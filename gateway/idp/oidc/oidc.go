@@ -206,8 +206,42 @@ func downloadJWKS(jwksURL string) (*keyfunc.JWKS, error) {
 	return keyfunc.Get(jwksURL, options)
 }
 
+// RefreshAccessToken exchanges a refresh token for a new access token using the provider's token endpoint.
+func (p *Provider) RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	token := &oauth2.Token{RefreshToken: refreshToken}
+	tokenSource := p.oauth2Config.TokenSource(ctx, token)
+	newToken, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh access token: %w", err)
+	}
+	return newToken, nil
+}
+
+// VerifyExpiredTokenSubject validates the JWT signature using the provider's JWKS
+// but skips claims validation (expiration). Returns the "sub" claim.
+func (p *Provider) VerifyExpiredTokenSubject(tokenStr string) (string, error) {
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	token, err := parser.Parse(tokenStr, p.jwks.Keyfunc)
+	if err != nil {
+		return "", fmt.Errorf("signature verification failed: %w", err)
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("failed to parse token claims")
+	}
+	subject, ok := claims["sub"].(string)
+	if !ok || subject == "" {
+		return "", fmt.Errorf("'sub' not found or empty in token")
+	}
+	return subject, nil
+}
+
 func (p *Provider) GetAudience() string { return p.Audience }
 func (p *Provider) GetAuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	if slices.Contains(p.oauth2Config.Scopes, "offline_access") {
+		opts = append(opts, oauth2.AccessTypeOffline)
+	}
+
 	return p.oauth2Config.AuthCodeURL(state, opts...)
 }
 

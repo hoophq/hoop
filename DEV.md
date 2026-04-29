@@ -64,6 +64,85 @@ We use Presidio as the provider to redact sensitive data on Hoop. To run the Pre
 make run-dev-presidio
 ```
 
+### SPIFFE Agent Setup
+
+Hoop can authenticate agents with SPIFFE JWT-SVIDs instead of DSN tokens. For local development we ship a minter that generates a trust bundle, signing key, and a short-lived JWT on your workstation — no SPIRE server required. See [`documentation/setup/deployment/spiffe.mdx`](../documentation/setup/deployment/spiffe.mdx) for the full feature docs.
+
+1. Mint the SPIFFE artifacts and patch `.env` with `HOOP_SPIFFE_*` vars:
+
+```sh
+make run-dev-spiffe-prep
+```
+
+This writes a managed block into `.env`:
+
+```sh
+# <<<HOOP_SPIFFE_DEV>>>
+HOOP_SPIFFE_MODE=enforce
+HOOP_SPIFFE_TRUST_DOMAIN=local.test
+HOOP_SPIFFE_BUNDLE_FILE=/app/spiffe/bundle.jwks
+HOOP_SPIFFE_AUDIENCE=http://127.0.0.1:8009
+HOOP_SPIFFE_REFRESH_PERIOD=30s
+# <<</HOOP_SPIFFE_DEV>>>
+```
+
+and emits three files under `dist/dev/spiffe/`:
+
+- `priv.pem` — RSA signing key (reused across runs, so the bundle stays stable)
+- `bundle.jwks` — JWKS trust bundle mounted into the gateway at `/app/spiffe/bundle.jwks`
+- `agent.jwt` — JWT-SVID for `spiffe://local.test/agent/local-dev`, 24h TTL (re-minted every run)
+
+2. Start (or restart) the gateway so it picks up the new `HOOP_SPIFFE_*` vars:
+
+```sh
+make run-dev
+```
+
+> If `run-dev` was already running before step 1, `Ctrl-C` and start it again. SPIFFE configuration is loaded at gateway boot.
+
+3. In another terminal, start a host-side agent that authenticates with the minted JWT:
+
+```sh
+make run-dev-spiffe-agent
+```
+
+This script:
+
+- rebuilds `$HOME/.hoop/bin/hoop` if source files under `agent/` or `common/clientconfig/` are newer than the binary
+- copies `bundle.jwks` into the `hoopdev` container (where `/app/spiffe/` is mounted)
+- reads `POSTGRES_DB_URI` from `hoopdev`'s env and seeds two rows in `hoopdevpg` (idempotent):
+  - `private.agents` → a `spiffe-agent` row
+  - `private.agent_spiffe_mappings` → maps `spiffe://local.test/agent/local-dev` to that agent
+- launches the agent on your host with `HOOP_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
+
+`Ctrl-C` stops only the agent; `run-dev` keeps running.
+
+#### Overriding defaults
+
+| Variable | Default | Where it's used |
+|---|---|---|
+| `HOOP_SPIFFE_TRUST_DOMAIN` | `local.test` | Embedded in the minted JWT and the gateway config |
+| `HOOP_SPIFFE_ID` | `spiffe://local.test/agent/local-dev` | Subject of the minted JWT and the DB mapping |
+| `HOOP_SPIFFE_AUDIENCE` | `http://127.0.0.1:8009` | `aud` claim the gateway enforces |
+| `HOOP_SPIFFE_TTL` | `24h` | Lifetime of the minted JWT |
+| `HOOPDEV_APP_CONTAINER` | `hoopdev` | Gateway container (bundle copy + `POSTGRES_DB_URI` source) |
+| `HOOPDEV_DB_CONTAINER` | `hoopdevpg` | Postgres container where `psql` runs |
+
+#### Re-minting / rotating the JWT
+
+The minter always writes a fresh `agent.jwt` while reusing `priv.pem`/`bundle.jwks`. To rotate:
+
+```sh
+make run-dev-spiffe-prep         # new agent.jwt, same bundle
+# agent picks it up on its next reconnect (Refresh() is called in the backoff loop)
+```
+
+To rotate the signing key too, delete `dist/dev/spiffe/priv.pem` before running prep, then restart the gateway so it refreshes the bundle.
+
+#### Disabling SPIFFE
+
+Edit `.env` and change `HOOP_SPIFFE_MODE=enforce` to `HOOP_SPIFFE_MODE=disabled` (or remove the managed block entirely), then restart `run-dev`. `enforce` is the only "on" value — the gateway always rejects invalid SVIDs and never falls back to DSN on a JWT-shaped token.
+
 ## Swagger / OpenAPI
 
 This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. Make sure to generate it every time a change is made in the API:
@@ -145,3 +224,72 @@ docker buildx build \
   --push .
 ```
 
+## Feature Flags
+
+The codebase has a per-org feature flag system that lets you ship experimental code behind toggles. Flags default to off — merging to `main` is always safe.
+
+### Adding a new flag
+
+Add one entry to the `catalog` map in `common/featureflag/featureflag.go`:
+
+```go
+"experimental.my_feature": {
+    Name:        "experimental.my_feature",
+    Description: "Short description shown to org admins",
+    Default:     false,
+    Stability:   StabilityExperimental, // or StabilityBeta
+    Components:  []Component{ComponentGateway, ComponentAgent},
+},
+```
+
+That's it. No migrations, no frontend changes. The flag appears automatically in the admin UI at **Settings > Experimental**.
+
+**Naming:** `<stability>.<snake_case_name>` (e.g. `experimental.ssh_multiplex`, `beta.new_proxy`).
+
+### Gating code
+
+**Gateway:**
+
+```go
+import "github.com/hoophq/hoop/common/featureflag"
+
+if featureflag.IsEnabled(orgID, "experimental.my_feature") {
+    // new path
+}
+```
+
+**Agent:**
+
+```go
+import "github.com/hoophq/hoop/agent/controller/featureflagstate"
+
+if featureflagstate.IsEnabled("experimental.my_feature") {
+    // new path
+}
+```
+
+The agent receives flag updates from the gateway in real-time via gRPC — no polling needed.
+
+**Webapp (ClojureScript):** flags are available in the `/serverinfo` response under `feature_flags`.
+
+### Enabling a flag
+
+An org admin goes to **Settings > Experimental** in the webapp and flips the switch. The change persists to the DB, updates the gateway cache, and broadcasts to all connected agents immediately.
+
+### Rules
+
+- Every experimental PR **must** gate its behavior behind `IsEnabled`. No ungated experimental code on `main`.
+- `Default` is almost always `false`. Unknown flags return `false`.
+- Removing a flag from the catalog disables it everywhere automatically.
+- License gating is orthogonal — feature flags compose on top of license checks.
+
+### Key files
+
+| What | Path |
+|------|------|
+| Flag catalog (source of truth) | `common/featureflag/featureflag.go` |
+| Gateway: check a flag | `featureflag.IsEnabled(orgID, name)` |
+| Agent: check a flag | `agent/controller/featureflagstate/featureflagstate.go` |
+| REST API | `gateway/api/featureflags/featureflags.go` |
+| DB model | `gateway/models/org_feature_flags.go` |
+| Admin UI | `webapp/src/webapp/settings/experimental/` |

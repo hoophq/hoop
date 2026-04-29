@@ -13,14 +13,17 @@
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
+   [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
+   [webapp.sessions.components.reject-details-modal :as reject-details-modal]
 
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
    [webapp.sessions.components.session-header :as session-header]
-   [webapp.sessions.components.session-details :as session-details-component]))
+   [webapp.sessions.components.session-details :as session-details-component]
+   [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
 (def ^:private export-dictionary
   {:postgres "csv"
@@ -162,6 +165,8 @@
               ;; credentials_expire_at is stored in session metadata by the backend
               ;; when connection credentials are issued (see SetSessionCredentialsExpireAt)
               credentials-expire-at (get-in session [:metadata :credentials_expire_at])
+              credentials-revoked-at (get-in session [:metadata :credentials_revoked_at])
+              credentials-revoked-at? (not (cs/blank? credentials-revoked-at))
               credentials-expired? (when credentials-expire-at
                                      (<= (.getTime (js/Date. credentials-expire-at))
                                          (.getTime (js/Date.))))
@@ -188,9 +193,19 @@
                                         force-groups
                                         (some #(contains? force-groups %) user-groups)))
               handle-reject (fn []
-                              (rf/dispatch [:audit->add-review
-                                            session
-                                            "rejected"]))
+                              (rf/dispatch
+                               [:modal->open
+                                {:id "reject-details-modal"
+                                 :maxWidth "500px"
+                                 :content [reject-details-modal/main
+                                           {:on-confirm
+                                            (fn [{:keys [comment]}]
+                                              (rf/dispatch [:audit->add-review
+                                                            session
+                                                            "rejected"
+                                                            :rejection-reason comment])
+                                              (rf/dispatch [:modal->close]))
+                                            :on-cancel #(rf/dispatch [:modal->close])}]}]))
               handle-approve (fn []
                                (rf/dispatch [:audit->add-review
                                              session
@@ -253,12 +268,18 @@
                     [:span param-value]]))]])
             ;; end runbook params
 
-            ;; metadata (internal fields like credentials_expire_at and credentials_session are excluded from display)
+            ;; metadata
             (when (and metadata
-                       (seq (dissoc metadata :credentials_expire_at :credential_session)))
+                       (seq (dissoc metadata
+                                    :credentials_expire_at
+                                    :credentials_revoked_at
+                                    :credential_session)))
               [:div
                (doall
-                (for [[metadata-key metadata-value] (dissoc metadata :credentials_expire_at :credential_session)]
+                (for [[metadata-key metadata-value] (dissoc metadata
+                                                            :credentials_expire_at
+                                                            :credentials_revoked_at
+                                                            :credential_session)]
                   ^{:key metadata-key}
                   [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
                    [:header {:class "w-32 px-small text-sm font-bold"}
@@ -288,7 +309,11 @@
 
             [session-analysis/main {:ai-analysis (:ai_analysis session)}]
 
+            [guardrails-info/main {:guardrails-info (:guardrails_info session)}]
+
             [data-masking-analytics/main {:session session}]
+
+            [rejection-reason/main {:session session}]
 
             ;; response logs area
             (when-not (or credentials-expire-at
@@ -428,24 +453,33 @@
                 "Execute"]])
 
             ;; Connect button for approved credential requests (verb = connect).
-            ;; Visible when session is:
-            ;;   ready  → review approved, credentials not yet issued
-            ;;   open   → credentials were issued (show validity or expired message)
-            (when (and (or ready?
-                           (and open? credentials-expire-at))
-                       (= (:verb session) "connect")
+            (when (and (= (:verb session) "connect")
+                       (not= (:status session) "open")
                        is-session-owner?)
               (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
                     has-valid-credentials? (and existing-session
+                                                (= (:status existing-session) "open")
                                                 (:connection_credentials existing-session)
                                                 (> (.getTime (js/Date. (:expire_at existing-session)))
                                                    (.getTime (js/Date.))))]
                 (cond
+                  ;; Credentials have been revoked (timestamp passed, backend may not have closed session yet)
+                  credentials-revoked-at?
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "Your credentials have been revoked at "
+                    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"}
+                     (formatters/time-parsed->readable-datetime credentials-revoked-at)]
+                    "."]]
+
                   ;; Credentials have expired (timestamp passed, backend may not have closed session yet)
                   credentials-expired?
                   [:> Flex {:align "center" :justify "end" :gap "4"}
                    [:> Text {:size "2" :class "text-[--gray-11]"}
-                    "Your credentials have expired."]]
+                    "Your credentials have expired at "
+                    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"}
+                     (formatters/time-parsed->readable-datetime credentials-expire-at)]
+                    "."]]
 
                   ;; Credentials exist in local store and are valid — offer to view them
                   has-valid-credentials?

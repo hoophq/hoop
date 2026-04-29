@@ -11,21 +11,21 @@ const tableSecurityAuditLog = "private.security_audit_log"
 
 // SecurityAuditLog is the persisted security audit event (who, when, what, details, outcome).
 type SecurityAuditLog struct {
-	ID                      uuid.UUID      `gorm:"column:id;type:uuid;primaryKey;default:uuid_generate_v4()"`
-	OrgID                   string         `gorm:"column:org_id;type:uuid;not null"`
-	ActorSubject            string         `gorm:"column:actor_subject;size:255;not null"`
-	ActorEmail              string         `gorm:"column:actor_email;size:255"`
-	ActorName               string         `gorm:"column:actor_name;size:255"`
-	CreatedAt               time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
-	ResourceType            string         `gorm:"column:resource_type;size:64;not null"`
-	Action                  string         `gorm:"column:action;size:32;not null"`
-	HttpMethod              string         `gorm:"column:http_method;size:16;not null"`
-	HttpStatus              int            `gorm:"column:http_status;not null"`
-	HttpPath                string         `gorm:"column:http_path;size:512;not null"`
-	ClientIP                string         `gorm:"column:client_ip;size:45;not null"`
-	RequestPayloadRedacted  map[string]any `gorm:"column:request_payload_redacted;serializer:json"`
-	Outcome                 bool           `gorm:"column:outcome;not null"` // true = success, false = failure
-	ErrorMessage            string         `gorm:"column:error_message;type:text"`
+	ID                     uuid.UUID      `gorm:"column:id;type:uuid;primaryKey;default:uuid_generate_v4()"`
+	OrgID                  string         `gorm:"column:org_id;type:uuid;not null"`
+	ActorSubject           string         `gorm:"column:actor_subject;size:255;not null"`
+	ActorEmail             string         `gorm:"column:actor_email;size:255"`
+	ActorName              string         `gorm:"column:actor_name;size:255"`
+	CreatedAt              time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
+	ResourceType           string         `gorm:"column:resource_type;size:64;not null"`
+	Action                 string         `gorm:"column:action;size:32;not null"`
+	HttpMethod             string         `gorm:"column:http_method;size:16;not null"`
+	HttpStatus             int            `gorm:"column:http_status;not null"`
+	HttpPath               string         `gorm:"column:http_path;size:512;not null"`
+	ClientIP               string         `gorm:"column:client_ip;size:45;not null"`
+	RequestPayloadRedacted map[string]any `gorm:"column:request_payload_redacted;serializer:json"`
+	Outcome                bool           `gorm:"column:outcome;not null"` // true = success, false = failure
+	ErrorMessage           string         `gorm:"column:error_message;type:text"`
 }
 
 // TableName overrides the table name.

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -59,8 +60,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin already enabled"})
 		return
 	default:
-		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving existing plugin: %v", err)
 		return
 	}
 
@@ -88,9 +88,7 @@ func Post(c *gin.Context) {
 	}
 
 	if err := models.UpsertPlugin(newPlugin); err != nil {
-		errMsg := fmt.Sprintf("failed creating plugin %v, reason=%v", req.Name, err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating plugin %v, reason=%v", req.Name, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toOpenApi(newPlugin))
@@ -123,8 +121,7 @@ func Put(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving existing plugin")
 		return
 	}
 	existingPlugin.Connections = parsePluginConnections(c, existingPlugin.ID, req)
@@ -132,9 +129,7 @@ func Put(c *gin.Context) {
 	// this is kept for compatibility with webapp
 	existingPlugin.EnvVars = nil
 	if err := models.UpsertPlugin(existingPlugin); err != nil {
-		errMsg := fmt.Sprintf("failed updating plugin, reason=%v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating plugin")
 		return
 	}
 	c.JSON(http.StatusOK, toOpenApi(existingPlugin))
@@ -168,8 +163,7 @@ func PutConfig(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving existing plugin: %v", err)
 		return
 	}
 
@@ -180,9 +174,7 @@ func PutConfig(c *gin.Context) {
 
 	newState := newPluginUpdateConfigState(existingPlugin, envVars)
 	if err := processOnUpdatePluginPhase(existingPlugin, newState); err != nil {
-		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
-		log.Errorf(msg)
-		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed initializing plugin, reason=%v", err)})
 		return
 	}
 
@@ -195,9 +187,7 @@ func PutConfig(c *gin.Context) {
 	})
 
 	if err != nil {
-		errMsg := fmt.Sprintf("failed updating plugin configuration, reason=%v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating plugin configuration: %v", err)
 		return
 	}
 	c.JSON(http.StatusOK, toOpenApi(existingPlugin))
@@ -224,8 +214,7 @@ func Get(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(obj))
 	default:
-		log.Errorf("failed obtaining plugin, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining plugin: %v", err)
 		return
 	}
 }
@@ -243,8 +232,7 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	itemList, err := models.ListPlugins(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed listing plugins, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing plugins: %v", err)
 		return
 	}
 	var out []*openapi.Plugin

@@ -91,6 +91,19 @@ func (s *PGServer) Stop() error {
 
 func (s *PGServer) ListenAddr() string { return s.listenAddr }
 
+// RevokeByCredentialID cancels all connections using the given credential ID.
+// This triggers the same cleanup flow as when a credential expires.
+func (s *PGServer) RevokeByCredentialID(credentialID string) {
+	if s.connectionStore == nil {
+		return
+	}
+	for _, obj := range s.connectionStore.List() {
+		if pgConn, ok := obj.(*postgresConn); ok && pgConn.credentialID == credentialID {
+			pgConn.cancelFn("credential revoked")
+		}
+	}
+}
+
 func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, error) {
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
@@ -147,6 +160,7 @@ func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, erro
 type postgresConn struct {
 	sid           string
 	id            string
+	credentialID  string
 	ctx           context.Context
 	cancelFn      func(msg string, a ...any)
 	streamClient  pb.ClientTransport
@@ -253,6 +267,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired (%v)", dba.ExpireAt.Format(time.RFC3339)))
+	pgConn.credentialID = dba.ID
 	pgConn.cancelFn = func(msg string, a ...any) {
 		cancelFn(fmt.Errorf(msg, a...))
 		timeoutCancelFn()
@@ -260,7 +275,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 	pgConn.ctx = ctx
 
 	transport.PollingUserToken(pgConn.ctx, func(cause error) {
-		pgConn.cancelFn(cause.Error())
+		pgConn.cancelFn("%s", cause.Error())
 	}, tokenVerifier, dba.UserSubject)
 
 	grpcOpts := []*grpc.ClientOptions{

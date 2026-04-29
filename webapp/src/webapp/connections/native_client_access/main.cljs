@@ -1,25 +1,26 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text Badge]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
    ["lucide-react" :refer [Info ShieldCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.components.logs-container :as logs]
    [webapp.components.timer :as timer]
-   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.native-client-access.constants :as constants]
-   [webapp.connections.native-client-access.custom-credential-views :as custom-views]))
+   [webapp.connections.native-client-access.custom-credential-views :as custom-views]
+   [webapp.formatters :as formatters]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn disconnect-session
-  "Handle disconnect with confirmation"
-  [connection-name]
+  "Handle disconnect with confirmation. Calls revoke API to invalidate credential and disconnect active sessions."
+  [connection-name credential-id]
   (let [dialog-text (str "Are you sure you want to disconnect the native client session for \"" connection-name "\"?")
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
                                                   :action-button? true
                                                   :on-success (fn []
-                                                                (rf/dispatch [:native-client-access->clear-session connection-name])
+                                                                (rf/dispatch [:native-client-access->revoke-credential connection-name credential-id])
                                                                 (rf/dispatch [:modal->close]))
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
@@ -212,7 +213,7 @@
   "Http proxy specific credentials fields"
   [{:keys [command port proxy_token]}]
 
-  (let [{:keys [curl browser]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
+  (let [{:keys [curl browser subdomain]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
     [:> Box {:class "space-y-4"}
 
      ;; Host
@@ -247,6 +248,14 @@
        {:status :success
         :id "command-browser"
         :logs browser}]]
+
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Command Subdomain Browser"]
+      [logs/new-container
+       {:status :success
+        :id "command-wildcard-browser"
+        :logs subdomain}]]
 
      ;; Port
      [:> Box {:class "space-y-2"}
@@ -369,8 +378,6 @@
   (let [active-tab (r/atom "credentials")
         subtype (:connection_subtype native-client-access-data)
         has-command? (contains? #{"ssh" "rdp"} subtype)]
-
-    (println native-client-access-data)
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}
@@ -496,7 +503,8 @@
         "aws-ssm" "AWS SSM"
         "kubernetes" "Kubernetes"
         "httpproxy" "HTTP Proxy"
-        "Unknown")]]
+        (formatters/title-case
+         (:connection_subtype native-client-access-data)))]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Time left: "]
@@ -515,7 +523,7 @@
      {:variant "solid"
       :size "1"
       :color "red"
-      :on-click #(disconnect-session connection-name)}
+      :on-click #(disconnect-session connection-name (:id native-client-access-data))}
      "Disconnect"]]])
 
 (defn minimize-modal
@@ -552,7 +560,7 @@
         (and @session-valid? @native-client-access-data)
         [connection-established-view connection-name @native-client-access-data
          #(minimize-modal connection-name)
-         #(disconnect-session connection-name)]
+         #(disconnect-session connection-name (:id @native-client-access-data))]
 
         ;; Step 1: Configure session duration (no session)
         (not @native-client-access-data)

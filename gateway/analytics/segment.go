@@ -1,14 +1,25 @@
 package analytics
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 
+	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
+	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 )
 
 type Segment struct {
@@ -31,6 +42,36 @@ func New() *Segment {
 	}
 }
 
+func (s *Segment) Close() {
+	if s == nil || s.Client == nil {
+		return
+	}
+
+	if err := s.Client.Close(); err != nil {
+		log.Warnf("failed closing analytics client, err=%v", err)
+		return
+	}
+}
+
+// identifyTraits builds the trait set for an Identify call. On OSS installs
+// the user's real email and name are attached so Intercom can address them;
+// Enterprise keeps the pseudonymous hashed user-id as the only identifier.
+func identifyTraits(ctx *types.APIContext, hashedUserID, environmentName string) analytics.Traits {
+	traits := analytics.NewTraits().
+		Set("org-id", ctx.OrgID).
+		Set("user-id", hashedUserID).
+		Set("is-admin", ctx.IsAdminUser()).
+		Set("environment", environmentName).
+		Set("status", ctx.UserStatus).
+		Set("client-version", version.Get().Version)
+
+	if ctx.GetLicenseType() == license.OSSType && ctx.UserEmail != "" {
+		traits = traits.SetEmail(ctx.UserEmail).SetName(ctx.UserName)
+	}
+
+	return traits
+}
+
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" ||
 		!appconfig.Get().AnalyticsTracking() {
@@ -42,13 +83,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 	_ = s.Client.Enqueue(analytics.Identify{
 		UserId:      hashedUserID,
 		AnonymousId: ctx.UserAnonSubject,
-		Traits: analytics.NewTraits().
-			Set("org-id", ctx.OrgID).
-			Set("user-id", hashedUserID).
-			Set("is-admin", ctx.IsAdminUser()).
-			Set("environment", s.environmentName).
-			Set("status", ctx.UserStatus).
-			Set("client-version", version.Get().Version),
+		Traits:      identifyTraits(ctx, hashedUserID, s.environmentName),
 	})
 
 	_ = s.Client.Enqueue(analytics.Group{
@@ -131,10 +166,18 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 		}
 	}
 
+	groups := make(map[string]any)
+
 	if orgID, exists := properties["org-id"]; exists && orgID != "" {
-		properties["$groups"] = map[string]any{
-			"org-id": orgID,
-		}
+		groups["org-id"] = orgID
+	}
+
+	if sessionID, exists := properties["session-id"]; exists && sessionID != "" {
+		groups["session-id"] = sessionID
+	}
+
+	if len(groups) > 0 {
+		properties["$groups"] = groups
 	}
 
 	hashedUserID := getUserIDHash(userID)
@@ -143,9 +186,140 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	properties["auth-method"] = appconfig.Get().AuthMethod()
 	properties["client-version"] = version.Get().Version
 
-	_ = s.Client.Enqueue(analytics.Track{
+	if err := s.Client.Enqueue(analytics.Track{
 		UserId:     hashedUserID,
 		Event:      eventName,
 		Properties: properties,
+	}); err != nil {
+		log.Warnf("failed to enqueue analytics event=%s, reason=%v", eventName, err)
+	}
+}
+
+func sessionUsageProperties(
+	s *models.Session,
+	c *models.Connection,
+	agent *models.Agent,
+	guardrails *models.ConnectionGuardRailRules,
+	dataMasking json.RawMessage,
+	accessRequestList []*models.AccessRequestRule,
+) map[string]any {
+
+	props := map[string]any{
+		"org-id":                           s.OrgID,
+		"session-id":                       s.ID,
+		"resource-type":                    s.ConnectionType,
+		"resource-subtype":                 s.ConnectionSubtype,
+		"status":                           s.Status,
+		"created-at":                       s.CreatedAt.String(),
+		"ai-session-analyzer-activated":    false,
+		"agent-version":                    agent.GetMeta("version"),
+		"agent-platform":                   agent.GetMeta("platform"),
+		"mandatory-metadata-activated":     c.MandatoryMetadataFields != nil && len(c.MandatoryMetadataFields) > 0,
+		"jira-template-activated":          c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
+		"jit-access-request-activated":     false,
+		"command-access-request-activated": false,
+		"guardrails-activated":             guardrails != nil && !guardrails.HasEmptyRules(),
+		"data-masking-activated":           string(dataMasking) != "[]",
+	}
+
+	if s.EndSession != nil {
+		props["finished-at"] = s.EndSession.String()
+	}
+
+	if s.AIAnalysis != nil {
+		props["ai-session-analyzer-activated"] = true
+		props["ai-session-analyzer-identified-risk"] = s.AIAnalysis.RiskLevel
+		props["ai-session-analyzer-action"] = s.AIAnalysis.Action
+	}
+
+	for _, rule := range accessRequestList {
+		if rule != nil {
+			props[fmt.Sprintf("%s-access-request-activated", rule.AccessType)] = true
+			props[fmt.Sprintf("%s-access-request-force-approval", rule.AccessType)] = len(rule.ForceApprovalGroups) > 0
+			props[fmt.Sprintf("%s-access-request-all-groups-must-approve", rule.AccessType)] = rule.AllGroupsMustApprove
+
+			if rule.MinApprovals != nil {
+				props[fmt.Sprintf("%s-access-request-minimum-approval", rule.AccessType)] = *rule.MinApprovals
+			}
+		}
+	}
+
+	return props
+}
+
+func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID string, sessionID string) {
+	var (
+		err                  error
+		session              *models.Session
+		connection           *models.Connection
+		agent                *models.Agent
+		guardrails           *models.ConnectionGuardRailRules
+		jitAccessRequest     *models.AccessRequestRule
+		commandAccessRequest *models.AccessRequestRule
+		dataMasking          json.RawMessage
+	)
+
+	if session, err = models.GetSessionByID(orgID, sessionID); err != nil {
+		log.Warnf("failed getting session by ID, reason=%v", err)
+		return
+	}
+
+	if connection, err = models.GetConnectionByName(models.DB, session.Connection); err != nil {
+		log.Warnf("failed getting connection features by name, reason=%v", err)
+		return
+	}
+
+	group, _ := errgroup.WithContext(context.Background())
+	group.Go(func() error {
+		if agent, err = models.GetAgentByNameOrID(orgID, connection.AgentID.String); err != nil {
+			log.Warnf("failed getting agent by name, reason=%v", err)
+			return err
+		}
+		return nil
 	})
+
+	group.Go(func() error {
+		if guardrails, err = services.GetGuardRailRulesForConnection(orgID, session.Connection); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting guardrails for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	group.Go(func() error {
+		if dataMasking, err = services.GetDataMaskingRulesForConnection(orgID, session.Connection); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting data masking rules for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	group.Go(func() error {
+		if jitAccessRequest, err = services.GetRuleForConnection(uuid.MustParse(orgID), session.Connection, "jit"); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting jit rule for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	group.Go(func() error {
+		if commandAccessRequest, err = services.GetRuleForConnection(uuid.MustParse(orgID), session.Connection, "command"); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting command rule for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	if err := group.Wait(); err != nil {
+		return
+	}
+
+	props := sessionUsageProperties(session, connection, agent, guardrails, dataMasking, []*models.AccessRequestRule{jitAccessRequest, commandAccessRequest})
+	log.With("sid", sessionID).Infof("tracking session usage data, event=%s, orgID=%s, userID=%s, props=%+v", eventName, orgID, userID, props)
+
+	s.Track(userID, eventName, props)
 }

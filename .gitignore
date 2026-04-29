@@ -48,6 +48,7 @@ libhoop
 client/cmd/auth
 client/cmd/custom.go
 gateway/cmd/gateway/.env
+rest-client/
 
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions
@@ -59,7 +60,6 @@ deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 # rust build
 target/
 webapp/resources/public/data/connections-metadata.json
-.claude/settings.local.json
-
+.claude
 # WASM build output
 gateway/rdp/wasm/target/

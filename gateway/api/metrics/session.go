@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -57,8 +58,7 @@ func Get(c *gin.Context) {
 		// Return aggregated metrics
 		result, err := models.GetSessionMetricsAggregated(ctx.OrgID, filter)
 		if err != nil {
-			log.Errorf("failed to get aggregated session metrics: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to retrieve session metrics"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed to retrieve session metrics")
 			return
 		}
 
@@ -81,8 +81,7 @@ func Get(c *gin.Context) {
 	// Query session metrics
 	result, pagination, err := models.GetSessionMetrics(ctx.OrgID, filter)
 	if err != nil {
-		log.Errorf("failed to query session metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to retrieve session metrics"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed to retrieve session metrics")
 		return
 	}
 

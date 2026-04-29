@@ -12,7 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -62,8 +64,7 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApiReview(review))
 	default:
-		log.Errorf("failed fetching review %v, err=%v", id, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching review: %v", err)
 		return
 	}
 }
@@ -83,8 +84,7 @@ func (h *handler) List(c *gin.Context) {
 	reviews, err := models.ListReviews(ctx.GetOrgID())
 
 	if err != nil {
-		log.Errorf("failed fetching reviews, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching reviews: %v", err)
 		return
 	}
 
@@ -175,9 +175,14 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 				rev.Status.Str(),
 			)
 		}
+		if rev.Status == models.ReviewStatusRejected && req.RejectionReason != "" {
+			if setErr := models.SetReviewRejectionReason(rev.OrgID, rev.SessionID, req.RejectionReason); setErr != nil {
+				log.Warnf("failed storing rejection reason, sid=%v, err=%v", rev.SessionID, setErr)
+			}
+		}
 		c.JSON(http.StatusOK, toOpenApiReview(rev))
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating review status: %v", err)
 	}
 }
 
@@ -234,6 +239,14 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	if err := models.UpdateReview(rev); err != nil {
 		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
 	}
+
+	if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, rev.SessionID)
+	}
+
 	return rev, nil
 }
 
@@ -477,5 +490,6 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
+		RejectionReason:       r.RejectionReason,
 	}
 }

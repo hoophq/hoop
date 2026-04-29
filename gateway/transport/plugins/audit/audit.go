@@ -1,7 +1,6 @@
 package audit
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -17,10 +16,10 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -98,10 +97,18 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
+		if pctx.CorrelationID != "" {
+			newSession.CorrelationID = &pctx.CorrelationID
+		}
 
-		if err := services.UpsertSession(context.Background(), newSession, *connection); err != nil {
+		if err := models.UpsertSession(newSession); err != nil {
 			return fmt.Errorf("failed persisting session to store, reason=%v", err)
 		}
+
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
@@ -146,6 +153,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 					log.Errorf("failed updating session, err=%v", err)
 					return nil, plugintypes.InternalErr("failed updating session", err)
 				}
+				trackClient := analytics.New()
+				defer trackClient.Close()
+
+				trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 
 				if shouldBlock {
 					return nil, plugintypes.NewPacketErr("session blocked by AI risk analyzer", nil)
@@ -246,7 +257,11 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 				Warnf("failed closing session, reason=%v", err)
 		}
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
 		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
+		trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 	}()
 }
 

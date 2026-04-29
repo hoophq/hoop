@@ -13,12 +13,17 @@
        str/join))
 
 (defn- format-duration
-  "Format milliseconds as MM:SS"
+  "Format milliseconds as HH:MM:SS or MM:SS depending on duration"
   [ms]
   (let [total-seconds (quot ms 1000)
-        minutes (quot total-seconds 60)
+        hours (quot total-seconds 3600)
+        minutes (mod (quot total-seconds 60) 60)
         seconds (mod total-seconds 60)]
-    (str (pad-zero minutes) ":" (pad-zero seconds))))
+    (if (> hours 0)
+      ;; Format with hours: HH:MM:SS
+      (str (pad-zero hours) ":" (pad-zero minutes) ":" (pad-zero seconds))
+      ;; Format without hours: MM:SS
+      (str (pad-zero minutes) ":" (pad-zero seconds)))))
 
 
 ;; Hook for timer logic

@@ -57,6 +57,14 @@ run-dev-postgres:
 run-dev-presidio:
 	./scripts/dev/run-presidio.sh
 
+run-dev-spiffe-prep:
+	./scripts/dev/spiffe-prep.sh
+
+run-dev-spiffe-agent:
+	./scripts/dev/run-spiffe-agent.sh
+
+run-dev-spiffe: run-dev-spiffe-agent
+
 build-dev-client:
 	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 

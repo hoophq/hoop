@@ -37,6 +37,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 * runbooks (tabview)
 * serviceaccounts (tabview)
 * sessions (tabview)
+* spiffe-mappings (tabview)
 * users (tabview)
 `
 
@@ -69,7 +70,7 @@ var getCmd = &cobra.Command{
 		}
 		obj, _, err := httpRequest(apir)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := obj.([]byte)
@@ -241,6 +242,30 @@ var getCmd = &cobra.Command{
 					groupList := joinItems(groupsObject)
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t", m["subject"], m["name"], m["status"], groupList)
 					fmt.Fprintln(w)
+				}
+			}
+		case "spiffe-mapping", "spiffe-mappings", "spiffemapping", "spiffemappings":
+			fmt.Fprintln(w, "ID\tTRUST_DOMAIN\tMATCH\tRESOLVES_TO\tGROUPS\t")
+			printRow := func(m map[string]any) {
+				match := toStr(m["spiffe_id"])
+				if match == "-" {
+					match = toStr(m["spiffe_prefix"]) + "*"
+				}
+				resolves := toStr(m["agent_id"])
+				if resolves == "-" {
+					resolves = toStr(m["agent_template"])
+				}
+				groupsObject, _ := m["groups"].([]any)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t",
+					m["id"], m["trust_domain"], match, resolves, joinItems(groupsObject))
+				fmt.Fprintln(w)
+			}
+			switch contents := obj.(type) {
+			case map[string]any:
+				printRow(contents)
+			case []map[string]any:
+				for _, m := range contents {
+					printRow(m)
 				}
 			}
 		case "runbooks":

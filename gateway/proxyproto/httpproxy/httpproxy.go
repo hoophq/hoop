@@ -23,6 +23,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -108,7 +109,7 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	if err != nil {
 		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
-	log.Infof("starting http proxy server at %v", listenAddr)
+	log.Debugf("starting http proxy server at %v", listenAddr)
 
 	server := &HttpProxyServer{
 		listener:   lis,
@@ -133,11 +134,11 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	go func() {
 		var err error
 		if tlsConfig != nil {
-			log.Infof("http proxy server using TLS")
+			log.Debugf("http proxy server using TLS")
 			server.httpServer.TLSConfig = tlsConfig
 			err = server.httpServer.ServeTLS(lis, "", "")
 		} else {
-			log.Infof("http proxy server using plain HTTP")
+			log.Debugf("http proxy server using plain HTTP")
 			err = server.httpServer.Serve(lis)
 		}
 		if err != nil && err != http.ErrServerClosed {
@@ -176,6 +177,16 @@ func (s *HttpProxyServer) Stop() error {
 }
 
 func (s *HttpProxyServer) ListenAddr() string { return s.listenAddr }
+
+// RevokeBySecretKeyHash cancels the session for the given secret key hash, if one exists.
+// This triggers the same cleanup flow as when a credential expires.
+func (s *HttpProxyServer) RevokeBySecretKeyHash(secretKeyHash string) {
+	if session, ok := s.sessionStore.Load(secretKeyHash); ok {
+		if sess, ok := session.(*httpProxySession); ok {
+			sess.cancelFn("credential revoked")
+		}
+	}
+}
 
 // ServeHTTP implements http.Handler
 func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -235,9 +246,12 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if proxyToken == "" {
 		proxyToken = r.Header.Get(proxyTokenHeader)
 	}
+	if proxyToken == "" {
+		proxyToken = r.Header.Get("X-Api-Key")
+	}
 
 	if proxyToken == "" {
-		http.Error(w, "missing Authorization header", http.StatusUnauthorized)
+		http.Error(w, "missing Authorization or X-Api-Key header", http.StatusUnauthorized)
 		return
 	}
 	// token contains Bearer prefix
@@ -268,7 +282,20 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		negativeAuthCache.Delete(secretKeyHash)
 	}
 
-	session, err := s.getOrCreateSession(secretKeyHash)
+	// The correlation ID is session-scoped: it is only honored on the request that
+	// creates the long-lived hoop session for this credential. Later requests reusing
+	// the session will have their X-Hoop-Correlation-Id header ignored.
+	correlationID := r.Header.Get("X-Hoop-Correlation-Id")
+	var correlationIDPtr *string
+	if correlationID != "" {
+		correlationIDPtr = &correlationID
+	}
+	if err := sessionapi.ValidateCorrelationID(correlationIDPtr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	session, err := s.getOrCreateSession(secretKeyHash, correlationID)
 	if err != nil {
 		var credErr *credentialError
 		if errors.As(err, &credErr) {
@@ -335,7 +362,7 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 	return nil, nil
 }
 
-func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySession, error) {
+func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string) (*httpProxySession, error) {
 	// First try to get existing valid session
 	sess, err := s.getSessionOrRelease(secretKeyHash)
 	if err != nil {
@@ -393,6 +420,9 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	}
 	if dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
+	}
+	if correlationID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("correlation-id", correlationID))
 	}
 
 	// Do gRPC connection setup outside lock (this can take time)
@@ -496,9 +526,10 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	log := log.With("sid", sess.sid, "conn", connectionID)
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
 
-	// Create response channel for this request
-	// TODO: chico increase buffer size to prevent blocking.
-	responseChan := make(chan []byte, 10) // changed for buffering
+	// Create response channel for this request.
+	// Buffer size of 100 provides headroom for SSE streaming where the agent sends
+	// headers and each event chunk as separate gRPC packets.
+	responseChan := make(chan []byte, 100)
 	sess.responseStore.Store(connectionID, responseChan)
 	defer sess.responseStore.Delete(connectionID)
 
@@ -527,7 +558,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// Build raw HTTP request to forward
 	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
 	for key, values := range r.Header {
-		if key == proxyTokenHeader || key == "Host" {
+		if key == proxyTokenHeader || key == "X-Api-Key" || key == "Host" {
 			continue
 		}
 
@@ -622,6 +653,15 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			sess.handleWebSocketUpgraded(w, response, responseChan, connectionID)
 			return
 		}
+
+		// Check if this is an SSE streaming response.
+		// SSE responses arrive as multiple gRPC packets (headers first, then chunks),
+		// so we need to loop on responseChan to forward all chunks.
+		if isSSEStreamingResponse(resp) {
+			sess.handleSSEStream(w, resp, responseChan, connectionID)
+			return
+		}
+
 		for key, values := range resp.Header {
 			for _, value := range values {
 				w.Header().Add(key, value)
@@ -629,6 +669,105 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		}
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
+	}
+}
+
+// isSSEStreamingResponse checks if the HTTP response is a Server-Sent Events stream.
+// SSE responses require special handling because the agent sends headers and body
+// chunks as separate gRPC packets, unlike regular responses which are sent atomically.
+func isSSEStreamingResponse(resp *http.Response) bool {
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	return strings.HasPrefix(ct, "text/event-stream")
+}
+
+// handleSSEStream handles Server-Sent Events streaming responses.
+//
+// The agent sends SSE responses as multiple gRPC packets: the first contains
+// HTTP headers only, and subsequent packets contain chunked body data (one per
+// SSE event). This method loops on responseChan to forward all chunks to the
+// HTTP client, flushing after each one so events are delivered in real-time.
+//
+// The stream ends when the responseChan is closed (agent finished), the session
+// context is cancelled, or an idle timeout of 5 minutes is exceeded between
+// consecutive chunks.
+func (sess *httpProxySession) handleSSEStream(
+	w http.ResponseWriter,
+	resp *http.Response,
+	responseChan chan []byte,
+	connectionID string,
+) {
+	log := log.With("sid", sess.sid, "conn", connectionID, "type", "sse")
+	log.Infof("SSE stream detected, starting streaming relay")
+
+	// Copy response headers to the client
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	// Close the parsed response body — for SSE the first packet contains only
+	// headers, so the body is empty. The actual SSE event data arrives as
+	// subsequent gRPC packets via responseChan.
+	if resp.Body != nil {
+		resp.Body.Close()
+	}
+
+	// Flush initial headers to the client immediately
+	flusher, ok := w.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+
+	// Stream subsequent chunks from the agent.
+	// Each chunk is a raw HTTP chunked-encoding fragment produced by the agent's
+	// httputil.NewChunkedWriter wrapping the gRPC streamWriter.
+	const sseIdleTimeout = 90 * time.Second
+	idleTimer := time.NewTimer(sseIdleTimeout)
+	defer idleTimer.Stop()
+
+	for {
+		select {
+		case <-sess.ctx.Done():
+			log.Infof("SSE stream ended: session context done")
+			return
+		case <-idleTimer.C:
+			log.Warnf("SSE stream ended: idle timeout (%v) exceeded", sseIdleTimeout)
+			return
+		case data, ok := <-responseChan:
+			if !ok {
+				// Channel closed — agent finished the SSE stream
+				log.Infof("SSE stream ended: response channel closed")
+				return
+			}
+
+			if _, err := w.Write(data); err != nil {
+				log.Warnf("SSE stream ended: write error: %v", err)
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+
+			// Detect chunked-encoding termination (zero-length chunk: "0\r\n").
+			// The agent's httputil.ChunkedWriter.Close() writes this when the SSE
+			// stream ends. The agent does NOT send TCPConnectionClose for SSE, so
+			// this is how we know the stream is done.
+			if bytes.Equal(bytes.TrimSpace(data), []byte("0")) {
+				log.Infof("SSE stream ended: received chunked transfer terminator")
+				return
+			}
+
+			// Reset idle timer after each successful chunk
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(sseIdleTimeout)
+		}
 	}
 }
 
@@ -854,9 +993,10 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 						// Session canceled while trying to send
 						return
 					default:
-						log.Warnf("response channel full for conn %s, sid=%s", connectionID, sess.sid)
-						// Channel is full, remove it to prevent memory leak
-						sess.responseStore.Delete(connectionID)
+						log.Warnf("response channel full for conn %s, sid=%s (packet dropped)", connectionID, sess.sid)
+						// Don't delete the channel — the consumer (e.g. SSE streaming loop)
+						// may catch up and resume reading. Deleting would permanently kill
+						// the stream for this connection.
 					}
 				} else {
 					log.Infof("invalid response channel type for conn %s, sid=%s", connectionID, sess.sid)

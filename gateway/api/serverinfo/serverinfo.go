@@ -1,7 +1,6 @@
 package apiserverinfo
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -10,9 +9,10 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/license"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
@@ -51,15 +51,12 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed obtaining organization, reason=%v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining organization: %v", err)
 		return
 	}
 	serverConfig, _, err := idp.LoadServerAuthConfig()
 	if err != nil {
-		log.Errorf("failed loading server auth config, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, failed loading server auth config"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading server auth config")
 		return
 	}
 
@@ -97,6 +94,7 @@ func Get(c *gin.Context) {
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
 	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
+	serverInfoData.FeatureFlags = featureflag.SnapshotForOrg(ctx.OrgID)
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,
 		VerifyError:  licenseVerifyErr,

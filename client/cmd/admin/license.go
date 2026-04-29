@@ -61,7 +61,7 @@ var licenseSignCmd = &cobra.Command{
 		}
 		resp, err := httpBodyRequest(apir, "POST", req)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		licenseJsonBytes, ok := resp.([]byte)
 		if !ok {
@@ -89,7 +89,7 @@ var licenseInstallCmd = &cobra.Command{
 			styles.PrintErrorAndExit("failed decoding license: %v", err)
 		}
 		if _, err := httpBodyRequest(apir, "PUT", licenseJsonMap); err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 
 		fmt.Println("license updated!")

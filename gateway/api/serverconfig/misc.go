@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
@@ -41,9 +42,7 @@ func GetServerMisc(c *gin.Context) {
 
 	config, err := models.GetServerMiscConfig()
 	if err != nil && err != models.ErrNotFound {
-		errMsg := fmt.Sprintf("failed to get server config, reason=%v", err)
-		log.Errorf(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server config: %v", err)
 		return
 	}
 	if config == nil {
@@ -132,9 +131,7 @@ func UpdateServerMisc(c *gin.Context) {
 
 	currentSrvConf, err := models.GetServerMiscConfig()
 	if err != nil && err != models.ErrNotFound {
-		errMsg := fmt.Sprintf("failed to get server config, reason=%v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server config: %v", err)
 		return
 	}
 
@@ -150,9 +147,7 @@ func UpdateServerMisc(c *gin.Context) {
 	}
 
 	if err != nil {
-		errMsg := fmt.Sprintf("failed handling rdp server startup, reason=%v", err)
-		log.Errorf(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed handling rdp server startup: %v", err)
 		return
 	}
 
@@ -167,9 +162,7 @@ func UpdateServerMisc(c *gin.Context) {
 	}
 
 	if err != nil {
-		errMsg := fmt.Sprintf("failed handling postgres server startup, reason=%v", err)
-		log.Errorf(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed handling postgres server startup: %v", err)
 		return
 	}
 
@@ -181,8 +174,7 @@ func UpdateServerMisc(c *gin.Context) {
 			log.Infof("generating a new ed25519 hosts key")
 			privateKeyPemBytes, err := newEd25519PrivateKey()
 			if err != nil {
-				log.Errorf("failed to generate hosts key: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to generate hosts key: %v", err)})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to generate hosts key: %v", err)
 				return
 			}
 			sshConf.HostsKey = base64.StdEncoding.EncodeToString(privateKeyPemBytes)
@@ -196,9 +188,7 @@ func UpdateServerMisc(c *gin.Context) {
 	}
 
 	if err != nil {
-		errMsg := fmt.Sprintf("failed handling ssh server startup, reason=%v", err)
-		log.Errorf(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed handling ssh server startup: %v", err)
 		return
 	}
 
@@ -213,9 +203,7 @@ func UpdateServerMisc(c *gin.Context) {
 	}
 
 	if err != nil {
-		errMsg := fmt.Sprintf("failed handling http proxy server startup, reason=%v", err)
-		log.Errorf(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed handling http proxy server startup: %v", err)
 		return
 	}
 
@@ -238,8 +226,7 @@ func UpdateServerMisc(c *gin.Context) {
 	})
 	if err != nil {
 		evt.Err(err)
-		log.Errorf("failed to update server config, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server config"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update server config")
 		return
 	}
 

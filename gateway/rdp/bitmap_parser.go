@@ -23,7 +23,7 @@ func InitParser() error {
 		if globalParserErr != nil {
 			log.Errorf("failed to initialize RDP parser: %v", globalParserErr)
 		} else {
-			log.Infof("RDP bitmap parser initialized successfully")
+			log.Debugf("RDP bitmap parser initialized successfully")
 		}
 	})
 	return globalParserErr

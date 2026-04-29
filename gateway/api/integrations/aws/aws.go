@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -173,8 +174,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 
 	getProvisionedConnectionsFn, err := listConnections(ctx)
 	if err != nil {
-		log.Errorf("failed listing connection resources, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connection resources: %v", err)
 		return
 	}
 
@@ -257,9 +257,8 @@ func CreateRDSRootPassword(c *gin.Context) {
 		}
 		randomPwd, err := generateRandomPassword()
 		if err != nil {
-			msgErr := fmt.Sprintf("failed generating random password for instance %s, reason=%v", instanceArn, err)
-			log.Errorf(msgErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": msgErr})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+				"failed generating random password for instance %s: %v", instanceArn, err)
 			return
 		}
 
@@ -303,8 +302,7 @@ func CreateDBRoleJob(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("unable to fetch agent information, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to validate agent, reason=" + err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to validate agent: %v", err)
 		return
 	}
 	resourceAWSAccountID := parseDatabaseArnAccountID(dbArn)
@@ -385,8 +383,7 @@ func GetDBRoleJobByID(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toDBRoleOpenAPI(dbRole))
 	default:
-		log.Errorf("failed getting db role job by id, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting db role job by id: %v", err)
 	}
 }
 
@@ -403,8 +400,7 @@ func ListDBRoleJobs(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	dbRoleItems, err := models.ListDBRoleJobs(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed listing db role jobs, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing db role jobs: %v", err)
 		return
 	}
 	var obj openapi.DBRoleJobList

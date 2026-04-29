@@ -1,12 +1,16 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/log/bootstrap"
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -39,11 +43,13 @@ func (s *Server) subscribeAgent(stream *streamclient.AgentStream) (err error) {
 	defer func() { stream.Close(pluginContext, err) }()
 
 	connectionrequests.AcceptProxyConnection(stream.GetOrgID(), stream.StreamAgentID(), nil)
-	log.With("connection", stream.ConnectionName()).Infof("agent connected: %s", stream)
+	log.With("connection", stream.ConnectionName()).Debugf("agent connected: %s", stream)
+	bootstrap.AgentConnected(stream.AgentName(), stream.AgentMode())
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
 		Payload: nil,
 	})
+	sendFeatureFlagSeed(stream)
 	return s.listenAgentMessages(&pluginContext, stream)
 }
 
@@ -115,18 +121,56 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.SessionClose:
+			updateGuardRailsInfoFromPacket(pctx, pkt)
 			// it will make sure to run the disconnect plugin phase for both clients
 			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
 		case pbclient.SessionOpenOK:
 			if proxyStream.PluginContext().ConnectionSubType == "ssh" {
 				pkt.Spec[pb.SpecClientSSHHostKey] = []byte(appconfig.Get().SSHClientHostKey())
 			}
+			if agentVersion := stream.GetMeta("version"); agentVersion != "" {
+				pkt.Spec[pb.SpecAgentVersion] = []byte(agentVersion)
+			}
+		case pbclient.PGConnectionWrite:
+			rewritePGGuardRailsErrorPacket(pkt)
 		}
 
 		if err = proxyStream.Send(pkt); err != nil {
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, type=%v, err=%v", pkt.Type, err)
 		}
 	}
+}
+
+func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) {
+	if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
+		var guardRailsData []models.SessionGuardRailsInfo
+		if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
+			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from session close, reason=%v", err)
+		} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
+			log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
+		}
+	}
+}
+
+func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {
+	rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]
+	if len(rawInfo) == 0 || len(pkt.Payload) == 0 {
+		return
+	}
+	msg, ok := buildLegacyGuardRailErrorMessage(rawInfo)
+	if !ok || msg == "" {
+		return
+	}
+
+	decoded, err := pgtypes.Decode(bytes.NewBuffer(pkt.Payload))
+	if err != nil || decoded == nil {
+		return
+	}
+	if decoded.Type() != pgtypes.ServerErrorResponse {
+		return
+	}
+
+	pkt.Payload = pgtypes.NewError("%s", msg).Encode()
 }
 
 func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {
@@ -179,5 +223,79 @@ func buildErrorFromPacket(sid string, pkt *pb.Packet) error {
 		return nil
 	}
 
-	return plugintypes.NewPacketErr(string(pkt.Payload), exitCode)
+	errMsg := string(pkt.Payload)
+	if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
+		if msg, ok := buildLegacyGuardRailErrorMessage(rawInfo); ok {
+			errMsg = msg
+		}
+	}
+
+	return plugintypes.NewPacketErr(errMsg, exitCode)
+}
+
+func buildLegacyGuardRailErrorMessage(rawInfo []byte) (string, bool) {
+	var items []models.SessionGuardRailsInfo
+	if err := json.Unmarshal(rawInfo, &items); err != nil || len(items) == 0 {
+		return "", false
+	}
+
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		direction := "InputRules"
+		if strings.EqualFold(item.Direction, "output") {
+			direction = "OutputRules"
+		}
+		scope := fmt.Sprintf("[%s]", direction)
+		if item.RuleName != "" {
+			scope = fmt.Sprintf("[%s:%s]", direction, item.RuleName)
+		}
+
+		ruleType := item.Rule.Type
+		if len(item.Rule.Words) > 0 {
+			parts = append(parts,
+				fmt.Sprintf("validation error, match guard rail %s rule, type=%s, words=%v", scope, ruleType, item.Rule.Words))
+			continue
+		}
+		if item.Rule.PatternRegex != "" {
+			parts = append(parts,
+				fmt.Sprintf("validation error, match guard rail %s rule, type=%s, patterns=%s", scope, ruleType, item.Rule.PatternRegex))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("validation error, match guard rail %s rule, type=%s", scope, ruleType))
+	}
+
+	return "Blocked by the following Hoop Guardrails Rules: " + strings.Join(parts, ", "), true
+}
+
+func sendFeatureFlagSeed(stream *streamclient.AgentStream) {
+	snapshot := featureflag.SnapshotForOrg(stream.GetOrgID())
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		log.Warnf("failed marshalling feature flags for agent %s: %v", stream.AgentName(), err)
+		return
+	}
+	_ = stream.Send(&pb.Packet{
+		Type: pbgateway.FeatureFlagUpdate,
+		Spec: map[string][]byte{pb.SpecFeatureFlagsKey: data},
+	})
+}
+
+// SendFeatureFlagUpdateToOrg fans out the current feature flag snapshot
+// to all live agent streams for the given org.
+func SendFeatureFlagUpdateToOrg(orgID string) {
+	snapshot := featureflag.SnapshotForOrg(orgID)
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		log.Warnf("failed marshalling feature flags for org %s: %v", orgID, err)
+		return
+	}
+	pkt := &pb.Packet{
+		Type: pbgateway.FeatureFlagUpdate,
+		Spec: map[string][]byte{pb.SpecFeatureFlagsKey: data},
+	}
+	for _, stream := range streamclient.ListAgentsByOrg(orgID) {
+		if err := stream.Send(pkt); err != nil {
+			log.With("agent", stream.AgentName()).Warnf("failed sending feature flag update: %v", err)
+		}
+	}
 }

@@ -104,4 +104,8 @@
                     :active-rule {:status :idle :data nil :error nil}}
    :attributes {:list {:status :idle :data []}
                 :active {:status :idle :data nil}
-                :submitting? false}})
+                :submitting? false}
+   :api-keys {:list {:status :idle :data []}
+              :active {:status :idle :data nil}
+              :created {:status :idle :data nil}
+              :submitting? false}})

@@ -95,12 +95,12 @@ func CloseExpiredCredentialSessions() error {
 
 	for _, cred := range expiredCreds {
 		endTime := time.Now().UTC()
-		_ = UpdateSessionEventStream(SessionDone{
-			ID:         cred.SessionID,
-			OrgID:      cred.OrgID,
-			EndSession: &endTime,
-			Status:     "done",
-		})
+
+		_ = DB.Table("private.sessions").
+			Where("id = ?", cred.SessionID).
+			Update("status", "done").
+			Update("ended_at", endTime).Error
+
 		// Clear session_id so this record is not reprocessed on the next lazy call
 		_ = DB.Table("private.connection_credentials").
 			Where("id = ?", cred.ID).
@@ -108,4 +108,13 @@ func CloseExpiredCredentialSessions() error {
 	}
 
 	return nil
+}
+
+// RevokeConnectionCredentials invalidates a credential by setting ExpireAt to the past.
+// This prevents new connections and existing sessions will be terminated when proxies
+// check credential validity or when RevokeByCredentialID is called on each proxy.
+func RevokeConnectionCredentials(orgID, credentialID string) error {
+	return DB.Table("private.connection_credentials").
+		Where("org_id = ? AND id = ?", orgID, credentialID).
+		Update("expire_at", time.Now().UTC().Add(-time.Hour)).Error
 }

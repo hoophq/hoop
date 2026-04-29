@@ -1,7 +1,9 @@
 package idp
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -17,7 +19,9 @@ import (
 	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 )
 
 var ErrUnknownIdpProvider = fmt.Errorf("unknown idp provider")
@@ -50,10 +54,28 @@ type UserInfoTokenVerifier interface {
 	VerifyAccessTokenWithUserInfo(accessToken string) (*idptypes.ProviderUserInfo, error)
 }
 
+// TokenRefresher is an optional interface that token verifiers can implement
+// to support refreshing access tokens using a refresh token (OIDC providers).
+type TokenRefresher interface {
+	RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
+}
+
+// ExpiredTokenSubjectVerifier is an optional interface that token verifiers can
+// implement to extract the subject from an expired JWT while still validating
+// the signature. This prevents forged tokens from triggering the refresh flow.
+type ExpiredTokenSubjectVerifier interface {
+	VerifyExpiredTokenSubject(tokenStr string) (string, error)
+}
+
 var (
 	singletonStore         = memory.New()
 	singletonStoreKey      = "1"
 	singletonCacheDuration = time.Minute * 30
+
+	// refreshGroup deduplicates concurrent token refresh requests for the same subject.
+	// When multiple requests arrive with the same expired token, only one refresh call
+	// hits the IDP; the rest wait and reuse the result.
+	refreshGroup singleflight.Group
 )
 
 // LoadServerAuthConfig loads the server authentication configuration and returns it along with the provider type.
@@ -80,6 +102,153 @@ type userInfoTokenVerifier struct {
 	cacheExpirationTime     time.Time
 }
 
+// RefreshAccessToken delegates to the underlying provider if it supports token refresh.
+func (v userInfoTokenVerifier) RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	if refresher, ok := v.UserInfoTokenVerifier.(TokenRefresher); ok {
+		return refresher.RefreshAccessToken(ctx, refreshToken)
+	}
+	return nil, fmt.Errorf("token refresh not supported by this provider")
+}
+
+// VerifyExpiredTokenSubject delegates to the underlying provider if it supports
+// signature-validated subject extraction from expired tokens.
+func (v userInfoTokenVerifier) VerifyExpiredTokenSubject(tokenStr string) (string, error) {
+	if sv, ok := v.UserInfoTokenVerifier.(ExpiredTokenSubjectVerifier); ok {
+		return sv.VerifyExpiredTokenSubject(tokenStr)
+	}
+	return "", fmt.Errorf("expired token subject verification not supported by this provider")
+}
+
+// TryRefreshExpiredToken validates the signature of an expired JWT, extracts
+// the subject, looks up the stored refresh token, and exchanges it for a new
+// access token. On success it persists the new tokens, syncs user groups from
+// the IDP userinfo endpoint, and returns (subject, newAccessToken).
+// Concurrent calls for the same subject are deduplicated via singleflight.
+func TryRefreshExpiredToken(tokenVerifier TokenVerifier, expiredToken string) (string, string, error) {
+	sv, ok := tokenVerifier.(ExpiredTokenSubjectVerifier)
+	if !ok {
+		return "", "", fmt.Errorf("expired token subject verification not supported")
+	}
+	subject, err := sv.VerifyExpiredTokenSubject(expiredToken)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to verify expired token: %w", err)
+	}
+
+	type refreshResult struct {
+		subject        string
+		newAccessToken string
+	}
+
+	result, err, _ := refreshGroup.Do(subject, func() (any, error) {
+		userToken, err := models.GetUserToken(models.DB, subject)
+		if err != nil || userToken == nil {
+			return nil, fmt.Errorf("no stored token for subject")
+		}
+		if userToken.RefreshToken == nil || *userToken.RefreshToken == "" {
+			return nil, fmt.Errorf("no refresh token available")
+		}
+
+		refresher, ok := tokenVerifier.(TokenRefresher)
+		if !ok {
+			return nil, fmt.Errorf("token refresh not supported by this provider")
+		}
+
+		newToken, err := refresher.RefreshAccessToken(context.Background(), *userToken.RefreshToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refresh access token: %w", err)
+		}
+
+		var newRefreshToken *string
+		if newToken.RefreshToken != "" {
+			newRefreshToken = &newToken.RefreshToken
+		}
+		if err := models.UpsertUserToken(models.DB, subject, newToken.AccessToken, newRefreshToken); err != nil {
+			return nil, fmt.Errorf("failed to persist refreshed token: %w", err)
+		}
+
+		syncUserGroupsFromUserInfo(tokenVerifier, subject, newToken.AccessToken)
+
+		log.With("subject", subject).Infof("access token refreshed successfully")
+		return &refreshResult{subject: subject, newAccessToken: newToken.AccessToken}, nil
+	})
+	if err != nil {
+		return "", "", err
+	}
+
+	r := result.(*refreshResult)
+	return r.subject, r.newAccessToken, nil
+}
+
+// syncUserGroupsFromUserInfo fetches fresh group claims from the IDP userinfo
+// endpoint using the new access token and updates the user's groups in the database.
+// This is best-effort: failures are logged but do not fail the refresh flow.
+func syncUserGroupsFromUserInfo(tokenVerifier TokenVerifier, subject, accessToken string) {
+	uiVerifier, ok := tokenVerifier.(UserInfoTokenVerifier)
+	if !ok {
+		return
+	}
+
+	uinfo, err := uiVerifier.VerifyAccessTokenWithUserInfo(accessToken)
+	if err != nil {
+		log.With("subject", subject).Warnf("failed to fetch userinfo after token refresh: %v", err)
+		return
+	}
+	if !uinfo.MustSyncGroups {
+		return
+	}
+
+	ctx, err := models.GetUserContext(subject)
+	if err != nil || ctx.IsEmpty() {
+		log.With("subject", subject).Warnf("failed to get user context for group sync: %v", err)
+		return
+	}
+
+	userGroups := uinfo.Groups
+	if ctx.IsAdmin() {
+		userGroups = append(userGroups, types.GroupAdmin)
+	}
+
+	encountered := make(map[string]bool)
+	var dedupedGroups []string
+	for _, g := range userGroups {
+		if !encountered[g] {
+			encountered[g] = true
+			dedupedGroups = append(dedupedGroups, g)
+		}
+	}
+
+	newUserGroups := make([]models.UserGroup, 0, len(dedupedGroups))
+	for _, g := range dedupedGroups {
+		newUserGroups = append(newUserGroups, models.UserGroup{
+			OrgID:  ctx.OrgID,
+			UserID: ctx.UserID,
+			Name:   g,
+		})
+	}
+
+	verified := false
+	if uinfo.EmailVerified != nil {
+		verified = *uinfo.EmailVerified
+	}
+	user := models.User{
+		ID:       ctx.UserID,
+		OrgID:    ctx.OrgID,
+		Subject:  subject,
+		Name:     ctx.UserName,
+		Email:    ctx.UserEmail,
+		Verified: verified,
+		Status:   ctx.UserStatus,
+		SlackID:  ctx.UserSlackID,
+	}
+	if ctx.UserHashedPassword != nil {
+		user.HashedPassword = *ctx.UserHashedPassword
+	}
+
+	if err := models.UpdateUserAndUserGroups(&user, newUserGroups); err != nil {
+		log.With("subject", subject).Warnf("failed to sync user groups after token refresh: %v", err)
+	}
+}
+
 func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.ProviderType, old, new *models.ServerAuthConfig) (hasChanged bool) {
 	switch providerType {
 	case idptypes.ProviderTypeLocal:
@@ -88,16 +257,18 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			newc = *new
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v",
-			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), toStr(newc.SharedSigningKey))
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v,license-data=%v",
+			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), toStr(newc.SharedSigningKey),
+			string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
 			oldc = *old
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v",
-			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), toStr(oldc.SharedSigningKey))
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v,license-data=%v",
+			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), toStr(oldc.SharedSigningKey),
+			string(oldc.OrgLicenseData))
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeOIDC, idptypes.ProviderTypeIDP:
 		var newc models.ServerAuthConfig
@@ -109,9 +280,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oid = *newc.OidcConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v",
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v",
 			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), oid.IssuerURL, oid.ClientID, oid.ClientSecret,
-			oid.Audience, oid.Scopes, oid.GroupsClaim)
+			oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -123,9 +294,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldOidc = *oldc.OidcConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v",
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v",
 			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldOidc.IssuerURL, oldOidc.ClientID, oldOidc.ClientSecret,
-			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim)
+			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData))
 
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeSAML:
@@ -138,8 +309,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			saml = *newc.SamlConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v",
-			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, toStr(newc.SharedSigningKey))
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v,license-data=%v",
+			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, toStr(newc.SharedSigningKey),
+			string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -151,8 +323,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldSaml = *oldc.SamlConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v",
-			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, toStr(oldc.SharedSigningKey))
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v,license-data=%v",
+			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, toStr(oldc.SharedSigningKey),
+			string(oldc.OrgLicenseData))
 
 		return newConfigStr != oldConfigStr
 	}
@@ -189,7 +362,7 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 		cacheTimeRemaining := tokenVerifier.cacheExpirationTime.Sub(time.Now().UTC()).
 			Truncate(time.Minute).
 			String()
-		log.Warnf("clearing singleton store for authentication verifier, "+
+		log.Debugf("clearing singleton store for authentication verifier, "+
 			"provider-type=%v, configuration-changed=%v, cache-expired=%v, expires-in=%v",
 			providerType, hasConfigChanged, hasCacheExpired, cacheTimeRemaining)
 	}
@@ -215,18 +388,23 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 
 	// set server configuration falling back to appconfig
 	appc := appconfig.Get()
+	var orgLicenseData json.RawMessage
 
 	// legacy api key organization id
 	orgID := strings.Split(appc.ApiKey(), "|")[0]
 	// fallback loading from the server auth config in case it's set
-	if serverAuthConfig != nil && serverAuthConfig.OrgID != "" {
-		orgID = serverAuthConfig.OrgID
+	if serverAuthConfig != nil {
+		if serverAuthConfig.OrgID != "" {
+			orgID = serverAuthConfig.OrgID
+		}
+		orgLicenseData = serverAuthConfig.OrgLicenseData
 	}
 	serverConfig := idptypes.ServerConfig{
-		OrgID:      orgID,
-		AuthMethod: providerType,
-		ApiKey:     appc.ApiKey(),
-		GrpcURL:    appc.GrpcURL(),
+		OrgID:          orgID,
+		OrgLicenseData: orgLicenseData,
+		AuthMethod:     providerType,
+		ApiKey:         appc.ApiKey(),
+		GrpcURL:        appc.GrpcURL(),
 	}
 
 	if serverAuthConfig != nil {
@@ -328,7 +506,7 @@ func newLocalProvider(serverAuthConfig *models.ServerAuthConfig) (*localprovider
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ed25519 key pair: %v", err)
 		}
-		log.Infof("saving shared signing key")
+		log.Debugf("saving shared signing key")
 		err = models.CreateServerSharedSigningKey(base64.StdEncoding.EncodeToString(tokenSigningKey))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create server shared signing key: %v", err)

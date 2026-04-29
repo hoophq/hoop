@@ -145,10 +145,6 @@ func GetRequestRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributes []stri
 		Where("name IN (?)", ruleNamesSubQuery).
 		First(&accessRequestRule)
 	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
-			return nil, result.Error
-		}
-
 		return nil, result.Error
 	}
 

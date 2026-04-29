@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -64,8 +65,7 @@ func GetRDPFrames(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed fetching session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
 
@@ -85,8 +85,7 @@ func GetRDPFrames(c *gin.Context) {
 	// Get blob stream
 	blob, err := session.GetBlobStream()
 	if err != nil {
-		log.Errorf("failed fetching blob stream, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session data"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session data")
 		return
 	}
 	if blob == nil || len(blob.BlobStream) == 0 {
@@ -103,8 +102,7 @@ func GetRDPFrames(c *gin.Context) {
 	// Parse the blob stream (it's a JSON array of events)
 	var events [][]interface{}
 	if err := json.Unmarshal(blob.BlobStream, &events); err != nil {
-		log.Errorf("failed parsing blob stream, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing session data"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing session data")
 		return
 	}
 

@@ -3,10 +3,12 @@ package controller
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"libhoop"
+	redactortypes "libhoop/redactor/types"
 	"net"
 	"net/url"
 	"os"
@@ -18,6 +20,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/awseks"
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
@@ -28,6 +31,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
@@ -67,6 +71,8 @@ type (
 		kubernetesClusterURL         string
 		kubernetesToken              string
 		kubernetesInsecureSkipVerify bool
+
+		experimentalRedactRows string
 	}
 	ioMetricFlush struct {
 		client pb.ClientTransport
@@ -132,30 +138,14 @@ func (a *Agent) Close(cause error) {
 	_, _ = a.client.Close()
 }
 
-func (a *Agent) getOrAddConnMutex(connId string, connType string) *sync.Mutex {
-	a.connMtxStoreMtx.Lock()
-	defer a.connMtxStoreMtx.Unlock()
-
-	if _, ok := a.connMtx[connId+connType]; !ok {
-		a.connMtx[connId+connType] = &sync.Mutex{}
-	}
-	return a.connMtx[connId+connType]
-}
-
 func (a *Agent) processPacket(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
-	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-	clientStreamID := sid + clientConnectionID
-
-	// Make it pipelined for each connection but parallel between connections
-	mtx := a.getOrAddConnMutex(clientStreamID, pkt.Type)
-	mtx.Lock()
-	defer mtx.Unlock()
-
 	log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
 	switch pkt.Type {
 	case pbagent.GatewayConnectOK:
 		log.Infof("connected with success to %v", a.config.URL)
+	case pbgateway.FeatureFlagUpdate:
+		featureflagstate.Update(pkt.Spec)
 	case pbagent.SessionOpen:
 		a.processSessionOpen(pkt)
 
@@ -230,16 +220,7 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// SSH data packets are processed synchronously so that gRPC flow
-		// control propagates backpressure from the destination SSH server
-		// all the way back to the SCP/SSH client. Without this, Recv()
-		// keeps draining packets into goroutines that pile up in memory
-		// while blocked on the SSH channel's flow control window.
-		if pkt.Type == pbagent.SSHConnectionWrite {
-			a.processPacket(pkt)
-		} else {
-			go a.processPacket(pkt)
-		}
+		a.processPacket(pkt)
 	}
 }
 
@@ -376,7 +357,26 @@ func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
 	a.sendClientSessionCloseWithExitCode(sessionID, errMsg, exitCode)
 }
 
+func (a *Agent) sendClientSessionCloseFromError(sessionID string, err error) {
+	if err == nil {
+		a.sendClientSessionCloseWithExitCode(sessionID, "", "0")
+		return
+	}
+
+	var guardrailErr *redactortypes.ErrGuardrailsValidation
+	if errors.As(err, &guardrailErr) {
+		a.sendClientSessionCloseWithGuardRailsInfo(sessionID, "", internalExitCode, guardrailErr.Info())
+		return
+	}
+
+	a.sendClientSessionCloseWithExitCode(sessionID, err.Error(), internalExitCode)
+}
+
 func (a *Agent) sendClientSessionCloseWithExitCode(sessionID string, errMsg, exitCode string) {
+	a.sendClientSessionCloseWithGuardRailsInfo(sessionID, errMsg, exitCode, nil)
+}
+
+func (a *Agent) sendClientSessionCloseWithGuardRailsInfo(sessionID string, errMsg, exitCode string, guardRailsInfo []redactortypes.GuardRailsInfo) {
 	if sessionID == "" {
 		return
 	}
@@ -384,13 +384,22 @@ func (a *Agent) sendClientSessionCloseWithExitCode(sessionID string, errMsg, exi
 	if errMsg != "" {
 		errPayload = []byte(errMsg)
 	}
+	spec := map[string][]byte{
+		pb.SpecGatewaySessionID:  []byte(sessionID),
+		pb.SpecClientExitCodeKey: []byte(exitCode),
+	}
+	if len(guardRailsInfo) > 0 {
+		if rawInfo, err := json.Marshal(guardRailsInfo); err == nil {
+			spec[pb.SpecClientGuardRailsInfoKey] = rawInfo
+		} else {
+			log.With("sid", sessionID).Warnf("failed marshaling guardrails info for session close, err=%v", err)
+		}
+	}
+
 	_ = a.client.Send(&pb.Packet{
 		Type:    pbclient.SessionClose,
 		Payload: errPayload,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:  []byte(sessionID),
-			pb.SpecClientExitCodeKey: []byte(exitCode),
-		},
+		Spec:    spec,
 	})
 }
 
@@ -443,6 +452,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		}
 	}
 
+	// EKS integration
 	if _, ok := connParams.EnvVars["envvar:EKS_CLUSTER"]; ok {
 		eksClusterName, eksAwsRegion, eksSessionRole, roleArn, err := parseEksIntegrationEnvs(connParams.EnvVars)
 		if err != nil {
@@ -458,7 +468,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		connParams.EnvVars["envvar:KUBERNETES_BEARER_TOKEN"] = b64Enc([]byte(tokenBearer))
 	}
 
-	// add rds iam auth token
+	// RDS iam auth token
 	userValue, ok := connParams.EnvVars["envvar:USER"]
 	if ok {
 		d, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", userValue))
@@ -488,6 +498,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 			}
 		}
 	}
+
 	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
 		switch connType {
 		case pb.ConnectionTypePostgres:
@@ -631,6 +642,8 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
 		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),
 		kubernetesInsecureSkipVerify: envVarS.Getenv("KUBERNETES_INSECURE_SKIP_VERIFY") == "true",
+
+		experimentalRedactRows: envVarS.Getenv("EXPERIMENTAL_REDACT_ROWS"),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:

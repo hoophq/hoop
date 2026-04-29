@@ -43,6 +43,7 @@ type SessionOption struct {
 	ReviewStatus        string
 	ReviewApproverEmail *string
 	BatchID             *string
+	CorrelationID       *string
 	JiraIssueKey        []string
 	StartDate           sql.NullString
 	EndDate             sql.NullString
@@ -68,32 +69,49 @@ type SessionAIAnalysis struct {
 	Action      string `json:"action"`
 }
 
+// SessionGuardRailMatchedRule mirrors guardrails.Rule and represents the specific
+// internal rule entry that triggered the match.
+type SessionGuardRailMatchedRule struct {
+	Type         string   `json:"type"`
+	Words        []string `json:"words,omitempty"`
+	PatternRegex string   `json:"pattern_regex,omitempty"`
+}
+
+type SessionGuardRailsInfo struct {
+	RuleName     string                      `json:"rule_name"`
+	Rule         SessionGuardRailMatchedRule `json:"rule"`
+	Direction    string                      `json:"direction"`
+	MatchedWords []string                    `json:"matched_words"`
+}
+
 type Session struct {
-	ID                   string             `gorm:"column:id"`
-	OrgID                string             `gorm:"column:org_id"`
-	Connection           string             `gorm:"column:connection"`
-	ResourceName         string             `gorm:"column:resource_name;->"`
-	ConnectionType       string             `gorm:"column:connection_type"`
-	ConnectionSubtype    string             `gorm:"column:connection_subtype"`
-	ConnectionTags       map[string]string  `gorm:"column:connection_tags;serializer:json"`
-	Verb                 string             `gorm:"column:verb"`
-	Labels               map[string]string  `gorm:"column:labels;serializer:json"`
-	Metadata             map[string]any     `gorm:"column:metadata;serializer:json"`
-	IntegrationsMetadata map[string]any     `gorm:"column:integrations_metadata;serializer:json"`
-	Metrics              map[string]any     `gorm:"column:metrics;serializer:json"`
-	AIAnalysis           *SessionAIAnalysis `gorm:"column:ai_analysis;serializer:json"`
-	BlobInputID          sql.NullString     `gorm:"column:blob_input_id"`
-	BlobInput            BlobInputType      `gorm:"-"`
-	BlobInputSize        int64              `gorm:"column:blob_input_size;->"`
-	BlobStream           *Blob              `gorm:"-"`
-	BlobStreamSize       int64              `gorm:"column:blob_stream_size;->"`
-	UserID               string             `gorm:"column:user_id"`
-	UserName             string             `gorm:"column:user_name"`
-	UserEmail            string             `gorm:"column:user_email"`
-	Status               string             `gorm:"column:status"`
-	ExitCode             *int               `gorm:"column:exit_code"`
-	Review               *SessionReview     `gorm:"column:review;->"`
-	SessionBatchID       *string            `gorm:"column:session_batch_id"`
+	ID                   string                  `gorm:"column:id"`
+	OrgID                string                  `gorm:"column:org_id"`
+	Connection           string                  `gorm:"column:connection"`
+	ResourceName         string                  `gorm:"column:resource_name;->"`
+	ConnectionType       string                  `gorm:"column:connection_type"`
+	ConnectionSubtype    string                  `gorm:"column:connection_subtype"`
+	ConnectionTags       map[string]string       `gorm:"column:connection_tags;serializer:json"`
+	Verb                 string                  `gorm:"column:verb"`
+	Labels               map[string]string       `gorm:"column:labels;serializer:json"`
+	Metadata             map[string]any          `gorm:"column:metadata;serializer:json"`
+	IntegrationsMetadata map[string]any          `gorm:"column:integrations_metadata;serializer:json"`
+	Metrics              map[string]any          `gorm:"column:metrics;serializer:json"`
+	AIAnalysis           *SessionAIAnalysis      `gorm:"column:ai_analysis;serializer:json"`
+	GuardRailsInfo       []SessionGuardRailsInfo `gorm:"column:guardrails_info;serializer:json"`
+	BlobInputID          sql.NullString          `gorm:"column:blob_input_id"`
+	BlobInput            BlobInputType           `gorm:"-"`
+	BlobInputSize        int64                   `gorm:"column:blob_input_size;->"`
+	BlobStream           *Blob                   `gorm:"-"`
+	BlobStreamSize       int64                   `gorm:"column:blob_stream_size;->"`
+	UserID               string                  `gorm:"column:user_id"`
+	UserName             string                  `gorm:"column:user_name"`
+	UserEmail            string                  `gorm:"column:user_email"`
+	Status               string                  `gorm:"column:status"`
+	ExitCode             *int                    `gorm:"column:exit_code"`
+	Review               *SessionReview          `gorm:"column:review;->"`
+	SessionBatchID       *string                 `gorm:"column:session_batch_id"`
+	CorrelationID        *string                 `gorm:"column:correlation_id"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -136,6 +154,7 @@ type SessionReview struct {
 	AccessRequestRuleName *string           `json:"access_request_rule_name"`
 	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups" gorm:"force_approval_groups;serializer:json;"`
 	MinApprovals          *int              `json:"min_approvals"`
+	RejectionReason       *string           `json:"rejection_reason"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -204,8 +223,8 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	err := DB.Raw(`
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
-		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis,
+		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id, s.correlation_id,
+		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.guardrails_info,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		c.resource_name,
 		CASE
@@ -219,6 +238,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'access_request_rule_name', rv.access_request_rule_name,
 				'min_approvals', rv.min_approvals,
 				'force_approval_groups', rv.force_approval_groups,
+				'rejection_reason', rv.rejection_reason,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (
@@ -302,6 +322,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
+				THEN s.correlation_id = @correlation_id
+				ELSE true
+			END AND
 			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
 				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
 				ELSE true
@@ -318,6 +342,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"correlation_id":        opt.CorrelationID,
 			"jira_issue_keys":       jiraIssueKeysLower,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
@@ -331,8 +356,8 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		err = tx.Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
-			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id,
+			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id, s.correlation_id,
+			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
 			c.resource_name,
 			CASE
@@ -342,6 +367,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 					'type', rv.type,
 					'access_duration_sec', rv.access_duration_sec,
 					'status', rv.status,
+					'rejection_reason', rv.rejection_reason,
 					'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 					'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 					'review_groups', (
@@ -398,6 +424,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
+				THEN s.correlation_id = @correlation_id
+				ELSE true
+			END AND
 			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
 				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
 				ELSE true
@@ -418,6 +448,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"correlation_id":        opt.CorrelationID,
 			"jira_issue_keys":       jiraIssueKeysLower,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
@@ -479,9 +510,11 @@ func UpsertSession(sess Session) error {
 				Status:               sess.Status,
 				ExitCode:             sess.ExitCode,
 				SessionBatchID:       sess.SessionBatchID,
+				CorrelationID:        sess.CorrelationID,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
 				AIAnalysis:           sess.AIAnalysis,
+				GuardRailsInfo:       sess.GuardRailsInfo,
 			}).Error
 	})
 }
@@ -499,7 +532,19 @@ func SetSessionCredentialsExpireAt(orgID, sessionID string, expireAt time.Time) 
 	value := fmt.Sprintf(`{"credentials_expire_at":%q}`, expireAt.Format(time.RFC3339))
 	return DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).
-		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).Error
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).
+		Error
+}
+
+// SetSessionRevokedAt stores the credential revocation timestamp in the session metadata.
+func SetSessionCredentialsRevokedAt(orgID, sessionID string, revokedAt time.Time) error {
+	value := fmt.Sprintf(`{"credentials_revoked_at":%q}`, revokedAt.Format(time.RFC3339))
+	return DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).
+		Update("status", "done").
+		Update("ended_at", revokedAt).
+		Error
 }
 
 // UpdateSessionEventStream updates a session partially
@@ -575,6 +620,27 @@ func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int64) e
         )
     `, metrics))
 
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
+func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
+	res := DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sid).
+		Update("guardrails_info", gorm.Expr("COALESCE(guardrails_info, '[]'::jsonb) || ?::jsonb", info))
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
+// SetReviewRejectionReason stores the rejection reason on the review record for the given session.
+func SetReviewRejectionReason(orgID, sessionID, reason string) error {
+	res := DB.Table("private.reviews").
+		Where("org_id = ? AND session_id = ?", orgID, sessionID).
+		Update("rejection_reason", reason)
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound
 	}

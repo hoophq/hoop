@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -37,8 +38,7 @@ func RunReviewedExec(c *gin.Context) {
 	apiroutes.SetSidSpanAttr(c, sessionId)
 	review, err := models.GetReviewByIdOrSid(ctx.OrgID, sessionId)
 	if err != nil {
-		log.Errorf("failed retrieving review, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving review"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving review")
 		return
 	}
 
@@ -72,15 +72,13 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed fetching session, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching sessions"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching sessions")
 		return
 	}
 
 	session.BlobInput, err = session.GetBlobInput()
 	if err != nil {
-		log.Errorf("failed fetching session blob input, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session input"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session input")
 		return
 	}
 
@@ -88,8 +86,7 @@ func RunReviewedExec(c *gin.Context) {
 	// after the execution, this will ensure that a review is executed only once.
 	p, err := models.GetPluginByName(ctx.OrgID, plugintypes.PluginReviewName)
 	if err != nil && err != models.ErrNotFound {
-		log.Errorf("failed obtaining review plugin, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving review plugin"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving review plugin")
 		return
 	}
 	hasReviewPlugin := false
@@ -125,8 +122,7 @@ func RunReviewedExec(c *gin.Context) {
 		UserAgent:      userAgent,
 	})
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client: %v", err)
 		return
 	}
 

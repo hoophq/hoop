@@ -426,7 +426,8 @@
  (fn
    [_ [_ session status & {:keys [start-time
                                   end-time
-                                  force-review]}]]
+                                  force-review
+                                  rejection-reason]}]]
    (let [body (cond-> {:status (string/upper-case status)}
                 (and start-time end-time)
                 (assoc :time_window {:type "time_range"
@@ -434,7 +435,10 @@
                                                      :end_time (formatters/local-time->utc-time end-time)}})
 
                 force-review
-                (assoc :force_review true))]
+                (assoc :force_review true)
+
+                (not (string/blank? rejection-reason))
+                (assoc :rejection_reason rejection-reason))]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (-> session :review :id))

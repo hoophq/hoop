@@ -73,6 +73,17 @@ func (s *proxyServer) Start(listenAddr, hostsKeyB64Enc string) (err error) {
 	return nil
 }
 
+// RevokeByCredentialID cancels all connections using the given credential ID.
+// This triggers the same cleanup flow as when a credential expires.
+func (s *proxyServer) RevokeByCredentialID(credentialID string) {
+	s.connectionStore.Range(func(key, value any) bool {
+		if sshConn, ok := value.(*sshConnection); ok && sshConn.credentialID == credentialID {
+			sshConn.cancelFn("credential revoked")
+		}
+		return true
+	})
+}
+
 func (s *proxyServer) Stop() error {
 	instance, _ := instanceStore.LoadAndDelete(instanceKey)
 	if server, ok := instance.(*proxyServer); ok {
@@ -171,6 +182,7 @@ type pendingReplyQueue struct {
 type sshConnection struct {
 	id                  string
 	sid                 string
+	credentialID        string
 	ctx                 context.Context
 	cancelFn            func(msg string, a ...any)
 	grpcClient          pb.ClientTransport
@@ -218,6 +230,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 				dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 			extensions := map[string]string{
+				"hoop-credential-id":    dba.ID,
 				"hoop-user-subject":     dba.UserSubject,
 				"hoop-connection-name":  dba.ConnectionName,
 				"hoop-context-duration": ctxDuration.String(),
@@ -253,6 +266,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	userSubject := sshConn.Permissions.Extensions["hoop-user-subject"]
 	ctxDurationStr := sshConn.Permissions.Extensions["hoop-context-duration"]
 	credentialSessionID := sshConn.Permissions.Extensions["hoop-credential-session-id"]
+	credentialID := sshConn.Permissions.Extensions["hoop-credential-id"]
 
 	if connectionName == "" || userSubject == "" {
 		return nil, fmt.Errorf("missing required SSH connection attributes")
@@ -306,9 +320,10 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
 	sessionConn := &sshConnection{
-		id:  connID,
-		sid: sid,
-		ctx: ctx,
+		id:           connID,
+		sid:          sid,
+		credentialID: credentialID,
+		ctx:          ctx,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
