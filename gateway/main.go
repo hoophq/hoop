@@ -16,6 +16,7 @@ import (
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
+	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
@@ -81,6 +82,8 @@ func Run() {
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
 	goMigrateStep.OK("")
+
+	services.WarmFeatureFlagCache()
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL

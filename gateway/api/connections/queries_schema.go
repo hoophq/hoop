@@ -6,6 +6,20 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 )
 
+// TablesQueryFor returns the backing query for listing tables on the given
+// connection type, or an empty string when the type is unsupported.
+// Exported for reuse by the MCP schema tools.
+func TablesQueryFor(connType pb.ConnectionType, dbName string) string {
+	return getTablesQuery(connType, dbName)
+}
+
+// ColumnsQueryFor returns the backing query for listing columns of a specific
+// table on the given connection type, or an empty string when unsupported.
+// Exported for reuse by the MCP schema tools.
+func ColumnsQueryFor(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
+	return getColumnsQuery(connType, dbName, tableName, schemaName)
+}
+
 // getTablesQuery returns the query to list only the tables of a database
 func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	switch connType {

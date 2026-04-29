@@ -1171,6 +1171,8 @@ type ServerLicenseInfo struct {
 type PublicServerInfo struct {
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
+	// Whether the server requires initial setup (no users have been registered yet)
+	SetupRequired bool `json:"setup_required" example:"true"`
 }
 
 type IdpProviderNameType string
@@ -1231,6 +1233,30 @@ type ServerInfo struct {
 	// * enabled - Analytics/tracking are enabled
 	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
+	// Effective feature flags for the caller's organization
+	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
+}
+
+// FeatureFlagItem represents a single feature flag from the catalog with its per-org state.
+type FeatureFlagItem struct {
+	// The feature flag name
+	Name string `json:"name" example:"experimental.rdp_v2"`
+	// Human-readable description
+	Description string `json:"description" example:"New IronRDP-based proxy"`
+	// Default value when not explicitly set
+	Default bool `json:"default" example:"false"`
+	// Stability level
+	Stability string `json:"stability" enums:"experimental,beta" example:"experimental"`
+	// Components affected by this flag
+	Components []string `json:"components" example:"gateway,agent"`
+	// Current effective value for the organization
+	Enabled bool `json:"enabled" example:"false"`
+}
+
+// FeatureFlagUpdateRequest is the body for PUT /feature-flags/:name
+type FeatureFlagUpdateRequest struct {
+	// Whether the feature flag should be enabled
+	Enabled bool `json:"enabled" binding:"required_with=Enabled"`
 }
 
 type LivenessCheck struct {

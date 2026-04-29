@@ -2725,6 +2725,94 @@ const docTemplate = `{
                 }
             }
         },
+        "/feature-flags": {
+            "get": {
+                "description": "List all feature flags from the catalog with their per-org state",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "List Feature Flags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.FeatureFlagItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/feature-flags/{name}": {
+            "put": {
+                "description": "Enable or disable a feature flag for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "Update Feature Flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature flag name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/features/ask-ai/v1/chat/completions": {
             "post": {
                 "description": "Proxy to OpenAI chat completions ` + "`" + `/vi/chat/completions` + "`" + `",
@@ -10447,6 +10535,60 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.FeatureFlagItem": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "description": "Components affected by this flag",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gateway",
+                        "agent"
+                    ]
+                },
+                "default": {
+                    "description": "Default value when not explicitly set",
+                    "type": "boolean",
+                    "example": false
+                },
+                "description": {
+                    "description": "Human-readable description",
+                    "type": "string",
+                    "example": "New IronRDP-based proxy"
+                },
+                "enabled": {
+                    "description": "Current effective value for the organization",
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "description": "The feature flag name",
+                    "type": "string",
+                    "example": "experimental.rdp_v2"
+                },
+                "stability": {
+                    "description": "Stability level",
+                    "type": "string",
+                    "enum": [
+                        "experimental",
+                        "beta"
+                    ],
+                    "example": "experimental"
+                }
+            }
+        },
+        "openapi.FeatureFlagUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the feature flag should be enabled",
+                    "type": "boolean"
+                }
+            }
+        },
         "openapi.FeatureRequest": {
             "type": "object",
             "required": [
@@ -11534,6 +11676,11 @@ const docTemplate = `{
                         "saml"
                     ],
                     "example": "local"
+                },
+                "setup_required": {
+                    "description": "Whether the server requires initial setup (no users have been registered yet)",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -12972,6 +13119,13 @@ const docTemplate = `{
                 "disable_sessions_download": {
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
                     "type": "boolean"
+                },
+                "feature_flags": {
+                    "description": "Effective feature flags for the caller's organization",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
                 },
                 "go_debug": {
                     "description": "Expose ` + "`" + `GODEBUG` + "`" + ` flags enabled",

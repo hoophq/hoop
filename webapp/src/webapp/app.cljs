@@ -115,6 +115,8 @@
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
+   [webapp.setup.main :as setup]
+   [webapp.setup.events]
    [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
@@ -126,6 +128,9 @@
    [webapp.settings.api-keys.subs]
    [webapp.settings.api-keys.views.created :as api-keys-created]
    [webapp.settings.api-keys.views.form :as api-keys-form]
+   [webapp.settings.experimental.events]
+   [webapp.settings.experimental.main :as settings-experimental]
+   [webapp.settings.experimental.subs]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
@@ -136,29 +141,13 @@
    [webapp.slack.slack-new-user :as slack-new-user]
    [webapp.subs :as subs]
    [webapp.upgrade-plan.main :as upgrade-plan]
+   [webapp.utilities :refer [clear-cookie get-cookie-value]]
    [webapp.views.home :as home]
    [webapp.webclient.events.codemirror]
    [webapp.webclient.events.primary-connection]
    [webapp.webclient.events.search]
    [webapp.webclient.events.metadata]
    [webapp.webclient.panel :as webclient]))
-
-;; Tracking initialization is now handled by :tracking->initialize-if-allowed
-;; which is dispatched after gateway info is loaded and checks do_not_track
-(defn- get-cookie-value
-  "Helper function to extract cookie value by name"
-  [cookie-name]
-  (when-let [cookie-string (.-cookie js/document)]
-    (let [cookies (cs/split cookie-string #"; ")
-          target-cookie (some #(when (cs/starts-with? % (str cookie-name "="))
-                                 %) cookies)]
-      (when target-cookie
-        (subs target-cookie (+ (count cookie-name) 1))))))
-
-(defn- clear-cookie
-  "Helper function to clear a cookie by setting it to empty with past expiration"
-  [cookie-name]
-  (set! js/document.cookie (str cookie-name "=; max-age=0; path=/")))
 
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -300,6 +289,12 @@
     [routes/wrap-admin-only
      [license-management/main]]]])
 
+(defmethod routes/panels :settings-experimental-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [settings-experimental/main]]]])
+
 (defmethod routes/panels :settings-infrastructure-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-full"}
@@ -343,6 +338,9 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
+
+(defmethod routes/panels :setup-panel []
+  [layout :auth [setup/main]])
 
 (defmethod routes/panels :onboarding-panel []
   [layout :auth [onboarding/main]])
@@ -787,6 +785,13 @@
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
+
+        (and (-> @gateway-public-info :data :setup_required)
+             (not= (-> @gateway-public-info :data :auth_method) "oidc")
+             (not= @active-panel :setup-panel))
+        (do
+          (rf/dispatch [:navigate :setup])
+          [loading-transition])
 
         :else
         [theme-provider

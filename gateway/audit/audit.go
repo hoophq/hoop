@@ -27,6 +27,7 @@ const (
 	ResourceOrgKey             ResourceType = "org_keys"
 	ResourceApiKey             ResourceType = "api_keys"
 	ResourceAgentSPIFFEMapping ResourceType = "agent_spiffe_mappings"
+	ResourceFeatureFlag        ResourceType = "feature_flags"
 )
 
 // Action is the operation performed.
