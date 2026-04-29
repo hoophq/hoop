@@ -219,8 +219,8 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL str
 
 // tryRefreshFromRequest validates the signature of the expired JWT in the
 // request, extracts the subject, and attempts to refresh the access token.
-// On success it sets the new access token in a response header and cookie so
-// the client can update its stored token.
+// On success it sets the new access token in a response header so the client
+// can update its stored token.
 func (r *Router) tryRefreshFromRequest(tokenVerifier idp.TokenVerifier, c *gin.Context) (string, error) {
 	expiredToken, err := parseToken(c)
 	if err != nil {
@@ -232,18 +232,9 @@ func (r *Router) tryRefreshFromRequest(tokenVerifier idp.TokenVerifier, c *gin.C
 		return "", fmt.Errorf("access token is expired, try logging in again")
 	}
 
-	// signal the client with the refreshed token
+	// signal the client with the refreshed token via response header.
+	// CORSMiddleware exposes this header so cross-origin webapps can read it.
 	c.Header("X-New-Access-Token", newAccessToken)
-	isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "hoop_access_token",
-		Value:    newAccessToken,
-		Path:     "/",
-		MaxAge:   0,
-		HttpOnly: false,
-		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
-	})
 	return subject, nil
 }
 
