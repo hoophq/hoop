@@ -8,10 +8,27 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
+
+// execInputLogMaxBytes caps the size of the exec input snippet attached to
+// structured logs. Keeps memory usage and downstream log volume bounded when
+// the experimental.log_exec_input feature flag is enabled.
+const execInputLogMaxBytes = 4096
+
+// truncateForLog returns a snippet of payload safe to attach to a log line,
+// along with a flag indicating whether truncation happened and the original
+// payload size in bytes.
+func truncateForLog(payload []byte, max int) (snippet string, truncated bool, originalSize int) {
+	originalSize = len(payload)
+	if originalSize <= max {
+		return string(payload), false, originalSize
+	}
+	return string(payload[:max]), true, originalSize
+}
 
 func (a *Agent) doExec(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
@@ -70,7 +87,24 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		a.sendClientSessionCloseFromError(sid, err)
 		return
 	}
-	log.With("sid", sid).Infof("tty=false, stdinsize=%v - executing command:%v", len(pkt.Payload), args)
+	logFields := []any{
+		"sid", sid,
+		"connection", connParams.ConnectionName,
+		"connection_type", connParams.ConnectionType,
+		"user_email", connParams.UserEmail,
+		"client_verb", connParams.ClientVerb,
+		"client_origin", connParams.ClientOrigin,
+		"stdin_size", len(pkt.Payload),
+	}
+	if featureflagstate.IsEnabled("experimental.log_exec_input") {
+		snippet, truncated, size := truncateForLog(pkt.Payload, execInputLogMaxBytes)
+		logFields = append(logFields,
+			"input", snippet,
+			"input_truncated", truncated,
+			"input_size", size,
+		)
+	}
+	log.With(logFields...).Infof("tty=false, stdinsize=%v - executing command:%v", len(pkt.Payload), args)
 	sessionIDKey := fmt.Sprintf(execStoreKey, sid)
 	a.connStore.Set(sessionIDKey, cmd)
 
