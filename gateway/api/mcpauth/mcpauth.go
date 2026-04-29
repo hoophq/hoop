@@ -28,7 +28,7 @@ type LegacyAuthMiddleware func(c *gin.Context)
 
 // Middleware returns a Gin handler that authenticates MCP requests. When MCP
 // OAuth is disabled for the current org, or when the bearer token is not a
-// JWT, the legacy Hoop auth path is used unchanged. JWT bearers are validated
+// JWT, the (gateway) legacy Hoop auth path is used unchanged. JWT bearers are validated
 // against the configured OIDC issuer with strict audience binding.
 func Middleware(legacyAuth LegacyAuthMiddleware) gin.HandlerFunc {
 	return func(c *gin.Context) {
