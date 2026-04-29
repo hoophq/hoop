@@ -57,3 +57,21 @@ serviceAccount:
   create: false
   # Annotations to add to the service account
   annotations: {}
+
+# -- Additional init containers to run before the agent container
+additionalInitContainers: []
+# - name: init-myservice
+#   image: busybox
+#   command: ['sh', '-c', 'echo init']
+
+# -- Volume mounts for the agent container
+volumeMounts: []
+# - name: my-configmap-volume
+#   mountPath: /etc/config/myfile.conf
+#   subPath: myfile.conf
+
+# -- Volumes to mount into the pod
+volumes: []
+# - name: my-configmap-volume
+#   configMap:
+#     name: my-configmap
