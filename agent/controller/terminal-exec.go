@@ -91,7 +91,6 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"sid", sid,
 		"connection", connParams.ConnectionName,
 		"connection_type", connParams.ConnectionType,
-		"user_email", connParams.UserEmail,
 		"client_verb", connParams.ClientVerb,
 		"client_origin", connParams.ClientOrigin,
 		"stdin_size", len(pkt.Payload),
