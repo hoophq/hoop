@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -322,10 +323,14 @@ func (r *RDPSessionRecorder) Close(err error) {
 		return
 	}
 
-	// Enqueue async PII analysis if there are bitmap frames to analyze AND the
-	// analysis pipeline is actually enabled on this gateway. Otherwise the job
-	// would sit 'pending' forever and the session would appear stuck.
-	if r.bitmapCount > 0 && analyzer.IsEnabled(appconfig.Get().MSPresidioAnalyzerURL()) {
+	// Enqueue async PII analysis if there are bitmap frames to analyze, the
+	// analysis pipeline is actually enabled on this gateway, AND the org has
+	// the experimental flag turned on. Otherwise the job would sit 'pending'
+	// forever (worker pool may be stopped by the supervisor) and the session
+	// would appear stuck.
+	if r.bitmapCount > 0 &&
+		analyzer.IsEnabled(appconfig.Get().MSPresidioAnalyzerURL()) &&
+		featureflag.IsEnabled(r.orgID, analyzer.FlagName) {
 		if enqueueErr := models.CreateRDPAnalysisJob(r.orgID, r.sessionID); enqueueErr != nil {
 			log.With("sid", r.sessionID).Warnf("failed to enqueue RDP analysis job: %v", enqueueErr)
 		} else {

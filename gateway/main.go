@@ -102,6 +102,10 @@ func Run() {
 	}
 
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
+	// Captured for the RDP analyzer supervisor so it can watch the default
+	// org's feature flag. Stays empty in multi-tenant deployments, which
+	// causes the supervisor to fall back to unconditional pool startup.
+	var defaultOrgID string
 	if !isOrgMultiTenant {
 		orgStep := bootstrap.Step("Default organization")
 		_, serverConfig, err := idp.NewTokenVerifierProvider()
@@ -115,6 +119,7 @@ func Run() {
 			orgStep.Fail(err)
 			log.Fatal(err)
 		}
+		defaultOrgID = org.ID
 
 		if isNewOrg {
 			trackClient := analytics.New()
@@ -258,10 +263,13 @@ func Run() {
 		}
 	}
 
-	// Start async RDP PII analysis workers if Presidio is configured.
-	// Workers poll for pending jobs regardless of whether the RDP proxy server is running,
-	// since analysis jobs can be processed by any gateway instance.
-	analyzer.StartWorkerPool(context.Background(), appconfig.Get().MSPresidioAnalyzerURL())
+	// Start the RDP PII analyzer supervisor. It watches the
+	// experimental.rdp_pii_detection feature flag for the default org and
+	// starts/stops the worker pool as the flag toggles. In multi-tenant
+	// deployments (defaultOrgID empty) it falls back to running the pool
+	// unconditionally — per-org gating then happens on the enqueue side
+	// inside RDPSessionRecorder.
+	go analyzer.RunSupervisor(context.Background(), appconfig.Get().MSPresidioAnalyzerURL(), defaultOrgID)
 
 	bootstrap.Phase("Starting API")
 	grpcStep := bootstrap.Step("gRPC gateway")

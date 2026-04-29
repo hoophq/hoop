@@ -47,6 +47,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.rdp_pii_detection": {
+		Name:        "experimental.rdp_pii_detection",
+		Description: "Enable async RDP PII detection workers and per-session analysis enqueue. Requires Presidio analyzer URL and tesseract OCR.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.
