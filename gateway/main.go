@@ -16,10 +16,12 @@ import (
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
+	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/externaljwt"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
@@ -81,6 +83,19 @@ func Run() {
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
 	goMigrateStep.OK("")
+
+	services.WarmFeatureFlagCache()
+
+	if err := externaljwt.Init(context.Background()); err != nil {
+		// Bootstrap failures are typically transient (bundle URL
+		// unreachable, JWKS file not yet present) and the provider's
+		// background refresh loop will retry. Warn instead of crashing
+		// so a SPIFFE issue does not take DSN-token agents offline as
+		// collateral damage. JWT-SVID auth keeps failing until the
+		// bundle refreshes, which is visible via agent logs and the
+		// "spiffe: bundle refresh failed" warnings.
+		log.Warnf("failed initializing SPIFFE provider, background refresh will retry: %v", err)
+	}
 
 	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {
 		appconfig.GetRef().SetAnalyticsTracking(enabled)

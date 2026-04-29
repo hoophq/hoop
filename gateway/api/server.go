@@ -27,6 +27,7 @@ import (
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
+	apifeatureflags "github.com/hoophq/hoop/gateway/api/featureflags"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
@@ -35,6 +36,7 @@ import (
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
+	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
@@ -49,10 +51,10 @@ import (
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
-	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
+	spiffemappingsapi "github.com/hoophq/hoop/gateway/api/spiffemappings"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -232,7 +234,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		userapi.Create)
-	r.PUT("/users/:id",
+	r.PUT("/users/:emailOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
@@ -242,7 +244,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateUser),
 		userapi.PatchSlackID)
-	r.DELETE("/users/:id",
+	r.DELETE("/users/:emailOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
@@ -312,6 +314,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventReactivateApiKey),
 		apikeys.Reactivate)
+	r.GET("/spiffe-mappings",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		spiffemappingsapi.List)
+	r.POST("/spiffe-mappings",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		spiffemappingsapi.Create)
+	r.PUT("/spiffe-mappings/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		spiffemappingsapi.Update)
+	r.DELETE("/spiffe-mappings/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		spiffemappingsapi.Delete)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,
@@ -883,6 +904,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apidatamasking.Delete)
+
+	// feature flags
+	r.GET("/feature-flags",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apifeatureflags.List)
+	r.PUT("/feature-flags/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apifeatureflags.Update)
 
 	// server config routes
 	r.GET("/serverconfig/misc",

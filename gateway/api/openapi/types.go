@@ -188,6 +188,43 @@ type APIKeyResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+// AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
+// agent plus a set of groups that feed into RBAC on authentication.
+//
+// Exactly one of SPIFFEID or SPIFFEPrefix must be set. Similarly, exactly
+// one of AgentID or AgentTemplate must be set: AgentID points at a specific
+// agent; AgentTemplate (used with SPIFFEPrefix) renders against the
+// captured suffix to derive the agent name. Available template fields are
+// WorkloadIdentifier (the part after the prefix) and SPIFFEID (the full
+// id); see the SPIFFE deployment docs for examples.
+type AgentSPIFFEMapping struct {
+	// The unique identifier of this resource
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// SPIFFE trust domain. Must match the trust domain configured on the
+	// gateway for SPIFFE authentication to succeed.
+	TrustDomain string `json:"trust_domain" binding:"required" example:"customer.com"`
+	// Exact SPIFFE ID to match. Mutually exclusive with SPIFFEPrefix.
+	SPIFFEID string `json:"spiffe_id,omitempty" example:"spiffe://customer.com/agent/arqa-prod"`
+	// SPIFFE ID prefix. Matches any SVID whose sub begins with this string;
+	// longest-prefix wins on lookup. Mutually exclusive with SPIFFEID.
+	SPIFFEPrefix string `json:"spiffe_prefix,omitempty" example:"spiffe://customer.com/agent/"`
+	// ID of the Hoop agent this mapping resolves to (exact form). Mutually
+	// exclusive with AgentTemplate.
+	AgentID string `json:"agent_id,omitempty" format:"uuid"`
+	// Go text/template that renders to a Hoop agent name. Used with
+	// SPIFFEPrefix. See the SPIFFE docs for template field details.
+	// Mutually exclusive with AgentID.
+	AgentTemplate string `json:"agent_template,omitempty"`
+	// The groups assigned to the agent when authenticating via this mapping.
+	Groups []string `json:"groups" example:"agents"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+	// Last update timestamp
+	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
 type AgentRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"default"`
@@ -1134,6 +1171,8 @@ type ServerLicenseInfo struct {
 type PublicServerInfo struct {
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
+	// Whether the server requires initial setup (no users have been registered yet)
+	SetupRequired bool `json:"setup_required" example:"true"`
 }
 
 type IdpProviderNameType string
@@ -1194,6 +1233,30 @@ type ServerInfo struct {
 	// * enabled - Analytics/tracking are enabled
 	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
+	// Effective feature flags for the caller's organization
+	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
+}
+
+// FeatureFlagItem represents a single feature flag from the catalog with its per-org state.
+type FeatureFlagItem struct {
+	// The feature flag name
+	Name string `json:"name" example:"experimental.rdp_v2"`
+	// Human-readable description
+	Description string `json:"description" example:"New IronRDP-based proxy"`
+	// Default value when not explicitly set
+	Default bool `json:"default" example:"false"`
+	// Stability level
+	Stability string `json:"stability" enums:"experimental,beta" example:"experimental"`
+	// Components affected by this flag
+	Components []string `json:"components" example:"gateway,agent"`
+	// Current effective value for the organization
+	Enabled bool `json:"enabled" example:"false"`
+}
+
+// FeatureFlagUpdateRequest is the body for PUT /feature-flags/:name
+type FeatureFlagUpdateRequest struct {
+	// Whether the feature flag should be enabled
+	Enabled bool `json:"enabled" binding:"required_with=Enabled"`
 }
 
 type LivenessCheck struct {

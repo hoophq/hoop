@@ -142,6 +142,26 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - AWS CloudFormation templates: `deploy/aws/`.
 - Docker images: `Dockerfile` (production), `Dockerfile.dev` (dev), `Dockerfile.tools` (agent tools).
 
+## Feature Flags & Experimental Code
+
+When implementing a new feature, behavior change, or non-trivial code path, **ask the user whether it should be gated behind a feature flag**. If the user confirms, follow these steps:
+
+1. **Register the flag** — add one entry to `catalog` in `common/featureflag/featureflag.go`:
+   - Name: `<stability>.<snake_case_name>` (e.g. `experimental.ssh_multiplex`, `beta.new_proxy`).
+   - `Default: false`, `Stability: StabilityExperimental` (or `StabilityBeta`).
+   - `Components`: list which binaries use it (`ComponentGateway`, `ComponentAgent`, `ComponentClient`).
+   - No migrations or frontend changes are needed — the flag appears automatically in the admin UI.
+
+2. **Gate every code path** — wrap the new behavior so it only runs when the flag is on:
+   - **Gateway**: `featureflag.IsEnabled(orgID, "experimental.my_feature")` (import `common/featureflag`).
+   - **Agent**: `featureflagstate.IsEnabled("experimental.my_feature")` (import `agent/controller/featureflagstate`).
+   - **Webapp**: check `feature_flags` from the `/serverinfo` response.
+   - Always preserve the existing behavior in the `else` branch.
+
+3. **No ungated experimental code on `main`** — every PR that adds experimental behavior must gate it. Default is always `false`, so a fresh deployment has everything off.
+
+See `DEV.md` "Feature Flags" section for the full developer guide and file reference.
+
 ## Coding Conventions
 
 ### Go

@@ -21,6 +21,7 @@ func init() {
 	MainCmd.AddCommand(serverInfoCmd)
 	MainCmd.AddCommand(openWebhooksDashboardCmd)
 	MainCmd.AddCommand(licenseCmd)
+	MainCmd.AddCommand(featureFlagCmd)
 
 	serverInfoCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }

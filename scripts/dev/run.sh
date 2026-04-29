@@ -67,6 +67,8 @@ CGO_ENABLED=0 GOOS=linux go build \
 docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 
+mkdir -p ./dist/dev/spiffe
+
 docker run --rm --name hoopdev \
   -p 2225:22 \
   -p 8009:8009 \
@@ -82,4 +84,5 @@ docker run --rm --name hoopdev \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./rootfs/app/migrations/:/app/migrations/ \
   -v ./dist/dev/resources/:/app/ui/ \
+  -v ./dist/dev/spiffe/:/app/spiffe/ \
   -it hoopdev /app/bin/entrypoint.sh

@@ -78,6 +78,7 @@
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
+                  ["/experimental" :settings-experimental]
                   ["/audit-logs" :settings-audit-logs]
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
@@ -87,6 +88,7 @@
                   ["/api-keys/new" :settings-api-keys-new]
                   ["/api-keys/created" :settings-api-keys-created]
                   [["/api-keys/" :id "/configure"] :settings-api-keys-configure]]
+     "/setup" :setup
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop
      "/upgrade-plan" :upgrade-plan}]))

@@ -158,20 +158,22 @@ func Create(c *gin.Context) {
 //	@Param			request		body		openapi.User	true	"The request body resource"
 //	@Success		200			{object}	openapi.User
 //	@Failure		400,422,500	{object}	openapi.HTTPError
-//	@Router			/users/{id} [put]
+//	@Router			/users/{emailOrID} [put]
 func Update(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	userID := c.Param("id")
+	emailOrID := c.Param("emailOrID")
 
-	existingUser, err := models.GetUserBySubjectAndOrg(userID, ctx.OrgID)
-
+	getUserFn := models.GetUserBySubjectAndOrg
+	if isValidMailAddress(emailOrID) {
+		getUserFn = models.GetUserByEmailAndOrg
+	}
+	existingUser, err := getUserFn(emailOrID, ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", userID)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", emailOrID)
 		return
 	}
-
 	if existingUser == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", userID)})
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", emailOrID)})
 		return
 	}
 
@@ -198,7 +200,7 @@ func Update(c *gin.Context) {
 	existingUser.Status = string(req.Status)
 	existingUser.SlackID = req.SlackID
 
-	log.Debugf("updating user %s and its user groups", userID)
+	log.Debugf("updating user %s and its user groups", emailOrID)
 
 	newUserGroups := []models.UserGroup{}
 	for i := range req.Groups {
@@ -296,24 +298,22 @@ func List(c *gin.Context) {
 //	@Param			id	path	string	true	"The subject identifier of the user"
 //	@Success		204
 //	@Failure		404,422,500	{object}	openapi.HTTPError
-//	@Router			/users/{id} [delete]
+//	@Router			/users/{emailOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	subject := c.Param("id")
+	emailOrID := c.Param("emailOrID")
 
-	var getUserFn func(subject, orgID string) (*models.User, error)
-	if isValidMailAddress(subject) {
+	getUserFn := models.GetUserBySubjectAndOrg
+	if isValidMailAddress(emailOrID) {
 		getUserFn = models.GetUserByEmailAndOrg
-	} else {
-		getUserFn = models.GetUserBySubjectAndOrg
 	}
-	user, err := getUserFn(subject, ctx.OrgID)
+	user, err := getUserFn(emailOrID, ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", subject)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", emailOrID)
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", subject)})
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", emailOrID)})
 		return
 	}
 	if user.Subject == ctx.UserID {
@@ -321,7 +321,7 @@ func Delete(c *gin.Context) {
 		return
 	}
 
-	if err := models.DeleteUser(ctx.OrgID, subject); err != nil {
+	if err := models.DeleteUser(ctx.OrgID, emailOrID); err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting user")
 		return
 	}
