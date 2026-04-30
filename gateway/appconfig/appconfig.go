@@ -230,9 +230,6 @@ func Load() error {
 		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
-		rdpPIISnapshotInterval:          rdpPIISnapshotInterval,
-		rdpPIIScoreThreshold:            rdpPIIScoreThreshold,
-		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
@@ -400,9 +397,6 @@ func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert
 func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }
 func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
 func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
-func (c Config) RDPPIISnapshotInterval() float64       { return c.rdpPIISnapshotInterval }
-func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThreshold }
-func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)
