@@ -14,6 +14,7 @@ type ServerAuthConfig struct {
 	AuthMethod            *string               `gorm:"column:auth_method"`
 	OidcConfig            *ServerAuthOidcConfig `gorm:"column:oidc_config;serializer:json"`
 	SamlConfig            *ServerAuthSamlConfig `gorm:"column:saml_config;serializer:json"`
+	McpAuthConfig         *ServerMcpAuthConfig  `gorm:"column:mcp_auth_config;serializer:json"`
 	ProviderName          *string               `gorm:"column:provider_name"`
 	ApiKey                *string               `gorm:"column:api_key"`
 	RolloutApiKey         *string               `gorm:"column:rollout_api_key"`
@@ -41,13 +42,19 @@ type ServerAuthSamlConfig struct {
 	GroupsClaim    string `json:"groups_claim"`
 }
 
+type ServerMcpAuthConfig struct {
+	Enabled     bool   `json:"enabled"`
+	ResourceURI string `json:"resource_uri"`
+	GroupsClaim string `json:"groups_claim"`
+}
+
 func GetServerAuthConfig() (*ServerAuthConfig, error) {
 	var config ServerAuthConfig
 	err := DB.Raw(`
 	WITH authconfig AS (
 		SELECT
 			a.org_id, o.license_data, a.auth_method, a.oidc_config, a.saml_config, a.api_key, a.rollout_api_key,
-			provider_name, a.webapp_users_management, a.admin_role_name, a.auditor_role_name, a.updated_at
+			provider_name, a.webapp_users_management, a.admin_role_name, a.auditor_role_name, a.mcp_auth_config, a.updated_at
 		FROM private.authconfig a
 		LEFT JOIN private.orgs o ON a.org_id = o.id
 	), serverconfig AS (
@@ -85,6 +92,7 @@ func UpdateServerAuthConfig(newObj *ServerAuthConfig) (*ServerAuthConfig, error)
 		"auth_method":             newObj.AuthMethod,
 		"oidc_config":             newObj.OidcConfig,
 		"saml_config":             newObj.SamlConfig,
+		"mcp_auth_config":         newObj.McpAuthConfig,
 		"provider_name":           newObj.ProviderName,
 		"rollout_api_key":         newObj.RolloutApiKey,
 		"webapp_users_management": newObj.WebappUsersManagement,

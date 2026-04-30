@@ -21,9 +21,23 @@ func init() {
 	MainCmd.AddCommand(serverInfoCmd)
 	MainCmd.AddCommand(openWebhooksDashboardCmd)
 	MainCmd.AddCommand(licenseCmd)
+	MainCmd.AddCommand(mcpCmd)
 	MainCmd.AddCommand(featureFlagCmd)
 
 	serverInfoCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
+
+	mcpCmd.AddCommand(mcpAuthCmd)
+	mcpAuthCmd.AddCommand(mcpAuthEnableCmd)
+	mcpAuthCmd.AddCommand(mcpAuthDisableCmd)
+	mcpAuthCmd.AddCommand(mcpAuthStatusCmd)
+	mcpAuthCmd.AddCommand(mcpAuthConfigureCmd)
+
+	for _, c := range []*cobra.Command{mcpAuthEnableCmd, mcpAuthConfigureCmd} {
+		c.Flags().StringVar(&mcpAuthResourceURIFlag, "resource-uri", "",
+			"Canonical resource URI for RFC 8707 audience binding (default: <api-url>/api/mcp)")
+		c.Flags().StringVar(&mcpAuthGroupsClaimFlag, "groups-claim", "",
+			"JWT claim name from which user groups are extracted (default: groups)")
+	}
 }
 
 var MainCmd = &cobra.Command{

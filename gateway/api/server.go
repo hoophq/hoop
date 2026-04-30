@@ -36,6 +36,7 @@ import (
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
+	apimcpauth "github.com/hoophq/hoop/gateway/api/mcpauth"
 	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -147,6 +148,9 @@ func (a *Api) StartAPI() {
 			return
 		}
 	})
+
+	route.GET("/.well-known/oauth-protected-resource", apimcpauth.MetadataHandler)
+	route.GET("/.well-known/oauth-protected-resource"+apimcpauth.McpResourcePath(), apimcpauth.MetadataHandler)
 
 	ssmGroup := route.Group(baseURL + "/ssm")
 	ssmInstance := ssmproxy.GetServerInstance()
@@ -934,6 +938,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiserverconfig.GenerateApiKey,
 	)
+	r.GET("/serverconfig/mcp-auth",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.GetMcpAuthConfig,
+	)
+	r.PUT("/serverconfig/mcp-auth",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiserverconfig.UpdateMcpAuthConfig,
+	)
 
 	r.GET("/search",
 		apiroutes.ReadOnlyAccessRole,
@@ -1064,5 +1079,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 
 	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
 	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)
-	r.RouterGroup.Any("/mcp", r.AuthMiddleware, api.AuditMiddleware(), mcpServer.GinHandler)
+	mcpAuth := apimcpauth.Middleware(r.AuthMiddleware)
+	r.RouterGroup.Any("/mcp", mcpAuth, api.AuditMiddleware(), mcpServer.GinHandler)
 }

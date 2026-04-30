@@ -2725,6 +2725,94 @@ const docTemplate = `{
                 }
             }
         },
+        "/feature-flags": {
+            "get": {
+                "description": "List all feature flags from the catalog with their per-org state",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "List Feature Flags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.FeatureFlagItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/feature-flags/{name}": {
+            "put": {
+                "description": "Enable or disable a feature flag for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "Update Feature Flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature flag name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/features/ask-ai/v1/chat/completions": {
             "post": {
                 "description": "Proxy to OpenAI chat completions ` + "`" + `/vi/chat/completions` + "`" + `",
@@ -6222,6 +6310,94 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/mcp-auth": {
+            "get": {
+                "description": "Returns the per-org MCP OAuth Resource Server settings. When disabled (default), /mcp accepts Hoop-issued bearer tokens only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get MCP OAuth 2.1 Resource Server Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMcpAuthConfig"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Enable, disable, or reconfigure the OAuth 2.1 Resource Server profile for the /mcp endpoint.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update MCP OAuth 2.1 Resource Server Configuration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMcpAuthConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMcpAuthConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10359,6 +10535,60 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.FeatureFlagItem": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "description": "Components affected by this flag",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gateway",
+                        "agent"
+                    ]
+                },
+                "default": {
+                    "description": "Default value when not explicitly set",
+                    "type": "boolean",
+                    "example": false
+                },
+                "description": {
+                    "description": "Human-readable description",
+                    "type": "string",
+                    "example": "New IronRDP-based proxy"
+                },
+                "enabled": {
+                    "description": "Current effective value for the organization",
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "description": "The feature flag name",
+                    "type": "string",
+                    "example": "experimental.rdp_v2"
+                },
+                "stability": {
+                    "description": "Stability level",
+                    "type": "string",
+                    "enum": [
+                        "experimental",
+                        "beta"
+                    ],
+                    "example": "experimental"
+                }
+            }
+        },
+        "openapi.FeatureFlagUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the feature flag should be enabled",
+                    "type": "boolean"
+                }
+            }
+        },
         "openapi.FeatureRequest": {
             "type": "object",
             "required": [
@@ -12890,6 +13120,13 @@ const docTemplate = `{
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
                     "type": "boolean"
                 },
+                "feature_flags": {
+                    "description": "Effective feature flags for the caller's organization",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
                 "go_debug": {
                     "description": "Expose ` + "`" + `GODEBUG` + "`" + ` flags enabled",
                     "type": "string",
@@ -13026,6 +13263,25 @@ const docTemplate = `{
                     "description": "The error returned when verifying the license",
                     "type": "string",
                     "example": "unable to verify license"
+                }
+            }
+        },
+        "openapi.ServerMcpAuthConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition\nto Hoop-issued bearer tokens.",
+                    "type": "boolean"
+                },
+                "groups_claim": {
+                    "description": "JWT claim name from which user groups are extracted. Defaults to \"groups\".",
+                    "type": "string",
+                    "example": "groups"
+                },
+                "resource_uri": {
+                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/mcp\" when empty. Must match the ` + "`" + `aud` + "`" + ` claim of inbound JWTs.",
+                    "type": "string",
+                    "example": "https://use.hoop.dev/mcp"
                 }
             }
         },
