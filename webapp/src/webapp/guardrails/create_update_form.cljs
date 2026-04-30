@@ -116,7 +116,10 @@
         (.addEventListener js/window "scroll" handle-scroll)
         (if (= :loading (:status @guardrails->active-guardrail))
           [loading]
-          [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos (-> @user :data :free-license?)])
+          [guardrail-form form-type
+           (:data @guardrails->active-guardrail)
+           scroll-pos
+           (-> @user :data :free-license?)])
 
         (finally
           (.removeEventListener js/window "scroll" handle-scroll)
