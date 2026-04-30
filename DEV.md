@@ -80,7 +80,7 @@ This writes a managed block into `.env`:
 # <<<HOOP_SPIFFE_DEV>>>
 HOOP_SPIFFE_MODE=enforce
 HOOP_SPIFFE_TRUST_DOMAIN=local.test
-HOOP_SPIFFE_BUNDLE_FILE=/app/spiffe/bundle.jwks
+HOOP_SPIFFE_BUNDLE_JWKS=<base64-encoded JWKS>
 HOOP_SPIFFE_AUDIENCE=http://127.0.0.1:8009
 HOOP_SPIFFE_REFRESH_PERIOD=30s
 # <<</HOOP_SPIFFE_DEV>>>
@@ -89,7 +89,7 @@ HOOP_SPIFFE_REFRESH_PERIOD=30s
 and emits three files under `dist/dev/spiffe/`:
 
 - `priv.pem` — RSA signing key (reused across runs, so the bundle stays stable)
-- `bundle.jwks` — JWKS trust bundle mounted into the gateway at `/app/spiffe/bundle.jwks`
+- `bundle.jwks` — JWKS trust bundle; its contents are base64-encoded into `HOOP_SPIFFE_BUNDLE_JWKS` in `.env`, so no file mount is needed in the gateway container
 - `agent.jwt` — JWT-SVID for `spiffe://local.test/agent/local-dev`, 24h TTL (re-minted every run)
 
 2. Start (or restart) the gateway so it picks up the new `HOOP_SPIFFE_*` vars:
@@ -109,11 +109,12 @@ make run-dev-spiffe-agent
 This script:
 
 - rebuilds `$HOME/.hoop/bin/hoop` if source files under `agent/` or `common/clientconfig/` are newer than the binary
-- copies `bundle.jwks` into the `hoopdev` container (where `/app/spiffe/` is mounted)
 - reads `POSTGRES_DB_URI` from `hoopdev`'s env and seeds two rows in `hoopdevpg` (idempotent):
   - `private.agents` → a `spiffe-agent` row
   - `private.agent_spiffe_mappings` → maps `spiffe://local.test/agent/local-dev` to that agent
-- launches the agent on your host with `HOOP_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
+- launches the agent on your host with `HOOP_SPIFFE_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
+
+The trust bundle is delivered to the gateway via `HOOP_SPIFFE_BUNDLE_JWKS` in `.env` (set by `run-dev-spiffe-prep`), so this script does not touch the gateway container's filesystem.
 
 `Ctrl-C` stops only the agent; `run-dev` keeps running.
 
@@ -125,7 +126,7 @@ This script:
 | `HOOP_SPIFFE_ID` | `spiffe://local.test/agent/local-dev` | Subject of the minted JWT and the DB mapping |
 | `HOOP_SPIFFE_AUDIENCE` | `http://127.0.0.1:8009` | `aud` claim the gateway enforces |
 | `HOOP_SPIFFE_TTL` | `24h` | Lifetime of the minted JWT |
-| `HOOPDEV_APP_CONTAINER` | `hoopdev` | Gateway container (bundle copy + `POSTGRES_DB_URI` source) |
+| `HOOPDEV_APP_CONTAINER` | `hoopdev` | Gateway container (`POSTGRES_DB_URI` source) |
 | `HOOPDEV_DB_CONTAINER` | `hoopdevpg` | Postgres container where `psql` runs |
 
 #### Re-minting / rotating the JWT
