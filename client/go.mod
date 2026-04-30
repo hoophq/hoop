@@ -20,6 +20,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-20260414143915-f3c4a85dcd3b
 	github.com/hoophq/hoop/gateway v0.0.0-20260414143915-f3c4a85dcd3b
+	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.50.0
 	google.golang.org/grpc v1.80.0
@@ -143,7 +144,6 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/lib/pq v1.12.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/mailru/easyjson v0.9.2 // indirect

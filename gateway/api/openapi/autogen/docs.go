@@ -7347,59 +7347,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/sessions/{session_id}/rdp-detections": {
-            "get": {
-                "description": "Returns PII entity detections with screen-space coordinates for an RDP session recording",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Sessions"
-                ],
-                "summary": "Get RDP session PII detections",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The id of the session",
-                        "name": "session_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/sessionapi.RDPDetectionsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
         "/sessions/{session_id}/rdp-frames": {
             "get": {
                 "description": "Returns paginated bitmap frames from an RDP session recording",
@@ -14395,52 +14342,6 @@ const docTemplate = `{
                 "url": {
                     "type": "string",
                     "example": "https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"
-                }
-            }
-        },
-        "sessionapi.RDPDetection": {
-            "type": "object",
-            "properties": {
-                "entity_type": {
-                    "type": "string"
-                },
-                "frame_index": {
-                    "type": "integer"
-                },
-                "height": {
-                    "type": "integer"
-                },
-                "score": {
-                    "type": "number"
-                },
-                "timestamp": {
-                    "type": "number"
-                },
-                "width": {
-                    "type": "integer"
-                },
-                "x": {
-                    "type": "integer"
-                },
-                "y": {
-                    "type": "integer"
-                }
-            }
-        },
-        "sessionapi.RDPDetectionsResponse": {
-            "type": "object",
-            "properties": {
-                "analysis_status": {
-                    "type": "string"
-                },
-                "detections": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/sessionapi.RDPDetection"
-                    }
-                },
-                "total": {
-                    "type": "integer"
                 }
             }
         },

@@ -592,11 +592,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.GetRDPFrames)
 
-	r.GET("/sessions/:session_id/rdp-detections",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		sessionapi.GetRDPDetections)
-
 	r.GET("/sessions/:session_id/result/stream",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
