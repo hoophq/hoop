@@ -175,9 +175,17 @@
                                   (when on-failure
                                     (on-failure _error-message error)))
              default-on-success (fn [res]
-                                  (rf/dispatch
-                                   [:show-snackbar {:level :success
-                                                    :text "Runbook was executed!"}])
+                                  (if (= "running" (:output_status res))
+                                    (rf/dispatch
+                                     [:show-snackbar
+                                      {:level :info
+                                       :text "Runbook is still running"
+                                       :description (str "The gateway timed out after 50s. "
+                                                         "Your runbook keeps executing in the background, "
+                                                         "open session details to track progress.")}])
+                                    (rf/dispatch
+                                     [:show-snackbar {:level :success
+                                                      :text "Runbook was executed!"}]))
                                   (rf/dispatch [:runbooks/exec-success res file-name])
                                   (rf/dispatch [:webapp.events.editor-plugin/editor-plugin->set-script-success res file-name])
                                   (when on-success
@@ -205,8 +213,9 @@
 (rf/reg-event-fx
  :runbooks/exec-success
  (fn [{:keys [db]} [_ data file-name]]
-   {:db (assoc-in db [:runbooks->exec] {:status :success
-                                        :data (merge data {:file-name file-name})})}))
+   (let [status (if (= "running" (:output_status data)) :running :success)]
+     {:db (assoc-in db [:runbooks->exec] {:status status
+                                          :data (merge data {:file-name file-name})})})))
 
 (rf/reg-event-fx
  :runbooks/exec-failure

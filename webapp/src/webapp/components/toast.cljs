@@ -1,7 +1,7 @@
 (ns webapp.components.toast
   (:require
    ["@radix-ui/themes" :refer [Box Text]]
-   ["lucide-react" :refer [AlertCircle CheckCircle ChevronDown ChevronUp X]]
+   ["lucide-react" :refer [AlertCircle CheckCircle ChevronDown ChevronUp Clock X]]
    ["sonner" :refer [toast]]
    [clojure.string :as cs]
    [reagent.core :as r]))
@@ -22,6 +22,7 @@
   (case toast-type
     :success {:icon-color "text-success-11"}
     :error {:icon-color "text-error-11"}
+    :info {:icon-color "text-info-11"}
     {:icon-color "text-gray-11"}))
 
 (defn toast-component [{:keys [id title description type details]}]
@@ -39,6 +40,7 @@
           (case type
             :success [:> CheckCircle {:size "20"}]
             :error [:> AlertCircle {:size "20"}]
+            :info [:> Clock {:size "20"}]
             nil)]
 
          [:> Box {:class "flex-1 min-w-0"}
@@ -89,5 +91,14 @@
                   :title title
                   :description description
                   :details details}
+
+                 #js{:duration 10000})))
+
+(defn toast-info
+  ([title] (toast-info title nil))
+  ([title description]
+   (custom-toast {:type :info
+                  :title title
+                  :description description}
 
                  #js{:duration 10000})))

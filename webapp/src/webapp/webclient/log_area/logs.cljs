@@ -1,6 +1,6 @@
 (ns webapp.webclient.log-area.logs
-  (:require ["@radix-ui/themes" :refer [Box Spinner Flex Text DropdownMenu]]
-            ["lucide-react" :refer [SquareArrowOutUpRight EllipsisVertical Copy]]
+  (:require ["@radix-ui/themes" :refer [Box Button Spinner Flex Text DropdownMenu]]
+            ["lucide-react" :refer [SquareArrowOutUpRight EllipsisVertical Copy Clock]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [webapp.audit.views.session-details :as session-details]
@@ -60,6 +60,31 @@
     :loading [:div {:class "flex gap-regular py-regular pl-regular pr-large"}
               [:> Spinner {:loading true}]
               [:span "loading"]]
+    :running [:div {:class "group relative py-regular pl-regular pr-large"}
+              [:div {:class "flex items-start gap-3"}
+               [:div {:class "flex-shrink-0 text-info-11 mt-0.5"}
+                [:> Clock {:size 18}]]
+               [:div {:class "flex flex-col gap-2"}
+                [:div {:class "text-sm font-medium text-gray-12"}
+                 "Session is still running"]
+                [:div {:class "text-sm text-gray-11"}
+                 (str "The gateway timed out after 50s waiting for the result. "
+                      "Your session keeps executing in the background.")]
+                (when session-id
+                  [:<>
+                   [:> Button {:size "1"
+                               :variant "soft"
+                               :on-click (fn []
+                                           (rf/dispatch [:open-modal
+                                                         [session-details/main
+                                                          {:id session-id :verb "exec"}]
+                                                         :large
+                                                         (fn []
+                                                           (rf/dispatch [:audit->clear-session])
+                                                           (rf/dispatch [:close-modal]))]))}
+                    "View session details"]
+                   [:div {:class "text-gray-10 text-xs font-mono"}
+                    (str "Session: " session-id)]])]]]
     :failure [:div {:class " group relative py-regular pl-regular pr-large whitespace-pre"}
               [:div {:class "text-sm mb-1"}
                "There was an error to get the logs for this task"]
@@ -70,7 +95,7 @@
 
 (defn main
   "config is a map with the following fields:
-      :status -> possible values are :success :loading :failure. Anything different will be default to an generic error message
+      :status -> possible values are :success :running :loading :failure. Anything different will be default to an generic error message
       :id -> id to differentiate more than one log on the same page.
       :logs -> the actual string with the logs"
   [type config]
@@ -79,6 +104,7 @@
         aria-label-text (str "Execution output. "
                             (case (:status config)
                               :success (str "Status: success. " line-count " lines")
+                              :running "Status: still running after gateway timeout"
                               :loading "Status: executing..."
                               :failure "Status: failed"
                               "No output"))]
@@ -112,6 +138,11 @@
          [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
           [:div {:class "pointer-events-auto"}
            [action-buttons-container (:response-id config) (:response config)]]])
+       :running
+       (when (:response-id config)
+         [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
+          [:div {:class "pointer-events-auto"}
+           [action-buttons-container (:response-id config) ""]]])
        :failure
        [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
         [:div {:class "pointer-events-auto"}
