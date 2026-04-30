@@ -54,9 +54,6 @@ func Load() (*Config, error) {
 		if isLegacy {
 			log.Warnf("HOOP_DSN environment variable is deprecated, use HOOP_KEY instead")
 		}
-		if os.Getenv("HOOP_SPIFFE_KEY_FILE") != "" {
-			log.Warnf("HOOP_SPIFFE_KEY_FILE is set but HOOP_KEY takes precedence; SPIFFE credentials are being ignored. Unset HOOP_KEY to use SPIFFE.")
-		}
 		tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
 		if err != nil {
 			return nil, err
@@ -73,6 +70,12 @@ func Load() (*Config, error) {
 		}, nil
 	}
 
+	// HOOP_SPIFFE_KEY_FILE is emitted unconditionally by the helm chart, so the
+	// env var is set on every pod. Only treat it as a real SPIFFE credential
+	// when the file actually exists on disk (i.e., a spiffe-helper sidecar has
+	// mounted the SVID volume and written to it). Otherwise fall through to the
+	// "missing HOOP_KEY" error below, which is the right diagnostic for a pod
+	// that was deployed without either credential.
 	if path := os.Getenv("HOOP_SPIFFE_KEY_FILE"); path != "" {
 		return loadFromSVIDFile(path)
 	}

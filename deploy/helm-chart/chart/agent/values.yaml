@@ -19,9 +19,9 @@ config: {}
 
 # -- Authenticate the agent to the gateway via SPIFFE JWT-SVID instead of HOOP_KEY.
 # When enabled:
-#   * config.HOOP_KEY MUST be left unset. HOOP_KEY takes precedence over SPIFFE,
-#     so leaving a stale HOOP_KEY in your values silently disables SPIFFE on
-#     this agent (the agent will log a warning at startup).
+#   * config.HOOP_KEY MUST be left unset. HOOP_KEY takes precedence over
+#     SPIFFE, so leaving a stale HOOP_KEY in your values silently disables
+#     SPIFFE on this agent.
 #   * the agent reads HOOP_SPIFFE_KEY_FILE=/run/spiffe/agent.jwt
 #   * config.HOOP_GATEWAY_URL is ignored; set spiffe.grpcHost to your gateway's
 #     gRPC endpoint (host:port, e.g. grpc.hoop.example.com:8010)
