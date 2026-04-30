@@ -32,18 +32,16 @@ type Config struct {
 // Load the configuration based on environment variables.
 //
 // Resolution order:
-//  1. HOOP_SPIFFE_KEY_FILE: path to a file containing a bare JWT-SVID.
+//  1. HOOP_KEY / HOOP_DSN: DSN-encoded token. The default, historical
+//     production flow with a static, long-lived secret. When set,
+//     HOOP_KEY always wins; SPIFFE/legacy modes are ignored. To use
+//     SPIFFE, leave HOOP_KEY unset.
+//  2. HOOP_SPIFFE_KEY_FILE: path to a file containing a bare JWT-SVID.
 //     Requires HOOP_GRPCURL. This path is used by SPIFFE integrations
 //     where an external sidecar (e.g. spiffe-helper) writes the SVID
 //     to disk and rotates it.
-//  2. HOOP_KEY / HOOP_DSN: DSN-encoded token. This is the original
-//     production flow with a static, long-lived secret.
 //  3. HOOP_TOKEN + HOOP_GRPCURL: deprecated legacy env format.
 func Load() (*Config, error) {
-	if path := os.Getenv("HOOP_SPIFFE_KEY_FILE"); path != "" {
-		return loadFromSVIDFile(path)
-	}
-
 	isLegacy, key := getEnvCredentials()
 	dsn, err := dsnkeys.Parse(key)
 	if err != nil && err != dsnkeys.ErrEmpty {
@@ -55,6 +53,9 @@ func Load() (*Config, error) {
 	if dsn != nil {
 		if isLegacy {
 			log.Warnf("HOOP_DSN environment variable is deprecated, use HOOP_KEY instead")
+		}
+		if os.Getenv("HOOP_SPIFFE_KEY_FILE") != "" {
+			log.Warnf("HOOP_SPIFFE_KEY_FILE is set but HOOP_KEY takes precedence; SPIFFE credentials are being ignored. Unset HOOP_KEY to use SPIFFE.")
 		}
 		tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
 		if err != nil {
@@ -71,6 +72,11 @@ func Load() (*Config, error) {
 			tlsCA:     tlsCA,
 		}, nil
 	}
+
+	if path := os.Getenv("HOOP_SPIFFE_KEY_FILE"); path != "" {
+		return loadFromSVIDFile(path)
+	}
+
 	legacyToken := getLegacyHoopTokenCredentials()
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	if legacyToken != "" && grpcURL != "" {
