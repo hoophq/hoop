@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Bring up Hoop gateway + SPIFFE agent on local k3s/colima.
+# Phase 1 of 2 — Bring up SPIRE + Hoop gateway on local k3s/colima.
+#
+# This script stops after the gateway is up and prints a manual checklist
+# (signup admin user, create agent record in the UI, copy HOOP_KEY).
+# After completing those steps, run scripts/local-spiffe-agent.sh to deploy
+# the SPIFFE-authenticated agent.
+#
 # Idempotent: re-run after edits, helm upgrades in place.
 
 set -euo pipefail
@@ -22,8 +28,28 @@ GATEWAY_IMAGE_TAG="${GATEWAY_IMAGE_TAG:-1403.0.0-5a9bd6f}"
 AGENT_IMAGE_TAG="${AGENT_IMAGE_TAG:-1403.0.0-5a9bd6f}"
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-GATEWAY_CHART="${REPO_ROOT}/deploy/helm-chart/chart/gateway"
-AGENT_CHART="${REPO_ROOT}/deploy/helm-chart/chart/agent"
+
+# Chart source.
+#   CHART_VERSION=""               -> install from the local checkout under
+#                                     $REPO_ROOT/deploy/helm-chart/chart/...
+#                                     (good for iterating on chart edits).
+#   CHART_VERSION=1403.0.0-1e7cf15 -> install the published OCI chart at that
+#                                     version, like the docs example:
+#                                       helm upgrade --install hoopagent \
+#                                         oci://ghcr.io/hoophq/helm-charts/hoopagent-chart \
+#                                         --version $VERSION ...
+# GATEWAY_CHART / AGENT_CHART can be overridden directly to pin a custom path
+# or OCI ref per component.
+CHART_VERSION="${CHART_VERSION:-}"
+if [ -n "$CHART_VERSION" ]; then
+  GATEWAY_CHART="${GATEWAY_CHART:-oci://ghcr.io/hoophq/helm-charts/hoop-chart}"
+  AGENT_CHART="${AGENT_CHART:-oci://ghcr.io/hoophq/helm-charts/hoopagent-chart}"
+  HELM_VERSION_FLAG=(--version "$CHART_VERSION")
+else
+  GATEWAY_CHART="${GATEWAY_CHART:-${REPO_ROOT}/deploy/helm-chart/chart/gateway}"
+  AGENT_CHART="${AGENT_CHART:-${REPO_ROOT}/deploy/helm-chart/chart/agent}"
+  HELM_VERSION_FLAG=()
+fi
 
 WORKDIR="${WORKDIR:-${HOME}/.hoop/local-spiffe}"
 mkdir -p "$WORKDIR"
@@ -42,8 +68,10 @@ require kubectl helm jq colima
 # ---- 0. preflight ----
 log "preflight"
 kubectl get nodes >/dev/null
-[ -d "$GATEWAY_CHART" ] || { echo "gateway chart not at $GATEWAY_CHART (set REPO_ROOT)"; exit 1; }
-[ -d "$AGENT_CHART"   ] || { echo "agent chart not at $AGENT_CHART"; exit 1; }
+for chart in "$GATEWAY_CHART" "$AGENT_CHART"; do
+  [[ "$chart" == oci://* ]] && continue
+  [ -d "$chart" ] || { echo "chart not at $chart (set REPO_ROOT or CHART_VERSION)"; exit 1; }
+done
 
 # ---- 1. namespaces ----
 log "namespaces"
@@ -165,8 +193,9 @@ defaultAgent:
   enabled: true
 EOF
 
-log "gateway helm upgrade"
+log "gateway helm upgrade ($GATEWAY_CHART${CHART_VERSION:+ @ $CHART_VERSION})"
 helm upgrade --install hoop "$GATEWAY_CHART" \
+  ${HELM_VERSION_FLAG[@]+"${HELM_VERSION_FLAG[@]}"} \
   -n "$HOOP_NS" \
   -f "$WORKDIR/gateway-values.yaml" \
   --set-file config.HOOP_SPIFFE_BUNDLE_JWKS="$WORKDIR/spire-bundle.jwks"
@@ -184,100 +213,36 @@ kubectl -n "$HOOP_NS" port-forward svc/hoopgateway 8010:8010 \
   >"$WORKDIR/pf-8010.log" 2>&1 &
 sleep 3
 
-# ---- 7. MANUAL: admin signup ----
-if ! curl -fsS http://localhost:8009/api/userinfo \
-      -H "Authorization: Bearer ${HOOP_TOKEN:-none}" >/dev/null 2>&1; then
-  cat <<EOM
-
-================================================================================
-MANUAL STEP — sign up the local admin (one time only):
-
-  1. open http://localhost:8009 in a browser
-  2. complete the local-auth signup (the first user is admin)
-  3. run:    hoop login    (it'll target http://localhost:8009)
-  4. re-run this script — it will skip past this step on the next run.
-================================================================================
-
-EOM
-  exit 0
-fi
-
-# ---- 8. Hoop agent record + SPIFFE mapping ----
-log "hoop agent + spiffe-mapping"
-HOOP_BIN="${HOOP_BIN:-hoop}"
-
-if ! "$HOOP_BIN" admin get agents --name "$AGENT_NAME" -o json 2>/dev/null \
-      | jq -e '.id' >/dev/null; then
-  "$HOOP_BIN" admin create agent "$AGENT_NAME" --mode standard
-fi
-
-AGENT_ID=$("$HOOP_BIN" admin get agents --name "$AGENT_NAME" -o json | jq -r '.id')
-[ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ] || { echo "AGENT_ID not resolved"; exit 1; }
-
-"$HOOP_BIN" admin create spiffe-mapping \
-  --trust-domain "$TRUST_DOMAIN" \
-  --spiffe-id "$SPIFFE_ID" \
-  --agent-id "$AGENT_ID" \
-  --groups agents \
-  --overwrite
-
-# ---- 9. SPIFFE agent values + install ----
-log "agent values"
-cat > "$WORKDIR/agent-values.yaml" <<EOF
-image:
-  repository: hoophq/hoopdev
-  tag: ${AGENT_IMAGE_TAG}
-  pullPolicy: IfNotPresent
-
-replicaCount: 1
-
-serviceAccount:
-  create: true
-
-spiffe:
-  enabled: true
-  grpcHost: hoopgateway:8010
-  grpcSkipVerify: true
-  grpcInsecure: true     # gateway 8010 is plaintext locally (no TLS_KEY/TLS_CERT)
-  name: ${AGENT_NAME}
-
-  workloadAPI:
-    type: hostPath
-    hostPath: /run/spire/agent-sockets
-
-  spiffeHelper:
-    agentAddress: /spiffe-workload-api/api.sock
-    audience: ${AUDIENCE}
-
-deploymentStrategy:
-  type: Recreate
-EOF
-
-log "agent helm upgrade"
-helm upgrade --install hoopagent "$AGENT_CHART" \
-  -n "$HOOP_NS" \
-  -f "$WORKDIR/agent-values.yaml"
-
-log "wait for agent"
-kubectl -n "$HOOP_NS" rollout status deploy/hoopagent --timeout=180s
-
-# ---- 10. Verify ----
-log "verify"
-kubectl -n "$HOOP_NS" get pods
-kubectl -n "$HOOP_NS" logs deploy/hoopgateway -c hoopgateway --tail=200 \
-  | grep -i 'spiffe' | tail -5 || true
-kubectl -n "$HOOP_NS" logs deploy/hoopagent  -c agent --tail=30 \
-  | grep -E 'connecting to|connected' || true
-"$HOOP_BIN" admin get agents
-
+# ---- 7. Phase 1 done — manual checklist ----
 cat <<EOM
 
-Done. Re-run this script any time; everything is idempotent.
+================================================================================
+Phase 1 complete: gateway + SPIRE are up, port-forwards on 8009/8010.
 
-Useful follow-ups:
-  kubectl -n $HOOP_NS logs deploy/hoopagent -c spiffe-helper -f
-  kubectl -n $HOOP_NS logs deploy/hoopgateway -c hoopgateway -f
-  $HOOP_BIN admin get agents
-  $HOOP_BIN admin get spiffe-mappings
+Manual steps before running phase 2:
+
+  1. Open http://localhost:8009 and complete the local-auth signup.
+     The first user becomes admin. (If you've signed up before on this
+     gateway, just log in with that user.)
+
+  2. In the UI, create an agent named "${AGENT_NAME}" (mode: standard).
+     The UI will show a HOOP_KEY — keep it for reference, but the SPIFFE
+     flow won't use it at runtime; the agent authenticates via JWT-SVID.
+
+  3. Authenticate the CLI against the local gateway:
+
+       hoop login    # targets http://localhost:8009
+
+  4. Run phase 2 (deploys the SPIFFE-authenticated agent):
+
+       ./scripts/local-spiffe-agent.sh
+
+     Phase 2 uses 'hoop admin get agents' / 'hoop admin create
+     spiffe-mapping' — the same flow operators use in production.
+
+Useful follow-ups while debugging:
+  kubectl -n ${HOOP_NS} logs deploy/hoopgateway -c hoopgateway -f
+  kubectl -n ${HOOP_NS} get pods
+================================================================================
 
 EOM
