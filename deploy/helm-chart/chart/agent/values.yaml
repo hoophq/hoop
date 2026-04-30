@@ -10,11 +10,6 @@ image: {}
   # pullPolicy: Always
   # tag: latest
 
-# -- Number of agent pod replicas. Values >1 require a per-pod identity
-# replicas with the same HOOP_KEY will cause connection flapping on the
-# gateway, since one agent identity maps to one active gRPC stream.
-replicaCount: 1
-
 config: {}
   # HOOP_KEY: '<AUTH_KEY>'
   # LOG_ENCODING: 'console|json'
