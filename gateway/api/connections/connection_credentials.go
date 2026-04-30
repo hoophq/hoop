@@ -143,32 +143,16 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	connType := proto.ConnectionType(conn.SubType.String)
-	secretKey, secretKeyHash, err := generateSecretKey(connType)
-	if err != nil {
-		log.Warnf("failed to create access credentials, err=%v", err)
-		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
-		return
-	}
-
 	expireAt := time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
 	if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
 		return
 	}
 
-	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
-		ID:             uuid.NewString(),
-		OrgID:          ctx.OrgID,
-		UserSubject:    ctx.UserID,
-		ConnectionName: conn.Name,
-		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-		SecretKeyHash:  secretKeyHash,
-		SessionID:      sid,
-		CreatedAt:      time.Now().UTC(),
-		ExpireAt:       expireAt,
-	})
+	connType := proto.ConnectionType(conn.SubType.String)
+	secretKey, db, err := issueOrRefreshCredential(ctx.OrgID, ctx.UserID, conn, connType, sid, expireAt)
 	if err != nil {
+		log.Warnf("failed to issue credential, err=%v", err)
 		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
 		return
 	}
@@ -179,6 +163,104 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey, false, ""))
+}
+
+// issueOrRefreshCredential implements the stable-key contract documented on
+// CreateConnectionCredentials: for a given (user, connection) pair the plaintext
+// secret key is stable across issuances. The row is reused (and its expiration
+// refreshed to the new value) whenever a non-revoked credential exists; the key
+// only changes when the previous credential was revoked or when the row predates
+// the encrypted_secret_key backfill column.
+func issueOrRefreshCredential(
+	orgID, userSubject string,
+	conn *models.Connection,
+	connType proto.ConnectionType,
+	sessionID string,
+	expireAt time.Time,
+) (string, *models.ConnectionCredentials, error) {
+	existing, err := models.GetActiveCredentialByUserAndConnection(orgID, userSubject, conn.Name)
+	if err != nil && err != models.ErrNotFound {
+		return "", nil, fmt.Errorf("failed to look up existing credential: %w", err)
+	}
+
+	if existing != nil {
+		// Close the previous audit session (if any) so it doesn't remain
+		// perpetually "open" once the credential row is re-pointed at the new
+		// session. Errors here are non-fatal since the lazy cleanup path in
+		// CloseExpiredCredentialSessions will catch stragglers.
+		if existing.SessionID != "" && existing.SessionID != sessionID {
+			if err := models.UpdateSessionStatus(orgID, existing.SessionID, string(openapi.SessionStatusDone)); err != nil {
+				log.Warnf("failed closing previous audit session %s, err=%v", existing.SessionID, err)
+			}
+		}
+
+		// Reuse the stable key: decrypt, refresh expiration, keep the same row.
+		if len(existing.EncryptedSecretKey) > 0 {
+			plaintext, decErr := models.DecryptCredentialSecretKey(existing.EncryptedSecretKey)
+			if decErr == nil {
+				if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
+					return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
+				}
+				existing.SessionID = sessionID
+				existing.ExpireAt = expireAt
+				return plaintext, existing, nil
+			}
+			log.Warnf("failed to decrypt stored credential (id=%s), regenerating: %v",
+				existing.ID, decErr)
+		}
+
+		// Backfill path: the row exists but has no ciphertext (created before
+		// migration 000081, or decryption failed). Rotate the secret key in
+		// place so the user still keeps the same credential id, but they will
+		// observe a one-time token change.
+		newSecret, newHash, genErr := generateSecretKey(connType)
+		if genErr != nil {
+			return "", nil, fmt.Errorf("failed to generate secret key: %w", genErr)
+		}
+		ciphertext, encErr := models.EncryptCredentialSecretKey(newSecret)
+		if encErr != nil {
+			return "", nil, fmt.Errorf("failed to encrypt secret key: %w", encErr)
+		}
+		if err := models.UpdateConnectionCredentialsSecret(existing.ID, newHash, ciphertext); err != nil {
+			return "", nil, fmt.Errorf("failed to update credential secret: %w", err)
+		}
+		if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
+			return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
+		}
+		existing.SecretKeyHash = newHash
+		existing.EncryptedSecretKey = ciphertext
+		existing.SessionID = sessionID
+		existing.ExpireAt = expireAt
+		return newSecret, existing, nil
+	}
+
+	// No active credential for this (user, connection) pair. Create a fresh row
+	// and store both the hash (for proxy auth lookup) and the encrypted copy of
+	// the plaintext (for future reuse).
+	newSecret, newHash, err := generateSecretKey(connType)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to generate secret key: %w", err)
+	}
+	ciphertext, err := models.EncryptCredentialSecretKey(newSecret)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to encrypt secret key: %w", err)
+	}
+	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
+		ID:                 uuid.NewString(),
+		OrgID:              orgID,
+		UserSubject:        userSubject,
+		ConnectionName:     conn.Name,
+		ConnectionType:     proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+		SecretKeyHash:      newHash,
+		EncryptedSecretKey: ciphertext,
+		SessionID:          sessionID,
+		CreatedAt:          time.Now().UTC(),
+		ExpireAt:           expireAt,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	return newSecret, db, nil
 }
 
 // ResumeConnectionCredentials
@@ -344,7 +426,12 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	}
 
 	// If credentials already exist for this session, update the secret key (preserves expiration)
-	// Otherwise create a new record
+	// Otherwise create a new record.
+	//
+	// Resume keeps the legacy rotate-on-call behavior for review/JIT flows:
+	// repeated Resume calls explicitly rotate the token. The encrypted copy is
+	// cleared on rotation so the credential cannot later be mistaken for a
+	// stable-key row by CreateConnectionCredentials.
 	var db *models.ConnectionCredentials
 	if existingCred != nil {
 		if err := models.UpdateConnectionCredentialsSecretKey(existingCred.ID, secretKeyHash); err != nil {
@@ -352,18 +439,29 @@ func ResumeConnectionCredentials(c *gin.Context) {
 			return
 		}
 		existingCred.SecretKeyHash = secretKeyHash
+		existingCred.EncryptedSecretKey = nil
 		db = existingCred
 	} else {
+		// First issuance after review approval: store the encrypted copy so
+		// that if the review requirement is later removed the same token can
+		// be reused via CreateConnectionCredentials.
+		ciphertext, encErr := models.EncryptCredentialSecretKey(secretKey)
+		if encErr != nil {
+			log.Errorf("failed to encrypt secret key, err=%v", encErr)
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed to encrypt secret key"})
+			return
+		}
 		db, err = models.CreateConnectionCredentials(&models.ConnectionCredentials{
-			ID:             uuid.NewString(),
-			OrgID:          ctx.OrgID,
-			UserSubject:    ctx.UserID,
-			ConnectionName: conn.Name,
-			ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-			SecretKeyHash:  secretKeyHash,
-			SessionID:      sessionID,
-			CreatedAt:      createdAt,
-			ExpireAt:       expireAt,
+			ID:                 uuid.NewString(),
+			OrgID:              ctx.OrgID,
+			UserSubject:        ctx.UserID,
+			ConnectionName:     conn.Name,
+			ConnectionType:     proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+			SecretKeyHash:      secretKeyHash,
+			EncryptedSecretKey: ciphertext,
+			SessionID:          sessionID,
+			CreatedAt:          createdAt,
+			ExpireAt:           expireAt,
 		})
 		if err != nil {
 			c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
@@ -389,7 +487,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 // RevokeConnectionCredentials
 //
 //	@Summary		Revoke Connection Credentials
-//	@Description	Revokes a connection credential, invalidating it and disconnecting any active sessions
+//	@Description	Revokes a connection credential, invalidating the stored token and disconnecting any active sessions. The next credential request for the same (user, connection) pair will issue a fresh token.
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
@@ -402,39 +500,9 @@ func RevokeConnectionCredentials(c *gin.Context) {
 	connNameOrID := c.Param("nameOrID")
 	credentialID := c.Param("ID")
 
-	if credentialID == "" {
-		c.AbortWithStatusJSON(400, gin.H{"message": "credential ID is required"})
-		return
-	}
-
-	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
-	if err != nil {
-		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
-		return
-	}
-	if conn == nil {
-		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("connection %s not found", connNameOrID)})
-		return
-	}
-
-	cred, err := models.GetConnectionCredentialsByID(ctx.OrgID, credentialID)
-	if err != nil {
-		if err == models.ErrNotFound {
-			c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("credential %s not found", credentialID)})
-			return
-		}
-		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
-		return
-	}
-
-	if cred.ConnectionName != conn.Name {
-		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("credential %s does not belong to connection %s", credentialID, connNameOrID)})
-		return
-	}
-
-	// Only the credential owner or org admin can revoke
-	if cred.UserSubject != ctx.UserID && !ctx.IsAdmin() {
-		c.AbortWithStatusJSON(403, gin.H{"message": "only the credential owner or admin can revoke"})
+	cred, conn, errResp := loadCredentialForMutation(ctx, connNameOrID, credentialID)
+	if errResp != nil {
+		c.AbortWithStatusJSON(errResp.status, gin.H{"message": errResp.message})
 		return
 	}
 
@@ -449,22 +517,109 @@ func RevokeConnectionCredentials(c *gin.Context) {
 		}
 	}
 
-	// Cancel active sessions in each proxy
+	terminateActiveCredentialSessions(cred, conn)
+
+	c.Status(204)
+}
+
+// CloseConnectionCredentials
+//
+//	@Summary		Close Connection Credentials Session
+//	@Description	Ends the current audit session for a credential and tears down any active proxy connections, but keeps the credential itself usable. The stored token is preserved so the next credential request for the same (user, connection) pair returns the same value. For explicit token invalidation use the revoke endpoint.
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
+//	@Param			credentialID	path		string	true	"UUID of the credential"
+//	@Success		204			"No content"
+//	@Failure		400,403,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/credentials/{credentialID}/close [post]
+func CloseConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	credentialID := c.Param("ID")
+
+	cred, conn, errResp := loadCredentialForMutation(ctx, connNameOrID, credentialID)
+	if errResp != nil {
+		c.AbortWithStatusJSON(errResp.status, gin.H{"message": errResp.message})
+		return
+	}
+
+	// Close the audit session (if still linked) and unlink it from the
+	// credential so the next issuance starts a fresh Session row. The
+	// credential row itself (including the encrypted_secret_key) is preserved
+	// so the stable-key contract holds across disconnects.
+	if cred.SessionID != "" {
+		if err := models.UpdateSessionStatus(ctx.OrgID, cred.SessionID, "done"); err != nil {
+			log.Warnf("failed closing audit session %s, err=%v", cred.SessionID, err)
+		}
+	}
+	if err := models.ClearCredentialSession(cred.ID); err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to close credential session: %v", err)})
+		return
+	}
+
+	terminateActiveCredentialSessions(cred, conn)
+
+	c.Status(204)
+}
+
+type handlerError struct {
+	status  int
+	message string
+}
+
+// loadCredentialForMutation loads a credential and validates that the caller is
+// allowed to mutate it. Used by both Revoke and Close.
+func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialID string) (*models.ConnectionCredentials, *models.Connection, *handlerError) {
+	if credentialID == "" {
+		return nil, nil, &handlerError{status: 400, message: "credential ID is required"}
+	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+	if err != nil {
+		return nil, nil, &handlerError{status: 500, message: err.Error()}
+	}
+	if conn == nil {
+		return nil, nil, &handlerError{status: 404, message: fmt.Sprintf("connection %s not found", connNameOrID)}
+	}
+
+	cred, err := models.GetConnectionCredentialsByID(ctx.OrgID, credentialID)
+	if err != nil {
+		if err == models.ErrNotFound {
+			return nil, nil, &handlerError{status: 404, message: fmt.Sprintf("credential %s not found", credentialID)}
+		}
+		return nil, nil, &handlerError{status: 500, message: err.Error()}
+	}
+
+	if cred.ConnectionName != conn.Name {
+		return nil, nil, &handlerError{status: 404, message: fmt.Sprintf("credential %s does not belong to connection %s", credentialID, connNameOrID)}
+	}
+
+	if cred.UserSubject != ctx.UserID && !ctx.IsAdmin() {
+		return nil, nil, &handlerError{status: 403, message: "only the credential owner or admin can perform this action"}
+	}
+
+	return cred, conn, nil
+}
+
+// terminateActiveCredentialSessions tears down any in-flight proxy sessions for
+// the given credential. Shared by Revoke (with DB invalidation) and Close
+// (without DB invalidation).
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
-		postgresproxy.GetServerInstance().RevokeByCredentialID(credentialID)
+		postgresproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeSSH:
-		sshproxy.GetServerInstance().RevokeByCredentialID(credentialID)
+		sshproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeRDP:
-		broker.RevokeByCredentialID(credentialID)
+		broker.RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
-		// SSM has no persistent session store; DB invalidation blocks new connections
+		// SSM has no persistent session store; proxies reject new connections
+		// at next auth check when the credential is revoked.
 	}
-
-	c.Status(204)
 }
 
 func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {

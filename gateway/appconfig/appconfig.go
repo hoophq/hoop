@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +63,10 @@ type Config struct {
 	gatewaySkipTLSVerify            bool
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
+
+	rdpPIISnapshotInterval float64
+	rdpPIIScoreThreshold   float64
+	rdpPIIEntityDenylist   []string
 
 	spiffeMode          string
 	spiffeBundleURL     string
@@ -188,6 +193,26 @@ func Load() error {
 	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
 	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
 
+	// RDP PII analysis defaults (overridable via env)
+	rdpPIISnapshotInterval := 0.25 // 250ms
+	if v := os.Getenv("RDP_PII_SNAPSHOT_INTERVAL"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			rdpPIISnapshotInterval = f
+		}
+	}
+	rdpPIIScoreThreshold := 0.9
+	if v := os.Getenv("RDP_PII_SCORE_THRESHOLD"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			rdpPIIScoreThreshold = f
+		}
+	}
+	var rdpPIIEntityDenylist []string
+	if v := os.Getenv("RDP_PII_ENTITY_DENYLIST"); v != "" {
+		rdpPIIEntityDenylist = strings.Split(v, ",")
+	} else {
+		rdpPIIEntityDenylist = []string{"DATE_TIME", "NRP"}
+	}
+
 	spiffeMode, spiffeBundleURL, spiffeBundleFile, spiffeTrustDomain, spiffeAudience, spiffeRefreshPeriod, err := loadSPIFFEConfig()
 	if err != nil {
 		return err
@@ -230,6 +255,9 @@ func Load() error {
 		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
+		rdpPIISnapshotInterval:          rdpPIISnapshotInterval,
+		rdpPIIScoreThreshold:            rdpPIIScoreThreshold,
+		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
@@ -397,6 +425,9 @@ func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert
 func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }
 func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
 func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
+func (c Config) RDPPIISnapshotInterval() float64       { return c.rdpPIISnapshotInterval }
+func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThreshold }
+func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)
