@@ -2,7 +2,7 @@ BEGIN;
 
 SET search_path TO private;
 
-CREATE TABLE rdp_analysis_jobs (
+CREATE TABLE IF NOT EXISTS rdp_analysis_jobs (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id        UUID NOT NULL REFERENCES orgs(id),
     session_id    UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -15,11 +15,11 @@ CREATE TABLE rdp_analysis_jobs (
     finished_at   TIMESTAMP
 );
 
-CREATE INDEX idx_rdp_analysis_jobs_status_priority
+CREATE INDEX IF NOT EXISTS idx_rdp_analysis_jobs_status_priority
     ON rdp_analysis_jobs (status, priority DESC, created_at ASC)
     WHERE status IN ('pending', 'failed');
 
-CREATE INDEX idx_rdp_analysis_jobs_session_id
+CREATE INDEX IF NOT EXISTS idx_rdp_analysis_jobs_session_id
     ON rdp_analysis_jobs (session_id);
 
 COMMIT;

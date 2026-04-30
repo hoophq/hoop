@@ -2,7 +2,7 @@ BEGIN;
 
 SET search_path TO private;
 
-CREATE TABLE rdp_entity_detections (
+CREATE TABLE IF NOT EXISTS rdp_entity_detections (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     frame_index INT  NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE rdp_entity_detections (
     height      INT NOT NULL
 );
 
-CREATE INDEX idx_rdp_entity_detections_session
+CREATE INDEX IF NOT EXISTS idx_rdp_entity_detections_session
     ON rdp_entity_detections (session_id);
 
 COMMIT;
