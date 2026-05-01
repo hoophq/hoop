@@ -271,7 +271,7 @@
                            :background "var(--green-9)" :flex-shrink 0}}]
           [:> Text {:size "2" :color "green"} (str ready-count " complete")]]]
         [:> Flex {:gap "2"}
-         [:> Button {:size "3" :on-click #(on-set-screen :bulk-import)}
+         [:> Button {:size "3" :on-click on-open-bulk-import}
           [:> Plus {:size 16}] " Add to Inventory"]]]
 
        ;; Funnel

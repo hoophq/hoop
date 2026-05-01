@@ -1,8 +1,8 @@
 (ns webapp.provisioning.views.bulk-import
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Callout Flex Heading
-                                Progress Table Text]]
-   ["lucide-react" :refer [AlertCircle ArrowLeft Check CheckCircle2
+   ["@radix-ui/themes" :refer [Badge Box Button Callout Dialog Flex Heading
+                                IconButton Progress Table Text]]
+   ["lucide-react" :refer [AlertCircle Check CheckCircle2
                             Database Loader2 Upload X]]
    [reagent.core :as r]
    [webapp.provisioning.data :as data]))
@@ -35,13 +35,14 @@
                [:> Text {:size "1" :style {:color (if active? "white" "var(--gray-7)")
                                            :font-size 9 :font-weight 600}}
                 (inc i)])]
-            [:> Text {:size "1"
-                      :color (cond active? nil done? "green" :else "gray")
-                      :weight (if active? "medium" "regular")}
+            [:> Text (cond-> {:size "1"
+                              :weight (if active? "medium" "regular")}
+                       (and (not active?) done?)       (assoc :color "green")
+                       (and (not active?) (not done?)) (assoc :color "gray"))
              (nth step-labels i)]]])))]))
 
 (defn bulk-import-screen
-  [{:keys [on-confirm on-back]}]
+  [{:keys [on-confirm on-close]}]
   (let [step*           (r/atom :upload)
         file-selected   (r/atom false)
         drag-over       (r/atom false)
@@ -51,17 +52,22 @@
         import-phase    (r/atom "creating")]
     (fn []
       (let [step @step*]
-        [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
-         ;; Back
-         (when (not= step :results)
-           [:> Flex {:align "center" :gap "2" :mb "1"}
-            [:> Button {:variant "ghost" :color "gray" :size "2" :on-click on-back}
-             [:> ArrowLeft {:size 14}] " Back"]])
-
-         ;; Header + step indicator
-         [:> Flex {:align "center" :gap "4" :mb "5" :wrap "wrap"}
-          [:> Heading {:size "7"} "Import inventory"]
-          [step-indicator step]]
+        [:> Dialog.Root {:open true
+                         :onOpenChange #(when-not % (on-close))}
+         [:> Dialog.Content {:max-width "880px"
+                             :class "max-h-[90vh] overflow-hidden"}
+          [:> Flex {:direction "column" :gap "0"
+                    :style {:max-height "calc(90vh - 48px)"}}
+           ;; Header: title + step indicator + close
+           [:> Flex {:align "center" :justify "between" :gap "4" :mb "5" :wrap "wrap"}
+            [:> Flex {:align "center" :gap "4" :wrap "wrap"}
+             [:> Dialog.Title {:asChild true}
+              [:> Heading {:size "6"} "Import inventory"]]
+             [step-indicator step]]
+            [:> Dialog.Close {:asChild true}
+             [:> IconButton {:variant "ghost" :color "gray" :size "2"
+                             :aria-label "Close"}
+              [:> X {:size 16}]]]]
 
          ;; ── Upload ──
          (when (= step :upload)
@@ -230,7 +236,7 @@
                      " rows will be imported · "
                      (count (:errors data/import-result)) " skipped")]
                [:> Flex {:gap "3"}
-                [:> Button {:variant "outline" :color "gray" :on-click on-back} "Cancel"]
+                [:> Button {:variant "outline" :color "gray" :on-click on-close} "Cancel"]
                 [:> Button {:color "indigo"
                             :on-click (fn []
                                         (reset! step* :importing)
@@ -318,7 +324,7 @@
                                :overflow "hidden"}}
               [:> Flex {:align "center" :gap "3" :px "4" :py "3"
                         :style {:border-bottom "1px solid var(--gray-4)" :cursor "pointer"}
-                        :on-click on-back}
+                        :on-click on-close}
                [:> Database {:size 16 :color "var(--indigo-9)"}]
                [:> Flex {:direction "column" :gap "0" :style {:flex 1}}
                 [:> Text {:size "2" :weight "medium"} "View inventory"]
@@ -331,4 +337,4 @@
                [:> Upload {:size 16 :color "var(--gray-9)"}]
                [:> Flex {:direction "column" :gap "0" :style {:flex 1}}
                 [:> Text {:size "2" :weight "medium"} "Import another file"]
-                [:> Text {:size "1" :color "gray"} "Add more resources to the catalog"]]]]]])]))))
+                [:> Text {:size "1" :color "gray"} "Add more resources to the catalog"]]]]]])]]]))))

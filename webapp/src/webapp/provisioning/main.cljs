@@ -16,7 +16,8 @@
         selected-ids-atom   (r/atom #{})
         search-atom         (r/atom "")
         active-tab-atom     (r/atom :inventory)
-        hub-screen-atom     (r/atom :hub)       ;; :hub | :bulk-admin | :bulk-roles | :bulk-import | :job-detail | :session-list
+        hub-screen-atom     (r/atom :hub)       ;; :hub | :bulk-admin | :bulk-roles | :job-detail | :session-list
+        bulk-import-open?   (r/atom false)
         jobs-atom           (r/atom [])
         dismissed-job-ids   (r/atom #{})
         sessions-atom       (r/atom [])
@@ -79,7 +80,7 @@
              :on-set-screen        set-screen!
              :on-open-bulk-admin   open-bulk-admin!
              :on-open-bulk-roles   open-bulk-roles!
-             :on-open-bulk-import  #(set-screen! :bulk-import)}])
+             :on-open-bulk-import  #(reset! bulk-import-open? true)}])
 
          ;; ── Bulk Admin ──
          (when (= screen :bulk-admin)
@@ -111,10 +112,10 @@
                                  (reset! viewing-job-id job-id)
                                  (set-screen! :job-detail)))}])
 
-         ;; ── Bulk Import ──
-         (when (= screen :bulk-import)
+         ;; ── Bulk Import (modal overlay) ──
+         (when @bulk-import-open?
            [bulk-import/bulk-import-screen
-            {:on-back    #(set-screen! :hub)
+            {:on-close   #(reset! bulk-import-open? false)
              :on-confirm (fn [new-resources]
                            (swap! resources-atom into new-resources))}])
 
