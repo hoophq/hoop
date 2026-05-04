@@ -20,10 +20,11 @@
         [:> Box
          [:> EllipsisVertical {:size 18 :class "text-gray-12" :aria-hidden "true"}]]]
        [:> DropdownMenu.Content
-        [:> DropdownMenu.Item {:on-select #(rf/dispatch [:modal->open
-                                                         {:id "session-details"
-                                                          :maxWidth "95vw"
-                                                          :content [session-details/main {:id session-id :verb "exec"}]}])}
+        [:> DropdownMenu.Item {:on-select #(rf/dispatch
+                                            [:modal->open
+                                             {:id "session-details"
+                                              :maxWidth "95vw"
+                                              :content [session-details/main {:id session-id :verb "exec"}]}])}
          [:> Flex {:align "center" :gap "2"}
           [:> SquareArrowOutUpRight {:size 16}]
           [:> Text {:size "2"} "View session details"]]]
@@ -39,12 +40,11 @@
     :success (if has-review?
                [:div {:class "group relative py-regular pl-regular pr-large whitespace-pre"
                       :on-click (fn []
-                                  (rf/dispatch [:open-modal
-                                                [session-details/main {:id session-id :verb "exec"}]
-                                                :large
-                                                (fn []
-                                                  (rf/dispatch [:audit->clear-session])
-                                                  (rf/dispatch [:close-modal]))]))}
+                                  (rf/dispatch (rf/dispatch
+                                                [:modal->open
+                                                 {:id "session-details"
+                                                  :maxWidth "95vw"
+                                                  :content [session-details/main {:id session-id :verb "exec"}]}])))}
                 [:div {:class "text-sm mb-1"}
                  "This task needs to be reviewed. Please click here to see the details."]
                 [:div {:class "text-gray-11 text-sm"}
@@ -75,13 +75,11 @@
                    [:> Button {:size "1"
                                :variant "soft"
                                :on-click (fn []
-                                           (rf/dispatch [:open-modal
-                                                         [session-details/main
-                                                          {:id session-id :verb "exec"}]
-                                                         :large
-                                                         (fn []
-                                                           (rf/dispatch [:audit->clear-session])
-                                                           (rf/dispatch [:close-modal]))]))}
+                                           (rf/dispatch
+                                            [:modal->open
+                                             {:id "session-details"
+                                              :maxWidth "95vw"
+                                              :content [session-details/main {:id session-id :verb "exec"}]}]))}
                     "View session details"]
                    [:div {:class "text-gray-10 text-xs font-mono"}
                     (str "Session: " session-id)]])]]]
@@ -102,12 +100,12 @@
   (let [line-count (when (:response config)
                      (count (clojure.string/split-lines (:response config))))
         aria-label-text (str "Execution output. "
-                            (case (:status config)
-                              :success (str "Status: success. " line-count " lines")
-                              :running "Status: still running after gateway timeout"
-                              :loading "Status: executing..."
-                              :failure "Status: failed"
-                              "No output"))]
+                             (case (:status config)
+                               :success (str "Status: success. " line-count " lines")
+                               :running "Status: still running after gateway timeout"
+                               :loading "Status: executing..."
+                               :failure "Status: failed"
+                               "No output"))]
     [:div {:class "relative h-full"}
      [:section
       {:class (str "bg-gray-2 font-mono h-full"
