@@ -563,6 +563,72 @@ func CloseConnectionCredentials(c *gin.Context) {
 	c.Status(204)
 }
 
+// GetConnectionCredentials
+//
+//	@Summary		Get Active Connection Credentials
+//	@Description	Returns the current active, non-expired credentials for the authenticated user on the given connection without creating a new session. Returns 404 if no active credentials exist or they have expired.
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID	path		string									true	"Name or UUID of the connection"
+//	@Success		200			{object}	openapi.ConnectionCredentialsResponse
+//	@Failure		404			{object}	openapi.HTTPError
+//	@Failure		400,500		{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/credentials [get]
+func GetConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+	if err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
+		return
+	}
+	if conn == nil {
+		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("connection %s not found", connNameOrID)})
+		return
+	}
+
+	serverConf, err := models.GetServerMiscConfig()
+	if err != nil && err != models.ErrNotFound {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to retrieve server config, err=%v", err)})
+		return
+	}
+
+	cred, err := models.GetActiveCredentialByUserAndConnection(ctx.OrgID, ctx.UserID, conn.Name)
+	if err == models.ErrNotFound {
+		c.AbortWithStatusJSON(404, gin.H{"message": "no active credentials found for this connection; open a native connection first"})
+		return
+	}
+	if err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to retrieve credentials: %v", err)})
+		return
+	}
+
+	if time.Now().UTC().After(cred.ExpireAt) {
+		c.AbortWithStatusJSON(404, gin.H{"message": "credentials have expired; open a new native connection"})
+		return
+	}
+
+	if len(cred.EncryptedSecretKey) == 0 {
+		c.AbortWithStatusJSON(404, gin.H{"message": "no credentials available for this connection"})
+		return
+	}
+
+	plaintext, err := models.DecryptCredentialSecretKey(cred.EncryptedSecretKey)
+	if err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed to recover credential secret key"})
+		return
+	}
+
+	resp := buildConnectionCredentialsResponse(cred, conn, serverConf, plaintext, false, "")
+	if resp == nil {
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection type not supported for credential retrieval"})
+		return
+	}
+
+	c.JSON(200, resp)
+}
+
 type handlerError struct {
 	status  int
 	message string
