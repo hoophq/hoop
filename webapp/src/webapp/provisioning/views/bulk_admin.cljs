@@ -9,13 +9,13 @@
 
 (defn bulk-admin-screen
   "Manual + CSV admin credential entry. No vault support."
-  [{:keys [resources configs-atom on-apply on-cancel initial-mode]}]
-  (let [mode         (r/atom (or initial-mode "manual"))
+  [props]
+  (let [mode         (r/atom (or (:initial-mode props) "manual"))
         csv-parsing  (r/atom false)
         csv-parsed   (r/atom false)
         agent-id     (r/atom "default")]
-    (fn []
-      (let [cfg @configs-atom]
+    (fn [{:keys [resources configs set-configs on-apply on-cancel]}]
+      (let [cfg configs]
         [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
          ;; Back button
          [:> Flex {:align "center" :gap "2" :mb "1"}
@@ -100,13 +100,15 @@
                    [:> Box {:style {:width 150 :flex-shrink 0}}
                     [:> TextField.Root {:size "1" :placeholder "Admin user"
                                         :value (or (:username c) "")
-                                        :onChange #(swap! configs-atom assoc-in [(:id r) :username]
-                                                         (.. % -target -value))}]]
+                                        :onChange #(set-configs
+                                                  (fn [c] (assoc-in c [(:id r) :username]
+                                                                    (.. % -target -value))))}]]
                    [:> Box {:style {:flex 1}}
                     [:> TextField.Root {:size "1" :type "password" :placeholder "Password"
                                         :value (or (:password c) "")
-                                        :onChange #(swap! configs-atom assoc-in [(:id r) :password]
-                                                         (.. % -target -value))}]]])))]])
+                                        :onChange #(set-configs
+                                                  (fn [c] (assoc-in c [(:id r) :password]
+                                                                    (.. % -target -value))))}]]])))]])
 
          ;; CSV mode — upload
          (when (and (= @mode "csv") (not @csv-parsed))

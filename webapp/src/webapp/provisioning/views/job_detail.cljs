@@ -3,12 +3,11 @@
    ["@radix-ui/themes" :refer [Badge Box Button Callout Flex Heading
                                 Progress Table Text]]
    ["lucide-react" :refer [AlertCircle ArrowLeft Check CheckCircle2
-                            Loader2 ScrollText]]
-   [webapp.provisioning.data :as data]))
+                            Loader2 ScrollText]]))
 
 (defn job-detail-screen
-  [{:keys [job sessions on-back on-run-in-background on-view-sessions]}]
-  (fn []
+  [_props]
+  (fn [{:keys [job sessions on-back on-run-in-background on-view-sessions]}]
     (let [items   (:items job)
           done    (count (filter #(= "done" (:status %)) items))
           failed  (count (filter #(= "failed" (:status %)) items))

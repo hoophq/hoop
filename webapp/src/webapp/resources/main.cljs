@@ -429,7 +429,7 @@
                     (apply-filter (cond-> {}
                                     (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
                                     @selected-resource (assoc :subtype @selected-resource))))]]])
-             
+
              (when (= @active-tab "roles")
                [attribute-filter/main {:selected @selected-attribute
                                        :on-select (fn [attribute-name]

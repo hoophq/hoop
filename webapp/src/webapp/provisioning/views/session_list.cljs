@@ -52,12 +52,12 @@
 
 ;; ── Session list screen ────────────────────────────────────────────────────────
 (defn session-list-screen
-  [{:keys [sessions title subtitle on-back]}]
+  [_props]
   (let [expanded-id (r/atom nil)
         ai-open     (r/atom false)
         ai-loading  (r/atom false)
         ai-insights (r/atom [])]
-    (fn []
+    (fn [{:keys [sessions title subtitle on-back]}]
       [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
        ;; Back
        [:> Flex {:align "center" :gap "2" :mb "1"}

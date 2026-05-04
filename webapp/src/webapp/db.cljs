@@ -110,4 +110,7 @@
               :active {:status :idle :data nil}
               :created {:status :idle :data nil}
               :submitting? false}
-   :workflows workflows-events/initial-state})
+   :workflows workflows-events/initial-state
+   :provisioning {:resources {:status :idle :data []}
+                  :jobs      []
+                  :sessions  []}})
