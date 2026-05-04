@@ -29,8 +29,11 @@ const (
 	RDPJobStatusFailed  = "failed"
 )
 
-// maxJobAttempts is the number of times a job will be retried before giving up.
-const maxJobAttempts = 3
+// MaxJobAttempts is the number of times a job will be retried before giving up.
+const MaxJobAttempts = 3
+
+// maxJobAttempts is kept for backwards compatibility within the package.
+const maxJobAttempts = MaxJobAttempts
 
 // CreateRDPAnalysisJob inserts a new pending analysis job for the given session.
 func CreateRDPAnalysisJob(orgID, sessionID string) error {

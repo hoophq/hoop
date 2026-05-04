@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Text Heading Badge]]
    ["lucide-react" :refer [Play Pause FastForward Rewind Maximize Minimize]]
+   [clojure.set :as set]
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.components.loaders :as loaders]
@@ -72,6 +73,30 @@
                 :on-success on-success
                 :on-failure on-error}))
 
+(def ^:private analysis-active-statuses
+  "Statuses that should keep the polling loop running. Once the analysis
+   reaches a terminal state (done / failed) the loop stops."
+  #{"pending" "running" "analyzing"})
+
+(def ^:private detection-poll-interval-ms 5000)
+
+(defn- normalize-analysis
+  "Reads the gateway's `analysis` payload and falls back to the legacy
+   `analysis_status` string for older API responses. Returns a map with
+   keyword keys consumed by the legend component."
+  [response]
+  (let [info (:analysis response)
+        detections (:detections response)
+        ;; older gateways only return :analysis_status without the nested object
+        status (or (:status info) (:analysis_status response) "")]
+    {:status status
+     :attempt (or (:attempt info) 0)
+     :max-attempts (or (:max_attempts info) 0)
+     :last-error (or (:last_error info) "")
+     :started-at (:started_at info)
+     :finished-at (:finished_at info)
+     :total-detections (count detections)}))
+
 (def ^:private entity-colors
   {"PERSON" {:fill "rgba(239, 68, 68, 0.25)" :stroke "rgba(239, 68, 68, 0.85)"}
    "EMAIL_ADDRESS" {:fill "rgba(249, 115, 22, 0.25)" :stroke "rgba(249, 115, 22, 0.85)"}
@@ -125,33 +150,65 @@
       (.fillRect overlay-ctx x y width height)
       (.strokeRect overlay-ctx x y width height))))
 
-(defn- entity-legend [{:keys [entity-types enabled-entity-types on-toggle detections-loading analysis-status]}]
-  (when (or detections-loading (seq entity-types) (seq analysis-status))
-    [:> Flex {:align "center"
-              :gap "2"
-              :wrap "wrap"
-              :class "px-radix-4 py-radix-3 rounded-b-lg bg-[--gray-1] border-t border-[--gray-6]"}
-     [:> Text {:size "1" :weight "medium" :class "uppercase tracking-[0.08em] text-[--gray-11]"}
-      "PII highlights"]
-     (when (seq analysis-status)
-       [:> Badge {:variant "soft" :color "gray" :size "1"}
-        (str "Status: " analysis-status)])
-     (when detections-loading
-       [:> Badge {:variant "soft" :color "blue" :size "1"}
-        "Loading detections..."])
-     (for [entity-type entity-types]
-       (let [{:keys [fill stroke]} (get-entity-color entity-type)
-             enabled? (contains? enabled-entity-types entity-type)]
-         ^{:key entity-type}
-         [:> Badge {:variant (if enabled? "solid" "soft")
-                    :size "1"
-                    :class "cursor-pointer select-none"
-                    :on-click #(on-toggle entity-type)
-                    :style {:border (str "1px solid " stroke)
-                            :backgroundColor (if enabled? fill "transparent")
-                            :color (if enabled? stroke "var(--gray-11)")
-                            :opacity (if enabled? 1 0.6)}}
-          entity-type]))]))
+(def ^:private status-presentation
+  "Maps the analysis status string returned by the gateway to the user-facing
+   label and Radix Badge color. The gateway uses 'running' for the in-flight
+   job state; the legacy 'analyzing' value (set on sessions.metrics) is
+   normalised to the same presentation."
+  {"pending"   {:label "Queued"          :color "gray"   :spinning? true}
+   "running"   {:label "Analyzing PII"   :color "blue"   :spinning? true}
+   "analyzing" {:label "Analyzing PII"   :color "blue"   :spinning? true}
+   "done"      {:label "Analysis ready"  :color "green"  :spinning? false}
+   "failed"    {:label "Analysis failed" :color "red"    :spinning? false}})
+
+(defn- analysis-status-badge
+  "Renders the colour-coded analysis status badge plus, when applicable, an
+   attempt counter or the captured error message."
+  [{:keys [status attempt max-attempts last-error] :as analysis}]
+  (when (seq status)
+    (let [{:keys [label color]} (get status-presentation status
+                                     {:label (str "Status: " status) :color "gray"})]
+      [:> Flex {:align "center" :gap "2" :wrap "wrap"}
+       [:> Badge {:variant "soft" :color color :size "1"} label]
+       (when (and (= status "running") (pos? attempt) (> max-attempts 1))
+         [:> Badge {:variant "soft" :color "gray" :size "1"}
+          (str "Attempt " attempt "/" max-attempts)])
+       (when (and (= status "failed") (pos? attempt) (>= attempt max-attempts))
+         [:> Badge {:variant "soft" :color "red" :size "1"}
+          (str "Gave up after " max-attempts " attempts")])
+       (when (and (= status "failed") (seq last-error))
+         [:> Text {:size "1" :class "text-[--red-11]"} last-error])
+       (when (and (= status "done") (zero? (:total-detections analysis 0)))
+         [:> Text {:size "1" :class "text-[--gray-11]"}
+          "No PII entities detected."])])))
+
+(defn- entity-legend [{:keys [entity-types enabled-entity-types on-toggle
+                              detections-loading analysis]}]
+  (let [status (:status analysis)]
+    (when (or detections-loading (seq entity-types) (seq status))
+      [:> Flex {:align "center"
+                :gap "2"
+                :wrap "wrap"
+                :class "px-radix-4 py-radix-3 rounded-b-lg bg-[--gray-1] border-t border-[--gray-6]"}
+       [:> Text {:size "1" :weight "medium" :class "uppercase tracking-[0.08em] text-[--gray-11]"}
+        "PII highlights"]
+       [analysis-status-badge analysis]
+       (when detections-loading
+         [:> Badge {:variant "soft" :color "blue" :size "1"}
+          "Loading detections..."])
+       (for [entity-type entity-types]
+         (let [{:keys [fill stroke]} (get-entity-color entity-type)
+               enabled? (contains? enabled-entity-types entity-type)]
+           ^{:key entity-type}
+           [:> Badge {:variant (if enabled? "solid" "soft")
+                      :size "1"
+                      :class "cursor-pointer select-none"
+                      :on-click #(on-toggle entity-type)
+                      :style {:border (str "1px solid " stroke)
+                              :backgroundColor (if enabled? fill "transparent")
+                              :color (if enabled? stroke "var(--gray-11)")
+                              :opacity (if enabled? 1 0.6)}}
+            entity-type]))])))
 
 ;; Format time as MM:SS
 (defn- format-time [seconds]
@@ -346,13 +403,17 @@
                          :sorted-snapshots []
                          :entity-types []
                          :enabled-entity-types #{}
-                         :analysis-status ""
+                         :analysis {:status "" :attempt 0 :max-attempts 0
+                                    :last-error "" :total-detections 0}
                         ;; Track virtual time for playback
                         :start-time nil      ;; Real time when playback started
                         :start-offset 0})    ;; Time offset when playback started
         raf-id (r/atom nil)
         container-ref (r/atom nil)
-        fullscreen-listener (r/atom nil)]
+        fullscreen-listener (r/atom nil)
+        ;; Holds the currently-scheduled detection refresh timer so we can
+        ;; cancel it on unmount or when polling reaches a terminal status.
+        detection-poll-timer (r/atom nil)]
     (r/create-class
      {:display-name "rdp-streaming-player"
       :component-did-mount
@@ -364,48 +425,89 @@
                          (swap! state assoc :fullscreen (boolean (.-fullscreenElement js/document))))]
           (reset! fullscreen-listener listener)
           (.addEventListener js/document "fullscreenchange" listener))
-        ;; Load initial batch of frames
-        (swap! state assoc :loading true)
-        (fetch-frames
-         session-id 0 100
-         (fn [data]
-            (swap! state assoc
-                   :frames (:frames data)
-                   :loaded-up-to (count (:frames data))
-                   :loading false
-                   :total-frames (:total_frames data)
-                   :total-duration (:total_duration data)
-                   :detections-loading true)
-            (fetch-detections
-             session-id
-             (fn [response]
-               (let [detections (:detections response)
-                     entity-types (->> detections (map :entity_type) (remove nil?) set sort vec)]
-                 (swap! state assoc
-                        :sorted-snapshots (group-detections-by-snapshot detections)
-                        :entity-types entity-types
-                        :enabled-entity-types (set entity-types)
-                        :analysis-status (:analysis_status response)
-                        :detections-loading false)))
-             (fn [err]
-               (js/console.error "Failed to load detections:" err)
-               (swap! state assoc :detections-loading false))))
-          (fn [err]
-            (js/console.error "Failed to load frames:" err)
-            (swap! state assoc :loading false))))
+         (letfn [(apply-detections-response [response]
+                   (let [detections (:detections response)
+                         entity-types (->> detections (map :entity_type) (remove nil?) set sort vec)
+                         analysis (normalize-analysis response)]
+                     (swap! state assoc
+                            :sorted-snapshots (group-detections-by-snapshot detections)
+                            :entity-types entity-types
+                            ;; Preserve the user's existing toggle selection
+                            ;; when polling brings in new entity types so we
+                            ;; don't unexpectedly re-enable disabled ones.
+                            :enabled-entity-types
+                            (let [prev (:enabled-entity-types @state)
+                                  prev-types (:entity-types @state)
+                                  new-types (set entity-types)
+                                  added (set/difference new-types (set prev-types))]
+                              (set/union (set/intersection prev new-types) added))
+                            :analysis analysis
+                            :detections-loading false)))
+                 (cancel-poll []
+                   (when-let [t @detection-poll-timer]
+                     (js/clearTimeout t)
+                     (reset! detection-poll-timer nil)))
+                 (schedule-next-poll []
+                   (cancel-poll)
+                   (reset! detection-poll-timer
+                           (js/setTimeout poll-detections detection-poll-interval-ms)))
+                 (poll-detections []
+                   (fetch-detections
+                    session-id
+                    (fn [response]
+                      (apply-detections-response response)
+                      (when (contains? analysis-active-statuses
+                                       (:status (:analysis @state)))
+                        (schedule-next-poll)))
+                    (fn [err]
+                      (js/console.error "Failed to refresh detections:" err)
+                      ;; On transient failures keep retrying; the legend will
+                      ;; still display the last known status.
+                      (schedule-next-poll))))]
+           ;; Expose poll cancellation to component-will-unmount via an atom.
+           (swap! state assoc :__cancel-poll cancel-poll)
+           ;; Load initial batch of frames + first detections snapshot
+           (swap! state assoc :loading true)
+           (fetch-frames
+            session-id 0 100
+            (fn [data]
+              (swap! state assoc
+                     :frames (:frames data)
+                     :loaded-up-to (count (:frames data))
+                     :loading false
+                     :total-frames (:total_frames data)
+                     :total-duration (:total_duration data)
+                     :detections-loading true)
+              (fetch-detections
+               session-id
+               (fn [response]
+                 (apply-detections-response response)
+                 (when (contains? analysis-active-statuses
+                                  (:status (:analysis @state)))
+                   (schedule-next-poll)))
+               (fn [err]
+                 (js/console.error "Failed to load detections:" err)
+                 (swap! state assoc :detections-loading false))))
+            (fn [err]
+              (js/console.error "Failed to load frames:" err)
+              (swap! state assoc :loading false)))))
 
-      :component-will-unmount
-      (fn []
-        (when @raf-id
-          (js/cancelAnimationFrame @raf-id))
-        ;; Remove fullscreen listener
-        (when @fullscreen-listener
-          (.removeEventListener js/document "fullscreenchange" @fullscreen-listener)))
+       :component-will-unmount
+       (fn []
+         (when @raf-id
+           (js/cancelAnimationFrame @raf-id))
+         ;; Remove fullscreen listener
+         (when @fullscreen-listener
+           (.removeEventListener js/document "fullscreenchange" @fullscreen-listener))
+         ;; Stop any in-flight detection poll loop so it doesn't keep firing
+         ;; against an unmounted component.
+         (when-let [cancel (:__cancel-poll @state)]
+           (cancel)))
 
        :reagent-render
        (fn []
-         (let [{:keys [frames current-frame playing loading _loaded-up-to total-frames total-duration playback-speed start-time start-offset fetching fullscreen
-                       sorted-snapshots entity-types enabled-entity-types detections-loading analysis-status]} @state
+          (let [{:keys [frames current-frame playing loading _loaded-up-to total-frames total-duration playback-speed start-time start-offset fetching fullscreen
+                        sorted-snapshots entity-types enabled-entity-types detections-loading analysis]} @state
                ;; Calculate current time position
                current-time (if playing
                               (+ start-offset (* (- (js/performance.now) start-time) playback-speed 0.001))
@@ -512,12 +614,12 @@
                                 (swap! state assoc :loaded-up-to (+ target-frame (count (:frames data)))))
                                (fn [err]
                                  (js/console.error "Failed to load frames:" err))))))}]]
-            [entity-legend
-             {:entity-types entity-types
-              :enabled-entity-types enabled-entity-types
-              :detections-loading detections-loading
-              :analysis-status analysis-status
-              :on-toggle (fn [entity-type]
+             [entity-legend
+              {:entity-types entity-types
+               :enabled-entity-types enabled-entity-types
+               :detections-loading detections-loading
+               :analysis analysis
+               :on-toggle (fn [entity-type]
                            (swap! state update :enabled-entity-types
                                   (fn [enabled]
                                     (if (contains? enabled entity-type)
