@@ -60,14 +60,14 @@
     :loading [:div {:class "flex gap-regular py-regular pl-regular pr-large"}
               [:> Spinner {:loading true}]
               [:span "loading"]]
-    :running [:div {:class "group relative py-regular pl-regular pr-large"}
-              [:div {:class "flex items-start gap-3"}
-               [:div {:class "flex-shrink-0 text-info-11 mt-0.5"}
+    :running [:> Box {:class "group relative py-regular pl-regular pr-large"}
+              [:> Flex {:align "start" :gap "3"}
+               [:> Box {:class "flex-shrink-0 text-info-11 mt-0.5"}
                 [:> Clock {:size 18}]]
-               [:div {:class "flex flex-col gap-2"}
-                [:div {:class "text-sm font-medium text-gray-12"}
+               [:> Flex {:direction "column" :gap "2"}
+                [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
                  "Session is still running"]
-                [:div {:class "text-sm text-gray-11"}
+                [:> Text {:size "2" :class "text-gray-11"}
                  (str "The gateway timed out after 50s waiting for the result. "
                       "Your session keeps executing in the background.")]
                 (when session-id
@@ -81,7 +81,7 @@
                                               :maxWidth "95vw"
                                               :content [session-details/main {:id session-id :verb "exec"}]}]))}
                     "View session details"]
-                   [:div {:class "text-gray-10 text-xs font-mono"}
+                   [:> Text {:size "1" :class "text-gray-10 font-mono"}
                     (str "Session: " session-id)]])]]]
     :failure [:div {:class " group relative py-regular pl-regular pr-large whitespace-pre"}
               [:div {:class "text-sm mb-1"}
