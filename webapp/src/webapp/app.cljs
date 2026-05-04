@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Spinner]]
+   ["@radix-ui/themes" :refer [Box Heading]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
    ["sonner" :refer [Toaster]]
@@ -21,6 +21,7 @@
    [webapp.auth.views.logout :as logout]
    [webapp.auth.views.signup :as signup]
    [webapp.components.dialog :as dialog]
+   [webapp.components.loaders :as loaders]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
    [webapp.components.modal :as modals]
@@ -180,11 +181,8 @@
          #(rf/dispatch [:navigate :home])
          1500)))
 
-    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
-      [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:div {:class "flex justify-center"}
-       [:> Spinner {:size "3"}]]]]))
+    [loaders/page-loading-screen {:message "Verifying authentication..."
+                                  :description "Please wait while we complete your sign in"}]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -206,32 +204,29 @@
      #(rf/dispatch [:navigate destiny])
      1500)
 
-    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
-      [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:div {:class "flex justify-center"}
-       [:> Spinner {:size "3"}]]]]))
+    [loaders/page-loading-screen {:message "Setting up your account..."
+                                  :description "Please wait while we complete your sign up"}]))
 
 (defn loading-transition []
-  [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-   [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-    [:div {:class "text-center"}
-     [h/h2 "Loading..." {:class "mb-4"}]
-     [:div {:class "flex justify-center"}
-      [:> Spinner {:size "3"}]]]]])
+  [loaders/page-loading-screen {}])
 
 (defn- hoop-layout [_]
-  (let [user (rf/subscribe [:users->current-user])]
+  (let [user (rf/subscribe [:users->current-user])
+        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
     (if (nil? (.getItem js/localStorage "jwt-token"))
       (do
-        (let [current-url (.. js/window -location -href)]
-          (.setItem js/localStorage "redirect-after-auth" current-url)
-          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
+        ;; React shell handles auth redirect — skip if in shell mode
+        (when-not react-shell?
+          (let [current-url (.. js/window -location -href)]
+            (.setItem js/localStorage "redirect-after-auth" current-url)
+            (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000)))
         [loading-transition])
 
       (do
-        (rf/dispatch [:users->get-user])
-        (rf/dispatch [:gateway->get-info])
+        ;; In shell mode skip refetch if user data already exists (avoids loading flash on remount)
+        (when-not (and react-shell? (-> @user :data some?))
+          (rf/dispatch [:users->get-user])
+          (rf/dispatch [:gateway->get-info]))
 
         (fn [panels]
           (rf/dispatch [:routes->get-route])
@@ -246,26 +241,43 @@
             (and (not (:loading @user))
                  (empty? (:data @user)))
             (do
-              (let [current-url (.. js/window -location -href)]
-                (.setItem js/localStorage "redirect-after-auth" current-url)
-                (.removeItem js/localStorage "jwt-token")
-                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
+              ;; React shell handles invalid token via API interceptor
+              (when-not react-shell?
+                (let [current-url (.. js/window -location -href)]
+                  (.setItem js/localStorage "redirect-after-auth" current-url)
+                  (.removeItem js/localStorage "jwt-token")
+                  (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000)))
 
               [loading-transition])
 
             :else
-            [:section
-             {:class "antialiased min-h-screen"}
-             [:> Toaster {:position "top-right"}]
-             [modals/modal]
-             [modals/modal-radix]
-             [dialog/dialog]
-             [dialog/new-dialog]
-             [snackbar/snackbar]
-             [draggable-card/main]
-             [command-palette/command-palette]
-             [command-palette/keyboard-listener]
-             [sidebar/main panels]]))))))
+            (if react-shell?
+              ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
+              [:section
+               {:class "antialiased h-screen"}
+               [:> Toaster {:position "top-right"}]
+               [modals/modal]
+               [modals/modal-radix]
+               [dialog/dialog]
+               [dialog/new-dialog]
+               [snackbar/snackbar]
+               [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
+               panels]
+              ;; Normal mode: full layout with sidebar and cmdk
+              [:section
+               {:class "antialiased h-screen"}
+               [:> Toaster {:position "top-right"}]
+               [modals/modal]
+               [modals/modal-radix]
+               [dialog/dialog]
+               [dialog/new-dialog]
+               [snackbar/snackbar]
+               [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
+               [sidebar/main panels]])))))))
 
 (defmulti layout identity)
 (defmethod layout :application-hoop [_ panels]
@@ -764,20 +776,18 @@
     (if (nil? matched-route)
       (do
         (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
-        [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-         [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-          [:div {:class "text-center"}
-           [h/h2 "Page not found" {:class "mb-4"}]
-           [:p {:class "text-gray-600 mb-6"} "In a few seconds you will be redirected to the home page."]
-           [:div {:class "flex justify-center"}
-            [:> Spinner {:size "3"}]]]]])
+        [loaders/page-loading-screen {:message "Page not found"
+                                      :description "In a few seconds you will be redirected to the home page."}])
 
       [loading-transition])))
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
-    (rf/dispatch [:gateway->get-public-info])
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+    ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
+    (when-not (and react-shell? (-> @gateway-public-info :data some?))
+      (rf/dispatch [:gateway->get-public-info]))
     (.registerPlugin gsap Draggable)
     (.registerModules ModuleRegistry #js[AllCommunityModule])
 

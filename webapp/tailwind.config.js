@@ -196,6 +196,7 @@ module.exports = {
         }
       },
       animation: {
+        'appear-right': 'appear-right .15s ease-in-out',
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out'
       },
@@ -226,7 +227,6 @@ module.exports = {
       textColor: {
         magenta: '#ff29ff'
       },
-      animation: { 'appear-right': 'appear-right .15s ease-in-out' },
       spacing: {
         'radix-1': 'var(--space-1)',
         'radix-2': 'var(--space-2)',
