@@ -144,7 +144,7 @@ func (s *Segment) TrackEvent(eventName string, properties map[string]any) {
 	properties["client-version"] = version.Get().Version
 
 	_ = s.Client.Enqueue(analytics.Track{
-		UserId:     "None",
+		UserId:     "Gateway",
 		Event:      eventName,
 		Properties: properties,
 	})
