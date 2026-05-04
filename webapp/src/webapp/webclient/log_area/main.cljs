@@ -1,5 +1,6 @@
 (ns webapp.webclient.log-area.main
   (:require ["papaparse" :as papa]
+            ["@radix-ui/themes" :refer [Box]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -73,23 +74,23 @@
           (.setItem js/localStorage "webclient-selected-tab" (first (vals available-tabs)))
           (reset! selected-tab (first (vals available-tabs))))
 
-        [:div {:class "h-full flex flex-col"}
-         [:div {:class "h-full flex flex-col bg-gray-1 border-b border-gray-3"}
+        [:> Box {:class "flex-1 min-h-0 flex flex-col overflow-hidden"}
+         [:> Box {:class "h-full flex flex-col bg-gray-1 border-b border-gray-3"}
           [tabs {:on-click (fn [_ value]
                              (.setItem js/localStorage "webclient-selected-tab" value)
                              (reset! selected-tab value))
                  :tabs available-tabs
                  :selected-tab @selected-tab}]
-          [:div {:role "tabpanel"
-                 :id (str "tabpanel-" (case @selected-tab
-                                        "Tabular" :tabular
-                                        "Logs" :logs
-                                        :logs))
-                 :aria-labelledby (str "tab-" (case @selected-tab
-                                                "Tabular" :tabular
-                                                "Logs" :logs
-                                                :logs))
-                 :class "h-full"}
+          [:> Box {:role "tabpanel"
+                   :id (str "tabpanel-" (case @selected-tab
+                                          "Tabular" :tabular
+                                          "Logs" :logs
+                                          :logs))
+                   :aria-labelledby (str "tab-" (case @selected-tab
+                                                  "Tabular" :tabular
+                                                  "Logs" :logs
+                                                  :logs))
+                   :class "flex-1 min-h-0 overflow-hidden"}
            (case @selected-tab
              "Tabular" [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
                         {:height "100%"
