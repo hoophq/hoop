@@ -82,7 +82,7 @@
                   ["/audit-logs" :settings-audit-logs]
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
-                  [["/attributes/edit/" :name] :settings-attributes-edit]
+                  ["/attributes/edit" :settings-attributes-edit]
                   ["/jira" :settings-jira]
                   ["/api-keys" :settings-api-keys]
                   ["/api-keys/new" :settings-api-keys-new]

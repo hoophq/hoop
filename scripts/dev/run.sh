@@ -84,5 +84,4 @@ docker run --rm --name hoopdev \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./rootfs/app/migrations/:/app/migrations/ \
   -v ./dist/dev/resources/:/app/ui/ \
-  -v ./dist/dev/spiffe/:/app/spiffe/ \
   -it hoopdev /app/bin/entrypoint.sh

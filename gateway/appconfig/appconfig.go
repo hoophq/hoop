@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,9 +64,14 @@ type Config struct {
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
 
+	rdpPIISnapshotInterval float64
+	rdpPIIScoreThreshold   float64
+	rdpPIIEntityDenylist   []string
+
 	spiffeMode          string
 	spiffeBundleURL     string
 	spiffeBundleFile    string
+	spiffeBundleJWKS    string
 	spiffeTrustDomain   string
 	spiffeAudience      string
 	spiffeRefreshPeriod time.Duration
@@ -188,7 +194,27 @@ func Load() error {
 	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
 	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
 
-	spiffeMode, spiffeBundleURL, spiffeBundleFile, spiffeTrustDomain, spiffeAudience, spiffeRefreshPeriod, err := loadSPIFFEConfig()
+	// RDP PII analysis defaults (overridable via env)
+	rdpPIISnapshotInterval := 0.25 // 250ms
+	if v := os.Getenv("RDP_PII_SNAPSHOT_INTERVAL"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			rdpPIISnapshotInterval = f
+		}
+	}
+	rdpPIIScoreThreshold := 0.9
+	if v := os.Getenv("RDP_PII_SCORE_THRESHOLD"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			rdpPIIScoreThreshold = f
+		}
+	}
+	var rdpPIIEntityDenylist []string
+	if v := os.Getenv("RDP_PII_ENTITY_DENYLIST"); v != "" {
+		rdpPIIEntityDenylist = strings.Split(v, ",")
+	} else {
+		rdpPIIEntityDenylist = []string{"DATE_TIME", "NRP"}
+	}
+
+	spiffeMode, spiffeBundleURL, spiffeBundleFile, spiffeBundleJWKS, spiffeTrustDomain, spiffeAudience, spiffeRefreshPeriod, err := loadSPIFFEConfig()
 	if err != nil {
 		return err
 	}
@@ -230,6 +256,9 @@ func Load() error {
 		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
+		rdpPIISnapshotInterval:          rdpPIISnapshotInterval,
+		rdpPIIScoreThreshold:            rdpPIIScoreThreshold,
+		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
@@ -237,6 +266,7 @@ func Load() error {
 		spiffeMode:          spiffeMode,
 		spiffeBundleURL:     spiffeBundleURL,
 		spiffeBundleFile:    spiffeBundleFile,
+		spiffeBundleJWKS:    spiffeBundleJWKS,
 		spiffeTrustDomain:   spiffeTrustDomain,
 		spiffeAudience:      spiffeAudience,
 		spiffeRefreshPeriod: spiffeRefreshPeriod,
@@ -397,6 +427,9 @@ func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert
 func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }
 func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
 func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
+func (c Config) RDPPIISnapshotInterval() float64       { return c.rdpPIISnapshotInterval }
+func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThreshold }
+func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)
@@ -435,10 +468,15 @@ const (
 //	HOOP_SPIFFE_MODE             disabled|enforce (default: disabled)
 //	HOOP_SPIFFE_BUNDLE_URL       HTTPS URL to fetch the SPIFFE trust bundle (JWKS-shaped)
 //	HOOP_SPIFFE_BUNDLE_FILE      path to a static trust bundle file (JWKS JSON)
+//	HOOP_SPIFFE_BUNDLE_JWKS      inline SPIFFE trust bundle as JWKS JSON. Accepts
+//	                             either raw JSON (auto-detected by a leading '{')
+//	                             or standard-encoded base64 of the JWKS JSON.
+//	                             Intended for cases where mounting a file is
+//	                             inconvenient (e.g. pure env-based deployments).
 //	HOOP_SPIFFE_TRUST_DOMAIN     trust domain name, e.g. "customer.com"
 //	HOOP_SPIFFE_AUDIENCE         required audience claim on JWT-SVIDs (default: "hoop-gateway")
 //	HOOP_SPIFFE_REFRESH_PERIOD   go duration for trust bundle refresh (default: 30s)
-func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience string, refresh time.Duration, err error) {
+func loadSPIFFEConfig() (mode, bundleURL, bundleFile, bundleJWKS, trustDomain, audience string, refresh time.Duration, err error) {
 	mode = os.Getenv("HOOP_SPIFFE_MODE")
 	if mode == "" {
 		mode = SPIFFEModeDisabled
@@ -456,10 +494,35 @@ func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience stri
 
 	bundleURL = os.Getenv("HOOP_SPIFFE_BUNDLE_URL")
 	bundleFile = os.Getenv("HOOP_SPIFFE_BUNDLE_FILE")
+	rawJWKS := strings.TrimSpace(os.Getenv("HOOP_SPIFFE_BUNDLE_JWKS"))
 	trustDomain = os.Getenv("HOOP_SPIFFE_TRUST_DOMAIN")
 	audience = os.Getenv("HOOP_SPIFFE_AUDIENCE")
 	if audience == "" {
 		audience = "hoop-gateway"
+	}
+
+	// HOOP_SPIFFE_BUNDLE_JWKS accepts either raw JWKS JSON or base64-encoded
+	// JWKS JSON. Raw JSON is detected by a leading '{'. Anything else is
+	// assumed to be base64 and decoded here so downstream code only deals
+	// with JSON bytes. We validate the shape (must start with '{' after
+	// decode) to fail fast on malformed input rather than at first SVID
+	// validation.
+	if rawJWKS != "" {
+		if strings.HasPrefix(rawJWKS, "{") {
+			bundleJWKS = rawJWKS
+		} else {
+			decoded, decErr := base64.StdEncoding.DecodeString(rawJWKS)
+			if decErr != nil {
+				err = fmt.Errorf("failed decoding HOOP_SPIFFE_BUNDLE_JWKS as base64: %v", decErr)
+				return
+			}
+			trimmed := strings.TrimSpace(string(decoded))
+			if !strings.HasPrefix(trimmed, "{") {
+				err = fmt.Errorf("HOOP_SPIFFE_BUNDLE_JWKS did not decode to a JSON object")
+				return
+			}
+			bundleJWKS = trimmed
+		}
 	}
 
 	// exactly one source must be set
@@ -470,8 +533,11 @@ func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience stri
 	if bundleFile != "" {
 		sourcesSet++
 	}
+	if bundleJWKS != "" {
+		sourcesSet++
+	}
 	if sourcesSet != 1 {
-		err = fmt.Errorf("SPIFFE mode %q requires exactly one of HOOP_SPIFFE_BUNDLE_URL or HOOP_SPIFFE_BUNDLE_FILE to be set", mode)
+		err = fmt.Errorf("SPIFFE mode %q requires exactly one of HOOP_SPIFFE_BUNDLE_URL, HOOP_SPIFFE_BUNDLE_FILE, or HOOP_SPIFFE_BUNDLE_JWKS to be set", mode)
 		return
 	}
 	if trustDomain == "" {
@@ -495,10 +561,11 @@ func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience stri
 	return
 }
 
-func (c Config) SPIFFEMode() string               { return c.spiffeMode }
-func (c Config) SPIFFEEnabled() bool              { return c.spiffeMode == SPIFFEModeEnforce }
-func (c Config) SPIFFEBundleURL() string          { return c.spiffeBundleURL }
-func (c Config) SPIFFEBundleFile() string         { return c.spiffeBundleFile }
-func (c Config) SPIFFETrustDomain() string        { return c.spiffeTrustDomain }
-func (c Config) SPIFFEAudience() string           { return c.spiffeAudience }
+func (c Config) SPIFFEMode() string                 { return c.spiffeMode }
+func (c Config) SPIFFEEnabled() bool                { return c.spiffeMode == SPIFFEModeEnforce }
+func (c Config) SPIFFEBundleURL() string            { return c.spiffeBundleURL }
+func (c Config) SPIFFEBundleFile() string           { return c.spiffeBundleFile }
+func (c Config) SPIFFEBundleJWKS() string           { return c.spiffeBundleJWKS }
+func (c Config) SPIFFETrustDomain() string          { return c.spiffeTrustDomain }
+func (c Config) SPIFFEAudience() string             { return c.spiffeAudience }
 func (c Config) SPIFFERefreshPeriod() time.Duration { return c.spiffeRefreshPeriod }

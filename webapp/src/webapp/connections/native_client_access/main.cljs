@@ -13,14 +13,16 @@
    [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn disconnect-session
-  "Handle disconnect with confirmation. Calls revoke API to invalidate credential and disconnect active sessions."
+  "Handle disconnect with confirmation. Calls the close-session API which ends
+   the audit session and tears down active proxy connections but keeps the
+   stored token alive, so reconnecting returns the same credential."
   [connection-name credential-id]
   (let [dialog-text (str "Are you sure you want to disconnect the native client session for \"" connection-name "\"?")
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
                                                   :action-button? true
                                                   :on-success (fn []
-                                                                (rf/dispatch [:native-client-access->revoke-credential connection-name credential-id])
+                                                                (rf/dispatch [:native-client-access->disconnect-credential connection-name credential-id])
                                                                 (rf/dispatch [:modal->close]))
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))

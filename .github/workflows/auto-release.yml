@@ -1,0 +1,127 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+# Serialize runs so two PRs merged back-to-back can't both read the same
+# "latest" tag and race on `gh release create`.
+concurrency:
+  group: auto-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify GH_TOKEN secret is present
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::secrets.GH_TOKEN (PAT) is required so that tag pushes from this workflow trigger release.yml. Add it in repo settings."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve merged PR and bump type
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          PR_JSON=$(gh api "repos/${REPO}/commits/${SHA}/pulls" --jq '.[0]' || echo "")
+          if [ -z "$PR_JSON" ] || [ "$PR_JSON" = "null" ]; then
+            echo "::warning::No merged PR is associated with commit $SHA (direct push to main?). Skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+          LABELS=$(echo "$PR_JSON" | jq -r '.labels[].name')
+
+          if echo "$LABELS" | grep -qx 'skip-release'; then
+            echo "PR #${PR_NUMBER} has 'skip-release' label — no release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BUMP=$(echo "$LABELS" | grep -E '^(major|minor|patch)$' | head -1 || true)
+          if [ -z "$BUMP" ]; then
+            echo "::warning::PR #${PR_NUMBER} has no major/minor/patch/skip-release label — skipping release. (PR Release Label Check should have blocked this merge.)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Merged PR: #${PR_NUMBER} (bump: ${BUMP})"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "bump=${BUMP}" >> "$GITHUB_OUTPUT"
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next version
+        if: steps.pr.outputs.skip == 'false'
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUMP: ${{ steps.pr.outputs.bump }}
+        run: |
+          set -euo pipefail
+          # Fetch the last 10 releases and pick the highest valid semver,
+          # not the most recently created. This avoids out-of-order hotfix
+          # releases (e.g. 1.61.1 published after 1.62.0) tricking the bump.
+          LATEST=$(gh release list -L 10 --json tagName --jq '
+            [.[].tagName | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+            | sort_by(sub("^v"; "") | split(".") | map(tonumber))
+            | .[-1] // ""
+          ')
+          if [ -z "$LATEST" ]; then
+            LATEST="0.0.0"
+          fi
+
+          CLEAN="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN"
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "Highest existing release: ${LATEST} -> Next: ${NEXT} (bump: ${BUMP})"
+          echo "next=${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "previous=${LATEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: steps.pr.outputs.skip == 'false'
+        env:
+          # Use a PAT (GH_TOKEN) instead of GITHUB_TOKEN so that the resulting
+          # tag push triggers the existing release.yml workflow. Tag pushes made
+          # with GITHUB_TOKEN do not fire downstream `on: push: tags` workflows.
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NEXT: ${{ steps.version.outputs.next }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$NEXT" >/dev/null 2>&1; then
+            echo "::error::Release $NEXT already exists. Another run may have created it; investigate before retrying."
+            exit 1
+          fi
+          gh release create "$NEXT" \
+            --title "$NEXT" \
+            --target "$SHA" \
+            --generate-notes \
+            --notes-start-tag "$PREVIOUS"
+          echo "Created release $NEXT (previous: $PREVIOUS) — release.yml will now build and publish artifacts."

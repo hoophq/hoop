@@ -54,7 +54,6 @@
               convert-preset-rules
               remove-empty-rules)})
 
-;; TODO: Handle errors properly
 (rf/reg-event-fx
  :guardrails->create
  (fn [_ [_ guardrails]]
@@ -70,7 +69,9 @@
                                    (rf/dispatch [:guardrails->get-all])
                                    (rf/dispatch [:navigate :guardrails]))
                      :on-failure (fn [error]
-                                   (println :guardrails->create guardrails error))}]]]})))
+                                   (let [error-message (or (:message error) (str error))]
+                                     (rf/dispatch [:show-snackbar {:level :error
+                                                                   :text error-message}])))}]]]})))
 
 (rf/reg-event-fx
  :guardrails->update-by-id

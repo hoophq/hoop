@@ -186,6 +186,15 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Run `make generate-openapi-docs` to regenerate `gateway/api/openapi/autogen/`.
 - OpenAPI specs are served at `/api/openapiv2.json` and `/api/openapiv3.json`.
 
+### Environment variables
+- Whenever a new env var is added, removed, or renamed in `gateway/appconfig/appconfig.go` (or anywhere read via `os.Getenv` in the gateway), **update the helm chart in the same PR**:
+  - `deploy/helm-chart/chart/gateway/templates/secret-configs.yaml` — pass-through entry, e.g. `MY_VAR: '{{ .Values.config.MY_VAR | default "..." }}'`.
+  - `deploy/helm-chart/chart/gateway/values.yaml` — add an example or sensible default under the `config:` block (commented if optional).
+  - `deploy/helm-chart/chart/gateway/README.md` — document the new var if it is user-facing.
+- Same rule applies to the agent helm chart at `deploy/helm-chart/chart/agent/` for agent-side env vars.
+- For deployments managed in the `infra` repo (sandbox, hoopcloud envs), open a follow-up PR there if the new var needs to be enabled per-environment.
+- The local dev `.env.sample` should also be updated so contributors discover the new var.
+
 ### Versioning
 - Semantic versioning: `MAJOR.MINOR.PATCH`.
 - Version is injected at build time via `-ldflags` into `common/version`.

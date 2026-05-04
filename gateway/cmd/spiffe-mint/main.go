@@ -51,8 +51,11 @@ func main() {
 	kid := kidFor(&priv.PublicKey)
 
 	// The JWKS is deterministic in the public key, so writing it every
-	// invocation is safe (no churn once the key is stable). The gateway
-	// re-reads the bundle on its refresh timer.
+	// invocation is safe (no churn once the key is stable). The dev flow
+	// in scripts/dev/spiffe-prep.sh base64-encodes this file into
+	// HOOP_SPIFFE_BUNDLE_JWKS in .env; the gateway is also happy to
+	// consume the file directly via HOOP_SPIFFE_BUNDLE_FILE if you wire
+	// it that way.
 	if err := writeJWKS(bundlePath, &priv.PublicKey, kid); err != nil {
 		log.Fatalf("write bundle: %v", err)
 	}

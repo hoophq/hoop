@@ -712,9 +712,9 @@
      [attributes-form/main :create]]]])
 
 (defmethod routes/panels :settings-attributes-edit-panel []
-  (let [attr-name (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
-                      :route-params
-                      :name)]
+  (let [attr-name (-> js/window .-location .-search
+                      js/URLSearchParams.
+                      (.get "name"))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:attributes/get attr-name])
     [layout :application-hoop
