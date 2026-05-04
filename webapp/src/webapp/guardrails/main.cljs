@@ -1,6 +1,7 @@
 (ns webapp.guardrails.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link Text]]
+   ["lucide-react" :refer [AlertCircle]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.attribute-filter :as attribute-filter]
@@ -14,7 +15,8 @@
         min-loading-done (r/atom false)
         selected-connection (r/atom nil)
         selected-attribute (r/atom nil)
-        connections (rf/subscribe [:connections])]
+        connections (rf/subscribe [:connections])
+        user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:guardrails->get-all])
 
     (js/setTimeout #(reset! min-loading-done true) 1500)
@@ -23,6 +25,8 @@
       (let [loading? (or (= :loading (:status @guardrails-rules-list))
                          (not @min-loading-done))
             all-rules (:data @guardrails-rules-list)
+            free-license? (-> @user :data :free-license?)
+            limit-reached? (and free-license? (>= (count all-rules) 1))
             connections-data @connections
             connections-results (:results connections-data)
             by-connection (if (nil? @selected-connection)
@@ -60,8 +64,23 @@
              (when (seq all-rules)
                [:> Button {:size "3"
                            :variant "solid"
+                           :disabled limit-reached?
                            :on-click #(rf/dispatch [:navigate :create-guardrail])}
                 "Create a new Guardrail"])]]
+
+           (when limit-reached?
+             [:> Callout.Root {:color "red" :class "mb-5"}
+              [:> Callout.Icon
+               [:> AlertCircle {:size 16}]]
+              [:> Callout.Text
+               "Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected. "
+               [:> Link {:href "#"
+                         :class "font-medium"
+                         :color "red"
+                         :on-click (fn [e]
+                                     (.preventDefault e)
+                                     (promotion/request-demo))}
+                "Contact our Sales team \u2197"]]])
 
            [:> Flex {:mb "6" :gap "2"}
             [resource-role-filter/main {:selected @selected-connection

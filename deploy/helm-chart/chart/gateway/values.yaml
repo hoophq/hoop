@@ -11,7 +11,7 @@ image:
   #   pullPolicy: Always
   #   tag: latest
 
-# -- Enable the default agent
+# -- Enable the default agent (authenticates to the gateway via HOOP_KEY / DSN)
 defaultAgent:
   enabled: false
   imageRepository: 'hoophq/hoopdev'
@@ -134,6 +134,30 @@ config:
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
   # PLUGIN_AUDIT_PATH: ''
   # PLUGIN_INDEX_PATH: ''
+  #
+  # Async RDP session-replay PII analysis. Workers run OCR + Presidio over
+  # recorded RDP bitmap frames so the webapp can highlight PII on top of the
+  # replay. Defaults to 0 (disabled). Set RDP_ANALYSIS_WORKERS >= 1 and ensure
+  # MSPRESIDIO_ANALYZER_URL is reachable and tesseract is installed in the
+  # gateway image to enable.
+  # RDP_ANALYSIS_WORKERS: '0'
+  # RDP_PII_SNAPSHOT_INTERVAL: '0.25'
+  # RDP_PII_SCORE_THRESHOLD: '0.9'
+  # RDP_PII_ENTITY_DENYLIST: 'DATE_TIME,NRP'
+
+  ## SPIFFE / JWT-SVID authentication
+  ## When HOOP_SPIFFE_MODE=enforce, the gateway validates agent JWT-SVIDs
+  ## against the SPIFFE trust bundle. Supply the bundle via exactly one of:
+  ##   HOOP_SPIFFE_BUNDLE_JWKS (inline — raw JWKS JSON or base64 of it;
+  ##                            autodetected by the gateway on the env side),
+  ##   HOOP_SPIFFE_BUNDLE_URL  (HTTPS fetch, refreshed on HOOP_SPIFFE_REFRESH_PERIOD),
+  ##   HOOP_SPIFFE_BUNDLE_FILE (path mounted into the container).
+  # HOOP_SPIFFE_MODE: 'enforce'
+  # HOOP_SPIFFE_TRUST_DOMAIN: 'customer.com'
+  # HOOP_SPIFFE_AUDIENCE: 'https://hoop.customer.com'
+  # HOOP_SPIFFE_REFRESH_PERIOD: '5m'
+  # HOOP_SPIFFE_BUNDLE_URL: ''
+  # HOOP_SPIFFE_BUNDLE_JWKS: ''
 
 mainService:
   # -- Annotations to add in the main service

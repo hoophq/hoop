@@ -17,6 +17,77 @@ config: {}
   # LOG_GRPC: '0|1|2'
   # HOOP_GATEWAY_URL: 'https://gateway.example.com'
 
+# -- Authenticate the agent to the gateway via SPIFFE JWT-SVID instead of HOOP_KEY.
+# When enabled:
+#   * config.HOOP_KEY MUST be left unset. HOOP_KEY takes precedence over
+#     SPIFFE, so leaving a stale HOOP_KEY in your values silently disables
+#     SPIFFE on this agent.
+#   * the agent reads HOOP_SPIFFE_KEY_FILE=/run/spiffe/agent.jwt
+#   * config.HOOP_GATEWAY_URL is ignored; set spiffe.grpcHost to your gateway's
+#     gRPC endpoint (host:port, e.g. grpc.hoop.example.com:8010)
+#   * a spiffe-helper sidecar writes /run/spiffe/agent.jwt on a shared emptyDir
+#     and rotates it before expiry
+# Requires a SPIRE Agent DaemonSet reachable from each node where this agent
+# may be scheduled, plus a private.agent_spiffe_mappings row on the gateway
+# for the SPIFFE ID this pod presents. The chart additionally needs one of:
+#   * SPIFFE CSI Driver (csi.spiffe.io) installed — when workloadAPI.type=csi
+#   * hostPath access allowed by Pod Security Admission — when workloadAPI.type=hostPath
+# Using SPIFFE is the recommended way to run replicaCount > 1, since each
+# replica receives its own short-lived SVID instead of sharing a static
+# HOOP_KEY (which causes stream flapping on the gateway).
+spiffe:
+  enabled: false
+  # Gateway gRPC endpoint the agent dials, e.g. grpc.hoop.example.com:8010
+  grpcHost: ''
+  # Skip TLS verification when dialing the gateway. Dev/testing only.
+  grpcSkipVerify: false
+  # Force plaintext gRPC when dialing the gateway (sets HOOP_GRPC_INSECURE).
+  # In SPIFFE mode the agent normally always uses TLS for non-loopback URLs;
+  # set this to true when the gateway's gRPC port doesn't terminate TLS
+  # (typically local clusters where TLS_KEY/TLS_CERT are unset). Production
+  # deployments should always leave this false and run a TLS-terminated
+  # gateway. Mutually informational with grpcSkipVerify: when grpcInsecure
+  # is true, no TLS handshake is attempted, so grpcSkipVerify is irrelevant.
+  grpcInsecure: false
+  # Optional cosmetic HOOP_SPIFFE_NAME passed to the agent. Identity is
+  # resolved from the SPIFFE mapping, not this field. Leave empty to omit.
+  name: ''
+
+  # How the spiffe-helper sidecar reaches the SPIRE Workload API socket
+  # exposed by the node-local SPIRE Agent. Pick one of:
+  #   csi      — uses the SPIFFE CSI Driver (csi.spiffe.io). Requires the
+  #              driver installed as a DaemonSet. Compatible with Pod
+  #              Security Admission "baseline" and "restricted".
+  #   hostPath — mounts the node's socket directory directly. Drops the
+  #              CSI Driver dependency at the cost of requiring a Pod
+  #              Security Admission profile that allows hostPath volumes.
+  workloadAPI:
+    type: csi
+    # Only used when type=hostPath. Directory on the node where the SPIRE
+    # Agent exposes its Workload API socket. Defaults to the SPIRE Helm
+    # chart's convention; adjust if your SPIRE install uses a different
+    # socket_path.
+    hostPath: /run/spire/agent-sockets
+
+  spiffeHelper:
+    image: ghcr.io/spiffe/spiffe-helper:0.9.1
+    imagePullPolicy: IfNotPresent
+    # Unix socket path (as seen inside the sidecar) to the SPIRE Workload
+    # API. Default matches the SPIFFE CSI Driver's convention; for
+    # hostPath mode the filename is usually different (e.g. api.sock or
+    # agent.sock, depending on your SPIRE agent's socket_path). Override
+    # to match your SPIRE install.
+    agentAddress: /spiffe-workload-api/spire-agent.sock
+    # Required. Must match config.HOOP_SPIFFE_AUDIENCE on the gateway.
+    audience: ''
+    # resources:
+    #   limits:
+    #     cpu: 100m
+    #     memory: 64Mi
+    #   requests:
+    #     cpu: 50m
+    #     memory: 32Mi
+
 # -- Define extra secret as environment variables
 extraSecret: {}
 # ENVSECRET1: RAWVALUE1

@@ -19,7 +19,7 @@ const (
 	// ModeEnv is when a client is loaded with the environment variable HOOP_KEY
 	ModeDsn = "dsn"
 	// ModeSVID is when an agent is loaded with the environment variable
-	// HOOP_KEY_FILE pointing at a file that contains a bare JWT-SVID.
+	// HOOP_SPIFFE_KEY_FILE pointing at a file that contains a bare JWT-SVID.
 	// The file is re-read on every reconnect so rotated tokens are picked up.
 	ModeSVID = "svid"
 	// ModeLocal detects if the client has found a local instance
