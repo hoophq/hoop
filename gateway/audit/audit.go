@@ -19,6 +19,7 @@ const (
 	ResourceUser               ResourceType = "users"
 	ResourceUserGroup          ResourceType = "user_groups"
 	ResourceServiceAccount     ResourceType = "service_accounts"
+	ResourceMachineIdentity    ResourceType = "machine_identities"
 	ResourceConnection         ResourceType = "connections"
 	ResourceResource           ResourceType = "resources"
 	ResourceAgent              ResourceType = "agents"

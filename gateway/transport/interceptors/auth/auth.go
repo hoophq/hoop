@@ -24,6 +24,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const identityTypeMachine = "machine"
+
 // serverStreamWrapper could override methods from the grpc.StreamServer interface.
 // using this wrapper it's possible to intercept calls from a grpc server
 type serverStreamWrapper struct {
@@ -232,6 +234,18 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			subject = userSubjectVal[0]
+
+			// Machine-identity sessions reach the interceptor through the same
+			// impersonation path proxies use for human credentials. They are
+			// distinguished by the credential session being tagged identity_type='machine'.
+			miCtx, err := i.authenticateMachineIdentity(subject, commongrpc.MetaGet(md, "credential-session-id"), md)
+			if err != nil {
+				return err
+			}
+			if miCtx != nil {
+				ctxVal = miCtx
+				break
+			}
 		} else {
 			// first we check if the auth method is local, if so, we authenticate the user
 			// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
@@ -327,6 +341,77 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 		log.Debugf("unrecognized agent token shape, tokenlength=%v", len(bearerToken))
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
+}
+
+// authenticateMachineIdentity resolves the impersonation request as a
+// machine-identity session when the referenced credential session is tagged
+// identity_type='machine'. Returns (nil, nil) when the request is not a
+// machine identity (caller falls through to the user path), (ctx, nil) when
+// authenticated, or (nil, err) when authentication fails.
+//
+// A synthetic admin context is built — same shape the static API-key path
+// uses — so downstream RBAC treats the MI as authorized to reach any
+// connection it presents a valid credential for.
+func (i *interceptor) authenticateMachineIdentity(subject, credentialSessionID string, md metadata.MD) (*GatewayContext, error) {
+	if credentialSessionID == "" {
+		return nil, nil
+	}
+	si, err := models.GetSessionIdentityByID(credentialSessionID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return nil, nil
+		}
+		log.Errorf("failed loading session identity for machine auth, err=%v", err)
+		return nil, status.Errorf(codes.Internal, "internal error")
+	}
+	if si.IdentityType != identityTypeMachine || si.MachineIdentityID == nil {
+		return nil, nil
+	}
+	if subject != *si.MachineIdentityID {
+		log.Warnf("machine identity subject mismatch, subject=%v session-mi=%v", subject, *si.MachineIdentityID)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	mi, err := models.GetMachineIdentity(si.OrgID, *si.MachineIdentityID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			log.Debugf("machine identity not found, org=%v id=%v", si.OrgID, *si.MachineIdentityID)
+			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		log.Errorf("failed loading machine identity, org=%v id=%v err=%v", si.OrgID, *si.MachineIdentityID, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error")
+	}
+	org, err := models.GetOrganizationByNameOrID(si.OrgID)
+	if err != nil {
+		log.Errorf("failed loading org for machine identity, org=%v err=%v", si.OrgID, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error")
+	}
+	ctx := &models.Context{
+		OrgID:          org.ID,
+		OrgName:        org.Name,
+		OrgLicenseData: org.LicenseData,
+		UserID:         mi.ID,
+		UserSubject:    mi.ID,
+		UserName:       mi.Name,
+		UserStatus:     "active",
+		UserGroups:     []string{types.GroupAdmin},
+	}
+	gwctx := &GatewayContext{
+		UserContext:       *ctx,
+		IdentityType:      identityTypeMachine,
+		MachineIdentityID: mi.ID,
+	}
+	connectionName := commongrpc.MetaGet(md, "connection-name")
+	conn, err := i.getConnection(connectionName, ctx)
+	if err != nil {
+		return nil, err
+	}
+	if conn == nil {
+		return nil, status.Errorf(codes.NotFound, "connection not found")
+	}
+	gwctx.Connection = *conn
+	return gwctx, nil
 }
 
 func (i *interceptor) authenticateAgentStatic(bearerToken string, md metadata.MD) (*models.Agent, error) {

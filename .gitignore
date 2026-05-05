@@ -19,6 +19,7 @@ gateway/.idea/*
 plugins/.idea/*
 common/.idea/*
 .idea/*
+.vscode/*
 .fleet/*
 .clj-kondo/*
 .lsp/*

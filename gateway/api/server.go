@@ -36,6 +36,7 @@ import (
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
+	machineidentityapi "github.com/hoophq/hoop/gateway/api/machineidentity"
 	apimcpauth "github.com/hoophq/hoop/gateway/api/mcpauth"
 	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
@@ -86,6 +87,8 @@ type Api struct {
 
 //	@tag.name	User Management
 //	@tag.description.markdown
+
+//	@tag.name	Machine Identities
 
 //	@tag.name	Server Management
 //	@tag.description.markdown
@@ -285,6 +288,42 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
+
+	r.GET("/machineidentities",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.List)
+	r.GET("/machineidentities/:name",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.Get)
+	r.POST("/machineidentities",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateMachineIdentity),
+		machineidentityapi.Create)
+	r.PUT("/machineidentities/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateMachineIdentity),
+		machineidentityapi.Update)
+	r.DELETE("/machineidentities/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventDeleteMachineIdentity),
+		machineidentityapi.Delete)
+	r.GET("/machineidentities/:name/credentials",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.ListCredentials)
+	r.POST("/machineidentities/:name/credentials/:connectionName/rotate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		machineidentityapi.RotateCredential)
 
 	r.GET("/api-keys",
 		apiroutes.AdminOnlyAccessRole,
@@ -601,6 +640,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		sessionapi.StreamSessionResult)
+
+	r.GET("/sessions/:session_id/stream",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.StreamSession)
 
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,

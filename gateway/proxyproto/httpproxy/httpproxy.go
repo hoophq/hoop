@@ -23,12 +23,11 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
 const (
@@ -290,7 +289,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if correlationID != "" {
 		correlationIDPtr = &correlationID
 	}
-	if err := sessionapi.ValidateCorrelationID(correlationIDPtr); err != nil {
+	if err := validateCorrelationID(correlationIDPtr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -379,13 +378,19 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 	}
 	ctxDuration := time.Until(dba.ExpireAt)
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		return nil, err
-	}
+	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
-	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		return nil, err
+	var tokenVerifier idp.UserInfoTokenVerifier
+	if !isMachineCredential {
+		var err error
+		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			return nil, err
+		}
+
+		if err := usertoken.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+			return nil, err
+		}
 	}
 
 	sid := uuid.NewString()
@@ -406,9 +411,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		},
 	}
 
-	transport.PollingUserToken(session.ctx, func(cause error) {
-		session.cancelFn(cause.Error())
-	}, tokenVerifier, dba.UserSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(session.ctx, func(cause error) {
+			session.cancelFn(cause.Error())
+		}, tokenVerifier, dba.UserSubject)
+	}
 
 	grpcOpts := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
@@ -1031,4 +1038,23 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			log.Debugf("unknown packet type received: %v, sid=%s", pkt.Type, sess.sid)
 		}
 	}
+}
+
+// validateCorrelationID ensures the correlation id is bounded and printable.
+// Accepts nil/empty (treated as absent). Mirrors the validator in api/session
+// to avoid an import cycle through services -> httpproxy -> api/session.
+func validateCorrelationID(v *string) error {
+	if v == nil || *v == "" {
+		return nil
+	}
+	s := *v
+	if len(s) > 255 {
+		return fmt.Errorf("correlation_id must not exceed 255 characters")
+	}
+	for _, r := range s {
+		if r < 0x20 || r > 0x7E {
+			return fmt.Errorf("correlation_id must contain only printable ASCII characters")
+		}
+	}
+	return nil
 }
