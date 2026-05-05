@@ -3,8 +3,8 @@
    ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu
                                Flex Text ScrollArea]]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download Info ChevronDown CalendarClock
-                           Check CircleCheckBig Clock2 OctagonX CheckCheck]]
+   ["lucide-react" :refer [ArrowUpRight Download Info ChevronDown CalendarClock
+                           Check CircleCheckBig Clock2 OctagonX CheckCheck Workflow]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -135,7 +135,11 @@
     clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
     executing-status (r/atom :ready)
     current-path (.-pathname (.-location js/window))
-    is-dedicated-page? (cs/starts-with? current-path "/sessions/")]
+    ;; A dedicated session page is `/sessions/<id>` — but `/sessions/workflows/<id>`
+    ;; is the workflow timeline, where session-details opens as a modal and still
+    ;; needs its close affordance.
+    is-dedicated-page? (and (cs/starts-with? current-path "/sessions/")
+                            (not (cs/starts-with? current-path "/sessions/workflows/")))]
 
     (rf/dispatch [:gateway->get-info])
     (when session
@@ -251,6 +255,33 @@
             [session-details-component/main {:session session
                                              :review-groups review-groups
                                              :review-status review-status}]
+
+            ;; workflow shortcut
+            (when-let [correlation-id (:correlation_id session)]
+              (when-not (cs/blank? correlation-id)
+                [:> Box {:class (str "rounded-4 border border-[--accent-a4] "
+                                     "bg-[--accent-2] p-3")}
+                 [:> Flex {:align "center" :justify "between" :gap "3" :wrap "wrap"}
+                  [:> Flex {:align "center" :gap "3" :class "min-w-0"}
+                   [:> Box {:class (str "flex items-center justify-center w-8 h-8 "
+                                        "rounded-full bg-[--accent-3] text-[--accent-11] shrink-0")}
+                    [:> Workflow {:size 16}]]
+                   [:> Flex {:direction "column" :class "min-w-0"}
+                    [:> Text {:size "1" :weight "bold"
+                              :class "uppercase tracking-wider text-[--gray-11]"}
+                     "Part of workflow"]
+                    [:> Text {:size "2" :class "font-mono text-[--gray-12] truncate"
+                              :title correlation-id}
+                     correlation-id]]]
+                  [:> Button {:size "2" :variant "soft" :color "gray" :highContrast true
+                              :on-click (fn []
+                                          (rf/dispatch [:modal->close])
+                                          (rf/dispatch [:navigate :sessions-workflow
+                                                        {}
+                                                        :correlation-id
+                                                        (js/encodeURIComponent correlation-id)]))}
+                   [:> ArrowUpRight {:size 14}]
+                   "View timeline"]]]))
 
             ;; runbook params
             (when (and runbook-params

@@ -75,6 +75,7 @@
                [["/organization" "/new"] :slack-new-organization]]
      "/sessions" [["" :sessions]
                   ["/filtered" :sessions-list-filtered-by-ids]
+                  [["/workflows/" :correlation-id] :sessions-workflow]
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]

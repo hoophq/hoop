@@ -219,3 +219,50 @@
 
 (defn title-case [s]
   (string/replace s #"\b\w" string/upper-case))
+
+(defn- pad2 [n]
+  (if (< n 10) (str "0" n) (str n)))
+
+(defn duration-ms->compact
+  "Render a duration in milliseconds as a compact, human-friendly string.
+   < 1000 ms      → '830 ms'
+   < 60 s         → '4.2 s'
+   < 60 m         → '4m 12s'
+   else           → '1h 03m'"
+  [ms]
+  (cond
+    (or (nil? ms) (neg? ms))
+    "—"
+
+    (< ms 1000)
+    (str (int ms) " ms")
+
+    (< ms 60000)
+    (let [s (/ ms 1000.0)]
+      (str (-> s (* 10) Math/round (/ 10)) " s"))
+
+    (< ms 3600000)
+    (let [total-s (Math/floor (/ ms 1000))
+          m (Math/floor (/ total-s 60))
+          s (mod total-s 60)]
+      (str (int m) "m " (int s) "s"))
+
+    :else
+    (let [total-min (Math/floor (/ ms 60000))
+          h (Math/floor (/ total-min 60))
+          m (mod total-min 60)]
+      (str (int h) "h " (pad2 (int m)) "m"))))
+
+(defn time-offset->compact
+  "Render a relative time offset (in ms) prefixed with '+', or '—' for nil."
+  [ms]
+  (cond
+    (nil? ms) "—"
+    (zero? ms) "+0.0s"
+    :else (str "+" (duration-ms->compact ms))))
+
+(defn iso->ms
+  "Parse an ISO 8601 string into a millisecond epoch, or nil if blank."
+  [iso]
+  (when (and iso (not (string/blank? iso)))
+    (.getTime (js/Date. iso))))
