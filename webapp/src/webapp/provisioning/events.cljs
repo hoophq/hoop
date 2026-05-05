@@ -41,17 +41,31 @@
                                             :role-count (count (:roles resource)))
     :else (assoc resource :stage :needs-roles)))
 
+(defn- resource-catalog? [resource]
+  (some? (get (:env_vars resource) :envvar:RESOURCE_CATALOG)))
+
+(defn- fetch-resources-page!
+  "Fetches a single page. Accumulates results and recurses until all pages are fetched."
+  [page acc]
+  (rf/dispatch
+   [:fetch {:method "GET"
+            :uri    (str "/resources?page=" page "&page_size=100")
+            :on-success
+            (fn [resp]
+              (let [data       (or (:data resp) [])
+                    all        (into acc data)
+                    total      (get-in resp [:pages :total] 0)
+                    fetched    (count all)]
+                (if (< fetched total)
+                  (fetch-resources-page! (inc page) all)
+                  (rf/dispatch [:provisioning/set-resources all]))))
+            :on-failure #(rf/dispatch [:provisioning/set-resources-error %])}]))
+
 (rf/reg-event-fx
  :provisioning/fetch-resources
  (fn [{:keys [db]} _]
-   {:db (assoc-in db [:provisioning :resources :status] :loading)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/resources"
-                             :on-success #(rf/dispatch [:provisioning/set-resources %])
-                             :on-failure #(rf/dispatch [:provisioning/set-resources-error %])}]]]}))
-
-(defn- resource-catalog? [resource]
-  (some? (get (:env_vars resource) :envvar:RESOURCE_CATALOG)))
+   (fetch-resources-page! 1 [])
+   {:db (assoc-in db [:provisioning :resources :status] :loading)}))
 
 (rf/reg-event-fx
  :provisioning/set-resources

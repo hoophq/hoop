@@ -27,6 +27,7 @@
         [bulk-import-open? set-bulk-import-open] (react/useState false)
         [dismissed-job-ids set-dismissed-job-ids] (react/useState #{})
         [hovered-row set-hovered-row]         (react/useState nil)
+        [hub-page set-hub-page]               (react/useState 0)
 
         ;; using the useState react for transiant state in the commponents
         [bulk-resources set-bulk-resources]    (react/useState [])
@@ -76,9 +77,11 @@
          :selected-ids        selected-ids
          :set-selected-ids    set-selected-ids
          :search              search
-         :set-search          set-search
+         :set-search          (fn [v] (set-search v) (set-hub-page 0))
          :active-tab          active-tab
-         :set-active-tab      set-active-tab
+         :set-active-tab      (fn [t] (set-active-tab t) (set-hub-page 0))
+         :page                hub-page
+         :set-page            set-hub-page
          :jobs                jobs
          :dismissed-job-ids   dismissed-job-ids
          :set-dismissed-job-ids set-dismissed-job-ids

@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
                                 Table Tabs Text TextField Tooltip]]
-   ["lucide-react" :refer [AlertCircle Check ChevronRight Database
+   ["lucide-react" :refer [AlertCircle Check ChevronLeft ChevronRight Database
                             Key Loader2 Plus Search Upload
                             UserCog X]]
    [clojure.string :as cs]
@@ -38,20 +38,18 @@
 
 ;; ── Funnel cards ───────────────────────────────────────────────────────────
 (defn funnel-cards [resources]
-  (let [total      (count resources)
-        admin-done (count (filter :admin resources))
-        roles-done (count (filter :role-count resources))
+  (let [total       (count resources)
         needs-admin (count (filter #(= :needs-admin (:stage %)) resources))
         needs-roles (count (filter #(= :needs-roles (:stage %)) resources))
-        stages [{:label "Inventory" :big-num total     :detail (str total " total")
-                 :fill 1                               :fill-color "var(--gray-7)"
+        stages [{:label "Inventory" :big-num total         :detail (str total " total")
+                 :fill 1                                   :fill-color "var(--gray-7)"
                  :pending 0   :pending-color "gray"}
-                {:label "Manage"    :big-num admin-done :detail (str admin-done " of " total)
-                 :fill (if (pos? total) (/ admin-done total) 0)
+                {:label "Manage"    :big-num needs-admin   :detail (str needs-admin " pending")
+                 :fill (if (pos? total) (/ needs-admin total) 0)
                  :fill-color "var(--amber-9)"
                  :pending needs-admin :pending-color "amber"}
-                {:label "Provision" :big-num roles-done :detail (str roles-done " of " total)
-                 :fill (if (pos? total) (/ roles-done total) 0)
+                {:label "Provision" :big-num needs-roles   :detail (str needs-roles " pending")
+                 :fill (if (pos? total) (/ needs-roles total) 0)
                  :fill-color "var(--blue-9)"
                  :pending needs-roles :pending-color "blue"}]]
     [:> Flex {:align "stretch" :mb "5" :gap "0"}
@@ -197,9 +195,12 @@
     [:> X {:size 14}]]])
 
 ;; ── Hub main view ──────────────────────────────────────────────────────────
+(def ^:private hub-page-size 50)
+
 (defn hub-view
   [{:keys [resources selected-ids set-selected-ids
            search set-search active-tab set-active-tab
+           page set-page
            jobs dismissed-job-ids set-dismissed-job-ids
            hovered-row set-hovered-row
            on-set-screen on-open-bulk-admin on-open-bulk-roles on-open-bulk-import]}]
@@ -214,6 +215,12 @@
                                        (cs/lower-case (:name r))
                                        (cs/lower-case search))))
                                 stage-filtered)
+        total-visible  (count visible)
+        total-pages    (js/Math.ceil (/ total-visible hub-page-size))
+        safe-page      (min page (max 0 (dec total-pages)))
+        start-idx      (* safe-page hub-page-size)
+        end-idx        (min total-visible (+ start-idx hub-page-size))
+        page-rows      (subvec (vec visible) start-idx end-idx)
 
         counts {:inventory (count resources)
                 :manage    (count (filter #(= :needs-admin (:stage %)) resources))
@@ -233,8 +240,10 @@
                          (fn [s] (if (s id) (disj s id) (conj s id)))))
         toggle-all    (fn []
                         (if all-visible-selected
-                          (set-selected-ids #{})
-                          (set-selected-ids (set (map :id visible)))))
+                          (set-selected-ids
+                           (fn [s] (reduce disj s (map :id visible))))
+                          (set-selected-ids
+                           (fn [s] (into s (map :id visible))))))
         change-tab    (fn [tab]
                         (set-active-tab (keyword tab))
                         (set-selected-ids #{})
@@ -349,7 +358,7 @@
                "Clear search"])]]]
 
          (doall
-          (for [r visible]
+          (for [r page-rows]
             ^{:key (:id r)}
             [:> Table.Row
              {:style    {:background (data/row-bg (:stage r)
@@ -390,18 +399,24 @@
                                "Manage"]
                  nil)]]])))]]
 
-     ;; Footer
+     ;; Pagination + Footer
      [:> Flex {:align "center" :justify "between" :mt "3"}
       [:> Text {:size "1" :color "gray"}
-       (str (count visible) " resource" (when (not= 1 (count visible)) "s")
-            (when (not= active-tab :inventory)
-              (str " in " (cs/lower-case
-                           (get data/stage-label active-tab ""))
-                   " · "))
-            (when (not= active-tab :inventory)
-              ""))]
-      (when (pos? (count selected-ids))
-        [:> Text {:size "1" :color "gray"} (str (count selected-ids) " selected")])]
+       (str total-visible " resource" (when (not= 1 total-visible) "s")
+            (when (pos? (count selected-ids))
+              (str " \u00b7 " (count selected-ids) " selected")))]
+      (when (> total-pages 1)
+        [:> Flex {:align "center" :gap "2"}
+         [:> Button {:size "1" :variant "ghost" :color "gray"
+                     :disabled (zero? safe-page)
+                     :on-click #(set-page (dec safe-page))}
+          [:> ChevronLeft {:size 14}]]
+         [:> Text {:size "1" :color "gray"}
+          (str (inc safe-page) " / " total-pages)]
+         [:> Button {:size "1" :variant "ghost" :color "gray"
+                     :disabled (>= (inc safe-page) total-pages)
+                     :on-click #(set-page (inc safe-page))}
+          [:> ChevronRight {:size 14}]]])]
 
      ;; Floating action bar
      (when (pos? (count selected-ids))

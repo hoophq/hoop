@@ -94,6 +94,11 @@
                                    (empty? name-val) "missing required field: name"
                                    (empty? type-val) "missing required field: type")}
 
+                  (not (#{"PostgreSQL" "postgres"} type-val))
+                  {:row row-num :name name-val :db-type type-val :host host-val :port port-val
+                   :status "error"
+                   :error-reason (str "type not allowed: " type-val " (only PostgreSQL is supported)")}
+
                   (and existing (= host-val ex-host) (= port-val ex-port))
                   {:row row-num :name name-val :db-type type-val :host host-val :port port-val
                    :status "unchanged"}
