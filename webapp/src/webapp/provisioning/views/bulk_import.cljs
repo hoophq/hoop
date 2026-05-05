@@ -394,7 +394,6 @@
          [:> Text {:size "2" :weight "medium"} "Import another file"]
          [:> Text {:size "1" :color "gray"} "Add more resources to the catalog"]]]]]]))
 
-;; ── Main screen ──────────────────────────────────────────────────────────────
 
 (defn bulk-import-screen-inner
   [{:keys [on-confirm on-close resources]}]

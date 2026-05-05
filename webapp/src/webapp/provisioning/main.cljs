@@ -37,24 +37,21 @@
         [session-filter set-session-filter]    (react/useState {:title "Sessions"})
         [session-return-to set-session-return-to] (react/useState :hub)
 
-        set-screen!
-        (fn [s & [job-id]]
-          (set-hub-screen s)
-          (when job-id (set-viewing-job-id job-id)))
+        set-screen! (fn [s & [job-id]]
+                      (set-hub-screen s)
+                      (when job-id (set-viewing-job-id job-id)))
 
-        open-bulk-admin!
-        (fn [targets & [mode]]
-          (set-bulk-resources (vec targets))
-          (set-bulk-configs
-           (into {} (map (fn [r] [(:id r) (data/make-default-config)]) targets)))
-          (set-bulk-admin-mode (or mode "manual"))
-          (set-hub-screen :bulk-admin))
+        open-bulk-admin! (fn [targets & [mode]]
+                           (set-bulk-resources (vec targets))
+                           (set-bulk-configs
+                            (into {} (map (fn [r] [(:id r) (data/make-default-config)]) targets)))
+                           (set-bulk-admin-mode (or mode "manual"))
+                           (set-hub-screen :bulk-admin))
 
-        open-bulk-roles!
-        (fn [targets & [method]]
-          (set-bulk-resources (vec targets))
-          (set-bulk-roles-method (or method "create"))
-          (set-hub-screen :bulk-roles))
+        open-bulk-roles! (fn [targets & [method]]
+                           (set-bulk-resources (vec targets))
+                           (set-bulk-roles-method (or method "create"))
+                           (set-hub-screen :bulk-roles))
 
         navigate-sessions!
         (fn [filter-map return-to]
@@ -68,7 +65,6 @@
        (rf/dispatch [:provisioning/fetch-resources])
        js/undefined)
      #js [])
-
 
     [:> Box {:class "flex flex-col bg-gray-1 px-10 pb-10 pt-10"
              :style {:height "100vh" :box-sizing "border-box" :overflow "hidden"}}

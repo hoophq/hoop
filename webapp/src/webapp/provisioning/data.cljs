@@ -56,54 +56,6 @@
 (defn get-mock-roles [_db-type]
   mock-pg-roles)
 
-;; ── Initial resources (PostgreSQL only) ────────────────────────────────────────
-(def initial-resources
-  [{:id "1"  :name "orders-db"    :db-type "PostgreSQL" :host "10.0.1.10" :stage :needs-admin}
-   {:id "2"  :name "payments-db"  :db-type "PostgreSQL" :host "10.0.1.11" :stage :needs-admin}
-   {:id "3"  :name "reporting-db" :db-type "PostgreSQL" :host "10.0.1.16" :stage :needs-admin}
-   {:id "4"  :name "analytics-db" :db-type "PostgreSQL" :host "10.0.1.12" :stage :needs-roles :admin-user "analyst_admin"}
-   {:id "5"  :name "warehouse-db" :db-type "PostgreSQL" :host "10.0.1.13" :stage :needs-roles :admin-user "admin"}
-   {:id "6"  :name "auth-db"      :db-type "PostgreSQL" :host "10.0.1.14" :stage :needs-roles :admin-user "postgres"}
-   {:id "7"  :name "cache-db"     :db-type "PostgreSQL" :host "10.0.1.15" :stage :needs-roles :admin-user "postgres"}
-   {:id "8"  :name "users-db"     :db-type "PostgreSQL" :host "10.0.2.10" :stage :ready       :admin-user "admin"    :role-count 2}
-   {:id "9"  :name "billing-db"   :db-type "PostgreSQL" :host "10.0.2.11" :stage :ready       :admin-user "admin"    :role-count 3}
-   {:id "10" :name "logs-db"      :db-type "PostgreSQL" :host "10.0.2.12" :stage :ready       :admin-user "postgres" :role-count 1}])
-
-;; ── Import mock data ───────────────────────────────────────────────────────────
-(def mock-import-rows
-  [{:row 1  :name "db-prod-east-01" :db-type "PostgreSQL" :host "10.1.0.1"  :port "5432" :status "new"}
-   {:row 2  :name "db-prod-east-02" :db-type "PostgreSQL" :host "10.1.0.2"  :port "5432" :status "new"}
-   {:row 3  :name "db-prod-east-03" :db-type "PostgreSQL" :host "10.1.0.3"  :port "5432" :status "new"}
-   {:row 4  :name "db-prod-east-04" :db-type ""           :host "10.1.0.4"  :port "5432" :status "error" :error-reason "missing required field: type"}
-   {:row 5  :name "db-prod-east-05" :db-type "PostgreSQL" :host "10.1.0.5"  :port "5432" :status "new"}
-   {:row 6  :name "db-prod-west-01" :db-type "PostgreSQL" :host "10.2.0.1"  :port "5432" :status "new"}
-   {:row 7  :name "db-prod-west-02" :db-type "PostgreSQL" :host "10.2.0.2"  :port "5432" :status "new"}
-   {:row 8  :name "db-prod-west-03" :db-type "PostgreSQL" :host "10.2.0.3"  :port "5432" :status "new"}
-   {:row 9  :name "db-staging-01"   :db-type "PostgreSQL" :host "10.1.0.11" :port "5432" :status "new"}
-   {:row 10 :name "orders-db"       :db-type "PostgreSQL" :host "10.0.1.10" :port "5433" :status "update"
-    :update-diff [{:field "port" :from "5432" :to "5433"}]}
-   {:row 11 :name "payments-db"     :db-type "PostgreSQL" :host "10.0.1.11" :port "5433" :status "update"
-    :update-diff [{:field "port" :from "5432" :to "5433"}]}
-   {:row 12 :name "reporting-db"    :db-type "PostgreSQL" :host "10.0.1.16" :port "5432" :status "update"
-    :update-diff [{:field "agent" :from "—" :to "prod-agent-us-east"}]}
-   {:row 13 :name "analytics-db"    :db-type "PostgreSQL" :host "10.0.1.12" :port "5432" :status "unchanged"}
-   {:row 14 :name "warehouse-db"    :db-type "PostgreSQL" :host "10.0.1.13" :port "5432" :status "unchanged"}
-   {:row 15 :name "auth-db"         :db-type "PostgreSQL" :host "10.0.1.14" :port "5432" :status "unchanged"}])
-
-(def import-result
-  {:created 8 :updated 3 :unchanged 12
-   :errors [{:row 4 :reason "missing required field: type"}]})
-
-(def new-resources-from-import
-  [{:id "imp-1" :name "db-prod-east-01" :db-type "PostgreSQL" :host "10.1.0.1"  :stage :needs-admin}
-   {:id "imp-2" :name "db-prod-east-02" :db-type "PostgreSQL" :host "10.1.0.2"  :stage :needs-admin}
-   {:id "imp-3" :name "db-prod-east-03" :db-type "PostgreSQL" :host "10.1.0.3"  :stage :needs-admin}
-   {:id "imp-4" :name "db-prod-east-05" :db-type "PostgreSQL" :host "10.1.0.5"  :stage :needs-admin}
-   {:id "imp-5" :name "db-prod-west-01" :db-type "PostgreSQL" :host "10.2.0.1"  :stage :needs-admin}
-   {:id "imp-6" :name "db-prod-west-02" :db-type "PostgreSQL" :host "10.2.0.2"  :stage :needs-admin}
-   {:id "imp-7" :name "db-prod-west-03" :db-type "PostgreSQL" :host "10.2.0.3"  :stage :needs-admin}
-   {:id "imp-8" :name "db-staging-01"   :db-type "PostgreSQL" :host "10.1.0.11" :stage :needs-admin}])
-
 ;; ── Helpers ────────────────────────────────────────────────────────────────────
 (defn row-bg [stage selected? hovered?]
   (cond
@@ -121,18 +73,6 @@
    "readwrite" "blue"
    "admin"     "red"
    "custom"    "purple"})
-
-(def import-status-color
-  {"new"       "green"
-   "update"    "blue"
-   "unchanged" "gray"
-   "error"     "red"})
-
-(def import-status-label
-  {"new"       "New"
-   "update"    "Update"
-   "unchanged" "Unchanged"
-   "error"     "Error"})
 
 ;; ── Funnel accent colors / step labels ─────────────────────────────────────────
 (def funnel-accent  ["var(--gray-8)" "var(--amber-9)" "var(--blue-9)"])

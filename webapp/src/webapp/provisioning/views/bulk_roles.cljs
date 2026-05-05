@@ -1,9 +1,9 @@
 (ns webapp.provisioning.views.bulk-roles
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Card Checkbox
-                                Flex Heading Skeleton Text TextField]]
+                               Flex Heading Skeleton Text TextField]]
    ["lucide-react" :refer [ArrowLeft Check FileText Info Key Loader2
-                            Sparkles Upload]]
+                           Sparkles Upload]]
    [reagent.core :as r]
    [webapp.provisioning.data :as data]))
 

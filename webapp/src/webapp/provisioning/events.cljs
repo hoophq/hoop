@@ -1,6 +1,5 @@
 (ns webapp.provisioning.events
-  (:require [re-frame.core :as rf]
-            [webapp.provisioning.data :as data]))
+  (:require [re-frame.core :as rf]))
 
 (defn- derive-stage [env]
   (if (get env "ADMIN_ACCOUNT")
@@ -38,14 +37,10 @@
 (rf/reg-event-fx
  :provisioning/set-resources
  (fn [{:keys [db]} [_ api-resources]]
-   (let [api-mapped    (mapv (comp compute-stage api-resource->provisioning-resource) api-resources)
-         mock          (vec data/initial-resources)
-         existing-ids  (set (map :id api-mapped))
-         mock-filtered (filterv #(not (existing-ids (:id %))) mock)
-         merged        (into mock-filtered api-mapped)]
+   (let [api-mapped (mapv (comp compute-stage api-resource->provisioning-resource) api-resources)]
      {:db (-> db
               (assoc-in [:provisioning :resources :status] :ready)
-              (assoc-in [:provisioning :resources :data] merged))
+              (assoc-in [:provisioning :resources :data] api-mapped))
       :fx (mapv (fn [r]
                   [:dispatch [:provisioning/fetch-resource-roles (:name r)]])
                 api-mapped)})))
@@ -81,7 +76,6 @@
 (rf/reg-event-db
  :provisioning/add-resources
  (fn [db [_ new-resources]]
-   (prn :new new-resources)
    (update-in db [:provisioning :resources :data] into new-resources)))
 
 (rf/reg-event-db
