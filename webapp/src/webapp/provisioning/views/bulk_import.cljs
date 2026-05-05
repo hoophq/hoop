@@ -5,7 +5,7 @@
    ["papaparse" :as papa]
    ["react" :as react]
    ["lucide-react" :refer [AlertCircle Check CheckCircle2
-                           Database Loader2 Upload X]]
+                           ChevronLeft ChevronRight Database Loader2 Upload X]]
    [re-frame.core :as rf]))
 
 (def step-labels ["Source" "Parsing" "Preview" "Importing" "Results"])
@@ -199,13 +199,19 @@
         [:> Check {:size 12 :color "var(--green-9)"}]
         [:> Text {:size "1" :color "gray"} msg]])]]])
 
-(defn- preview-file [{:keys [on-close set-step set-import-progress
-                              set-import-results classified-rows summary total-rows]}]
-  (let [error-count    (count (:errors summary))
-        importable-rows (filterv #(#{"new" "update"} (:status %)) classified-rows)
-        valid-count    (count importable-rows)
-        visible-rows   (take 50 classified-rows)
-        hidden-count   (max 0 (- (count classified-rows) 50))]
+(def ^:private page-size 50)
+
+(defn- preview-file-inner [{:keys [on-close set-step set-import-progress
+                                    set-import-results classified-rows summary total-rows]}]
+  (let [[page set-page]    (react/useState 0)
+        error-count        (count (:errors summary))
+        importable-rows    (filterv #(#{"new" "update"} (:status %)) classified-rows)
+        valid-count        (count importable-rows)
+        total-count        (count classified-rows)
+        total-pages        (js/Math.ceil (/ total-count page-size))
+        start-idx          (* page page-size)
+        end-idx            (min total-count (+ start-idx page-size))
+        visible-rows       (subvec (vec classified-rows) start-idx end-idx)]
     [:> Flex {:direction "column" :gap "3" :style {:flex 1 :min-height 0}}
      [:> Flex {:align "center" :gap "3" :wrap "wrap"}
       [:> Heading {:size "5"} (str "Review " total-rows " rows")]
@@ -261,7 +267,7 @@
               (:host row)]]
             [:> Table.Cell
              [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
-              (or (:port row) "—")]]
+              (or (:port row) "\u2014")]]
             [:> Table.Cell
              [:> Flex {:direction "column" :gap "1"}
               [:> Badge {:color (get import-status-color (:status row) "gray")
@@ -271,19 +277,28 @@
                 ^{:key (:field d)}
                 [:> Text {:size "1" :color "gray"
                           :style {:font-family "var(--font-mono)" :font-size 10}}
-                 (str (:field d) ": " (:from d) " → " (:to d))])
+                 (str (:field d) ": " (:from d) " \u2192 " (:to d))])
               (when (:error-reason row)
-                [:> Text {:size "1" :color "red"} (:error-reason row)])]]]))
+                [:> Text {:size "1" :color "red"} (:error-reason row)])]]]))]]]
 
-        (when (pos? hidden-count)
-          [:> Table.Row
-           [:> Table.Cell {:col-span 6 :style {:background "var(--gray-1)"}}
-            [:> Text {:size "1" :color "gray" :style {:font-style "italic"}}
-             (str "+" hidden-count " more rows")]]])]]]
+     (when (> total-pages 1)
+       [:> Flex {:align "center" :justify "center" :gap "3" :py "2"
+                 :style {:flex-shrink 0}}
+        [:> Button {:size "1" :variant "ghost" :color "gray"
+                    :disabled (zero? page)
+                    :on-click #(set-page (dec page))}
+         [:> ChevronLeft {:size 14}]]
+        [:> Text {:size "1" :color "gray"}
+         (str "Page " (inc page) " of " total-pages
+              " (" (inc start-idx) "\u2013" end-idx " of " total-count ")")]
+        [:> Button {:size "1" :variant "ghost" :color "gray"
+                    :disabled (>= (inc page) total-pages)
+                    :on-click #(set-page (inc page))}
+         [:> ChevronRight {:size 14}]]])
 
      [:> Flex {:align "center" :justify "between" :pt "2" :style {:flex-shrink 0}}
       [:> Text {:size "1" :color "gray"}
-       (str (:created summary) " new · " (:updated summary) " updates · " error-count " skipped")]
+       (str (:created summary) " new \u00b7 " (:updated summary) " updates \u00b7 " error-count " skipped")]
       [:> Flex {:gap "3"}
        [:> Button {:variant "outline" :color "gray" :on-click on-close} "Cancel"]
        [:> Button {:color "indigo"
@@ -310,7 +325,10 @@
                                                    (rf/dispatch [:provisioning/fetch-resources])
                                                    (set-import-progress 100)
                                                    (js/setTimeout #(set-step :results) 400)))}]))}
-        (str "Import " valid-count " rows →")]]]]))
+        (str "Import " valid-count " rows \u2192")]]]]))
+
+(defn- preview-file [props]
+  [:f> preview-file-inner props])
 
 (defn- importing-step [{:keys [import-progress summary]}]
   (let [total (+ (:created summary) (:updated summary))
