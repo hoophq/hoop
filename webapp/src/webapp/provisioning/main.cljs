@@ -9,7 +9,7 @@
    [webapp.provisioning.views.bulk-admin :as bulk-admin]
    [webapp.provisioning.views.bulk-import :as bulk-import]
    [webapp.provisioning.views.bulk-roles :as bulk-roles]
-   [webapp.provisioning.views.hub :as hub]
+   [webapp.provisioning.views.inventory.main :as inventory]
    [webapp.provisioning.views.job-detail :as job-detail]
    [webapp.provisioning.views.session-list :as session-list]))
 
@@ -23,7 +23,7 @@
         [selected-ids set-selected-ids]       (react/useState #{})
         [search set-search]                   (react/useState "")
         [active-tab set-active-tab]           (react/useState :inventory)
-        [hub-screen set-hub-screen]           (react/useState :hub)
+        [screen set-hub-screen]           (react/useState :hub)
         [bulk-import-open? set-bulk-import-open] (react/useState false)
         [dismissed-job-ids set-dismissed-job-ids] (react/useState #{})
         [hovered-row set-hovered-row]         (react/useState nil)
@@ -70,91 +70,83 @@
     [:> Box {:class "flex flex-col bg-gray-1 px-10 pb-10 pt-10"
              :style {:height "100vh" :box-sizing "border-box" :overflow "hidden"}}
 
-     ;; ── Hub ──
-     (when (= hub-screen :hub)
-       [hub/hub-view
-        {:resources           resources
-         :selected-ids        selected-ids
-         :set-selected-ids    set-selected-ids
-         :search              search
-         :set-search          (fn [v] (set-search v) (set-hub-page 0))
-         :active-tab          active-tab
-         :set-active-tab      (fn [t] (set-active-tab t) (set-hub-page 0))
-         :page                hub-page
-         :set-page            set-hub-page
-         :jobs                jobs
-         :dismissed-job-ids   dismissed-job-ids
-         :set-dismissed-job-ids set-dismissed-job-ids
-         :hovered-row         hovered-row
-         :set-hovered-row     set-hovered-row
-         :on-set-screen       set-screen!
-         :on-open-bulk-admin  open-bulk-admin!
-         :on-open-bulk-roles  open-bulk-roles!
-         :on-open-bulk-import #(set-bulk-import-open true)}])
+     ;; this controls the internal flow
+     ;; most of the state is lifted up here in the parent component since it's shared across multiple child screens,
+     ;; but some state is still kept in the child components for transient UI state (e.g. form inputs)
 
-     ;; ── Bulk Admin ──
-     (when (= hub-screen :bulk-admin)
-       [bulk-admin/bulk-admin-screen
-        {:resources    bulk-resources
-         :configs      bulk-configs
-         :set-configs  set-bulk-configs
-         :initial-mode bulk-admin-mode
-         :on-cancel    #(set-screen! :hub)}])
+     (case screen
+       :hub [inventory/view
+             {:resources           resources
+              :selected-ids        selected-ids
+              :set-selected-ids    set-selected-ids
+              :search              search
+              :set-search          (fn [v] (set-search v) (set-hub-page 0))
+              :active-tab          active-tab
+              :set-active-tab      (fn [t] (set-active-tab t) (set-hub-page 0))
+              :page                hub-page
+              :set-page            set-hub-page
+              :jobs                jobs
+              :dismissed-job-ids   dismissed-job-ids
+              :set-dismissed-job-ids set-dismissed-job-ids
+              :hovered-row         hovered-row
+              :set-hovered-row     set-hovered-row
+              :on-set-screen       set-screen!
+              :on-open-bulk-admin  open-bulk-admin!
+              :on-open-bulk-roles  open-bulk-roles!
+              :on-open-bulk-import #(set-bulk-import-open true)}]
+       :bulk-admin [bulk-admin/bulk-admin-screen
+                    {:resources    bulk-resources
+                     :configs      bulk-configs
+                     :set-configs  set-bulk-configs
+                     :initial-mode bulk-admin-mode
+                     :on-cancel    #(set-screen! :hub)}]
+       :bulk-roles [bulk-roles/bulk-roles-screen
+                    {:resources      bulk-resources
+                     :initial-method bulk-roles-method
+                     :on-cancel      #(set-screen! :hub)
+                     :on-apply       (fn [_method roles-by-resource]
+                                       (let [job-id (data/start-job!
+                                                     {:type              :role-provision
+                                                      :targets           bulk-resources
+                                                      :roles-by-resource roles-by-resource})]
+                                         (set-viewing-job-id job-id)
+                                         (set-screen! :job-detail)))}]
+       :job-detail (let [job (some #(when (= (:id %) viewing-job-id) %) jobs)]
+                     (when job
+                       [job-detail/job-detail-screen
+                        {:job                  job
+                         :sessions             sessions
+                         :on-back              #(set-screen! :hub)
+                         :on-run-in-background #(set-screen! :hub)
+                         :on-view-sessions     (fn [filter-opt]
+                                                 (navigate-sessions!
+                                                  {:job-id      (:id job)
+                                                   :resource-id (:resource-id filter-opt)
+                                                   :title       (if (:resource-name filter-opt)
+                                                                  (str "Sessions — " (:resource-name filter-opt))
+                                                                  (str "Sessions — " (:label job)))}
+                                                  :job-detail))}]))
+       :session-list (let [filtered (filterv
+                                     (fn [s]
+                                       (and (or (nil? (:job-id session-filter))
+                                                (= (:job-id session-filter) (:job-id s)))
+                                            (or (nil? (:resource-id session-filter))
+                                                (= (:resource-id session-filter) (:resource-id s)))))
+                                     sessions)]
+                       [session-list/session-list-screen
+                        {:sessions  filtered
+                         :title     (:title session-filter)
+                         :subtitle  (str (count filtered)
+                                         " session" (when (not= 1 (count filtered)) "s")
+                                         " · each triggered by a provisioning step")
+                         :on-back   #(set-screen! session-return-to)}])
+ ;; do not render anything if the screen is unrecognized
+       nil)
 
-     ;; ── Bulk Roles ──
-     (when (= hub-screen :bulk-roles)
-       [bulk-roles/bulk-roles-screen
-        {:resources      bulk-resources
-         :initial-method bulk-roles-method
-         :on-cancel      #(set-screen! :hub)
-         :on-apply       (fn [_method roles-by-resource]
-                           (let [job-id (data/start-job!
-                                         {:type              :role-provision
-                                          :targets           bulk-resources
-                                          :roles-by-resource roles-by-resource})]
-                             (set-viewing-job-id job-id)
-                             (set-screen! :job-detail)))}])
-
-     ;; ── Bulk Import (modal overlay) ──
      (when bulk-import-open?
        [bulk-import/bulk-import-screen
         {:on-close  #(set-bulk-import-open false)
-         :resources resources}])
-
-     ;; ── Job Detail ──
-     (when (= hub-screen :job-detail)
-       (let [job (some #(when (= (:id %) viewing-job-id) %) jobs)]
-         (when job
-           [job-detail/job-detail-screen
-            {:job                  job
-             :sessions             sessions
-             :on-back              #(set-screen! :hub)
-             :on-run-in-background #(set-screen! :hub)
-             :on-view-sessions     (fn [filter-opt]
-                                     (navigate-sessions!
-                                      {:job-id      (:id job)
-                                       :resource-id (:resource-id filter-opt)
-                                       :title       (if (:resource-name filter-opt)
-                                                      (str "Sessions — " (:resource-name filter-opt))
-                                                      (str "Sessions — " (:label job)))}
-                                      :job-detail))}])))
-
-     ;; ── Session List ──
-     (when (= hub-screen :session-list)
-       (let [filtered (filterv
-                       (fn [s]
-                         (and (or (nil? (:job-id session-filter))
-                                  (= (:job-id session-filter) (:job-id s)))
-                              (or (nil? (:resource-id session-filter))
-                                  (= (:resource-id session-filter) (:resource-id s)))))
-                       sessions)]
-         [session-list/session-list-screen
-          {:sessions  filtered
-           :title     (:title session-filter)
-           :subtitle  (str (count filtered)
-                           " session" (when (not= 1 (count filtered)) "s")
-                           " · each triggered by a provisioning step")
-           :on-back   #(set-screen! session-return-to)}]))]))
+         :resources resources}])]))
 
 (defn panel []
   [:f> panel-inner])

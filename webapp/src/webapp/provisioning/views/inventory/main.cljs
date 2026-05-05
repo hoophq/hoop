@@ -1,10 +1,10 @@
-(ns webapp.provisioning.views.hub
+(ns webapp.provisioning.views.inventory.main
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
-                               Table Tabs Text TextField Tooltip]]
+                                Table Tabs Text TextField Tooltip]]
    ["lucide-react" :refer [AlertCircle Check ChevronLeft ChevronRight Database
-                           Key Loader2 Plus Search Upload
-                           UserCog X]]
+                            Key Loader2 Plus Search Upload
+                            UserCog X]]
    [clojure.string :as cs]
    [webapp.provisioning.data :as data]))
 
@@ -168,7 +168,7 @@
          [:> X {:size 12}]])]]))
 
 (defn floating-action-bar [{:keys [count-val admin-count roles-count
-                                   on-add-admin on-configure-roles on-clear]}]
+                                    on-add-admin on-configure-roles on-clear]}]
   [:> Flex {:align "center" :gap "3" :px "5" :py "3"
             :style {:position    "fixed"
                     :bottom      80
@@ -196,7 +196,9 @@
 ;; initial page size is 50
 (def ^:private hub-page-size 50)
 
-(defn hub-view
+
+
+(defn view
   [{:keys [resources selected-ids set-selected-ids
            search set-search active-tab set-active-tab
            page set-page
@@ -204,19 +206,19 @@
            hovered-row set-hovered-row
            on-set-screen on-open-bulk-admin on-open-bulk-roles on-open-bulk-import]}]
 
+  ;;; initially i am keeping fn inside the component unless I need to use this in another namespace
   (let [stage-filter   (get data/tab->stage active-tab)
         stage-filtered (if stage-filter
                          (filterv #(= stage-filter (:stage %)) resources)
                          resources)
 
-        search-lower (cs/lower-case (or search ""))
+
         visible        (filterv (fn [r]
                                   (or (empty? search)
                                       (cs/includes?
-                                       (cs/lower-case (or (:name r) ""))
-                                       search-lower)))
+                                       (cs/lower-case (:name r))
+                                       (cs/lower-case search))))
                                 stage-filtered)
-
         total-visible  (count visible)
         total-pages    (js/Math.ceil (/ total-visible hub-page-size))
         safe-page      (min page (max 0 (dec total-pages)))
@@ -364,8 +366,8 @@
             ^{:key (:id r)}
             [:> Table.Row
              {:style    {:background (data/row-bg (:stage r)
-                                                  (contains? selected-ids (:id r))
-                                                  (= hovered-row (:id r)))
+                                                   (contains? selected-ids (:id r))
+                                                   (= hovered-row (:id r)))
                          :cursor "pointer"}
               :on-click #(toggle-select (:id r))
               :on-mouse-enter #(set-hovered-row (:id r))

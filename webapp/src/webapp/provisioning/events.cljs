@@ -128,19 +128,49 @@
                  (seq (:host row)) (assoc "envvar:HOST" (js/btoa (:host row)))
                  (seq (:port row)) (assoc "envvar:PORT" (js/btoa (str (:port row)))))}))
 
+(defn- normalize-env-keys
+  "Coerces env_var map keys to strings. The API response uses keyword keys
+   like :envvar:HOST, but PUT/POST bodies must use string keys."
+  [envs]
+  (reduce-kv (fn [m k v]
+               (assoc m (if (keyword? k) (name k) k) v))
+             {}
+             (or envs {})))
+
 (rf/reg-event-fx
  :provisioning/import-resource
  (fn [_ [_ {:keys [row on-success on-failure]}]]
-   (let [update? (= "update" (:status row))
-         method  (if update? "PUT" "POST")
-         uri     (if update? (str "/resources/" (:name row)) "/resources")]
-     {:fx [[:dispatch [:fetch {:method     method
-                               :uri        uri
-                               :body       (row->resource-request row)
-                               :on-success (fn [response]
-                                             (on-success row response))
-                               :on-failure (fn [error]
-                                             (on-failure row error))}]]]})))
+   (let [update? (= "update" (:status row))]
+     (if update?
+       ;; Fetch existing resource first so we can preserve admin credentials
+       ;; (USER, PASS, ADMIN_ACCOUNT) and any other env vars set outside the CSV.
+       {:fx [[:dispatch
+              [:fetch {:method "GET"
+                       :uri    (str "/resources/" (:name row))
+                       :on-success
+                       (fn [resource]
+                         (let [subtype       (get display->subtype (:db-type row) (:db-type row))
+                               existing-envs (normalize-env-keys (:env_vars resource))
+                               new-envs      (cond-> {"envvar:RESOURCE_CATALOG" (js/btoa "true")}
+                                               (seq (:host row)) (assoc "envvar:HOST" (js/btoa (:host row)))
+                                               (seq (:port row)) (assoc "envvar:PORT" (js/btoa (str (:port row)))))
+                               merged-envs   (merge existing-envs new-envs)
+                               body          {:name     (:name resource)
+                                              :type     (or (:type resource) "database")
+                                              :subtype  (or (:subtype resource) subtype)
+                                              :agent_id (or (:agent_id resource) "")
+                                              :env_vars merged-envs}]
+                           (rf/dispatch [:fetch {:method     "PUT"
+                                                 :uri        (str "/resources/" (:name row))
+                                                 :body       body
+                                                 :on-success (fn [response] (on-success row response))
+                                                 :on-failure (fn [error] (on-failure row error))}])))
+                       :on-failure (fn [error] (on-failure row error))}]]]}
+       {:fx [[:dispatch [:fetch {:method     "POST"
+                                 :uri        "/resources"
+                                 :body       (row->resource-request row)
+                                 :on-success (fn [response] (on-success row response))
+                                 :on-failure (fn [error] (on-failure row error))}]]]}))))
 
 (rf/reg-event-fx
  :provisioning/import-next-resource
