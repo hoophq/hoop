@@ -8,7 +8,50 @@
    [clojure.string :as cs]
    [webapp.provisioning.data :as data]))
 
-;; ── Progress bar ───────────────────────────────────────────────────────────
+;; ── Shared visual primitives ───────────────────────────────────────────────────
+
+(defn- status-dot
+  "Small color-coded circle used for status indicators."
+  [{:keys [color size] :or {size 7}}]
+  [:> Box {:style {:width         size
+                   :height        size
+                   :border-radius "50%"
+                   :background    (str "var(--" color "-9)")
+                   :flex-shrink   0}}])
+
+(defn- callout-style [color]
+  (let [c #(str "var(--" color "-" % ")")]
+    {:background    (c 2)
+     :border-top    (str "1px solid " (c 5))
+     :border-right  (str "1px solid " (c 5))
+     :border-bottom (str "1px solid " (c 5))
+     :border-left   (str "4px solid " (c 9))
+     :border-radius "var(--radius-3)"}))
+
+(defn- callout
+  "Color-coded banner with a left accent, leading icon, title/subtitle slot,
+   and an actions slot on the right. Both `stage-banner` and `job-status-bar`
+   are thin wrappers around this."
+  [{:keys [color icon title subtitle extra actions px py]
+    :or   {px "5" py "4"}}]
+  [:> Flex {:align "center" :justify "between" :gap "4"
+            :px px :py py :mb "4"
+            :style (callout-style color)}
+   [:> Flex {:align "center" :gap "3"}
+    (when icon
+      [:> Box {:style {:color       (str "var(--" color "-9)")
+                       :display     "flex"
+                       :flex-shrink 0}}
+       icon])
+    [:> Flex {:direction "column" :gap "0"}
+     (when title    [:> Text {:size "2" :weight "medium"} title])
+     (when subtitle [:> Text {:size "1" :color "gray"} subtitle])
+     extra]]
+   (when actions
+     [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])])
+
+;; ── Progress bar ───────────────────────────────────────────────────────────────
+
 (defn progress-bar [resource]
   (let [completed (count (filter #(= "done" (data/get-segment-state (:key %) resource))
                                  data/segments))]
@@ -16,27 +59,21 @@
      [:> Flex {:align "center" :gap "2"}
       [:> Flex {:gap "1" :style {:flex 1}}
        (for [seg data/segments]
-         (let [state (data/get-segment-state (:key seg) resource)
-               bg    (case state
-                       "done"   "var(--green-9)"
-                       "active" "var(--indigo-9)"
-                       "var(--gray-4)")]
+         (let [state    (data/get-segment-state (:key seg) resource)
+               {:keys [bg text]} (get data/segment-states state)]
            ^{:key (:key seg)}
-           [:> Tooltip {:content (str (:label seg) " — "
-                                      (case state
-                                        "done"   "complete"
-                                        "active" "action required"
-                                        "complete previous steps first"))}
-            [:> Box {:style {:flex      "1 1 0"
-                             :height    7
+           [:> Tooltip {:content (str (:label seg) " — " text)}
+            [:> Box {:style {:flex          "1 1 0"
+                             :height        7
                              :border-radius 3
-                             :background bg
-                             :cursor    "default"}}]]))]
+                             :background    bg
+                             :cursor        "default"}}]]))]
       [:> Text {:size "1" :color "gray"
                 :style {:white-space "nowrap" :min-width 28 :text-align "right"}}
        (str completed " / " (count data/segments))]]]))
 
-;; ── Funnel cards ───────────────────────────────────────────────────────────
+;; ── Funnel cards ───────────────────────────────────────────────────────────────
+
 (defn funnel-cards [resources]
   (let [total       (count resources)
         needs-admin (count (filter #(= :needs-admin (:stage %)) resources))
@@ -92,80 +129,68 @@
                              :border-radius 99
                              :transition "width 0.6s ease"}}]]]]]))]))
 
-;; ── Stage banner ───────────────────────────────────────────────────────────
+;; ── Stage banner ───────────────────────────────────────────────────────────────
+
 (defn stage-banner [{:keys [tab total-in-stage selected-in-stage on-action on-import-csv]}]
   (when (and (not= tab :inventory) (pos? total-in-stage))
     (let [count-val (if (pos? selected-in-stage) selected-in-stage total-in-stage)
           label-str (if (pos? selected-in-stage)
                       (str count-val " selected")
                       (str "all " count-val))
-          manage? (= tab :manage)]
-      [:> Flex {:align "center" :justify "between" :gap "4" :px "5" :py "4" :mb "4"
-                :style {:background     (if manage? "var(--amber-2)" "var(--blue-2)")
-                        :border-top     (str "1px solid " (if manage? "var(--amber-5)" "var(--blue-5)"))
-                        :border-right   (str "1px solid " (if manage? "var(--amber-5)" "var(--blue-5)"))
-                        :border-bottom  (str "1px solid " (if manage? "var(--amber-5)" "var(--blue-5)"))
-                        :border-left    (str "4px solid " (if manage? "var(--amber-9)" "var(--blue-9)"))
-                        :border-radius  "var(--radius-3)"}}
-       [:> Flex {:align "center" :gap "3"}
-        [:> Box {:style {:color   (if manage? "var(--amber-9)" "var(--blue-9)")
-                         :display "flex" :flex-shrink 0}}
-         (if manage? [:> UserCog {:size 18}] [:> Key {:size 18}])]
-        [:> Flex {:direction "column" :gap "0"}
-         [:> Text {:size "2" :weight "medium"}
-          (if manage? "Admin accounts needed" "Role provisioning needed")]
-         [:> Text {:size "1" :color "gray"}
-          (str total-in-stage " resource"
-               (when (not= total-in-stage 1) "s")
-               (if manage?
-                 " need an admin account before Hoop can provision roles."
-                 " have an admin account but haven't had roles provisioned."))]]]
-       [:> Flex {:gap "2" :style {:flex-shrink 0}}
-        [:> Button {:size "2" :variant "outline"
-                    :color (if manage? "amber" "gray")
-                    :on-click on-import-csv}
-         [:> Upload {:size 14}] " Import CSV"]
-        [:> Button {:size "2" :color (if manage? "amber" "indigo")
-                    :on-click on-action}
-         (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
-         (str " " (if manage? "Set up " "Provision ") label-str " →")]]])))
+          manage?   (= tab :manage)
+          color     (if manage? "amber" "blue")]
+      [callout
+       {:color    color
+        :icon     (if manage? [:> UserCog {:size 18}] [:> Key {:size 18}])
+        :title    (if manage? "Admin accounts needed" "Role provisioning needed")
+        :subtitle (str (data/pluralize total-in-stage "resource")
+                       (if manage?
+                         " need an admin account before Hoop can provision roles."
+                         " have an admin account but haven't had roles provisioned."))
+        :actions  [:<>
+                   [:> Button {:size "2" :variant "outline"
+                               :color (if manage? "amber" "gray")
+                               :on-click on-import-csv}
+                    [:> Upload {:size 14}] " Import CSV"]
+                   [:> Button {:size "2" :color (if manage? "amber" "indigo")
+                               :on-click on-action}
+                    (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
+                    (str " " (if manage? "Set up " "Provision ") label-str " →")]]}])))
 
-;; ── Job status bar ─────────────────────────────────────────────────────────
+;; ── Job status bar ─────────────────────────────────────────────────────────────
+
 (defn job-status-bar [{:keys [job on-view on-dismiss]}]
-  (let [done    (count (filter #(= "done" (:status %)) (:items job)))
-        failed  (count (filter #(= "failed" (:status %)) (:items job)))
-        total   (count (:items job))
+  (let [done     (count (filter #(= "done" (:status %)) (:items job)))
+        failed   (count (filter #(= "failed" (:status %)) (:items job)))
+        total    (count (:items job))
         running? (< (+ done failed) total)
-        color   (cond running? "indigo" (pos? failed) "amber" :else "green")]
-    [:> Flex {:align "center" :justify "between" :px "4" :py "3" :mb "4"
-              :style {:background   (str "var(--" color "-2)")
-                      :border-top   (str "1px solid var(--" color "-5)")
-                      :border-right (str "1px solid var(--" color "-5)")
-                      :border-bottom (str "1px solid var(--" color "-5)")
-                      :border-left  (str "4px solid var(--" color "-9)")
-                      :border-radius "var(--radius-3)"}}
-     [:> Flex {:align "center" :gap "3"}
-      (cond
-        running?     [:span {:class "animate-spin inline-flex"
-                             :style {:color (str "var(--" color "-9)")}}
-                      [:> Loader2 {:size 14}]]
-        (pos? failed) [:> Box {:style {:color "var(--amber-9)" :display "flex"}}
-                       [:> AlertCircle {:size 14}]]
-        :else         [:> Box {:style {:color "var(--green-9)" :display "flex"}}
-                       [:> Check {:size 14}]])
-      [:> Text {:size "2" :weight "medium"}
-       (str (if (= (:type job) :admin-setup) "Admin setup" "Role provisioning")
-            " — " (second (re-find #"— (.+)" (:label job))))]
-      [:> Text {:size "2" :color "gray"}
-       (if running?
-         (str (+ done failed) " / " total " processed")
-         (str done " succeeded" (when (pos? failed) (str ", " failed " failed"))))]]
-     [:> Flex {:align "center" :gap "2"}
-      [:> Button {:size "1" :variant "ghost" :on-click on-view}
-       (if running? "View progress" "View results")]
-      (when-not running?
-        [:> Button {:size "1" :variant "ghost" :color "gray" :on-click on-dismiss}
-         [:> X {:size 12}]])]]))
+        color    (cond running? "indigo" (pos? failed) "amber" :else "green")
+        icon     (cond
+                   running?      [:span {:class "animate-spin inline-flex"
+                                         :style {:color (str "var(--" color "-9)")}}
+                                  [:> Loader2 {:size 14}]]
+                   (pos? failed) [:> AlertCircle {:size 14}]
+                   :else         [:> Check {:size 14}])
+        title    (str (if (= (:type job) :admin-setup) "Admin setup" "Role provisioning")
+                      " — " (second (re-find #"— (.+)" (:label job))))
+        progress (if running?
+                   (str (+ done failed) " / " total " processed")
+                   (str done " succeeded" (when (pos? failed) (str ", " failed " failed"))))]
+    [callout
+     {:color   color
+      :px      "4" :py "3"
+      :icon    icon
+      :extra   [:> Flex {:align "center" :gap "3"}
+                [:> Text {:size "2" :weight "medium"} title]
+                [:> Text {:size "2" :color "gray"} progress]]
+      :actions [:<>
+                [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                 (if running? "View progress" "View results")]
+                (when-not running?
+                  [:> Button {:size "1" :variant "ghost" :color "gray" :on-click on-dismiss}
+                   [:> X {:size 12}]])]}]))
+
+;; ── Floating action bar ────────────────────────────────────────────────────────
 
 (defn floating-action-bar [{:keys [count-val admin-count roles-count
                                     on-add-admin on-configure-roles on-clear]}]
@@ -193,10 +218,177 @@
    [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
     [:> X {:size 14}]]])
 
+;; ── Layout sections ────────────────────────────────────────────────────────────
+
+(defn- inventory-header [{:keys [total-resources ready-count on-open-bulk-import]}]
+  [:> Flex {:align "center" :justify "between" :mb "6"}
+   [:> Flex {:direction "column" :gap "2"}
+    [:> Heading {:size "8"} "Resource Catalog"]
+    [:> Flex {:align "center" :gap "3"}
+     [:> Text {:size "2" :color "gray"}
+      "Track and provision every database resource connected to Hoop."]
+     [:> Box {:style {:width 1 :height 12 :background "var(--gray-5)" :flex-shrink 0}}]
+     [:> Text {:size "2" :color "gray"} (data/pluralize total-resources "resource")]
+     [status-dot {:color "green" :size 5}]
+     [:> Text {:size "2" :color "green"} (str ready-count " complete")]]]
+   [:> Flex {:gap "2"}
+    [:> Button {:size "3" :on-click on-open-bulk-import}
+     [:> Plus {:size 16}] " Add to Inventory"]]])
+
+(defn- inventory-tabs [{:keys [active-tab counts on-change]}]
+  [:> Tabs.Root {:value         (name active-tab)
+                 :onValueChange #(on-change (keyword %))}
+   [:> Tabs.List {:mb "4"}
+    [:> Tabs.Trigger {:value "inventory"}
+     (str "Inventory (" (:inventory counts) ")")]
+    [:> Tabs.Trigger {:value "manage"}
+     (str "Manage (" (:manage counts) ")")]
+    [:> Tabs.Trigger {:value "provision"}
+     (str "Provision (" (:provision counts) ")")]]])
+
+(defn- inventory-search [{:keys [search set-search active-tab]}]
+  [:> Box {:mb "4"}
+   [:> TextField.Root {:placeholder (str "Search "
+                                         (cs/lower-case
+                                          (get data/stage-label active-tab "inventory"))
+                                         " resources…")
+                       :value     search
+                       :onChange  #(set-search (.. % -target -value))
+                       :style     {:max-width 360}}
+    [:> TextField.Slot [:> Search {:size 14}]]]])
+
+(defn- inventory-empty-state [{:keys [search active-tab on-clear-search]}]
+  [:> Table.Row
+   [:> Table.Cell {:col-span 7}
+    [:> Flex {:direction "column" :align "center" :justify "center" :py "9" :gap "3"}
+     [:> Box {:style {:color "var(--gray-5)" :display "flex"}}
+      (if (seq search)
+        [:> Search {:size 30 :stroke-width 1.5}]
+        [:> Database {:size 30 :stroke-width 1.5}])]
+     [:> Text {:size "2" :weight "medium" :color "gray"}
+      (cond
+        (seq search)              (str "No results for \"" search "\"")
+        (= active-tab :manage)    "All resources have admin accounts configured"
+        (= active-tab :provision) "No resources are ready for provisioning yet"
+        :else                     "No resources found")]
+     (when (seq search)
+       [:> Button {:variant "ghost" :size "1" :color "gray"
+                   :on-click on-clear-search}
+        "Clear search"])]]])
+
+(defn- row-action-button
+  "Renders the per-row stage action button using the central stage-action map."
+  [{:keys [resource on-open-bulk-admin on-open-bulk-roles]}]
+  (let [stage   (:stage resource)
+        action  (get data/stage-action stage)
+        handler (case (:handler-key action)
+                  :on-open-bulk-admin #(on-open-bulk-admin [resource])
+                  :on-open-bulk-roles #(on-open-bulk-roles [resource])
+                  nil)]
+    (when action
+      [:> Button (cond-> {:variant (:variant action) :size "1"}
+                   (:color action) (assoc :color (:color action))
+                   handler         (assoc :on-click handler))
+       (:row-label action)])))
+
+(defn- inventory-row
+  [{:keys [resource selected? hovered? on-toggle on-hover-on on-hover-off
+           on-open-bulk-admin on-open-bulk-roles]}]
+  [:> Table.Row
+   {:style          {:background (data/row-bg (:stage resource) selected? hovered?)
+                     :cursor     "pointer"}
+    :on-click       on-toggle
+    :on-mouse-enter on-hover-on
+    :on-mouse-leave on-hover-off}
+   [:> Table.Cell {:on-click #(.stopPropagation %)}
+    [:> Checkbox {:checked selected? :onCheckedChange on-toggle}]]
+   [:> Table.Cell [:> Text {:size "2" :weight "medium"} (:name resource)]]
+   [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type resource)]]
+   [:> Table.Cell
+    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+     (:address resource)]]
+   [:> Table.Cell
+    (if (:admin resource)
+      [:> Flex {:align "center" :gap "2"}
+       [status-dot {:color "green"}]
+       [:> Text {:size "2"} (:admin resource)]]
+      [:> Flex {:align "center" :gap "2"}
+       [status-dot {:color "amber"}]
+       [:> Text {:size "2" :color "gray"} "Not configured"]])]
+   [:> Table.Cell {:style {:min-width 220}} [progress-bar resource]]
+   [:> Table.Cell {:on-click #(.stopPropagation %)}
+    [:> Flex {:align "center" :gap "1"}
+     [row-action-button {:resource           resource
+                         :on-open-bulk-admin on-open-bulk-admin
+                         :on-open-bulk-roles on-open-bulk-roles}]]]])
+
+(defn- inventory-table
+  [{:keys [page-rows visible all-visible-selected some-visible-selected
+           selected-ids hovered-row search active-tab
+           on-toggle-select on-toggle-all on-set-hovered on-set-search
+           on-open-bulk-admin on-open-bulk-roles]}]
+  [:> Table.Root {:variant "surface"}
+   [:> Table.Header
+    [:> Table.Row
+     [:> Table.ColumnHeaderCell {:style {:width 48}}
+      [:> Checkbox {:checked         (cond
+                                       (and all-visible-selected (pos? (count visible))) true
+                                       some-visible-selected                             "indeterminate"
+                                       :else                                             false)
+                    :onCheckedChange on-toggle-all}]]
+     [:> Table.ColumnHeaderCell "Name"]
+     [:> Table.ColumnHeaderCell "Type"]
+     [:> Table.ColumnHeaderCell "Host"]
+     [:> Table.ColumnHeaderCell "Admin account"]
+     [:> Table.ColumnHeaderCell {:style {:min-width 220}} "Setup progress"]
+     [:> Table.ColumnHeaderCell]]]
+   [:> Table.Body
+    (if (empty? visible)
+      [inventory-empty-state {:search          search
+                              :active-tab      active-tab
+                              :on-clear-search #(on-set-search "")}]
+      (doall
+       (for [r page-rows]
+         ^{:key (:id r)}
+         [inventory-row
+          {:resource           r
+           :selected?          (contains? selected-ids (:id r))
+           :hovered?           (= hovered-row (:id r))
+           :on-toggle          #(on-toggle-select (:id r))
+           :on-hover-on        #(on-set-hovered (:id r))
+           :on-hover-off       #(on-set-hovered nil)
+           :on-open-bulk-admin on-open-bulk-admin
+           :on-open-bulk-roles on-open-bulk-roles}])))]])
+
+(defn- pagination
+  [{:keys [total-visible selected-count safe-page total-pages on-change]}]
+  [:> Flex {:align "center" :justify "between" :mt "3"}
+   [:> Text {:size "1" :color "gray"}
+    (str (data/pluralize total-visible "resource")
+         (when (pos? selected-count)
+           (str " \u00b7 " selected-count " selected")))]
+   (when (> total-pages 1)
+     [:> Flex {:align "center" :gap "2"}
+      [:> Button {:size "1" :variant "ghost" :color "gray"
+                  :disabled (zero? safe-page)
+                  :on-click #(on-change (dec safe-page))}
+       [:> ChevronLeft {:size 14}]]
+      [:> Text {:size "1" :color "gray"}
+       (str (inc safe-page) " / " total-pages)]
+      [:> Button {:size "1" :variant "ghost" :color "gray"
+                  :disabled (>= (inc safe-page) total-pages)
+                  :on-click #(on-change (inc safe-page))}
+       [:> ChevronRight {:size 14}]]])])
+
 ;; initial page size is 50
 (def ^:private hub-page-size 50)
 
-
+(defn- resolve-stage-handler
+  "Looks up the bulk handler fn for the given stage from the props passed
+   to `view`. Returns nil if no action is configured for that stage."
+  [stage props]
+  (when-let [k (:handler-key (get data/stage-action stage))]
+    (get props k)))
 
 (defn view
   [{:keys [resources selected-ids set-selected-ids
@@ -204,14 +396,12 @@
            page set-page
            jobs dismissed-job-ids set-dismissed-job-ids
            hovered-row set-hovered-row
-           on-set-screen on-open-bulk-admin on-open-bulk-roles on-open-bulk-import]}]
-
-  ;;; initially i am keeping fn inside the component unless I need to use this in another namespace
+           on-set-screen on-open-bulk-admin on-open-bulk-roles on-open-bulk-import]
+    :as   props}]
   (let [stage-filter   (get data/tab->stage active-tab)
         stage-filtered (if stage-filter
                          (filterv #(= stage-filter (:stage %)) resources)
                          resources)
-
 
         visible        (filterv (fn [r]
                                   (or (empty? search)
@@ -230,14 +420,14 @@
                 :manage    (count (filter #(= :needs-admin (:stage %)) resources))
                 :provision (count (filter #(= :needs-roles (:stage %)) resources))}
 
-        selected-resources    (filter #(selected-ids (:id %)) resources)
+        selected-resources     (filter #(selected-ids (:id %)) resources)
         selected-needing-admin (filter #(= :needs-admin (:stage %)) selected-resources)
         selected-needing-roles (filter #(= :needs-roles (:stage %)) selected-resources)
-        selected-in-stage     (count (filter #(= stage-filter (:stage %)) selected-resources))
+        selected-in-stage      (count (filter #(= stage-filter (:stage %)) selected-resources))
 
-        all-visible-selected  (and (pos? (count visible))
-                                   (every? #(selected-ids (:id %)) visible))
-        some-visible-selected (some #(selected-ids (:id %)) visible)
+        all-visible-selected   (and (pos? (count visible))
+                                    (every? #(selected-ids (:id %)) visible))
+        some-visible-selected  (some #(selected-ids (:id %)) visible)
 
         toggle-select (fn [id]
                         (set-selected-ids
@@ -249,180 +439,74 @@
                           (set-selected-ids
                            (fn [s] (into s (map :id visible))))))
         change-tab    (fn [tab]
-                        (set-active-tab (keyword tab))
+                        (set-active-tab tab)
                         (set-selected-ids #{})
                         (set-search ""))
 
         latest-active-job (last (filterv #(not (contains? dismissed-job-ids (:id %))) jobs))
-        ready-count (count (filter #(= :ready (:stage %)) resources))]
+        ready-count       (count (filter #(= :ready (:stage %)) resources))
+
+        stage-handler     (resolve-stage-handler stage-filter props)
+        run-stage-action  (fn []
+                            (when stage-handler
+                              (let [targets (if (pos? selected-in-stage)
+                                              (filterv #(and (selected-ids (:id %))
+                                                             (= stage-filter (:stage %)))
+                                                       resources)
+                                              stage-filtered)]
+                                (stage-handler targets))))
+        run-import-csv    (fn []
+                            (when stage-handler
+                              (stage-handler stage-filtered "csv")))]
 
     [:> Box {:class "flex-1 overflow-y-auto"}
-     ;; Header
-     [:> Flex {:align "center" :justify "between" :mb "6"}
-      [:> Flex {:direction "column" :gap "2"}
-       [:> Heading {:size "8"} "Resource Catalog"]
-       [:> Flex {:align "center" :gap "3"}
-        [:> Text {:size "2" :color "gray"}
-         "Track and provision every database resource connected to Hoop."]
-        [:> Box {:style {:width 1 :height 12 :background "var(--gray-5)" :flex-shrink 0}}]
-        [:> Text {:size "2" :color "gray"} (str (count resources) " resources")]
-        [:> Box {:style {:width 5 :height 5 :border-radius "50%"
-                         :background "var(--green-9)" :flex-shrink 0}}]
-        [:> Text {:size "2" :color "green"} (str ready-count " complete")]]]
-      [:> Flex {:gap "2"}
-       [:> Button {:size "3" :on-click on-open-bulk-import}
-        [:> Plus {:size 16}] " Add to Inventory"]]]
+     [inventory-header {:total-resources     (count resources)
+                        :ready-count         ready-count
+                        :on-open-bulk-import on-open-bulk-import}]
 
-     ;; Funnel
      [funnel-cards resources]
 
-     ;; Active job banner
      (when latest-active-job
        [job-status-bar {:job        latest-active-job
                         :on-view    #(on-set-screen :job-detail (:id latest-active-job))
                         :on-dismiss #(set-dismissed-job-ids
                                       (fn [s] (conj s (:id latest-active-job))))}])
 
-     ;; Tabs
-     [:> Tabs.Root {:value (name active-tab)
-                    :onValueChange #(change-tab %)}
-      [:> Tabs.List {:mb "4"}
-       [:> Tabs.Trigger {:value "inventory"}
-        (str "Inventory (" (:inventory counts) ")")]
-       [:> Tabs.Trigger {:value "manage"}
-        (str "Manage (" (:manage counts) ")")]
-       [:> Tabs.Trigger {:value "provision"}
-        (str "Provision (" (:provision counts) ")")]]]
+     [inventory-tabs {:active-tab active-tab
+                      :counts     counts
+                      :on-change  change-tab}]
 
-     ;; Stage banner
-     [stage-banner {:tab             active-tab
-                    :total-in-stage  (count stage-filtered)
+     [stage-banner {:tab               active-tab
+                    :total-in-stage    (count stage-filtered)
                     :selected-in-stage selected-in-stage
-                    :on-action       (fn []
-                                       (let [targets (if (pos? selected-in-stage)
-                                                       (filterv #(and (selected-ids (:id %))
-                                                                      (= stage-filter (:stage %)))
-                                                                resources)
-                                                       stage-filtered)]
-                                         (case active-tab
-                                           :manage    (on-open-bulk-admin targets)
-                                           :provision (on-open-bulk-roles targets)
-                                           nil)))
-                    :on-import-csv   (fn []
-                                       (case active-tab
-                                         :manage    (on-open-bulk-admin stage-filtered "csv")
-                                         :provision (on-open-bulk-roles stage-filtered "csv")
-                                         nil))}]
+                    :on-action         run-stage-action
+                    :on-import-csv     run-import-csv}]
 
-     ;; Search
-     [:> Box {:mb "4"}
-      [:> TextField.Root {:placeholder (str "Search "
-                                            (cs/lower-case
-                                             (get data/stage-label active-tab "inventory"))
-                                            " resources…")
-                          :value     search
-                          :onChange  #(set-search (.. % -target -value))
-                          :style     {:max-width 360}}
-       [:> TextField.Slot [:> Search {:size 14}]]]]
+     [inventory-search {:search     search
+                        :set-search set-search
+                        :active-tab active-tab}]
 
-     ;; Table
-     [:> Table.Root {:variant "surface"}
-      [:> Table.Header
-       [:> Table.Row
-        [:> Table.ColumnHeaderCell {:style {:width 48}}
-         [:> Checkbox {:checked (cond
-                                  (and all-visible-selected (pos? (count visible))) true
-                                  some-visible-selected "indeterminate"
-                                  :else false)
-                       :onCheckedChange toggle-all}]]
-        [:> Table.ColumnHeaderCell "Name"]
-        [:> Table.ColumnHeaderCell "Type"]
-        [:> Table.ColumnHeaderCell "Host"]
-        [:> Table.ColumnHeaderCell "Admin account"]
-        [:> Table.ColumnHeaderCell {:style {:min-width 220}} "Setup progress"]
-        [:> Table.ColumnHeaderCell]]]
-      [:> Table.Body
-       (if (empty? visible)
-         [:> Table.Row
-          [:> Table.Cell {:col-span 7}
-           [:> Flex {:direction "column" :align "center" :justify "center" :py "9" :gap "3"}
-            [:> Box {:style {:color "var(--gray-5)" :display "flex"}}
-             (if (seq search)
-               [:> Search {:size 30 :stroke-width 1.5}]
-               [:> Database {:size 30 :stroke-width 1.5}])]
-            [:> Text {:size "2" :weight "medium" :color "gray"}
-             (cond
-               (seq search) (str "No results for \"" search "\"")
-               (= active-tab :manage) "All resources have admin accounts configured"
-               (= active-tab :provision) "No resources are ready for provisioning yet"
-               :else "No resources found")]
-            (when (seq search)
-              [:> Button {:variant "ghost" :size "1" :color "gray"
-                          :on-click #(set-search "")}
-               "Clear search"])]]]
+     [inventory-table {:page-rows             page-rows
+                       :visible               visible
+                       :all-visible-selected  all-visible-selected
+                       :some-visible-selected some-visible-selected
+                       :selected-ids          selected-ids
+                       :hovered-row           hovered-row
+                       :search                search
+                       :active-tab            active-tab
+                       :on-toggle-select      toggle-select
+                       :on-toggle-all         toggle-all
+                       :on-set-hovered        set-hovered-row
+                       :on-set-search         set-search
+                       :on-open-bulk-admin    on-open-bulk-admin
+                       :on-open-bulk-roles    on-open-bulk-roles}]
 
-         (doall
-          (for [r page-rows]
-            ^{:key (:id r)}
-            [:> Table.Row
-             {:style    {:background (data/row-bg (:stage r)
-                                                   (contains? selected-ids (:id r))
-                                                   (= hovered-row (:id r)))
-                         :cursor "pointer"}
-              :on-click #(toggle-select (:id r))
-              :on-mouse-enter #(set-hovered-row (:id r))
-              :on-mouse-leave #(set-hovered-row nil)}
-             [:> Table.Cell {:on-click #(.stopPropagation %)}
-              [:> Checkbox {:checked   (contains? selected-ids (:id r))
-                            :onCheckedChange #(toggle-select (:id r))}]]
-             [:> Table.Cell [:> Text {:size "2" :weight "medium"} (:name r)]]
-             [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type r)]]
-             [:> Table.Cell [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
-                             (:address r)]]
-             [:> Table.Cell
-              (if (:admin r)
-                [:> Flex {:align "center" :gap "2"}
-                 [:> Box {:style {:width 7 :height 7 :border-radius "50%"
-                                  :background "var(--green-9)" :flex-shrink 0}}]
-                 [:> Text {:size "2"} (:admin r)]]
-                [:> Flex {:align "center" :gap "2"}
-                 [:> Box {:style {:width 7 :height 7 :border-radius "50%"
-                                  :background "var(--amber-9)" :flex-shrink 0}}]
-                 [:> Text {:size "2" :color "gray"} "Not configured"]])]
-             [:> Table.Cell {:style {:min-width 220}} [progress-bar r]]
-             [:> Table.Cell {:on-click #(.stopPropagation %)}
-              [:> Flex {:align "center" :gap "1"}
-               (case (:stage r)
-                 :needs-admin [:> Button {:variant "ghost" :size "1"
-                                          :on-click #(on-open-bulk-admin [r])}
-                               "Set up admin"]
-                 :needs-roles [:> Button {:variant "ghost" :size "1"
-                                          :on-click #(on-open-bulk-roles [r])}
-                               "Provision roles"]
-                 :ready       [:> Button {:variant "ghost" :size "1" :color "gray"}
-                               "Manage"]
-                 nil)]]])))]]
+     [pagination {:total-visible  total-visible
+                  :selected-count (count selected-ids)
+                  :safe-page      safe-page
+                  :total-pages    total-pages
+                  :on-change      set-page}]
 
-     ;; Pagination + Footer
-     [:> Flex {:align "center" :justify "between" :mt "3"}
-      [:> Text {:size "1" :color "gray"}
-       (str total-visible " resource" (when (not= 1 total-visible) "s")
-            (when (pos? (count selected-ids))
-              (str " \u00b7 " (count selected-ids) " selected")))]
-      (when (> total-pages 1)
-        [:> Flex {:align "center" :gap "2"}
-         [:> Button {:size "1" :variant "ghost" :color "gray"
-                     :disabled (zero? safe-page)
-                     :on-click #(set-page (dec safe-page))}
-          [:> ChevronLeft {:size 14}]]
-         [:> Text {:size "1" :color "gray"}
-          (str (inc safe-page) " / " total-pages)]
-         [:> Button {:size "1" :variant "ghost" :color "gray"
-                     :disabled (>= (inc safe-page) total-pages)
-                     :on-click #(set-page (inc safe-page))}
-          [:> ChevronRight {:size 14}]]])]
-
-     ;; Floating action bar
      (when (pos? (count selected-ids))
        [floating-action-bar
         {:count-val          (count selected-ids)

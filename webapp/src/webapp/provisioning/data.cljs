@@ -33,6 +33,34 @@
                     "locked")
       "locked")))
 
+;; ── Progress segment visual lookup ─────────────────────────────────────────────
+;; Single source of truth for both the bar color and the tooltip wording.
+(def segment-states
+  {"done"   {:bg "var(--green-9)"  :text "complete"}
+   "active" {:bg "var(--indigo-9)" :text "action required"}
+   "locked" {:bg "var(--gray-4)"   :text "complete previous steps first"}})
+
+;; ── Stage → row action ─────────────────────────────────────────────────────────
+;; Drives the per-row "Set up admin / Provision roles / Manage" buttons and
+;; the stage-banner action button. `:handler-key` is looked up in the props
+;; passed to `view`, so adding a new stage = one map entry.
+(def stage-action
+  {:needs-admin {:row-label   "Set up admin"
+                 :banner-verb "Set up"
+                 :handler-key :on-open-bulk-admin
+                 :variant     "ghost"
+                 :color       nil}
+   :needs-roles {:row-label   "Provision roles"
+                 :banner-verb "Provision"
+                 :handler-key :on-open-bulk-roles
+                 :variant     "ghost"
+                 :color       nil}
+   :ready       {:row-label   "Manage"
+                 :banner-verb nil
+                 :handler-key nil
+                 :variant     "ghost"
+                 :color       "gray"}})
+
 ;; ── DB type → Radix color ──────────────────────────────────────────────────────
 (def db-type-color
   {"PostgreSQL" "blue"})
@@ -76,6 +104,13 @@
 ;; ── Funnel accent colors / step labels ─────────────────────────────────────────
 (def funnel-accent  ["var(--gray-8)" "var(--amber-9)" "var(--blue-9)"])
 (def funnel-step-id ["01" "02" "03"])
+
+;; ── Pluralize helper ───────────────────────────────────────────────────────────
+(defn pluralize
+  "Returns \"<n> <word>\" with the word pluralized when n != 1.
+   Pass an explicit `plural` form for irregular plurals."
+  ([n word] (pluralize n word (str word "s")))
+  ([n word plural] (str n " " (if (= 1 n) word plural))))
 
 ;; ── Session output generator ───────────────────────────────────────────────────
 (defn generate-session-output
