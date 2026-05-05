@@ -10,7 +10,7 @@
 
 /* Applies to both column headers (thead th) and row headers (tbody th) */
 .th {
-  color: var(--mantine-color-gray-8);
-  font-weight: 600;
-  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-text);
+  font-weight: 700;
+  font-size: var(--mantine-font-size-sm);
 }

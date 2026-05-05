@@ -21,6 +21,7 @@ import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
+import SettingsExperimental from '@/pages/Settings/Experimental'
 
 /**
  * Routing strategy:
@@ -213,6 +214,20 @@ function Router() {
             <Layout>
               <PageLayout>
                 <OrganizationUsers />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Experimental feature flags */}
+      <Route
+        path="/settings/experimental"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsExperimental />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

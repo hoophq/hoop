@@ -11,7 +11,7 @@ import classes from './Sidebar.module.css';
 
 function SectionLabel({ label, id }) {
   return (
-    <Text id={id} size="xs" fw={600} c="white" mb="xs">
+    <Text id={id} size="xs" fw={600} c="white" mb="sm">
       {label}
     </Text>
   );

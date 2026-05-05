@@ -247,7 +247,7 @@ function ClojureApp() {
 
   return (
     <>
-      {cljsLoading && <PageLoader overlay />}
+      {cljsLoading && <PageLoader />}
       <div ref={containerRef} />
     </>
   )
