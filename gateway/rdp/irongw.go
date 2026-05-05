@@ -305,6 +305,12 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 				sessionErrMu.Lock()
 				sessionErr = err
 				sessionErrMu.Unlock()
+				// The outer loop blocks on tlsClient.Read until the agent-side
+				// TLS connection drops on its own, which can take tens of
+				// seconds (or never on a silent disconnect). Close it here so
+				// the outer loop returns immediately and recorder.Close + the
+				// session-ended persistence path run promptly.
+				_ = tlsClient.Close()
 				return
 			}
 
@@ -316,6 +322,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 				sessionErrMu.Lock()
 				sessionErr = err
 				sessionErrMu.Unlock()
+				_ = tlsClient.Close()
 				return
 			}
 		}
@@ -344,8 +351,10 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		}
 	}
 
-	// Close tlsClient to unblock any pending reads/writes
-	tlsClient.Close()
+	// Make sure the TLS connection is torn down (idempotent if the goroutine
+	// already closed it on browser disconnect) so the websocket-reader goroutine
+	// also unblocks and exits.
+	_ = tlsClient.Close()
 
 	// Wait for the websocket read goroutine to finish
 	<-done
