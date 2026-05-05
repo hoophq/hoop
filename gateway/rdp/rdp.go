@@ -13,7 +13,7 @@ import (
 
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
@@ -177,7 +177,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		}
 	}
 
-	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, err := checkAndPrepareRDP(firstRDPData)
+	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, isMachineCredential, err := checkAndPrepareRDP(firstRDPData)
 	if err != nil {
 		log.Printf("Failed to check and prepare RDP: %v", err)
 		_ = sendGenericRdpError(conn)
@@ -205,9 +205,11 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	transport.PollingUserToken(context.Background(), func(cause error) {
-		session.Close()
-	}, tokenVerifier, dba.UserSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(context.Background(), func(cause error) {
+			session.Close()
+		}, tokenVerifier, dba.UserSubject)
+	}
 
 	// Register session
 	// Clean up session on exit
@@ -223,18 +225,18 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 
 }
 
-func checkAndPrepareRDP(firstRDPData []byte) (duration time.Duration, at *models.ConnectionCredentials, model *models.Connection, verifier idp.UserInfoTokenVerifier, creds string, err error) {
+func checkAndPrepareRDP(firstRDPData []byte) (duration time.Duration, at *models.ConnectionCredentials, model *models.Connection, verifier idp.UserInfoTokenVerifier, creds string, isMachine bool, err error) {
 	// Extract credentials from headers
 	extractedCreds, err := ExtractCredentialsFromRDP(firstRDPData)
 	if err != nil {
 		log.Errorf("Failed to extract credentials: %v", err)
-		return duration, at, model, verifier, creds, err
+		return duration, at, model, verifier, creds, false, err
 	}
 
 	secretKeyHash, err := keys.Hash256Key(extractedCreds)
 	if err != nil {
 		log.Errorf("failed hashing rdp secret key, reason=%v", err)
-		return duration, at, model, verifier, creds, err
+		return duration, at, model, verifier, creds, false, err
 	}
 
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
@@ -245,40 +247,52 @@ func checkAndPrepareRDP(firstRDPData []byte) (duration time.Duration, at *models
 		if errors.Is(err, models.ErrNotFound) {
 			// it is possible to use just mapped errors for client responses
 			log.Errorf("invalid credentials provided by rdp client, reason=%v", err)
-			return duration, at, model, verifier, creds, err
+			return duration, at, model, verifier, creds, false, err
 		}
 		log.Errorf("failed obtaining secret access key, reason=%v", err)
-		return duration, at, model, verifier, creds, err
+		return duration, at, model, verifier, creds, false, err
 	}
 
 	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
 	if ctxDuration <= 0 {
 		log.Errorf("invalid secret access key credentials")
-		return duration, at, model, verifier, creds, fmt.Errorf("expired credentials")
+		return duration, at, model, verifier, creds, false, fmt.Errorf("expired credentials")
 	}
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		log.Errorf("failed to load IDP provider: %v", err)
-		return duration, at, model, verifier, creds, err
+	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
+
+	var tokenVerifier idp.UserInfoTokenVerifier
+	if !isMachineCredential {
+		var err error
+		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			log.Errorf("failed to load IDP provider: %v", err)
+			return duration, at, model, verifier, creds, false, err
+		}
+
+		if err := usertoken.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+			log.Errorf("Error verifying the user token: %v", err)
+			return duration, at, model, verifier, creds, false, err
+		}
 	}
 
-	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		log.Errorf("Error verifying the user token: %v", err)
-		return duration, at, model, verifier, creds, err
-	}
-
-	userCtx, err := models.GetUserContext(dba.UserSubject)
-	if err != nil {
-		log.Errorf("failed fetching user context, reason=%v", err)
-		return duration, at, model, verifier, creds, err
+	var userCtx models.UserContext
+	if isMachineCredential {
+		userCtx = models.NewAdminContext(dba.OrgID)
+	} else {
+		var err error
+		userCtx, err = models.GetUserContext(dba.UserSubject)
+		if err != nil {
+			log.Errorf("failed fetching user context, reason=%v", err)
+			return duration, at, model, verifier, creds, false, err
+		}
 	}
 
 	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
 	if connectionModel == nil || err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
-		return duration, at, model, verifier, creds, err
+		return duration, at, model, verifier, creds, false, err
 	}
 
-	return ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, nil
+	return ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, isMachineCredential, nil
 }

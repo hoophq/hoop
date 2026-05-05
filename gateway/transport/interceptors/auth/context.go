@@ -15,6 +15,13 @@ type GatewayContext struct {
 	UserContext models.Context
 	Connection  types.ConnectionInfo
 	Agent       models.Agent
+
+	// IdentityType distinguishes user (human) vs machine sessions.
+	// "machine" is set when the request was authenticated as a machine
+	// identity; empty otherwise (treated as user).
+	IdentityType string
+	// MachineIdentityID is populated when IdentityType == "machine".
+	MachineIdentityID string
 }
 
 func (c *GatewayContext) ValidateConnectionAttrs() error {

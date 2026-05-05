@@ -181,6 +181,7 @@ func Post(c *gin.Context) {
 		ConnectionTags:       conn.ConnectionTags,
 		Verb:                 proto.ClientVerbExec,
 		Status:               string(openapi.SessionStatusOpen),
+		IdentityType:         "user",
 		SessionBatchID:       req.SessionBatchID,
 		CorrelationID:        req.CorrelationID,
 		CreatedAt:            time.Now().UTC(),

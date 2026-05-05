@@ -67,6 +67,8 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		EndSession:           s.EndSession,
 		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),
 		GuardRailsInfo:       toOpenApiSessionGuardRailsInfo(s.GuardRailsInfo),
+		IdentityType:         s.IdentityType,
+		MachineIdentityID:    s.MachineIdentityID,
 	}
 }
 
