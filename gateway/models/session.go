@@ -581,6 +581,72 @@ func SetSessionCredentialsRevokedAt(orgID, sessionID string, revokedAt time.Time
 		}).Error
 }
 
+// SessionStreamBlobID returns the deterministic blob id for a session's stream.
+func SessionStreamBlobID(sessionID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobstream:%s", sessionID)).String()
+}
+
+// CreateEmptySessionStreamBlob inserts an empty stream blob and points the
+// session row at it. Subsequent flushes append to that row via AppendSessionStream.
+// Idempotent: re-running for the same session is a no-op on conflict.
+func CreateEmptySessionStreamBlob(orgID, sessionID string, blobFormat *string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		blobStreamID := SessionStreamBlobID(sessionID)
+		blob := Blob{
+			ID:         blobStreamID,
+			OrgID:      orgID,
+			BlobStream: json.RawMessage(`[]`),
+			Type:       "session-stream",
+			BlobFormat: blobFormat,
+		}
+		// upsert via UPDATE-then-INSERT pattern used elsewhere in this file
+		res := tx.Table("private.blobs").
+			Where("org_id = ? AND id = ?", orgID, blobStreamID).
+			Updates(map[string]any{"format": blobFormat})
+		if res.Error == nil && res.RowsAffected == 0 {
+			res.Error = tx.Table("private.blobs").Create(blob).Error
+		}
+		if res.Error != nil {
+			return fmt.Errorf("failed creating empty session stream blob: %v", res.Error)
+		}
+		return tx.Table("private.sessions").
+			Where("org_id = ? AND id = ?", orgID, sessionID).
+			Update("blob_stream_id", blobStreamID).Error
+	})
+}
+
+// AppendSessionStream concatenates entries onto the session's blob_stream
+// using Postgres jsonb concatenation. entries must already be a JSON array.
+// Returns ErrNotFound if the stream blob row does not exist — callers should
+// retry rather than silently dropping the flush window.
+func AppendSessionStream(orgID, sessionID string, entries json.RawMessage) error {
+	blobStreamID := SessionStreamBlobID(sessionID)
+	res := DB.Exec(
+		`UPDATE private.blobs SET blob_stream = blob_stream || ?::jsonb WHERE org_id = ? AND id = ?`,
+		string(entries), orgID, blobStreamID,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkSessionDone updates the session terminal columns without touching the
+// stream blob — flushes write the blob incrementally during the session.
+func MarkSessionDone(sess SessionDone) error {
+	return DB.Table("private.sessions AS s").
+		Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
+		Updates(map[string]any{
+			"exit_code": sess.ExitCode,
+			"status":    sess.Status,
+			"ended_at":  sess.EndSession,
+			"metrics":   gorm.Expr("COALESCE(s.metrics, '{}'::jsonb) || ?::jsonb", sess.Metrics),
+		}).Error
+}
+
 // UpdateSessionEventStream updates a session partially
 func UpdateSessionEventStream(sess SessionDone) error {
 	return DB.Transaction(func(tx *gorm.DB) error {

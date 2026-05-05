@@ -124,9 +124,6 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			updateGuardRailsInfoFromPacket(pctx, pkt)
 			// it will make sure to run the disconnect plugin phase for both clients
 			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
-		case pbclient.InteractionClose:
-			// handled by audit plugin via OnReceive; do not forward to client or close session
-			continue
 		case pbclient.SessionOpenOK:
 			if proxyStream.PluginContext().ConnectionSubType == "ssh" {
 				pkt.Spec[pb.SpecClientSSHHostKey] = []byte(appconfig.Get().SSHClientHostKey())

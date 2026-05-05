@@ -7585,124 +7585,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/sessions/{session_id}/interactions": {
-            "get": {
-                "description": "Returns the list of interactions for a machine session, with support for pagination via the sequence parameter.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Sessions"
-                ],
-                "summary": "List Session Interactions",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The session ID",
-                        "name": "session_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Only return interactions with sequence \u003e N",
-                        "name": "after_sequence",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Max interactions to return (default: 50, max: 100)",
-                        "name": "limit",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/sessionapi.listInteractionsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/sessions/{session_id}/interactions/stream": {
-            "get": {
-                "description": "Streams interactions for a machine session in real-time via SSE. Sends existing interactions as catch-up, then pushes new ones as they are created.",
-                "produces": [
-                    "text/event-stream"
-                ],
-                "tags": [
-                    "Sessions"
-                ],
-                "summary": "Stream Session Interactions",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The session ID",
-                        "name": "session_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Only stream interactions with sequence \u003e N",
-                        "name": "after_sequence",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
         "/sessions/{session_id}/kill": {
             "post": {
                 "tags": [
@@ -8012,6 +7894,59 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/stream": {
+            "get": {
+                "description": "Streams audit events for a machine session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Stream Session Events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -15161,49 +15096,6 @@ const docTemplate = `{
                 },
                 "total_frames": {
                     "type": "integer"
-                }
-            }
-        },
-        "sessionapi.interactionResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "ended_at": {
-                    "type": "string"
-                },
-                "exit_code": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "input": {
-                    "type": "string"
-                },
-                "output": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "sequence": {
-                    "type": "integer"
-                }
-            }
-        },
-        "sessionapi.listInteractionsResponse": {
-            "type": "object",
-            "properties": {
-                "has_more": {
-                    "type": "boolean"
-                },
-                "interactions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/sessionapi.interactionResponse"
-                    }
                 }
             }
         },

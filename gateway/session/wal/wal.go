@@ -138,4 +138,30 @@ func (w *WalLog) ReadAtMost(max uint32, readerFn ReaderFunc) (bool, error) {
 func (w *WalLog) ReadFull(readerFn ReaderFunc) (bool, error) {
 	return w.ReadAtMost(DefaultMaxRead, readerFn)
 }
+
+// ReadFrom reads events starting at startIndex (inclusive) until end of log,
+// passing each entry to readerFn. Returns the last index successfully read so
+// the caller can resume from lastIndex+1 next time. Indices below the first
+// data slot are clamped up.
+func (w *WalLog) ReadFrom(startIndex uint64, readerFn ReaderFunc) (uint64, error) {
+	if startIndex < defaultDataIndex {
+		startIndex = defaultDataIndex
+	}
+	lastIndex := startIndex - 1
+	for i := startIndex; ; i++ {
+		data, err := w.wlog.Read(i)
+		if err == wal.ErrNotFound {
+			break
+		}
+		if err != nil {
+			return lastIndex, err
+		}
+		if err := readerFn(data); err != nil {
+			return lastIndex, err
+		}
+		lastIndex = i
+	}
+	return lastIndex, nil
+}
+
 func (w *WalLog) Close() error { return w.wlog.Close() }

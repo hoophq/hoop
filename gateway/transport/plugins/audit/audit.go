@@ -1,16 +1,13 @@
 package audit
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
@@ -23,8 +20,8 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/session/eventbroker"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
-	"github.com/hoophq/hoop/gateway/session/interactionbroker"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -36,28 +33,14 @@ const (
 	identityTypeUser    = "user"
 )
 
-// machineSessionState tracks the current interaction WAL and sequence counter for a machine session.
-type machineSessionState struct {
-	mu              sync.Mutex
-	currentSequence int
-	currentWAL      *walLogRWMutex
-	startDate       *time.Time // start of current interaction
-	sessionID       string
-	orgID           string
-}
-
 type auditPlugin struct {
-	walSessionStore     memory.Store // human sessions: key=sessionID
-	machineSessionStore memory.Store // machine sessions: key=sessionID, value=*machineSessionState
-	started             bool
-	mu                  sync.RWMutex
+	walSessionStore memory.Store // key=sessionID, value=*walLogRWMutex
+	started         bool
+	mu              sync.RWMutex
 }
 
 func New() *auditPlugin {
-	return &auditPlugin{
-		walSessionStore:     memory.New(),
-		machineSessionStore: memory.New(),
-	}
+	return &auditPlugin{walSessionStore: memory.New()}
 }
 func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
 func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
@@ -81,18 +64,11 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	pctx.ParamsData["status"] = string(openapi.SessionStatusOpen)
 	pctx.ParamsData["start_date"] = &startDate
 
-	isMachine := pctx.IdentityType == identityTypeMachine
-	if isMachine {
-		// machine sessions: don't open a WAL yet (no interaction started)
-		p.machineSessionStore.Set(pctx.SID, &machineSessionState{
-			sessionID: pctx.SID,
-			orgID:     pctx.OrgID,
-		})
-	} else {
-		if err := p.writeOnConnect(pctx); err != nil {
-			return err
-		}
+	if err := p.writeOnConnect(pctx); err != nil {
+		return err
 	}
+
+	isMachine := pctx.IdentityType == identityTypeMachine
 
 	// persist session for public gRPC clients
 	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
@@ -151,17 +127,19 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 
 		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
+
+	if isMachine {
+		if err := p.startMachineFlushTicker(pctx); err != nil {
+			return fmt.Errorf("failed starting machine flush ticker, reason=%v", err)
+		}
+	}
+
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
 	return nil
 }
 
 func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
-	// handle interaction close for machine sessions
-	if pb.PacketType(pkt.GetType()) == pbclient.InteractionClose && pctx.IdentityType == identityTypeMachine {
-		return nil, p.closeInteraction(pctx, pkt)
-	}
-
 	eventMetadata := parseSpecAsEventMetadata(pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.SessionOpen:
@@ -223,13 +201,13 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		pbclient.MySQLConnectionWrite,
 		pbclient.MongoDBConnectionWrite:
 		if len(eventMetadata) > 0 {
-			return nil, p.dispatchWrite(pctx, eventlogv1.OutputType, nil, eventMetadata)
+			return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, nil, eventMetadata)
 		}
 	case pbagent.PGConnectionWrite:
-		return nil, p.dispatchWrite(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	case pbagent.MySQLConnectionWrite:
 		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
-			return nil, p.dispatchWrite(pctx, eventlogv1.InputType, queryBytes, eventMetadata)
+			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, queryBytes, eventMetadata)
 		}
 	case pbagent.MSSQLConnectionWrite:
 		var mssqlPacketType mssqltypes.PacketType
@@ -243,7 +221,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 				return nil, err
 			}
 			if query != "" {
-				return nil, p.dispatchWrite(pctx, eventlogv1.InputType, []byte(query), eventMetadata)
+				return nil, p.writeOnReceive(pctx, eventlogv1.InputType, []byte(query), eventMetadata)
 			}
 		}
 	case pbagent.MongoDBConnectionWrite:
@@ -252,24 +230,24 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, err
 		}
 		if decJSONPayload != nil {
-			return nil, p.dispatchWrite(pctx, eventlogv1.InputType, decJSONPayload, eventMetadata)
+			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
 	case pbclient.WriteStdout, pbclient.WriteStderr:
-		err := p.dispatchWrite(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
+		err := p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
 		return nil, nil
 	case pbagent.ExecWriteStdin, pbagent.TerminalWriteStdin, pbagent.TCPConnectionWrite:
-		return nil, p.dispatchWrite(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	case pbclient.SSHConnectionWrite:
-		return nil, p.dispatchWrite(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
+		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 	case pbagent.SSHConnectionWrite:
-		return nil, p.dispatchWrite(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	case pbagent.HttpProxyConnectionWrite:
-		return nil, p.dispatchWrite(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	case pbclient.HttpProxyConnectionWrite:
-		return nil, p.dispatchWrite(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
+		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 	}
 	return nil, nil
 }
@@ -301,7 +279,10 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 		defer memorySessionStore.Del(pctx.SID)
 
 		if pctx.IdentityType == identityTypeMachine {
-			p.closeMachineSession(pctx, err)
+			if cerr := p.closeMachineSession(pctx, err); cerr != nil {
+				log.With("sid", pctx.SID).Warnf("failed closing machine session: %v", cerr)
+			}
+			eventbroker.Default.Remove(pctx.SID)
 		} else {
 			if err := p.writeOnClose(pctx, err); err != nil {
 				log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
@@ -315,104 +296,6 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
 		trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 	}()
-}
-
-// closeMachineSession flushes any in-flight interaction WAL and marks the session as done.
-func (p *auditPlugin) closeMachineSession(pctx plugintypes.Context, errMsg error) {
-	stateObj := p.machineSessionStore.Pop(pctx.SID)
-	state, ok := stateObj.(*machineSessionState)
-	if !ok {
-		log.With("sid", pctx.SID).Warnf("no machine session state found on disconnect")
-		p.markSessionDone(pctx, errMsg)
-		interactionbroker.Default.PublishAndRemove(pctx.SID, interactionbroker.InteractionEvent{
-			Type: interactionbroker.SessionEnded,
-		})
-		return
-	}
-
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
-	// flush in-flight interaction WAL if any
-	if state.currentWAL != nil {
-		walogm := state.currentWAL
-		state.currentWAL = nil
-
-		walogm.mu.Lock()
-		defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
-
-		// write final error if present
-		if errMsg != nil && errMsg != io.EOF {
-			_ = walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, []byte(errMsg.Error()), nil))
-		}
-
-		protocolConnectionType := pctx.ProtoConnectionType()
-		result, err := p.drainWAL(walogm, protocolConnectionType, state.startDate)
-		if err != nil {
-			log.With("sid", pctx.SID).Warnf("failed draining in-flight interaction WAL: %v", err)
-		} else {
-			var blobFormat *string
-			switch protocolConnectionType {
-			case pb.ConnectionTypePostgres:
-				blobFormat = ptr.String(models.BlobFormatWireProtoType)
-			}
-
-			interactionID := uuid.NewString()
-			endDate := time.Now().UTC()
-			err = models.CreateInteractionWithBlobs(
-				models.DB,
-				models.SessionInteraction{
-					ID:        interactionID,
-					SessionID: pctx.SID,
-					OrgID:     pctx.OrgID,
-					Sequence:  state.currentSequence,
-					ExitCode:  parseExitCodeFromErr(errMsg),
-					CreatedAt: *state.startDate,
-					EndedAt:   &endDate,
-				},
-				nil,
-				json.RawMessage(result.rawJSONBlobStream),
-				blobFormat,
-			)
-			if err != nil {
-				log.With("sid", pctx.SID).Warnf("failed persisting in-flight interaction: %v", err)
-			} else {
-				_ = os.RemoveAll(walogm.folderName)
-				interactionbroker.Default.Publish(pctx.SID, interactionbroker.InteractionEvent{
-					Type: interactionbroker.InteractionCreated, Sequence: state.currentSequence,
-				})
-			}
-		}
-	}
-
-	p.markSessionDone(pctx, errMsg)
-	interactionbroker.Default.PublishAndRemove(pctx.SID, interactionbroker.InteractionEvent{
-		Type: interactionbroker.SessionEnded,
-	})
-}
-
-func (p *auditPlugin) markSessionDone(pctx plugintypes.Context, errMsg error) {
-	endDate := time.Now().UTC()
-	err := models.UpdateSessionEventStream(models.SessionDone{
-		ID:         pctx.SID,
-		OrgID:      pctx.OrgID,
-		Metrics:    make(map[string]any),
-		BlobStream: json.RawMessage(`[]`),
-		Status:     string(openapi.SessionStatusDone),
-		ExitCode:   parseExitCodeFromErr(errMsg),
-		EndSession: &endDate,
-	})
-	if err != nil {
-		log.With("sid", pctx.SID).Warnf("failed marking machine session as done: %v", err)
-	}
-}
-
-// dispatchWrite routes WAL writes to either the session WAL (human) or interaction WAL (machine).
-func (p *auditPlugin) dispatchWrite(pctx plugintypes.Context, eventType eventlogv1.EventType, event []byte, metadata map[string][]byte) error {
-	if pctx.IdentityType == identityTypeMachine {
-		return p.writeOnReceiveMachine(pctx, eventType, event, metadata)
-	}
-	return p.writeOnReceive(pctx.SID, eventType, event, metadata)
 }
 
 func (p *auditPlugin) OnShutdown() {}
