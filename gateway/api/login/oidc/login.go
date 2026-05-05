@@ -161,34 +161,39 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 	uinfo.Subject = subject
-	// get the user by its email to get the actual subject of that user. This is necessary
-	// due to the user subject when it's created inside hoop is changed after that user
-	// logs in with the IDP. The email should always come from the IDP as a design of how
-	// we handle users in hoop.
-	dbUser, err := models.GetUserByEmail(uinfo.Email)
-	if err != nil {
-		login.Outcome = fmt.Sprintf("failed fetching user by email=%s, reason=%v", uinfo.Email, err)
-		log.Error(login.Outcome)
-		sentry.CaptureException(err)
-		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
-		return
-	}
-
-	// if the user doesn't exist in the database, we should use the subject from the IDP
-	// to allow the user to login. This user will be a new user and will be created at
-	// the end of this method.
-	if dbUser == nil {
-		subject = uinfo.Subject
-	} else {
-		subject = dbUser.Subject
-	}
-	ctx, err := models.GetUserContext(subject)
+	// Try to find user by IDP subject first (unambiguous). Fall back to email lookup only
+	// when no user is found by subject, to handle users whose stored subject is still a
+	// placeholder (e.g. invited users who have not yet completed first login).
+	ctx, err := models.GetUserContext(uinfo.Subject)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed fetching user subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)
 		sentry.CaptureException(err)
 		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 		return
+	}
+	if ctx.IsEmpty() {
+		dbUser, err := models.GetUserByEmail(uinfo.Email)
+		if err != nil {
+			login.Outcome = fmt.Sprintf("failed fetching user by email=%s, reason=%v", uinfo.Email, err)
+			log.Error(login.Outcome)
+			sentry.CaptureException(err)
+			c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
+			return
+		}
+		if dbUser != nil {
+			ctx, err = models.GetUserContext(dbUser.Subject)
+			if err != nil {
+				login.Outcome = fmt.Sprintf("failed fetching user subject=%s, email=%s, reason=%v", dbUser.Subject, uinfo.Email, err)
+				log.Error(login.Outcome)
+				sentry.CaptureException(err)
+				c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
+				return
+			}
+		}
+	}
+	if !ctx.IsEmpty() {
+		subject = ctx.UserSubject
 	}
 
 	var refreshToken *string

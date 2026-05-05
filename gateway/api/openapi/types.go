@@ -12,6 +12,15 @@ type HTTPError struct {
 	Message string `json:"message" example:"the error description"`
 }
 
+type HTTPSuccess struct {
+	Message string `json:"message" example:"operation completed successfully"`
+}
+
+// OrgInvitationRequest is used to accept or decline a pending org invitation
+type OrgInvitationRequest struct {
+	Action string `json:"action" binding:"required" enums:"accept,decline"`
+}
+
 type Login struct {
 	// The URL to redirect the user to the identity provider
 	URL string `json:"login_url"`
@@ -85,6 +94,13 @@ type UserGroup struct {
 	Name string `json:"name" binding:"required" example:"engineering"`
 }
 
+// PendingOrgInvitation represents an organization the user has been invited to
+// but has not yet joined. Only populated in multi-tenant environments.
+type PendingOrgInvitation struct {
+	// Organization name
+	OrgName string `json:"org_name"`
+}
+
 type UserInfo struct {
 	User `json:",inline"`
 	// DEPRECATED in flavor of role
@@ -111,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// Pending organization invitations for this user. When non-empty, the user can migrate
+	// to one of these organizations. Only populated in multi-tenant environments.
+	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
 }
 
 type ServiceAccountStatusType string

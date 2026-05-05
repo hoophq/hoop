@@ -78,6 +78,18 @@ func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
 	return user, nil
 }
 
+func GetInvitedUserByEmailAndOrg(email, orgID string) (*User, error) {
+	var user *User
+	if err := DB.Where("org_id = ? AND email = ? AND status = 'invited'", orgID, email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
 func GetUserByEmail(email string) (*User, error) {
 	var user *User
 	if err := DB.Where("email = ?", email).First(&user).Error; err != nil {
@@ -88,6 +100,12 @@ func GetUserByEmail(email string) (*User, error) {
 	}
 
 	return user, nil
+}
+
+func ListUsersByEmail(email string) ([]User, error) {
+	var users []User
+	err := DB.Where("email = ?", email).Find(&users).Error
+	return users, err
 }
 
 func CreateUser(user User) error {
@@ -108,6 +126,32 @@ func DeleteUser(orgID, subject string) error {
 		Where("org_id = ? AND subject = ?", orgID, subject).
 		Delete(&User{}).
 		Error
+}
+
+func DeleteUserByID(id string) error {
+	return DB.Where("id = ?", id).Delete(&User{}).Error
+}
+
+// PromoteInvitedUser atomically migrates a user to an invited org.
+// It deletes the current user record first (releasing the UNIQUE subject constraint)
+// then promotes the invited record by binding the subject and activating it.
+func PromoteInvitedUser(invitedUserID, currentUserOrgID, idpSubject, name, picture string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(
+			`DELETE FROM private.users WHERE org_id = ? AND subject = ?`,
+			currentUserOrgID, idpSubject,
+		).Error; err != nil {
+			return err
+		}
+		return tx.Exec(
+			`UPDATE private.users SET status = 'active', verified = true, subject = ?, name = ?, picture = ? WHERE id = ? AND status = 'invited'`,
+			idpSubject, name, picture, invitedUserID,
+		).Error
+	})
+}
+
+func DeletePendingInvitationByEmail(email string) error {
+	return DB.Exec(`DELETE FROM private.users WHERE email = ? AND status = 'invited'`, email).Error
 }
 
 func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
