@@ -235,11 +235,11 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 				"hoop-connection-name":  dba.ConnectionName,
 				"hoop-context-duration": ctxDuration.String(),
 			}
-			if dba.SessionID != "" {
-				extensions["hoop-credential-session-id"] = dba.SessionID
-			}
 			if models.IsMachineIdentityCredential(dba.ID) {
 				extensions["hoop-is-machine-credential"] = "true"
+				extensions["hoop-machine-identity-org-id"] = dba.OrgID
+			} else if dba.SessionID != "" {
+				extensions["hoop-credential-session-id"] = dba.SessionID
 			}
 			return &ssh.Permissions{Extensions: extensions}, nil
 		},
@@ -271,6 +271,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	credentialSessionID := sshConn.Permissions.Extensions["hoop-credential-session-id"]
 	credentialID := sshConn.Permissions.Extensions["hoop-credential-id"]
 	isMachineCredential := sshConn.Permissions.Extensions["hoop-is-machine-credential"] == "true"
+	machineIdentityOrgID := sshConn.Permissions.Extensions["hoop-machine-identity-org-id"]
 
 	if connectionName == "" || userSubject == "" {
 		return nil, fmt.Errorf("missing required SSH connection attributes")
@@ -307,7 +308,12 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		grpc.WithOption("verb", pb.ClientVerbConnect),
 		grpc.WithOption("session-id", sid),
 	}
-	if credentialSessionID != "" {
+	if isMachineCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, machineIdentityOrgID),
+		)
+	} else if credentialSessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", credentialSessionID))
 	}
 

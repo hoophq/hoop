@@ -294,7 +294,12 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		grpc.WithOption("verb", pb.ClientVerbConnect),
 		grpc.WithOption("session-id", sid),
 	}
-	if dba.SessionID != "" {
+	if isMachineCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, dba.OrgID),
+		)
+	} else if dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
 	}
 

@@ -14,6 +14,15 @@ var ImpersonateSecretKey string = generateSecureRandomKeyOrDie()
 const (
 	ImpersonateAuthKeyHeaderKey     = "impersonate-auth-key"
 	ImpersonateUserSubjectHeaderKey = "impersonate-user-subject"
+
+	// MachineIdentityFlagHeaderKey marks an impersonation request as a
+	// machine-identity authentication. Set to "true" by protocol proxies
+	// when the caller's credential resolves to a machine identity.
+	MachineIdentityFlagHeaderKey = "is-machine-credential"
+	// MachineIdentityOrgIDHeaderKey carries the org id of the machine
+	// identity so the auth interceptor can load the MI without an extra
+	// DB round-trip through a credential-session row.
+	MachineIdentityOrgIDHeaderKey = "machine-identity-org-id"
 )
 
 func generateSecureRandomKeyOrDie() string {

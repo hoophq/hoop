@@ -425,7 +425,12 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		grpc.WithOption("verb", pb.ClientVerbConnect),
 		grpc.WithOption("session-id", sid),
 	}
-	if dba.SessionID != "" {
+	if isMachineCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, dba.OrgID),
+		)
+	} else if dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
 	}
 	if correlationID != "" {

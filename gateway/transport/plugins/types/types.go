@@ -10,6 +10,11 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
+// IdentityTypeMachine is the value of Context.IdentityType for machine-identity
+// (non-human) sessions. Other gateway packages should use this constant instead
+// of redefining the literal string.
+const IdentityTypeMachine = "machine"
+
 type GenericMap map[string]any
 
 type PacketErr struct {
@@ -63,8 +68,11 @@ type Context struct {
 	ClientOrigin string
 
 	// IdentityType distinguishes user (human) vs machine sessions.
-	// "machine" enables WAL-per-interaction; empty or "user" uses the default WAL-per-session flow.
+	// IdentityTypeMachine enables WAL-per-interaction; empty or "user" uses the default WAL-per-session flow.
 	IdentityType string
+
+	// MachineIdentityID is set when IdentityType == IdentityTypeMachine; empty otherwise.
+	MachineIdentityID string
 
 	// CredentialSessionID is the review session ID associated with a JIT credential.
 	// Set when a proxy connects using a JIT credential; used to tag the proxy session

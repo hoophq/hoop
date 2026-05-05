@@ -18,13 +18,12 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
-
-const identityTypeMachine = "machine"
 
 // serverStreamWrapper could override methods from the grpc.StreamServer interface.
 // using this wrapper it's possible to intercept calls from a grpc server
@@ -237,14 +236,17 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 
 			// Machine-identity sessions reach the interceptor through the same
 			// impersonation path proxies use for human credentials. They are
-			// distinguished by the credential session being tagged identity_type='machine'.
-			miCtx, err := i.authenticateMachineIdentity(subject, commongrpc.MetaGet(md, "credential-session-id"), md)
-			if err != nil {
-				return err
-			}
-			if miCtx != nil {
-				ctxVal = miCtx
-				break
+			// distinguished by the `is-machine-credential` header set by each
+			// protocol proxy when the credential resolves to a machine identity.
+			if commongrpc.MetaGet(md, grpckey.MachineIdentityFlagHeaderKey) == "true" {
+				miCtx, err := i.authenticateMachineIdentity(subject, commongrpc.MetaGet(md, grpckey.MachineIdentityOrgIDHeaderKey), md)
+				if err != nil {
+					return err
+				}
+				if miCtx != nil {
+					ctxVal = miCtx
+					break
+				}
 			}
 		} else {
 			// first we check if the auth method is local, if so, we authenticate the user
@@ -344,46 +346,35 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 }
 
 // authenticateMachineIdentity resolves the impersonation request as a
-// machine-identity session when the referenced credential session is tagged
-// identity_type='machine'. Returns (nil, nil) when the request is not a
-// machine identity (caller falls through to the user path), (ctx, nil) when
-// authenticated, or (nil, err) when authentication fails.
+// machine-identity session. The caller has already confirmed the proxy
+// flagged this request as a machine credential via the
+// `is-machine-credential` header. The MI is loaded directly by org id +
+// subject (the MI's UUID), avoiding any reliance on a pre-existing
+// session row.
+//
+// Returns (ctx, nil) on success or (nil, err) on failure.
 //
 // A synthetic admin context is built — same shape the static API-key path
 // uses — so downstream RBAC treats the MI as authorized to reach any
 // connection it presents a valid credential for.
-func (i *interceptor) authenticateMachineIdentity(subject, credentialSessionID string, md metadata.MD) (*GatewayContext, error) {
-	if credentialSessionID == "" {
-		return nil, nil
-	}
-	si, err := models.GetSessionIdentityByID(credentialSessionID)
-	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			return nil, nil
-		}
-		log.Errorf("failed loading session identity for machine auth, err=%v", err)
-		return nil, status.Errorf(codes.Internal, "internal error")
-	}
-	if si.IdentityType != identityTypeMachine || si.MachineIdentityID == nil {
-		return nil, nil
-	}
-	if subject != *si.MachineIdentityID {
-		log.Warnf("machine identity subject mismatch, subject=%v session-mi=%v", subject, *si.MachineIdentityID)
+func (i *interceptor) authenticateMachineIdentity(subject, orgID string, md metadata.MD) (*GatewayContext, error) {
+	if orgID == "" {
+		log.Warn("machine identity auth missing org id header")
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
-	mi, err := models.GetMachineIdentity(si.OrgID, *si.MachineIdentityID)
+	mi, err := models.GetMachineIdentity(orgID, subject)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
-			log.Debugf("machine identity not found, org=%v id=%v", si.OrgID, *si.MachineIdentityID)
+			log.Debugf("machine identity not found, org=%v id=%v", orgID, subject)
 			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		log.Errorf("failed loading machine identity, org=%v id=%v err=%v", si.OrgID, *si.MachineIdentityID, err)
+		log.Errorf("failed loading machine identity, org=%v id=%v err=%v", orgID, subject, err)
 		sentry.CaptureException(err)
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
-	org, err := models.GetOrganizationByNameOrID(si.OrgID)
+	org, err := models.GetOrganizationByNameOrID(orgID)
 	if err != nil {
-		log.Errorf("failed loading org for machine identity, org=%v err=%v", si.OrgID, err)
+		log.Errorf("failed loading org for machine identity, org=%v err=%v", orgID, err)
 		sentry.CaptureException(err)
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
@@ -399,7 +390,7 @@ func (i *interceptor) authenticateMachineIdentity(subject, credentialSessionID s
 	}
 	gwctx := &GatewayContext{
 		UserContext:       *ctx,
-		IdentityType:      identityTypeMachine,
+		IdentityType:      plugintypes.IdentityTypeMachine,
 		MachineIdentityID: mi.ID,
 	}
 	connectionName := commongrpc.MetaGet(md, "connection-name")

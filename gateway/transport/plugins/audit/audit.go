@@ -29,7 +29,7 @@ import (
 var memorySessionStore = memory.New()
 
 const (
-	identityTypeMachine = "machine"
+	identityTypeMachine = plugintypes.IdentityTypeMachine
 	identityTypeUser    = "user"
 )
 
@@ -90,8 +90,13 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		}
 
 		sessionIdentityType := identityTypeUser
+		var machineIdentityID *string
 		if isMachine {
 			sessionIdentityType = identityTypeMachine
+			if pctx.MachineIdentityID != "" {
+				miID := pctx.MachineIdentityID
+				machineIdentityID = &miID
+			}
 		}
 
 		newSession := models.Session{
@@ -111,6 +116,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			Status:               string(openapi.SessionStatusOpen),
 			ExitCode:             nil,
 			IdentityType:         sessionIdentityType,
+			MachineIdentityID:    machineIdentityID,
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
