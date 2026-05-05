@@ -2314,6 +2314,22 @@ type ResourceResponse struct {
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
+type ResourceRoleGrantRequest struct {
+	// Name of the connection/role resource that will be created after provisioning
+	Name string `json:"name" binding:"required" example:"pgdemo-readonly"`
+	// The external role name to grant on the target system
+	RoleName string `json:"role_name" binding:"required" example:"readonly"`
+}
+
+type ResourceRoleGrantResponse struct {
+	// The session ID for tracking the async operation
+	SessionID string `json:"session_id" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// Tags associated with the operation
+	Tags map[string]string `json:"tags"`
+	// Status of the async operation
+	Status string `json:"status" enums:"pending" example:"pending"`
+}
+
 type RunbookConfigurationRequest struct {
 	// The runbook repository configuration
 	Repositories []RunbookRepository `json:"repositories" binding:"required"`

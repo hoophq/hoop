@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -17,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
+	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"gorm.io/gorm"
 )
 
@@ -378,6 +381,101 @@ func DeleteResource(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// CreateResourceRole
+//
+//	@Summary		Creates external roles for a resource
+//	@Description	Grants an external role on a target system using the resource's master credentials. The operation runs asynchronously; use the sessions endpoint to track progress.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produces		json
+//	@Param			name		path		string								true	"The resource name"
+//	@Param			request		body		openapi.ResourceRoleGrantRequest	true	"The request body"
+//	@Success		202			{object}	openapi.ResourceRoleGrantResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/resources/{name}/roles [post]
+func CreateResourceRole(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	name := c.Param("name")
+
+	var req openapi.ResourceRoleGrantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
+		return
+	}
+	if resource == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	}
+
+	jobResp, err := transportsystem.RunResourceManager(
+		// TODO: accept agent id from the request body
+		resource.AgentID.String,
+		&pbsystem.ResourceManagerRequest{
+			OrgID:          ctx.OrgID,
+			UserID:         ctx.UserID,
+			UserName:       ctx.UserName,
+			UserEmail:      ctx.UserEmail,
+			ResourceName:   name,
+			ResourceType:   resource.Type,
+			ConnectionName: req.Name,
+			RoleName:       req.RoleName,
+			Script:         resourceManagerScript(resource.SubType.String),
+			TemplateData:   map[string]any{"role_name": req.RoleName, "password": ""},
+			Command:        resourceManagerCommand(resource.SubType.String),
+			EnvVars:        resourceManagerEnvVars(resource.Envs),
+		},
+	)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusBadRequest, err, "failed starting resource manager: %v", err)
+		return
+	}
+
+	c.JSON(http.StatusAccepted, openapi.ResourceRoleGrantResponse{
+		SessionID: jobResp.SessionID,
+		Tags:      jobResp.Tags,
+		Status:    jobResp.Status,
+	})
+}
+
+// resourceManagerCommand returns the runtime entrypoint for the given database subtype.
+func resourceManagerCommand(subType string) []string {
+	switch subType {
+	case "postgres":
+		return []string{"psql"}
+	}
+	return nil
+}
+
+// resourceManagerScript returns a Go template script for the given database subtype.
+// The template exposes {{.role_name}} and {{.password}} placeholders.
+// For now each variant is a bare SELECT used to verify connectivity.
+func resourceManagerScript(subType string) string {
+	switch subType {
+	case "postgres":
+		return `SELECT '{{.password}}' AS role_password, '{{.role_name}}' AS role_name;`
+	}
+	return ""
+}
+
+// resourceManagerEnvVars extracts the subset of resource env vars required by the
+// subtype's runtime entrypoint, stripping the "envvar:" key prefix.
+// For postgres this yields PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE.
+func resourceManagerEnvVars(envs map[string]string) map[string]string {
+	result := make(map[string]string, len(envs))
+	for k, v := range envs {
+		if key, ok := strings.CutPrefix(k, "envvar:"); ok {
+			result[key] = v
+		}
+	}
+	return result
 }
 
 func toOpenApi(r *models.Resources) *openapi.ResourceResponse {

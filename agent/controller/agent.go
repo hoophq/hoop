@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/agent/controller/awseks"
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
+	"github.com/hoophq/hoop/agent/controller/system/resourcemanager"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
 	"github.com/hoophq/hoop/agent/secretsmanager"
@@ -202,6 +203,9 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 	case pbsystem.RunbookHookRequestType:
 		runbookhook.ProcessRequest(a.client, pkt)
+
+	case pbsystem.ResourceManagerRequestType:
+		resourcemanager.ProcessRequest(a.client, pkt)
 	}
 }
 

@@ -1050,6 +1050,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
+	r.POST("/resources/:name/roles",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.CreateResourceRole)
 
 	r.GET("/audit/logs",
 		apiroutes.AdminAndAuditorAccessRole,
