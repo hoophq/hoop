@@ -280,6 +280,30 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	return session, nil
 }
 
+// SessionIdentity carries only the identity-related columns of a session.
+type SessionIdentity struct {
+	OrgID             string  `gorm:"column:org_id"`
+	IdentityType      string  `gorm:"column:identity_type"`
+	MachineIdentityID *string `gorm:"column:machine_identity_id"`
+}
+
+// GetSessionIdentityByID resolves a session's identity columns without an
+// org_id. The gRPC auth interceptor uses it to detect machine-identity
+// sessions before any org context exists. Returns ErrNotFound when no
+// session matches the id.
+func GetSessionIdentityByID(sid string) (*SessionIdentity, error) {
+	var si SessionIdentity
+	err := DB.Raw(`SELECT org_id, identity_type, machine_identity_id FROM private.sessions WHERE id = ?`, sid).
+		Scan(&si).Error
+	if err != nil {
+		return nil, err
+	}
+	if si.OrgID == "" {
+		return nil, ErrNotFound
+	}
+	return &si, nil
+}
+
 func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt SessionOption) (*SessionList, error) {
 	sessionList := &SessionList{Items: []Session{}}
 	// Prepare lowercase jira issue keys array
