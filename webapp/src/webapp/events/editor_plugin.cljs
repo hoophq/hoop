@@ -37,7 +37,17 @@
                                                     :details error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))
          on-success (fn [res]
-                      (when-not (= "block_execution" (get-in res [:ai_analysis :action]))
+                      (cond
+                        (= "running" (:output_status res))
+                        (rf/dispatch
+                         [:show-snackbar
+                          {:level :info
+                           :text "Session is still running"
+                           :description (str "The gateway timed out after 50s. "
+                                             "Your session keeps executing in the background, "
+                                             "open session details to track progress.")}])
+
+                        (not= "block_execution" (get-in res [:ai_analysis :action]))
                         (rf/dispatch
                          [:show-snackbar {:level :success
                                           :text "Script was executed!"}]))
@@ -52,8 +62,9 @@
 (rf/reg-event-fx
  ::editor-plugin->set-script-success
  (fn [{:keys [db]} [_ data script]]
-   {:db (assoc-in db [:editor-plugin->script] {:status :success
-                                               :data (merge data {:script script})})}))
+   (let [status (if (= "running" (:output_status data)) :running :success)]
+     {:db (assoc-in db [:editor-plugin->script] {:status status
+                                                 :data (merge data {:script script})})})))
 
 (rf/reg-event-fx
  ::editor-plugin->set-script-failure
