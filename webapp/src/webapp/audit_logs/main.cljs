@@ -42,9 +42,7 @@
 
       (cond
         (and initial-loading? (not @min-loading-done))
-        [:> Box {:class "bg-gray-1 h-full"}
-         [:> Flex {:direction "column" :justify "center" :align "center" :height "100%"}
-          [loaders/simple-loader]]]
+        [loaders/page-loading-screen {:full-page false}]
 
         show-empty?
         [:> Box {:class "min-h-screen bg-gray-1"}

@@ -1,10 +1,10 @@
 (ns webapp.onboarding.setup
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Spinner
-                               Text]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Text]]
    ["lucide-react" :refer [BrainCog DatabaseZap PackagePlus PackageSearch]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.components.loaders :as loaders]
    [webapp.config :as config]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]))
 
@@ -80,22 +80,9 @@
           [setup-card option])]]]]]])
 
 (defn loading-screen []
-  [:> Flex {:direction "column" :align "center" :justify "center" :class "h-screen"}
-   [:> Box {:class "max-w-[600px] text-center space-y-6"}
-    [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
-           :class "w-16 mx-auto py-4"}]
-    [:> Flex {:align "center" :justify "center"}
-     [:> Spinner]]
-    [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12] mt-6"}
-     "Setting up your environment"]
-    [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-     "We're preparing everything you need to get started."]
-    [:> Text {:as "p" :size "2" :class "text-[--gray-11] mt-4"}
-     "This might take a moment as we ensure your agents are ready. While you wait, feel free to learn more about how Agents work in our documentation: "
-     [:a {:href "https://hoop.dev/docs/concepts/agents"
-          :target "_blank"
-          :class "text-blue-500 hover:underline"}
-      "https://hoop.dev/docs/concepts/agents"]]]])
+  [loaders/page-loading-screen
+   {:message "Setting up your environment"
+    :description "We're preparing everything you need to get started. This might take a moment as we ensure your agents are ready."}])
 
 (defn setup-agent []
   [:> Flex {:direction "column" :align "center" :justify "center" :class "h-screen"}

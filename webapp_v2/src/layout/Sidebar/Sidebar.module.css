@@ -1,0 +1,341 @@
+/* ── Nav link ──────────────────────────────────────────────── */
+
+.navLink {
+  border-radius: var(--mantine-radius-sm);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.navLinkLabel {
+  color: inherit;
+  font-weight: 600;
+}
+
+.navLinkSection {
+  color: inherit;
+}
+
+.navLinkChevron {
+  color: inherit;
+}
+
+/* Destructive action (Log out) */
+.navLinkDanger {
+  color: rgba(255, 120, 120, 0.85);
+}
+
+/*
+ * --mantine-color-gray-0 is overridden on the sidebar root element so that
+ * Mantine's NavLink hover (which uses that variable) resolves to our subtle
+ * white tint instead of the default near-white. No !important needed.
+ */
+.navLink:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.navLink:hover * {
+  color: inherit;
+}
+
+/* Active state — override Mantine's --nl-bg / --nl-color */
+.navLink[data-active],
+.navLink[aria-current='page'] {
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  --nl-bg: rgba(255, 255, 255, 0.07);
+  --nl-color: #fff;
+}
+
+.navLink[data-active] *,
+.navLink[aria-current='page'] * {
+  color: inherit;
+}
+
+.navLink[data-active]:hover,
+.navLink[aria-current='page']:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.navLink:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 1px;
+}
+
+/* Blocked paid feature — dimmed, still clickable (redirects to upgrade) */
+.navLinkBlocked {
+  opacity: 0.45;
+}
+
+/* ── Collapsed icon button ─────────────────────────────────── */
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--mantine-radius-sm);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.iconBtn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 1px;
+}
+
+.iconBtnActive {
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+/* ── Profile disclosure items ──────────────────────────────── */
+
+.profileItem {
+  border-radius: 0;
+}
+
+/* ── Collapse button (full-width footer, right-aligned, border-top) ── */
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--mantine-spacing-lg);
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.collapseBtn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.collapseBtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: -2px;
+}
+
+/* ── Skip link (visible on focus for keyboard users) ──────── */
+
+.skipLink {
+  position: fixed;
+  top: -9999px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  background: var(--mantine-color-indigo-6);
+  color: #fff;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  border-radius: var(--mantine-radius-sm);
+  z-index: 9999;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skipLink:focus {
+  top: 50%;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(62, 99, 221, 0.4);
+}
+
+/* ── Screen-reader-only text ──────────────────────────────── */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Sidebar root ─────────────────────────────────────────── */
+
+.sidebarRoot {
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  /* Override Mantine's gray-0 so NavLink hover resolves to a subtle white tint
+     on the dark sidebar background (Mantine's default near-white would not fit). */
+  --mantine-color-gray-0: rgba(255, 255, 255, 0.05);
+}
+
+/* ── Layer transitions ────────────────────────────────────── */
+
+.collapsedLayer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+}
+
+.collapsedLayer[data-visible] {
+  opacity: 1;
+  transition: opacity 150ms ease;
+  pointer-events: auto;
+}
+
+.expandedLayer {
+  position: absolute;
+  inset: 0;
+  /* minWidth prevents text-wrap reflow inside overflow:hidden while narrow */
+  min-width: 310px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+}
+
+.expandedLayer[data-visible] {
+  /* Delayed fade-in so content appears after the container has grown */
+  opacity: 1;
+  transition: opacity 150ms ease 150ms;
+  pointer-events: auto;
+}
+
+/* ── Collapsed nav internals ──────────────────────────────── */
+
+.collapsedNav {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.collapsedScrollArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  padding-top: var(--mantine-spacing-sm);
+}
+
+.collapsedFooter {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Expanded nav internals ───────────────────────────────── */
+
+.logoCollapsed {
+  flex-shrink: 0;
+}
+
+.logoExpanded {
+  flex-shrink: 0;
+  padding: 0 var(--mantine-spacing-lg);
+}
+
+.expandedScrollArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--mantine-spacing-md);
+}
+
+.navList {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.listItem {
+  list-style: none;
+}
+
+/* Keeps vertical rhythm in the collapsed view while hiding section text */
+.sectionHidden {
+  visibility: hidden;
+}
+
+/* ── Avatar circle (collapsed + profile disclosure) ───────── */
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.avatarClickable {
+  cursor: pointer;
+}
+
+/* ── Badge / shortcut in nav item right section ───────────── */
+
+.badgeUpgrade {
+  color: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.25);
+  border-width: 1px;
+  border-style: solid;
+  flex-shrink: 0;
+}
+
+.badgeFilled {
+  border-width: 1px;
+  border-style: solid;
+  border-color: transparent;
+  flex-shrink: 0;
+}
+
+.navLinkChildren {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  padding-top: var(--mantine-spacing-xs);
+}
+
+.shortcutText {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+}
+
+/* ── Gateway version text ─────────────────────────────────── */
+
+.gatewayVersion {
+  color: rgba(255, 255, 255, 0.35);
+  padding: 2px var(--mantine-spacing-md) var(--mantine-spacing-md);
+}
