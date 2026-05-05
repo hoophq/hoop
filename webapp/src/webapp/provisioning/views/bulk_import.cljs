@@ -5,7 +5,8 @@
    ["papaparse" :as papa]
    ["react" :as react]
    ["lucide-react" :refer [AlertCircle Check CheckCircle2
-                           Database Loader2 Upload X]]))
+                           Database Loader2 Upload X]]
+   [re-frame.core :as rf]))
 
 (def step-labels ["Source" "Parsing" "Preview" "Importing" "Results"])
 (def step-keys   [:upload :parsing :preview :importing :results])
@@ -82,33 +83,33 @@
                   type-val  (str (or (:type row) ""))
                   host-val  (str (or (:host row) ""))
                   port-val  (str (or (:port row) ""))
-                  existing  (get existing-by-name name-val)]
+                  existing  (get existing-by-name name-val)
+                  ex-host   (str (or (:host existing) ""))
+                  ex-port   (str (or (:port existing) "5432"))]
               (cond
-                (or (empty? name-val) (empty? type-val))
-                {:row row-num :name name-val :db-type type-val :host host-val :port port-val
-                 :status "error"
-                 :error-reason (cond
-                                 (empty? name-val) "missing required field: name"
-                                 (empty? type-val) "missing required field: type")}
+                  (or (empty? name-val) (empty? type-val))
+                  {:row row-num :name name-val :db-type type-val :host host-val :port port-val
+                   :status "error"
+                   :error-reason (cond
+                                   (empty? name-val) "missing required field: name"
+                                   (empty? type-val) "missing required field: type")}
 
-                (and existing
-                     (= host-val (str (:host existing)))
-                     (= port-val (str (or (:port existing) "5432"))))
-                {:row row-num :name name-val :db-type type-val :host host-val :port port-val
-                 :status "unchanged"}
+                  (and existing (= host-val ex-host) (= port-val ex-port))
+                  {:row row-num :name name-val :db-type type-val :host host-val :port port-val
+                   :status "unchanged"}
 
-                existing
-                {:row row-num :name name-val :db-type type-val :host host-val :port port-val
-                 :status "update"
-                 :update-diff (cond-> []
-                                (not= host-val (str (:host existing)))
-                                (conj {:field "host" :from (:host existing) :to host-val})
-                                (not= port-val (str (or (:port existing) "5432")))
-                                (conj {:field "port" :from (str (or (:port existing) "5432")) :to port-val}))}
+                  existing
+                  {:row row-num :name name-val :db-type type-val :host host-val :port port-val
+                   :status "update"
+                   :update-diff (cond-> []
+                                  (not= host-val ex-host)
+                                  (conj {:field "host" :from ex-host :to host-val})
+                                  (not= port-val ex-port)
+                                  (conj {:field "port" :from ex-port :to port-val}))}
 
-                :else
-                {:row row-num :name name-val :db-type type-val :host host-val :port port-val
-                 :status "new"})))
+                  :else
+                  {:row row-num :name name-val :db-type type-val :host host-val :port port-val
+                   :status "new"})))
           parsed-rows))
         errors (filterv #(= "error" (:status %)) annotated)]
     {:rows    annotated
@@ -198,12 +199,13 @@
         [:> Check {:size 12 :color "var(--green-9)"}]
         [:> Text {:size "1" :color "gray"} msg]])]]])
 
-(defn- preview-file [{:keys [on-confirm on-close set-step set-import-progress set-import-phase
-                              classified-rows summary total-rows]}]
-  (let [error-count  (count (:errors summary))
-        valid-count  (- total-rows error-count)
-        visible-rows (take 50 classified-rows)
-        hidden-count (max 0 (- (count classified-rows) 50))]
+(defn- preview-file [{:keys [on-close set-step set-import-progress
+                              set-import-results classified-rows summary total-rows]}]
+  (let [error-count    (count (:errors summary))
+        importable-rows (filterv #(#{"new" "update"} (:status %)) classified-rows)
+        valid-count    (count importable-rows)
+        visible-rows   (take 50 classified-rows)
+        hidden-count   (max 0 (- (count classified-rows) 50))]
     [:> Flex {:direction "column" :gap "3" :style {:flex 1 :min-height 0}}
      [:> Flex {:align "center" :gap "3" :wrap "wrap"}
       [:> Heading {:size "5"} (str "Review " total-rows " rows")]
@@ -281,64 +283,69 @@
 
      [:> Flex {:align "center" :justify "between" :pt "2" :style {:flex-shrink 0}}
       [:> Text {:size "1" :color "gray"}
-       (str valid-count " rows will be imported · " error-count " skipped")]
+       (str (:created summary) " new · " (:updated summary) " updates · " error-count " skipped")]
       [:> Flex {:gap "3"}
        [:> Button {:variant "outline" :color "gray" :on-click on-close} "Cancel"]
        [:> Button {:color "indigo"
+                   :disabled (zero? valid-count)
                    :on-click (fn []
                                (set-step :importing)
                                (set-import-progress 0)
-                               (set-import-phase "creating")
-                               (let [new-resources (->> classified-rows
-                                                        (filter #(= "new" (:status %)))
-                                                        (map-indexed
-                                                         (fn [i row]
-                                                           {:id      (str "imp-" (inc i))
-                                                            :name    (:name row)
-                                                            :db-type (:db-type row)
-                                                            :host    (:host row)
-                                                            :stage   :needs-admin}))
-                                                        vec)
-                                     ticks [[300  #(set-import-progress 12)]
-                                            [600  #(set-import-progress 28)]
-                                            [900  #(set-import-progress 38)]
-                                            [1200 #(do (set-import-progress 40)
-                                                       (set-import-phase "updating"))]
-                                            [1700 #(set-import-progress 52)]
-                                            [2100 #(do (set-import-progress 58)
-                                                       (set-import-phase "verifying"))]
-                                            [2500 #(set-import-progress 74)]
-                                            [2800 #(set-import-progress 90)]
-                                            [3100 #(set-import-progress 100)]
-                                            [3500 #(do (on-confirm new-resources)
-                                                       (set-step :results))]]]
-                                 (doseq [[delay f] ticks]
-                                   (js/setTimeout f delay))))}
+                               (rf/dispatch
+                                [:provisioning/import-next-resource
+                                 {:queue       importable-rows
+                                  :index       0
+                                  :results     []
+                                  :on-progress (fn [done total]
+                                                 (set-import-progress
+                                                  (js/Math.round (* 100 (/ done total)))))
+                                  :on-complete (fn [results]
+                                                 (let [succeeded (filterv #(= :success (:status %)) results)
+                                                       failed    (filterv #(= :failed (:status %)) results)
+                                                       created   (count (filter #(= "new" (get-in % [:row :status])) succeeded))
+                                                       updated   (count (filter #(= "update" (get-in % [:row :status])) succeeded))]
+                                                   (set-import-results {:created created
+                                                                        :updated updated
+                                                                        :failed  failed})
+                                                   (rf/dispatch [:provisioning/fetch-resources])
+                                                   (set-import-progress 100)
+                                                   (js/setTimeout #(set-step :results) 400)))}]))}
         (str "Import " valid-count " rows →")]]]]))
 
-(defn- importing-step [{:keys [import-progress import-phase summary]}]
-  (let [phase-label {"creating"  (str "Creating " (:created summary) " new resources…")
-                     "updating"  (str "Updating " (:updated summary) " existing resources…")
-                     "verifying" (str "Verifying " (:unchanged summary) " unchanged entries…")}]
+(defn- importing-step [{:keys [import-progress summary]}]
+  (let [total (+ (:created summary) (:updated summary))
+        done  (js/Math.round (/ (* import-progress total) 100))]
     [:> Flex {:direction "column" :align "center" :justify "center"
               :style {:flex 1} :gap "5"}
      [:> Flex {:direction "column" :align "center" :gap "4" :style {:width 400}}
       [:> Flex {:align "center" :gap "2"}
        [:> Box {:class "animate-pulse" :style {:color "var(--indigo-9)" :display "flex"}}
         [:> Loader2 {:size 20}]]
-       [:> Text {:size "3" :weight "medium"} (get phase-label import-phase)]]
+       [:> Text {:size "3" :weight "medium"}
+        (str "Importing resources… (" done " of " total ")")]]
       [:> Box {:style {:width "100%"}}
        [:> Progress {:value import-progress :size "2" :color "indigo"}]]
-      [:> Text {:size "2" :color "gray"} (str (js/Math.round import-progress) "% complete")]]]))
+      [:> Text {:size "2" :color "gray"}
+       (str (js/Math.round import-progress) "% complete"
+            (when (pos? (:created summary))
+              (str " · " (:created summary) " new"))
+            (when (pos? (:updated summary))
+              (str " · " (:updated summary) " updates")))]]]))
 
-(defn- results-step [{:keys [on-close clear-file! set-step summary]}]
-  (let [errors (:errors summary)]
+(defn- results-step [{:keys [on-close clear-file! set-step summary import-results]}]
+  (let [parse-errors (:errors summary)
+        created      (:created import-results 0)
+        updated      (:updated import-results 0)
+        api-failures (:failed import-results [])
+        all-ok?      (and (zero? (count parse-errors)) (zero? (count api-failures)))]
     [:> Flex {:direction "column" :align "center" :justify "center"
               :style {:flex 1} :gap "5"}
      [:> Flex {:direction "column" :align "center" :gap "4"
                :style {:max-width 440 :width "100%"}}
-      [:> Box {:style {:color "var(--green-9)" :display "flex"}}
-       [:> CheckCircle2 {:size 48 :stroke-width 1.5}]]
+      [:> Box {:style {:color (if all-ok? "var(--green-9)" "var(--amber-9)") :display "flex"}}
+       (if all-ok?
+         [:> CheckCircle2 {:size 48 :stroke-width 1.5}]
+         [:> AlertCircle {:size 48 :stroke-width 1.5}])]
       [:> Heading {:size "6"} "Import complete"]
 
       [:> Box {:style {:width "100%"
@@ -347,29 +354,35 @@
                        :background "var(--gray-1)"
                        :padding "16px 20px"}}
        [:> Flex {:direction "column" :gap "2"}
-        (for [[k v color] [["created"   (:created summary)   "green"]
-                           ["updated"   (:updated summary)   "blue"]
-                           ["unchanged" (:unchanged summary) "gray"]
-                           ["errors"    (count errors)       "red"]]]
+        (for [[k v color] [["created"      created                  "green"]
+                           ["updated"      updated                  "blue"]
+                           ["skipped"      (:unchanged summary 0)   "gray"]
+                           ["parse errors" (count parse-errors)     "red"]
+                           ["api failures" (count api-failures)     "red"]]]
           ^{:key k}
           [:> Flex {:align "center" :gap "3"}
            [:> Text {:size "2" :color "gray"
-                     :style {:font-family "var(--font-mono)" :width 90}}
+                     :style {:font-family "var(--font-mono)" :width 110}}
             (str k ":")]
            [:> Text {:size "2" :color color :weight "medium"
                      :style {:font-family "var(--font-mono)"}}
-            v]])
-        (when (seq errors)
-          [:> Box {:pt "1" :style {:border-top "1px solid var(--gray-4)"}}
-           [:> Text {:size "1" :color "gray" :style {:font-family "var(--font-mono)"}}
-            (let [e (first errors)]
-              (str "errors: [{ row: " (:row e) ", reason: \"" (:reason e) "\" }]"))]])]]
+            v]])]]
 
-      (when (seq errors)
+      (when (seq api-failures)
         [:> Callout.Root {:color "red" :size "1" :style {:width "100%"}}
          [:> Callout.Icon [:> AlertCircle {:size 14}]]
          [:> Callout.Text {:size "1"}
-          (let [e (first errors)]
+          (let [f (first api-failures)
+                err-msg (or (some-> (:error f) :message) "unknown error")]
+            (str "Failed to create \"" (get-in f [:row :name]) "\": " err-msg
+                 (when (> (count api-failures) 1)
+                   (str " (+" (dec (count api-failures)) " more)"))))]])
+
+      (when (seq parse-errors)
+        [:> Callout.Root {:color "amber" :size "1" :style {:width "100%"}}
+         [:> Callout.Icon [:> AlertCircle {:size 14}]]
+         [:> Callout.Text {:size "1"}
+          (let [e (first parse-errors)]
             (str "Row " (:row e) " skipped: " (:reason e)))]])
 
       [:> Flex {:direction "column" :gap "0"
@@ -396,22 +409,22 @@
 
 
 (defn bulk-import-screen-inner
-  [{:keys [on-confirm on-close resources]}]
-  (let [[step set-step]                       (react/useState :upload)
-        [file-obj set-file-obj]               (react/useState nil)
-        [file-name* set-file-name]            (react/useState nil)
-        [file-size* set-file-size]            (react/useState 0)
-        [row-count set-row-count]             (react/useState 0)
-        [classified-rows set-classified-rows] (react/useState [])
-        [summary set-summary]                 (react/useState nil)
-        [parse-progress set-parse-progress]   (react/useState 0)
-        [parsed-count set-parsed-count]       (react/useState 0)
-        [import-progress set-import-progress] (react/useState 0)
-        [import-phase set-import-phase]       (react/useState "creating")
-        [drag-over? set-drag-over]            (react/useState false)
-        file-input-ref                        (react/useRef nil)
-        row-count-ref                         (react/useRef row-count)
-        _                                     (set! (.-current row-count-ref) row-count)
+  [{:keys [on-close resources]}]
+  (let [[step set-step]                           (react/useState :upload)
+        [file-obj set-file-obj]                   (react/useState nil)
+        [file-name* set-file-name]                (react/useState nil)
+        [file-size* set-file-size]                (react/useState 0)
+        [row-count set-row-count]                 (react/useState 0)
+        [classified-rows set-classified-rows]     (react/useState [])
+        [summary set-summary]                     (react/useState nil)
+        [parse-progress set-parse-progress]       (react/useState 0)
+        [parsed-count set-parsed-count]           (react/useState 0)
+        [import-progress set-import-progress]     (react/useState 0)
+        [import-results set-import-results]       (react/useState nil)
+        [drag-over? set-drag-over]                (react/useState false)
+        file-input-ref                            (react/useRef nil)
+        row-count-ref                             (react/useRef row-count)
+        _                                         (set! (.-current row-count-ref) row-count)
         total-rows    row-count
         file-selected (some? file-obj)
         handle-file! (fn [file]
@@ -426,6 +439,7 @@
                       (set-row-count 0)
                       (set-classified-rows [])
                       (set-summary nil)
+                      (set-import-results nil)
                       (when-let [el (.-current file-input-ref)]
                         (set! (.-value el) "")))
         start-parse! (fn []
@@ -488,21 +502,20 @@
                                    :parsed-count   parsed-count
                                    :total-rows     total-rows
                                    :num-existing   (count resources)})
-         :preview   (preview-file {:on-confirm           on-confirm
-                                   :on-close             on-close
+         :preview   (preview-file {:on-close             on-close
                                    :set-step             set-step
                                    :set-import-progress  set-import-progress
-                                   :set-import-phase     set-import-phase
+                                   :set-import-results   set-import-results
                                    :classified-rows      classified-rows
                                    :summary              summary
                                    :total-rows           total-rows})
          :importing (importing-step {:import-progress import-progress
-                                     :import-phase    import-phase
                                      :summary         summary})
-         :results   (results-step {:on-close    on-close
-                                   :clear-file! clear-file!
-                                   :set-step    set-step
-                                   :summary     summary}))]]]))
+         :results   (results-step {:on-close       on-close
+                                   :clear-file!    clear-file!
+                                   :set-step       set-step
+                                   :summary        summary
+                                   :import-results import-results}))]]]))
 
 (defn bulk-import-screen
   [props]

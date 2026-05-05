@@ -33,7 +33,6 @@
                     "locked")
       "locked")))
 
-
 ;; ── DB type → Radix color ──────────────────────────────────────────────────────
 (def db-type-color
   {"PostgreSQL" "blue"})
@@ -135,9 +134,9 @@
                       (first mock-agents))
         agent-nm  (:name agent-rec)
         items     (mapv (fn [r] {:resource-id   (:id r)
-                                  :resource-name (:name r)
-                                  :resource-type (:db-type r)
-                                  :status        "pending"})
+                                 :resource-name (:name r)
+                                 :resource-type (:db-type r)
+                                 :status        "pending"})
                         targets)
         new-job   {:id         job-id
                    :type       type
@@ -231,7 +230,7 @@
                        (if (target-ids (:id r))
                          (if (= type :admin-setup)
                            (assoc r :stage :needs-roles
-                                  :admin-user (or (:username (get configs (:id r))) "admin"))
+                                  :admin (or (:username (get configs (:id r))) "admin"))
                            (assoc r :stage :ready :role-count 2))
                          r))
                      rs)))]))

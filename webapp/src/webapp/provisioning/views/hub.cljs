@@ -3,7 +3,7 @@
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
                                 Table Tabs Text TextField Tooltip]]
    ["lucide-react" :refer [AlertCircle Check ChevronRight Database
-                            Key Loader2 Plus Search Sliders Upload
+                            Key Loader2 Plus Search Upload
                             UserCog X]]
    [clojure.string :as cs]
    [webapp.provisioning.data :as data]))
@@ -39,7 +39,7 @@
 ;; ── Funnel cards ───────────────────────────────────────────────────────────
 (defn funnel-cards [resources]
   (let [total      (count resources)
-        admin-done (count (filter :admin-user resources))
+        admin-done (count (filter :admin resources))
         roles-done (count (filter :role-count resources))
         needs-admin (count (filter #(= :needs-admin (:stage %)) resources))
         needs-roles (count (filter #(= :needs-roles (:stage %)) resources))
@@ -170,8 +170,8 @@
          [:> X {:size 12}]])]]))
 
 ;; ── Floating action bar ────────────────────────────────────────────────────
-(defn floating-action-bar [{:keys [count-val admin-count roles-count ready-count
-                                    on-add-admin on-configure-roles on-manage-attributes on-clear]}]
+(defn floating-action-bar [{:keys [count-val admin-count roles-count
+                                    on-add-admin on-configure-roles on-clear]}]
   [:> Flex {:align "center" :gap "3" :px "5" :py "3"
             :style {:position    "fixed"
                     :bottom      80
@@ -191,10 +191,7 @@
    (when (pos? roles-count)
      [:> Button {:size "2" :variant "soft" :on-click on-configure-roles}
       [:> Key {:size 14}] (str " Provision (" roles-count ")")])
-   (when (pos? ready-count)
-     [:> Button {:size "2" :color "purple" :variant "soft" :on-click on-manage-attributes}
-      [:> Sliders {:size 14}] (str " Attributes (" ready-count ")")])
-   (when (and (zero? admin-count) (zero? roles-count) (zero? ready-count))
+   (when (and (zero? admin-count) (zero? roles-count))
      [:> Text {:size "2" :color "gray"} "No actions available."])
    [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
     [:> X {:size 14}]]])
@@ -225,7 +222,6 @@
         selected-resources    (filter #(selected-ids (:id %)) resources)
         selected-needing-admin (filter #(= :needs-admin (:stage %)) selected-resources)
         selected-needing-roles (filter #(= :needs-roles (:stage %)) selected-resources)
-        selected-ready         (filter #(= :ready (:stage %)) selected-resources)
         selected-in-stage     (count (filter #(= stage-filter (:stage %)) selected-resources))
 
         all-visible-selected  (and (pos? (count visible))
@@ -369,13 +365,13 @@
              [:> Table.Cell [:> Text {:size "2" :weight "medium"} (:name r)]]
              [:> Table.Cell [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type r)]]
              [:> Table.Cell [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
-                             (:host r)]]
+                             (:address r)]]
              [:> Table.Cell
-              (if (:admin-user r)
+              (if (:admin r)
                 [:> Flex {:align "center" :gap "2"}
                  [:> Box {:style {:width 7 :height 7 :border-radius "50%"
                                   :background "var(--green-9)" :flex-shrink 0}}]
-                 [:> Text {:size "2"} (:admin-user r)]]
+                 [:> Text {:size "2"} (:admin r)]]
                 [:> Flex {:align "center" :gap "2"}
                  [:> Box {:style {:width 7 :height 7 :border-radius "50%"
                                   :background "var(--amber-9)" :flex-shrink 0}}]
@@ -413,8 +409,6 @@
         {:count-val          (count selected-ids)
          :admin-count        (count selected-needing-admin)
          :roles-count        (count selected-needing-roles)
-         :ready-count        (count selected-ready)
          :on-add-admin       #(on-open-bulk-admin (vec selected-needing-admin))
          :on-configure-roles #(on-open-bulk-roles (vec selected-needing-roles))
-         :on-manage-attributes (fn [])
          :on-clear           #(set-selected-ids #{})}])]))

@@ -96,15 +96,7 @@
          :configs      bulk-configs
          :set-configs  set-bulk-configs
          :initial-mode bulk-admin-mode
-         :on-cancel    #(set-screen! :hub)
-         :on-apply     (fn [configs agent-id]
-                         (let [job-id (data/start-job!
-                                       {:type       :admin-setup
-                                        :targets    bulk-resources
-                                        :configs    configs
-                                        :agent-id   agent-id})]
-                           (set-viewing-job-id job-id)
-                           (set-screen! :job-detail)))}])
+         :on-cancel    #(set-screen! :hub)}])
 
      ;; ── Bulk Roles ──
      (when (= hub-screen :bulk-roles)
@@ -123,10 +115,8 @@
      ;; ── Bulk Import (modal overlay) ──
      (when bulk-import-open?
        [bulk-import/bulk-import-screen
-        {:on-close   #(set-bulk-import-open false)
-         :on-confirm (fn [new-resources]
-                       (rf/dispatch [:provisioning/add-resources new-resources]))
-         :resources  resources}])
+        {:on-close  #(set-bulk-import-open false)
+         :resources resources}])
 
      ;; ── Job Detail ──
      (when (= hub-screen :job-detail)
