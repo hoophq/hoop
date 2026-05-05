@@ -2,6 +2,7 @@ package sessionapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -21,11 +22,31 @@ type RDPDetection struct {
 	Height     int     `json:"height"`
 }
 
+// RDPAnalysisInfo carries job-level state alongside the detection list so the
+// webapp can render progress, retry counts, and the failure reason without
+// hitting a second endpoint.
+type RDPAnalysisInfo struct {
+	// Status mirrors the rdp_analysis_jobs.status column when a job exists,
+	// falling back to the sessions.metrics rdp_analysis_status key for sessions
+	// that pre-date the jobs table or where analysis is disabled. Possible
+	// values: "pending", "running", "analyzing", "done", "failed", or empty
+	// when analysis is not configured for the session.
+	Status      string     `json:"status"`
+	Attempt     int        `json:"attempt"`
+	MaxAttempts int        `json:"max_attempts"`
+	LastError   string     `json:"last_error,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+}
+
 // RDPDetectionsResponse is the response for the RDP detections endpoint.
 type RDPDetectionsResponse struct {
-	Detections     []RDPDetection `json:"detections"`
-	Total          int            `json:"total"`
-	AnalysisStatus string         `json:"analysis_status"`
+	Detections []RDPDetection `json:"detections"`
+	Total      int            `json:"total"`
+	// AnalysisStatus is preserved for backwards compatibility with older
+	// webapp builds; new code should read .Analysis.Status.
+	AnalysisStatus string          `json:"analysis_status"`
+	Analysis       RDPAnalysisInfo `json:"analysis"`
 }
 
 // GetRDPDetections returns PII entity detections for an RDP session recording.
@@ -68,12 +89,30 @@ func GetRDPDetections(c *gin.Context) {
 		return
 	}
 
-	// Get analysis status from session metrics
-	analysisStatus := ""
-	if session.Metrics != nil {
-		if status, ok := session.Metrics["rdp_analysis_status"]; ok {
-			if s, ok := status.(string); ok {
-				analysisStatus = s
+	// Pull the canonical job state when one exists; fall back to the
+	// sessions.metrics field for legacy / pre-jobs-table sessions.
+	analysis := RDPAnalysisInfo{MaxAttempts: models.MaxJobAttempts}
+	job, err := models.GetRDPAnalysisJobBySessionID(sessionID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching analysis job")
+		return
+	}
+	if job != nil {
+		analysis.Status = job.Status
+		analysis.Attempt = job.Attempt
+		analysis.StartedAt = job.StartedAt
+		analysis.FinishedAt = job.FinishedAt
+		if job.LastError != nil {
+			analysis.LastError = *job.LastError
+		}
+	}
+	// session.metrics keeps a denormalized copy ("pending", "analyzing",
+	// "done", "failed"). Use it only when no job row was found so the
+	// response always reflects the freshest source of truth.
+	if analysis.Status == "" && session.Metrics != nil {
+		if raw, ok := session.Metrics["rdp_analysis_status"]; ok {
+			if s, ok := raw.(string); ok {
+				analysis.Status = s
 			}
 		}
 	}
@@ -103,6 +142,7 @@ func GetRDPDetections(c *gin.Context) {
 	c.JSON(http.StatusOK, RDPDetectionsResponse{
 		Detections:     detections,
 		Total:          len(detections),
-		AnalysisStatus: analysisStatus,
+		AnalysisStatus: analysis.Status,
+		Analysis:       analysis,
 	})
 }

@@ -14398,6 +14398,30 @@ const docTemplate = `{
                 }
             }
         },
+        "sessionapi.RDPAnalysisInfo": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status mirrors the rdp_analysis_jobs.status column when a job exists,\nfalling back to the sessions.metrics rdp_analysis_status key for sessions\nthat pre-date the jobs table or where analysis is disabled. Possible\nvalues: \"pending\", \"running\", \"analyzing\", \"done\", \"failed\", or empty\nwhen analysis is not configured for the session.",
+                    "type": "string"
+                }
+            }
+        },
         "sessionapi.RDPDetection": {
             "type": "object",
             "properties": {
@@ -14430,7 +14454,11 @@ const docTemplate = `{
         "sessionapi.RDPDetectionsResponse": {
             "type": "object",
             "properties": {
+                "analysis": {
+                    "$ref": "#/definitions/sessionapi.RDPAnalysisInfo"
+                },
                 "analysis_status": {
+                    "description": "AnalysisStatus is preserved for backwards compatibility with older\nwebapp builds; new code should read .Analysis.Status.",
                     "type": "string"
                 },
                 "detections": {
