@@ -21,6 +21,7 @@ export const useUserStore = create((set, get) => ({
   isSelfHosted: false,
   isFreeLicense: true,
   analyticsTracking: false,
+  disableClipboard: false,
   gatewayVersion: null,
   loading: false,
 
@@ -29,12 +30,13 @@ export const useUserStore = create((set, get) => ({
     const license = serverInfo?.license_info
     const isFreeLicense = !(license?.is_valid && license?.type === 'enterprise')
     const analyticsTracking = serverInfo?.analytics_tracking === 'enabled'
-    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking })
+    const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
+    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, disableClipboard })
   },
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, gatewayVersion: null })
+    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, disableClipboard: false, gatewayVersion: null })
   },
 
   initIntercom: (user) => {

@@ -6,10 +6,10 @@ import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
 import PageLoader from '@/components/PageLoader'
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, setUser, setLoading, setServerInfo, initIntercom } = useUserStore()
+  const { user, isAdmin, setUser, setLoading, setServerInfo, initIntercom } = useUserStore()
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
@@ -101,6 +101,10 @@ function ProtectedRoute({ children }) {
 
   if (initializing) {
     return <PageLoader message="Verifying authentication..." />
+  }
+
+  if (adminOnly && !isAdmin) {
+    return <Navigate to="/" replace />
   }
 
   return children

@@ -1,5 +1,6 @@
 import { CopyButton as MantineCopyButton, ActionIcon, Tooltip } from '@mantine/core'
 import { Copy, Check } from 'lucide-react'
+import { useUserStore } from '@/stores/useUserStore'
 
 /**
  * Icon button that copies `value` to the clipboard.
@@ -10,6 +11,9 @@ import { Copy, Check } from 'lucide-react'
  *   <CopyButton value={key} label="Copy API Key" />
  */
 export default function CopyButton({ value, label, size = 'sm', ...props }) {
+  const disableClipboard = useUserStore(s => s.disableClipboard)
+  if (disableClipboard) return null
+
   return (
     <MantineCopyButton value={value} timeout={2000}>
       {({ copied, copy }) => (
