@@ -7,11 +7,14 @@ import (
 	"net/url"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -178,7 +181,41 @@ func CreateResource(c *gin.Context) {
 		return
 	}
 
+	if len(connections) > 0 {
+		trackCreateConnection(c, ctx, req, connections)
+	}
+
 	c.JSON(http.StatusCreated, toOpenApi(&resource))
+}
+
+// trackCreateConnection emits the hoop-create-connection analytics event for
+// connections born from a resource creation. The /resources route does not run
+// the api.TrackRequest middleware (which is wired only on POST /connections),
+// so we emit explicitly here to keep the funnel accurate. Property shape mirrors
+// the middleware's EventCreateConnection branch.
+func trackCreateConnection(c *gin.Context, ctx *storagev2.Context, req openapi.ResourceRequest, connections []*models.Connection) {
+	if ctx.UserEmail == "" || ctx.OrgID == "" || len(connections) == 0 {
+		return
+	}
+
+	properties := map[string]any{
+		"org-id":         ctx.OrgID,
+		"auth-method":    appconfig.Get().AuthMethod(),
+		"license-type":   ctx.GetLicenseType(),
+		"content-length": c.Request.ContentLength,
+		"user-agent":     apiutils.NormalizeUserAgent(c.Request.Header.Values),
+		"api-hostname":   c.Request.Host,
+		"type":           req.Type,
+		"subtype":        req.SubType,
+		"command":        "",
+	}
+	if len(connections[0].Command) > 0 {
+		properties["command"] = connections[0].Command[0]
+	}
+
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(ctx.UserID, analytics.EventCreateConnection, properties)
 }
 
 func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, err error) {
