@@ -17,7 +17,6 @@
 
 (defn- api-resource->provisioning-resource
   [resource]
-  (prn :kk resource)
   (let [env     (:env_vars resource)
         host    (or (decode-env env "HOST") "")
         port    (or (decode-env env "PORT") "")

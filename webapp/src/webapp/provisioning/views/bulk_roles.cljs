@@ -2,13 +2,13 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Card Checkbox
                                Flex Heading Skeleton Text]]
-   ["lucide-react" :refer [ArrowLeft Check FileText Info Key Loader2
-                           Sparkles Upload]]
+   ["lucide-react" :refer [AlertTriangle ArrowLeft Check Circle FileText
+                           Info Key Loader2 Upload XCircle]]
    [reagent.core :as r]
    [webapp.provisioning.data :as data]))
 
 ;; ── Method card ────────────────────────────────────────────────────────────────
-(defn method-card [{:keys [selected icon title description badge schemas on-click]}]
+(defn method-card [{:keys [selected icon title description badge on-click]}]
   [:> Card {:style {:flex 1 :cursor "pointer" :position "relative"
                     :border-color (when selected "var(--indigo-9)")
                     :border-width (if selected 2 1)
@@ -32,16 +32,7 @@
      [:> Flex {:align "center" :gap "1"}
       [:> Text {:size "2" :weight "medium"} title]
       (when badge [:> Badge {:color "indigo" :variant "soft" :size "1"} badge])]
-     [:> Text {:size "1" :color "gray"} description]
-     (when (seq schemas)
-       [:> Flex {:direction "column" :gap "1" :mt "2" :style {:width "100%"}}
-        [:> Text {:size "1" :weight "medium" :color "gray"} "Schemas"]
-        [:> Flex {:gap "1" :style {:flex-wrap "wrap"}}
-         (for [s schemas]
-           ^{:key s}
-           [:> Badge {:color "gray" :variant "soft" :size "1"
-                      :style {:font-family "var(--font-mono)" :font-size 10}}
-            s])]])]]])
+     [:> Text {:size "1" :color "gray"} description]]]])
 
 ;; ── Role discovery table (bind mode) ──────────────────────────────────────────
 (defn role-discovery-table [{:keys [resources discovered-roles selected-roles on-toggle]}]
@@ -52,7 +43,6 @@
     [:> Box {:style {:flex 1 :overflow-y "auto"
                      :border "1px solid var(--gray-5)"
                      :border-radius "var(--radius-2)"}}
-     ;; Header
      [:> Flex {:px "3" :py "2"
                :style {:background "var(--gray-3)"
                        :border-bottom "1px solid var(--gray-5)"
@@ -66,7 +56,6 @@
        [:> Text {:size "1" :color "gray" :weight "medium"} "Type"]]
       [:> Box {:style {:width 80 :flex-shrink 0}}
        [:> Text {:size "1" :color "gray" :weight "medium"} "DB users"]]]
-     ;; Rows
      (doall
       (for [[i {:keys [resource role]}] (map-indexed vector all-roles)]
         (let [selected? (contains? (get selected-roles (:id resource)) (:name role))]
@@ -98,17 +87,204 @@
            [:> Box {:style {:width 80 :flex-shrink 0}}
             [:> Text {:size "2" :color "gray"} (:user-count role)]]])))]))
 
+;; ── CSV preview table header ─────────────────────────────────────────────────
+(defn- csv-table-header []
+  [:> Flex {:px "3" :py "2"
+            :style {:background "var(--gray-3)"
+                    :border-bottom "1px solid var(--gray-5)"
+                    :position "sticky" :top 0 :z-index 1}}
+   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+    [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
+   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+    [:> Text {:size "1" :color "gray" :weight "medium"} "Role"]]
+   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+    [:> Text {:size "1" :color "gray" :weight "medium"} "Database"]]
+   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+    [:> Text {:size "1" :color "gray" :weight "medium"} "Permissions"]]
+   [:> Box {:style {:width 110 :flex-shrink 0}}
+    [:> Text {:size "1" :color "gray" :weight "medium"} "Status"]]])
+
+;; ── Row renderers ────────────────────────────────────────────────────────────
+(defn- csv-row-base [{:keys [row bg extra-style badge-content badge-color badge-icon]}]
+  [:> Flex {:px "3" :py "2" :align "center"
+            :style (merge {:min-height 40 :background bg} extra-style)}
+   [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
+    [:> Text {:size "2" :style (when (= badge-color "gray") {:color "var(--gray-8)"})}
+     (:resource-name row)]]
+   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
+                                :color (when (= badge-color "gray") "var(--gray-8)")}}
+     (:role row)]]
+   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
+                                :color (when (= badge-color "gray") "var(--gray-8)")}}
+     (:database row)]]
+   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+    [:> Text {:size "1" :color "gray"} (:permissions row)]]
+   [:> Box {:style {:width 110 :flex-shrink 0}}
+    [:> Badge {:color badge-color :variant "soft" :size "1"}
+     badge-icon " " badge-content]]])
+
+(defn- valid-row [row idx total]
+  [csv-row-base {:row row
+                 :bg (if (even? idx) "var(--color-panel-solid)" "var(--gray-1)")
+                 :extra-style {:border-bottom (when (< idx (dec total)) "1px solid var(--gray-3)")}
+                 :badge-content "Valid"
+                 :badge-color "green"
+                 :badge-icon [:> Check {:size 10}]}])
+
+(defn- skipped-csv-row [row idx total]
+  [csv-row-base {:row row
+                 :bg "var(--gray-2)"
+                 :extra-style {:border-bottom (when (< idx (dec total)) "1px solid var(--gray-3)")
+                               :opacity 0.65}
+                 :badge-content "Skipped"
+                 :badge-color "gray"
+                 :badge-icon [:> Circle {:size 10}]}])
+
+(defn- invalid-row [row idx total]
+  (let [reason (if (= (:error row) :bad-permissions) "Bad permissions" "Missing field")]
+    [csv-row-base {:row row
+                   :bg "var(--red-2)"
+                   :extra-style {:border-bottom (when (< idx (dec total)) "1px solid var(--gray-3)")}
+                   :badge-content reason
+                   :badge-color "red"
+                   :badge-icon [:> XCircle {:size 10}]}]))
+
+;; ── Conflict group ───────────────────────────────────────────────────────────
+(defn- conflict-group-rows [conflict-id rows conflict-picks set-conflict-picks]
+  (let [picked (get conflict-picks conflict-id)]
+    [:> Box {:style {:border-left "3px solid var(--amber-8)" :margin-bottom 2}}
+     (doall
+      (for [[i row] (map-indexed vector rows)]
+        (let [line   (:line-num row)
+              active? (= picked line)]
+          ^{:key (str conflict-id "-" line)}
+          [:> Flex {:px "3" :py "2" :align "center"
+                    :on-click #(set-conflict-picks (assoc conflict-picks conflict-id line))
+                    :style {:min-height 40 :cursor "pointer"
+                            :background (if active? "var(--amber-2)" "var(--gray-2)")
+                            :opacity (if (and picked (not active?)) 0.45 1)
+                            :border-bottom (when (< i (dec (count rows)))
+                                             "1px solid var(--amber-4)")}}
+           [:> Box {:style {:width 24 :flex-shrink 0 :margin-right 8}}
+            [:> Box {:style {:width 16 :height 16 :border-radius "50%"
+                             :border (str "2px solid " (if active? "var(--amber-9)" "var(--gray-7)"))
+                             :background (when active? "var(--amber-9)")
+                             :display "flex" :align-items "center" :justify-content "center"}}
+             (when active?
+               [:> Box {:style {:width 6 :height 6 :border-radius "50%"
+                                :background "white"}}])]]
+           [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
+            [:> Text {:size "2"} (:resource-name row)]
+            [:> Badge {:color "amber" :variant "soft" :size "1"} (str "line " (:line-num row))]]
+           [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+            [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+             (:role row)]]
+           [:> Box {:style {:flex "1 1 0" :min-width 0}}
+            [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+             (:database row)]]
+           [:> Box {:style {:flex "1 1 0" :min-width 0}}
+            [:> Text {:size "1" :color "gray"} (:permissions row)]]
+           [:> Box {:style {:width 110 :flex-shrink 0}}
+            [:> Badge {:color "amber" :variant "soft" :size "1"}
+             [:> AlertTriangle {:size 10}] " Conflict"]]])))]))
+
+;; ── Skipped resources section ────────────────────────────────────────────────
+(defn- skipped-resources-section [skipped-resources]
+  (when (seq skipped-resources)
+    [:> Box {:mt "3" :p "3"
+             :style {:border "1px solid var(--gray-5)"
+                     :border-radius "var(--radius-2)"
+                     :background "var(--gray-2)"}}
+     [:> Flex {:align "center" :gap "2" :mb "2"}
+      [:> Info {:size 14 :color "var(--gray-9)"}]
+      [:> Text {:size "2" :weight "medium" :color "gray"}
+       (str (count skipped-resources)
+            " selected resource" (when (not= 1 (count skipped-resources)) "s")
+            " had no matching CSV rows")]]
+     [:> Flex {:gap "2" :style {:flex-wrap "wrap"}}
+      (for [r skipped-resources]
+        ^{:key (:id r)}
+        [:> Badge {:color "gray" :variant "soft" :size "1"} (:name r)])]]))
+
+;; ── CSV parsed preview ───────────────────────────────────────────────────────
+(defn- csv-preview [{:keys [classification conflict-picks set-conflict-picks]}]
+  (let [{:keys [valid conflicts skipped-csv skipped-resources invalid]}
+        (or classification {})
+        has-conflicts?  (seq conflicts)
+        has-invalid?    (seq invalid)
+
+        flat-rows (vec (concat
+                        (mapv (fn [row] {:type :valid :row row}) valid)
+                        (mapv (fn [row] {:type :invalid :row row}) invalid)
+                        (mapv (fn [row] {:type :skipped :row row}) skipped-csv)))
+        total     (count flat-rows)]
+    [:<>
+     (when (or has-conflicts? has-invalid?)
+       [:> Callout.Root {:color (if has-conflicts? "amber" "red") :mb "3" :size "1"}
+        [:> Callout.Icon
+         (if has-conflicts?
+           [:> AlertTriangle {:size 14}]
+           [:> XCircle {:size 14}])]
+        [:> Callout.Text {:size "1"}
+         (cond
+           (and has-conflicts? has-invalid?)
+           "Some rows have conflicts or errors. Resolve all conflicts (pick one row per group) and fix invalid rows before applying."
+           has-conflicts?
+           "Some rows have the same resource, role, and database but different permissions. Pick which row to keep for each conflict group."
+           :else
+           "Some rows have missing fields or invalid permissions. They will be excluded from provisioning.")]])
+
+     [:> Box {:style {:flex 1 :overflow-y "auto"
+                      :border "1px solid var(--gray-5)"
+                      :border-radius "var(--radius-2)"}}
+      [csv-table-header]
+
+      ;; Conflict groups (rendered before flat rows)
+      (into [:<>]
+            (when has-conflicts?
+              (for [[cid rows] (sort-by key conflicts)]
+                ^{:key cid}
+                [conflict-group-rows cid rows conflict-picks set-conflict-picks])))
+
+      ;; All non-conflict rows in a single list
+      (into [:<>]
+            (for [[i {:keys [type row]}] (map-indexed vector flat-rows)]
+              (let [row-key (str (name type) "-" (:line-num row))]
+                (case type
+                  :valid   ^{:key row-key} [valid-row row i total]
+                  :invalid ^{:key row-key} [invalid-row row i total]
+                  :skipped ^{:key row-key} [skipped-csv-row row i total]))))]
+
+     [skipped-resources-section skipped-resources]]))
+
 ;; ── Main screen ────────────────────────────────────────────────────────────────
 (defn bulk-roles-screen
   [{:keys [resources on-apply on-cancel initial-method]}]
-  (let [method*              (r/atom (or initial-method "create"))
+  (let [method*              (r/atom (or initial-method "csv"))
+        csv-text             (r/atom nil)
         csv-parsing          (r/atom false)
-        csv-parsed             (r/atom false)
-        discovered-roles      (r/atom {})
-        roles-loading          (r/atom false)
-        selected-roles         (r/atom {})
-        create-selections      (r/atom {})
-        load-timer             (r/atom nil)]
+        csv-parsed           (r/atom nil)
+        csv-classification   (r/atom nil)
+        conflict-picks       (r/atom {})
+        discovered-roles     (r/atom {})
+        roles-loading        (r/atom false)
+        selected-roles       (r/atom {})
+        load-timer           (r/atom nil)
+
+        do-parse-csv!  (fn [text]
+                         (reset! csv-text text)
+                         (reset! csv-parsing true)
+                         (js/setTimeout
+                          (fn []
+                            (let [parsed (data/parse-csv-roles text)
+                                  classified (data/classify-csv-rows (or parsed []) resources)]
+                              (reset! csv-parsed parsed)
+                              (reset! csv-classification classified)
+                              (reset! conflict-picks {})
+                              (reset! csv-parsing false)))
+                          400))]
     (fn []
       (let [method   @method*
             loading? @roles-loading
@@ -125,54 +301,33 @@
                                               (disj s role-name)
                                               (conj s role-name)))))))
 
-            create-rows          (data/standard-role-preview-rows resources)
-            create-plan-for-ui   (when (= method "create")
-                                   (data/create-schema-plan-from-selections resources @create-selections))
+            classification @csv-classification
+            cur-picks      @conflict-picks
+            unresolved     (when classification
+                             (count (filter (fn [[cid _]]
+                                             (nil? (get cur-picks cid)))
+                                           (:conflicts classification))))
 
-            _sync-create-sel
-            (when (and (= method "create")
-                       (or (empty? @create-selections)
-                           (not= (count @create-selections) (count create-rows))))
-              (reset! create-selections (data/initial-create-selections resources)))
+            apply-disabled? (or (and (= method "csv")
+                                     (or (nil? classification)
+                                         (and (seq (:conflicts classification))
+                                              (pos? (or unresolved 0)))))
+                                (and (= method "bind") (or loading? (zero? total-selected))))
 
-            toggle-create-row (fn [row-key]
-                                (swap! create-selections update row-key not))
+            valid-count   (count (:valid classification))
+            conflict-count (count (:conflicts classification))
+            skipped-count (+ (count (:skipped-csv classification))
+                             (count (:skipped-resources classification)))
 
-            toggle-all-create (fn []
-                                (let [all-on? (every? true? (vals @create-selections))]
-                                  (reset! create-selections
-                                          (into {} (map (fn [row] [(:key row) (not all-on?)])
-                                                        create-rows)))))
-
-            all-create-selected? (and (seq @create-selections)
-                                      (every? true? (vals @create-selections)))
-            some-create-selected? (and (seq @create-selections)
-                                       (some true? (vals @create-selections)))
-
-            row-selected? (fn [row-key]
-                            (get @create-selections row-key true))
-
-            apply-disabled? (or (and (= method "csv") (not @csv-parsed))
-                                (and (= method "bind") (or loading? (zero? total-selected)))
-                                (and (= method "create")
-                                     (not (some (fn [[_ p]] (or (seq (:readonly p)) (seq (:readwrite p))))
-                                                (or create-plan-for-ui {})))))
-
-            create-selected-count (when (= method "create")
-                                   (count (filter true? (vals @create-selections))))
             footer-info (cond
-                          (= method "create")
-                          (let [plan (or create-plan-for-ui {})
-                                ro-n (reduce + 0 (map (fn [[_ p]] (count (:readonly p))) plan))
-                                rw-n (reduce + 0 (map (fn [[_ p]] (count (:readwrite p))) plan))]
-                            (str create-selected-count " of " (count create-rows) " selected · "
-                                 ro-n " read-only · " rw-n " read/write schema grants"))
+                          (and (= method "csv") classification)
+                          (str valid-count " valid · "
+                               conflict-count " conflict" (when (not= 1 conflict-count) "s") " · "
+                               skipped-count " skipped")
                           (and (= method "bind") loading?)
                           "Reading roles from databases…"
                           (= method "bind")
                           (str total-discovered " roles discovered · " total-selected " selected")
-                          @csv-parsed
-                          (str (* (count resources) 2) " roles parsed from CSV")
                           :else "Upload a CSV to continue")]
 
         [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
@@ -185,15 +340,13 @@
 
          ;; Method cards
          [:> Flex {:gap "3" :mb "5"}
-          [method-card {:selected (= method "create")
-                        :icon     [:> Sparkles {:size 18}]
-                        :title    "Create standard roles"
-                        :description "Auto-create readonly and readwrite roles for each resource."
+          [method-card {:selected (= method "csv")
+                        :icon     [:> Upload {:size 18}]
+                        :title    "Import from CSV"
+                        :description "Define roles in a CSV file and bulk-apply across all resources."
                         :badge    "Recommended"
-                        :schemas  data/mock-resource-schemas
                         :on-click (fn []
-                                    (reset! method* "create")
-                                    (reset! create-selections (data/initial-create-selections resources))
+                                    (reset! method* "csv")
                                     (when @load-timer (js/clearTimeout @load-timer)))}]
           [method-card {:selected (= method "bind")
                         :icon     [:> Key {:size 18}]
@@ -212,73 +365,73 @@
                                                                        [(:id r) (data/get-mock-roles (:db-type r))])
                                                                      resources)))
                                                (reset! roles-loading false))
-                                             1500)))}]
-          [method-card {:selected (= method "csv")
-                        :icon     [:> Upload {:size 18}]
-                        :title    "Import from CSV"
-                        :description "Define roles in a CSV file and bulk-apply across all resources."
-                        :on-click (fn []
-                                    (reset! method* "csv")
-                                    (when @load-timer (js/clearTimeout @load-timer)))}]]
+                                             1500)))}]]
 
-         ;; ── Create mode ──
-         (when (= method "create")
+         ;; ── CSV mode — upload ──
+         (when (and (= method "csv") (nil? @csv-parsed))
+           [:> Flex {:direction "column" :gap "3" :style {:flex 1}}
+            [:> Box {:on-click (fn []
+                                 (let [input (js/document.createElement "input")]
+                                   (set! (.-type input) "file")
+                                   (set! (.-accept input) ".csv,text/csv")
+                                   (set! (.-onchange input)
+                                         (fn [e]
+                                           (let [file (-> e .-target .-files (aget 0))]
+                                             (when file
+                                               (let [reader (js/FileReader.)]
+                                                 (set! (.-onload reader)
+                                                       (fn [evt]
+                                                         (do-parse-csv! (-> evt .-target .-result))))
+                                                 (.readAsText reader file))))))
+                                   (.click input)))
+                     :on-drop  (fn [e]
+                                 (.preventDefault e)
+                                 (let [file (-> e .-dataTransfer .-files (aget 0))]
+                                   (when file
+                                     (let [reader (js/FileReader.)]
+                                       (set! (.-onload reader)
+                                             (fn [evt]
+                                               (do-parse-csv! (-> evt .-target .-result))))
+                                       (.readAsText reader file)))))
+                     :on-drag-over #(.preventDefault %)
+                     :style {:border "2px dashed var(--gray-6)"
+                             :border-radius "var(--radius-3)"
+                             :padding 40 :background "var(--gray-2)"
+                             :text-align "center" :cursor "pointer"
+                             :flex 1 :display "flex" :align-items "center"
+                             :justify-content "center"}}
+             (if @csv-parsing
+               [:> Flex {:direction "column" :align "center" :gap "2"}
+                [:span {:class "animate-spin inline-flex" :style {:color "var(--indigo-9)"}}
+                 [:> Loader2 {:size 20}]]
+                [:> Text {:size "2" :color "gray"} "Parsing CSV…"]]
+               [:> Flex {:direction "column" :align "center" :gap "2"}
+                [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
+                [:> Text {:size "2" :color "gray"}
+                 "Drop your CSV here or "
+                 [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
+                [:> Text {:size "1" :color "gray"}
+                 "Columns: resource_name, role, database, permissions"]])]
+            [:> Flex {:justify "end"}
+             [:> Button {:variant "ghost" :size "1" :color "gray"}
+              [:> FileText {:size 12}] " Download template"]]])
+
+         ;; ── CSV mode — parsed preview ──
+         (when (and (= method "csv") @csv-parsed)
            [:<>
-            [:> Callout.Root {:color "blue" :mb "3" :size "1"}
-             [:> Callout.Icon [:> Info {:size 14}]]
-             [:> Callout.Text {:size "1"}
-              "Each row is a schema in the resource's database. Use the checkboxes to include that schema in grants for the standard read-only or read/write roles (e.g. analytics-db-readonly / analytics-db-readwrite). Roles are created once per resource; SQL grants use only the schemas you select."]]
-            [:> Box {:style {:flex 1 :overflow-y "auto"
-                            :border "1px solid var(--gray-5)"
-                            :border-radius "var(--radius-2)"}}
-             [:> Flex {:px "3" :py "2"
-                       :style {:background "var(--gray-3)"
-                               :border-bottom "1px solid var(--gray-5)"
-                               :position "sticky" :top 0 :z-index 1}}
-              [:> Box {:style {:width 36 :flex-shrink 0}}
-               [:> Checkbox {:checked (cond
-                                        all-create-selected?  true
-                                        some-create-selected? "indeterminate"
-                                        :else                 false)
-                             :onCheckedChange toggle-all-create}]]
-              [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
-               [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-              [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
-               [:> Text {:size "1" :color "gray" :weight "medium"} "Role"]]
-              [:> Box {:style {:flex "1 1 0" :min-width 0}}
-               [:> Text {:size "1" :color "gray" :weight "medium"} "Database"]]
-              [:> Box {:style {:flex "1 1 0" :min-width 0}}
-               [:> Text {:size "1" :color "gray" :weight "medium"} "Permissions"]]]
-             (doall
-              (for [[i {:keys [key resource schema role-name permissions]}]
-                    (map-indexed vector create-rows)]
-                (let [sel? (row-selected? key)]
-                  ^{:key key}
-                  [:> Flex {:px "3" :py "2" :align "center"
-                            :on-click #(toggle-create-row key)
-                            :style {:border-bottom (when (< i (dec (count create-rows)))
-                                                     "1px solid var(--gray-3)")
-                                    :min-height 44
-                                    :background (cond
-                                                  sel?    "var(--indigo-1)"
-                                                  (even? i) "var(--color-panel-solid)"
-                                                  :else     "var(--gray-1)")
-                                    :cursor "pointer"}}
-                   [:> Box {:style {:width 36 :flex-shrink 0}
-                            :on-click #(.stopPropagation %)}
-                    [:> Checkbox {:checked sel?
-                                  :onCheckedChange #(toggle-create-row key)}]]
-                   [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
-                    [:> Text {:size "2" :weight "medium"} (:name resource)]
-                    [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type resource)]]
-                   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
-                    [:> Text {:size "1" :style {:font-family "var(--font-mono)" :font-size 11}}
-                     role-name]]
-                   [:> Box {:style {:flex "1 1 0" :min-width 0}}
-                    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
-                     schema]]
-                   [:> Box {:style {:flex "1 1 0" :min-width 0}}
-                    [:> Text {:size "1" :color "gray"} permissions]]])))]]) 
+            [:> Flex {:align "center" :justify "between" :mb "3"}
+             [:> Text {:size "2" :weight "medium"}
+              (str (count @csv-parsed) " rows parsed")]
+             [:> Button {:variant "ghost" :size "1" :color "gray"
+                         :on-click (fn []
+                                     (reset! csv-parsed nil)
+                                     (reset! csv-classification nil)
+                                     (reset! csv-text nil)
+                                     (reset! conflict-picks {}))}
+              "Upload different file"]]
+            [csv-preview {:classification     classification
+                          :conflict-picks     cur-picks
+                          :set-conflict-picks #(reset! conflict-picks %)}]])
 
          ;; ── Bind mode — loading ──
          (when (and (= method "bind") loading?)
@@ -312,78 +465,6 @@
               :selected-roles   @selected-roles
               :on-toggle        toggle-role}]])
 
-         ;; ── CSV mode — upload ──
-         (when (and (= method "csv") (not @csv-parsed))
-           [:> Flex {:direction "column" :gap "3" :style {:flex 1}}
-            [:> Box {:on-click (fn []
-                                 (reset! csv-parsing true)
-                                 (js/setTimeout (fn []
-                                                  (reset! csv-parsing false)
-                                                  (reset! csv-parsed true))
-                                                900))
-                     :style {:border "2px dashed var(--gray-6)"
-                             :border-radius "var(--radius-3)"
-                             :padding 40 :background "var(--gray-2)"
-                             :text-align "center" :cursor "pointer"
-                             :flex 1 :display "flex" :align-items "center"
-                             :justify-content "center"}}
-             (if @csv-parsing
-               [:> Flex {:direction "column" :align "center" :gap "2"}
-                [:span {:class "animate-spin inline-flex" :style {:color "var(--indigo-9)"}}
-                 [:> Loader2 {:size 20}]]
-                [:> Text {:size "2" :color "gray"} "Parsing CSV…"]]
-               [:> Flex {:direction "column" :align "center" :gap "2"}
-                [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
-                [:> Text {:size "2" :color "gray"}
-                 "Drop your CSV here or "
-                 [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
-                [:> Text {:size "1" :color "gray"} "Columns: resource_name, role_name, permissions"]])]
-            [:> Flex {:justify "end"}
-             [:> Button {:variant "ghost" :size "1" :color "gray"}
-              [:> FileText {:size 12}] " Download template"]]])
-
-         ;; ── CSV mode — parsed preview ──
-         (when (and (= method "csv") @csv-parsed)
-           [:> Box {:style {:flex 1 :overflow-y "auto"
-                            :border "1px solid var(--gray-5)"
-                            :border-radius "var(--radius-2)"}}
-            [:> Flex {:px "3" :py "2"
-                      :style {:background "var(--gray-3)"
-                              :border-bottom "1px solid var(--gray-5)"}}
-             [:> Box {:style {:flex 1}}
-              [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-             [:> Box {:style {:flex 1}}
-              [:> Text {:size "1" :color "gray" :weight "medium"} "Role name"]]
-             [:> Box {:style {:width 180 :flex-shrink 0}}
-              [:> Text {:size "1" :color "gray" :weight "medium"} "Permissions"]]
-             [:> Box {:style {:width 70}}
-              [:> Text {:size "1" :color "gray" :weight "medium"} "Status"]]]
-            (let [rows (mapcat (fn [r]
-                                 [{:key (str (:id r) "-ro") :name (:name r) :type (:db-type r)
-                                   :role (str (:name r) "_readonly") :perms "SELECT"}
-                                  {:key (str (:id r) "-rw") :name (:name r) :type (:db-type r)
-                                   :role (str (:name r) "_readwrite") :perms "SELECT, INSERT, UPDATE"}])
-                               resources)]
-              (doall
-               (for [[i row] (map-indexed vector rows)]
-                 ^{:key (:key row)}
-                 [:> Flex {:px "3" :py "2" :align "center"
-                           :style {:border-bottom (when (< i (dec (count rows)))
-                                                    "1px solid var(--gray-3)")
-                                   :min-height 40
-                                   :background (if (even? i)
-                                                 "var(--color-panel-solid)" "var(--gray-1)")}}
-                  [:> Flex {:align "center" :gap "2" :style {:flex 1}}
-                   [:> Text {:size "2"} (:name row)]
-                   [:> Badge {:color "gray" :variant "soft" :size "1"} (:type row)]]
-                  [:> Box {:style {:flex 1}}
-                   [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
-                    (:role row)]]
-                  [:> Box {:style {:width 180 :flex-shrink 0}}
-                   [:> Text {:size "1" :color "gray"} (:perms row)]]
-                  [:> Badge {:color "green" :variant "soft" :size "1"}
-                   [:> Check {:size 10}] " Valid"]])))])
-
          ;; Footer
          [:> Flex {:align "center" :justify "between" :pt "4" :mt "4"
                    :style {:border-top "1px solid var(--gray-4)" :flex-shrink 0}}
@@ -393,21 +474,42 @@
            [:> Button {:disabled apply-disabled?
                        :on-click (fn []
                                    (let [roles-by-resource
-                                         (when (= method "bind")
+                                         (cond
+                                           (= method "csv")
+                                           (when classification
+                                             (let [kept-conflict-rows
+                                                   (vec (keep (fn [[cid rows]]
+                                                                (let [ln (get cur-picks cid)]
+                                                                  (some #(when (= (:line-num %) ln) %) rows)))
+                                                              (:conflicts classification)))
+                                                   all-valid (concat (:valid classification) kept-conflict-rows)
+                                                   by-name   (group-by :resource-name all-valid)
+                                                   res-by-name (into {} (map (fn [r] [(:name r) r]) resources))]
+                                               (into {}
+                                                     (keep (fn [[rname rows]]
+                                                             (when-let [r (get res-by-name rname)]
+                                                               [(:id r)
+                                                                (vec (map (fn [row]
+                                                                            {:role        (:role row)
+                                                                             :database    (:database row)
+                                                                             :permissions (:permissions row)})
+                                                                          rows))]))
+                                                           by-name))))
+
+                                           (= method "bind")
                                            (into {}
                                                  (map (fn [[id s]] [id (vec s)])
-                                                      @selected-roles)))
-                                         create-plan
-                                         (when (= method "create")
-                                           (data/create-schema-plan-from-selections
-                                            resources @create-selections))]
-                                     (on-apply method roles-by-resource create-plan)))}
+                                                      @selected-roles)))]
+                                     (on-apply method roles-by-resource)))}
             (cond
               (= method "bind")
               (str "Bind " total-selected " role"
                    (when (not= 1 total-selected) "s") " →")
-              (= method "create")
-              "Provision roles & grants →"
+              (= method "csv")
+              (str "Provision " (+ valid-count
+                                    (count (filter #(get cur-picks (key %))
+                                                   (:conflicts (or classification {})))))
+                   " roles →")
               :else
               (str "Provision " (count resources)
                    (if (= 1 (count resources)) " resource" " resources") " →"))]]]]))))

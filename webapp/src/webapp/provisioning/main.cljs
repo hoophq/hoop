@@ -33,7 +33,7 @@
         [bulk-resources set-bulk-resources]    (react/useState [])
         [bulk-configs set-bulk-configs]        (react/useState {})
         [bulk-admin-mode set-bulk-admin-mode]  (react/useState "manual")
-        [bulk-roles-method set-bulk-roles-method] (react/useState "create")
+        [bulk-roles-method set-bulk-roles-method] (react/useState "csv")
         [viewing-job-id set-viewing-job-id]    (react/useState nil)
         [session-filter set-session-filter]    (react/useState {:title "Sessions"})
         [session-return-to set-session-return-to] (react/useState :hub)
@@ -51,7 +51,7 @@
 
         open-bulk-roles! (fn [targets & [method]]
                            (set-bulk-resources (vec targets))
-                           (set-bulk-roles-method (or method "create"))
+                           (set-bulk-roles-method (or method "csv"))
                            (set-hub-screen :bulk-roles))
 
         navigate-sessions!
@@ -104,12 +104,11 @@
                     {:resources      bulk-resources
                      :initial-method bulk-roles-method
                      :on-cancel      #(set-screen! :hub)
-                    :on-apply       (fn [_method roles-by-resource create-schema-plan]
+                    :on-apply       (fn [_method roles-by-resource]
                                       (let [job-id (data/start-job!
                                                     {:type               :role-provision
                                                      :targets            bulk-resources
-                                                     :roles-by-resource  (or roles-by-resource {})
-                                                     :create-schema-plan create-schema-plan})]
+                                                     :roles-by-resource  (or roles-by-resource {})})]
                                         (set-viewing-job-id job-id)
                                         (set-screen! :job-detail)))}]
        :job-detail (let [job (some #(when (= (:id %) viewing-job-id) %) jobs)]

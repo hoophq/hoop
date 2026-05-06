@@ -83,85 +83,121 @@
 (defn get-mock-roles [_db-type]
   mock-pg-roles)
 
-;; ── Mock DB schemas (standard-role create preview) ─────────────────────────────
-;; Each entry renders as one row in the create-mode table (per resource).
-(def mock-resource-schemas
-  "Illustrative schema names shown in the create-standard-roles UI."
-  ["dbprod.public"
-   "dbprod.private"
-   "dbprod.enterprise"
-   "dbprodw2.enterprise"
-   "dbprodw2.enterprise"
-   "dbprodw2.enterprise"
-   "dbprode2.enterprise"
-   "dbprod12.enterprise"
-   "dbprod5.enterprise"
-   "dbprod3.enterprise"])
-
-;; Shown in bulk create-roles table and matched by mock session SQL for role-provision.
-(def standard-role-readonly-permissions "SELECT")
-(def standard-role-readwrite-permissions "SELECT, INSERT, UPDATE")
-
-(defn standard-role-preview-rows
-  "Two rows per resource × schema: one :readonly, one :readwrite.
-   Each row carries `:role-type` (:readonly | :readwrite), `:role-name`,
-   and `:permissions` so the UI can render a flat, checkable list."
-  [resources]
-  (vec
-   (mapcat
-    (fn [r]
-      (mapcat
-       (fn [[idx schema]]
-         [{:key        (str (:id r) "-sch-" idx "-ro")
-           :resource   r
-           :schema     schema
-           :role-type  :readonly
-           :role-name  (str (:name r) "-readonly")
-           :permissions standard-role-readonly-permissions}
-          {:key        (str (:id r) "-sch-" idx "-rw")
-           :resource   r
-           :schema     schema
-           :role-type  :readwrite
-           :role-name  (str (:name r) "-readwrite")
-           :permissions standard-role-readwrite-permissions}])
-       (map-indexed vector mock-resource-schemas)))
-    resources)))
-
-(defn initial-create-selections
-  "Default: every row selected."
-  [resources]
-  (into {} (map (fn [row] [(:key row) true])
-                (standard-role-preview-rows resources))))
-
-(defn create-schema-plan-from-selections
-  "`selections` is {row-key bool}.
-   Returns {resource-id {:readonly #{schema-str ...} :readwrite #{schema-str ...}}}."
-  [resources selections]
-  (reduce
-   (fn [acc {:keys [key resource schema role-type]}]
-     (let [selected? (get selections key true)]
-       (if-not selected?
-         acc
-         (let [rid  (:id resource)
-               kind (if (= role-type :readonly) :readonly :readwrite)
-               cur  (get acc rid {:readonly #{} :readwrite #{}})]
-           (assoc acc rid (update cur kind conj schema))))))
-   {}
-   (standard-role-preview-rows resources)))
-
-(defn roles-from-create-schema-plan
-  [target plan-by-resource]
-  (let [p (get plan-by-resource (:id target))
-        ro (seq (:readonly p))
-        rw (seq (:readwrite p))]
-    (cond-> []
-      ro (conj (str (:name target) "-readonly"))
-      rw (conj (str (:name target) "-readwrite")))))
-
 (defn- pg-schema-idents
   "Use the last segment of dotted names (e.g. dbprod.public → public) for mock SQL."
   [schemas]
   (mapv #(or (some-> (cs/split % #"\.") last) %) (vec schemas)))
+
+;; ── CSV role import ──────────────────────────────────────────────────────────
+
+(def ^:private valid-permissions
+  #{"SELECT" "INSERT" "UPDATE" "DELETE" "ALL"})
+
+(defn- parse-csv-line
+  "Splits a CSV line on commas, respecting double-quoted fields."
+  [line]
+  (loop [chars (seq line) field [] fields [] in-quote? false]
+    (if-not (seq chars)
+      (conj fields (cs/trim (apply str field)))
+      (let [c (first chars) rest-chars (rest chars)]
+        (cond
+          (and (= c \") (not in-quote?))
+          (recur rest-chars field fields true)
+
+          (and (= c \") in-quote?)
+          (recur rest-chars field fields false)
+
+          (and (= c \,) (not in-quote?))
+          (recur rest-chars [] (conj fields (cs/trim (apply str field))) false)
+
+          :else
+          (recur rest-chars (conj field c) fields in-quote?))))))
+
+(defn parse-csv-roles
+  "Parses raw CSV text into a vector of maps.
+   Expected columns: resource_name, role, database, permissions.
+   Returns [{:resource-name :role :database :permissions :line-num} ...]."
+  [csv-text]
+  (let [lines  (cs/split-lines (cs/trim csv-text))
+        header (first lines)
+        data   (rest lines)]
+    (when (and header (seq data))
+      (vec
+       (keep-indexed
+        (fn [idx line]
+          (let [trimmed (cs/trim line)]
+            (when (seq trimmed)
+              (let [fields (parse-csv-line trimmed)]
+                {:resource-name (cs/trim (or (nth fields 0 nil) ""))
+                 :role          (cs/trim (or (nth fields 1 nil) ""))
+                 :database      (cs/trim (or (nth fields 2 nil) ""))
+                 :permissions   (cs/trim (or (nth fields 3 nil) ""))
+                 :line-num      (+ idx 2)}))))
+        data)))))
+
+(defn- normalize-permissions
+  "Uppercases and re-joins permission tokens for consistent comparison."
+  [perms-str]
+  (->> (cs/split (cs/upper-case (cs/trim perms-str)) #"[,\s]+")
+       (filter seq)
+       sort
+       (cs/join ", ")))
+
+(defn- validate-permissions
+  "Returns true if every token in the permissions string is recognized."
+  [perms-str]
+  (let [tokens (cs/split (cs/upper-case (cs/trim perms-str)) #"[,\s]+")]
+    (and (seq tokens) (every? valid-permissions tokens))))
+
+(defn classify-csv-rows
+  "Takes parsed CSV rows and the selected resources.
+   Returns {:valid [...] :conflicts {conflict-id [rows...]} :skipped-csv [...]
+            :skipped-resources [...] :invalid [...]}."
+  [parsed-rows resources]
+  (let [resource-names (set (map :name resources))
+        {matched true unmatched false}
+        (group-by #(contains? resource-names (:resource-name %)) parsed-rows)
+
+        {valid-fields true invalid-fields false}
+        (group-by (fn [row]
+                    (and (seq (:resource-name row))
+                         (seq (:role row))
+                         (seq (:database row))
+                         (seq (:permissions row))))
+                  (or matched []))
+
+        {good-perms true bad-perms false}
+        (group-by #(validate-permissions (:permissions %)) (or valid-fields []))
+
+        deduped (vals (group-by (fn [r] [(:resource-name r)
+                                          (:role r)
+                                          (:database r)
+                                          (normalize-permissions (:permissions r))])
+                                (or good-perms [])))
+        unique-rows (mapv first deduped)
+
+        grouped (group-by (fn [r] [(:resource-name r) (:role r) (:database r)]) unique-rows)
+        {conflict-groups true ok-groups false}
+        (group-by (fn [[_k rows]] (> (count rows) 1)) grouped)
+
+        conflict-map (into {}
+                          (map-indexed
+                           (fn [idx [k rows]]
+                             [(str "conflict-" idx)
+                              (mapv #(assoc % :conflict-key k) rows)])
+                           (or conflict-groups [])))
+
+        valid-rows (vec (mapcat val (or ok-groups [])))
+
+        csv-resource-names     (set (map :resource-name (or parsed-rows [])))
+        skipped-resources      (vec (filter #(not (contains? csv-resource-names (:name %)))
+                                            resources))]
+    {:valid             valid-rows
+     :conflicts         conflict-map
+     :skipped-csv       (vec (or unmatched []))
+     :skipped-resources skipped-resources
+     :invalid           (vec (concat (or invalid-fields [])
+                                     (map #(assoc % :error :bad-permissions) (or bad-perms []))))}))
 
 ;; ── Helpers ────────────────────────────────────────────────────────────────────
 (defn row-bg [stage selected? hovered?]
@@ -258,9 +294,8 @@
    Dispatches re-frame events to update application state.
    `opts` is {:type :admin-setup|:role-provision, :targets [...],
               :configs {id -> config}, :roles-by-resource {id -> [role-name ...]},
-              :create-schema-plan {resource-id {:readonly #{schema...} :readwrite #{...}}} (optional),
               :agent-id \"default\"}"
-  [{:keys [type targets configs roles-by-resource create-schema-plan agent-id]}]
+  [{:keys [type targets configs roles-by-resource agent-id]}]
   (let [job-id    (str "job-" (.now js/Date))
         agent-rec (or (some #(when (= (:id %) (or agent-id "default")) %) mock-agents)
                       (first mock-agents))
@@ -310,43 +345,25 @@
            (let [success?        (not= i (js/Math.floor (* (count targets) 0.85)))
                  roles           (if (= type :admin-setup)
                                    [(or (:username (get configs (:id target))) "admin")]
-                                   (cond
-                                     (seq (get roles-by-resource (:id target)))
-                                     (get roles-by-resource (:id target))
-
-                                     (seq create-schema-plan)
-                                     (roles-from-create-schema-plan target create-schema-plan)
-
-                                     :else
-                                     [(str (:name target) "-readonly")
-                                      (str (:name target) "-readwrite")]))
-                 catalog-schemas (fn [role-name]
-                                   (when (seq create-schema-plan)
-                                     (let [p (get create-schema-plan (:id target)
-                                                  {:readonly #{} :readwrite #{}})]
-                                       (vec
-                                        (sort
-                                         (if (cs/includes? role-name "readwrite")
-                                           (:readwrite p)
-                                           (:readonly p)))))))
+                                   (or (seq (get roles-by-resource (:id target)))
+                                       [(str (:name target) "-readonly")
+                                        (str (:name target) "-readwrite")]))
                  new-sessions
                  (mapv (fn [role-name]
-                         (let [cats (catalog-schemas role-name)]
-                           {:id            (str "sess-" job-id "-" (:id target) "-" role-name)
-                            :job-id        job-id
-                            :resource-id   (:id target)
-                            :resource-name (:name target)
-                            :resource-type (:db-type target)
-                            :role-name     role-name
-                            :status        (if success? "success" "error")
-                            :started-at    (.now js/Date)
-                            :duration-ms   (if success?
-                                             (+ 700 (rand-int 800))
-                                             30000)
-                            :output        (generate-session-output
-                                            type (:name target) (:db-type target)
-                                            role-name agent-nm success?
-                                            {:catalog-schemas (or cats [])})}))
+                         {:id            (str "sess-" job-id "-" (:id target) "-" role-name)
+                          :job-id        job-id
+                          :resource-id   (:id target)
+                          :resource-name (:name target)
+                          :resource-type (:db-type target)
+                          :role-name     role-name
+                          :status        (if success? "success" "error")
+                          :started-at    (.now js/Date)
+                          :duration-ms   (if success?
+                                           (+ 700 (rand-int 800))
+                                           30000)
+                          :output        (generate-session-output
+                                          type (:name target) (:db-type target)
+                                          role-name agent-nm success?)})
                        roles)]
 
              (rf/dispatch [:provisioning/add-sessions new-sessions])
