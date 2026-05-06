@@ -26,8 +26,8 @@
           (if @migrating?
             [migration-loading (:org_name invitation)]
             [:<>
-             [:> Flex {:align "center" :gap "2" :mb "1"}
-              [:> Building2 {:size 20 :class "text-gray-11"}]
+             [:> Flex {:gap "2" :mb "1"}
+              [:> Building2 {:size 20 :class "mb-3 text-gray-11"}]
               [:> AlertDialog.Title "Organization Invitation"]]
              [:> AlertDialog.Description {:size "2"}
               [:> Text
