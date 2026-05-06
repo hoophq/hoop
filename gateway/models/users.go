@@ -92,13 +92,15 @@ func GetInvitedUserByEmailAndOrg(email, orgID string) (*User, error) {
 
 func GetUserByEmail(email string) (*User, error) {
 	var user *User
-	if err := DB.Where("email = ?", email).First(&user).Error; err != nil {
+	err := DB.Where("email = ?", email).
+		Order("CASE WHEN status = 'active' THEN 0 WHEN status = 'invited' THEN 1 ELSE 2 END, id").
+		First(&user).Error
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-
 	return user, nil
 }
 
