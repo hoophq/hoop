@@ -97,3 +97,31 @@ func UpdateOrgLicense(orgID string, licenseDataJSON []byte) error {
 		Update("license_data", licenseDataJSON).
 		Error
 }
+
+// DeleteOrganizationIfEmpty removes an org and its default scaffolding data (plugins, runbooks).
+// It returns an error if the org still has users or if FK constraints prevent deletion
+// (connections, sessions, agents, etc.).
+func DeleteOrganizationIfEmpty(orgID string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var userCount int64
+		if err := tx.Table("private.users").Where("org_id = ?", orgID).Count(&userCount).Error; err != nil {
+			return err
+		}
+		if userCount > 0 {
+			return fmt.Errorf("org %s still has %d users, cannot delete", orgID, userCount)
+		}
+		if err := tx.Exec(`DELETE FROM private.user_groups WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM private.runbook_rules WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM private.runbooks WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM private.plugins WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		return tx.Table("private.orgs").Where("id = ?", orgID).Delete(nil).Error
+	})
+}
