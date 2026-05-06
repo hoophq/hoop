@@ -83,6 +83,86 @@
 (defn get-mock-roles [_db-type]
   mock-pg-roles)
 
+;; ── Mock DB schemas (standard-role create preview) ─────────────────────────────
+;; Each entry renders as one row in the create-mode table (per resource).
+(def mock-resource-schemas
+  "Illustrative schema names shown in the create-standard-roles UI."
+  ["dbprod.public"
+   "dbprod.private"
+   "dbprod.enterprise"
+   "dbprodw2.enterprise"
+   "dbprodw2.enterprise"
+   "dbprodw2.enterprise"
+   "dbprode2.enterprise"
+   "dbprod12.enterprise"
+   "dbprod5.enterprise"
+   "dbprod3.enterprise"])
+
+;; Shown in bulk create-roles table and matched by mock session SQL for role-provision.
+(def standard-role-readonly-permissions "SELECT")
+(def standard-role-readwrite-permissions "SELECT, INSERT, UPDATE")
+
+(defn standard-role-preview-rows
+  "Two rows per resource × schema: one :readonly, one :readwrite.
+   Each row carries `:role-type` (:readonly | :readwrite), `:role-name`,
+   and `:permissions` so the UI can render a flat, checkable list."
+  [resources]
+  (vec
+   (mapcat
+    (fn [r]
+      (mapcat
+       (fn [[idx schema]]
+         [{:key        (str (:id r) "-sch-" idx "-ro")
+           :resource   r
+           :schema     schema
+           :role-type  :readonly
+           :role-name  (str (:name r) "-readonly")
+           :permissions standard-role-readonly-permissions}
+          {:key        (str (:id r) "-sch-" idx "-rw")
+           :resource   r
+           :schema     schema
+           :role-type  :readwrite
+           :role-name  (str (:name r) "-readwrite")
+           :permissions standard-role-readwrite-permissions}])
+       (map-indexed vector mock-resource-schemas)))
+    resources)))
+
+(defn initial-create-selections
+  "Default: every row selected."
+  [resources]
+  (into {} (map (fn [row] [(:key row) true])
+                (standard-role-preview-rows resources))))
+
+(defn create-schema-plan-from-selections
+  "`selections` is {row-key bool}.
+   Returns {resource-id {:readonly #{schema-str ...} :readwrite #{schema-str ...}}}."
+  [resources selections]
+  (reduce
+   (fn [acc {:keys [key resource schema role-type]}]
+     (let [selected? (get selections key true)]
+       (if-not selected?
+         acc
+         (let [rid  (:id resource)
+               kind (if (= role-type :readonly) :readonly :readwrite)
+               cur  (get acc rid {:readonly #{} :readwrite #{}})]
+           (assoc acc rid (update cur kind conj schema))))))
+   {}
+   (standard-role-preview-rows resources)))
+
+(defn roles-from-create-schema-plan
+  [target plan-by-resource]
+  (let [p (get plan-by-resource (:id target))
+        ro (seq (:readonly p))
+        rw (seq (:readwrite p))]
+    (cond-> []
+      ro (conj (str (:name target) "-readonly"))
+      rw (conj (str (:name target) "-readwrite")))))
+
+(defn- pg-schema-idents
+  "Use the last segment of dotted names (e.g. dbprod.public → public) for mock SQL."
+  [schemas]
+  (mapv #(or (some-> (cs/split % #"\.") last) %) (vec schemas)))
+
 ;; ── Helpers ────────────────────────────────────────────────────────────────────
 (defn row-bg [stage selected? hovered?]
   (cond
@@ -114,11 +194,16 @@
 
 ;; ── Session output generator ───────────────────────────────────────────────────
 (defn generate-session-output
-  [job-type resource-name resource-type role-name agent-name success?]
-  (let [db-name (cs/replace resource-name "-db" "")]
+  [job-type resource-name resource-type role-name agent-name success?
+   & [{:keys [catalog-schemas]}]]
+  (let [db-name        (cs/replace resource-name "-db" "")
+        schema-idents  (pg-schema-idents (or (seq catalog-schemas) ["public"]))
+        schema-banner  (when (seq catalog-schemas)
+                         (str "-- Catalog schemas: " (cs/join ", " catalog-schemas) "\n"))]
     (if-not success?
       (str "-- Resource: " resource-name " (" resource-type ") | Agent: " agent-name "\n"
            "-- Target: " role-name "\n"
+           (or schema-banner "")
            "\n"
            "ERROR: could not connect to server: Connection refused\n"
            "\tIs the server running on host \"" resource-name ".internal\"\n"
@@ -137,21 +222,32 @@
              "\n"
              "-- ✓ Admin account configured in 1.1s")
         (let [is-read? (and (cs/includes? role-name "read")
-                            (not (cs/includes? role-name "write")))]
+                            (not (cs/includes? role-name "write")))
+              usage    (cs/join ""
+                                  (for [sch schema-idents]
+                                    (str "GRANT USAGE ON SCHEMA " sch " TO \"" role-name "\";\n")))
+              tables   (cs/join ""
+                                  (for [sch schema-idents]
+                                    (str (if is-read?
+                                           (str "GRANT SELECT ON ALL TABLES IN SCHEMA " sch " TO \"" role-name "\";\n")
+                                           (str "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA " sch
+                                                " TO \"" role-name "\";\n")))))
+              defaults (cs/join ""
+                                  (for [sch schema-idents]
+                                    (str "ALTER DEFAULT PRIVILEGES IN SCHEMA " sch "\n"
+                                         (if is-read?
+                                           (str "  GRANT SELECT ON TABLES TO \"" role-name "\";\n")
+                                           (str "  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"" role-name "\";\n")))))]
           (str "-- Resource: " resource-name " (" resource-type ") | Agent: " agent-name "\n"
                "-- Role: " role-name "\n"
+               (or schema-banner "")
                "\n"
                "BEGIN;\n"
                "CREATE ROLE \"" role-name "\";\n"
                "GRANT CONNECT ON DATABASE \"" db-name "\" TO \"" role-name "\";\n"
-               "GRANT USAGE ON SCHEMA public TO \"" role-name "\";\n"
-               (if is-read?
-                 (str "GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"" role-name "\";\n")
-                 (str "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"" role-name "\";\n"))
-               "ALTER DEFAULT PRIVILEGES IN SCHEMA public\n"
-               (if is-read?
-                 (str "  GRANT SELECT ON TABLES TO \"" role-name "\";\n")
-                 (str "  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"" role-name "\";\n"))
+               usage
+               tables
+               defaults
                "COMMIT;\n"
                "\n"
                "-- ✓ Role provisioned in 0.9s"))))))
@@ -162,8 +258,9 @@
    Dispatches re-frame events to update application state.
    `opts` is {:type :admin-setup|:role-provision, :targets [...],
               :configs {id -> config}, :roles-by-resource {id -> [role-name ...]},
+              :create-schema-plan {resource-id {:readonly #{schema...} :readwrite #{...}}} (optional),
               :agent-id \"default\"}"
-  [{:keys [type targets configs roles-by-resource agent-id]}]
+  [{:keys [type targets configs roles-by-resource create-schema-plan agent-id]}]
   (let [job-id    (str "job-" (.now js/Date))
         agent-rec (or (some #(when (= (:id %) (or agent-id "default")) %) mock-agents)
                       (first mock-agents))
@@ -210,29 +307,46 @@
         ;; Mark done/failed + create sessions
         (js/setTimeout
          (fn []
-           (let [success?  (not= i (js/Math.floor (* (count targets) 0.85)))
-                 roles     (if (= type :admin-setup)
-                             [(or (:username (get configs (:id target))) "admin")]
-                             (if (seq (get roles-by-resource (:id target)))
-                               (get roles-by-resource (:id target))
-                               [(str (:name target) "-readonly")
-                                (str (:name target) "-readwrite")]))
+           (let [success?        (not= i (js/Math.floor (* (count targets) 0.85)))
+                 roles           (if (= type :admin-setup)
+                                   [(or (:username (get configs (:id target))) "admin")]
+                                   (cond
+                                     (seq (get roles-by-resource (:id target)))
+                                     (get roles-by-resource (:id target))
+
+                                     (seq create-schema-plan)
+                                     (roles-from-create-schema-plan target create-schema-plan)
+
+                                     :else
+                                     [(str (:name target) "-readonly")
+                                      (str (:name target) "-readwrite")]))
+                 catalog-schemas (fn [role-name]
+                                   (when (seq create-schema-plan)
+                                     (let [p (get create-schema-plan (:id target)
+                                                  {:readonly #{} :readwrite #{}})]
+                                       (vec
+                                        (sort
+                                         (if (cs/includes? role-name "readwrite")
+                                           (:readwrite p)
+                                           (:readonly p)))))))
                  new-sessions
                  (mapv (fn [role-name]
-                         {:id            (str "sess-" job-id "-" (:id target) "-" role-name)
-                          :job-id        job-id
-                          :resource-id   (:id target)
-                          :resource-name (:name target)
-                          :resource-type (:db-type target)
-                          :role-name     role-name
-                          :status        (if success? "success" "error")
-                          :started-at    (.now js/Date)
-                          :duration-ms   (if success?
-                                           (+ 700 (rand-int 800))
-                                           30000)
-                          :output        (generate-session-output
-                                          type (:name target) (:db-type target)
-                                          role-name agent-nm success?)})
+                         (let [cats (catalog-schemas role-name)]
+                           {:id            (str "sess-" job-id "-" (:id target) "-" role-name)
+                            :job-id        job-id
+                            :resource-id   (:id target)
+                            :resource-name (:name target)
+                            :resource-type (:db-type target)
+                            :role-name     role-name
+                            :status        (if success? "success" "error")
+                            :started-at    (.now js/Date)
+                            :duration-ms   (if success?
+                                             (+ 700 (rand-int 800))
+                                             30000)
+                            :output        (generate-session-output
+                                            type (:name target) (:db-type target)
+                                            role-name agent-nm success?
+                                            {:catalog-schemas (or cats [])})}))
                        roles)]
 
              (rf/dispatch [:provisioning/add-sessions new-sessions])

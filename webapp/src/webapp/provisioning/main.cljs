@@ -104,13 +104,14 @@
                     {:resources      bulk-resources
                      :initial-method bulk-roles-method
                      :on-cancel      #(set-screen! :hub)
-                     :on-apply       (fn [_method roles-by-resource]
-                                       (let [job-id (data/start-job!
-                                                     {:type              :role-provision
-                                                      :targets           bulk-resources
-                                                      :roles-by-resource roles-by-resource})]
-                                         (set-viewing-job-id job-id)
-                                         (set-screen! :job-detail)))}]
+                    :on-apply       (fn [_method roles-by-resource create-schema-plan]
+                                      (let [job-id (data/start-job!
+                                                    {:type               :role-provision
+                                                     :targets            bulk-resources
+                                                     :roles-by-resource  (or roles-by-resource {})
+                                                     :create-schema-plan create-schema-plan})]
+                                        (set-viewing-job-id job-id)
+                                        (set-screen! :job-detail)))}]
        :job-detail (let [job (some #(when (= (:id %) viewing-job-id) %) jobs)]
                      (when job
                        [job-detail/job-detail-screen

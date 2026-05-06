@@ -1,14 +1,14 @@
 (ns webapp.provisioning.views.bulk-roles
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Card Checkbox
-                               Flex Heading Skeleton Text TextField]]
+                               Flex Heading Skeleton Text]]
    ["lucide-react" :refer [ArrowLeft Check FileText Info Key Loader2
                            Sparkles Upload]]
    [reagent.core :as r]
    [webapp.provisioning.data :as data]))
 
 ;; ── Method card ────────────────────────────────────────────────────────────────
-(defn method-card [{:keys [selected icon title description badge on-click]}]
+(defn method-card [{:keys [selected icon title description badge schemas on-click]}]
   [:> Card {:style {:flex 1 :cursor "pointer" :position "relative"
                     :border-color (when selected "var(--indigo-9)")
                     :border-width (if selected 2 1)
@@ -32,7 +32,16 @@
      [:> Flex {:align "center" :gap "1"}
       [:> Text {:size "2" :weight "medium"} title]
       (when badge [:> Badge {:color "indigo" :variant "soft" :size "1"} badge])]
-     [:> Text {:size "1" :color "gray"} description]]]])
+     [:> Text {:size "1" :color "gray"} description]
+     (when (seq schemas)
+       [:> Flex {:direction "column" :gap "1" :mt "2" :style {:width "100%"}}
+        [:> Text {:size "1" :weight "medium" :color "gray"} "Schemas"]
+        [:> Flex {:gap "1" :style {:flex-wrap "wrap"}}
+         (for [s schemas]
+           ^{:key s}
+           [:> Badge {:color "gray" :variant "soft" :size "1"
+                      :style {:font-family "var(--font-mono)" :font-size 10}}
+            s])]])]]])
 
 ;; ── Role discovery table (bind mode) ──────────────────────────────────────────
 (defn role-discovery-table [{:keys [resources discovered-roles selected-roles on-toggle]}]
@@ -92,13 +101,14 @@
 ;; ── Main screen ────────────────────────────────────────────────────────────────
 (defn bulk-roles-screen
   [{:keys [resources on-apply on-cancel initial-method]}]
-  (let [method*         (r/atom (or initial-method "create"))
-        csv-parsing     (r/atom false)
-        csv-parsed      (r/atom false)
-        discovered-roles (r/atom {})
-        roles-loading   (r/atom false)
-        selected-roles  (r/atom {})
-        load-timer      (r/atom nil)]
+  (let [method*              (r/atom (or initial-method "create"))
+        csv-parsing          (r/atom false)
+        csv-parsed             (r/atom false)
+        discovered-roles      (r/atom {})
+        roles-loading          (r/atom false)
+        selected-roles         (r/atom {})
+        create-selections      (r/atom {})
+        load-timer             (r/atom nil)]
     (fn []
       (let [method   @method*
             loading? @roles-loading
@@ -115,13 +125,48 @@
                                               (disj s role-name)
                                               (conj s role-name)))))))
 
-            apply-disabled? (or (and (= method "csv") (not @csv-parsed))
-                                (and (= method "bind") (or loading? (zero? total-selected))))
+            create-rows          (data/standard-role-preview-rows resources)
+            create-plan-for-ui   (when (= method "create")
+                                   (data/create-schema-plan-from-selections resources @create-selections))
 
+            _sync-create-sel
+            (when (and (= method "create")
+                       (or (empty? @create-selections)
+                           (not= (count @create-selections) (count create-rows))))
+              (reset! create-selections (data/initial-create-selections resources)))
+
+            toggle-create-row (fn [row-key]
+                                (swap! create-selections update row-key not))
+
+            toggle-all-create (fn []
+                                (let [all-on? (every? true? (vals @create-selections))]
+                                  (reset! create-selections
+                                          (into {} (map (fn [row] [(:key row) (not all-on?)])
+                                                        create-rows)))))
+
+            all-create-selected? (and (seq @create-selections)
+                                      (every? true? (vals @create-selections)))
+            some-create-selected? (and (seq @create-selections)
+                                       (some true? (vals @create-selections)))
+
+            row-selected? (fn [row-key]
+                            (get @create-selections row-key true))
+
+            apply-disabled? (or (and (= method "csv") (not @csv-parsed))
+                                (and (= method "bind") (or loading? (zero? total-selected)))
+                                (and (= method "create")
+                                     (not (some (fn [[_ p]] (or (seq (:readonly p)) (seq (:readwrite p))))
+                                                (or create-plan-for-ui {})))))
+
+            create-selected-count (when (= method "create")
+                                   (count (filter true? (vals @create-selections))))
             footer-info (cond
                           (= method "create")
-                          (str (* (count resources) 2) " roles will be created across "
-                               (count resources) " resources")
+                          (let [plan (or create-plan-for-ui {})
+                                ro-n (reduce + 0 (map (fn [[_ p]] (count (:readonly p))) plan))
+                                rw-n (reduce + 0 (map (fn [[_ p]] (count (:readwrite p))) plan))]
+                            (str create-selected-count " of " (count create-rows) " selected · "
+                                 ro-n " read-only · " rw-n " read/write schema grants"))
                           (and (= method "bind") loading?)
                           "Reading roles from databases…"
                           (= method "bind")
@@ -145,8 +190,10 @@
                         :title    "Create standard roles"
                         :description "Auto-create readonly and readwrite roles for each resource."
                         :badge    "Recommended"
+                        :schemas  data/mock-resource-schemas
                         :on-click (fn []
                                     (reset! method* "create")
+                                    (reset! create-selections (data/initial-create-selections resources))
                                     (when @load-timer (js/clearTimeout @load-timer)))}]
           [method-card {:selected (= method "bind")
                         :icon     [:> Key {:size 18}]
@@ -176,36 +223,62 @@
 
          ;; ── Create mode ──
          (when (= method "create")
-           [:> Box {:style {:flex 1 :overflow-y "auto"
+           [:<>
+            [:> Callout.Root {:color "blue" :mb "3" :size "1"}
+             [:> Callout.Icon [:> Info {:size 14}]]
+             [:> Callout.Text {:size "1"}
+              "Each row is a schema in the resource's database. Use the checkboxes to include that schema in grants for the standard read-only or read/write roles (e.g. analytics-db-readonly / analytics-db-readwrite). Roles are created once per resource; SQL grants use only the schemas you select."]]
+            [:> Box {:style {:flex 1 :overflow-y "auto"
                             :border "1px solid var(--gray-5)"
                             :border-radius "var(--radius-2)"}}
-            [:> Flex {:px "3" :py "2"
-                      :style {:background "var(--gray-3)"
-                              :border-bottom "1px solid var(--gray-5)"}}
-             [:> Box {:style {:flex 1}}
-              [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-             [:> Box {:style {:flex 1}}
-              [:> Text {:size "1" :color "gray" :weight "medium"} "Roles to create"]]]
-            (doall
-             (for [[i r] (map-indexed vector resources)]
-               ^{:key (:id r)}
-               [:> Flex {:px "3" :py "2" :align "center"
-                         :style {:border-bottom (when (< i (dec (count resources)))
-                                                  "1px solid var(--gray-3)")
-                                 :min-height 44
-                                 :background (if (even? i)
-                                               "var(--color-panel-solid)" "var(--gray-1)")}}
-                [:> Flex {:align "center" :gap "2" :style {:flex 1}}
-                 [:> Text {:size "2" :weight "medium"} (:name r)]
-                 [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type r)]
-                 [:> Text {:size "1" :color "gray"
-                           :style {:font-family "var(--font-mono)" :font-size 11}}
-                  (:host r)]]
-                [:> Flex {:gap "2" :style {:flex 1}}
-                 [:> Badge {:color "indigo" :variant "soft" :size "1"}
-                  (str (:name r) "-readonly")]
-                 [:> Badge {:color "indigo" :variant "soft" :size "1"}
-                  (str (:name r) "-readwrite")]]]))])
+             [:> Flex {:px "3" :py "2"
+                       :style {:background "var(--gray-3)"
+                               :border-bottom "1px solid var(--gray-5)"
+                               :position "sticky" :top 0 :z-index 1}}
+              [:> Box {:style {:width 36 :flex-shrink 0}}
+               [:> Checkbox {:checked (cond
+                                        all-create-selected?  true
+                                        some-create-selected? "indeterminate"
+                                        :else                 false)
+                             :onCheckedChange toggle-all-create}]]
+              [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+               [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
+              [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+               [:> Text {:size "1" :color "gray" :weight "medium"} "Role"]]
+              [:> Box {:style {:flex "1 1 0" :min-width 0}}
+               [:> Text {:size "1" :color "gray" :weight "medium"} "Database"]]
+              [:> Box {:style {:flex "1 1 0" :min-width 0}}
+               [:> Text {:size "1" :color "gray" :weight "medium"} "Permissions"]]]
+             (doall
+              (for [[i {:keys [key resource schema role-name permissions]}]
+                    (map-indexed vector create-rows)]
+                (let [sel? (row-selected? key)]
+                  ^{:key key}
+                  [:> Flex {:px "3" :py "2" :align "center"
+                            :on-click #(toggle-create-row key)
+                            :style {:border-bottom (when (< i (dec (count create-rows)))
+                                                     "1px solid var(--gray-3)")
+                                    :min-height 44
+                                    :background (cond
+                                                  sel?    "var(--indigo-1)"
+                                                  (even? i) "var(--color-panel-solid)"
+                                                  :else     "var(--gray-1)")
+                                    :cursor "pointer"}}
+                   [:> Box {:style {:width 36 :flex-shrink 0}
+                            :on-click #(.stopPropagation %)}
+                    [:> Checkbox {:checked sel?
+                                  :onCheckedChange #(toggle-create-row key)}]]
+                   [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
+                    [:> Text {:size "2" :weight "medium"} (:name resource)]
+                    [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type resource)]]
+                   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+                    [:> Text {:size "1" :style {:font-family "var(--font-mono)" :font-size 11}}
+                     role-name]]
+                   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+                    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+                     schema]]
+                   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+                    [:> Text {:size "1" :color "gray"} permissions]]])))]]) 
 
          ;; ── Bind mode — loading ──
          (when (and (= method "bind") loading?)
@@ -323,10 +396,18 @@
                                          (when (= method "bind")
                                            (into {}
                                                  (map (fn [[id s]] [id (vec s)])
-                                                      @selected-roles)))]
-                                     (on-apply method roles-by-resource)))}
-            (if (= method "bind")
+                                                      @selected-roles)))
+                                         create-plan
+                                         (when (= method "create")
+                                           (data/create-schema-plan-from-selections
+                                            resources @create-selections))]
+                                     (on-apply method roles-by-resource create-plan)))}
+            (cond
+              (= method "bind")
               (str "Bind " total-selected " role"
                    (when (not= 1 total-selected) "s") " →")
+              (= method "create")
+              "Provision roles & grants →"
+              :else
               (str "Provision " (count resources)
                    (if (= 1 (count resources)) " resource" " resources") " →"))]]]]))))
