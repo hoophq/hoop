@@ -31,18 +31,23 @@
                              :on-success #(rf/dispatch [:workflows/set-data %])
                              :on-failure #(rf/dispatch [:workflows/set-error %])}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :workflows/set-data
  (fn
-   [db [_ response]]
+   [{:keys [db]} [_ response]]
    (let [data (or (:data response) [])
          total (or (:total response) (count data))
-         sorted (vec (sort-by :start_date data))]
-     (-> db
-         (assoc-in [:workflows :status] :ready)
-         (assoc-in [:workflows :sessions] sorted)
-         (assoc-in [:workflows :total] total)
-         (assoc-in [:workflows :truncated?] (> total (count sorted)))))))
+         sorted (vec (sort-by :start_date data))
+         expanded-ids (into #{} (map :id) sorted)]
+     {:db (-> db
+              (assoc-in [:workflows :status] :ready)
+              (assoc-in [:workflows :sessions] sorted)
+              (assoc-in [:workflows :total] total)
+              (assoc-in [:workflows :truncated?] (> total (count sorted)))
+              (assoc-in [:workflows :expanded] expanded-ids))
+      :fx (mapv (fn [session]
+                  [:dispatch [:workflows/get-step-detail session]])
+                sorted)})))
 
 (rf/reg-event-db
  :workflows/set-error
