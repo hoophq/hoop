@@ -102,6 +102,17 @@ func RunResourceManager(agentID string, req *pbsystem.ResourceManagerRequest) (*
 	}, nil
 }
 
+// ResourceHealthCheckTest sends a connectivity-test request to the agent synchronously
+// and returns the agent's response. No session is created, so nothing is audited.
+func ResourceHealthCheckTest(agentID string, req *pbsystem.ResourceManagerRequest) (*pbsystem.ResourceManagerResponse, error) {
+	req.SID = uuid.NewString()
+	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
+	if st == nil {
+		return nil, fmt.Errorf("agent stream not found for %v", agentID)
+	}
+	return dispatchResourceManager(st, req), nil
+}
+
 func dispatchResourceManager(st *streamclient.AgentStream, req *pbsystem.ResourceManagerRequest) *pbsystem.ResourceManagerResponse {
 	dataCh := make(chan []byte)
 	systemStore.Set(req.SID, dataCh)
