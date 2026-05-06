@@ -16,13 +16,14 @@
                               "width" 80
                               "height" 24
                               "env" {"TERM" "xterm-256color"}}]
-        asciinema-options {:loop true
-                           :theme "solarized-dark"}
+        asciinema-options (clj->js {:loop true
+                                    :fit "both"})
         asciinema-initiator #(.create asciinema
                                       (clj->js {"data" (concat
                                                         event-stream-config
                                                         event-stream)})
-                                      % asciinema-options)
+                                      %
+                                      asciinema-options)
         component-did-mount #(swap! asciinema-view
                                     assoc
                                     :current
@@ -31,8 +32,8 @@
                      :component-did-mount component-did-mount
                      :reagent-render
                      (fn []
-                       [:div {:id "asciinema-player-container"
-                              :class ""
+                       [:div {:class (str "asciinema-player-mount "
+                                          "flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden")
                               :ref #(swap! asciinema-view assoc :current %)}])})))
 
 (defn- logs-text-container [logs-text]
@@ -63,35 +64,36 @@
     (rf/dispatch [:audit->get-session-logs-data session-id])
 
     (fn [event-stream]
-      [:div {:class "flex flex-col h-[660px] overflow-y-hidden"}
+      [:div {:class "flex flex-col h-[660px] min-h-0 overflow-hidden"}
        [tabs/tabs {:on-change handle-tab-change
                    :tabs ["Logs" "Video"]
                    :default-value "Logs"}]
-       (case @selected-tab
-         "Logs" (cond
-                  (= (:status @session-logs) :loading)
-                  [loading-logs]
+       [:div {:class "flex min-h-0 flex-1 flex-col overflow-hidden"}
+        (case @selected-tab
+          "Logs" (cond
+                   (= (:status @session-logs) :loading)
+                   [loading-logs]
 
-                  (and (= (:status @session-logs) :success)
-                       (seq (:data @session-logs)))
-                  (let [event-data (first (:data @session-logs))
-                        logs-text (utilities/decode-b64 event-data)]
-                    (if (empty? logs-text)
-                      [empty-event-stream/main]
-                      [logs-text-container logs-text]))
+                   (and (= (:status @session-logs) :success)
+                        (seq (:data @session-logs)))
+                   (let [event-data (first (:data @session-logs))
+                         logs-text (utilities/decode-b64 event-data)]
+                     (if (empty? logs-text)
+                       [empty-event-stream/main]
+                       [logs-text-container logs-text]))
 
-                  (= (:status @session-logs) :error)
-                  [empty-event-stream/main]
+                   (= (:status @session-logs) :error)
+                   [empty-event-stream/main]
 
-                  :else
-                  [empty-event-stream/main])
+                   :else
+                   [empty-event-stream/main])
 
-         "Video" [asciinema-player-container
-                  (map
-                   (fn [e]
-                     [(first e)
-                      (second e)
-                      (js/atob (nth e 2))]) event-stream)])])))
+          "Video" [asciinema-player-container
+                   (map
+                    (fn [e]
+                      [(first e)
+                       (second e)
+                       (js/atob (nth e 2))]) event-stream)])]])))
 
 (defn main [event-stream session-id]
   [:div

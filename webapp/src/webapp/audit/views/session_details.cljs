@@ -455,6 +455,7 @@
             ;; Connect button for approved credential requests (verb = connect).
             (when (and (= (:verb session) "connect")
                        (not= (:status session) "open")
+                       has-review?
                        is-session-owner?)
               (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
                     has-valid-credentials? (and existing-session
