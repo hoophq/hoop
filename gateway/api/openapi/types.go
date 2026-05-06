@@ -2316,9 +2316,10 @@ type ResourceResponse struct {
 
 type ResourceRoleGrantRequest struct {
 	// Name of the connection/role resource that will be created after provisioning
-	Name string `json:"name" binding:"required" example:"pgdemo-readonly"`
-	// The external role name to grant on the target system
-	RoleName string `json:"role_name" binding:"required" example:"readonly"`
+	Name string `json:"name" binding:"required" example:"pgdemo-ro"`
+	// The standard role type to provision on the target system. Must be 'ro' (read-only: SELECT)
+	// or 'rw' (read-write: SELECT, INSERT, UPDATE, DELETE).
+	RoleName string `json:"role_name" binding:"required" enums:"ro,rw" example:"ro"`
 }
 
 type ResourceRoleGrantResponse struct {
@@ -2328,6 +2329,13 @@ type ResourceRoleGrantResponse struct {
 	Tags map[string]string `json:"tags"`
 	// Status of the async operation
 	Status string `json:"status" enums:"pending" example:"pending"`
+}
+
+type ResourceConnectResponse struct {
+	// Output is the raw stdout/stderr returned by the connectivity test query
+	Output string `json:"output"`
+	// Status reports the outcome of the connectivity test
+	Status string `json:"status" enums:"ok,error" example:"ok"`
 }
 
 type RunbookConfigurationRequest struct {

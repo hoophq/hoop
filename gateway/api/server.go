@@ -1054,6 +1054,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.CreateResourceRole)
+	r.GET("/resources/:name/health",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ResourceHealthCheck)
 
 	r.GET("/audit/logs",
 		apiroutes.AdminAndAuditorAccessRole,
