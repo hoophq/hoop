@@ -4,7 +4,8 @@
    ["lucide-react" :refer [ChevronRight Monitor ShieldCheck Wrench]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.resources.helpers :as helpers]))
+   [webapp.resources.helpers :as helpers]
+   [webapp.resources.setup.guardrails-suggestions.views :as guardrails-suggestions]))
 
 (defn action-card [{:keys [icon title description recommended? on-click]}]
   [:> Card {:size "2"
@@ -62,7 +63,14 @@
        (str "Your " resource-subtype " is now protected by the access gateway. "
             "Every connection will be authenticated, audited, and secured.")]]
 
-     ;; Next steps
+     ;; Guardrails suggestions + existing guardrails
+     [guardrails-suggestions/main]
+
+     ;; What else you can do
+     [:> Box
+      [:> Heading {:as "h3" :size "3" :weight "bold"
+                   :class "text-[--gray-12] mb-3"}
+       "What else you can do"]]
      [:> Box {:class "space-y-3"}
       (if single-role?
         ;; Single role: Show options based on capabilities
