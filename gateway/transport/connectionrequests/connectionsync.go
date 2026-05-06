@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/models"
 )
 
@@ -97,10 +98,26 @@ func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
 		}
 	}
 
+	isNewConnection := conn == nil
+
 	// update or create a connection with new values
 	if err := upsertConnection(orgID, agentID, req, conn); err != nil {
 		return err
 	}
 	setChecksumCache(orgID, req)
+
+	if isNewConnection {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+			OrgID:     orgID,
+			Source:    "agent-autoregister",
+			AgentID:   agentID,
+			ManagedBy: managedByAgent,
+			Type:      req.Type,
+			SubType:   req.Subtype,
+			Command:   req.Command,
+		})
+	}
 	return nil
 }

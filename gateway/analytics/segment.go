@@ -323,3 +323,68 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 
 	s.Track(userID, eventName, props)
 }
+
+// CreateConnectionEvent is the canonical input for the hoop-create-connection
+// analytics event. Different connection-creation paths fill different subsets of
+// these fields — empty/zero fields are omitted from the emitted properties.
+type CreateConnectionEvent struct {
+	// Always required
+	OrgID   string
+	Source  string // e.g. "connections-api", "resources-api", "mcp", "aws-rds-provisioner", "agent-autoregister"
+	Type    string
+	SubType string
+	Command []string // first token used as the "command" property; empty -> ""
+
+	// User-attributed paths set UserID. System paths leave it empty and the
+	// event is emitted via TrackEvent (UserId="Gateway") instead.
+	UserID      string
+	LicenseType string
+
+	// System / agent-bound metadata. Optional.
+	AgentID   string
+	ManagedBy string
+
+	// HTTP-context metadata. APIHostname acts as the gating signal — if set,
+	// the HTTP triple (content-length, user-agent, api-hostname) is included.
+	ContentLength int64
+	UserAgent     string
+	APIHostname   string
+}
+
+// TrackCreateConnection emits hoop-create-connection with a consistent property
+// shape across every connection-creation path. If evt.UserID is empty the event
+// is emitted as a system event (UserId="Gateway") so dashboards can distinguish
+// user-initiated from background-job creations via the "source" property.
+func (s *Segment) TrackCreateConnection(evt CreateConnectionEvent) {
+	properties := map[string]any{
+		"org-id":      evt.OrgID,
+		"auth-method": appconfig.Get().AuthMethod(),
+		"source":      evt.Source,
+		"type":        evt.Type,
+		"subtype":     evt.SubType,
+		"command":     "",
+	}
+	if len(evt.Command) > 0 {
+		properties["command"] = evt.Command[0]
+	}
+	if evt.LicenseType != "" {
+		properties["license-type"] = evt.LicenseType
+	}
+	if evt.AgentID != "" {
+		properties["agent-id"] = evt.AgentID
+	}
+	if evt.ManagedBy != "" {
+		properties["managed-by"] = evt.ManagedBy
+	}
+	if evt.APIHostname != "" {
+		properties["content-length"] = evt.ContentLength
+		properties["user-agent"] = evt.UserAgent
+		properties["api-hostname"] = evt.APIHostname
+	}
+
+	if evt.UserID == "" {
+		s.TrackEvent(EventCreateConnection, properties)
+		return
+	}
+	s.Track(evt.UserID, EventCreateConnection, properties)
+}

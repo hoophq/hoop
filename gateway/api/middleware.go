@@ -44,6 +44,9 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 				properties["mode"] = fmt.Sprintf("%v", agentMode)
 			}
 		case analytics.EventUpdateConnection, analytics.EventCreateConnection:
+			if eventName == analytics.EventCreateConnection {
+				properties["source"] = "connections-api"
+			}
 			requestBody, _ := io.ReadAll(c.Request.Body)
 			data := getBodyAsMap(requestBody)
 			reCopyBody(requestBody, c)
