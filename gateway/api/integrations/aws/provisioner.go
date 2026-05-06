@@ -349,33 +349,21 @@ func (p *provisioner) handleConnectionProvision(req pbsystem.DBProvisionerReques
 		return err
 	}
 
-	for _, conn := range newConnections {
-		trackCreateConnection(p.orgID, p.apiRequest.AgentID, conn)
+	if len(newConnections) > 0 {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		for _, conn := range newConnections {
+			trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+				OrgID:   p.orgID,
+				Source:  "aws-rds-provisioner",
+				AgentID: p.apiRequest.AgentID,
+				Type:    conn.Type,
+				SubType: conn.SubType.String,
+				Command: conn.Command,
+			})
+		}
 	}
 	return nil
-}
-
-// trackCreateConnection emits the hoop-create-connection analytics event for
-// connections born from the AWS RDS provisioner. The provisioner runs in a
-// background goroutine after the originating HTTP request has returned, so
-// there is no user context — we use the system "Gateway" track helper.
-func trackCreateConnection(orgID, agentID string, conn *models.Connection) {
-	properties := map[string]any{
-		"org-id":      orgID,
-		"agent-id":    agentID,
-		"auth-method": appconfig.Get().AuthMethod(),
-		"type":        conn.Type,
-		"subtype":     conn.SubType.String,
-		"command":     "",
-		"source":      "aws-rds-provisioner",
-	}
-	if len(conn.Command) > 0 {
-		properties["command"] = conn.Command[0]
-	}
-
-	trackClient := analytics.New()
-	defer trackClient.Close()
-	trackClient.TrackEvent(analytics.EventCreateConnection, properties)
 }
 
 func (p *provisioner) Cancel() { p.cancelFn() }

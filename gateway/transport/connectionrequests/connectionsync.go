@@ -13,7 +13,6 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 )
 
@@ -108,30 +107,17 @@ func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
 	setChecksumCache(orgID, req)
 
 	if isNewConnection {
-		trackCreateConnection(orgID, agentID, req)
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+			OrgID:     orgID,
+			Source:    "agent-autoregister",
+			AgentID:   agentID,
+			ManagedBy: managedByAgent,
+			Type:      req.Type,
+			SubType:   req.Subtype,
+			Command:   req.Command,
+		})
 	}
 	return nil
-}
-
-// trackCreateConnection emits the hoop-create-connection analytics event for
-// connections born from agent gRPC PreConnect auto-registration. The agent
-// path has no user context — we use the system "Gateway" track helper.
-func trackCreateConnection(orgID, agentID string, req *proto.PreConnectRequest) {
-	properties := map[string]any{
-		"org-id":      orgID,
-		"agent-id":    agentID,
-		"auth-method": appconfig.Get().AuthMethod(),
-		"type":        req.Type,
-		"subtype":     req.Subtype,
-		"command":     "",
-		"source":      "agent-autoregister",
-		"managed-by":  managedByAgent,
-	}
-	if len(req.Command) > 0 {
-		properties["command"] = req.Command[0]
-	}
-
-	trackClient := analytics.New()
-	defer trackClient.Close()
-	trackClient.TrackEvent(analytics.EventCreateConnection, properties)
 }
