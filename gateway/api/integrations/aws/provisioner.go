@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/common/runbooks"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
@@ -326,10 +327,55 @@ func (p *provisioner) handleConnectionProvision(req pbsystem.DBProvisionerReques
 		})
 	}
 
+	// Resolve which connections are new (vs. updates) inside the same
+	// transaction as the upsert so a concurrent writer cannot make us
+	// double-fire (or miss) the hoop-create-connection event.
+	var newConnections []*models.Connection
 	sess := &gorm.Session{FullSaveAssociations: true}
-	return models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+	if err := models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		for _, conn := range connections {
+			var count int64
+			if err := tx.Table("private.connections").
+				Where("org_id = ? AND name = ?", conn.OrgID, conn.Name).
+				Count(&count).Error; err != nil {
+				return fmt.Errorf("failed checking existing connection %v, reason=%v", conn.Name, err)
+			}
+			if count == 0 {
+				newConnections = append(newConnections, conn)
+			}
+		}
 		return models.UpsertBatchConnections(tx, connections)
-	})
+	}); err != nil {
+		return err
+	}
+
+	for _, conn := range newConnections {
+		trackCreateConnection(p.orgID, p.apiRequest.AgentID, conn)
+	}
+	return nil
+}
+
+// trackCreateConnection emits the hoop-create-connection analytics event for
+// connections born from the AWS RDS provisioner. The provisioner runs in a
+// background goroutine after the originating HTTP request has returned, so
+// there is no user context — we use the system "Gateway" track helper.
+func trackCreateConnection(orgID, agentID string, conn *models.Connection) {
+	properties := map[string]any{
+		"org-id":      orgID,
+		"agent-id":    agentID,
+		"auth-method": appconfig.Get().AuthMethod(),
+		"type":        conn.Type,
+		"subtype":     conn.SubType.String,
+		"command":     "",
+		"source":      "aws-rds-provisioner",
+	}
+	if len(conn.Command) > 0 {
+		properties["command"] = conn.Command[0]
+	}
+
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.TrackEvent(analytics.EventCreateConnection, properties)
 }
 
 func (p *provisioner) Cancel() { p.cancelFn() }

@@ -7,8 +7,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -189,7 +192,35 @@ func connectionsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("failed creating connection: %w", err)
 	}
 
+	trackCreateConnection(sc, conn)
+
 	return jsonResult(connectionToMap(resp, false))
+}
+
+// trackCreateConnection emits the hoop-create-connection analytics event for
+// connections created via the MCP connections_create tool. The MCP route does
+// not run the api.TrackRequest middleware, so we emit explicitly here.
+func trackCreateConnection(sc *storagev2.Context, conn *models.Connection) {
+	if sc.UserEmail == "" || sc.OrgID == "" {
+		return
+	}
+
+	properties := map[string]any{
+		"org-id":       sc.OrgID,
+		"auth-method":  appconfig.Get().AuthMethod(),
+		"license-type": sc.GetLicenseType(),
+		"type":         conn.Type,
+		"subtype":      conn.SubType.String,
+		"command":      "",
+		"source":       "mcp",
+	}
+	if len(conn.Command) > 0 {
+		properties["command"] = conn.Command[0]
+	}
+
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(sc.UserID, analytics.EventCreateConnection, properties)
 }
 
 func connectionsUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args connectionsUpdateInput) (*mcp.CallToolResult, any, error) {

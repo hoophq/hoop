@@ -208,6 +208,7 @@ func trackCreateConnection(c *gin.Context, ctx *storagev2.Context, req openapi.R
 		"type":           req.Type,
 		"subtype":        req.SubType,
 		"command":        "",
+		"source":         "resources-api",
 	}
 	if len(connections[0].Command) > 0 {
 		properties["command"] = connections[0].Command[0]
