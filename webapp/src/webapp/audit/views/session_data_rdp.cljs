@@ -73,6 +73,16 @@
                 :on-success on-success
                 :on-failure on-error}))
 
+(defn- retry-detections
+  "Asks the gateway to requeue a previously-failed RDP analysis job. The server
+   responds with the standard detections payload (status will be 'pending') so
+   the caller can pipe it through the existing apply-detections-response logic."
+  [session-id on-success on-error]
+  (api/request {:method "POST"
+                :uri (str "/sessions/" session-id "/rdp-detections/retry")
+                :on-success on-success
+                :on-failure on-error}))
+
 (def ^:private analysis-active-statuses
   "Statuses that should keep the polling loop running. Once the analysis
    reaches a terminal state (done / failed) the loop stops."
@@ -154,17 +164,23 @@
   "Maps the analysis status string returned by the gateway to the user-facing
    label and Radix Badge color. The gateway uses 'running' for the in-flight
    job state; the legacy 'analyzing' value (set on sessions.metrics) is
-   normalised to the same presentation."
-  {"pending"   {:label "Queued"          :color "gray"   :spinning? true}
-   "running"   {:label "Analyzing PII"   :color "blue"   :spinning? true}
-   "analyzing" {:label "Analyzing PII"   :color "blue"   :spinning? true}
-   "done"      {:label "Analysis ready"  :color "green"  :spinning? false}
-   "failed"    {:label "Analysis failed" :color "red"    :spinning? false}})
+   normalised to the same presentation. 'not_analyzed' is reserved for
+   pre-activation sessions where no job ever ran but analysis is still
+   available on demand."
+  {"pending"      {:label "Queued"          :color "gray"   :spinning? true}
+   "running"      {:label "Analyzing PII"   :color "blue"   :spinning? true}
+   "analyzing"    {:label "Analyzing PII"   :color "blue"   :spinning? true}
+   "done"         {:label "Analysis ready"  :color "green"  :spinning? false}
+   "failed"       {:label "Analysis failed" :color "red"    :spinning? false}
+   "not_analyzed" {:label "Not analyzed"    :color "gray"   :spinning? false}})
 
 (defn- analysis-status-badge
   "Renders the colour-coded analysis status badge plus, when applicable, an
-   attempt counter or the captured error message."
-  [{:keys [status attempt max-attempts last-error] :as analysis}]
+   attempt counter or the captured error message. When :on-retry is provided
+   and the analysis has failed, a Retry button is rendered so the user can
+   requeue the job without DB access."
+  [{:keys [status attempt max-attempts last-error on-retry retrying?]
+    :as analysis}]
   (when (seq status)
     (let [{:keys [label color]} (get status-presentation status
                                      {:label (str "Status: " status) :color "gray"})]
@@ -178,12 +194,26 @@
           (str "Gave up after " max-attempts " attempts")])
        (when (and (= status "failed") (seq last-error))
          [:> Text {:size "1" :class "text-[--red-11]"} last-error])
+       ;; Retry is offered when analysis can still be (re)started: a
+       ;; permanently-failed job, or a never-run job (pre-activation
+       ;; sessions surfaced as "not_analyzed").
+       (when (and (or (= status "failed") (= status "not_analyzed"))
+                  on-retry)
+         [:> Button {:size "1"
+                     :variant "soft"
+                     :color "blue"
+                     :disabled retrying?
+                     :on-click on-retry}
+          (cond
+            retrying?                    "Retrying…"
+            (= status "not_analyzed")    "Run analysis"
+            :else                        "Retry analysis")])
        (when (and (= status "done") (zero? (:total-detections analysis 0)))
          [:> Text {:size "1" :class "text-[--gray-11]"}
           "No PII entities detected."])])))
 
 (defn- entity-legend [{:keys [entity-types enabled-entity-types on-toggle
-                              detections-loading analysis]}]
+                              detections-loading analysis on-retry retrying?]}]
   (let [status (:status analysis)]
     (when (or detections-loading (seq entity-types) (seq status))
       [:> Flex {:align "center"
@@ -192,7 +222,7 @@
                 :class "px-radix-4 py-radix-3 rounded-b-lg bg-[--gray-1] border-t border-[--gray-6]"}
        [:> Text {:size "1" :weight "medium" :class "uppercase tracking-[0.08em] text-[--gray-11]"}
         "PII highlights"]
-       [analysis-status-badge analysis]
+       [analysis-status-badge (assoc analysis :on-retry on-retry :retrying? retrying?)]
        (when detections-loading
          [:> Badge {:variant "soft" :color "blue" :size "1"}
           "Loading detections..."])
@@ -463,9 +493,30 @@
                       (js/console.error "Failed to refresh detections:" err)
                       ;; On transient failures keep retrying; the legend will
                       ;; still display the last known status.
-                      (schedule-next-poll))))]
-           ;; Expose poll cancellation to component-will-unmount via an atom.
-           (swap! state assoc :__cancel-poll cancel-poll)
+                      (schedule-next-poll))))
+                 ;; Triggered from the legend's Retry button. Optimistically
+                 ;; flips the badge to "Queued" so the user gets immediate
+                 ;; feedback even if the backend takes a moment to respond,
+                 ;; then resumes the poll loop.
+                 (request-retry []
+                   (when-not (:retrying? @state)
+                     (swap! state assoc :retrying? true)
+                     (retry-detections
+                      session-id
+                      (fn [response]
+                        (swap! state assoc :retrying? false)
+                        (apply-detections-response response)
+                        (when (contains? analysis-active-statuses
+                                         (:status (:analysis @state)))
+                          (schedule-next-poll)))
+                      (fn [err]
+                        (js/console.error "Failed to retry analysis:" err)
+                        (swap! state assoc :retrying? false)))))]
+           ;; Expose poll cancellation and retry handler to descendants via
+           ;; the state atom so the legend can call them without prop-drilling.
+           (swap! state assoc
+                  :__cancel-poll cancel-poll
+                  :__request-retry request-retry)
            ;; Load initial batch of frames + first detections snapshot
            (swap! state assoc :loading true)
            (fetch-frames
@@ -507,7 +558,7 @@
        :reagent-render
        (fn []
           (let [{:keys [frames current-frame playing loading _loaded-up-to total-frames total-duration playback-speed start-time start-offset fetching fullscreen
-                        sorted-snapshots entity-types enabled-entity-types detections-loading analysis]} @state
+                        sorted-snapshots entity-types enabled-entity-types detections-loading analysis retrying?]} @state
                ;; Calculate current time position
                current-time (if playing
                               (+ start-offset (* (- (js/performance.now) start-time) playback-speed 0.001))
@@ -619,6 +670,8 @@
                :enabled-entity-types enabled-entity-types
                :detections-loading detections-loading
                :analysis analysis
+               :retrying? retrying?
+               :on-retry (when-let [r (:__request-retry @state)] r)
                :on-toggle (fn [entity-type]
                            (swap! state update :enabled-entity-types
                                   (fn [enabled]

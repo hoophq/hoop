@@ -7707,6 +7707,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{id}/rdp-detections/retry": {
+            "post": {
+                "description": "Resets a failed RDP analysis job to pending so the worker pool can re-claim it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Retry RDP PII analysis",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/sessionapi.RDPDetectionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}": {
             "get": {
                 "description": "Get a session by id. This endpoint returns a conditional response\n\n- When the query string ` + "`" + `extension` + "`" + ` is present it will return a payload containing a link to download the session\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"download_url\": \"http://127.0.0.1:8009/api/sessions/\u003cid\u003e/download?token=\u003ctoken\u003e\u0026extension=csv\u0026newline=1\u0026event-time=0\u0026events=o,e\",\n  \"expire_at\": \"2024-07-25T15:56:35.317601Z\",\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n- Fetching the endpoint without any query string returns the payload documented for this endpoint\n- The attribute ` + "`" + `event_stream` + "`" + ` will be rendered differently if the request contains the query string ` + "`" + `event_stream` + "`" + ` with the values ` + "`" + `utf8` + "`" + ` or ` + "`" + `base64` + "`" + `.\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  (...)\n  \"event_stream\": [\"hello world\"]\n  (...)\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nThe attribute ` + "`" + `metrics` + "`" + ` contains the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"data_masking\": {\n    \"err_count\": 0,\n    \"info_types\": {\n      \"EMAIL_ADDRESS\": 1\n    },\n    \"total_redact_count\": 1,\n    \"transformed_bytes\": 31\n  },\n  \"event_size\": 356\n}\n` + "`" + `` + "`" + `` + "`" + `\n",
