@@ -34,7 +34,7 @@
         [bulk-configs set-bulk-configs]        (react/useState {})
         [bulk-admin-mode set-bulk-admin-mode]  (react/useState "manual")
         [bulk-roles-method set-bulk-roles-method] (react/useState "csv")
-        [viewing-job-id set-viewing-job-id]    (react/useState nil)
+        [_viewing-job-id set-viewing-job-id]   (react/useState nil)
         [session-filter set-session-filter]    (react/useState {:title "Sessions"})
         [session-return-to set-session-return-to] (react/useState :hub)
 
@@ -104,28 +104,23 @@
                     {:resources      bulk-resources
                      :initial-method bulk-roles-method
                      :on-cancel      #(set-screen! :hub)
-                    :on-apply       (fn [_method roles-by-resource]
-                                      (let [job-id (data/start-job!
-                                                    {:type               :role-provision
-                                                     :targets            bulk-resources
-                                                     :roles-by-resource  (or roles-by-resource {})})]
-                                        (set-viewing-job-id job-id)
-                                        (set-screen! :job-detail)))}]
-       :job-detail (let [job (some #(when (= (:id %) viewing-job-id) %) jobs)]
-                     (when job
-                       [job-detail/job-detail-screen
-                        {:job                  job
-                         :sessions             sessions
-                         :on-back              #(set-screen! :hub)
-                         :on-run-in-background #(set-screen! :hub)
-                         :on-view-sessions     (fn [filter-opt]
-                                                 (navigate-sessions!
-                                                  {:job-id      (:id job)
-                                                   :resource-id (:resource-id filter-opt)
-                                                   :title       (if (:resource-name filter-opt)
-                                                                  (str "Sessions — " (:resource-name filter-opt))
-                                                                  (str "Sessions — " (:label job)))}
-                                                  :job-detail))}]))
+                     :on-apply       (fn [_method roles-by-resource]
+                                       (rf/dispatch [:provisioning/start-role-plans
+                                                     {:resources          bulk-resources
+                                                      :roles-by-resource  (or roles-by-resource {})}])
+                                       (set-hub-screen :job-detail))}]
+       :job-detail [job-detail/job-detail-screen
+                    {:on-back              #(set-screen! :hub)
+                     :on-run-in-background #(set-screen! :hub)
+                     :on-view-sessions     (fn [filter-opt]
+                                             (let [plan-job @(rf/subscribe [:provisioning/plan-job])]
+                                               (navigate-sessions!
+                                                {:job-id      (:id plan-job)
+                                                 :resource-id (:resource-id filter-opt)
+                                                 :title       (if (:resource-name filter-opt)
+                                                                (str "Sessions — " (:resource-name filter-opt))
+                                                                "Sessions — Role provisioning")}
+                                                :job-detail)))}]
        :session-list (let [filtered (filterv
                                      (fn [s]
                                        (and (or (nil? (:job-id session-filter))

@@ -1,5 +1,6 @@
 (ns webapp.provisioning.events
-  (:require [re-frame.core :as rf]))
+  (:require [clojure.string :as cs]
+            [re-frame.core :as rf]))
 
 (defn- derive-stage [env]
   (if (get env :envvar:ADMIN_ACCOUNT)
@@ -275,3 +276,249 @@
  :provisioning/add-sessions
  (fn [db [_ new-sessions]]
    (update-in db [:provisioning :sessions] into new-sessions)))
+
+;; ── Role plan flow ───────────────────────────────────────────────────────────
+;; POST /resources/{name}/plan for each role row, async with mock delays.
+
+(defn- mock-plan-response
+  "Generates a mock plan response. ~80 % Create, ~10 % Update, ~10 % Failed."
+  [resource-name role]
+  (let [r     (rand)
+        status (cond (< r 0.1) "Failed" (< r 0.2) "Update" :else "Create")
+        pid   (str "plan-" (.now js/Date) "-" (rand-int 10000))]
+    {:plan-id    pid
+     :status     status
+     :session-id (str "sess-" pid)
+     :resource-name resource-name
+     :role       role}))
+
+(rf/reg-event-db
+ :provisioning/set-plan-job
+ (fn [db [_ plan-job]]
+   (assoc-in db [:provisioning :plan-job] plan-job)))
+
+(rf/reg-event-db
+ :provisioning/update-plan-item
+ (fn [db [_ item-key update-fn]]
+   (update-in db [:provisioning :plan-job :items]
+              (fn [items]
+                (mapv (fn [it]
+                        (if (= (:key it) item-key)
+                          (update-fn it)
+                          it))
+                      items)))))
+
+(rf/reg-event-fx
+ :provisioning/start-role-plans
+ (fn [{:keys [db]} [_ {:keys [resources roles-by-resource]}]]
+   (let [res-by-id (into {} (map (fn [r] [(:id r) r]) resources))
+         items     (vec
+                    (mapcat
+                     (fn [[rid role-list]]
+                       (let [r (get res-by-id rid)]
+                         (map-indexed
+                          (fn [idx role-entry]
+                            {:key           (str rid "-" idx)
+                             :resource-id   rid
+                             :resource-name (:name r)
+                             :role          (:role role-entry)
+                             :database      (:database role-entry)
+                             :permissions   (:permissions role-entry)
+                             :status        "pending"
+                             :plan-id       nil
+                             :session-id    nil})
+                          role-list)))
+                     roles-by-resource))
+         plan-job  {:id    (str "plan-" (.now js/Date))
+                    :items items
+                    :started-at (.now js/Date)}]
+     {:db (assoc-in db [:provisioning :plan-job] plan-job)
+      :fx (vec (map-indexed
+                (fn [idx item]
+                  [:dispatch-later
+                   {:ms (+ 200 (* idx 100))
+                    :dispatch [:provisioning/request-plan (:key item)]}])
+                items))})))
+
+(rf/reg-event-fx
+ :provisioning/request-plan
+ (fn [{:keys [db]} [_ item-key]]
+   (let [item (some #(when (= (:key %) item-key) %)
+                    (get-in db [:provisioning :plan-job :items]))]
+     (when item
+       ;; Mark as processing, then simulate async response
+       {:db (update-in db [:provisioning :plan-job :items]
+                       (fn [items]
+                         (mapv (fn [it]
+                                 (if (= (:key it) item-key)
+                                   (assoc it :status "processing")
+                                   it))
+                               items)))
+        :fx [[:dispatch-later
+              {:ms       (+ 800 (rand-int 2000))
+               :dispatch [:provisioning/plan-response
+                          item-key
+                          (mock-plan-response (:resource-name item) (:role item))]}]]}))))
+
+(rf/reg-event-db
+ :provisioning/plan-response
+ (fn [db [_ item-key response]]
+   (update-in db [:provisioning :plan-job :items]
+              (fn [items]
+                (mapv (fn [it]
+                        (if (= (:key it) item-key)
+                          (assoc it
+                                 :status     (:status response)
+                                 :plan-id    (:plan-id response)
+                                 :session-id (:session-id response))
+                          it))
+                      items)))))
+
+(rf/reg-event-fx
+ :provisioning/retry-plan
+ (fn [_ [_ item-key]]
+   {:fx [[:dispatch [:provisioning/request-plan item-key]]]}))
+
+;; ── Apply flow ──────────────────────────────────────────────────────────────
+;; POST /resources/{name}/apply — executes the planned change.
+
+(defn- mock-apply-response
+  "~90 % success, ~10 % failure."
+  [item]
+  (let [ok? (> (rand) 0.1)]
+    {:status     (if ok? "Applied" "ApplyFailed")
+     :session-id (str "sess-apply-" (.now js/Date) "-" (rand-int 10000))
+     :plan-id    (:plan-id item)}))
+
+(rf/reg-event-fx
+ :provisioning/apply-plan
+ (fn [{:keys [db]} [_ item-key]]
+   (let [item (some #(when (= (:key %) item-key) %)
+                    (get-in db [:provisioning :plan-job :items]))]
+     (when item
+       {:db (update-in db [:provisioning :plan-job :items]
+                       (fn [items]
+                         (mapv (fn [it]
+                                 (if (= (:key it) item-key)
+                                   (assoc it :status "applying")
+                                   it))
+                               items)))
+        :fx [[:dispatch-later
+              {:ms       (+ 600 (rand-int 1500))
+               :dispatch [:provisioning/apply-response
+                          item-key
+                          (mock-apply-response item)]}]]}))))
+
+(rf/reg-event-db
+ :provisioning/apply-response
+ (fn [db [_ item-key response]]
+   (update-in db [:provisioning :plan-job :items]
+              (fn [items]
+                (mapv (fn [it]
+                        (if (= (:key it) item-key)
+                          (assoc it
+                                 :status     (:status response)
+                                 :session-id (:session-id response))
+                          it))
+                      items)))))
+
+(rf/reg-event-fx
+ :provisioning/apply-all
+ (fn [{:keys [db]} _]
+   (let [items (get-in db [:provisioning :plan-job :items])
+         applicable (filterv #(contains? #{"Create" "Update"} (:status %)) items)]
+     {:fx (vec (map-indexed
+                (fn [idx item]
+                  [:dispatch-later
+                   {:ms (* idx 80)
+                    :dispatch [:provisioning/apply-plan (:key item)]}])
+                applicable))})))
+
+(defn- mock-session-output
+  "Generates realistic mock session output based on the item's current status."
+  [item]
+  (let [header  (str "-- Session for plan: " (:plan-id item) "\n"
+                     "-- Resource: " (:resource-name item) "\n"
+                     "-- Role: " (:role item) "\n"
+                     "-- Database: " (:database item) "\n"
+                     "-- Permissions: " (:permissions item) "\n\n")
+        schema  (or (last (cs/split (or (:database item) "") #"\.")) "public")]
+    (case (:status item)
+      "Failed"
+      (str header
+           "ERROR: could not connect to server: Connection refused\n"
+           "\tIs the server running on host \"" (:resource-name item) ".internal\"\n"
+           "\tand accepting TCP/IP connections on port 5432?\n\n"
+           "-- ✗ Plan failed after 30.0s (connection timeout)")
+
+      "Create"
+      (str header
+           "-- DRY RUN: the following statements WILL be executed on apply\n\n"
+           "BEGIN;\n"
+           "CREATE ROLE \"" (:role item) "\";\n"
+           "GRANT CONNECT ON DATABASE \"" (:resource-name item) "\" TO \"" (:role item) "\";\n"
+           "GRANT USAGE ON SCHEMA " schema " TO \"" (:role item) "\";\n"
+           "GRANT " (:permissions item) " ON ALL TABLES IN SCHEMA " schema
+           " TO \"" (:role item) "\";\n"
+           "ALTER DEFAULT PRIVILEGES IN SCHEMA " schema "\n"
+           "  GRANT " (:permissions item) " ON TABLES TO \"" (:role item) "\";\n"
+           "COMMIT;\n\n"
+           "-- ✓ Plan: Create — role does not exist, will be created")
+
+      "Update"
+      (str header
+           "-- DRY RUN: the following statements WILL be executed on apply\n\n"
+           "BEGIN;\n"
+           "-- Role \"" (:role item) "\" already exists, updating grants\n"
+           "REVOKE ALL ON ALL TABLES IN SCHEMA " schema " FROM \"" (:role item) "\";\n"
+           "GRANT USAGE ON SCHEMA " schema " TO \"" (:role item) "\";\n"
+           "GRANT " (:permissions item) " ON ALL TABLES IN SCHEMA " schema
+           " TO \"" (:role item) "\";\n"
+           "ALTER DEFAULT PRIVILEGES IN SCHEMA " schema "\n"
+           "  GRANT " (:permissions item) " ON TABLES TO \"" (:role item) "\";\n"
+           "COMMIT;\n\n"
+           "-- ✓ Plan: Update — role exists, grants will be refreshed")
+
+      "Applied"
+      (str header
+           "BEGIN;\n"
+           "CREATE ROLE \"" (:role item) "\";\n"
+           "GRANT CONNECT ON DATABASE \"" (:resource-name item) "\" TO \"" (:role item) "\";\n"
+           "GRANT USAGE ON SCHEMA " schema " TO \"" (:role item) "\";\n"
+           "GRANT " (:permissions item) " ON ALL TABLES IN SCHEMA " schema
+           " TO \"" (:role item) "\";\n"
+           "ALTER DEFAULT PRIVILEGES IN SCHEMA " schema "\n"
+           "  GRANT " (:permissions item) " ON TABLES TO \"" (:role item) "\";\n"
+           "COMMIT;\n\n"
+           "-- ✓ Applied successfully in 1.2s")
+
+      "ApplyFailed"
+      (str header
+           "BEGIN;\n"
+           "CREATE ROLE \"" (:role item) "\";\n"
+           "ERROR: role \"" (:role item) "\" already exists\n"
+           "ROLLBACK;\n\n"
+           "-- ✗ Apply failed: duplicate role — resolve manually or retry with UPDATE strategy")
+
+      ;; fallback
+      (str header "-- Status: " (:status item)))))
+
+(rf/reg-event-fx
+ :provisioning/fetch-plan-session
+ (fn [{:keys [db]} [_ session-id]]
+   (let [item (some #(when (= (:session-id %) session-id) %)
+                    (get-in db [:provisioning :plan-job :items]))]
+     {:fx [[:dispatch-later
+            {:ms 300
+             :dispatch
+             [:provisioning/add-sessions
+              [{:id            session-id
+                :job-id        (get-in db [:provisioning :plan-job :id])
+                :resource-id   (:resource-id item)
+                :resource-name (:resource-name item)
+                :role-name     (:role item)
+                :status        (if (contains? #{"Failed" "ApplyFailed"} (:status item))
+                                 "error" "success")
+                :started-at    (.now js/Date)
+                :duration-ms   (+ 500 (rand-int 1000))
+                :output        (mock-session-output item)}]]}]]})))

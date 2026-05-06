@@ -160,21 +160,23 @@
 
         {valid-fields true invalid-fields false}
         (group-by (fn [row]
-                    (and (seq (:resource-name row))
-                         (seq (:role row))
-                         (seq (:database row))
-                         (seq (:permissions row))))
+                    (boolean
+                     (and (seq (:resource-name row))
+                          (seq (:role row))
+                          (seq (:database row))
+                          (seq (:permissions row)))))
                   (or matched []))
 
         {good-perms true bad-perms false}
         (group-by #(validate-permissions (:permissions %)) (or valid-fields []))
 
-        deduped (vals (group-by (fn [r] [(:resource-name r)
-                                          (:role r)
-                                          (:database r)
-                                          (normalize-permissions (:permissions r))])
-                                (or good-perms [])))
-        unique-rows (mapv first deduped)
+        dedup-groups (vals (group-by (fn [r] [(:resource-name r)
+                                            (:role r)
+                                            (:database r)
+                                            (normalize-permissions (:permissions r))])
+                                   (or good-perms [])))
+        unique-rows    (mapv first dedup-groups)
+        duplicate-rows (vec (mapcat rest dedup-groups))
 
         grouped (group-by (fn [r] [(:resource-name r) (:role r) (:database r)]) unique-rows)
         {conflict-groups true ok-groups false}
@@ -194,6 +196,7 @@
                                             resources))]
     {:valid             valid-rows
      :conflicts         conflict-map
+     :duplicates        duplicate-rows
      :skipped-csv       (vec (or unmatched []))
      :skipped-resources skipped-resources
      :invalid           (vec (concat (or invalid-fields [])

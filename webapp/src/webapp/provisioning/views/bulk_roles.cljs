@@ -2,8 +2,9 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Card Checkbox
                                Flex Heading Skeleton Text]]
-   ["lucide-react" :refer [AlertTriangle ArrowLeft Check Circle FileText
-                           Info Key Loader2 Upload XCircle]]
+   ["lucide-react" :refer [AlertTriangle ArrowLeft Check ChevronDown
+                           ChevronRight Circle FileText Info Key Loader2
+                           Upload XCircle]]
    [reagent.core :as r]
    [webapp.provisioning.data :as data]))
 
@@ -105,25 +106,31 @@
     [:> Text {:size "1" :color "gray" :weight "medium"} "Status"]]])
 
 ;; ── Row renderers ────────────────────────────────────────────────────────────
-(defn- csv-row-base [{:keys [row bg extra-style badge-content badge-color badge-icon]}]
-  [:> Flex {:px "3" :py "2" :align "center"
-            :style (merge {:min-height 40 :background bg} extra-style)}
-   [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
-    [:> Text {:size "2" :style (when (= badge-color "gray") {:color "var(--gray-8)"})}
-     (:resource-name row)]]
-   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
-    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
-                                :color (when (= badge-color "gray") "var(--gray-8)")}}
-     (:role row)]]
-   [:> Box {:style {:flex "1 1 0" :min-width 0}}
-    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
-                                :color (when (= badge-color "gray") "var(--gray-8)")}}
-     (:database row)]]
-   [:> Box {:style {:flex "1 1 0" :min-width 0}}
-    [:> Text {:size "1" :color "gray"} (:permissions row)]]
-   [:> Box {:style {:width 110 :flex-shrink 0}}
-    [:> Badge {:color badge-color :variant "soft" :size "1"}
-     badge-icon " " badge-content]]])
+(defn- csv-row-base [{:keys [row bg extra-style badge-content badge-color badge-icon reason]}]
+  (let [dimmed? (contains? #{"gray"} badge-color)]
+    [:> Flex {:direction "column"
+              :style (merge {:background bg} extra-style)}
+     [:> Flex {:px "3" :py "2" :align "center" :style {:min-height 40}}
+      [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
+       [:> Text {:size "2" :style (when dimmed? {:color "var(--gray-8)"})}
+        (:resource-name row)]]
+      [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+       [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
+                                   :color (when dimmed? "var(--gray-8)")}}
+        (:role row)]]
+      [:> Box {:style {:flex "1 1 0" :min-width 0}}
+       [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
+                                   :color (when dimmed? "var(--gray-8)")}}
+        (:database row)]]
+      [:> Box {:style {:flex "1 1 0" :min-width 0}}
+       [:> Text {:size "1" :color "gray"} (:permissions row)]]
+      [:> Box {:style {:width 110 :flex-shrink 0}}
+       [:> Badge {:color badge-color :variant "soft" :size "1"}
+        badge-icon " " badge-content]]]
+     (when reason
+       [:> Flex {:px "3" :pb "2" :style {:margin-top -4}}
+        [:> Text {:size "1" :style {:color "var(--gray-9)" :font-style "italic"}}
+         reason]])]))
 
 (defn- valid-row [row idx total]
   [csv-row-base {:row row
@@ -140,16 +147,31 @@
                                :opacity 0.65}
                  :badge-content "Skipped"
                  :badge-color "gray"
-                 :badge-icon [:> Circle {:size 10}]}])
+                 :badge-icon [:> Circle {:size 10}]
+                 :reason "Resource not in selection"}])
+
+(defn- duplicate-row [row idx total]
+  [csv-row-base {:row row
+                 :bg "var(--gray-2)"
+                 :extra-style {:border-bottom (when (< idx (dec total)) "1px solid var(--gray-3)")
+                               :opacity 0.65}
+                 :badge-content "Duplicate"
+                 :badge-color "gray"
+                 :badge-icon [:> Circle {:size 10}]
+                 :reason (str "Duplicate of line with same resource, role, database & permissions")}])
 
 (defn- invalid-row [row idx total]
-  (let [reason (if (= (:error row) :bad-permissions) "Bad permissions" "Missing field")]
+  (let [bad-perms? (= (:error row) :bad-permissions)
+        reason     (if bad-perms? "Bad permissions" "Missing field")]
     [csv-row-base {:row row
                    :bg "var(--red-2)"
                    :extra-style {:border-bottom (when (< idx (dec total)) "1px solid var(--gray-3)")}
                    :badge-content reason
                    :badge-color "red"
-                   :badge-icon [:> XCircle {:size 10}]}]))
+                   :badge-icon [:> XCircle {:size 10}]
+                   :reason (if bad-perms?
+                             "Permissions must be valid SQL grants (SELECT, INSERT, UPDATE, DELETE, ALL)"
+                             "All columns are required: resource_name, role, database, permissions")}]))
 
 ;; ── Conflict group ───────────────────────────────────────────────────────────
 (defn- conflict-group-rows [conflict-id rows conflict-picks set-conflict-picks]
@@ -210,13 +232,14 @@
 
 ;; ── CSV parsed preview ───────────────────────────────────────────────────────
 (defn- csv-preview [{:keys [classification conflict-picks set-conflict-picks]}]
-  (let [{:keys [valid conflicts skipped-csv skipped-resources invalid]}
+  (let [{:keys [valid conflicts duplicates skipped-csv skipped-resources invalid]}
         (or classification {})
         has-conflicts?  (seq conflicts)
         has-invalid?    (seq invalid)
 
         flat-rows (vec (concat
                         (mapv (fn [row] {:type :valid :row row}) valid)
+                        (mapv (fn [row] {:type :duplicate :row row}) duplicates)
                         (mapv (fn [row] {:type :invalid :row row}) invalid)
                         (mapv (fn [row] {:type :skipped :row row}) skipped-csv)))
         total     (count flat-rows)]
@@ -253,9 +276,10 @@
             (for [[i {:keys [type row]}] (map-indexed vector flat-rows)]
               (let [row-key (str (name type) "-" (:line-num row))]
                 (case type
-                  :valid   ^{:key row-key} [valid-row row i total]
-                  :invalid ^{:key row-key} [invalid-row row i total]
-                  :skipped ^{:key row-key} [skipped-csv-row row i total]))))]
+                  :valid     ^{:key row-key} [valid-row row i total]
+                  :duplicate ^{:key row-key} [duplicate-row row i total]
+                  :invalid   ^{:key row-key} [invalid-row row i total]
+                  :skipped   ^{:key row-key} [skipped-csv-row row i total]))))]
 
      [skipped-resources-section skipped-resources]]))
 
@@ -272,6 +296,7 @@
         roles-loading        (r/atom false)
         selected-roles       (r/atom {})
         load-timer           (r/atom nil)
+        res-list-open?       (r/atom false)
 
         do-parse-csv!  (fn [text]
                          (reset! csv-text text)
@@ -314,16 +339,21 @@
                                               (pos? (or unresolved 0)))))
                                 (and (= method "bind") (or loading? (zero? total-selected))))
 
-            valid-count   (count (:valid classification))
+            valid-count    (count (:valid classification))
             conflict-count (count (:conflicts classification))
-            skipped-count (+ (count (:skipped-csv classification))
-                             (count (:skipped-resources classification)))
+            duplicate-count (count (:duplicates classification))
+            skipped-count  (+ (count (:skipped-csv classification))
+                              (count (:skipped-resources classification)))
 
             footer-info (cond
                           (and (= method "csv") classification)
-                          (str valid-count " valid · "
-                               conflict-count " conflict" (when (not= 1 conflict-count) "s") " · "
-                               skipped-count " skipped")
+                          (str valid-count " valid"
+                               (when (pos? duplicate-count)
+                                 (str " · " duplicate-count " duplicate"
+                                      (when (not= 1 duplicate-count) "s")))
+                               " · " conflict-count " conflict"
+                               (when (not= 1 conflict-count) "s")
+                               " · " skipped-count " skipped")
                           (and (= method "bind") loading?)
                           "Reading roles from databases…"
                           (= method "bind")
@@ -370,6 +400,29 @@
          ;; ── CSV mode — upload ──
          (when (and (= method "csv") (nil? @csv-parsed))
            [:> Flex {:direction "column" :gap "3" :style {:flex 1}}
+            ;; Collapsible selected-resources list
+            [:> Box {:style {:border "1px solid var(--gray-5)"
+                             :border-radius "var(--radius-2)"
+                             :background "var(--gray-2)"}}
+             [:> Flex {:align "center" :gap "2" :px "3" :py "2"
+                       :on-click #(swap! res-list-open? not)
+                       :style {:cursor "pointer" :user-select "none"}}
+              (if @res-list-open?
+                [:> ChevronDown {:size 14 :color "var(--gray-9)"}]
+                [:> ChevronRight {:size 14 :color "var(--gray-9)"}])
+              [:> Text {:size "2" :weight "medium" :color "gray"}
+               (str (count resources) " selected resource"
+                    (when (not= 1 (count resources)) "s"))]
+              [:> Text {:size "1" :color "gray" :style {:margin-left "auto"}}
+               "Use these names in the resource_name column"]]
+             (when @res-list-open?
+               [:> Flex {:gap "2" :px "3" :pb "3" :style {:flex-wrap "wrap"}}
+                (for [r (sort-by :name resources)]
+                  ^{:key (:id r)}
+                  [:> Badge {:color "gray" :variant "outline" :size "1"
+                             :style {:font-family "var(--font-mono)" :font-size 11}}
+                   (:name r)])])]
+
             [:> Box {:on-click (fn []
                                  (let [input (js/document.createElement "input")]
                                    (set! (.-type input) "file")

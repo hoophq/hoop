@@ -26,3 +26,8 @@
  :provisioning/sessions
  (fn [db]
    (get-in db [:provisioning :sessions] [])))
+
+(rf/reg-sub
+ :provisioning/plan-job
+ (fn [db]
+   (get-in db [:provisioning :plan-job])))
