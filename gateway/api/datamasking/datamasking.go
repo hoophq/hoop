@@ -31,6 +31,77 @@ func getLicenseType(ctx *storagev2.Context) string {
 	return licenseType
 }
 
+// RulePayload is the validation-relevant subset of a data masking rule. It is the
+// shared shape consumed by ValidateRulePayload and ValidateOSSLimits so both the HTTP
+// API and the MCP server can run identical input checks.
+type RulePayload struct {
+	SupportedEntityTypes []models.SupportedEntityTypesEntry
+	CustomEntityTypes    []models.CustomEntityTypesEntry
+	ScoreThreshold       *float64
+	ConnectionIDs        []string
+}
+
+// ValidateRulePayload runs the field-level checks the HTTP API enforces on data
+// masking rule create/update requests: score range, connection ID format, entity-type
+// name shape, and required regex/deny_list/name on custom entries. Independent of
+// license type — call ValidateOSSLimits separately for OSS gating.
+func ValidateRulePayload(p RulePayload) error {
+	if p.ScoreThreshold != nil && (*p.ScoreThreshold < 0 || *p.ScoreThreshold > 1) {
+		return fmt.Errorf("score threshold must be between 0 and 1")
+	}
+	for _, connID := range p.ConnectionIDs {
+		if _, err := uuid.Parse(connID); err != nil {
+			return fmt.Errorf("invalid connection ID %s", connID)
+		}
+	}
+	for _, e := range p.SupportedEntityTypes {
+		if len(e.EntityTypes) == 0 || e.Name == "" {
+			return fmt.Errorf("missing entity types or name in supported entity types")
+		}
+		if e.Name != strings.ToUpper(e.Name) {
+			return fmt.Errorf("entity type name must be uppercase: %s", e.Name)
+		}
+	}
+	for _, e := range p.CustomEntityTypes {
+		if e.Name == "" || (len(e.DenyList) == 0 && e.Regex == "") {
+			return fmt.Errorf("missing name, deny_list or regex in custom entity types")
+		}
+		if e.Name != strings.ToUpper(e.Name) {
+			return fmt.Errorf("entity type name must be uppercase: %s", e.Name)
+		}
+	}
+	return nil
+}
+
+// ValidateOSSLimits enforces the OSS-license caps on a data masking rule payload.
+// Callers should run this only when the org is on the OSS license.
+func ValidateOSSLimits(p RulePayload) error {
+	if len(p.SupportedEntityTypes) > 0 && len(p.CustomEntityTypes) > 0 {
+		return fmt.Errorf("supported entity types and custom entity types cannot be both defined in OSS version")
+	}
+	if len(p.SupportedEntityTypes) > 1 {
+		return fmt.Errorf("supported entity types are limited to 1 rule in OSS version")
+	}
+	if len(p.SupportedEntityTypes) > 0 && len(p.SupportedEntityTypes[0].EntityTypes) > 1 {
+		return fmt.Errorf("supported entity types are limited to 1 entity type in OSS version")
+	}
+	if len(p.CustomEntityTypes) > 1 {
+		return fmt.Errorf("custom entity types are limited to 1 rule in OSS version")
+	}
+	if len(p.CustomEntityTypes) > 0 {
+		if len(p.CustomEntityTypes[0].DenyList) > 1 {
+			return fmt.Errorf("custom entity types deny list is limited to 1 entry in OSS version")
+		}
+		if len(p.CustomEntityTypes[0].Regex) > 0 && len(p.CustomEntityTypes[0].DenyList) > 0 {
+			return fmt.Errorf("custom entity types cannot have both regex and deny list in OSS version")
+		}
+	}
+	return nil
+}
+
+// validateOssRulesLimitations enforces the OSS-license caps on the openapi-shaped
+// HTTP request. Keep in sync with ValidateOSSLimits, which mirrors these checks for
+// callers that work with model types (e.g. the MCP server).
 func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
 	if len(req.SupportedEntityTypes) > 0 && len(req.CustomEntityTypesEntrys) > 0 {
 		return fmt.Errorf("supported entity types and custom entity types cannot be both defined in OSS version")
@@ -353,6 +424,9 @@ func upsertDatamaskingRuleAttributes(ctx *storagev2.Context, ruleName string, at
 	return models.UpsertDatamaskingRuleAttributes(models.DB, orgID, ruleName, attributeNames)
 }
 
+// parseRequestPayload parses and validates the openapi-shaped HTTP request body.
+// Keep validation rules in sync with ValidateRulePayload, which mirrors these checks
+// for callers that work with model types (e.g. the MCP server).
 func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 	req := openapi.DataMaskingRuleRequest{}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -360,7 +434,7 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return nil
 	}
-	if req.ScoreThreshold != nil && *req.ScoreThreshold < 0 && *req.ScoreThreshold > 1 {
+	if req.ScoreThreshold != nil && (*req.ScoreThreshold < 0 || *req.ScoreThreshold > 1) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "score threshold must be between 0 and 1"})
 		return nil
 	}
