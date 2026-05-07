@@ -434,8 +434,6 @@
               [:> Workflow {:size 14 :class "text-gray-500"}]]]
             [:> Button {:size "2"
                         :variant "solid"
-                        :color "gray"
-                        :highContrast true
                         :class "w-full"
                         :disabled (string/blank? @workflow-correlation-id)
                         :on-click submit-workflow}
