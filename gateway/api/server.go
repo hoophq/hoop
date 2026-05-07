@@ -1121,6 +1121,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
+	r.POST("/resources/:name/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.PlanResource)
+	r.POST("/resources/:name/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ApplyPlan)
 
 	r.GET("/resources/:name/health",
 		apiroutes.AdminOnlyAccessRole,

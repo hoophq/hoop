@@ -330,7 +330,7 @@ type Connection struct {
 	// Default databases returns the configured value of the attribute secrets->'DB'
 	DefaultDatabase string `json:"default_database"`
 	// The agent associated with this connection
-	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	AgentId string `json:"agent_id" bnding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
 	// * online - The agent is connected and alive
 	// * offline - The agent is not connected
@@ -1159,10 +1159,10 @@ const (
 )
 
 // AnalyticsModeType represents the per-organization analytics privacy mode.
-// * identified - PII (email, name) is sent to third-party destinations so
-//   the org's users are addressable for support and lifecycle outreach.
-// * anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
-// * disabled   - No analytics events are emitted for the org.
+//   - identified - PII (email, name) is sent to third-party destinations so
+//     the org's users are addressable for support and lifecycle outreach.
+//   - anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
+//   - disabled   - No analytics events are emitted for the org.
 type AnalyticsModeType string
 
 const (

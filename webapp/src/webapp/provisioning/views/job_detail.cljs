@@ -73,7 +73,7 @@
 
 (defn job-detail-screen
   [_props]
-  (fn [{:keys [on-back on-run-in-background on-view-sessions]}]
+  (fn [{:keys [on-back on-done on-run-in-background on-view-sessions]}]
     (let [plan-job  @(rf/subscribe [:provisioning/plan-job])
           sessions  @(rf/subscribe [:provisioning/sessions])
           items     (or (:items plan-job) [])
@@ -214,5 +214,5 @@
            [:> Rocket {:size 14}]
            (str " Apply " plan-done " role" (when (not= 1 plan-done) "s") " →")])
         (when all-done?
-          [:> Button {:color "green" :on-click on-back}
+          [:> Button {:color "green" :on-click (or on-done on-back)}
            [:> Check {:size 14}] " Done"])]])))

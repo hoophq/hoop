@@ -3,9 +3,10 @@
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
                                 Table Tabs Text TextField Tooltip]]
    ["lucide-react" :refer [AlertCircle Check ChevronLeft ChevronRight Database
-                            Key Loader2 Plus Search Upload
+                            Key Loader2 Plus Rocket Search Upload
                             UserCog X]]
    [clojure.string :as cs]
+   [re-frame.core :as rf]
    [webapp.provisioning.data :as data]))
 
 ;; ── Shared visual primitives ───────────────────────────────────────────────────
@@ -189,6 +190,48 @@
                 (when-not running?
                   [:> Button {:size "1" :variant "ghost" :color "gray" :on-click on-dismiss}
                    [:> X {:size 12}]])]}]))
+
+(defn plan-job-banner
+  "Shows the active plan-job status when the user navigates back to the inventory
+   while planning or applying is still running, or when results are ready."
+  [{:keys [on-view]}]
+  (let [plan-job @(rf/subscribe [:provisioning/plan-job])
+        items    (or (:items plan-job) [])]
+    (when (seq items)
+      (let [applied  (count (filter #(= "Applied" (:status %)) items))
+            failed   (count (filter #(contains? #{"Failed" "ApplyFailed"} (:status %)) items))
+            ready    (count (filter #(contains? #{"Create" "Update"} (:status %)) items))
+            planning (some #(contains? #{"pending" "processing"} (:status %)) items)
+            applying (some #(= "applying" (:status %)) items)
+            busy?    (or planning applying)
+            total    (count items)
+            all-done (and (not busy?) (zero? ready))
+            color    (cond busy?          "indigo"
+                          (pos? failed)   "amber"
+                          all-done        "green"
+                          (pos? ready)    "blue"
+                          :else           "gray")
+            icon     (cond
+                       busy?        [:span {:class "animate-spin inline-flex"
+                                            :style {:color (str "var(--" color "-9)")}}
+                                     [:> Loader2 {:size 14}]]
+                       all-done     [:> Check {:size 14}]
+                       (pos? ready) [:> Rocket {:size 14}]
+                       :else        [:> AlertCircle {:size 14}])
+            progress (cond
+                       planning (str "Planning — " (- total (count (filter #(contains? #{"pending" "processing"} (:status %)) items))) "/" total)
+                       applying (str "Applying — " applied "/" total)
+                       all-done (str applied " applied" (when (pos? failed) (str ", " failed " failed")))
+                       :else    (str ready " ready to apply" (when (pos? failed) (str ", " failed " failed"))))]
+        [callout
+         {:color   color
+          :px      "4" :py "3"
+          :icon    icon
+          :extra   [:> Flex {:align "center" :gap "3"}
+                    [:> Text {:size "2" :weight "medium"} "Role provisioning"]
+                    [:> Text {:size "2" :color "gray"} progress]]
+          :actions [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                    (if busy? "View progress" "View results")]}]))))
 
 ;; ── Floating action bar ────────────────────────────────────────────────────────
 
@@ -471,6 +514,8 @@
                         :on-view    #(on-set-screen :job-detail (:id latest-active-job))
                         :on-dismiss #(set-dismissed-job-ids
                                       (fn [s] (conj s (:id latest-active-job))))}])
+
+     [plan-job-banner {:on-view #(on-set-screen :job-detail)}]
 
      [inventory-tabs {:active-tab active-tab
                       :counts     counts

@@ -93,48 +93,6 @@
 (def ^:private valid-permissions
   #{"SELECT" "INSERT" "UPDATE" "DELETE" "ALL"})
 
-(defn- parse-csv-line
-  "Splits a CSV line on commas, respecting double-quoted fields."
-  [line]
-  (loop [chars (seq line) field [] fields [] in-quote? false]
-    (if-not (seq chars)
-      (conj fields (cs/trim (apply str field)))
-      (let [c (first chars) rest-chars (rest chars)]
-        (cond
-          (and (= c \") (not in-quote?))
-          (recur rest-chars field fields true)
-
-          (and (= c \") in-quote?)
-          (recur rest-chars field fields false)
-
-          (and (= c \,) (not in-quote?))
-          (recur rest-chars [] (conj fields (cs/trim (apply str field))) false)
-
-          :else
-          (recur rest-chars (conj field c) fields in-quote?))))))
-
-(defn parse-csv-roles
-  "Parses raw CSV text into a vector of maps.
-   Expected columns: resource_name, role, database, permissions.
-   Returns [{:resource-name :role :database :permissions :line-num} ...]."
-  [csv-text]
-  (let [lines  (cs/split-lines (cs/trim csv-text))
-        header (first lines)
-        data   (rest lines)]
-    (when (and header (seq data))
-      (vec
-       (keep-indexed
-        (fn [idx line]
-          (let [trimmed (cs/trim line)]
-            (when (seq trimmed)
-              (let [fields (parse-csv-line trimmed)]
-                {:resource-name (cs/trim (or (nth fields 0 nil) ""))
-                 :role          (cs/trim (or (nth fields 1 nil) ""))
-                 :database      (cs/trim (or (nth fields 2 nil) ""))
-                 :permissions   (cs/trim (or (nth fields 3 nil) ""))
-                 :line-num      (+ idx 2)}))))
-        data)))))
-
 (defn- normalize-permissions
   "Uppercases and re-joins permission tokens for consistent comparison."
   [perms-str]

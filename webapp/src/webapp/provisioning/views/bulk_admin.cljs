@@ -2,11 +2,12 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Card Flex Heading
                                 Progress Select Text TextField]]
-   ["lucide-react" :refer [AlertCircle ArrowLeft Check CheckCircle2
+   ["lucide-react" :refer [AlertCircle Check CheckCircle2
                             Loader2 Server Upload UserCog X]]
    ["papaparse" :as papa]
    ["react" :as react]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.provisioning.views.shared :as shared]))
 
 (defn- parse-admin-csv!
   "Parses a CSV file with columns: name, admin_user, password.
@@ -104,13 +105,9 @@
                                                (set-apply-progress 100)
                                                (rf/dispatch [:provisioning/fetch-resources])))}])))]
     [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
-     [:> Flex {:align "center" :gap "2" :mb "1"}
-      [:> Button {:variant "ghost" :color "gray" :size "2" :on-click on-cancel}
-       [:> ArrowLeft {:size 14}] " Back"]]
-
-     [:> Flex {:align "baseline" :gap "3" :mb "4"}
-      [:> Heading {:size "7"} "Manage \u2014 admin accounts"]
-      [:> Badge {:color "gray" :variant "soft"} (str (count resources) " resources")]]
+     [shared/bulk-screen-header {:title          "Manage \u2014 admin accounts"
+                                 :resource-count (count resources)
+                                 :on-back        on-cancel}]
 
      ;; Agent selector
      [:> Card {:mb "4" :style {:background "var(--gray-2)" :border-color "var(--gray-4)"}}
@@ -223,7 +220,7 @@
                            :style {:border-bottom (when (< i (dec (count resources)))
                                                     "1px solid var(--gray-3)")
                                    :min-height 52
-                                   :background (if (even? i) "var(--color-panel-solid)" "var(--gray-1)")}}
+                                   :background (shared/zebra-bg i)}}
                   [:> Box {:style {:width 260 :flex-shrink 0}}
                    [:> Flex {:align "center" :gap "2"}
                     [:> Text {:size "2" :weight "medium"} (:name r)]
@@ -249,21 +246,8 @@
           (if (not csv-parsed)
             ;; Upload area
             [:> Flex {:direction "column" :gap "3" :style {:flex 1}}
-             [:> Box {:on-click #(when (.-current file-input-ref)
-                                   (.click (.-current file-input-ref)))
-                      :style {:border "2px dashed var(--gray-6)"
-                              :border-radius "var(--radius-3)"
-                              :padding 40 :background "var(--gray-2)"
-                              :text-align "center" :cursor "pointer"
-                              :flex 1 :display "flex" :align-items "center"
-                              :justify-content "center"}}
-              [:> Flex {:direction "column" :align "center" :gap "2"}
-               [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
-               [:> Text {:size "2" :color "gray"}
-                "Drop your CSV here or "
-                [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
-               [:> Text {:size "1" :color "gray"}
-                "Columns: name, admin_user, password"]]]]
+             [shared/csv-drop-zone {:on-file   handle-csv!
+                                    :hint-text "Columns: name, admin_user, password"}]]
 
             ;; Parsed preview
             [:> Flex {:direction "column" :gap "3" :style {:flex 1 :min-height 0}}
@@ -314,7 +298,7 @@
                                      :min-height 44
                                      :background (if has-creds?
                                                    "var(--green-1)"
-                                                   (if (even? i) "var(--color-panel-solid)" "var(--gray-1)"))}}
+                                                   (shared/zebra-bg i))}}
                     [:> Flex {:align "center" :gap "2" :style {:flex 1}}
                      [:> Text {:size "2" :weight "medium"} (:name r)]
                      [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type r)]]
@@ -336,17 +320,14 @@
                        [:> Badge {:color "gray" :variant "soft" :size "1"} "Missing"])]])))]]))
 
         ;; Footer
-        [:> Flex {:align "center" :justify "between" :gap "3" :pt "4" :mt "4"
-                  :style {:border-top "1px solid var(--gray-4)" :flex-shrink 0}}
-         [:> Text {:size "1" :color "gray"}
-          (str (count valid-configs) " of " (count resources) " resources have credentials")]
-         [:> Flex {:gap "3"}
-          [:> Button {:variant "outline" :color "gray" :on-click on-cancel} "Cancel"]
-          [:> Button {:disabled (zero? (count valid-configs))
-                      :on-click do-apply!}
-           (str "Apply to " (count valid-configs)
-                (if (= 1 (count valid-configs)) " resource" " resources")
-                " \u2192")]]]])]))
+        [shared/bulk-footer
+         {:info-text       (str (count valid-configs) " of " (count resources) " resources have credentials")
+          :on-cancel       on-cancel
+          :apply-disabled? (zero? (count valid-configs))
+          :apply-label     (str "Apply to " (count valid-configs)
+                                (if (= 1 (count valid-configs)) " resource" " resources")
+                                " \u2192")
+          :on-apply        do-apply!}]])]))
 
 (defn bulk-admin-screen
   [props]

@@ -2,9 +2,14 @@ package resources
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
@@ -21,6 +26,20 @@ import (
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"gorm.io/gorm"
 )
+
+// In-memory plan store — holds plans between plan and apply calls.
+// Plans are keyed by plan ID and removed once applied.
+type storedPlan struct {
+	PlanID       string
+	OrgID        string
+	ResourceName string
+	Role         string
+	Database     string
+	Permissions  []string
+	Status       string
+}
+
+var planStore sync.Map
 
 // GetResource
 //
@@ -397,6 +416,189 @@ func DeleteResource(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// PlanResource
+//
+//	@Summary		Plans a role provisioning for a resource (mock)
+//	@Description	Simulates a dry-run of role provisioning. Returns a plan with a status
+//	@Description	indicating whether the role would be created, updated, or failed.
+//	@Description	This is a mock endpoint — it does not persist anything.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produce		json
+//	@Param			name		path		string						true	"The resource name"
+//	@Param			request		body		openapi.ResourcePlanRequest	true	"The plan request"
+//	@Success		200			{object}	openapi.ResourcePlanResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/resources/{name}/plan [post]
+func PlanResource(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	name := c.Param("name")
+
+	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
+		return
+	}
+	if resource == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	}
+
+	var req openapi.ResourcePlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Check if a connection with the same role name already exists
+	adminCtx := models.NewAdminContext(ctx.OrgID)
+	existingConn, _ := models.GetBareConnectionByNameOrID(adminCtx, req.Role, models.DB)
+	status := "Create"
+	if existingConn != nil {
+		status = "Update"
+	}
+
+	// Simulate processing delay (1–10 seconds)
+	delay := time.Duration(1+rand.Intn(10)) * time.Second
+	time.Sleep(delay)
+
+	planID := fmt.Sprintf("plan-%d-%d", time.Now().UnixMilli(), rand.Intn(10000))
+
+	planStore.Store(planID, &storedPlan{
+		PlanID:       planID,
+		OrgID:        ctx.OrgID,
+		ResourceName: name,
+		Role:         req.Role,
+		Database:     req.Database,
+		Permissions:  req.Permissions,
+		Status:       status,
+	})
+
+	c.JSON(http.StatusOK, openapi.ResourcePlanResponse{
+		PlanID:    planID,
+		Status:    status,
+		SessionID: fmt.Sprintf("sess-%s", planID),
+	})
+}
+
+// ApplyPlan
+//
+//	@Summary		Applies a previously created plan for a resource
+//	@Description	Looks up the plan from the in-memory store, creates or updates the
+//	@Description	connection (role) in the database, and returns the result.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produce		json
+//	@Param			name		path		string						true	"The resource name"
+//	@Param			request		body		openapi.ResourceApplyRequest	true	"The apply request"
+//	@Success		200			{object}	openapi.ResourceApplyResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/resources/{name}/apply [post]
+func ApplyPlan(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	name := c.Param("name")
+
+	var req openapi.ResourceApplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	val, ok := planStore.Load(req.PlanID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"message": "plan not found or already applied"})
+		return
+	}
+	plan := val.(*storedPlan)
+
+	if plan.ResourceName != name || plan.OrgID != ctx.OrgID {
+		c.JSON(http.StatusNotFound, gin.H{"message": "plan not found for this resource"})
+		return
+	}
+
+	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, true)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
+		return
+	}
+	if resource == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	}
+
+	sessionID := fmt.Sprintf("sess-apply-%d-%d", time.Now().UnixMilli(), rand.Intn(10000))
+
+	// Build connection secrets from the resource's env_vars (HOST, PORT)
+	// and the plan's database name.
+	connSecrets := map[string]any{}
+	if host, ok := resource.Envs["envvar:HOST"]; ok {
+		decoded, _ := base64.StdEncoding.DecodeString(host)
+		connSecrets["envvar:HOST"] = base64.StdEncoding.EncodeToString(decoded)
+	}
+	if port, ok := resource.Envs["envvar:PORT"]; ok {
+		decoded, _ := base64.StdEncoding.DecodeString(port)
+		connSecrets["envvar:PORT"] = base64.StdEncoding.EncodeToString(decoded)
+	}
+	connSecrets["envvar:DB"] = base64.StdEncoding.EncodeToString([]byte(plan.Database))
+
+	connType := resource.Type
+	connSubType := resource.SubType.String
+	defaultCmd, defaultEnvVars := apiconnections.GetConnectionDefaults(connType, connSubType, true)
+	for key, val := range defaultEnvVars {
+		if _, isset := connSecrets[key]; !isset {
+			connSecrets[key] = val
+		}
+	}
+
+	accessSchemaStatus := "disabled"
+	if connType == "database" {
+		accessSchemaStatus = "enabled"
+	}
+
+	agentID := resource.AgentID.String
+	connectionStatus := models.ConnectionStatusOffline
+	if streamclient.IsAgentOnline(streamtypes.NewStreamID(agentID, "")) {
+		connectionStatus = models.ConnectionStatusOnline
+	}
+
+	conn := &models.Connection{
+		OrgID:              ctx.OrgID,
+		Name:               plan.Role,
+		ResourceName:       name,
+		AgentID:            resource.AgentID,
+		Type:               connType,
+		SubType:            resource.SubType,
+		Command:            defaultCmd,
+		Status:             connectionStatus,
+		AccessModeRunbooks: "enabled",
+		AccessModeExec:     "enabled",
+		AccessModeConnect:  "enabled",
+		AccessSchema:       accessSchemaStatus,
+		Envs:               apiconnections.CoerceToMapString(connSecrets),
+		ConnectionTags:     map[string]string{},
+	}
+
+	err = models.UpsertBatchConnections(models.DB, []*models.Connection{conn})
+	if err != nil {
+		log.Errorf("apply-plan: failed to upsert connection %s: %v", plan.Role, err)
+		c.JSON(http.StatusOK, openapi.ResourceApplyResponse{
+			PlanID:    plan.PlanID,
+			Status:    "ApplyFailed",
+			SessionID: sessionID,
+		})
+		return
+	}
+
+	planStore.Delete(req.PlanID)
+
+	c.JSON(http.StatusOK, openapi.ResourceApplyResponse{
+		PlanID:    plan.PlanID,
+		Status:    "Applied",
+		SessionID: sessionID,
+		RoleName:  plan.Role,
+	})
 }
 
 func toOpenApi(r *models.Resources) *openapi.ResourceResponse {

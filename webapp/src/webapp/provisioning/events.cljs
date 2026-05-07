@@ -280,18 +280,6 @@
 ;; ── Role plan flow ───────────────────────────────────────────────────────────
 ;; POST /resources/{name}/plan for each role row, async with mock delays.
 
-(defn- mock-plan-response
-  "Generates a mock plan response. ~80 % Create, ~10 % Update, ~10 % Failed."
-  [resource-name role]
-  (let [r     (rand)
-        status (cond (< r 0.1) "Failed" (< r 0.2) "Update" :else "Create")
-        pid   (str "plan-" (.now js/Date) "-" (rand-int 10000))]
-    {:plan-id    pid
-     :status     status
-     :session-id (str "sess-" pid)
-     :resource-name resource-name
-     :role       role}))
-
 (rf/reg-event-db
  :provisioning/set-plan-job
  (fn [db [_ plan-job]]
@@ -346,19 +334,38 @@
    (let [item (some #(when (= (:key %) item-key) %)
                     (get-in db [:provisioning :plan-job :items]))]
      (when item
-       ;; Mark as processing, then simulate async response
-       {:db (update-in db [:provisioning :plan-job :items]
-                       (fn [items]
-                         (mapv (fn [it]
-                                 (if (= (:key it) item-key)
-                                   (assoc it :status "processing")
-                                   it))
-                               items)))
-        :fx [[:dispatch-later
-              {:ms       (+ 800 (rand-int 2000))
-               :dispatch [:provisioning/plan-response
-                          item-key
-                          (mock-plan-response (:resource-name item) (:role item))]}]]}))))
+       (let [payload {:role        (:role item)
+                      :database    (:database item)
+                      :permissions (vec (.split (or (:permissions item) "") #"\s*,\s*"))}]
+         {:db (update-in db [:provisioning :plan-job :items]
+                         (fn [items]
+                           (mapv (fn [it]
+                                   (if (= (:key it) item-key)
+                                     (assoc it :status "processing")
+                                     it))
+                                 items)))
+          :fx [[:dispatch
+                [:fetch {:method     "POST"
+                         :uri        (str "/resources/" (:resource-name item) "/plan")
+                         :body       payload
+                         :on-success (fn [resp]
+                                       (rf/dispatch
+                                        [:provisioning/plan-response
+                                         item-key
+                                         {:plan-id       (:plan_id resp)
+                                          :status        (:status resp)
+                                          :session-id    (:session_id resp)
+                                          :resource-name (:resource-name item)
+                                          :role          (:role item)}]))
+                         :on-failure (fn [_err]
+                                       (rf/dispatch
+                                        [:provisioning/plan-response
+                                         item-key
+                                         {:plan-id       nil
+                                          :status        "Failed"
+                                          :session-id    nil
+                                          :resource-name (:resource-name item)
+                                          :role          (:role item)}]))}]]]})))))
 
 (rf/reg-event-db
  :provisioning/plan-response
@@ -382,14 +389,6 @@
 ;; ── Apply flow ──────────────────────────────────────────────────────────────
 ;; POST /resources/{name}/apply — executes the planned change.
 
-(defn- mock-apply-response
-  "~90 % success, ~10 % failure."
-  [item]
-  (let [ok? (> (rand) 0.1)]
-    {:status     (if ok? "Applied" "ApplyFailed")
-     :session-id (str "sess-apply-" (.now js/Date) "-" (rand-int 10000))
-     :plan-id    (:plan-id item)}))
-
 (rf/reg-event-fx
  :provisioning/apply-plan
  (fn [{:keys [db]} [_ item-key]]
@@ -403,11 +402,24 @@
                                    (assoc it :status "applying")
                                    it))
                                items)))
-        :fx [[:dispatch-later
-              {:ms       (+ 600 (rand-int 1500))
-               :dispatch [:provisioning/apply-response
-                          item-key
-                          (mock-apply-response item)]}]]}))))
+        :fx [[:dispatch
+              [:fetch {:method     "POST"
+                       :uri        (str "/resources/" (:resource-name item) "/apply")
+                       :body       {:plan_id (:plan-id item)}
+                       :on-success (fn [resp]
+                                     (rf/dispatch
+                                      [:provisioning/apply-response
+                                       item-key
+                                       {:status     (:status resp)
+                                        :session-id (:session_id resp)
+                                        :plan-id    (:plan_id resp)}]))
+                       :on-failure (fn [_err]
+                                     (rf/dispatch
+                                      [:provisioning/apply-response
+                                       item-key
+                                       {:status     "ApplyFailed"
+                                        :session-id nil
+                                        :plan-id    (:plan-id item)}]))}]]]}))))
 
 (rf/reg-event-db
  :provisioning/apply-response

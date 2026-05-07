@@ -109,9 +109,12 @@
                                                      {:resources          bulk-resources
                                                       :roles-by-resource  (or roles-by-resource {})}])
                                        (set-hub-screen :job-detail))}]
-       :job-detail [job-detail/job-detail-screen
-                    {:on-back              #(set-screen! :hub)
-                     :on-run-in-background #(set-screen! :hub)
+      :job-detail [job-detail/job-detail-screen
+                   {:on-back              #(set-screen! :hub)
+                    :on-done              (fn []
+                                            (rf/dispatch [:provisioning/fetch-resources])
+                                            (set-screen! :hub))
+                    :on-run-in-background #(set-screen! :hub)
                      :on-view-sessions     (fn [filter-opt]
                                              (let [plan-job @(rf/subscribe [:provisioning/plan-job])]
                                                (navigate-sessions!

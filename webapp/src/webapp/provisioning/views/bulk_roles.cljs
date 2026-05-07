@@ -1,12 +1,14 @@
 (ns webapp.provisioning.views.bulk-roles
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Card Checkbox
-                               Flex Heading Skeleton Text]]
-   ["lucide-react" :refer [AlertTriangle ArrowLeft Check ChevronDown
-                           ChevronRight Circle FileText Info Key Loader2
+                               Flex Skeleton Text]]
+   ["lucide-react" :refer [AlertTriangle Check ChevronDown
+                           ChevronRight Circle FileText Info Key
                            Upload XCircle]]
-   [reagent.core :as r]
-   [webapp.provisioning.data :as data]))
+   ["papaparse" :as papa]
+   ["react" :as react]
+   [webapp.provisioning.data :as data]
+   [webapp.provisioning.views.shared :as shared]))
 
 ;; ── Method card ────────────────────────────────────────────────────────────────
 (defn method-card [{:keys [selected icon title description badge on-click]}]
@@ -66,10 +68,9 @@
                     :style {:border-bottom (when (< i (dec (count all-roles)))
                                              "1px solid var(--gray-3)")
                             :min-height 44
-                            :background (cond
-                                          selected? "var(--indigo-1)"
-                                          (even? i) "var(--color-panel-solid)"
-                                          :else "var(--gray-1)")
+                            :background (if selected?
+                                          "var(--indigo-1)"
+                                          (shared/zebra-bg i))
                             :cursor "pointer"}}
            [:> Box {:style {:width 36 :flex-shrink 0}
                     :on-click #(.stopPropagation %)}
@@ -134,7 +135,7 @@
 
 (defn- valid-row [row idx total]
   [csv-row-base {:row row
-                 :bg (if (even? idx) "var(--color-panel-solid)" "var(--gray-1)")
+                 :bg (shared/zebra-bg idx)
                  :extra-style {:border-bottom (when (< idx (dec total)) "1px solid var(--gray-3)")}
                  :badge-content "Valid"
                  :badge-color "green"
@@ -264,14 +265,12 @@
                       :border-radius "var(--radius-2)"}}
       [csv-table-header]
 
-      ;; Conflict groups (rendered before flat rows)
       (into [:<>]
             (when has-conflicts?
               (for [[cid rows] (sort-by key conflicts)]
                 ^{:key cid}
                 [conflict-group-rows cid rows conflict-picks set-conflict-picks])))
 
-      ;; All non-conflict rows in a single list
       (into [:<>]
             (for [[i {:keys [type row]}] (map-indexed vector flat-rows)]
               (let [row-key (str (name type) "-" (:line-num row))]
@@ -283,286 +282,264 @@
 
      [skipped-resources-section skipped-resources]]))
 
-;; ── Main screen ────────────────────────────────────────────────────────────────
-(defn bulk-roles-screen
+;; ── Papa-parse helper ────────────────────────────────────────────────────────
+(defn- parse-roles-csv!
+  "Parses a CSV file using papaparse. Calls on-complete with parsed row maps."
+  [file on-complete]
+  (papa/parse file
+              #js {"header"         true
+                   "skipEmptyLines" true
+                   "complete"       (fn [results]
+                                     (let [rows (js->clj (.-data results) :keywordize-keys true)
+                                           mapped (vec
+                                                   (map-indexed
+                                                    (fn [idx row]
+                                                      {:resource-name (or (:resource_name row) "")
+                                                       :role          (or (:role row) "")
+                                                       :database      (or (:database row) "")
+                                                       :permissions   (or (:permissions row) "")
+                                                       :line-num      (+ idx 2)})
+                                                    rows))]
+                                       (on-complete mapped)))}))
+
+;; ── Main screen (inner, uses React hooks) ────────────────────────────────────
+(defn- bulk-roles-screen-inner
   [{:keys [resources on-apply on-cancel initial-method]}]
-  (let [method*              (r/atom (or initial-method "csv"))
-        csv-text             (r/atom nil)
-        csv-parsing          (r/atom false)
-        csv-parsed           (r/atom nil)
-        csv-classification   (r/atom nil)
-        conflict-picks       (r/atom {})
-        discovered-roles     (r/atom {})
-        roles-loading        (r/atom false)
-        selected-roles       (r/atom {})
-        load-timer           (r/atom nil)
-        res-list-open?       (r/atom false)
+  (let [[method set-method]                     (react/useState (or initial-method "csv"))
+        [csv-parsing set-csv-parsing]           (react/useState false)
+        [csv-parsed set-csv-parsed]             (react/useState nil)
+        [classification set-classification]     (react/useState nil)
+        [conflict-picks set-conflict-picks]     (react/useState {})
+        [discovered-roles set-discovered-roles] (react/useState {})
+        [roles-loading set-roles-loading]       (react/useState false)
+        [selected-roles set-selected-roles]     (react/useState {})
+        [res-list-open set-res-list-open]       (react/useState false)
+        load-timer-ref                          (react/useRef nil)
 
-        do-parse-csv!  (fn [text]
-                         (reset! csv-text text)
-                         (reset! csv-parsing true)
-                         (js/setTimeout
-                          (fn []
-                            (let [parsed (data/parse-csv-roles text)
-                                  classified (data/classify-csv-rows (or parsed []) resources)]
-                              (reset! csv-parsed parsed)
-                              (reset! csv-classification classified)
-                              (reset! conflict-picks {})
-                              (reset! csv-parsing false)))
-                          400))]
-    (fn []
-      (let [method   @method*
-            loading? @roles-loading
+        handle-file! (fn [file]
+                       (set-csv-parsing true)
+                       (parse-roles-csv!
+                        file
+                        (fn [parsed]
+                          (let [classified (data/classify-csv-rows parsed resources)]
+                            (set-csv-parsed parsed)
+                            (set-classification classified)
+                            (set-conflict-picks {})
+                            (set-csv-parsing false)))))
 
-            total-discovered (reduce + 0 (map count (vals @discovered-roles)))
-            total-selected   (reduce + 0 (map count (vals @selected-roles)))
+        clear-csv!   (fn []
+                       (set-csv-parsed nil)
+                       (set-classification nil)
+                       (set-conflict-picks {}))
 
-            toggle-role (fn [resource-id role-name]
-                          (swap! selected-roles
-                                 (fn [sr]
-                                   (let [s (get sr resource-id #{})]
-                                     (assoc sr resource-id
-                                            (if (contains? s role-name)
-                                              (disj s role-name)
-                                              (conj s role-name)))))))
+        loading?     roles-loading
 
-            classification @csv-classification
-            cur-picks      @conflict-picks
-            unresolved     (when classification
-                             (count (filter (fn [[cid _]]
-                                             (nil? (get cur-picks cid)))
-                                           (:conflicts classification))))
+        total-discovered (reduce + 0 (map count (vals discovered-roles)))
+        total-selected   (reduce + 0 (map count (vals selected-roles)))
 
-            apply-disabled? (or (and (= method "csv")
-                                     (or (nil? classification)
-                                         (and (seq (:conflicts classification))
-                                              (pos? (or unresolved 0)))))
-                                (and (= method "bind") (or loading? (zero? total-selected))))
+        toggle-role  (fn [resource-id role-name]
+                       (set-selected-roles
+                        (fn [sr]
+                          (let [s (get sr resource-id #{})]
+                            (assoc sr resource-id
+                                   (if (contains? s role-name)
+                                     (disj s role-name)
+                                     (conj s role-name)))))))
 
-            valid-count    (count (:valid classification))
-            conflict-count (count (:conflicts classification))
-            duplicate-count (count (:duplicates classification))
-            skipped-count  (+ (count (:skipped-csv classification))
-                              (count (:skipped-resources classification)))
+        cur-picks      conflict-picks
+        unresolved     (when classification
+                         (count (filter (fn [[cid _]]
+                                         (nil? (get cur-picks cid)))
+                                       (:conflicts classification))))
 
-            footer-info (cond
-                          (and (= method "csv") classification)
-                          (str valid-count " valid"
-                               (when (pos? duplicate-count)
-                                 (str " · " duplicate-count " duplicate"
-                                      (when (not= 1 duplicate-count) "s")))
-                               " · " conflict-count " conflict"
-                               (when (not= 1 conflict-count) "s")
-                               " · " skipped-count " skipped")
-                          (and (= method "bind") loading?)
-                          "Reading roles from databases…"
+        apply-disabled? (or (and (= method "csv")
+                                 (or (nil? classification)
+                                     (and (seq (:conflicts classification))
+                                          (pos? (or unresolved 0)))))
+                            (and (= method "bind") (or loading? (zero? total-selected))))
+
+        valid-count    (count (:valid classification))
+        conflict-count (count (:conflicts classification))
+        duplicate-count (count (:duplicates classification))
+        skipped-count  (+ (count (:skipped-csv classification))
+                          (count (:skipped-resources classification)))
+
+        footer-info (cond
+                      (and (= method "csv") classification)
+                      (str valid-count " valid"
+                           (when (pos? duplicate-count)
+                             (str " · " duplicate-count " duplicate"
+                                  (when (not= 1 duplicate-count) "s")))
+                           " · " conflict-count " conflict"
+                           (when (not= 1 conflict-count) "s")
+                           " · " skipped-count " skipped")
+                      (and (= method "bind") loading?)
+                      "Reading roles from databases…"
+                      (= method "bind")
+                      (str total-discovered " roles discovered · " total-selected " selected")
+                      :else "Upload a CSV to continue")]
+
+    [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
+     [shared/bulk-screen-header {:title          "Provision — roles"
+                                 :resource-count (count resources)
+                                 :on-back        on-cancel}]
+
+     ;; Method cards
+     [:> Flex {:gap "3" :mb "5"}
+      [method-card {:selected (= method "csv")
+                    :icon     [:> Upload {:size 18}]
+                    :title    "Import from CSV"
+                    :description "Define roles in a CSV file and bulk-apply across all resources."
+                    :badge    "Recommended"
+                    :on-click (fn []
+                                (set-method "csv")
+                                (when (.-current load-timer-ref)
+                                  (js/clearTimeout (.-current load-timer-ref))))}]
+      [method-card {:selected (= method "bind")
+                    :icon     [:> Key {:size 18}]
+                    :title    "Bind existing roles"
+                    :description "Read and select roles from the database — no new roles created."
+                    :on-click (fn []
+                                (set-method "bind")
+                                (set-roles-loading true)
+                                (set-selected-roles {})
+                                (when (.-current load-timer-ref)
+                                  (js/clearTimeout (.-current load-timer-ref)))
+                                (set! (.-current load-timer-ref)
+                                      (js/setTimeout
+                                       (fn []
+                                         (set-discovered-roles
+                                          (into {} (map (fn [r]
+                                                          [(:id r) (data/get-mock-roles (:db-type r))])
+                                                        resources)))
+                                         (set-roles-loading false))
+                                       1500)))}]]
+
+     ;; ── CSV mode — upload ──
+     (when (and (= method "csv") (nil? csv-parsed))
+       [:> Flex {:direction "column" :gap "3" :style {:flex 1}}
+        ;; Collapsible selected-resources list
+        [:> Box {:style {:border "1px solid var(--gray-5)"
+                         :border-radius "var(--radius-2)"
+                         :background "var(--gray-2)"}}
+         [:> Flex {:align "center" :gap "2" :px "3" :py "2"
+                   :on-click #(set-res-list-open (not res-list-open))
+                   :style {:cursor "pointer" :user-select "none"}}
+          (if res-list-open
+            [:> ChevronDown {:size 14 :color "var(--gray-9)"}]
+            [:> ChevronRight {:size 14 :color "var(--gray-9)"}])
+          [:> Text {:size "2" :weight "medium" :color "gray"}
+           (str (count resources) " selected resource"
+                (when (not= 1 (count resources)) "s"))]
+          [:> Text {:size "1" :color "gray" :style {:margin-left "auto"}}
+           "Use these names in the resource_name column"]]
+         (when res-list-open
+           [:> Flex {:gap "2" :px "3" :pb "3" :style {:flex-wrap "wrap"}}
+            (for [r (sort-by :name resources)]
+              ^{:key (:id r)}
+              [:> Badge {:color "gray" :variant "outline" :size "1"
+                         :style {:font-family "var(--font-mono)" :font-size 11}}
+               (:name r)])])]
+
+        [shared/csv-drop-zone {:on-file   handle-file!
+                               :hint-text "Columns: resource_name, role, database, permissions"
+                               :loading?  csv-parsing}]
+        [:> Flex {:justify "end"}
+         [:> Button {:variant "ghost" :size "1" :color "gray"}
+          [:> FileText {:size 12}] " Download template"]]])
+
+     ;; ── CSV mode — parsed preview ──
+     (when (and (= method "csv") csv-parsed)
+       [:<>
+        [:> Flex {:align "center" :justify "between" :mb "3"}
+         [:> Text {:size "2" :weight "medium"}
+          (str (count csv-parsed) " rows parsed")]
+         [:> Button {:variant "ghost" :size "1" :color "gray"
+                     :on-click clear-csv!}
+          "Upload different file"]]
+        [csv-preview {:classification     classification
+                      :conflict-picks     cur-picks
+                      :set-conflict-picks set-conflict-picks}]])
+
+     ;; ── Bind mode — loading ──
+     (when (and (= method "bind") loading?)
+       [:> Box {:style {:flex 1 :border "1px solid var(--gray-5)"
+                        :border-radius "var(--radius-2)" :overflow "hidden"}}
+        [:> Flex {:px "3" :py "2"
+                  :style {:background "var(--gray-3)"
+                          :border-bottom "1px solid var(--gray-5)"}}
+         [:> Text {:size "1" :color "gray" :weight "medium"}
+          (str "Reading roles from " (count resources) " resources…")]]
+        (for [i (range 8)]
+          ^{:key i}
+          [:> Flex {:px "3" :py "3" :align "center" :gap "3"
+                    :style {:border-bottom (when (< i 7) "1px solid var(--gray-3)")}}
+           [:> Skeleton {:width "20px" :height "16px"}]
+           [:> Skeleton {:width "140px" :height "14px"}]
+           [:> Skeleton {:width "120px" :height "14px"}]
+           [:> Skeleton {:width "70px" :height "20px"}]
+           [:> Skeleton {:width "50px" :height "14px"}]])])
+
+     ;; ── Bind mode — role selection ──
+     (when (and (= method "bind") (not loading?))
+       [:<>
+        [:> Callout.Root {:color "blue" :mb "3" :size "1"}
+         [:> Callout.Icon [:> Info {:size 14}]]
+         [:> Callout.Text {:size "1"}
+          "Select the roles to bring into Hoop. A Hoop user will be created for each selected role and bound to the existing database role — no new roles are created in the database."]]
+        [role-discovery-table
+         {:resources        resources
+          :discovered-roles discovered-roles
+          :selected-roles   selected-roles
+          :on-toggle        toggle-role}]])
+
+     ;; Footer
+     [shared/bulk-footer
+      {:info-text       footer-info
+       :on-cancel       on-cancel
+       :apply-disabled? apply-disabled?
+       :apply-label     (cond
                           (= method "bind")
-                          (str total-discovered " roles discovered · " total-selected " selected")
-                          :else "Upload a CSV to continue")]
+                          (str "Bind " total-selected " role"
+                               (when (not= 1 total-selected) "s") " →")
+                          (= method "csv")
+                          (str "Provision " (+ valid-count
+                                                (count (filter #(get cur-picks (key %))
+                                                               (:conflicts (or classification {})))))
+                               " roles →")
+                          :else
+                          (str "Provision " (count resources)
+                               (if (= 1 (count resources)) " resource" " resources") " →"))
+       :on-apply        (fn []
+                          (let [roles-by-resource
+                                (cond
+                                  (= method "csv")
+                                  (when classification
+                                    (let [kept-conflict-rows
+                                          (vec (keep (fn [[cid rows]]
+                                                       (let [ln (get cur-picks cid)]
+                                                         (some #(when (= (:line-num %) ln) %) rows)))
+                                                     (:conflicts classification)))
+                                          all-valid (concat (:valid classification) kept-conflict-rows)
+                                          by-name   (group-by :resource-name all-valid)
+                                          res-by-name (into {} (map (fn [r] [(:name r) r]) resources))]
+                                      (into {}
+                                            (keep (fn [[rname rows]]
+                                                    (when-let [r (get res-by-name rname)]
+                                                      [(:id r)
+                                                       (vec (map (fn [row]
+                                                                   {:role        (:role row)
+                                                                    :database    (:database row)
+                                                                    :permissions (:permissions row)})
+                                                                 rows))]))
+                                                  by-name))))
 
-        [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
-         [:> Flex {:align "center" :gap "2" :mb "1"}
-          [:> Button {:variant "ghost" :color "gray" :size "2" :on-click on-cancel}
-           [:> ArrowLeft {:size 14}] " Back"]]
-         [:> Flex {:align "baseline" :gap "3" :mb "5"}
-          [:> Heading {:size "7"} "Provision — roles"]
-          [:> Badge {:color "gray" :variant "soft"} (str (count resources) " resources")]]
+                                  (= method "bind")
+                                  (into {}
+                                        (map (fn [[id s]] [id (vec s)])
+                                             selected-roles)))]
+                            (on-apply method roles-by-resource)))}]]))
 
-         ;; Method cards
-         [:> Flex {:gap "3" :mb "5"}
-          [method-card {:selected (= method "csv")
-                        :icon     [:> Upload {:size 18}]
-                        :title    "Import from CSV"
-                        :description "Define roles in a CSV file and bulk-apply across all resources."
-                        :badge    "Recommended"
-                        :on-click (fn []
-                                    (reset! method* "csv")
-                                    (when @load-timer (js/clearTimeout @load-timer)))}]
-          [method-card {:selected (= method "bind")
-                        :icon     [:> Key {:size 18}]
-                        :title    "Bind existing roles"
-                        :description "Read and select roles from the database — no new roles created."
-                        :on-click (fn []
-                                    (reset! method* "bind")
-                                    (reset! roles-loading true)
-                                    (reset! selected-roles {})
-                                    (when @load-timer (js/clearTimeout @load-timer))
-                                    (reset! load-timer
-                                            (js/setTimeout
-                                             (fn []
-                                               (reset! discovered-roles
-                                                       (into {} (map (fn [r]
-                                                                       [(:id r) (data/get-mock-roles (:db-type r))])
-                                                                     resources)))
-                                               (reset! roles-loading false))
-                                             1500)))}]]
-
-         ;; ── CSV mode — upload ──
-         (when (and (= method "csv") (nil? @csv-parsed))
-           [:> Flex {:direction "column" :gap "3" :style {:flex 1}}
-            ;; Collapsible selected-resources list
-            [:> Box {:style {:border "1px solid var(--gray-5)"
-                             :border-radius "var(--radius-2)"
-                             :background "var(--gray-2)"}}
-             [:> Flex {:align "center" :gap "2" :px "3" :py "2"
-                       :on-click #(swap! res-list-open? not)
-                       :style {:cursor "pointer" :user-select "none"}}
-              (if @res-list-open?
-                [:> ChevronDown {:size 14 :color "var(--gray-9)"}]
-                [:> ChevronRight {:size 14 :color "var(--gray-9)"}])
-              [:> Text {:size "2" :weight "medium" :color "gray"}
-               (str (count resources) " selected resource"
-                    (when (not= 1 (count resources)) "s"))]
-              [:> Text {:size "1" :color "gray" :style {:margin-left "auto"}}
-               "Use these names in the resource_name column"]]
-             (when @res-list-open?
-               [:> Flex {:gap "2" :px "3" :pb "3" :style {:flex-wrap "wrap"}}
-                (for [r (sort-by :name resources)]
-                  ^{:key (:id r)}
-                  [:> Badge {:color "gray" :variant "outline" :size "1"
-                             :style {:font-family "var(--font-mono)" :font-size 11}}
-                   (:name r)])])]
-
-            [:> Box {:on-click (fn []
-                                 (let [input (js/document.createElement "input")]
-                                   (set! (.-type input) "file")
-                                   (set! (.-accept input) ".csv,text/csv")
-                                   (set! (.-onchange input)
-                                         (fn [e]
-                                           (let [file (-> e .-target .-files (aget 0))]
-                                             (when file
-                                               (let [reader (js/FileReader.)]
-                                                 (set! (.-onload reader)
-                                                       (fn [evt]
-                                                         (do-parse-csv! (-> evt .-target .-result))))
-                                                 (.readAsText reader file))))))
-                                   (.click input)))
-                     :on-drop  (fn [e]
-                                 (.preventDefault e)
-                                 (let [file (-> e .-dataTransfer .-files (aget 0))]
-                                   (when file
-                                     (let [reader (js/FileReader.)]
-                                       (set! (.-onload reader)
-                                             (fn [evt]
-                                               (do-parse-csv! (-> evt .-target .-result))))
-                                       (.readAsText reader file)))))
-                     :on-drag-over #(.preventDefault %)
-                     :style {:border "2px dashed var(--gray-6)"
-                             :border-radius "var(--radius-3)"
-                             :padding 40 :background "var(--gray-2)"
-                             :text-align "center" :cursor "pointer"
-                             :flex 1 :display "flex" :align-items "center"
-                             :justify-content "center"}}
-             (if @csv-parsing
-               [:> Flex {:direction "column" :align "center" :gap "2"}
-                [:span {:class "animate-spin inline-flex" :style {:color "var(--indigo-9)"}}
-                 [:> Loader2 {:size 20}]]
-                [:> Text {:size "2" :color "gray"} "Parsing CSV…"]]
-               [:> Flex {:direction "column" :align "center" :gap "2"}
-                [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
-                [:> Text {:size "2" :color "gray"}
-                 "Drop your CSV here or "
-                 [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
-                [:> Text {:size "1" :color "gray"}
-                 "Columns: resource_name, role, database, permissions"]])]
-            [:> Flex {:justify "end"}
-             [:> Button {:variant "ghost" :size "1" :color "gray"}
-              [:> FileText {:size 12}] " Download template"]]])
-
-         ;; ── CSV mode — parsed preview ──
-         (when (and (= method "csv") @csv-parsed)
-           [:<>
-            [:> Flex {:align "center" :justify "between" :mb "3"}
-             [:> Text {:size "2" :weight "medium"}
-              (str (count @csv-parsed) " rows parsed")]
-             [:> Button {:variant "ghost" :size "1" :color "gray"
-                         :on-click (fn []
-                                     (reset! csv-parsed nil)
-                                     (reset! csv-classification nil)
-                                     (reset! csv-text nil)
-                                     (reset! conflict-picks {}))}
-              "Upload different file"]]
-            [csv-preview {:classification     classification
-                          :conflict-picks     cur-picks
-                          :set-conflict-picks #(reset! conflict-picks %)}]])
-
-         ;; ── Bind mode — loading ──
-         (when (and (= method "bind") loading?)
-           [:> Box {:style {:flex 1 :border "1px solid var(--gray-5)"
-                            :border-radius "var(--radius-2)" :overflow "hidden"}}
-            [:> Flex {:px "3" :py "2"
-                      :style {:background "var(--gray-3)"
-                              :border-bottom "1px solid var(--gray-5)"}}
-             [:> Text {:size "1" :color "gray" :weight "medium"}
-              (str "Reading roles from " (count resources) " resources…")]]
-            (for [i (range 8)]
-              ^{:key i}
-              [:> Flex {:px "3" :py "3" :align "center" :gap "3"
-                        :style {:border-bottom (when (< i 7) "1px solid var(--gray-3)")}}
-               [:> Skeleton {:width "20px" :height "16px"}]
-               [:> Skeleton {:width "140px" :height "14px"}]
-               [:> Skeleton {:width "120px" :height "14px"}]
-               [:> Skeleton {:width "70px" :height "20px"}]
-               [:> Skeleton {:width "50px" :height "14px"}]])])
-
-         ;; ── Bind mode — role selection ──
-         (when (and (= method "bind") (not loading?))
-           [:<>
-            [:> Callout.Root {:color "blue" :mb "3" :size "1"}
-             [:> Callout.Icon [:> Info {:size 14}]]
-             [:> Callout.Text {:size "1"}
-              "Select the roles to bring into Hoop. A Hoop user will be created for each selected role and bound to the existing database role — no new roles are created in the database."]]
-            [role-discovery-table
-             {:resources        resources
-              :discovered-roles @discovered-roles
-              :selected-roles   @selected-roles
-              :on-toggle        toggle-role}]])
-
-         ;; Footer
-         [:> Flex {:align "center" :justify "between" :pt "4" :mt "4"
-                   :style {:border-top "1px solid var(--gray-4)" :flex-shrink 0}}
-          [:> Text {:size "1" :color "gray"} footer-info]
-          [:> Flex {:gap "3"}
-           [:> Button {:variant "outline" :color "gray" :on-click on-cancel} "Cancel"]
-           [:> Button {:disabled apply-disabled?
-                       :on-click (fn []
-                                   (let [roles-by-resource
-                                         (cond
-                                           (= method "csv")
-                                           (when classification
-                                             (let [kept-conflict-rows
-                                                   (vec (keep (fn [[cid rows]]
-                                                                (let [ln (get cur-picks cid)]
-                                                                  (some #(when (= (:line-num %) ln) %) rows)))
-                                                              (:conflicts classification)))
-                                                   all-valid (concat (:valid classification) kept-conflict-rows)
-                                                   by-name   (group-by :resource-name all-valid)
-                                                   res-by-name (into {} (map (fn [r] [(:name r) r]) resources))]
-                                               (into {}
-                                                     (keep (fn [[rname rows]]
-                                                             (when-let [r (get res-by-name rname)]
-                                                               [(:id r)
-                                                                (vec (map (fn [row]
-                                                                            {:role        (:role row)
-                                                                             :database    (:database row)
-                                                                             :permissions (:permissions row)})
-                                                                          rows))]))
-                                                           by-name))))
-
-                                           (= method "bind")
-                                           (into {}
-                                                 (map (fn [[id s]] [id (vec s)])
-                                                      @selected-roles)))]
-                                     (on-apply method roles-by-resource)))}
-            (cond
-              (= method "bind")
-              (str "Bind " total-selected " role"
-                   (when (not= 1 total-selected) "s") " →")
-              (= method "csv")
-              (str "Provision " (+ valid-count
-                                    (count (filter #(get cur-picks (key %))
-                                                   (:conflicts (or classification {})))))
-                   " roles →")
-              :else
-              (str "Provision " (count resources)
-                   (if (= 1 (count resources)) " resource" " resources") " →"))]]]]))))
+(defn bulk-roles-screen
+  [props]
+  [:f> bulk-roles-screen-inner props])
