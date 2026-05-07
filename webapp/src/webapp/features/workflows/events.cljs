@@ -57,20 +57,11 @@
        (assoc-in [:workflows :status] :error)
        (assoc-in [:workflows :error] error))))
 
-(rf/reg-event-fx
- :workflows/toggle-step
+(rf/reg-event-db
+ :workflows/set-expanded
  (fn
-   [{:keys [db]} [_ session]]
-   (let [session-id (:id session)
-         expanded (get-in db [:workflows :expanded] #{})
-         already-expanded? (contains? expanded session-id)
-         already-loaded? (contains? (get-in db [:workflows :step-details] {}) session-id)
-         next-expanded (if already-expanded?
-                         (disj expanded session-id)
-                         (conj expanded session-id))]
-     (cond-> {:db (assoc-in db [:workflows :expanded] next-expanded)}
-       (and (not already-expanded?) (not already-loaded?))
-       (assoc :fx [[:dispatch [:workflows/get-step-detail session]]])))))
+   [db [_ expanded-set]]
+   (assoc-in db [:workflows :expanded] (set expanded-set))))
 
 (rf/reg-event-fx
  :workflows/get-step-detail

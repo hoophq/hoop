@@ -253,14 +253,6 @@
           m (mod total-min 60)]
       (str (int h) "h " (pad2 (int m)) "m"))))
 
-(defn time-offset->compact
-  "Render a relative time offset (in ms) prefixed with '+', or '—' for nil."
-  [ms]
-  (cond
-    (nil? ms) "—"
-    (zero? ms) "+0.0s"
-    :else (str "+" (duration-ms->compact ms))))
-
 (defn iso->ms
   "Parse an ISO 8601 string into a millisecond epoch, or nil if blank."
   [iso]

@@ -54,12 +54,8 @@
                                    admin?)
                                (= (:verb session) "exec")
                                (not (= session-status "done")))
-        ;; Check if we're on a dedicated session page (e.g., /sessions/{id}).
-        ;; `/sessions/workflows/<id>` is the workflow timeline — session-details
-        ;; opens there as a modal, so the close button must still render.
         current-path (.-pathname (.-location js/window))
-        is-dedicated-page? (and (cs/starts-with? current-path "/sessions/")
-                                (not (cs/starts-with? current-path "/sessions/workflows/")))
+        is-dedicated-page? (cs/starts-with? current-path "/sessions/")
         copy-to-clipboard (fn []
                             (-> (js/navigator.clipboard.writeText session-url)
                                 (.then #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))

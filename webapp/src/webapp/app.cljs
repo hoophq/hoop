@@ -536,7 +536,11 @@
       (js/decodeURIComponent s)
       (catch :default _ s))))
 
-(defmethod routes/panels :sessions-workflow-panel []
+(defmethod routes/panels :workflows-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop [workflows/landing-page]])
+
+(defmethod routes/panels :workflow-details-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         encoded (-> current-route :route-params :correlation-id)

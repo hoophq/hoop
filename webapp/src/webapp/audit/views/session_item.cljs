@@ -46,7 +46,7 @@
                    "transition-colors duration-150")
        :on-click (fn [e]
                    (.stopPropagation e)
-                   (rf/dispatch [:navigate :sessions-workflow
+                   (rf/dispatch [:navigate :workflow-details
                                  {}
                                  :correlation-id
                                  (js/encodeURIComponent correlation-id)]))}

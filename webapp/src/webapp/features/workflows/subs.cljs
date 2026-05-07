@@ -45,10 +45,10 @@
    (:total state)))
 
 (rf/reg-sub
- :workflows/expanded?
+ :workflows/expanded-set
  :<- [:workflows/state]
- (fn [state [_ session-id]]
-   (contains? (:expanded state) session-id)))
+ (fn [state _]
+   (:expanded state)))
 
 (rf/reg-sub
  :workflows/step-detail
@@ -71,7 +71,7 @@
  :workflows/summary
  :<- [:workflows/sessions]
  (fn [sessions _]
-   (let [steps (count sessions)
+   (let [total-sessions (count sessions)
          statuses (mapv session-status sessions)
          success-count (count (filter #{:success} statuses))
          error-count (count (filter #{:error} statuses))
@@ -80,7 +80,16 @@
          ends (keep #(formatters/iso->ms (:end_date %)) sessions)
          t-start (when (seq starts) (apply min starts))
          t-end (when (seq ends) (apply max ends))
-         duration-ms (when (and t-start t-end) (max 0 (- t-end t-start)))
+         ;; Sum each session's elapsed time so idle gaps between steps don't
+         ;; inflate the total. Sessions that haven't ended yet are skipped.
+         per-session-durations (keep (fn [s]
+                                       (let [start (formatters/iso->ms (:start_date s))
+                                             end (formatters/iso->ms (:end_date s))]
+                                         (when (and start end)
+                                           (max 0 (- end start)))))
+                                     sessions)
+         duration-ms (when (seq per-session-durations)
+                       (reduce + per-session-durations))
          identities (->> sessions
                          (map (fn [s]
                                 (or (:user_name s)
@@ -88,13 +97,8 @@
                                     (:user_id s))))
                          (remove nil?)
                          distinct)
-         machine? (every? #(= "machine" (:identity_type %)) sessions)
-         overall-status (cond
-                          (pos? running-count) :running
-                          (pos? error-count) :error
-                          (zero? steps) :empty
-                          :else :success)]
-     {:steps steps
+         machine? (every? #(= "machine" (:identity_type %)) sessions)]
+     {:sessions-count total-sessions
       :success-count success-count
       :error-count error-count
       :running-count running-count
@@ -102,18 +106,9 @@
       :end-ms t-end
       :duration-ms duration-ms
       :identities identities
-      :machine? machine?
-      :status overall-status})))
+      :machine? machine?})))
 
 (rf/reg-sub
- :workflows/step-status
+ :workflows/session-status
  (fn [_ [_ session]]
    (session-status session)))
-
-(rf/reg-sub
- :workflows/step-offset-ms
- :<- [:workflows/summary]
- (fn [summary [_ session]]
-   (when-let [start (formatters/iso->ms (:start_date session))]
-     (when-let [t0 (:start-ms summary)]
-       (max 0 (- start t0))))))

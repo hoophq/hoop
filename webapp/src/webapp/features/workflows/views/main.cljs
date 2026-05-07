@@ -1,39 +1,38 @@
 (ns webapp.features.workflows.views.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text]]
-   ["lucide-react" :refer [Workflow]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Text Tooltip]]
+   ["lucide-react" :refer [ArrowLeft Workflow]]
    [re-frame.core :as rf]
    [webapp.features.workflows.events]
    [webapp.features.workflows.subs]
    [webapp.features.workflows.views.header :as header]
+   [webapp.features.workflows.views.landing :as landing]
    [webapp.features.workflows.views.timeline :as timeline]))
 
-(defn- page-shell
-  "Atmospheric page background. The page is clean and editorial — a faint
-   dotted veil at the very top of the viewport gives the dark hero card
-   something to breathe against."
-  [& children]
-  [:> Box {:class "relative h-full overflow-y-auto bg-[--gray-1]"}
-   ;; Decorative dot grid that fades out below the hero
-   [:> Box {:aria-hidden "true"
-            :class "pointer-events-none absolute inset-x-0 top-0 h-[420px]"
-            :style {:backgroundImage
-                    "radial-gradient(circle at 1px 1px, var(--gray-a4) 1px, transparent 0)"
-                    :backgroundSize "20px 20px"
-                    :maskImage "linear-gradient(to bottom, black, transparent)"
-                    :WebkitMaskImage "linear-gradient(to bottom, black, transparent)"}}]
-   (into [:> Box {:class "relative flex flex-col px-4 py-10 sm:px-6 lg:p-10"}]
-         children)])
+(defn- breadcrumb []
+  [:> Flex {:align "center" :gap "2"}
+   [:> Tooltip {:content "Back to Workflows"}
+    [:> IconButton {:size "2" :variant "ghost" :color "gray"
+                    :on-click #(rf/dispatch [:navigate :workflows])}
+     [:> ArrowLeft {:size 16}]]]
+   [:> Flex {:align "center" :gap "1"}
+    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"
+              :as "button"
+              :role "link"
+              :style {:cursor "pointer"}
+              :on-click #(rf/dispatch [:navigate :workflows])}
+     "Workflows"]
+    [:> Text {:size "2" :class "text-[--gray-9]"} "/"]
+    [:> Text {:size "2" :weight "medium" :class "text-[--gray-12]"}
+     "Timeline"]]])
 
 (defn- loading-skeleton []
   [:> Flex {:direction "column" :gap "5"}
-   [:> Box {:class "h-44 rounded-6 bg-[--gray-3] animate-pulse"}]
-   [:> Flex {:direction "column" :gap "3"}
+   [:> Box {:class "h-32 rounded-4 bg-[--gray-3] animate-pulse"}]
+   [:> Flex {:direction "column" :gap "2"}
     (for [i (range 4)]
       ^{:key i}
-      [:> Flex {:gap "4" :align "center"}
-       [:> Box {:class "w-8 h-8 rounded-full bg-[--gray-3] animate-pulse shrink-0"}]
-       [:> Box {:class "grow h-16 rounded-4 bg-[--gray-3] animate-pulse"}]])]])
+      [:> Box {:class "h-14 rounded-3 bg-[--gray-3] animate-pulse"}])]])
 
 (defn- error-state [correlation-id]
   [:> Flex {:direction "column" :align "center" :justify "center"
@@ -46,16 +45,16 @@
     [:> Text {:size "4" :weight "bold" :class "text-[--gray-12]"}
      "We couldn't load this workflow"]
     [:> Text {:size "2" :class "text-[--gray-11]"}
-     "Try again, or head back to the sessions list."]]
+     "Try again, or head back to Workflows."]]
    [:> Flex {:gap "3"}
     [:> Button {:size "2" :variant "soft" :color "gray"
                 :on-click #(rf/dispatch [:workflows/get correlation-id])}
      "Retry"]
     [:> Button {:size "2" :variant "outline" :color "gray"
-                :on-click #(rf/dispatch [:navigate :sessions])}
-     "Back to sessions"]]])
+                :on-click #(rf/dispatch [:navigate :workflows])}
+     "Back to Workflows"]]])
 
-(defn- empty-state [correlation-id]
+(defn- empty-state [_]
   [:> Flex {:direction "column" :align "center" :justify "center"
             :gap "5"
             :class "py-16 text-center"}
@@ -75,26 +74,36 @@
      [:code {:class "font-mono text-[--gray-12]"} "correlation_id"]
      " field on the REST API."]]
    [:> Button {:size "2" :variant "soft" :color "gray"
-               :on-click #(rf/dispatch [:navigate :sessions])}
-    "Back to sessions"]])
+               :on-click #(rf/dispatch [:navigate :workflows])}
+    "Back to Workflows"]])
 
 (defn page
-  "Top-level page component for `/sessions/workflows/:correlation-id`.
-   Data fetching is triggered from the route panel multimethod, so this
-   component just renders the current `:workflows` state."
+  "Top-level page component for `/workflows/:correlation-id`."
   [correlation-id]
   (let [status @(rf/subscribe [:workflows/status])
         summary @(rf/subscribe [:workflows/summary])
         sessions @(rf/subscribe [:workflows/sessions])]
-    [page-shell
-     [:> Box {:class "max-w-5xl w-full mx-auto space-y-radix-7"}
-      (case status
-        :loading [loading-skeleton]
-        :error   [error-state correlation-id]
-        (:idle :ready)
-        [:<>
-         [header/header correlation-id summary]
-         (if (zero? (count sessions))
-           [empty-state correlation-id]
-           [timeline/timeline])]
-        [loading-skeleton])]]))
+    [:> Box {:class "min-h-screen bg-gray-1"}
+     [:> Box {:class "px-radix-7 pb-radix-7"}
+      [:> Box {:class (str "sticky top-0 z-10 bg-[--gray-1] pb-radix-5 "
+                           "-mx-radix-7 px-radix-7 pt-radix-7")}
+       [:> Box {:class "mb-radix-3"}
+        [breadcrumb]]
+       [:> Heading {:as "h2" :size "8" :class "mb-radix-3"} "Workflow Timeline"]
+       [:> Text {:size "3" :class "text-[--gray-11]"}
+        "Inspect each session that ran with this correlation ID."]]
+
+      [:> Box {:class "mt-radix-5 space-y-radix-6"}
+       (case status
+         :loading [loading-skeleton]
+         :error   [error-state correlation-id]
+         (:idle :ready)
+         [:<>
+          [header/header correlation-id summary]
+          (if (zero? (count sessions))
+            [empty-state correlation-id]
+            [timeline/timeline])]
+         [loading-skeleton])]]]))
+
+(defn landing-page []
+  [landing/main])

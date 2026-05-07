@@ -4,7 +4,7 @@
    ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
-                           Sparkles]]
+                           Sparkles Workflow]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -20,6 +20,8 @@
                 [:> BookUp2 {:size size}])
    "Sessions" (fn [& [{:keys [size] :or {size 24}}]]
                 [:> GalleryVerticalEnd {:size size}])
+   "Workflows" (fn [& [{:keys [size] :or {size 24}}]]
+                 [:> Workflow {:size size}])
    "Reviews" (fn [& [{:keys [size] :or {size 24}}]]
                [:> Inbox {:size size}])
    "RunbooksSetup" (fn [& [{:keys [size] :or {size 24}}]]
@@ -104,6 +106,13 @@
     :icon (get icons-registry "Sessions")
     :uri (routes/url-for :sessions)
     :navigate :sessions
+    :free-feature? true
+    :admin-only? false}
+   {:name "Workflows"
+    :label "Workflows"
+    :icon (get icons-registry "Workflows")
+    :uri (routes/url-for :workflows)
+    :navigate :workflows
     :free-feature? true
     :admin-only? false}
    {:name "Search"
