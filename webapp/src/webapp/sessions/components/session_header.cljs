@@ -26,6 +26,7 @@
                                       :params params
                                       :connection-name connection-name
                                       :repository repository
+                                      :correlation-id (:correlation_id session)
                                       :on-success on-success
                                       :on-failure on-failure}]))
       (rf/dispatch [:audit->clear-session-details-state {:status :loading}]))

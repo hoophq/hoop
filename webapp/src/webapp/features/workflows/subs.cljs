@@ -77,36 +77,14 @@
          error-count (count (filter #{:error} statuses))
          running-count (count (filter #{:running} statuses))
          starts (keep #(formatters/iso->ms (:start_date %)) sessions)
-         ends (keep #(formatters/iso->ms (:end_date %)) sessions)
          t-start (when (seq starts) (apply min starts))
-         t-end (when (seq ends) (apply max ends))
-         ;; Sum each session's elapsed time so idle gaps between steps don't
-         ;; inflate the total. Sessions that haven't ended yet are skipped.
-         per-session-durations (keep (fn [s]
-                                       (let [start (formatters/iso->ms (:start_date s))
-                                             end (formatters/iso->ms (:end_date s))]
-                                         (when (and start end)
-                                           (max 0 (- end start)))))
-                                     sessions)
-         duration-ms (when (seq per-session-durations)
-                       (reduce + per-session-durations))
-         identities (->> sessions
-                         (map (fn [s]
-                                (or (:user_name s)
-                                    (:user s)
-                                    (:user_id s))))
-                         (remove nil?)
-                         distinct)
-         machine? (every? #(= "machine" (:identity_type %)) sessions)]
+         last-session-start (when (seq starts) (apply max starts))]
      {:sessions-count total-sessions
       :success-count success-count
       :error-count error-count
       :running-count running-count
       :start-ms t-start
-      :end-ms t-end
-      :duration-ms duration-ms
-      :identities identities
-      :machine? machine?})))
+      :last-session-start-ms last-session-start})))
 
 (rf/reg-sub
  :workflows/session-status

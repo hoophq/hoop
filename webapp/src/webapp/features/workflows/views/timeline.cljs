@@ -38,13 +38,12 @@
 (defn- session-row
   "One accordion item. Owns its own subscriptions so the parent timeline
    doesn't deref per-row state on every render."
-  [session position]
+  [session]
   (let [session-id (:id session)
         status @(rf/subscribe [:workflows/session-status session])
         step-detail @(rf/subscribe [:workflows/step-detail session-id])]
     [session-card/session-item
      {:session session
-      :position position
       :status status
       :duration-ms (session->duration-ms session)
       :step-detail step-detail}]))
@@ -75,8 +74,6 @@
                              :onValueChange on-value-change
                              :className "w-full"}
       (doall
-       (map-indexed
-        (fn [idx session]
-          ^{:key (:id session)}
-          [session-row session (inc idx)])
-        sessions))]]))
+       (for [session sessions]
+         ^{:key (:id session)}
+         [session-row session]))]]))

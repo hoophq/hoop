@@ -67,26 +67,13 @@
     (formatters/time-parsed->readable-datetime
      (.toISOString (js/Date. ms)))))
 
-(defn- identity-meta-value
-  [{:keys [identities machine?]}]
-  (cond
-    (zero? (count identities))
-    "—"
-
-    (= 1 (count identities))
-    (str (first identities)
-         (when machine? " · machine"))
-
-    :else
-    (str (count identities) " identities")))
-
 ;; ─── Summary panel ──────────────────────────────────────────────────────────
 
 (defn- summary-panel
   "Light, compact summary that sits above the accordion list."
   [correlation-id summary]
-  (let [identity-text (identity-meta-value summary)
-        started-abs (or (absolute-time (:start-ms summary)) "—")
+  (let [started-abs (or (absolute-time (:start-ms summary)) "—")
+        last-session-abs (or (absolute-time (:last-session-start-ms summary)) "—")
         sessions-count (:sessions-count summary)
         success-count (:success-count summary)
         error-count (:error-count summary)
@@ -109,9 +96,8 @@
       ;; Meta row
       [:> Flex {:gap "8" :wrap "wrap"}
        [meta-pair "Sessions" (str sessions-count)]
-       [meta-pair "Total duration" (formatters/duration-ms->compact (:duration-ms summary))]
        [meta-pair "Started" started-abs]
-       [meta-pair "Initiator" identity-text]
+       [meta-pair "Last session at" last-session-abs]
        [meta-pair "Succeeded" (str success-count)]
        (when (pos? error-count)
          [meta-pair "Errors" (str error-count)])
