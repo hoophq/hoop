@@ -1,7 +1,7 @@
 (ns webapp.sessions.components.session-header
   (:require
    ["@radix-ui/themes" :refer [Box Button IconButton Flex Heading]]
-   ["lucide-react" :refer [Link2 Square RotateCw X Download]]
+   ["lucide-react" :refer [Link2 Square RotateCw X Download Workflow]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -50,6 +50,8 @@
         session-url (str (-> js/document .-location .-origin)
                          (routes/url-for :sessions)
                          "/" (:id session))
+        correlation-id (:correlation_id session)
+        has-workflow? (and correlation-id (not (cs/blank? correlation-id)))
         can-kill-session? (and (or is-session-owner?
                                    admin?)
                                (= (:verb session) "exec")
@@ -68,6 +70,26 @@
 
       ;; Right side - Action buttons
       [:> Flex {:gap "2" :align "center"}
+       ;; View Timeline button (when session has a correlation id)
+       (when has-workflow?
+         [:> Button
+          {:on-click (if is-dedicated-page?
+                       #(rf/dispatch [:navigate :workflow-details
+                                      {}
+                                      :correlation-id
+                                      (js/encodeURIComponent correlation-id)])
+                       #(js/open
+                         (str (-> js/document .-location .-origin)
+                              (routes/url-for :workflow-details
+                                              :correlation-id
+                                              (js/encodeURIComponent correlation-id)))
+                         "_blank"))
+           :variant "soft"
+           :size "2"
+           :color "gray"}
+          [:> Workflow {:size 20 :class "text-gray-11"}]
+          "View Timeline"])
+
        ;; Kill session button
        (when can-kill-session?
          [:div {:class "relative group"}

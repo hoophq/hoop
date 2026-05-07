@@ -4,7 +4,7 @@
    ["lucide-react" :refer [Hash BadgeCheck CalendarArrowDown CalendarArrowUp
                            ChevronDown ChevronUp CircleCheckBig CircleUser
                            Clock2 ExternalLink FastForward KeyRound OctagonX Package
-                           Rotate3d Users ArrowUpRight BookUp2 Sparkles Workflow]]
+                           Rotate3d Users ArrowUpRight BookUp2 Sparkles]]
    [clojure.string :as cs]
    [reagent.core :as r]
    [webapp.components.tooltip :as tooltip]
@@ -85,8 +85,6 @@
             end-date (:end_date session)
             user-name (:user_name session)
             session-batch-id (:session_batch_id session)
-            correlation-id (:correlation_id session)
-            has-workflow? (and correlation-id (not (cs/blank? correlation-id)))
             review-status (-> session :review :status)
             jira-url (get-in session [:integrations_metadata :jira_issue_url])
             ai-action (get-in session [:ai_analysis :action])
@@ -201,21 +199,6 @@
                                                                 "?batch_id=" session-batch-id)
                                                            "_blank")}
                                     "Open Parallel Summary"
-                                    [:> ArrowUpRight {:size 16}]]]}])
-
-            (when has-workflow?
-              [detail-row {:icon [:> Workflow {:size 20}]
-                           :label "Workflow"
-                           :value [:> Flex {:gap "2" :align "center"}
-                                   [:> Button {:size "1"
-                                               :variant "soft"
-                                               :on-click #(js/open
-                                                           (str (-> js/document .-location .-origin)
-                                                                (routes/url-for :workflow-details
-                                                                                :correlation-id
-                                                                                (js/encodeURIComponent correlation-id)))
-                                                           "_blank")}
-                                    "View Timeline"
                                     [:> ArrowUpRight {:size 16}]]]}])
 
             (when ai-action

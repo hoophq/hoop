@@ -76,8 +76,7 @@
      "/sessions" [["" :sessions]
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
-     "/workflows" [["" :workflows]
-                   [["/" :correlation-id] :workflow-details]]
+     ["/workflows/" :correlation-id] :workflow-details
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
                   ["/experimental" :settings-experimental]

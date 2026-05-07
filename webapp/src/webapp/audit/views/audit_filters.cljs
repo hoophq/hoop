@@ -2,7 +2,7 @@
   (:require
    ["@heroicons/react/16/solid" :as hero-micro-icon]
    ["@radix-ui/themes" :refer [Button Popover TextField]]
-   ["lucide-react" :refer [Search ListFilter Check]]
+   ["lucide-react" :refer [Search ListFilter Check Workflow]]
    ["react-tailwindcss-datepicker" :as Datepicker]
    [clojure.string :as string]
    [re-frame.core :as rf]
@@ -32,6 +32,15 @@
 
         jira-ticket-search (r/atom (get filters "jira_issue_key" ""))
         jira-ticket-debounce-timer (r/atom nil)
+
+        workflow-correlation-id (r/atom "")
+        submit-workflow (fn []
+                          (let [trimmed (string/trim @workflow-correlation-id)]
+                            (when (not (string/blank? trimmed))
+                              (rf/dispatch [:navigate :workflow-details
+                                            {}
+                                            :correlation-id
+                                            (js/encodeURIComponent trimmed)]))))
 
         review-status-options [{:text "Pending" :value "PENDING"}
                                {:text "Approved" :value "APPROVED"}
@@ -401,7 +410,36 @@
           (when (seq @jira-ticket-search)
             [:button {:class "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       :on-click #(handle-jira-ticket-search "")}
-             [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]])]]))))
+             [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]])]
+
+         [:> Popover.Root
+          [:> Popover.Trigger {:asChild true}
+           [:> Button {:size "3"
+                       :variant "surface"
+                       :color "gray"
+                       :on-click #(reset! workflow-correlation-id "")}
+            [:> Workflow {:size 16}]
+            [:span {:class "text-sm font-semibold"}
+             "Workflow"]]]
+          [:> Popover.Content {:size "2" :style {:width "384px"}}
+           [:div {:class "w-full space-y-3"}
+            [:> TextField.Root {:size "2"
+                                :placeholder "Enter a correlation ID"
+                                :value @workflow-correlation-id
+                                :onChange #(reset! workflow-correlation-id (-> % .-target .-value))
+                                :onKeyDown (fn [e]
+                                             (when (= (.-key e) "Enter")
+                                               (submit-workflow)))}
+             [:> TextField.Slot
+              [:> Workflow {:size 14 :class "text-gray-500"}]]]
+            [:> Button {:size "2"
+                        :variant "solid"
+                        :color "gray"
+                        :highContrast true
+                        :class "w-full"
+                        :disabled (string/blank? @workflow-correlation-id)
+                        :on-click submit-workflow}
+             "Open Workflow"]]]]]))))
 
 (defn audit-filters [_]
   (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])

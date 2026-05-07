@@ -6,25 +6,24 @@
    [webapp.features.workflows.events]
    [webapp.features.workflows.subs]
    [webapp.features.workflows.views.header :as header]
-   [webapp.features.workflows.views.landing :as landing]
    [webapp.features.workflows.views.timeline :as timeline]))
 
 (defn- breadcrumb []
   [:> Flex {:align "center" :gap "2"}
-   [:> Tooltip {:content "Back to Workflows"}
+   [:> Tooltip {:content "Back to Sessions"}
     [:> IconButton {:size "2" :variant "ghost" :color "gray"
-                    :on-click #(rf/dispatch [:navigate :workflows])}
+                    :on-click #(rf/dispatch [:navigate :sessions])}
      [:> ArrowLeft {:size 16}]]]
    [:> Flex {:align "center" :gap "1"}
     [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"
               :as "button"
               :role "link"
               :style {:cursor "pointer"}
-              :on-click #(rf/dispatch [:navigate :workflows])}
-     "Workflows"]
+              :on-click #(rf/dispatch [:navigate :sessions])}
+     "Sessions"]
     [:> Text {:size "2" :class "text-[--gray-9]"} "/"]
     [:> Text {:size "2" :weight "medium" :class "text-[--gray-12]"}
-     "Timeline"]]])
+     "Workflow Timeline"]]])
 
 (defn- loading-skeleton []
   [:> Flex {:direction "column" :gap "5"}
@@ -45,14 +44,14 @@
     [:> Text {:size "4" :weight "bold" :class "text-[--gray-12]"}
      "We couldn't load this workflow"]
     [:> Text {:size "2" :class "text-[--gray-11]"}
-     "Try again, or head back to Workflows."]]
+     "Try again, or head back to Sessions."]]
    [:> Flex {:gap "3"}
     [:> Button {:size "2" :variant "soft" :color "gray"
                 :on-click #(rf/dispatch [:workflows/get correlation-id])}
      "Retry"]
     [:> Button {:size "2" :variant "outline" :color "gray"
-                :on-click #(rf/dispatch [:navigate :workflows])}
-     "Back to Workflows"]]])
+                :on-click #(rf/dispatch [:navigate :sessions])}
+     "Back to Sessions"]]])
 
 (defn- empty-state [_]
   [:> Flex {:direction "column" :align "center" :justify "center"
@@ -74,8 +73,8 @@
      [:code {:class "font-mono text-[--gray-12]"} "correlation_id"]
      " field on the REST API."]]
    [:> Button {:size "2" :variant "soft" :color "gray"
-               :on-click #(rf/dispatch [:navigate :workflows])}
-    "Back to Workflows"]])
+               :on-click #(rf/dispatch [:navigate :sessions])}
+    "Back to Sessions"]])
 
 (defn page
   "Top-level page component for `/workflows/:correlation-id`."
@@ -104,6 +103,3 @@
             [empty-state correlation-id]
             [timeline/timeline])]
          [loading-skeleton])]]]))
-
-(defn landing-page []
-  [landing/main])
