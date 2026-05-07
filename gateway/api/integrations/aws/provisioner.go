@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/common/runbooks"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
@@ -326,10 +327,43 @@ func (p *provisioner) handleConnectionProvision(req pbsystem.DBProvisionerReques
 		})
 	}
 
+	// Resolve which connections are new (vs. updates) inside the same
+	// transaction as the upsert so a concurrent writer cannot make us
+	// double-fire (or miss) the hoop-create-connection event.
+	var newConnections []*models.Connection
 	sess := &gorm.Session{FullSaveAssociations: true}
-	return models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+	if err := models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		for _, conn := range connections {
+			var count int64
+			if err := tx.Table("private.connections").
+				Where("org_id = ? AND name = ?", conn.OrgID, conn.Name).
+				Count(&count).Error; err != nil {
+				return fmt.Errorf("failed checking existing connection %v, reason=%v", conn.Name, err)
+			}
+			if count == 0 {
+				newConnections = append(newConnections, conn)
+			}
+		}
 		return models.UpsertBatchConnections(tx, connections)
-	})
+	}); err != nil {
+		return err
+	}
+
+	if len(newConnections) > 0 {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		for _, conn := range newConnections {
+			trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+				OrgID:   p.orgID,
+				Source:  "aws-rds-provisioner",
+				AgentID: p.apiRequest.AgentID,
+				Type:    conn.Type,
+				SubType: conn.SubType.String,
+				Command: conn.Command,
+			})
+		}
+	}
+	return nil
 }
 
 func (p *provisioner) Cancel() { p.cancelFn() }

@@ -26,6 +26,7 @@ import (
 	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -89,9 +90,13 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	// The stream will be closed when receiving a SessionClose packet
 	// from the agent or when the stream process manager closes it.
 	if clientOrigin == pb.ConnectionOriginClient {
-		PollingUserToken(pctx.Context, func(cause error) {
-			_ = stream.Close(cause)
-		}, tokenVerifier, pctx.UserID)
+		// Machine-identity sessions reach this path with the same client origin
+		// but have no IDP-issued user token to poll — skip polling for them.
+		if pctx.IdentityType != plugintypes.IdentityTypeMachine {
+			usertoken.PollingUserToken(pctx.Context, func(cause error) {
+				_ = stream.Close(cause)
+			}, tokenVerifier, pctx.UserID)
+		}
 
 		// defer inside a function will bind any returned error
 		defer func() { stream.Close(err) }()

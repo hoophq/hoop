@@ -148,6 +148,9 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		UserSlackID:    gwctx.UserContext.UserSlackID,
 		UserGroups:     gwctx.UserContext.UserGroups,
 
+		IdentityType:      gwctx.IdentityType,
+		MachineIdentityID: gwctx.MachineIdentityID,
+
 		ConnectionID:                        gwctx.Connection.ID,
 		ConnectionName:                      gwctx.Connection.Name,
 		ConnectionType:                      gwctx.Connection.Type,

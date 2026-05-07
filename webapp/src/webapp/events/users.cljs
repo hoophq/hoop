@@ -39,18 +39,51 @@
  ::users->set-current-user
  (fn
    [{:keys [db]} [_ user server-info]]
-   (let [license-info (:license_info server-info)]
-
-     {:db (assoc db :users->current-user {:loading false
-                                          :data (assoc user
-                                                       :user-management? (= (:webapp_users_management user) "on")
-                                                       :free-license? (not (and (:is_valid license-info)
-                                                                                (= (:type license-info) "enterprise")))
-                                                       :admin? (:is_admin user)
-                                                       ;;:tenancy_type "multi-tenant"
-                                                       )})
+   (let [license-info (:license_info server-info)
+         pending-invitations (:pending_org_invitations user)]
+     {:db (-> db
+              (assoc :users->current-user {:loading false
+                                           :data (assoc user
+                                                        :user-management? (= (:webapp_users_management user) "on")
+                                                        :free-license? (not (and (:is_valid license-info)
+                                                                                 (= (:type license-info) "enterprise")))
+                                                        :admin? (:is_admin user))})
+              (assoc :users->pending-org-invitations (when (seq pending-invitations) pending-invitations)))
       :fx [[:dispatch [:initialize-intercom user]]
            [:dispatch [:close-page-loader]]]})))
+
+(rf/reg-event-fx
+ :users->accept-org-invitation
+ (fn
+   [_ [_ on-failure]]
+   {:fx [[:dispatch [:fetch
+                     {:method "POST"
+                      :uri "/orgs/invitations"
+                      :body {:action "accept"}
+                      :on-success (fn [_]
+                                    (js/setTimeout #(js/window.location.reload) 2500))
+                      :on-failure (fn [error]
+                                    (when on-failure (on-failure))
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text (or (:message error) "Failed to migrate organization")}]))}]]]}))
+
+(rf/reg-event-fx
+ :users->decline-org-invitation
+ (fn
+   [_ _]
+   {:fx [[:dispatch [:fetch
+                     {:method "POST"
+                      :uri "/orgs/invitations"
+                      :body {:action "decline"}
+                      :on-success (fn [_]
+                                    (rf/dispatch [:users->clear-pending-org-invitations]))
+                      :on-failure (fn [_]
+                                    (rf/dispatch [:users->clear-pending-org-invitations]))}]]]}))
+
+(rf/reg-event-db
+ :users->clear-pending-org-invitations
+ (fn [db _]
+   (assoc db :users->pending-org-invitations nil)))
 
 (rf/reg-event-fx
  :users->create-new-user

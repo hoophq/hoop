@@ -481,7 +481,103 @@ func GetUserInfo(c *gin.Context) {
 		userInfoData.Picture = ctx.UserAnonPicture
 		userInfoData.ID = ctx.UserAnonSubject
 	}
+
+	if isOrgMultiTenant && !ctx.IsAnonymous() {
+		allUsers, err := models.ListUsersByEmail(ctx.UserEmail)
+		if err != nil {
+			log.Warnf("failed listing users by email for pending invitations, err=%v", err)
+		}
+		for _, u := range allUsers {
+			if u.OrgID != ctx.OrgID && u.Status == string(openapi.StatusInvited) {
+				org, err := models.GetOrganizationByNameOrID(u.OrgID)
+				if err != nil {
+					log.Warnf("failed fetching org %s for pending invitation, err=%v", u.OrgID, err)
+					continue
+				}
+				userInfoData.PendingOrgInvitations = append(
+					userInfoData.PendingOrgInvitations,
+					openapi.PendingOrgInvitation{OrgName: org.Name},
+				)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, userInfoData)
+}
+
+// HandleOrgInvitation
+//
+//	@Summary		Handle Organization Invitation
+//	@Description	Accept or decline a pending organization invitation. On accept, the current user is migrated to the invited org and the old auto-created org is removed if empty. On decline, the invitation is dismissed permanently.
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openapi.OrgInvitationRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.HTTPSuccess
+//	@Failure		400,404,409,500	{object}	openapi.HTTPError
+//	@Router			/orgs/invitations [post]
+func HandleOrgInvitation(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.OrgInvitationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	allUsers, err := models.ListUsersByEmail(ctx.UserEmail)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed looking up invitations")
+		return
+	}
+
+	var invitations []models.User
+	for _, u := range allUsers {
+		if u.OrgID != ctx.OrgID && u.Status == string(openapi.StatusInvited) {
+			invitations = append(invitations, u)
+		}
+	}
+
+	if len(invitations) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no pending invitation found"})
+		return
+	}
+	if len(invitations) > 1 {
+		c.JSON(http.StatusConflict, gin.H{"message": "multiple pending invitations found, contact support"})
+		return
+	}
+
+	invitedUser := invitations[0]
+
+	switch req.Action {
+	case "accept":
+		name := invitedUser.Name
+		if ctx.UserName != "" {
+			name = ctx.UserName
+		}
+		picture := invitedUser.Picture
+		if ctx.UserPicture != "" {
+			picture = ctx.UserPicture
+		}
+		oldOrgID := ctx.OrgID
+		if err := models.PromoteInvitedUser(invitedUser.ID, ctx.OrgID, ctx.UserID, name, picture); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed migrating user to organization")
+			return
+		}
+		if err := models.DeleteOrganizationIfEmpty(oldOrgID); err != nil {
+			log.Warnf("could not delete old org %s after user migration: %v", oldOrgID, err)
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "successfully migrated to organization"})
+
+	case "decline":
+		if err := models.DeletePendingInvitationByEmail(ctx.UserEmail); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed declining invitation")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "invitation declined"})
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"message": "action must be accept or decline"})
+	}
 }
 
 // PatchUserSlackID

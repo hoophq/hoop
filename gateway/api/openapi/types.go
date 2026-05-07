@@ -12,6 +12,15 @@ type HTTPError struct {
 	Message string `json:"message" example:"the error description"`
 }
 
+type HTTPSuccess struct {
+	Message string `json:"message" example:"operation completed successfully"`
+}
+
+// OrgInvitationRequest is used to accept or decline a pending org invitation
+type OrgInvitationRequest struct {
+	Action string `json:"action" binding:"required" enums:"accept,decline"`
+}
+
 type Login struct {
 	// The URL to redirect the user to the identity provider
 	URL string `json:"login_url"`
@@ -85,6 +94,13 @@ type UserGroup struct {
 	Name string `json:"name" binding:"required" example:"engineering"`
 }
 
+// PendingOrgInvitation represents an organization the user has been invited to
+// but has not yet joined. Only populated in multi-tenant environments.
+type PendingOrgInvitation struct {
+	// Organization name
+	OrgName string `json:"org_name"`
+}
+
 type UserInfo struct {
 	User `json:",inline"`
 	// DEPRECATED in flavor of role
@@ -111,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// Pending organization invitations for this user. When non-empty, the user can migrate
+	// to one of these organizations. Only populated in multi-tenant environments.
+	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
 }
 
 type ServiceAccountStatusType string
@@ -763,6 +782,12 @@ type Session struct {
 	// GuardRailsInfo contains information about guardrail rules that matched during the session.
 	// A non-empty list indicates the session was blocked by at least one guardrail rule.
 	GuardRailsInfo []SessionGuardRailsInfo `json:"guardrails_info" readonly:"true"`
+	// The type of identity that created this session
+	// * user - a human user
+	// * machine - a machine identity (non-human identity)
+	IdentityType string `json:"identity_type" enums:"user,machine" example:"user"`
+	// The machine identity ID if this session was created by a machine identity
+	MachineIdentityID *string `json:"machine_identity_id,omitempty" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
 }
 
 type ProvisionSession struct {
@@ -2673,4 +2698,51 @@ type AttributeRequest struct {
 	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
+}
+
+type MachineIdentity struct {
+	ID              string     `json:"id" readonly:"true" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
+	Name            string     `json:"name" binding:"required" example:"backend-prod"`
+	Description     string     `json:"description" example:"Production backend service identity"`
+	ConnectionNames []string   `json:"connection_names" example:"prod-postgres,api-proxy"`
+	Attributes      []string   `json:"attributes" example:"env:prod,team:backend"`
+	CreatedAt       *time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	UpdatedAt       *time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type MachineIdentityCreateResponse struct {
+	MachineIdentity
+	Credentials []MachineIdentityCredentialResponse `json:"credentials"`
+}
+
+type MachineIdentityUpdateResponse struct {
+	MachineIdentity
+	NewCredentials []MachineIdentityCredentialResponse `json:"new_credentials"`
+}
+
+type MachineIdentityCredentialResponse struct {
+	ConnectionName     string `json:"connection_name"`
+	ConnectionType     string `json:"connection_type"`
+	ConnectionSubType  string `json:"connection_subtype,omitempty"`
+	SecretKey          string `json:"secret_key"`
+	Hostname           string `json:"hostname,omitempty"`
+	Port               string `json:"port,omitempty"`
+	DatabaseName       string `json:"database_name,omitempty"`
+	ConnectionString   string `json:"connection_string,omitempty"`
+	Username           string `json:"username,omitempty"`
+	Password           string `json:"password,omitempty"`
+	Command            string `json:"command,omitempty"`
+	ProxyToken         string `json:"proxy_token,omitempty"`
+	EndpointURL        string `json:"endpoint_url,omitempty"`
+	AwsAccessKeyId     string `json:"aws_access_key_id,omitempty"`
+	AwsSecretAccessKey string `json:"aws_secret_access_key,omitempty"`
+}
+
+type MachineIdentityCredentialInfo struct {
+	ConnectionName    string     `json:"connection_name"`
+	ConnectionType    string     `json:"connection_type"`
+	ConnectionSubType string     `json:"connection_subtype,omitempty"`
+	Hostname          string     `json:"hostname,omitempty"`
+	Port              string     `json:"port,omitempty"`
+	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
 }
