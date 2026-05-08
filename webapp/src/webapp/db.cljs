@@ -1,5 +1,6 @@
 (ns webapp.db
-  (:require [webapp.parallel-mode.db :as parallel-mode-db]))
+  (:require [webapp.parallel-mode.db :as parallel-mode-db]
+            [webapp.features.workflows.events :as workflows-events]))
 
 (def default-db
   {:agents {:status :loading, :data []}
@@ -108,4 +109,5 @@
    :api-keys {:list {:status :idle :data []}
               :active {:status :idle :data nil}
               :created {:status :idle :data nil}
-              :submitting? false}})
+              :submitting? false}
+   :workflows workflows-events/initial-state})

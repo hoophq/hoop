@@ -137,6 +137,9 @@
    [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
    [webapp.audit-logs.main :as audit-logs]
+   [webapp.features.workflows.events]
+   [webapp.features.workflows.subs]
+   [webapp.features.workflows.views.main :as workflows]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
@@ -525,6 +528,26 @@
     (rf/dispatch [:audit->get-session-details-page session-id])
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
                                [session-details/main]]]))
+
+(defn- safe-decode-uri-component
+  "URL-decode but never throw. Falls back to the raw string when the input
+   contains malformed percent-escapes (e.g., a bare '%')."
+  [s]
+  (when s
+    (try
+      (js/decodeURIComponent s)
+      (catch :default _ s))))
+
+(defmethod routes/panels :workflow-details-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        encoded (-> current-route :route-params :correlation-id)
+        correlation-id (safe-decode-uri-component encoded)
+        loaded-id @(rf/subscribe [:workflows/correlation-id])]
+    (rf/dispatch [:destroy-page-loader])
+    (when (and correlation-id (not= correlation-id loaded-id))
+      (rf/dispatch [:workflows/get correlation-id]))
+    [layout :application-hoop [workflows/page correlation-id]]))
 
 (defmethod routes/panels :sessions-list-filtered-by-ids-panel []
   (let [search (.. js/window -location -search)

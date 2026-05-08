@@ -327,9 +327,11 @@
 (rf/reg-event-fx
  :audit->handle-rerun-with-connection
  (fn [{:keys [db]} [_ connection session]]
-   (let [payload {:script (-> session :script :data)
-                  :labels {:re-run-from (:id session)}
-                  :connection (:connection session)}
+   (let [payload (cond-> {:script (-> session :script :data)
+                          :labels {:re-run-from (:id session)}
+                          :connection (:connection session)}
+                   (not (string/blank? (:correlation_id session)))
+                   (assoc :correlation_id (:correlation_id session)))
 
          jira-integration-enabled? (= "enabled" (-> db :jira-integration->details :data :status))
          needs-template? (boolean (and connection

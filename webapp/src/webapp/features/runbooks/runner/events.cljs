@@ -122,7 +122,7 @@
 (rf/reg-event-fx
  :runbooks/exec
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields extra-metadata on-success on-failure] :as context}]]
+   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields extra-metadata correlation-id on-success on-failure] :as context}]]
    ;; Check if parallel mode is active
    (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
          parallel-mode? (>= (count parallel-connections) 2)]
@@ -166,7 +166,9 @@
                               :metadata (metadata->json-stringify metadata)}
                        ref-hash (assoc :ref_hash ref-hash)
                        jira_fields (assoc :jira_fields jira_fields)
-                       cmdb_fields (assoc :cmdb_fields cmdb_fields))
+                       cmdb_fields (assoc :cmdb_fields cmdb_fields)
+                       (not (cs/blank? correlation-id))
+                       (assoc :correlation_id correlation-id))
              default-on-failure (fn [_error-message error]
                                   (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
                                                                 :level :error
