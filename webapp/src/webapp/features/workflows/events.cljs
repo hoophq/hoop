@@ -39,12 +39,12 @@
          total (or (:total response) (count data))
          sorted (vec (sort-by :start_date data))
          expanded-ids (into #{} (map :id) sorted)]
-     {:db (-> db
-              (assoc-in [:workflows :status] :ready)
-              (assoc-in [:workflows :sessions] sorted)
-              (assoc-in [:workflows :total] total)
-              (assoc-in [:workflows :truncated?] (> total (count sorted)))
-              (assoc-in [:workflows :expanded] expanded-ids))
+     {:db (update-in db [:workflows] merge
+                        {:status :ready  
+                         :sessions sorted 
+                         :total total 
+                         :truncated? (> total (count sorted))
+                         :expanded expanded-ids})
       :fx (mapv (fn [session]
                   [:dispatch [:workflows/get-step-detail session]])
                 sorted)})))

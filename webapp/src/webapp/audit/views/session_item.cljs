@@ -2,7 +2,7 @@
   (:require
    [clojure.string :as string]
    [re-frame.core :as rf]
-   ["@radix-ui/themes" :refer [Badge Box Flex Grid Tooltip]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Grid Text Tooltip]]
    ["lucide-react" :refer [CircleCheckBig Clock2 OctagonX Workflow]]
    [webapp.formatters :as formatters]
    [webapp.components.user-icon :as user-icon]
@@ -38,12 +38,10 @@
                     (str (subs correlation-id 0 16) "…")
                     correlation-id)]
     [:> Tooltip {:content (str "View workflow " correlation-id)}
-     [:button
-      {:class (str "inline-flex items-center gap-1 px-2 py-1 rounded-md "
-                   "bg-[--accent-3] text-[--accent-11] hover:bg-[--accent-4] "
-                   "border border-[--accent-a4] "
-                   "text-xs font-mono font-medium "
-                   "transition-colors duration-150")
+     [:> Button
+      {:size "1"
+       :variant "soft"
+       :class "font-mono"
        :on-click (fn [e]
                    (.stopPropagation e)
                    (rf/dispatch [:navigate :workflow-details
@@ -86,7 +84,7 @@
       [:> Box
        [:b (:connection session)]]
       [:> Box {:class "text-xxs text-gray-800"}
-       [:span (:type session)]]]
+       [:> Text (:type session)]]]
 
      [:> Flex {:id "badge-column"
                :gap "2"

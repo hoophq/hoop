@@ -46,9 +46,10 @@
                     :style {:maxHeight "240px"}}
      [:> Box {:class (str "p-3 rounded-3 "
                           "bg-[--gray-12] border border-[--gray-a4] "
-                          "font-mono text-xs text-[--gray-1] "
                           "whitespace-pre-wrap break-words")}
-      content]]))
+      [:> Text {:size "1"
+                :class "font-mono text-[--gray-1]"}
+       content]]]))
 
 (defn- detail-row [label content]
   [:> Flex {:direction "column" :gap "1"}
