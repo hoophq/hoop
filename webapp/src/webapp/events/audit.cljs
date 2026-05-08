@@ -512,3 +512,32 @@
                                                          {:level :error
                                                           :text "Failed to kill session"
                                                           :details error}]))}]]]}))
+
+(rf/reg-event-fx
+ :audit->get-session-logs-data
+ (fn
+   [{:keys [db]} [_ session-id]]
+   {:db (assoc-in db [:audit->session-logs] {:status :loading :data nil})
+    :fx [[:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/sessions/" session-id "?expand=event_stream,session_input&event_stream=base64")
+                      :on-success #(rf/dispatch [:audit->set-session-logs-data %])
+                      :on-failure (fn [error]
+                                    (rf/dispatch [:show-snackbar
+                                                  {:text "Failed to load session logs"
+                                                   :level :error
+                                                   :details error}])
+                                    (rf/dispatch [:audit->set-session-logs-error]))}]]]}))
+
+(rf/reg-event-db
+ :audit->set-session-logs-data
+ (fn
+   [db [_ session-data]]
+   (assoc-in db [:audit->session-logs] {:status :success
+                                        :data (:event_stream session-data)})))
+
+(rf/reg-event-db
+ :audit->set-session-logs-error
+ (fn
+   [db [_]]
+   (assoc-in db [:audit->session-logs] {:status :error :data nil})))

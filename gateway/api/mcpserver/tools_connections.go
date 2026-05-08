@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -187,6 +188,20 @@ func connectionsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	resp, err := models.UpsertConnection(sc, conn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating connection: %w", err)
+	}
+
+	if sc.UserEmail != "" && sc.OrgID != "" {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+			OrgID:       sc.OrgID,
+			UserID:      sc.UserID,
+			Source:      "mcp",
+			LicenseType: sc.GetLicenseType(),
+			Type:        conn.Type,
+			SubType:     conn.SubType.String,
+			Command:     conn.Command,
+		})
 	}
 
 	return jsonResult(connectionToMap(resp, false))
