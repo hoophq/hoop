@@ -2,8 +2,8 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
                                 Table Tabs Text TextField Tooltip]]
-   ["lucide-react" :refer [AlertCircle Check ChevronLeft ChevronRight Database
-                            Key Loader2 Pencil Plus Rocket Search Upload
+   ["lucide-react" :refer [AlertCircle Check ChevronRight Database
+                            Key Pencil Plus Rocket Search Upload
                             UserCog X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -137,9 +137,7 @@
         running? (< (+ done failed) total)
         color    (cond running? "indigo" (pos? failed) "amber" :else "green")
         icon     (cond
-                   running?      [:span {:class "animate-spin inline-flex"
-                                         :style {:color (str "var(--" color "-9)")}}
-                                  [:> Loader2 {:size 14}]]
+                   running?      [shared/spinner {:color color :size 14}]
                    (pos? failed) [:> AlertCircle {:size 14}]
                    :else         [:> Check {:size 14}])
         title    (str (if (= (:type job) :admin-setup) "Admin setup" "Role provisioning")
@@ -184,9 +182,7 @@
                             (pos? ready)   "blue"
                             :else          "gray")
             icon      (cond
-                        busy?        [:span {:class "animate-spin inline-flex"
-                                             :style {:color (str "var(--" color "-9)")}}
-                                      [:> Loader2 {:size 14}]]
+                        busy?        [shared/spinner {:color color :size 14}]
                         all-done     [:> Check {:size 14}]
                         (pos? ready) [:> Rocket {:size 14}]
                         :else        [:> AlertCircle {:size 14}])
@@ -210,9 +206,17 @@
 
 ;; ── Floating action bar ────────────────────────────────────────────────────────
 
-(defn floating-action-bar [{:keys [count-val admin-count roles-count ready-count
-                                    on-add-admin on-configure-roles
-                                    on-edit-admin on-edit-provision on-clear]}]
+(defn floating-action-bar
+  "Bottom-floating action bar shown when at least one resource is selected.
+
+   Primary actions (`Manage`, `Provision`) appear for stages that haven't
+   completed yet. Edit actions (`Edit admin`, `Edit provision`) appear for
+   stages that are already finished — independent of each other, so a user
+   who has only configured admin can still re-open admin to update it."
+  [{:keys [count-val admin-count roles-count
+            edit-admin-count edit-provision-count
+            on-add-admin on-configure-roles
+            on-edit-admin on-edit-provision on-clear]}]
   [:> Flex {:align "center" :gap "3" :px "5" :py "3"
             :style {:position    "fixed"
                     :bottom      80
@@ -232,13 +236,13 @@
    (when (pos? roles-count)
      [:> Button {:size "2" :variant "soft" :on-click on-configure-roles}
       [:> Key {:size 14}] (str " Provision (" roles-count ")")])
-   (when (pos? ready-count)
-     [:<>
-      [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-admin}
-       [:> Pencil {:size 14}] (str " Edit admin (" ready-count ")")]
-      [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-provision}
-       [:> Pencil {:size 14}] (str " Edit provision (" ready-count ")")]])
-   (when (and (zero? admin-count) (zero? roles-count) (zero? ready-count))
+   (when (pos? edit-admin-count)
+     [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-admin}
+      [:> Pencil {:size 14}] (str " Edit admin (" edit-admin-count ")")])
+   (when (pos? edit-provision-count)
+     [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-provision}
+      [:> Pencil {:size 14}] (str " Edit provision (" edit-provision-count ")")])
+   (when (zero? (+ admin-count roles-count edit-admin-count edit-provision-count))
      [:> Text {:size "2" :color "gray"} "No actions available."])
    [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
     [:> X {:size 14}]]])
@@ -387,23 +391,14 @@
 
 (defn- pagination
   [{:keys [total-visible selected-count safe-page total-pages on-change]}]
-  [:> Flex {:align "center" :justify "between" :mt "3"}
-   [:> Text {:size "1" :color "gray"}
-    (str (data/pluralize total-visible "resource")
-         (when (pos? selected-count)
-           (str " \u00b7 " selected-count " selected")))]
-   (when (> total-pages 1)
-     [:> Flex {:align "center" :gap "2"}
-      [:> Button {:size "1" :variant "ghost" :color "gray"
-                  :disabled (zero? safe-page)
-                  :on-click #(on-change (dec safe-page))}
-       [:> ChevronLeft {:size 14}]]
-      [:> Text {:size "1" :color "gray"}
-       (str (inc safe-page) " / " total-pages)]
-      [:> Button {:size "1" :variant "ghost" :color "gray"
-                  :disabled (>= (inc safe-page) total-pages)
-                  :on-click #(on-change (inc safe-page))}
-       [:> ChevronRight {:size 14}]]])])
+  [:> Box {:mt "3"}
+   [shared/pagination
+    {:page        safe-page
+     :total-pages (max 1 total-pages)
+     :on-change   on-change
+     :label       (str (data/pluralize total-visible "resource")
+                       (when (pos? selected-count)
+                         (str " \u00b7 " selected-count " selected")))}]])
 
 ;; initial page size is 50
 (def ^:private hub-page-size 50)
@@ -451,7 +446,13 @@
         selected-resources     (filter #(selected-ids (:id %)) resources)
         selected-needing-admin (filter #(= :needs-admin (:stage %)) selected-resources)
         selected-needing-roles (filter #(= :needs-roles (:stage %)) selected-resources)
-        selected-ready         (filter #(= :ready (:stage %)) selected-resources)
+        ;; Selections whose individual steps are already finished, independent
+        ;; of one another. `:needs-roles` means admin is configured but roles
+        ;; aren't, so it is editable for admin only. `:ready` is editable for
+        ;; both. Used to show "Edit admin" / "Edit provision" in the bar.
+        selected-with-admin     (filter #(contains? #{:needs-roles :ready} (:stage %))
+                                        selected-resources)
+        selected-with-provision (filter #(= :ready (:stage %)) selected-resources)
         selected-in-stage      (count (filter #(= stage-filter (:stage %)) selected-resources))
 
         all-visible-selected   (and (pos? (count visible))
@@ -540,12 +541,13 @@
 
      (when (pos? (count selected-ids))
        [floating-action-bar
-        {:count-val          (count selected-ids)
-         :admin-count        (count selected-needing-admin)
-         :roles-count        (count selected-needing-roles)
-         :ready-count        (count selected-ready)
-         :on-add-admin       #(on-open-bulk-admin (vec selected-needing-admin))
-         :on-configure-roles #(on-open-bulk-roles (vec selected-needing-roles))
-         :on-edit-admin      #(on-open-bulk-admin (vec selected-ready))
-         :on-edit-provision  #(on-open-bulk-roles (vec selected-ready))
-         :on-clear           #(set-selected-ids #{})}])]))
+        {:count-val            (count selected-ids)
+         :admin-count          (count selected-needing-admin)
+         :roles-count          (count selected-needing-roles)
+         :edit-admin-count     (count selected-with-admin)
+         :edit-provision-count (count selected-with-provision)
+         :on-add-admin         #(on-open-bulk-admin (vec selected-needing-admin))
+         :on-configure-roles   #(on-open-bulk-roles (vec selected-needing-roles))
+         :on-edit-admin        #(on-open-bulk-admin (vec selected-with-admin))
+         :on-edit-provision    #(on-open-bulk-roles (vec selected-with-provision))
+         :on-clear             #(set-selected-ids #{})}])]))

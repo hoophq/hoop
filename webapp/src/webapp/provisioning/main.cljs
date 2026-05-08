@@ -46,11 +46,13 @@
                            (set-bulk-resources (vec targets))
                            (set-bulk-configs
                             (into {} (map (fn [r]
-                                           [(:id r)
-                                            (if (seq (:admin r))
-                                              {:method "manual" :username (:admin r) :password ""}
-                                              (data/make-default-config))])
-                                         targets)))
+                                            [(:id r)
+                                             (if (seq (:admin r))
+                                               {:method   "manual"
+                                                :username (:admin r)
+                                                :password (or (:password r) "")}
+                                               (data/make-default-config))])
+                                          targets)))
                            (set-bulk-admin-mode (or mode "manual"))
                            (set-hub-screen :bulk-admin))
 

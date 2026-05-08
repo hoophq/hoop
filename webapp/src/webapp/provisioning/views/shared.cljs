@@ -1,23 +1,33 @@
 (ns webapp.provisioning.views.shared
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Flex Heading Text]]
-   ["lucide-react" :refer [ArrowLeft Loader2 Upload]]))
+   ["lucide-react" :refer [ArrowLeft ChevronLeft ChevronRight Loader2 Upload]]
+   ["papaparse" :as papa]))
+
+;; ── Pure helpers ─────────────────────────────────────────────────────────────
 
 (defn zebra-bg
   "Returns alternating row background for index i."
   [i]
   (if (even? i) "var(--color-panel-solid)" "var(--gray-1)"))
 
-(defn bulk-screen-header
-  "Back button + heading + resource count badge."
-  [{:keys [title resource-count on-back]}]
-  [:<>
-   [:> Flex {:align "center" :gap "2" :mb "1"}
-    [:> Button {:variant "ghost" :color "gray" :size "2" :on-click on-back}
-     [:> ArrowLeft {:size 14}] " Back"]]
-   [:> Flex {:align "baseline" :gap "3" :mb "5"}
-    [:> Heading {:size "7"} title]
-    [:> Badge {:color "gray" :variant "soft"} (str resource-count " resources")]]])
+;; ── Atomic UI primitives ─────────────────────────────────────────────────────
+
+(defn spinner
+  "Animated Loader2 spinner. Wrap any color/size combo from one place."
+  ([] (spinner {}))
+  ([{:keys [color size] :or {color "indigo" size 13}}]
+   [:span {:class "animate-spin inline-flex"
+           :style {:color (str "var(--" color "-9)")}}
+    [:> Loader2 {:size size}]]))
+
+(defn back-button
+  "Ghost back button with leading arrow."
+  [{:keys [on-click label size] :or {label "Back" size "2"}}]
+  [:> Button {:variant "ghost" :color "gray" :size size :on-click on-click}
+   [:> ArrowLeft {:size 14}] (str " " label)])
+
+;; ── Callouts ────────────────────────────────────────────────────────────────
 
 (defn info-callout
   "Radix Callout with an icon and a text message. Used for status banners."
@@ -55,6 +65,18 @@
      (when actions
        [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])]))
 
+;; ── Page chrome ─────────────────────────────────────────────────────────────
+
+(defn bulk-screen-header
+  "Back button + heading + resource count badge."
+  [{:keys [title resource-count on-back]}]
+  [:<>
+   [:> Flex {:align "center" :gap "2" :mb "1"}
+    [back-button {:on-click on-back}]]
+   [:> Flex {:align "baseline" :gap "3" :mb "5"}
+    [:> Heading {:size "7"} title]
+    [:> Badge {:color "gray" :variant "soft"} (str resource-count " resources")]]])
+
 (defn bulk-footer
   "Sticky footer: info text on the left, Cancel + primary action on the right."
   [{:keys [info-text on-cancel on-apply apply-disabled? apply-label]}]
@@ -64,6 +86,63 @@
    [:> Flex {:gap "3"}
     [:> Button {:variant "outline" :color "gray" :on-click on-cancel} "Cancel"]
     [:> Button {:disabled apply-disabled? :on-click on-apply} apply-label]]])
+
+;; ── Pagination ──────────────────────────────────────────────────────────────
+
+(defn pagination
+  "Prev / page-counter / next. Hides itself entirely when there are no pages
+   AND no label. With a label, the label still renders on a single page.
+
+   Props:
+     :page         (int)  current zero-based page
+     :total-pages  (int)
+     :on-change    (fn [new-page])
+     :label        (string, optional) — left-aligned summary text
+     :detail       (string, optional) — extra text shown alongside page counter"
+  [{:keys [page total-pages on-change label detail]}]
+  (let [paginated? (> total-pages 1)]
+    (when (or paginated? label)
+      [:> Flex {:align "center" :justify (cond label      "between"
+                                                paginated? "center"
+                                                :else      "start")
+                :gap "3" :py "2"
+                :style {:flex-shrink 0}}
+       (when label
+         [:> Text {:size "1" :color "gray"} label])
+       (when paginated?
+         [:> Flex {:align "center" :gap "2"}
+          [:> Button {:size "1" :variant "ghost" :color "gray"
+                      :disabled (zero? page)
+                      :on-click #(on-change (dec page))}
+           [:> ChevronLeft {:size 14}]]
+          [:> Text {:size "1" :color "gray"}
+           (str (inc page) " / " total-pages
+                (when detail (str " (" detail ")")))]
+          [:> Button {:size "1" :variant "ghost" :color "gray"
+                      :disabled (>= (inc page) total-pages)
+                      :on-click #(on-change (inc page))}
+           [:> ChevronRight {:size 14}]]])])))
+
+;; ── Flex-based table header ─────────────────────────────────────────────────
+
+(defn flex-table-header
+  "Sticky header row matching the custom flex-based 'tables' used across views.
+   `cols` is a vector of {:flex string|number, :width int, :label string}.
+   Either :flex or :width must be set per column."
+  [cols]
+  [:> Flex {:px "3" :py "2"
+            :style {:background "var(--gray-3)"
+                    :border-bottom "1px solid var(--gray-5)"
+                    :position "sticky" :top 0 :z-index 1}}
+   (doall
+    (for [[i {:keys [flex width label]}] (map-indexed vector cols)]
+      ^{:key i}
+      [:> Box {:style (cond-> {}
+                       flex  (assoc :flex flex :min-width 0)
+                       width (assoc :width width :flex-shrink 0))}
+       [:> Text {:size "1" :color "gray" :weight "medium"} label]]))])
+
+;; ── CSV drop zone ───────────────────────────────────────────────────────────
 
 (defn csv-drop-zone
   "Dashed drop zone for CSV file selection. Handles click-to-browse and drag-and-drop.
@@ -97,8 +176,7 @@
                    :justify-content "center"}}
    (if loading?
      [:> Flex {:direction "column" :align "center" :gap "2"}
-      [:span {:class "animate-spin inline-flex" :style {:color "var(--indigo-9)"}}
-       [:> Loader2 {:size 20}]]
+      [spinner {:size 20}]
       [:> Text {:size "2" :color "gray"} (or loading-text "Parsing CSV…")]]
      [:> Flex {:direction "column" :align "center" :gap "2"}
       [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
@@ -107,3 +185,40 @@
        [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
       (when hint-text
         [:> Text {:size "1" :color "gray"} hint-text])])])
+
+;; ── CSV parsing ─────────────────────────────────────────────────────────────
+
+(defn parse-csv!
+  "Parses a CSV file via papaparse. Single entry point for both modes:
+
+   Full-parse mode (default):
+     (parse-csv! file {:on-complete (fn [rows] ...)})
+
+   Streaming mode (per-row callback for progress reporting):
+     (parse-csv! file {:on-row      (fn [row-map row-num] ...)
+                       :on-complete (fn [all-rows] ...)})
+
+   `parse-opts` can override papaparse options (e.g. :dynamic-typing? true)."
+  [file {:keys [on-row on-complete dynamic-typing?]}]
+  (let [collected (atom [])
+        n         (atom 0)
+        opts      {"header"         true
+                   "skipEmptyLines" true
+                   "dynamicTyping"  (boolean dynamic-typing?)
+                   "complete"
+                   (fn [results]
+                     (let [rows (if on-row
+                                  @collected
+                                  (mapv (fn [row]
+                                          (js->clj row :keywordize-keys true))
+                                        (or (.-data results) [])))]
+                       (when on-complete (on-complete rows))))}
+        opts      (cond-> opts
+                    on-row
+                    (assoc "step"
+                           (fn [row _parser]
+                             (let [row-data (js->clj (.-data row) :keywordize-keys true)
+                                   idx      (swap! n inc)]
+                               (swap! collected conj row-data)
+                               (on-row row-data idx)))))]
+    (papa/parse file (clj->js opts))))

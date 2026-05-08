@@ -1,34 +1,48 @@
 (ns webapp.provisioning.views.bulk-admin
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading
-                                Progress Select Text TextField]]
-   ["lucide-react" :refer [AlertCircle Check CheckCircle2
-                            Loader2 Server Upload UserCog X]]
-   ["papaparse" :as papa]
+                                IconButton Progress Select Text TextField]]
+   ["lucide-react" :refer [AlertCircle Check CheckCircle2 Eye EyeOff
+                            Server Upload UserCog X]]
    ["react" :as react]
    [re-frame.core :as rf]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
 
-(defn- parse-admin-csv!
-  "Parses a CSV file with columns: name, admin_user, password.
-   Calls on-complete with a map of {resource-name {:username ... :password ...}}."
-  [file on-complete]
-  (papa/parse file
-              #js {"header"         true
-                   "skipEmptyLines" true
-                   "complete"       (fn [results]
-                                     (let [rows    (js->clj (.-data results) :keywordize-keys true)
-                                           by-name (reduce
-                                                    (fn [acc row]
-                                                      (if (seq (:name row))
-                                                        (assoc acc (:name row)
-                                                               {:username (or (:admin_user row) "")
-                                                                :password (or (:password row) "")})
-                                                        acc))
-                                                    {}
-                                                    rows)]
-                                       (on-complete by-name (count rows))))}))
+(defn- rows->admin-credentials
+  "Folds parsed CSV rows into {resource-name {:username ... :password ...}}."
+  [rows]
+  (reduce
+   (fn [acc row]
+     (if (seq (:name row))
+       (assoc acc (:name row)
+              {:username (or (:admin_user row) "")
+               :password (or (:password row) "")})
+       acc))
+   {}
+   rows))
+
+(defn- mask-password
+  "Hides the middle of a password with `*`. Keeps the first 2 and last 2
+   characters visible for context. Passwords <= 4 chars are fully masked.
+   The base64 encoding still happens server-side; this is display-only."
+  [pw]
+  (let [n (count pw)]
+    (cond
+      (zero? n) ""
+      (<= n 4)  (apply str (repeat n "*"))
+      :else     (str (subs pw 0 2)
+                     (apply str (repeat (- n 4) "*"))
+                     (subs pw (- n 2))))))
+
+(defn- eye-toggle
+  "Small ghost icon button that flips between Eye / EyeOff."
+  [{:keys [visible? on-click]}]
+  [:> IconButton {:size "1" :variant "ghost" :color "gray"
+                  :type "button"
+                  :aria-label (if visible? "Hide password" "Show password")
+                  :on-click on-click}
+   (if visible? [:> EyeOff {:size 12}] [:> Eye {:size 12}])])
 
 (defn- bulk-admin-screen-inner
   [{:keys [resources configs set-configs initial-mode on-cancel on-done]}]
@@ -40,6 +54,10 @@
         [applying? set-applying]              (react/useState false)
         [apply-progress set-apply-progress]   (react/useState 0)
         [apply-results set-apply-results]     (react/useState nil)
+        [visible-pwds set-visible-pwds]       (react/useState #{})
+        toggle-pwd!  (fn [id]
+                       (set-visible-pwds
+                        (fn [s] (if (contains? s id) (disj s id) (conj s id)))))
         agents                                @(rf/subscribe [:agents])
         agents-data                           (or (:data agents) [])
         agents-loading?                       (= :loading (:status agents))
@@ -57,25 +75,27 @@
             #js [agents-data agent-id])
         resource-names (set (map :name resources))
         cfg            configs
+        resources-by-name (into {} (map (juxt :name identity) resources))
         handle-csv!    (fn [file]
-                         (parse-admin-csv!
+                         (shared/parse-csv!
                           file
-                          (fn [by-name total]
-                            (set-csv-row-count total)
-                            (let [matched     (select-keys by-name resource-names)
-                                  match-count (count matched)]
-                              (set-csv-match-count match-count)
-                              (set-csv-parsed true)
-                              (set-configs
-                               (fn [old-cfg]
-                                 (reduce-kv
-                                  (fn [acc res-name creds]
-                                    (let [resource (some #(when (= (:name %) res-name) %) resources)]
-                                      (if resource
-                                        (assoc acc (:id resource) creds)
-                                        acc)))
-                                  old-cfg
-                                  matched)))))))
+                          {:on-complete
+                           (fn [rows]
+                             (let [by-name     (rows->admin-credentials rows)
+                                   matched     (select-keys by-name resource-names)
+                                   match-count (count matched)]
+                               (set-csv-row-count (count rows))
+                               (set-csv-match-count match-count)
+                               (set-csv-parsed true)
+                               (set-configs
+                                (fn [old-cfg]
+                                  (reduce-kv
+                                   (fn [acc res-name creds]
+                                     (if-let [r (get resources-by-name res-name)]
+                                       (assoc acc (:id r) creds)
+                                       acc))
+                                   old-cfg
+                                   matched)))))}))
         valid-configs  (filterv
                         (fn [r]
                           (let [c (get cfg (:id r))]
@@ -93,8 +113,6 @@
                            (rf/dispatch
                             [:provisioning/apply-admin-next
                              {:queue       queue
-                              :index       0
-                              :results     []
                               :agent-id    agent-id
                               :on-progress (fn [done total]
                                              (set-apply-progress
@@ -161,8 +179,7 @@
                    :style {:flex 1} :gap "5"}
           [:> Flex {:direction "column" :align "center" :gap "4" :style {:width 400}}
            [:> Flex {:align "center" :gap "2"}
-            [:> Box {:class "animate-pulse" :style {:color "var(--indigo-9)" :display "flex"}}
-             [:> Loader2 {:size 20}]]
+            [shared/spinner {:color "indigo" :size 20}]
             [:> Text {:size "3" :weight "medium"}
              (str "Setting admin credentials\u2026 ("
                   (js/Math.round (/ (* apply-progress (count valid-configs)) 100))
@@ -199,17 +216,10 @@
         ;; Manual mode
         (when (= mode "manual")
           [:<>
-           [:> Flex {:px "3" :py "2"
-                     :style {:background "var(--gray-3)"
-                             :border-radius "var(--radius-2) var(--radius-2) 0 0"
-                             :border-bottom "1px solid var(--gray-5)"
-                             :flex-shrink 0}}
-            [:> Box {:style {:width 260 :flex-shrink 0}}
-             [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-            [:> Box {:style {:width 150 :flex-shrink 0}}
-             [:> Text {:size "1" :color "gray" :weight "medium"} "Admin user"]]
-            [:> Box {:style {:flex 1}}
-             [:> Text {:size "1" :color "gray" :weight "medium"} "Password"]]]
+           [shared/flex-table-header
+            [{:width 260 :label "Resource"}
+             {:width 150 :label "Admin user"}
+             {:flex 1    :label "Password"}]]
            [:> Box {:style {:flex 1 :overflow-y "auto"
                             :border "1px solid var(--gray-5)" :border-top "none"
                             :border-radius "0 0 var(--radius-2) var(--radius-2)"}}
@@ -236,11 +246,17 @@
                                                  (fn [c] (assoc-in c [(:id r) :username]
                                                                    (.. % -target -value))))}]]
                   [:> Box {:style {:flex 1}}
-                   [:> TextField.Root {:size "1" :type "password" :placeholder "Password"
-                                       :value (or (:password c) "")
-                                       :onChange #(set-configs
-                                                 (fn [c] (assoc-in c [(:id r) :password]
-                                                                   (.. % -target -value))))}]]])))]])
+                   (let [shown? (contains? visible-pwds (:id r))]
+                     [:> TextField.Root {:size "1"
+                                         :type (if shown? "text" "password")
+                                         :placeholder "Password"
+                                         :value (or (:password c) "")
+                                         :onChange #(set-configs
+                                                     (fn [c] (assoc-in c [(:id r) :password]
+                                                                       (.. % -target -value))))}
+                      [:> TextField.Slot {:side "right"}
+                       [eye-toggle {:visible? shown?
+                                    :on-click #(toggle-pwd! (:id r))}]]])]])))]])
 
         ;; CSV mode
         (when (= mode "csv")
@@ -277,17 +293,11 @@
              [:> Box {:style {:flex 1 :overflow-y "auto"
                               :border "1px solid var(--gray-5)"
                               :border-radius "var(--radius-2)"}}
-              [:> Flex {:px "3" :py "2"
-                        :style {:background "var(--gray-3)"
-                                :border-bottom "1px solid var(--gray-5)"}}
-               [:> Box {:style {:flex 1}}
-                [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-               [:> Box {:style {:width 120 :flex-shrink 0}}
-                [:> Text {:size "1" :color "gray" :weight "medium"} "Admin user"]]
-               [:> Box {:style {:width 180 :flex-shrink 0}}
-                [:> Text {:size "1" :color "gray" :weight "medium"} "Password (base64)"]]
-               [:> Box {:style {:width 80}}
-                [:> Text {:size "1" :color "gray" :weight "medium"} "Status"]]]
+              [shared/flex-table-header
+               [{:flex 1    :label "Resource"}
+                {:width 120 :label "Admin user"}
+                {:width 180 :label "Password"}
+                {:width 80  :label "Status"}]]
               (doall
                (for [[i r] (map-indexed vector resources)]
                  (let [c          (get cfg (:id r))
@@ -313,7 +323,7 @@
                                  :style {:font-family "var(--font-mono)" :font-size 11
                                          :overflow "hidden" :text-overflow "ellipsis"
                                          :white-space "nowrap"}}
-                        (js/btoa (:password c))])]
+                        (mask-password (:password c))])]
                     [:> Box {:style {:width 80}}
                      (if has-creds?
                        [:> Badge {:color "green" :variant "soft" :size "1"}

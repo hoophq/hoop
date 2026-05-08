@@ -2,8 +2,8 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Heading
                                 Progress Table Text]]
-   ["lucide-react" :refer [AlertCircle ArrowLeft Ban Check CheckCircle2
-                            Loader2 RefreshCw Rocket ScrollText X]]
+   ["lucide-react" :refer [AlertCircle Ban Check CheckCircle2
+                            RefreshCw Rocket ScrollText X]]
    [re-frame.core :as rf]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
@@ -13,26 +13,19 @@
    :refresh [:> RefreshCw {:size 11}]
    :rocket  [:> Rocket {:size 11}]})
 
+(def ^:private indicator-icons
+  {:check [:> CheckCircle2 {:size 14}]
+   :ban   [:> Ban {:size 13}]})
+
 (defn- status-indicator [{:keys [color label spinner? icon]}]
-  (cond
-    spinner?
-    [:> Flex {:align "center" :gap "2"}
-     [:span {:class "animate-spin inline-flex"
-             :style {:color (str "var(--" color "-9)")}}
-      [:> Loader2 {:size 13}]]
-     [:> Text {:size "2" :color color} label]]
-
-    icon
-    [:> Flex {:align "center" :gap "2"}
-     [:> Box {:style {:color (str "var(--" color "-9)") :display "flex"}}
-      (case icon
-        :check [:> CheckCircle2 {:size 14}]
-        :ban   [:> Ban {:size 13}])]
-     [:> Badge {:color color :variant "soft" :size "1"} label]]
-
-    :else
-    [:> Flex {:align "center" :gap "2"}
-     [:> Badge {:color color :variant "soft" :size "1"} label]]))
+  [:> Flex {:align "center" :gap "2"}
+   (cond
+     spinner? [shared/spinner {:color color :size 13}]
+     icon     [:> Box {:style {:color (str "var(--" color "-9)") :display "flex"}}
+               (get indicator-icons icon)])
+   (if spinner?
+     [:> Text {:size "2" :color color} label]
+     [:> Badge {:color color :variant "soft" :size "1"} label])])
 
 (defn- status-action [item]
   (when-let [action (get data/plan-item-action (:status item))]
@@ -92,8 +85,7 @@
 
       [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
        [:> Flex {:align "center" :gap "2" :mb "1"}
-        [:> Button {:variant "ghost" :color "gray" :size "2" :on-click on-back}
-         [:> ArrowLeft {:size 14}] " Back to catalog"]]
+        [shared/back-button {:on-click on-back :label "Back to catalog"}]]
 
        [:> Flex {:align "center" :justify "between" :mb "4"}
         [:> Flex {:direction "column" :gap "1"}
@@ -199,8 +191,7 @@
 
        [:> Flex {:align "center" :justify "between" :pt "4" :mt "4"
                  :style {:border-top "1px solid var(--gray-4)" :flex-shrink 0}}
-        [:> Button {:variant "outline" :color "gray" :on-click on-back}
-         [:> ArrowLeft {:size 14}] " Back to catalog"]
+        [shared/back-button {:on-click on-back :label "Back to catalog"}]
         [:> Flex {:gap "2"}
          (when (and all-planned? (pos? plan-done) (not applying?))
            [:> Button {:on-click #(rf/dispatch [:provisioning/apply-all])}

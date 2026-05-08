@@ -1,6 +1,5 @@
 (ns webapp.provisioning.data
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]))
+  (:require [clojure.string :as cs]))
 
 ;; ── Resource stages ────────────────────────────────────────────────────────────
 ;; :needs-admin  → admin account not yet configured
@@ -91,58 +90,87 @@
   (let [tokens (cs/split (cs/upper-case (cs/trim perms-str)) #"[,\s]+")]
     (and (seq tokens) (every? valid-permissions tokens))))
 
-(defn classify-csv-rows
-  "Takes parsed CSV rows and the selected resources.
-   Returns {:valid [...] :conflicts {conflict-id [rows...]} :skipped-csv [...]
-            :skipped-resources [...] :invalid [...]}."
-  [parsed-rows resources]
-  (let [resource-names (set (map :name resources))
-        {matched true unmatched false}
-        (group-by #(contains? resource-names (:resource-name %)) parsed-rows)
+(defn- has-required-fields? [row]
+  (and (seq (:resource-name row))
+       (seq (:role row))
+       (seq (:database row))
+       (seq (:permissions row))))
 
-        {valid-fields true invalid-fields false}
-        (group-by (fn [row]
-                    (boolean
-                     (and (seq (:resource-name row))
-                          (seq (:role row))
-                          (seq (:database row))
-                          (seq (:permissions row)))))
-                  (or matched []))
+(defn- dedup-group-key [r]
+  [(:resource-name r) (:role r) (:database r)
+   (normalize-permissions (:permissions r))])
 
-        {good-perms true bad-perms false}
-        (group-by #(validate-permissions (:permissions %)) (or valid-fields []))
+(defn- conflict-group-key [r]
+  [(:resource-name r) (:role r) (:database r)])
 
-        dedup-groups (vals (group-by (fn [r] [(:resource-name r)
-                                            (:role r)
-                                            (:database r)
-                                            (normalize-permissions (:permissions r))])
-                                   (or good-perms [])))
-        unique-rows    (mapv first dedup-groups)
-        duplicate-rows (vec (mapcat rest dedup-groups))
+(defn- partition-by-pred
+  "Like clojure.core/group-by with a boolean pred but returns
+   {:matches [...] :rest [...]} for readability."
+  [pred coll]
+  (let [{t true f false} (group-by (comp boolean pred) coll)]
+    {:matches (vec (or t [])) :rest (vec (or f []))}))
 
-        grouped (group-by (fn [r] [(:resource-name r) (:role r) (:database r)]) unique-rows)
+(defn- split-duplicates
+  "Returns [unique-rows duplicate-rows] keeping the first occurrence of each
+   (resource, role, database, permissions) tuple."
+  [rows]
+  (let [groups (vals (group-by dedup-group-key rows))]
+    [(mapv first groups)
+     (vec (mapcat rest groups))]))
+
+(defn- split-conflicts
+  "Returns [conflict-map valid-rows]. A conflict is the same
+   (resource, role, database) appearing with different permissions."
+  [unique-rows]
+  (let [grouped       (group-by conflict-group-key unique-rows)
         {conflict-groups true ok-groups false}
         (group-by (fn [[_k rows]] (> (count rows) 1)) grouped)
+        conflict-map  (into {}
+                            (map-indexed
+                             (fn [idx [k rows]]
+                               [(str "conflict-" idx)
+                                (mapv #(assoc % :conflict-key k) rows)])
+                             (or conflict-groups [])))
+        valid-rows    (vec (mapcat val (or ok-groups [])))]
+    [conflict-map valid-rows]))
 
-        conflict-map (into {}
-                          (map-indexed
-                           (fn [idx [k rows]]
-                             [(str "conflict-" idx)
-                              (mapv #(assoc % :conflict-key k) rows)])
-                           (or conflict-groups [])))
+(defn classify-csv-rows
+  "Takes parsed CSV rows and the selected resources.
+   Returns {:valid [...] :conflicts {conflict-id [rows...]}
+            :duplicates [...] :skipped-csv [...] :skipped-resources [...]
+            :invalid [...]}."
+  [parsed-rows resources]
+  (let [resource-names (set (map :name resources))
+        ;; ── 1. partition unmatched (resource not selected) from matched rows
+        {matched :matches unmatched :rest}
+        (partition-by-pred #(contains? resource-names (:resource-name %))
+                           parsed-rows)
 
-        valid-rows (vec (mapcat val (or ok-groups [])))
+        ;; ── 2. drop rows missing required fields
+        {valid-fields :matches missing-fields :rest}
+        (partition-by-pred has-required-fields? matched)
 
-        csv-resource-names     (set (map :resource-name (or parsed-rows [])))
-        skipped-resources      (vec (filter #(not (contains? csv-resource-names (:name %)))
-                                            resources))]
+        ;; ── 3. drop rows with malformed permissions
+        {good-perms :matches bad-perms :rest}
+        (partition-by-pred #(validate-permissions (:permissions %)) valid-fields)
+
+        ;; ── 4. dedupe identical rows
+        [unique-rows duplicate-rows] (split-duplicates good-perms)
+
+        ;; ── 5. extract conflicts vs clean rows
+        [conflict-map valid-rows]    (split-conflicts unique-rows)
+
+        ;; ── 6. surface resources that have no CSV row at all
+        csv-resource-names (set (map :resource-name (or parsed-rows [])))
+        skipped-resources  (vec (remove #(contains? csv-resource-names (:name %))
+                                        resources))]
     {:valid             valid-rows
      :conflicts         conflict-map
      :duplicates        duplicate-rows
-     :skipped-csv       (vec (or unmatched []))
+     :skipped-csv       unmatched
      :skipped-resources skipped-resources
-     :invalid           (vec (concat (or invalid-fields [])
-                                     (map #(assoc % :error :bad-permissions) (or bad-perms []))))}))
+     :invalid           (into missing-fields
+                              (map #(assoc % :error :bad-permissions) bad-perms))}))
 
 ;; ── Count helper ─────────────────────────────────────────────────────────────
 (defn count-by-status

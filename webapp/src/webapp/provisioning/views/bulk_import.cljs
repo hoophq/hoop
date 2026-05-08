@@ -1,27 +1,22 @@
 (ns webapp.provisioning.views.bulk-import
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Callout Dialog Flex Heading
+   ["@radix-ui/themes" :refer [Badge Box Button Dialog Flex Heading
                                IconButton Progress Table Text]]
-   ["papaparse" :as papa]
    ["react" :as react]
    ["lucide-react" :refer [AlertCircle Check CheckCircle2
-                           ChevronLeft ChevronRight Database Loader2 Upload X]]
-   [re-frame.core :as rf]))
+                           Database Upload X]]
+   [re-frame.core :as rf]
+   [webapp.provisioning.data :as data]
+   [webapp.provisioning.views.shared :as shared]))
 
 (def step-labels ["Source" "Parsing" "Preview" "Importing" "Results"])
 (def step-keys   [:upload :parsing :preview :importing :results])
 
-(def import-status-color
-  {"new"       "green"
-   "update"    "blue"
-   "unchanged" "gray"
-   "error"     "red"})
-
-(def import-status-label
-  {"new"       "New"
-   "update"    "Update"
-   "unchanged" "Unchanged"
-   "error"     "Error"})
+(def import-status
+  {"new"       {:color "green" :label "New"}
+   "update"    {:color "blue"  :label "Update"}
+   "unchanged" {:color "gray"  :label "Unchanged"}
+   "error"     {:color "red"   :label "Error"}})
 
 (defn step-indicator [current-step]
   (let [cur-idx (.indexOf step-keys current-step)]
@@ -181,8 +176,7 @@
             :style {:flex 1} :gap "5"}
    [:> Flex {:direction "column" :align "center" :gap "4" :style {:width 380}}
     [:> Flex {:align "center" :gap "2"}
-     [:> Box {:class "animate-pulse" :style {:color "var(--indigo-9)" :display "flex"}}
-      [:> Loader2 {:size 20}]]
+     [shared/spinner {:color "indigo" :size 20}]
      [:> Text {:size "3" :weight "medium"} "Parsing your file…"]]
     [:> Box {:style {:width "100%"}}
      [:> Progress {:value parse-progress :size "2" :color "indigo"}]]
@@ -227,12 +221,12 @@
         [:> Badge {:color "red" :variant "soft"} (str error-count " error")])]
 
      (when (pos? error-count)
-       [:> Callout.Root {:color "amber" :size "1"}
-        [:> Callout.Icon [:> AlertCircle {:size 14}]]
-        [:> Callout.Text {:size "1"}
-         (str error-count " row" (when (> error-count 1) "s")
-              " will be skipped due to validation errors. "
-              "The remaining " valid-count " rows will be imported.")]])
+       [shared/info-callout
+        {:color "amber" :size "1"
+         :icon  [:> AlertCircle {:size 14}]
+         :text  (str (data/pluralize error-count "row")
+                     " will be skipped due to validation errors. "
+                     "The remaining " valid-count " rows will be imported.")}])
 
      [:> Box {:style {:flex 1 :overflow-y "auto"
                       :border "1px solid var(--gray-5)"
@@ -274,32 +268,23 @@
              [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
               (or (:port row) "\u2014")]]
             [:> Table.Cell
-             [:> Flex {:direction "column" :gap "1"}
-              [:> Badge {:color (get import-status-color (:status row) "gray")
-                         :variant "soft" :size "1"}
-               (get import-status-label (:status row))]
-              (for [d (:update-diff row)]
-                ^{:key (:field d)}
-                [:> Text {:size "1" :color "gray"
-                          :style {:font-family "var(--font-mono)" :font-size 10}}
-                 (str (:field d) ": " (:from d) " \u2192 " (:to d))])
-              (when (:error-reason row)
-                [:> Text {:size "1" :color "red"} (:error-reason row)])]]]))]]]
+             (let [{:keys [color label]} (get import-status (:status row)
+                                              {:color "gray" :label (:status row)})]
+               [:> Flex {:direction "column" :gap "1"}
+                [:> Badge {:color color :variant "soft" :size "1"} label]
+                (for [d (:update-diff row)]
+                  ^{:key (:field d)}
+                  [:> Text {:size "1" :color "gray"
+                            :style {:font-family "var(--font-mono)" :font-size 10}}
+                   (str (:field d) ": " (:from d) " \u2192 " (:to d))])
+                (when (:error-reason row)
+                  [:> Text {:size "1" :color "red"} (:error-reason row)])])]]))]]]
 
-     (when (> total-pages 1)
-       [:> Flex {:align "center" :justify "center" :gap "3" :py "2"
-                 :style {:flex-shrink 0}}
-        [:> Button {:size "1" :variant "ghost" :color "gray"
-                    :disabled (zero? page)
-                    :on-click #(set-page (dec page))}
-         [:> ChevronLeft {:size 14}]]
-        [:> Text {:size "1" :color "gray"}
-         (str "Page " (inc page) " of " total-pages
-              " (" (inc start-idx) "\u2013" end-idx " of " total-count ")")]
-        [:> Button {:size "1" :variant "ghost" :color "gray"
-                    :disabled (>= (inc page) total-pages)
-                    :on-click #(set-page (inc page))}
-         [:> ChevronRight {:size 14}]]])
+     [shared/pagination
+      {:page        page
+       :total-pages total-pages
+       :detail      (str (inc start-idx) "\u2013" end-idx " of " total-count)
+       :on-change   set-page}]
 
      [:> Flex {:align "center" :justify "between" :pt "2" :style {:flex-shrink 0}}
       [:> Text {:size "1" :color "gray"}
@@ -314,8 +299,6 @@
                                (rf/dispatch
                                 [:provisioning/import-next-resource
                                  {:queue       importable-rows
-                                  :index       0
-                                  :results     []
                                   :on-progress (fn [done total]
                                                  (set-import-progress
                                                   (js/Math.round (* 100 (/ done total)))))
@@ -342,8 +325,7 @@
               :style {:flex 1} :gap "5"}
      [:> Flex {:direction "column" :align "center" :gap "4" :style {:width 400}}
       [:> Flex {:align "center" :gap "2"}
-       [:> Box {:class "animate-pulse" :style {:color "var(--indigo-9)" :display "flex"}}
-        [:> Loader2 {:size 20}]]
+       [shared/spinner {:color "indigo" :size 20}]
        [:> Text {:size "3" :weight "medium"}
         (str "Importing resources… (" done " of " total ")")]]
       [:> Box {:style {:width "100%"}}
@@ -392,21 +374,21 @@
             v]])]]
 
       (when (seq api-failures)
-        [:> Callout.Root {:color "red" :size "1" :style {:width "100%"}}
-         [:> Callout.Icon [:> AlertCircle {:size 14}]]
-         [:> Callout.Text {:size "1"}
-          (let [f (first api-failures)
-                err-msg (or (some-> (:error f) :message) "unknown error")]
-            (str "Failed to create \"" (get-in f [:row :name]) "\": " err-msg
-                 (when (> (count api-failures) 1)
-                   (str " (+" (dec (count api-failures)) " more)"))))]])
+        (let [f       (first api-failures)
+              err-msg (or (some-> (:error f) :message) "unknown error")]
+          [shared/info-callout
+           {:color "red" :size "1" :mb "0"
+            :icon  [:> AlertCircle {:size 14}]
+            :text  (str "Failed to create \"" (get-in f [:row :name]) "\": " err-msg
+                        (when (> (count api-failures) 1)
+                          (str " (+" (dec (count api-failures)) " more)")))}]))
 
       (when (seq parse-errors)
-        [:> Callout.Root {:color "amber" :size "1" :style {:width "100%"}}
-         [:> Callout.Icon [:> AlertCircle {:size 14}]]
-         [:> Callout.Text {:size "1"}
-          (let [e (first parse-errors)]
-            (str "Row " (:row e) " skipped: " (:reason e)))]])
+        (let [e (first parse-errors)]
+          [shared/info-callout
+           {:color "amber" :size "1" :mb "0"
+            :icon  [:> AlertCircle {:size 14}]
+            :text  (str "Row " (:row e) " skipped: " (:reason e))}]))
 
       [:> Flex {:direction "column" :gap "0"
                 :style {:width "100%"
@@ -469,31 +451,22 @@
                        (set-step :parsing)
                        (set-parse-progress 0)
                        (set-parsed-count 0)
-                       (let [count-ref (atom 0)
-                             rows-ref  (atom [])]
-                         (papa/parse file-obj
-                                     (clj->js
-                                      {"header"         true
-                                       "skipEmptyLines" true
-                                       "dynamicTyping"  true
-                                       "step"           (fn [row _parser]
-                                                          (let [row-data (js->clj (.-data row) :keywordize-keys true)]
-                                                            (swap! rows-ref conj row-data)
-                                                            (swap! count-ref inc)
-                                                            (let [n     @count-ref
-                                                                  total (.-current row-count-ref)]
-                                                              (set-parsed-count n)
-                                                              (when (pos? total)
-                                                                (set-parse-progress
-                                                                 (min 95 (js/Math.round (* 100 (/ n total)))))))))
-                                       "complete"       (fn [_results]
-                                                          (let [data       @rows-ref
-                                                                classified (classify-rows data resources)]
-                                                            (set-classified-rows (:rows classified))
-                                                            (set-summary (:summary classified))
-                                                            (set-row-count (count data))
-                                                            (set-parse-progress 100)
-                                                            (js/setTimeout #(set-step :preview) 350)))}))))]
+                       (shared/parse-csv!
+                        file-obj
+                        {:dynamic-typing? true
+                         :on-row     (fn [_row n]
+                                       (set-parsed-count n)
+                                       (let [total (.-current row-count-ref)]
+                                         (when (pos? total)
+                                           (set-parse-progress
+                                            (min 95 (js/Math.round (* 100 (/ n total))))))))
+                         :on-complete (fn [rows]
+                                        (let [classified (classify-rows rows resources)]
+                                          (set-classified-rows (:rows classified))
+                                          (set-summary (:summary classified))
+                                          (set-row-count (count rows))
+                                          (set-parse-progress 100)
+                                          (js/setTimeout #(set-step :preview) 350)))}))]
     [:> Dialog.Root {:open true
                      :onOpenChange #(when-not % (on-close))}
      [:> Dialog.Content {:max-width "880px"

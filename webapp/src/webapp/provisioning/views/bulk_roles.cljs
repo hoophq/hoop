@@ -5,7 +5,6 @@
    ["lucide-react" :refer [AlertTriangle Check ChevronDown
                            ChevronRight Circle FileText Info Key
                            Upload XCircle]]
-   ["papaparse" :as papa]
    ["react" :as react]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
@@ -46,19 +45,12 @@
     [:> Box {:style {:flex 1 :overflow-y "auto"
                      :border "1px solid var(--gray-5)"
                      :border-radius "var(--radius-2)"}}
-     [:> Flex {:px "3" :py "2"
-               :style {:background "var(--gray-3)"
-                       :border-bottom "1px solid var(--gray-5)"
-                       :position "sticky" :top 0}}
-      [:> Box {:style {:width 36 :flex-shrink 0}}]
-      [:> Box {:style {:flex "2 1 0"}}
-       [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-      [:> Box {:style {:flex "2 1 0"}}
-       [:> Text {:size "1" :color "gray" :weight "medium"} "Role"]]
-      [:> Box {:style {:width 100 :flex-shrink 0}}
-       [:> Text {:size "1" :color "gray" :weight "medium"} "Type"]]
-      [:> Box {:style {:width 80 :flex-shrink 0}}
-       [:> Text {:size "1" :color "gray" :weight "medium"} "DB users"]]]
+     [shared/flex-table-header
+      [{:width 36  :label ""}
+       {:flex "2 1 0" :label "Resource"}
+       {:flex "2 1 0" :label "Role"}
+       {:width 100 :label "Type"}
+       {:width 80  :label "DB users"}]]
      (doall
       (for [[i {:keys [resource role]}] (map-indexed vector all-roles)]
         (let [selected? (contains? (get selected-roles (:id resource)) (:name role))]
@@ -90,21 +82,12 @@
             [:> Text {:size "2" :color "gray"} (:user-count role)]]])))]))
 
 ;; ── CSV preview table header ─────────────────────────────────────────────────
-(defn- csv-table-header []
-  [:> Flex {:px "3" :py "2"
-            :style {:background "var(--gray-3)"
-                    :border-bottom "1px solid var(--gray-5)"
-                    :position "sticky" :top 0 :z-index 1}}
-   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
-    [:> Text {:size "1" :color "gray" :weight "medium"} "Resource"]]
-   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
-    [:> Text {:size "1" :color "gray" :weight "medium"} "Role"]]
-   [:> Box {:style {:flex "1 1 0" :min-width 0}}
-    [:> Text {:size "1" :color "gray" :weight "medium"} "Database"]]
-   [:> Box {:style {:flex "1 1 0" :min-width 0}}
-    [:> Text {:size "1" :color "gray" :weight "medium"} "Permissions"]]
-   [:> Box {:style {:width 110 :flex-shrink 0}}
-    [:> Text {:size "1" :color "gray" :weight "medium"} "Status"]]])
+(def ^:private csv-preview-cols
+  [{:flex "1.2 1 0" :label "Resource"}
+   {:flex "1.2 1 0" :label "Role"}
+   {:flex "1 1 0"   :label "Database"}
+   {:flex "1 1 0"   :label "Permissions"}
+   {:width 110      :label "Status"}])
 
 ;; ── Row renderers ────────────────────────────────────────────────────────────
 (defn- csv-row-base [{:keys [row bg extra-style badge-content badge-color badge-icon reason]}]
@@ -263,7 +246,7 @@
      [:> Box {:style {:flex 1 :overflow-y "auto"
                       :border "1px solid var(--gray-5)"
                       :border-radius "var(--radius-2)"}}
-      [csv-table-header]
+      [shared/flex-table-header csv-preview-cols]
 
       (into [:<>]
             (when has-conflicts?
@@ -282,25 +265,19 @@
 
      [skipped-resources-section skipped-resources]]))
 
-;; ── Papa-parse helper ────────────────────────────────────────────────────────
-(defn- parse-roles-csv!
-  "Parses a CSV file using papaparse. Calls on-complete with parsed row maps."
-  [file on-complete]
-  (papa/parse file
-              #js {"header"         true
-                   "skipEmptyLines" true
-                   "complete"       (fn [results]
-                                     (let [rows (js->clj (.-data results) :keywordize-keys true)
-                                           mapped (vec
-                                                   (map-indexed
-                                                    (fn [idx row]
-                                                      {:resource-name (or (:resource_name row) "")
-                                                       :role          (or (:role row) "")
-                                                       :database      (or (:database row) "")
-                                                       :permissions   (or (:permissions row) "")
-                                                       :line-num      (+ idx 2)})
-                                                    rows))]
-                                       (on-complete mapped)))}))
+;; ── CSV row normalization ────────────────────────────────────────────────────
+(defn- normalize-roles-rows
+  "Converts raw papa-parsed rows into the role-row shape the classifier expects."
+  [rows]
+  (vec
+   (map-indexed
+    (fn [idx row]
+      {:resource-name (or (:resource_name row) "")
+       :role          (or (:role row) "")
+       :database      (or (:database row) "")
+       :permissions   (or (:permissions row) "")
+       :line-num      (+ idx 2)})
+    rows)))
 
 ;; ── Main screen (inner, uses React hooks) ────────────────────────────────────
 (defn- bulk-roles-screen-inner
@@ -318,14 +295,16 @@
 
         handle-file! (fn [file]
                        (set-csv-parsing true)
-                       (parse-roles-csv!
+                       (shared/parse-csv!
                         file
-                        (fn [parsed]
-                          (let [classified (data/classify-csv-rows parsed resources)]
-                            (set-csv-parsed parsed)
-                            (set-classification classified)
-                            (set-conflict-picks {})
-                            (set-csv-parsing false)))))
+                        {:on-complete
+                         (fn [rows]
+                           (let [parsed     (normalize-roles-rows rows)
+                                 classified (data/classify-csv-rows parsed resources)]
+                             (set-csv-parsed parsed)
+                             (set-classification classified)
+                             (set-conflict-picks {})
+                             (set-csv-parsing false)))}))
 
         clear-csv!   (fn []
                        (set-csv-parsed nil)
