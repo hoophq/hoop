@@ -64,13 +64,13 @@
     [:> Text {:size "4" :weight "bold" :class "text-[--gray-12]"}
      "No sessions found for this workflow"]
     [:> Text {:size "2" :class "text-[--gray-11]"}
-     "Make sure your agent passes the same correlation ID on every step — either "
+     "Make sure your AI agent or Automation passes the same correlation ID on every step — either "
      "with the "
-     [:code {:class "font-mono text-[--gray-12]"} "--correlation-id"]
+     [:code {:class "text-[--gray-12]"} "--correlation-id"]
      " CLI flag, the "
-     [:code {:class "font-mono text-[--gray-12]"} "X-Hoop-Correlation-Id"]
+     [:code {:class "text-[--gray-12]"} "X-Hoop-Correlation-Id"]
      " HTTP header, or the "
-     [:code {:class "font-mono text-[--gray-12]"} "correlation_id"]
+     [:code {:class "text-[--gray-12]"} "correlation_id"]
      " field on the REST API."]]
    [:> Button {:size "2" :variant "soft" :color "gray"
                :on-click #(rf/dispatch [:navigate :sessions])}

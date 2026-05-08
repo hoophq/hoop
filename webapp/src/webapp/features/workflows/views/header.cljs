@@ -87,7 +87,7 @@
         [:> Text {:size "1" :weight "bold"
                   :class "uppercase tracking-wider text-[--gray-11]"}
          "Correlation ID"]
-        [:> Text {:class "font-mono text-[13px] text-[--gray-12] truncate"
+        [:> Text {:class "text-[13px] text-[--gray-12] truncate"
                   :title correlation-id}
          correlation-id]
         [copy-button correlation-id]]

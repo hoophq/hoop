@@ -41,7 +41,6 @@
      [:> Button
       {:size "1"
        :variant "soft"
-       :class "font-mono"
        :on-click (fn [e]
                    (.stopPropagation e)
                    (rf/dispatch [:navigate :workflow-details

@@ -48,7 +48,7 @@
                           "bg-[--gray-12] border border-[--gray-a4] "
                           "whitespace-pre-wrap break-words")}
       [:> Text {:size "1"
-                :class "font-mono text-[--gray-1]"}
+                :class "text-[--gray-1]"}
        content]]]))
 
 (defn- detail-row [label content]
