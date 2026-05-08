@@ -2356,6 +2356,8 @@ type ResourceResponse struct {
 	EnvVars map[string]string `json:"env_vars"`
 	// The agent associated with this resource
 	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Connections (roles) associated with this resource
+	Roles []Connection `json:"roles,omitempty"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2470,6 +2472,65 @@ type ResourceApplyBatchRequest struct {
 type ResourceApplyBatchResponse struct {
 	// The list of apply results
 	Results []ResourceApplyResult `json:"results"`
+}
+
+type BatchPlanItem struct {
+	// The resource name
+	ResourceName string `json:"resource_name" binding:"required" example:"analytics-db-011"`
+	// The role name to plan
+	Role string `json:"role" binding:"required" example:"analytics-db-read"`
+	// The database (schema) target
+	Database string `json:"database" binding:"required" example:"dbprod.public"`
+	// The SQL permissions to grant
+	Permissions []string `json:"permissions" binding:"required" example:"SELECT,INSERT"`
+}
+
+type BatchPlanRequest struct {
+	// The items to plan
+	Items []BatchPlanItem `json:"items" binding:"required,dive"`
+}
+
+type BatchPlanResultItem struct {
+	// The resource name
+	ResourceName string `json:"resource_name" example:"analytics-db-011"`
+	// The role name
+	Role string `json:"role" example:"analytics-db-read"`
+	// The plan ID
+	PlanID string `json:"plan_id" example:"plan-1717171717-1234"`
+	// The plan status: Create, Update, or Failed
+	Status string `json:"status" enums:"Create,Update,Failed" example:"Create"`
+	// The session ID for reviewing the plan output
+	SessionID string `json:"session_id" example:"sess-plan-1717171717-1234"`
+	// Error message if the plan failed
+	Error string `json:"error,omitempty" example:"resource not found"`
+}
+
+type BatchPlanResponse struct {
+	// The results for each item
+	Results []BatchPlanResultItem `json:"results"`
+}
+
+type BatchApplyRequest struct {
+	// The plan IDs to apply
+	PlanIDs []string `json:"plan_ids" binding:"required" example:"plan-1717171717-1234"`
+}
+
+type BatchApplyResultItem struct {
+	// The plan ID that was applied
+	PlanID string `json:"plan_id" example:"plan-1717171717-1234"`
+	// The apply status: Applied or ApplyFailed
+	Status string `json:"status" enums:"Applied,ApplyFailed" example:"Applied"`
+	// The session ID for reviewing the apply output
+	SessionID string `json:"session_id" example:"sess-apply-1717171717-1234"`
+	// The role (connection) name that was created or updated
+	RoleName string `json:"role_name,omitempty" example:"analytics-db-read"`
+	// Error message if the apply failed
+	Error string `json:"error,omitempty"`
+}
+
+type BatchApplyResponse struct {
+	// The results for each plan
+	Results []BatchApplyResultItem `json:"results"`
 }
 
 type RunbookConfigurationRequest struct {

@@ -198,40 +198,45 @@
   (let [plan-job @(rf/subscribe [:provisioning/plan-job])
         items    (or (:items plan-job) [])]
     (when (seq items)
-      (let [applied  (count (filter #(= "Applied" (:status %)) items))
-            failed   (count (filter #(contains? #{"Failed" "ApplyFailed"} (:status %)) items))
-            ready    (count (filter #(contains? #{"Create" "Update"} (:status %)) items))
-            planning (some #(contains? #{"pending" "processing"} (:status %)) items)
-            applying (some #(= "applying" (:status %)) items)
-            busy?    (or planning applying)
-            total    (count items)
-            all-done (and (not busy?) (zero? ready))
-            color    (cond busy?          "indigo"
-                          (pos? failed)   "amber"
-                          all-done        "green"
-                          (pos? ready)    "blue"
-                          :else           "gray")
-            icon     (cond
-                       busy?        [:span {:class "animate-spin inline-flex"
-                                            :style {:color (str "var(--" color "-9)")}}
-                                     [:> Loader2 {:size 14}]]
-                       all-done     [:> Check {:size 14}]
-                       (pos? ready) [:> Rocket {:size 14}]
-                       :else        [:> AlertCircle {:size 14}])
-            progress (cond
-                       planning (str "Planning — " (- total (count (filter #(contains? #{"pending" "processing"} (:status %)) items))) "/" total)
-                       applying (str "Applying — " applied "/" total)
-                       all-done (str applied " applied" (when (pos? failed) (str ", " failed " failed")))
-                       :else    (str ready " ready to apply" (when (pos? failed) (str ", " failed " failed"))))]
-        [callout
-         {:color   color
-          :px      "4" :py "3"
-          :icon    icon
-          :extra   [:> Flex {:align "center" :gap "3"}
-                    [:> Text {:size "2" :weight "medium"} "Role provisioning"]
-                    [:> Text {:size "2" :color "gray"} progress]]
-          :actions [:> Button {:size "1" :variant "ghost" :on-click on-view}
-                    (if busy? "View progress" "View results")]}]))))
+      (let [applied   (count (filter #(= "Applied" (:status %)) items))
+            failed    (count (filter #(contains? #{"Failed" "ApplyFailed"} (:status %)) items))
+            ready     (count (filter #(contains? #{"Create" "Update"} (:status %)) items))
+            cancelled (count (filter #(= "Cancelled" (:status %)) items))
+            planning  (some #(contains? #{"pending" "processing"} (:status %)) items)
+            applying  (some #(= "applying" (:status %)) items)
+            busy?     (or planning applying)
+            total     (count items)
+            all-done  (and (not busy?) (zero? ready))
+            all-success? (and all-done (zero? failed) (zero? cancelled))
+            color     (cond busy?          "indigo"
+                            (pos? failed)  "amber"
+                            all-done       "green"
+                            (pos? ready)   "blue"
+                            :else          "gray")
+            icon      (cond
+                        busy?        [:span {:class "animate-spin inline-flex"
+                                             :style {:color (str "var(--" color "-9)")}}
+                                      [:> Loader2 {:size 14}]]
+                        all-done     [:> Check {:size 14}]
+                        (pos? ready) [:> Rocket {:size 14}]
+                        :else        [:> AlertCircle {:size 14}])
+            suffix    (str (when (pos? failed) (str ", " failed " failed"))
+                           (when (pos? cancelled) (str ", " cancelled " cancelled")))
+            progress  (cond
+                        planning (str "Planning — " (- total (count (filter #(contains? #{"pending" "processing"} (:status %)) items))) "/" total)
+                        applying (str "Applying — " applied "/" total)
+                        all-done (str applied " applied" suffix)
+                        :else    (str ready " ready to apply" suffix))]
+        (when-not all-success?
+          [callout
+           {:color   color
+            :px      "4" :py "3"
+            :icon    icon
+            :extra   [:> Flex {:align "center" :gap "3"}
+                      [:> Text {:size "2" :weight "medium"} "Role provisioning"]
+                      [:> Text {:size "2" :color "gray"} progress]]
+            :actions [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                      (if busy? "View progress" "View results")]}])))))
 
 ;; ── Floating action bar ────────────────────────────────────────────────────────
 
@@ -446,12 +451,15 @@
                          (filterv #(= stage-filter (:stage %)) resources)
                          resources)
 
-        visible        (filterv (fn [r]
-                                  (or (empty? search)
-                                      (cs/includes?
-                                       (cs/lower-case (:name r))
-                                       (cs/lower-case search))))
-                                stage-filtered)
+        progress-score {:needs-admin 0 :needs-roles 1 :ready 2}
+        visible        (->> stage-filtered
+                             (filterv (fn [r]
+                                        (or (empty? search)
+                                            (cs/includes?
+                                             (cs/lower-case (:name r))
+                                             (cs/lower-case search)))))
+                             (sort-by #(get progress-score (:stage %) 0))
+                             vec)
         total-visible  (count visible)
         total-pages    (js/Math.ceil (/ total-visible hub-page-size))
         safe-page      (min page (max 0 (dec total-pages)))

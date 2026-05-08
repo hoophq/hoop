@@ -55,7 +55,7 @@
                  :handler-key :on-open-bulk-roles
                  :variant     "ghost"
                  :color       nil}
-   :ready       {:row-label   "Manage"
+   :ready       {:row-label   "Configured"
                  :banner-verb nil
                  :handler-key nil
                  :variant     "ghost"

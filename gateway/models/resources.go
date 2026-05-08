@@ -183,12 +183,41 @@ func UpsertResource(db *gorm.DB, resource *Resources, updateDependentTables bool
 	return err
 }
 
+func GetResourceConnectionByName(db *gorm.DB, orgID, resourceName, connName string) (*Connection, error) {
+	var conn Connection
+	err := db.Table(tableConnections).
+		Where("org_id = ? AND resource_name = ? AND name = ?", orgID, resourceName, connName).
+		First(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+	return &conn, nil
+}
+
 func GetResourceConnections(db *gorm.DB, orgID, resourceName string) ([]Connection, error) {
 	var connections []Connection
 	err := db.Table(tableConnections).
 		Where("org_id = ? AND resource_name = ?", orgID, resourceName).
 		Find(&connections).Error
 	return connections, err
+}
+
+func GetConnectionsByResourceNames(db *gorm.DB, orgID string, resourceNames []string) (map[string][]Connection, error) {
+	if len(resourceNames) == 0 {
+		return map[string][]Connection{}, nil
+	}
+	var connections []Connection
+	err := db.Table(tableConnections).
+		Where("org_id = ? AND resource_name IN (?)", orgID, resourceNames).
+		Find(&connections).Error
+	if err != nil {
+		return nil, err
+	}
+	grouped := make(map[string][]Connection, len(resourceNames))
+	for _, c := range connections {
+		grouped[c.ResourceName] = append(grouped[c.ResourceName], c)
+	}
+	return grouped, nil
 }
 
 func DeleteResource(db *gorm.DB, orgID, name string) error {

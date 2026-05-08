@@ -21,24 +21,25 @@
   (let [env     (:env_vars resource)
         host    (or (decode-env env "HOST") "")
         port    (or (decode-env env "PORT") "")
-        subtype (or (:subtype resource) (:type resource))]
-    {:id       (:id resource)
-     :name     (:name resource)
-     :db-type  (get subtype->display subtype subtype)
-     :address  (if (seq port) (str host ":" port) host)
-     :host     host
-     :port     port
-     :agent-id (:agent_id resource)
-     :admin    (decode-env env "ADMIN_ACCOUNT")
-     :stage    (derive-stage env)
-     :roles    []}))
+        subtype (or (:subtype resource) (:type resource))
+        roles   (or (:roles resource) [])]
+    {:id         (:id resource)
+     :name       (:name resource)
+     :db-type    (get subtype->display subtype subtype)
+     :address    (if (seq port) (str host ":" port) host)
+     :host       host
+     :port       port
+     :agent-id   (:agent_id resource)
+     :admin      (decode-env env "ADMIN_ACCOUNT")
+     :stage      (derive-stage env)
+     :role-count (count roles)
+     :roles      roles}))
 
 (defn- compute-stage
   [resource]
   (cond
     (not (:admin resource)) (assoc resource :stage :needs-admin)
-    (pos? (count (:roles resource))) (assoc resource :stage :ready
-                                            :role-count (count (:roles resource)))
+    (pos? (:role-count resource)) (assoc resource :stage :ready)
     :else (assoc resource :stage :needs-roles)))
 
 (defn- resource-catalog? [resource]
@@ -67,45 +68,20 @@
    (fetch-resources-page! 1 [])
    {:db (assoc-in db [:provisioning :resources :status] :loading)}))
 
-(rf/reg-event-fx
+(rf/reg-event-db
  :provisioning/set-resources
- (fn [{:keys [db]} [_ api-resources]]
+ (fn [db [_ api-resources]]
    (let [catalog-only (filterv resource-catalog? api-resources)
          api-mapped   (mapv (comp compute-stage api-resource->provisioning-resource) catalog-only)]
-     {:db (-> db
-              (assoc-in [:provisioning :resources :status] :ready)
-              (assoc-in [:provisioning :resources :data] api-mapped))
-      :fx (mapv (fn [r]
-                  [:dispatch [:provisioning/fetch-resource-roles (:name r)]])
-                api-mapped)})))
+     (-> db
+         (assoc-in [:provisioning :resources :status] :ready)
+         (assoc-in [:provisioning :resources :data] api-mapped)))))
 
 (rf/reg-event-db
  :provisioning/set-resources-error
  (fn [db [_ _error]]
    (assoc-in db [:provisioning :resources :status] :error)))
 
-(rf/reg-event-fx
- :provisioning/fetch-resource-roles
- (fn [_ [_ resource-name]]
-   {:fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/connections"
-                             :query-params {:resource_name resource-name}
-                             :on-success #(rf/dispatch [:provisioning/set-resource-roles resource-name %])
-                             :on-failure (fn [_])}]]]}))
-
-(rf/reg-event-db
- :provisioning/set-resource-roles
- (fn [db [_ resource-name response]]
-   (let [roles (get response :data response)
-         role-list (if (sequential? roles) roles [])]
-     (update-in db [:provisioning :resources :data]
-                (fn [resources]
-                  (mapv (fn [r]
-                          (if (= (:name r) resource-name)
-                            (compute-stage (assoc r :roles role-list
-                                                  :role-count (count role-list)))
-                            r))
-                        resources))))))
 
 (rf/reg-event-db
  :provisioning/add-resources
@@ -296,6 +272,13 @@
                           it))
                       items)))))
 
+;; ── Batch chunking helpers ──────────────────────────────────────────────────
+
+(def ^:private plan-chunk-size 50)
+(def ^:private apply-chunk-size 50)
+
+;; ── Plan flow (batch) ───────────────────────────────────────────────────────
+
 (rf/reg-event-fx
  :provisioning/start-role-plans
  (fn [{:keys [db]} [_ {:keys [resources roles-by-resource]}]]
@@ -317,19 +300,95 @@
                              :session-id    nil})
                           role-list)))
                      roles-by-resource))
-         plan-job  {:id    (str "plan-" (.now js/Date))
-                    :items items
-                    :started-at (.now js/Date)}]
+         plan-job  {:id          (str "plan-" (.now js/Date))
+                    :items       items
+                    :cancelled?  false
+                    :started-at  (.now js/Date)}]
      {:db (assoc-in db [:provisioning :plan-job] plan-job)
-      :fx (vec (map-indexed
-                (fn [idx item]
-                  [:dispatch-later
-                   {:ms (+ 200 (* idx 100))
-                    :dispatch [:provisioning/request-plan (:key item)]}])
-                items))})))
+      :fx [[:dispatch [:provisioning/plan-next-chunk 0]]]})))
 
 (rf/reg-event-fx
- :provisioning/request-plan
+ :provisioning/plan-next-chunk
+ (fn [{:keys [db]} [_ chunk-idx]]
+   (let [plan-job (get-in db [:provisioning :plan-job])]
+     (when (and plan-job (not (:cancelled? plan-job)))
+       (let [items     (:items plan-job)
+             pending   (filterv #(= "pending" (:status %)) items)
+             chunk     (vec (take plan-chunk-size pending))]
+         (when (seq chunk)
+           (let [chunk-keys (set (map :key chunk))
+                 payload    {:items (mapv (fn [it]
+                                           {:resource_name (:resource-name it)
+                                            :role          (:role it)
+                                            :database      (:database it)
+                                            :permissions   (vec (.split (or (:permissions it) "") #"\s*,\s*"))})
+                                         chunk)}]
+             {:db (update-in db [:provisioning :plan-job :items]
+                             (fn [its]
+                               (mapv (fn [it]
+                                       (if (chunk-keys (:key it))
+                                         (assoc it :status "processing")
+                                         it))
+                                     its)))
+              :fx [[:dispatch
+                    [:fetch {:method     "POST"
+                             :uri        "/resources/plan/batch"
+                             :body       payload
+                             :on-success (fn [resp]
+                                           (rf/dispatch [:provisioning/plan-batch-response
+                                                         chunk-idx chunk resp]))
+                             :on-failure (fn [_err]
+                                           (rf/dispatch [:provisioning/plan-batch-error
+                                                         chunk]))}]]]})))))))
+
+(rf/reg-event-fx
+ :provisioning/plan-batch-response
+ (fn [{:keys [db]} [_ chunk-idx _chunk resp]]
+   (let [results    (:results resp)
+         result-map (into {}
+                          (map (fn [r] [(str (:resource_name r) "|" (:role r)) r])
+                               results))
+         new-items  (mapv (fn [it]
+                            (if-let [r (get result-map
+                                            (str (:resource-name it) "|" (:role it)))]
+                              (assoc it
+                                     :status     (:status r)
+                                     :plan-id    (:plan_id r)
+                                     :session-id (:session_id r))
+                              it))
+                          (get-in db [:provisioning :plan-job :items]))]
+     {:db (assoc-in db [:provisioning :plan-job :items] new-items)
+      :fx [[:dispatch [:provisioning/plan-next-chunk (inc chunk-idx)]]]})))
+
+(rf/reg-event-fx
+ :provisioning/plan-batch-error
+ (fn [{:keys [db]} [_ chunk]]
+   (let [chunk-keys (set (map :key chunk))
+         new-items  (mapv (fn [it]
+                            (if (chunk-keys (:key it))
+                              (assoc it :status "Failed")
+                              it))
+                          (get-in db [:provisioning :plan-job :items]))]
+     {:db (assoc-in db [:provisioning :plan-job :items] new-items)
+      :fx [[:dispatch [:provisioning/plan-next-chunk 0]]]})))
+
+(rf/reg-event-db
+ :provisioning/plan-response
+ (fn [db [_ item-key response]]
+   (update-in db [:provisioning :plan-job :items]
+              (fn [items]
+                (mapv (fn [it]
+                        (if (= (:key it) item-key)
+                          (assoc it
+                                 :status     (:status response)
+                                 :plan-id    (:plan-id response)
+                                 :session-id (:session-id response))
+                          it))
+                      items)))))
+
+;; Single-item retry still uses the individual endpoint
+(rf/reg-event-fx
+ :provisioning/retry-plan
  (fn [{:keys [db]} [_ item-key]]
    (let [item (some #(when (= (:key %) item-key) %)
                     (get-in db [:provisioning :plan-job :items]))]
@@ -352,43 +411,123 @@
                                        (rf/dispatch
                                         [:provisioning/plan-response
                                          item-key
-                                         {:plan-id       (:plan_id resp)
-                                          :status        (:status resp)
-                                          :session-id    (:session_id resp)
-                                          :resource-name (:resource-name item)
-                                          :role          (:role item)}]))
+                                         {:plan-id    (:plan_id resp)
+                                          :status     (:status resp)
+                                          :session-id (:session_id resp)}]))
                          :on-failure (fn [_err]
                                        (rf/dispatch
                                         [:provisioning/plan-response
                                          item-key
-                                         {:plan-id       nil
-                                          :status        "Failed"
-                                          :session-id    nil
-                                          :resource-name (:resource-name item)
-                                          :role          (:role item)}]))}]]]})))))
+                                         {:plan-id    nil
+                                          :status     "Failed"
+                                          :session-id nil}]))}]]]})))))
+
+;; ── Cancel flow ─────────────────────────────────────────────────────────────
 
 (rf/reg-event-db
- :provisioning/plan-response
- (fn [db [_ item-key response]]
+ :provisioning/cancel-plan
+ (fn [db _]
+   (-> db
+       (assoc-in [:provisioning :plan-job :cancelled?] true)
+       (update-in [:provisioning :plan-job :items]
+                  (fn [items]
+                    (mapv (fn [it]
+                            (if (contains? #{"pending"} (:status it))
+                              (assoc it :status "Cancelled")
+                              it))
+                          items))))))
+
+(rf/reg-event-db
+ :provisioning/cancel-apply
+ (fn [db _]
+   (-> db
+       (assoc-in [:provisioning :plan-job :apply-cancelled?] true)
+       (update-in [:provisioning :plan-job :items]
+                  (fn [items]
+                    (mapv (fn [it]
+                            (if (contains? #{"Create" "Update"} (:status it))
+                              (assoc it :status "Cancelled")
+                              it))
+                          items))))))
+
+(rf/reg-event-db
+ :provisioning/cancel-plan-item
+ (fn [db [_ item-key]]
    (update-in db [:provisioning :plan-job :items]
               (fn [items]
                 (mapv (fn [it]
-                        (if (= (:key it) item-key)
-                          (assoc it
-                                 :status     (:status response)
-                                 :plan-id    (:plan-id response)
-                                 :session-id (:session-id response))
+                        (if (and (= (:key it) item-key)
+                                 (contains? #{"pending" "Create" "Update"} (:status it)))
+                          (assoc it :status "Cancelled")
                           it))
                       items)))))
 
+;; ── Apply flow (batch) ──────────────────────────────────────────────────────
+
 (rf/reg-event-fx
- :provisioning/retry-plan
- (fn [_ [_ item-key]]
-   {:fx [[:dispatch [:provisioning/request-plan item-key]]]}))
+ :provisioning/apply-all
+ (fn [{:keys [db]} _]
+   {:db (-> db
+            (assoc-in [:provisioning :plan-job :apply-cancelled?] false))
+    :fx [[:dispatch [:provisioning/apply-next-chunk 0]]]}))
 
-;; ── Apply flow ──────────────────────────────────────────────────────────────
-;; POST /resources/{name}/apply — executes the planned change.
+(rf/reg-event-fx
+ :provisioning/apply-next-chunk
+ (fn [{:keys [db]} [_ chunk-idx]]
+   (let [plan-job (get-in db [:provisioning :plan-job])]
+     (when (and plan-job (not (:apply-cancelled? plan-job)))
+       (let [items      (:items plan-job)
+             applicable (filterv #(contains? #{"Create" "Update"} (:status %)) items)
+             chunk      (vec (take apply-chunk-size applicable))]
+         (when (seq chunk)
+           (let [chunk-keys (set (map :key chunk))
+                 plan-ids   (mapv :plan-id chunk)]
+             {:db (update-in db [:provisioning :plan-job :items]
+                             (fn [its]
+                               (mapv (fn [it]
+                                       (if (chunk-keys (:key it))
+                                         (assoc it :status "applying")
+                                         it))
+                                     its)))
+              :fx [[:dispatch
+                    [:fetch {:method     "POST"
+                             :uri        "/resources/apply/batch"
+                             :body       {:plan_ids plan-ids}
+                             :on-success (fn [resp]
+                                           (rf/dispatch [:provisioning/apply-batch-response
+                                                         chunk-idx chunk resp]))
+                             :on-failure (fn [_err]
+                                           (rf/dispatch [:provisioning/apply-batch-error
+                                                         chunk]))}]]]})))))))
 
+(rf/reg-event-fx
+ :provisioning/apply-batch-response
+ (fn [{:keys [db]} [_ chunk-idx _chunk resp]]
+   (let [results    (:results resp)
+         result-map (into {} (map (fn [r] [(:plan_id r) r]) results))
+         new-items  (mapv (fn [it]
+                            (if-let [r (get result-map (:plan-id it))]
+                              (assoc it
+                                     :status     (:status r)
+                                     :session-id (:session_id r))
+                              it))
+                          (get-in db [:provisioning :plan-job :items]))]
+     {:db (assoc-in db [:provisioning :plan-job :items] new-items)
+      :fx [[:dispatch [:provisioning/apply-next-chunk (inc chunk-idx)]]]})))
+
+(rf/reg-event-fx
+ :provisioning/apply-batch-error
+ (fn [{:keys [db]} [_ chunk]]
+   (let [chunk-keys (set (map :key chunk))
+         new-items  (mapv (fn [it]
+                            (if (chunk-keys (:key it))
+                              (assoc it :status "ApplyFailed")
+                              it))
+                          (get-in db [:provisioning :plan-job :items]))]
+     {:db (assoc-in db [:provisioning :plan-job :items] new-items)
+      :fx [[:dispatch [:provisioning/apply-next-chunk 0]]]})))
+
+;; Single-item apply still uses the individual endpoint
 (rf/reg-event-fx
  :provisioning/apply-plan
  (fn [{:keys [db]} [_ item-key]]
@@ -433,18 +572,6 @@
                                  :session-id (:session-id response))
                           it))
                       items)))))
-
-(rf/reg-event-fx
- :provisioning/apply-all
- (fn [{:keys [db]} _]
-   (let [items (get-in db [:provisioning :plan-job :items])
-         applicable (filterv #(contains? #{"Create" "Update"} (:status %)) items)]
-     {:fx (vec (map-indexed
-                (fn [idx item]
-                  [:dispatch-later
-                   {:ms (* idx 80)
-                    :dispatch [:provisioning/apply-plan (:key item)]}])
-                applicable))})))
 
 (defn- mock-session-output
   "Generates realistic mock session output based on the item's current status."

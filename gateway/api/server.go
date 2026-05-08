@@ -1129,6 +1129,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.ApplyPlan)
+	r.POST("/resources/plan/batch",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.BatchPlanResources)
+	r.POST("/resources/apply/batch",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.BatchApplyPlans)
 
 	r.GET("/resources/:name/health",
 		apiroutes.AdminOnlyAccessRole,
