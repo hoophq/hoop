@@ -64,7 +64,7 @@
     (rf/dispatch [:audit->get-session-logs-data session-id])
 
     (fn [event-stream]
-      [:div {:class "flex flex-col h-[660px] min-h-0 overflow-hidden"}
+      [:div {:class "flex flex-col min-h-[660px] overflow-hidden"}
        [tabs/tabs {:on-change handle-tab-change
                    :tabs ["Logs" "Video"]
                    :default-value "Logs"}]
