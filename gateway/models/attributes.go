@@ -9,11 +9,12 @@ import (
 )
 
 type Attribute struct {
-	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	OrgID       uuid.UUID `gorm:"column:org_id;index:idx_attributes_org_name,unique"`
-	Name        string    `gorm:"column:name;index:idx_attributes_org_name,unique"`
-	Description *string   `gorm:"column:description"`
-	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
+	ID          uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID       uuid.UUID  `gorm:"column:org_id;index:idx_attributes_org_name,unique"`
+	Name        string     `gorm:"column:name;index:idx_attributes_org_name,unique"`
+	Description *string    `gorm:"column:description"`
+	RulepackID  *uuid.UUID `gorm:"column:rulepack_id"`
+	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime"`
 
 	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
@@ -197,11 +198,16 @@ type AttributeFilterOption struct {
 	Search   string
 	Page     int
 	PageSize int
+	IncludeRulepackOwned bool
 }
 
 func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([]*Attribute, int64, error) {
 	var total int64
 	query := db.Model(&Attribute{}).Where("org_id = ?", orgID)
+
+	if !opts.IncludeRulepackOwned {
+		query = query.Where("rulepack_id IS NULL")
+	}
 
 	if opts.Search != "" {
 		query = query.Where("name ILIKE ?", "%"+opts.Search+"%")

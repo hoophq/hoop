@@ -74,8 +74,9 @@ func UpdateAccessRequestRule(db *gorm.DB, accessRequestRules *AccessRequestRule)
 }
 
 type AccessRequestRulesFilterOption struct {
-	Page     int
-	PageSize int
+	Page                    int
+	PageSize                int
+	IncludeAllRulepackOwned bool
 }
 
 func CountAccessRequestRules(db *gorm.DB, orgID uuid.UUID) (int64, error) {
@@ -88,12 +89,31 @@ func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRule
 	var accessRequestRules []AccessRequestRule
 	var total int64
 
-	// Get total count
-	if err := db.Model(&AccessRequestRule{}).Where("org_id = ?", orgID).Count(&total).Error; err != nil {
+	baseQuery := db.Model(&AccessRequestRule{}).Where("org_id = ?", orgID)
+	if !opts.IncludeAllRulepackOwned {
+		hide := `(
+			NOT EXISTS (
+				SELECT 1 FROM private.access_request_rules_attributes ja
+				WHERE ja.org_id = private.access_request_rules.org_id
+				  AND ja.access_rule_name = private.access_request_rules.name
+			)
+			OR EXISTS (
+				SELECT 1 FROM private.access_request_rules_attributes ja
+				JOIN private.attributes a
+				  ON a.org_id = ja.org_id AND a.name = ja.attribute_name
+				WHERE ja.org_id = private.access_request_rules.org_id
+				  AND ja.access_rule_name = private.access_request_rules.name
+				  AND a.rulepack_id IS NULL
+			)
+		)`
+		baseQuery = baseQuery.Where(hide)
+	}
+
+	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := db.Preload("RuleAttributes").Where("org_id = ?", orgID).Order("created_at DESC")
+	query := baseQuery.Preload("RuleAttributes").Order("created_at DESC")
 
 	if opts.PageSize > 0 {
 		offset := 0

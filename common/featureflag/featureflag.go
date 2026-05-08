@@ -61,6 +61,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.rulepacks": {
+		Name:        "experimental.rulepacks",
+		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.

@@ -6243,6 +6243,266 @@ const docTemplate = `{
                 }
             }
         },
+        "/rulepacks": {
+            "get": {
+                "description": "List rulepacks for the organization with optional pagination and search.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "List Rulepacks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by display_name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (1-100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_Rulepack"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new rulepack for the organization. Always created with is_managed=false.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Create Rulepack",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RulepackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Rulepack"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/rulepacks/{id}": {
+            "get": {
+                "description": "Get a rulepack by its UUID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Get Rulepack",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rulepack ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Rulepack"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing rulepack. Returns 403 if the rulepack is Hoop-managed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Update Rulepack",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rulepack ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RulepackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Rulepack"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a rulepack. Returns 403 if Hoop-managed. Cascades delete to its attributes and their feature junctions.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Delete Rulepack",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rulepack ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/runbooks": {
             "get": {
                 "description": "List all Runbooks",
@@ -10142,6 +10402,7 @@ const docTemplate = `{
                     ]
                 },
                 "description": {
+                    "description": "The description of the attribute",
                     "type": "string",
                     "example": "Blocks high-risk SQL commands"
                 },
@@ -10156,9 +10417,15 @@ const docTemplate = `{
                     ]
                 },
                 "name": {
-                    "description": "The name of the attribute",
+                    "description": "The name of the attribute. When rulepack_id is set, the name MUST start with ` + "`" + `rulepack_` + "`" + `.",
                     "type": "string",
                     "example": "default-session-attribute"
+                },
+                "rulepack_id": {
+                    "description": "Optional rulepack this attribute belongs to. When set, the name must use the ` + "`" + `rulepack_` + "`" + ` prefix.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },
@@ -10249,6 +10516,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "rulepack_id": {
+                    "description": "The rulepack this attribute belongs to (when set, attribute is managed via the rulepack)",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },
@@ -12547,6 +12820,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_Rulepack": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Rulepack"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_SecurityAuditLogResponse": {
             "type": "object",
             "properties": {
@@ -13742,6 +14029,113 @@ const docTemplate = `{
                 "ReviewTypeJit",
                 "ReviewTypeOneTime"
             ]
+        },
+        "openapi.Rulepack": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "description": "Optional description",
+                    "type": "string",
+                    "example": "Standard PCI controls for production DBs"
+                },
+                "display_name": {
+                    "description": "Human-readable display name for the rulepack",
+                    "type": "string",
+                    "example": "PCI Database Access"
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "is_managed": {
+                    "description": "True for Hoop-managed rulepacks (read-only for users)",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
+                },
+                "is_paid": {
+                    "description": "Whether this rulepack requires a paid tier",
+                    "type": "boolean",
+                    "example": false
+                },
+                "org_id": {
+                    "description": "Organization ID that owns this rulepack",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "tags": {
+                    "description": "Tags for grouping and filtering rulepacks",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pci",
+                        "production"
+                    ]
+                },
+                "updated_at": {
+                    "description": "The time the resource was last updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "version": {
+                    "description": "Optional version string",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.RulepackRequest": {
+            "type": "object",
+            "required": [
+                "display_name"
+            ],
+            "properties": {
+                "description": {
+                    "description": "Optional description of what the rulepack provides",
+                    "type": "string",
+                    "example": "Standard PCI controls for production DBs"
+                },
+                "display_name": {
+                    "description": "Human-readable display name for the rulepack (unique per organization)",
+                    "type": "string",
+                    "example": "PCI Database Access"
+                },
+                "is_paid": {
+                    "description": "Whether the rulepack is gated behind a paid tier",
+                    "type": "boolean",
+                    "example": false
+                },
+                "tags": {
+                    "description": "Tags for grouping and filtering rulepacks",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pci",
+                        "production"
+                    ]
+                },
+                "version": {
+                    "description": "Optional version string (free-form, e.g. semver)",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
         },
         "openapi.Runbook": {
             "type": "object",

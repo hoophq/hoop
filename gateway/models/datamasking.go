@@ -130,7 +130,35 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	})
 }
 
-func ListDataMaskingRules(orgID string) ([]DataMaskingRule, error) {
+type DataMaskingListOption struct {
+	IncludeAllRulepackOwned bool
+}
+
+func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMaskingRule, error) {
+	var opt DataMaskingListOption
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	hideClause := ""
+	if !opt.IncludeAllRulepackOwned {
+		hideClause = `
+		AND (
+			NOT EXISTS (
+				SELECT 1 FROM private.datamasking_rules_attributes ja
+				WHERE ja.org_id = r.org_id AND ja.datamasking_rule_name = r.name
+			)
+			OR EXISTS (
+				SELECT 1 FROM private.datamasking_rules_attributes ja
+				JOIN private.attributes a
+				  ON a.org_id = ja.org_id AND a.name = ja.attribute_name
+				WHERE ja.org_id = r.org_id
+				  AND ja.datamasking_rule_name = r.name
+				  AND a.rulepack_id IS NULL
+			)
+		)`
+	}
+
 	var rules []DataMaskingRule
 	return rules, DB.Raw(`
 	SELECT
@@ -146,7 +174,7 @@ func ListDataMaskingRules(orgID string) ([]DataMaskingRule, error) {
 		r.updated_at
 	FROM private.datamasking_rules r
 	WHERE org_id = ?
-	`, orgID, orgID, orgID).
+	`+hideClause, orgID, orgID, orgID).
 		Find(&rules).
 		Error
 }

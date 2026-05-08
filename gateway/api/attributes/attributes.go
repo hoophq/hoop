@@ -3,9 +3,11 @@ package apiattributes
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -15,6 +17,47 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
+
+const (
+	rulepackFlagName       = "experimental.rulepacks"
+	rulepackAttrNamePrefix = "rulepack_"
+)
+
+func validateRulepackPrefix(req openapi.AttributeRequest) error {
+	hasPrefix := strings.HasPrefix(req.Name, rulepackAttrNamePrefix)
+	hasRulepackID := req.RulepackID != nil && *req.RulepackID != ""
+	if hasRulepackID && !hasPrefix {
+		return errPrefixMismatch
+	}
+	if hasPrefix && !hasRulepackID {
+		return errMissingRulepackID
+	}
+	return nil
+}
+
+var (
+	errPrefixMismatch    = &validationError{msg: "attribute name must start with `rulepack_` when rulepack_id is set"}
+	errMissingRulepackID = &validationError{msg: "attribute names with the `rulepack_` prefix must include a rulepack_id"}
+)
+
+type validationError struct{ msg string }
+
+func (e *validationError) Error() string { return e.msg }
+
+func guardManagedAttribute(c *gin.Context, attr *models.Attribute, orgID uuid.UUID) bool {
+	if attr.RulepackID == nil {
+		return false
+	}
+	rp, err := models.GetRulepack(models.DB, orgID, *attr.RulepackID)
+	if err != nil {
+		return false
+	}
+	if rp.IsManaged {
+		c.JSON(http.StatusForbidden, gin.H{"message": "attributes belonging to managed rulepacks cannot be modified"})
+		return true
+	}
+	return false
+}
 
 func buildAttributeModel(orgID uuid.UUID, req openapi.AttributeRequest) *models.Attribute {
 	var connAttrs []models.ConnectionAttribute
@@ -62,10 +105,18 @@ func buildAttributeModel(orgID uuid.UUID, req openapi.AttributeRequest) *models.
 		}
 	}
 
+	var rulepackID *uuid.UUID
+	if req.RulepackID != nil && *req.RulepackID != "" {
+		if parsed, err := uuid.Parse(*req.RulepackID); err == nil {
+			rulepackID = &parsed
+		}
+	}
+
 	return &models.Attribute{
 		OrgID:               orgID,
 		Name:                req.Name,
 		Description:         req.Description,
+		RulepackID:          rulepackID,
 		Connections:         connAttrs,
 		AccessRequestRules:  arrAttrs,
 		GuardrailRules:      grAttrs,
@@ -99,6 +150,20 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	rulepackEnabled := featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName)
+	if rulepackEnabled {
+		if vErr := validateRulepackPrefix(req); vErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
+			return
+		}
+		if vErr := assertRulepackUsable(orgID, req.RulepackID); vErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
+			return
+		}
+	} else {
+		req.RulepackID = nil
+	}
+
 	attr := buildAttributeModel(orgID, req)
 
 	err = models.UpsertAttribute(models.DB, attr)
@@ -111,6 +176,24 @@ func Post(c *gin.Context) {
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating attribute: %v", err)
 	}
+}
+
+func assertRulepackUsable(orgID uuid.UUID, rulepackIDStr *string) error {
+	if rulepackIDStr == nil || *rulepackIDStr == "" {
+		return nil
+	}
+	id, err := uuid.Parse(*rulepackIDStr)
+	if err != nil {
+		return &validationError{msg: "invalid rulepack_id"}
+	}
+	rp, err := models.GetRulepack(models.DB, orgID, id)
+	if err != nil {
+		return &validationError{msg: "rulepack_id does not reference an existing rulepack"}
+	}
+	if rp.IsManaged {
+		return &validationError{msg: "managed rulepacks cannot accept new or modified attributes"}
+	}
+	return nil
 }
 
 // UpdateAttribute
@@ -151,8 +234,28 @@ func Put(c *gin.Context) {
 		return
 	}
 
+	rulepackEnabled := featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName)
+	if rulepackEnabled {
+		if guardManagedAttribute(c, existentAttr, orgID) {
+			return
+		}
+		if vErr := validateRulepackPrefix(req); vErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
+			return
+		}
+		if vErr := assertRulepackUsable(orgID, req.RulepackID); vErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
+			return
+		}
+	} else {
+		req.RulepackID = nil
+	}
+
 	attr := buildAttributeModel(orgID, req)
 	attr.ID = existentAttr.ID
+	if !rulepackEnabled {
+		attr.RulepackID = existentAttr.RulepackID
+	}
 
 	err = models.UpsertAttribute(models.DB, attr)
 
@@ -184,6 +287,15 @@ func Delete(c *gin.Context) {
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
+	}
+
+	if featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName) {
+		existentAttr, gerr := models.GetAttribute(models.DB, orgID, c.Param("name"))
+		if gerr == nil {
+			if guardManagedAttribute(c, existentAttr, orgID) {
+				return
+			}
+		}
 	}
 
 	err = models.DeleteAttribute(models.DB, orgID, c.Param("name"))
@@ -308,11 +420,18 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		accessControlGroups[i] = acg.GroupName
 	}
 
+	var rulepackID *string
+	if a.RulepackID != nil {
+		s := a.RulepackID.String()
+		rulepackID = &s
+	}
+
 	return openapi.Attributes{
 		ID:                      a.ID.String(),
 		OrgID:                   a.OrgID.String(),
 		Name:                    a.Name,
 		Description:             a.Description,
+		RulepackID:              rulepackID,
 		ConnectionNames:         connections,
 		AccessRequestRuleNames:  accessRequest,
 		GuardrailRuleNames:      guardrail,

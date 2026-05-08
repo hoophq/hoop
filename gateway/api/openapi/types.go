@@ -2860,6 +2860,8 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// The rulepack this attribute belongs to (when set, attribute is managed via the rulepack)
+	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute
@@ -2875,14 +2877,53 @@ type Attributes struct {
 }
 
 type AttributeRequest struct {
-	// The name of the attribute
-	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
-	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
+	// The name of the attribute. When rulepack_id is set, the name MUST start with `rulepack_`.
+	Name string `json:"name" binding:"required" example:"default-session-attribute"`
+	// The description of the attribute
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Optional rulepack this attribute belongs to. When set, the name must use the `rulepack_` prefix.
+	RulepackID              *string  `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
 	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
+}
+
+type RulepackRequest struct {
+	// Human-readable display name for the rulepack (unique per organization)
+	DisplayName string `json:"display_name" binding:"required" example:"PCI Database Access"`
+	// Optional description of what the rulepack provides
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Optional version string (free-form, e.g. semver)
+	Version *string `json:"version,omitempty" example:"1.0.0"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// Whether the rulepack is gated behind a paid tier
+	IsPaid bool `json:"is_paid" example:"false"`
+}
+
+type Rulepack struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this rulepack
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// Human-readable display name for the rulepack
+	DisplayName string `json:"display_name" example:"PCI Database Access"`
+	// Optional description
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Optional version string
+	Version *string `json:"version,omitempty" example:"1.0.0"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// True for Hoop-managed rulepacks (read-only for users)
+	IsManaged bool `json:"is_managed" readonly:"true" example:"false"`
+	// Whether this rulepack requires a paid tier
+	IsPaid bool `json:"is_paid" example:"false"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was last updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 type MachineIdentity struct {

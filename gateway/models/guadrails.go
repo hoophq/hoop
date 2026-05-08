@@ -33,13 +33,37 @@ type GuardRailConnection struct {
 	CreatedAt    time.Time `gorm:"column:created_at"`
 }
 
-func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
-	var rules []*GuardRailRules
-	err := DB.Table(tableGuardRails).
-		Where("org_id = ?", orgID).
-		Order("name DESC").
-		Find(&rules).Error
+type GuardRailListOption struct {
+	IncludeAllRulepackOwned bool
+}
 
+func ListGuardRailRules(orgID string, opts ...GuardRailListOption) ([]*GuardRailRules, error) {
+	var opt GuardRailListOption
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	var rules []*GuardRailRules
+	query := DB.Table(tableGuardRails).Where("org_id = ?", orgID)
+
+	if !opt.IncludeAllRulepackOwned {
+		query = query.Where(`(
+			NOT EXISTS (
+				SELECT 1 FROM private.guardrail_rules_attributes ja
+				WHERE ja.org_id = ?::uuid AND ja.guardrail_rule_name = `+tableGuardRails+`.name
+			)
+			OR EXISTS (
+				SELECT 1 FROM private.guardrail_rules_attributes ja
+				JOIN private.attributes a
+				  ON a.org_id = ja.org_id AND a.name = ja.attribute_name
+				WHERE ja.org_id = ?::uuid
+				  AND ja.guardrail_rule_name = `+tableGuardRails+`.name
+				  AND a.rulepack_id IS NULL
+			)
+		)`, orgID, orgID)
+	}
+
+	err := query.Order("name DESC").Find(&rules).Error
 	if err != nil {
 		return nil, err
 	}

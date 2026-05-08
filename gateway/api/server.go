@@ -24,6 +24,7 @@ import (
 	apikeys "github.com/hoophq/hoop/gateway/api/apikeys"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
+	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
@@ -1179,6 +1180,27 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.Delete)
+
+	r.GET("/rulepacks",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.List)
+	r.GET("/rulepacks/:id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Get)
+	r.POST("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Post)
+	r.PUT("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Put)
+	r.DELETE("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Delete)
 
 	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
 	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)
