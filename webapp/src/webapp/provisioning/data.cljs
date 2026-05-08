@@ -61,16 +61,6 @@
                  :variant     "ghost"
                  :color       "gray"}})
 
-;; ── DB type → Radix color ──────────────────────────────────────────────────────
-(def db-type-color
-  {"PostgreSQL" "blue"})
-
-;; ── Mock agents ────────────────────────────────────────────────────────────────
-(def mock-agents
-  [{:id "default" :name "default-agent"      :env "All environments"}
-   {:id "prod-us" :name "prod-agent-us-east" :env "Production"}
-   {:id "staging" :name "staging-agent"      :env "Staging"}])
-
 ;; ── Mock PostgreSQL roles ──────────────────────────────────────────────────────
 (def mock-pg-roles
   [{:name "pg_read_all_data"  :type "read"      :user-count 3}
@@ -83,12 +73,6 @@
 (defn get-mock-roles [_db-type]
   mock-pg-roles)
 
-(defn- pg-schema-idents
-  "Use the last segment of dotted names (e.g. dbprod.public → public) for mock SQL."
-  [schemas]
-  (mapv #(or (some-> (cs/split % #"\.") last) %) (vec schemas)))
-
-;; ── CSV role import ──────────────────────────────────────────────────────────
 
 (def ^:private valid-permissions
   #{"SELECT" "INSERT" "UPDATE" "DELETE" "ALL"})
@@ -160,6 +144,47 @@
      :invalid           (vec (concat (or invalid-fields [])
                                      (map #(assoc % :error :bad-permissions) (or bad-perms []))))}))
 
+;; ── Count helper ─────────────────────────────────────────────────────────────
+(defn count-by-status
+  "Count items whose :status is in the given set (or equals a single string)."
+  [items statuses]
+  (let [pred (if (set? statuses)
+               #(contains? statuses (:status %))
+               #(= statuses (:status %)))]
+    (count (filter pred items))))
+
+;; ── Plan-item status display config ─────────────────────────────────────────
+;; Drives the badge/indicator in job-detail's status cell.
+;; :spinner? true  → animated Loader2 instead of a badge
+;; :icon     :check / :ban → leading icon inside the badge
+(def plan-item-status
+  {"pending"     {:color "gray"   :label "Pending"}
+   "processing"  {:color "indigo" :label "Planning…" :spinner? true}
+   "Create"      {:color "green"  :label "Create"}
+   "Update"      {:color "blue"   :label "Update"}
+   "Failed"      {:color "red"    :label "Failed"}
+   "applying"    {:color "indigo" :label "Applying…" :spinner? true}
+   "Applied"     {:color "green"  :label "Applied"   :icon :check}
+   "ApplyFailed" {:color "red"    :label "Apply failed"}
+   "Cancelled"   {:color "gray"   :label "Cancelled" :icon :ban}})
+
+;; ── Plan-item action config ─────────────────────────────────────────────────
+;; Maps status → action button shown on the right side of the status cell.
+;; :event is the re-frame event keyword, :item-key selects what to pass from the item.
+(def plan-item-action
+  {"pending"     {:event :provisioning/cancel-plan-item :item-key :key
+                  :variant "ghost" :color "gray" :icon :x :label nil}
+   "Failed"      {:event :provisioning/retry-plan :item-key :key
+                  :variant "soft" :color "red" :icon :refresh :label "Retry"}
+   "Create"      {:event :provisioning/apply-plan :item-key :key
+                  :variant "soft" :color "indigo" :icon :rocket :label "Apply"
+                  :cancel? true}
+   "Update"      {:event :provisioning/apply-plan :item-key :key
+                  :variant "soft" :color "indigo" :icon :rocket :label "Apply"
+                  :cancel? true}
+   "ApplyFailed" {:event :provisioning/apply-plan :item-key :key
+                  :variant "soft" :color "red" :icon :refresh :label "Retry"}})
+
 ;; ── Helpers ────────────────────────────────────────────────────────────────────
 (defn row-bg [stage selected? hovered?]
   (cond
@@ -188,180 +213,3 @@
    Pass an explicit `plural` form for irregular plurals."
   ([n word] (pluralize n word (str word "s")))
   ([n word plural] (str n " " (if (= 1 n) word plural))))
-
-;; ── Session output generator ───────────────────────────────────────────────────
-(defn generate-session-output
-  [job-type resource-name resource-type role-name agent-name success?
-   & [{:keys [catalog-schemas]}]]
-  (let [db-name        (cs/replace resource-name "-db" "")
-        schema-idents  (pg-schema-idents (or (seq catalog-schemas) ["public"]))
-        schema-banner  (when (seq catalog-schemas)
-                         (str "-- Catalog schemas: " (cs/join ", " catalog-schemas) "\n"))]
-    (if-not success?
-      (str "-- Resource: " resource-name " (" resource-type ") | Agent: " agent-name "\n"
-           "-- Target: " role-name "\n"
-           (or schema-banner "")
-           "\n"
-           "ERROR: could not connect to server: Connection refused\n"
-           "\tIs the server running on host \"" resource-name ".internal\"\n"
-           "\tand accepting TCP/IP connections on port 5432?\n"
-           "\n"
-           "-- ✗ Failed after 30.0s (connection timeout)")
-      (if (= job-type :admin-setup)
-        (str "-- Resource: " resource-name " (" resource-type ") | Agent: " agent-name "\n"
-             "-- Creating admin account: " role-name "\n"
-             "\n"
-             "BEGIN;\n"
-             "CREATE USER \"" role-name "\" WITH ENCRYPTED PASSWORD '***' SUPERUSER;\n"
-             "GRANT CONNECT ON DATABASE \"" db-name "\" TO \"" role-name "\";\n"
-             "GRANT USAGE ON SCHEMA public TO \"" role-name "\";\n"
-             "COMMIT;\n"
-             "\n"
-             "-- ✓ Admin account configured in 1.1s")
-        (let [is-read? (and (cs/includes? role-name "read")
-                            (not (cs/includes? role-name "write")))
-              usage    (cs/join ""
-                                  (for [sch schema-idents]
-                                    (str "GRANT USAGE ON SCHEMA " sch " TO \"" role-name "\";\n")))
-              tables   (cs/join ""
-                                  (for [sch schema-idents]
-                                    (str (if is-read?
-                                           (str "GRANT SELECT ON ALL TABLES IN SCHEMA " sch " TO \"" role-name "\";\n")
-                                           (str "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA " sch
-                                                " TO \"" role-name "\";\n")))))
-              defaults (cs/join ""
-                                  (for [sch schema-idents]
-                                    (str "ALTER DEFAULT PRIVILEGES IN SCHEMA " sch "\n"
-                                         (if is-read?
-                                           (str "  GRANT SELECT ON TABLES TO \"" role-name "\";\n")
-                                           (str "  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"" role-name "\";\n")))))]
-          (str "-- Resource: " resource-name " (" resource-type ") | Agent: " agent-name "\n"
-               "-- Role: " role-name "\n"
-               (or schema-banner "")
-               "\n"
-               "BEGIN;\n"
-               "CREATE ROLE \"" role-name "\";\n"
-               "GRANT CONNECT ON DATABASE \"" db-name "\" TO \"" role-name "\";\n"
-               usage
-               tables
-               defaults
-               "COMMIT;\n"
-               "\n"
-               "-- ✓ Role provisioned in 0.9s"))))))
-
-;; ── Job simulation ─────────────────────────────────────────────────────────────
-(defn start-job!
-  "Runs a mock provisioning job entirely client-side via js/setTimeout.
-   Dispatches re-frame events to update application state.
-   `opts` is {:type :admin-setup|:role-provision, :targets [...],
-              :configs {id -> config}, :roles-by-resource {id -> [role-name ...]},
-              :agent-id \"default\"}"
-  [{:keys [type targets configs roles-by-resource agent-id]}]
-  (let [job-id    (str "job-" (.now js/Date))
-        agent-rec (or (some #(when (= (:id %) (or agent-id "default")) %) mock-agents)
-                      (first mock-agents))
-        agent-nm  (:name agent-rec)
-        items     (mapv (fn [r] {:resource-id   (:id r)
-                                 :resource-name (:name r)
-                                 :resource-type (:db-type r)
-                                 :status        "pending"})
-                        targets)
-        new-job   {:id         job-id
-                   :type       type
-                   :label      (str (if (= type :admin-setup) "Admin setup" "Role provisioning")
-                                    " — " (count targets) " resources")
-                   :items      items
-                   :started-at (.now js/Date)}
-        batch-size (max 1 (js/Math.ceil (/ (count targets) 8)))]
-
-    (rf/dispatch [:provisioning/add-job new-job])
-
-    (doseq [[i target] (map-indexed vector targets)]
-      (let [batch   (js/Math.floor (/ i batch-size))
-            run-at  (+ 400 (* batch 600))
-            done-at (+ run-at 400)]
-
-        ;; Mark running
-        (js/setTimeout
-         (fn []
-           (rf/dispatch
-            [:provisioning/update-jobs
-             (fn [jobs]
-               (mapv (fn [j]
-                       (if (= (:id j) job-id)
-                         (update j :items
-                                 (fn [its]
-                                   (mapv (fn [it]
-                                           (if (= (:resource-id it) (:id target))
-                                             (assoc it :status "running")
-                                             it))
-                                         its)))
-                         j))
-                     jobs))]))
-         run-at)
-
-        ;; Mark done/failed + create sessions
-        (js/setTimeout
-         (fn []
-           (let [success?        (not= i (js/Math.floor (* (count targets) 0.85)))
-                 roles           (if (= type :admin-setup)
-                                   [(or (:username (get configs (:id target))) "admin")]
-                                   (or (seq (get roles-by-resource (:id target)))
-                                       [(str (:name target) "-readonly")
-                                        (str (:name target) "-readwrite")]))
-                 new-sessions
-                 (mapv (fn [role-name]
-                         {:id            (str "sess-" job-id "-" (:id target) "-" role-name)
-                          :job-id        job-id
-                          :resource-id   (:id target)
-                          :resource-name (:name target)
-                          :resource-type (:db-type target)
-                          :role-name     role-name
-                          :status        (if success? "success" "error")
-                          :started-at    (.now js/Date)
-                          :duration-ms   (if success?
-                                           (+ 700 (rand-int 800))
-                                           30000)
-                          :output        (generate-session-output
-                                          type (:name target) (:db-type target)
-                                          role-name agent-nm success?)})
-                       roles)]
-
-             (rf/dispatch [:provisioning/add-sessions new-sessions])
-             (rf/dispatch
-              [:provisioning/update-jobs
-               (fn [jobs]
-                 (mapv (fn [j]
-                         (if (= (:id j) job-id)
-                           (update j :items
-                                   (fn [its]
-                                     (mapv (fn [it]
-                                             (if (= (:resource-id it) (:id target))
-                                               (assoc it :status (if success? "done" "failed")
-                                                      :session-ids (mapv :id new-sessions))
-                                               it))
-                                           its)))
-                           j))
-                       jobs))])))
-         done-at)))
-
-    ;; After all items finish, advance resource stages
-    (let [finish-at (+ 400 (* (js/Math.ceil (/ (count targets) batch-size)) 600) 600)]
-      (js/setTimeout
-       (fn []
-         (rf/dispatch
-          [:provisioning/update-resources
-           (fn [rs]
-             (let [target-ids (set (map :id targets))]
-               (mapv (fn [r]
-                       (if (target-ids (:id r))
-                         (if (= type :admin-setup)
-                           (assoc r :stage :needs-roles
-                                  :admin (or (:username (get configs (:id r))) "admin"))
-                           (assoc r :stage :ready :role-count 2))
-                         r))
-                     rs)))]))
-       finish-at))
-
-    ;; Return job-id so callers can navigate to it
-    job-id))

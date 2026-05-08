@@ -1,6 +1,6 @@
 (ns webapp.provisioning.views.bulk-roles
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Callout Card Checkbox
+   ["@radix-ui/themes" :refer [Badge Box Button Card Checkbox
                                Flex Skeleton Text]]
    ["lucide-react" :refer [AlertTriangle Check ChevronDown
                            ChevronRight Circle FileText Info Key
@@ -223,8 +223,7 @@
      [:> Flex {:align "center" :gap "2" :mb "2"}
       [:> Info {:size 14 :color "var(--gray-9)"}]
       [:> Text {:size "2" :weight "medium" :color "gray"}
-       (str (count skipped-resources)
-            " selected resource" (when (not= 1 (count skipped-resources)) "s")
+       (str (data/pluralize (count skipped-resources) "selected resource")
             " had no matching CSV rows")]]
      [:> Flex {:gap "2" :style {:flex-wrap "wrap"}}
       (for [r skipped-resources]
@@ -246,19 +245,20 @@
         total     (count flat-rows)]
     [:<>
      (when (or has-conflicts? has-invalid?)
-       [:> Callout.Root {:color (if has-conflicts? "amber" "red") :mb "3" :size "1"}
-        [:> Callout.Icon
-         (if has-conflicts?
-           [:> AlertTriangle {:size 14}]
-           [:> XCircle {:size 14}])]
-        [:> Callout.Text {:size "1"}
-         (cond
-           (and has-conflicts? has-invalid?)
-           "Some rows have conflicts or errors. Resolve all conflicts (pick one row per group) and fix invalid rows before applying."
-           has-conflicts?
-           "Some rows have the same resource, role, and database but different permissions. Pick which row to keep for each conflict group."
-           :else
-           "Some rows have missing fields or invalid permissions. They will be excluded from provisioning.")]])
+       [shared/info-callout
+        {:color (if has-conflicts? "amber" "red")
+         :mb    "3"
+         :size  "1"
+         :icon  (if has-conflicts?
+                  [:> AlertTriangle {:size 14}]
+                  [:> XCircle {:size 14}])
+         :text  (cond
+                  (and has-conflicts? has-invalid?)
+                  "Some rows have conflicts or errors. Resolve all conflicts (pick one row per group) and fix invalid rows before applying."
+                  has-conflicts?
+                  "Some rows have the same resource, role, and database but different permissions. Pick which row to keep for each conflict group."
+                  :else
+                  "Some rows have missing fields or invalid permissions. They will be excluded from provisioning.")}])
 
      [:> Box {:style {:flex 1 :overflow-y "auto"
                       :border "1px solid var(--gray-5)"
@@ -368,10 +368,8 @@
                       (and (= method "csv") classification)
                       (str valid-count " valid"
                            (when (pos? duplicate-count)
-                             (str " · " duplicate-count " duplicate"
-                                  (when (not= 1 duplicate-count) "s")))
-                           " · " conflict-count " conflict"
-                           (when (not= 1 conflict-count) "s")
+                             (str " · " (data/pluralize duplicate-count "duplicate")))
+                           " · " (data/pluralize conflict-count "conflict")
                            " · " skipped-count " skipped")
                       (and (= method "bind") loading?)
                       "Reading roles from databases…"
@@ -429,8 +427,7 @@
             [:> ChevronDown {:size 14 :color "var(--gray-9)"}]
             [:> ChevronRight {:size 14 :color "var(--gray-9)"}])
           [:> Text {:size "2" :weight "medium" :color "gray"}
-           (str (count resources) " selected resource"
-                (when (not= 1 (count resources)) "s"))]
+           (data/pluralize (count resources) "selected resource")]
           [:> Text {:size "1" :color "gray" :style {:margin-left "auto"}}
            "Use these names in the resource_name column"]]
          (when res-list-open
@@ -483,10 +480,10 @@
      ;; ── Bind mode — role selection ──
      (when (and (= method "bind") (not loading?))
        [:<>
-        [:> Callout.Root {:color "blue" :mb "3" :size "1"}
-         [:> Callout.Icon [:> Info {:size 14}]]
-         [:> Callout.Text {:size "1"}
-          "Select the roles to bring into Hoop. A Hoop user will be created for each selected role and bound to the existing database role — no new roles are created in the database."]]
+        [shared/info-callout
+         {:color "blue" :mb "3" :size "1"
+          :icon  [:> Info {:size 14}]
+          :text  "Select the roles to bring into Hoop. A Hoop user will be created for each selected role and bound to the existing database role — no new roles are created in the database."}]
         [role-discovery-table
          {:resources        resources
           :discovered-roles discovered-roles
@@ -500,16 +497,14 @@
        :apply-disabled? apply-disabled?
        :apply-label     (cond
                           (= method "bind")
-                          (str "Bind " total-selected " role"
-                               (when (not= 1 total-selected) "s") " →")
+                          (str "Bind " (data/pluralize total-selected "role") " →")
                           (= method "csv")
                           (str "Provision " (+ valid-count
                                                 (count (filter #(get cur-picks (key %))
                                                                (:conflicts (or classification {})))))
                                " roles →")
                           :else
-                          (str "Provision " (count resources)
-                               (if (= 1 (count resources)) " resource" " resources") " →"))
+                          (str "Provision " (data/pluralize (count resources) "resource") " →"))
        :on-apply        (fn []
                           (let [roles-by-resource
                                 (cond

@@ -1,89 +1,61 @@
 (ns webapp.provisioning.views.job-detail
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Callout Flex Heading
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading
                                 Progress Table Text]]
    ["lucide-react" :refer [AlertCircle ArrowLeft Ban Check CheckCircle2
                             Loader2 RefreshCw Rocket ScrollText X]]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.provisioning.data :as data]
+   [webapp.provisioning.views.shared :as shared]))
+
+(def ^:private action-icons
+  {:x       [:> X {:size 11}]
+   :refresh [:> RefreshCw {:size 11}]
+   :rocket  [:> Rocket {:size 11}]})
+
+(defn- status-indicator [{:keys [color label spinner? icon]}]
+  (cond
+    spinner?
+    [:> Flex {:align "center" :gap "2"}
+     [:span {:class "animate-spin inline-flex"
+             :style {:color (str "var(--" color "-9)")}}
+      [:> Loader2 {:size 13}]]
+     [:> Text {:size "2" :color color} label]]
+
+    icon
+    [:> Flex {:align "center" :gap "2"}
+     [:> Box {:style {:color (str "var(--" color "-9)") :display "flex"}}
+      (case icon
+        :check [:> CheckCircle2 {:size 14}]
+        :ban   [:> Ban {:size 13}])]
+     [:> Badge {:color color :variant "soft" :size "1"} label]]
+
+    :else
+    [:> Flex {:align "center" :gap "2"}
+     [:> Badge {:color color :variant "soft" :size "1"} label]]))
+
+(defn- status-action [item]
+  (when-let [action (get data/plan-item-action (:status item))]
+    (let [dispatch-val (get item (:item-key action))
+          btn [:> Button {:size "1" :variant (:variant action) :color (:color action)
+                          :on-click #(rf/dispatch [(:event action) dispatch-val])}
+               (get action-icons (:icon action))
+               (when (:label action) (str " " (:label action)))]]
+      (if (:cancel? action)
+        [:> Flex {:align "center" :gap "1"}
+         btn
+         [:> Button {:size "1" :variant "ghost" :color "gray"
+                     :on-click #(rf/dispatch [:provisioning/cancel-plan-item (:key item)])}
+          [:> X {:size 11}]]]
+        btn))))
 
 (defn- status-cell [item]
-  (let [status (:status item)]
+  (let [cfg (get data/plan-item-status (:status item))]
     [:> Flex {:align "center" :gap "2" :justify "between"}
-     ;; Status badge / indicator
-     (case status
-       "pending"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Text {:size "2" :color "gray"} "Pending"]
-        [:> Button {:size "1" :variant "ghost" :color "gray"
-                    :on-click #(rf/dispatch [:provisioning/cancel-plan-item (:key item)])}
-         [:> X {:size 11}]]]
-
-       "processing"
-       [:> Flex {:align "center" :gap "2"}
-        [:span {:class "animate-spin inline-flex"
-                :style {:color "var(--indigo-9)"}}
-         [:> Loader2 {:size 13}]]
-        [:> Text {:size "2" :color "indigo"} "Planning…"]]
-
-       "Create"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Badge {:color "green" :variant "soft" :size "1"} "Create"]]
-
-       "Update"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Badge {:color "blue" :variant "soft" :size "1"} "Update"]]
-
-       "Failed"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Badge {:color "red" :variant "soft" :size "1"} "Failed"]]
-
-       "applying"
-       [:> Flex {:align "center" :gap "2"}
-        [:span {:class "animate-spin inline-flex"
-                :style {:color "var(--indigo-9)"}}
-         [:> Loader2 {:size 13}]]
-        [:> Text {:size "2" :color "indigo"} "Applying…"]]
-
-       "Applied"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Box {:style {:color "var(--green-9)" :display "flex"}}
-         [:> CheckCircle2 {:size 14}]]
-        [:> Badge {:color "green" :variant "soft" :size "1"} "Applied"]]
-
-       "ApplyFailed"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Badge {:color "red" :variant "soft" :size "1"} "Apply failed"]]
-
-       "Cancelled"
-       [:> Flex {:align "center" :gap "2"}
-        [:> Box {:style {:color "var(--gray-8)" :display "flex"}}
-         [:> Ban {:size 13}]]
-        [:> Badge {:color "gray" :variant "soft" :size "1"} "Cancelled"]]
-
-       [:> Text {:size "2" :color "gray"} status])
-
-     ;; Action button
-     (case status
-       "Failed"
-       [:> Button {:size "1" :variant "soft" :color "red"
-                   :on-click #(rf/dispatch [:provisioning/retry-plan (:key item)])}
-        [:> RefreshCw {:size 11}] " Retry"]
-
-       ("Create" "Update")
-       [:> Flex {:align "center" :gap "1"}
-        [:> Button {:size "1" :variant "soft" :color "indigo"
-                    :on-click #(rf/dispatch [:provisioning/apply-plan (:key item)])}
-         [:> Rocket {:size 11}] " Apply"]
-        [:> Button {:size "1" :variant "ghost" :color "gray"
-                    :on-click #(rf/dispatch [:provisioning/cancel-plan-item (:key item)])}
-         [:> X {:size 11}]]]
-
-       "ApplyFailed"
-       [:> Button {:size "1" :variant "soft" :color "red"
-                   :on-click #(rf/dispatch [:provisioning/apply-plan (:key item)])}
-        [:> RefreshCw {:size 11}] " Retry"]
-
-       nil)]))
+     (if cfg
+       [status-indicator cfg]
+       [:> Text {:size "2" :color "gray"} (:status item)])
+     [status-action item]]))
 
 (defn job-detail-screen
   [_props]
@@ -98,10 +70,10 @@
           cancelled?      (:cancelled? plan-job)
           apply-cancelled? (:apply-cancelled? plan-job)
 
-          plan-done       (count (filter #(contains? #{"Create" "Update"} (:status %)) items))
-          failed-count    (count (filter #(contains? #{"Failed" "ApplyFailed"} (:status %)) items))
-          applied-count   (count (filter #(= "Applied" (:status %)) items))
-          cancelled-count (count (filter #(= "Cancelled" (:status %)) items))
+          plan-done       (data/count-by-status items #{"Create" "Update"})
+          failed-count    (data/count-by-status items #{"Failed" "ApplyFailed"})
+          applied-count   (data/count-by-status items "Applied")
+          cancelled-count (data/count-by-status items "Cancelled")
           total           (count items)
 
           terminal?       #(contains? #{"Create" "Update" "Failed" "Applied" "ApplyFailed" "Cancelled"} (:status %))
@@ -145,8 +117,7 @@
            [:> Button {:size "1" :variant "outline" :color "gray"
                        :on-click #(on-view-sessions nil)}
             [:> ScrollText {:size 13}]
-            (str " " (count job-sessions) " session"
-                 (when (not= 1 (count job-sessions)) "s"))])
+            (str " " (data/pluralize (count job-sessions) "session"))])
          (when (and planning? (not cancelled?))
            [:> Button {:variant "outline" :color "red" :size "2"
                        :on-click #(rf/dispatch [:provisioning/cancel-plan])}
@@ -167,33 +138,23 @@
                                    :else               "green")}]]
 
        (when (and all-done? (zero? failed-count))
-         [:> Callout.Root {:color "green" :mb "4"}
-          [:> Callout.Icon [:> CheckCircle2 {:size 16}]]
-          [:> Callout.Text
-           (str "All " applied-count " roles applied successfully.")]])
+         [shared/info-callout {:color "green" :icon [:> CheckCircle2 {:size 16}]
+                               :text (str "All " applied-count " roles applied successfully.")}])
 
        (when (and all-done? (pos? failed-count))
-         [:> Callout.Root {:color "amber" :mb "4"}
-          [:> Callout.Icon [:> AlertCircle {:size 16}]]
-          [:> Callout.Text
-           (str failed-count " role" (when (not= 1 failed-count) "s")
-                " failed. Use the Retry button to try again.")]])
+         [shared/info-callout {:color "amber" :icon [:> AlertCircle {:size 16}]
+                               :text (str (data/pluralize failed-count "role")
+                                          " failed. Use the Retry button to try again.")}])
 
        (when (and all-planned? (not all-done?) (pos? plan-done) (not applying?))
-         [:> Callout.Root {:color "blue" :mb "4"}
-          [:> Callout.Icon [:> Rocket {:size 16}]]
-          [:> Callout.Text
-           (str "Dry run complete. " plan-done " role"
-                (when (not= 1 plan-done) "s")
-                " ready to apply. Click 'Apply all' or apply individually.")]])
+         [shared/info-callout {:color "blue" :icon [:> Rocket {:size 16}]
+                               :text (str "Dry run complete. " (data/pluralize plan-done "role")
+                                          " ready to apply. Click 'Apply all' or apply individually.")}])
 
        (when (and (pos? cancelled-count) (not busy?))
-         [:> Callout.Root {:color "gray" :mb "4"}
-          [:> Callout.Icon [:> Ban {:size 16}]]
-          [:> Callout.Text
-           (str cancelled-count " role"
-                (when (not= 1 cancelled-count) "s")
-                " were cancelled.")]])
+         [shared/info-callout {:color "gray" :icon [:> Ban {:size 16}]
+                               :text (str (data/pluralize cancelled-count "role")
+                                          " were cancelled.")}])
 
        [:> Box {:style {:flex 1 :overflow-y "auto"
                         :border "1px solid var(--gray-5)"
@@ -244,7 +205,7 @@
          (when (and all-planned? (pos? plan-done) (not applying?))
            [:> Button {:on-click #(rf/dispatch [:provisioning/apply-all])}
             [:> Rocket {:size 14}]
-            (str " Apply " plan-done " role" (when (not= 1 plan-done) "s") " →")])
+            (str " Apply " (data/pluralize plan-done "role") " →")])
          (when all-done?
            [:> Button {:color "green" :on-click (or on-done on-back)}
             [:> Check {:size 14}] " Done"])]]])))

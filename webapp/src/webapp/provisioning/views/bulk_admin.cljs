@@ -1,12 +1,13 @@
 (ns webapp.provisioning.views.bulk-admin
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Callout Card Flex Heading
+   ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading
                                 Progress Select Text TextField]]
    ["lucide-react" :refer [AlertCircle Check CheckCircle2
                             Loader2 Server Upload UserCog X]]
    ["papaparse" :as papa]
    ["react" :as react]
    [re-frame.core :as rf]
+   [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
 
 (defn- parse-admin-csv!
@@ -268,10 +269,10 @@
                [:> X {:size 11}] " Clear"]]
 
              (when (zero? csv-match-count)
-               [:> Callout.Root {:color "amber" :size "1" :mb "2"}
-                [:> Callout.Icon [:> AlertCircle {:size 14}]]
-                [:> Callout.Text {:size "1"}
-                 "No CSV rows matched the selected resources. Check that the 'name' column matches resource names."]])
+               [shared/info-callout
+                {:color "amber" :size "1" :mb "2"
+                 :icon  [:> AlertCircle {:size 14}]
+                 :text  "No CSV rows matched the selected resources. Check that the 'name' column matches resource names."}])
 
              [:> Box {:style {:flex 1 :overflow-y "auto"
                               :border "1px solid var(--gray-5)"
@@ -324,8 +325,7 @@
          {:info-text       (str (count valid-configs) " of " (count resources) " resources have credentials")
           :on-cancel       on-cancel
           :apply-disabled? (zero? (count valid-configs))
-          :apply-label     (str "Apply to " (count valid-configs)
-                                (if (= 1 (count valid-configs)) " resource" " resources")
+          :apply-label     (str "Apply to " (data/pluralize (count valid-configs) "resource")
                                 " \u2192")
           :on-apply        do-apply!}]])]))
 

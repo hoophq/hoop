@@ -7,7 +7,8 @@
                             UserCog X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
-   [webapp.provisioning.data :as data]))
+   [webapp.provisioning.data :as data]
+   [webapp.provisioning.views.shared :as shared]))
 
 ;; ── Shared visual primitives ───────────────────────────────────────────────────
 
@@ -19,37 +20,6 @@
                    :border-radius "50%"
                    :background    (str "var(--" color "-9)")
                    :flex-shrink   0}}])
-
-(defn- callout-style [color]
-  (let [c #(str "var(--" color "-" % ")")]
-    {:background    (c 2)
-     :border-top    (str "1px solid " (c 5))
-     :border-right  (str "1px solid " (c 5))
-     :border-bottom (str "1px solid " (c 5))
-     :border-left   (str "4px solid " (c 9))
-     :border-radius "var(--radius-3)"}))
-
-(defn- callout
-  "Color-coded banner with a left accent, leading icon, title/subtitle slot,
-   and an actions slot on the right. Both `stage-banner` and `job-status-bar`
-   are thin wrappers around this."
-  [{:keys [color icon title subtitle extra actions px py]
-    :or   {px "5" py "4"}}]
-  [:> Flex {:align "center" :justify "between" :gap "4"
-            :px px :py py :mb "4"
-            :style (callout-style color)}
-   [:> Flex {:align "center" :gap "3"}
-    (when icon
-      [:> Box {:style {:color       (str "var(--" color "-9)")
-                       :display     "flex"
-                       :flex-shrink 0}}
-       icon])
-    [:> Flex {:direction "column" :gap "0"}
-     (when title    [:> Text {:size "2" :weight "medium"} title])
-     (when subtitle [:> Text {:size "1" :color "gray"} subtitle])
-     extra]]
-   (when actions
-     [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])])
 
 ;; ── Progress bar ───────────────────────────────────────────────────────────────
 
@@ -140,7 +110,7 @@
                       (str "all " count-val))
           manage?   (= tab :manage)
           color     (if manage? "amber" "blue")]
-      [callout
+      [shared/callout-bar
        {:color    color
         :icon     (if manage? [:> UserCog {:size 18}] [:> Key {:size 18}])
         :title    (if manage? "Admin accounts needed" "Role provisioning needed")
@@ -161,8 +131,8 @@
 ;; ── Job status bar ─────────────────────────────────────────────────────────────
 
 (defn job-status-bar [{:keys [job on-view on-dismiss]}]
-  (let [done     (count (filter #(= "done" (:status %)) (:items job)))
-        failed   (count (filter #(= "failed" (:status %)) (:items job)))
+  (let [done     (data/count-by-status (:items job) "done")
+        failed   (data/count-by-status (:items job) "failed")
         total    (count (:items job))
         running? (< (+ done failed) total)
         color    (cond running? "indigo" (pos? failed) "amber" :else "green")
@@ -177,7 +147,7 @@
         progress (if running?
                    (str (+ done failed) " / " total " processed")
                    (str done " succeeded" (when (pos? failed) (str ", " failed " failed"))))]
-    [callout
+    [shared/callout-bar
      {:color   color
       :px      "4" :py "3"
       :icon    icon
@@ -198,10 +168,10 @@
   (let [plan-job @(rf/subscribe [:provisioning/plan-job])
         items    (or (:items plan-job) [])]
     (when (seq items)
-      (let [applied   (count (filter #(= "Applied" (:status %)) items))
-            failed    (count (filter #(contains? #{"Failed" "ApplyFailed"} (:status %)) items))
-            ready     (count (filter #(contains? #{"Create" "Update"} (:status %)) items))
-            cancelled (count (filter #(= "Cancelled" (:status %)) items))
+      (let [applied   (data/count-by-status items "Applied")
+            failed    (data/count-by-status items #{"Failed" "ApplyFailed"})
+            ready     (data/count-by-status items #{"Create" "Update"})
+            cancelled (data/count-by-status items "Cancelled")
             planning  (some #(contains? #{"pending" "processing"} (:status %)) items)
             applying  (some #(= "applying" (:status %)) items)
             busy?     (or planning applying)
@@ -223,12 +193,12 @@
             suffix    (str (when (pos? failed) (str ", " failed " failed"))
                            (when (pos? cancelled) (str ", " cancelled " cancelled")))
             progress  (cond
-                        planning (str "Planning — " (- total (count (filter #(contains? #{"pending" "processing"} (:status %)) items))) "/" total)
+                        planning (str "Planning — " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
                         applying (str "Applying — " applied "/" total)
                         all-done (str applied " applied" suffix)
                         :else    (str ready " ready to apply" suffix))]
         (when-not all-success?
-          [callout
+          [shared/callout-bar
            {:color   color
             :px      "4" :py "3"
             :icon    icon
