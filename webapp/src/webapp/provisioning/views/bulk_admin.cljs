@@ -30,7 +30,7 @@
                                        (on-complete by-name (count rows))))}))
 
 (defn- bulk-admin-screen-inner
-  [{:keys [resources configs set-configs initial-mode on-cancel]}]
+  [{:keys [resources configs set-configs initial-mode on-cancel on-done]}]
   (let [[mode set-mode]                       (react/useState (or initial-mode "manual"))
         [csv-parsed set-csv-parsed]           (react/useState false)
         [csv-match-count set-csv-match-count] (react/useState 0)
@@ -154,7 +154,7 @@
            (when (pos? (:failed apply-results))
              [:> Text {:size "2" :color "red"}
               (str (:failed apply-results) " failed")])]
-          [:> Button {:on-click on-cancel} "Back to inventory"]]
+          [:> Button {:on-click (or on-done on-cancel)} "Continue to provision"]]
 
          [:> Flex {:direction "column" :align "center" :justify "center"
                    :style {:flex 1} :gap "5"}

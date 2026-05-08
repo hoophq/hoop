@@ -3,7 +3,7 @@
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
                                 Table Tabs Text TextField Tooltip]]
    ["lucide-react" :refer [AlertCircle Check ChevronLeft ChevronRight Database
-                            Key Loader2 Plus Rocket Search Upload
+                            Key Loader2 Pencil Plus Rocket Search Upload
                             UserCog X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -240,8 +240,9 @@
 
 ;; ── Floating action bar ────────────────────────────────────────────────────────
 
-(defn floating-action-bar [{:keys [count-val admin-count roles-count
-                                    on-add-admin on-configure-roles on-clear]}]
+(defn floating-action-bar [{:keys [count-val admin-count roles-count ready-count
+                                    on-add-admin on-configure-roles
+                                    on-edit-admin on-edit-provision on-clear]}]
   [:> Flex {:align "center" :gap "3" :px "5" :py "3"
             :style {:position    "fixed"
                     :bottom      80
@@ -261,7 +262,13 @@
    (when (pos? roles-count)
      [:> Button {:size "2" :variant "soft" :on-click on-configure-roles}
       [:> Key {:size 14}] (str " Provision (" roles-count ")")])
-   (when (and (zero? admin-count) (zero? roles-count))
+   (when (pos? ready-count)
+     [:<>
+      [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-admin}
+       [:> Pencil {:size 14}] (str " Edit admin (" ready-count ")")]
+      [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-provision}
+       [:> Pencil {:size 14}] (str " Edit provision (" ready-count ")")]])
+   (when (and (zero? admin-count) (zero? roles-count) (zero? ready-count))
      [:> Text {:size "2" :color "gray"} "No actions available."])
    [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
     [:> X {:size 14}]]])
@@ -474,6 +481,7 @@
         selected-resources     (filter #(selected-ids (:id %)) resources)
         selected-needing-admin (filter #(= :needs-admin (:stage %)) selected-resources)
         selected-needing-roles (filter #(= :needs-roles (:stage %)) selected-resources)
+        selected-ready         (filter #(= :ready (:stage %)) selected-resources)
         selected-in-stage      (count (filter #(= stage-filter (:stage %)) selected-resources))
 
         all-visible-selected   (and (pos? (count visible))
@@ -565,6 +573,9 @@
         {:count-val          (count selected-ids)
          :admin-count        (count selected-needing-admin)
          :roles-count        (count selected-needing-roles)
+         :ready-count        (count selected-ready)
          :on-add-admin       #(on-open-bulk-admin (vec selected-needing-admin))
          :on-configure-roles #(on-open-bulk-roles (vec selected-needing-roles))
+         :on-edit-admin      #(on-open-bulk-admin (vec selected-ready))
+         :on-edit-provision  #(on-open-bulk-roles (vec selected-ready))
          :on-clear           #(set-selected-ids #{})}])]))

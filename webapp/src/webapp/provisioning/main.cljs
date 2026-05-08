@@ -45,7 +45,12 @@
         open-bulk-admin! (fn [targets & [mode]]
                            (set-bulk-resources (vec targets))
                            (set-bulk-configs
-                            (into {} (map (fn [r] [(:id r) (data/make-default-config)]) targets)))
+                            (into {} (map (fn [r]
+                                           [(:id r)
+                                            (if (seq (:admin r))
+                                              {:method "manual" :username (:admin r) :password ""}
+                                              (data/make-default-config))])
+                                         targets)))
                            (set-bulk-admin-mode (or mode "manual"))
                            (set-hub-screen :bulk-admin))
 
@@ -99,7 +104,11 @@
                      :configs      bulk-configs
                      :set-configs  set-bulk-configs
                      :initial-mode bulk-admin-mode
-                     :on-cancel    #(set-screen! :hub)}]
+                     :on-cancel    #(set-screen! :hub)
+                     :on-done      (fn []
+                                     (rf/dispatch [:provisioning/fetch-resources])
+                                     (set-active-tab :provision)
+                                     (set-screen! :hub))}]
        :bulk-roles [bulk-roles/bulk-roles-screen
                     {:resources      bulk-resources
                      :initial-method bulk-roles-method
