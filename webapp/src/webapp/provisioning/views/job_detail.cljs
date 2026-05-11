@@ -17,6 +17,76 @@
   {:check [:> CheckCircle2 {:size 14}]
    :ban   [:> Ban {:size 13}]})
 
+(def ^:private status-badge-variants
+  "Ordered [pred color label] triples for the header badge. First match wins;
+   the last entry's pred returns true unconditionally and acts as the default.
+   Each pred receives a map with :cancelled? :busy? :planning? :applying?
+   :failed-count :all-done?."
+  [[#(and (:cancelled? %) (not (:busy? %))) "gray"   "Cancelled"]
+   [:planning?                              "indigo" "Planning"]
+   [:applying?                              "indigo" "Applying"]
+   [#(pos? (:failed-count %))               "amber"  "Completed with errors"]
+   [:all-done?                              "green"  "Complete"]
+   [(constantly true)                       "blue"   "Ready to apply"]])
+
+(defn- status-badge [state]
+  (let [[_ color label] (some (fn [[p :as v]] (when (p state) v)) status-badge-variants)]
+    [:> Badge {:color color :variant "soft"} label]))
+
+(defn- action-button
+  "Button shape helper for the header action row. Visibility is the caller's
+   responsibility — either wrap in `when` or filter with `:when` in a `for`."
+  [{:keys [variant color size icon icon-size label on-click]
+    :or   {size "2" icon-size 14}}]
+  [:> Button {:variant variant :color color :size size :on-click on-click}
+   (when icon [:> icon {:size icon-size}])
+   (when label (str (when icon " ") label))])
+
+(defn- header-actions
+  "Returns the header action specs for the current view state. Each spec has
+   a `:visible?` predicate that the render loop filters on, plus the props
+   consumed by `action-button`."
+  [{:keys [job-sessions planning? cancelled? applying? apply-cancelled? busy?
+           on-view-sessions on-run-in-background]}]
+  [{:visible? (pos? (count job-sessions))
+    :variant  "outline" :color "gray" :size "1"
+    :icon     ScrollText :icon-size 13
+    :label    (data/pluralize (count job-sessions) "session")
+    :on-click #(on-view-sessions nil)}
+   {:visible? (and planning? (not cancelled?))
+    :variant  "outline" :color "red"
+    :icon     X :label "Cancel planning"
+    :on-click #(rf/dispatch [:provisioning/cancel-plan])}
+   {:visible? (and applying? (not apply-cancelled?))
+    :variant  "outline" :color "red"
+    :icon     X :label "Cancel applying"
+    :on-click #(rf/dispatch [:provisioning/cancel-apply])}
+   {:visible? busy?
+    :variant  "ghost" :color "gray"
+    :label    "Background"
+    :on-click on-run-in-background}])
+
+(defn- status-callouts
+  "Returns the info-callout specs for the current view state. Each spec carries
+   its own `:visible?` predicate; multiple callouts may appear simultaneously."
+  [{:keys [all-done? failed-count plan-done applied-count cancelled-count
+           all-planned? applying? busy?]}]
+  [{:visible? (and all-done? (zero? failed-count))
+    :color    "green" :icon CheckCircle2
+    :text     (str "All " applied-count " roles applied successfully.")}
+   {:visible? (and all-done? (pos? failed-count))
+    :color    "amber" :icon AlertCircle
+    :text     (str (data/pluralize failed-count "role")
+                   " failed. Use the Retry button to try again.")}
+   {:visible? (and all-planned? (not all-done?) (pos? plan-done) (not applying?))
+    :color    "blue" :icon Rocket
+    :text     (str "Dry run complete. " (data/pluralize plan-done "role")
+                   " ready to apply. Click 'Apply all' or apply individually.")}
+   {:visible? (and (pos? cancelled-count) (not busy?))
+    :color    "gray" :icon Ban
+    :text     (str (data/pluralize cancelled-count "role")
+                   " were cancelled.")}])
+
 (defn- status-indicator [{:keys [color label spinner? icon]}]
   [:> Flex {:align "center" :gap "2"}
    (cond
@@ -57,8 +127,10 @@
           sessions  @(rf/subscribe [:provisioning/sessions])
           items     (or (:items plan-job) [])
 
-          planning?       (some #(contains? #{"pending" "processing"} (:status %)) items)
-          applying?       (some #(= "applying" (:status %)) items)
+          planning?       (or (:planning? plan-job)
+                              (some #(contains? #{"pending" "processing"} (:status %)) items))
+          applying?       (or (:applying? plan-job)
+                              (some #(= "applying" (:status %)) items))
           busy?           (or planning? applying?)
           cancelled?      (:cancelled? plan-job)
           apply-cancelled? (:apply-cancelled? plan-job)
@@ -75,9 +147,13 @@
                                (not applying?)
                                (zero? plan-done))
 
+          apply-done?     #(contains? #{"Applied" "ApplyFailed" "Cancelled"} (:status %))
           progress        (if (pos? total)
-                            (let [finished (count (filter terminal? items))]
-                              (js/Math.round (* (/ finished total) 100)))
+                            (if applying?
+                              (let [done (count (filter apply-done? items))]
+                                (js/Math.round (* (/ done total) 100)))
+                              (let [finished (count (filter terminal? items))]
+                                (js/Math.round (* (/ finished total) 100))))
                             0)
 
           job-sessions    (filterv #(= (:job-id %) (:id plan-job)) sessions)
@@ -91,13 +167,12 @@
         [:> Flex {:direction "column" :gap "1"}
          [:> Flex {:align "center" :gap "3"}
           [:> Heading {:size "7"} "Provision"]
-          (cond
-            (and cancelled? (not busy?)) [:> Badge {:color "gray" :variant "soft"} "Cancelled"]
-            planning?         [:> Badge {:color "indigo" :variant "soft"} "Planning"]
-            applying?         [:> Badge {:color "indigo" :variant "soft"} "Applying"]
-            (pos? failed-count) [:> Badge {:color "amber"  :variant "soft"} "Completed with errors"]
-            all-done?         [:> Badge {:color "green"  :variant "soft"} "Complete"]
-            :else             [:> Badge {:color "blue"   :variant "soft"} "Ready to apply"])]
+          [status-badge {:cancelled?   cancelled?
+                         :busy?        busy?
+                         :planning?    planning?
+                         :applying?    applying?
+                         :failed-count failed-count
+                         :all-done?    all-done?}]]
          [:> Text {:size "2" :color "gray"}
           (str "Role provisioning — " total " roles · "
                applied-count " applied · "
@@ -105,23 +180,18 @@
                failed-count " failed"
                (when (pos? cancelled-count) (str " · " cancelled-count " cancelled")))]]
         [:> Flex {:align "center" :gap "2"}
-         (when (pos? (count job-sessions))
-           [:> Button {:size "1" :variant "outline" :color "gray"
-                       :on-click #(on-view-sessions nil)}
-            [:> ScrollText {:size 13}]
-            (str " " (data/pluralize (count job-sessions) "session"))])
-         (when (and planning? (not cancelled?))
-           [:> Button {:variant "outline" :color "red" :size "2"
-                       :on-click #(rf/dispatch [:provisioning/cancel-plan])}
-            [:> X {:size 14}] " Cancel planning"])
-         (when (and applying? (not apply-cancelled?))
-           [:> Button {:variant "outline" :color "red" :size "2"
-                       :on-click #(rf/dispatch [:provisioning/cancel-apply])}
-            [:> X {:size 14}] " Cancel applying"])
-         (when busy?
-           [:> Button {:variant "ghost" :color "gray" :size "2"
-                       :on-click on-run-in-background}
-            "Background"])]]
+         (for [{:keys [visible? label] :as a}
+               (header-actions {:job-sessions         job-sessions
+                                :planning?            planning?
+                                :cancelled?           cancelled?
+                                :applying?            applying?
+                                :apply-cancelled?     apply-cancelled?
+                                :busy?                busy?
+                                :on-view-sessions     on-view-sessions
+                                :on-run-in-background on-run-in-background})
+               :when visible?]
+           ^{:key label}
+           [action-button (dissoc a :visible?)])]]
 
        [:> Box {:mb "4"}
         [:> Progress {:value progress
@@ -129,24 +199,18 @@
                                    (pos? failed-count) "amber"
                                    :else               "green")}]]
 
-       (when (and all-done? (zero? failed-count))
-         [shared/info-callout {:color "green" :icon [:> CheckCircle2 {:size 16}]
-                               :text (str "All " applied-count " roles applied successfully.")}])
-
-       (when (and all-done? (pos? failed-count))
-         [shared/info-callout {:color "amber" :icon [:> AlertCircle {:size 16}]
-                               :text (str (data/pluralize failed-count "role")
-                                          " failed. Use the Retry button to try again.")}])
-
-       (when (and all-planned? (not all-done?) (pos? plan-done) (not applying?))
-         [shared/info-callout {:color "blue" :icon [:> Rocket {:size 16}]
-                               :text (str "Dry run complete. " (data/pluralize plan-done "role")
-                                          " ready to apply. Click 'Apply all' or apply individually.")}])
-
-       (when (and (pos? cancelled-count) (not busy?))
-         [shared/info-callout {:color "gray" :icon [:> Ban {:size 16}]
-                               :text (str (data/pluralize cancelled-count "role")
-                                          " were cancelled.")}])
+       (for [{:keys [visible? color icon text]}
+             (status-callouts {:all-done?       all-done?
+                               :failed-count    failed-count
+                               :plan-done       plan-done
+                               :applied-count   applied-count
+                               :cancelled-count cancelled-count
+                               :all-planned?    all-planned?
+                               :applying?       applying?
+                               :busy?           busy?})
+             :when visible?]
+         ^{:key text}
+         [shared/info-callout {:color color :icon [:> icon {:size 16}] :text text}])
 
        [:> Box {:style {:flex 1 :overflow-y "auto"
                         :border "1px solid var(--gray-5)"

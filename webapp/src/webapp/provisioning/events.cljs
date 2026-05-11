@@ -353,6 +353,7 @@
          plan-job  {:id         (str "plan-" (.now js/Date))
                     :items      items
                     :cancelled? false
+                    :planning?  true
                     :started-at (.now js/Date)}]
      {:db (assoc-in db [:provisioning :plan-job] plan-job)
       :fx [[:dispatch [:provisioning/plan-next-chunk 0]]]})))
@@ -361,10 +362,11 @@
  :provisioning/plan-next-chunk
  (fn [{:keys [db]} [_ chunk-idx]]
    (let [plan-job (get-in db [:provisioning :plan-job])]
-     (when (and plan-job (not (:cancelled? plan-job)))
+     (if (or (not plan-job) (:cancelled? plan-job))
+       {}
        (let [pending (filterv #(= "pending" (:status %)) (:items plan-job))
              chunk   (vec (take plan-chunk-size pending))]
-         (when (seq chunk)
+         (if (seq chunk)
            (let [chunk-keys (set (map :key chunk))
                  payload    {:items (mapv (fn [it]
                                             {:resource_name (:resource-name it)
@@ -378,7 +380,8 @@
                              :uri        "/resources/plan/batch"
                              :body       payload
                              :on-success #(rf/dispatch [:provisioning/plan-batch-response chunk-idx chunk %])
-                             :on-failure #(rf/dispatch [:provisioning/plan-batch-error chunk])}]]]})))))))
+                             :on-failure #(rf/dispatch [:provisioning/plan-batch-error chunk])}]]]})
+           {:db (assoc-in db [:provisioning :plan-job :planning?] false)}))))))
 
 (rf/reg-event-fx
  :provisioning/plan-batch-response
@@ -445,6 +448,7 @@
  (fn [db _]
    (-> db
        (assoc-in [:provisioning :plan-job :cancelled?] true)
+       (assoc-in [:provisioning :plan-job :planning?] false)
        (update-plan-items #(set-status-where % (comp #{"pending"} :status) "Cancelled")))))
 
 (rf/reg-event-db
@@ -452,6 +456,7 @@
  (fn [db _]
    (-> db
        (assoc-in [:provisioning :plan-job :apply-cancelled?] true)
+       (assoc-in [:provisioning :plan-job :applying?] false)
        (update-plan-items #(set-status-where % (comp #{"Create" "Update"} :status) "Cancelled")))))
 
 (rf/reg-event-db
@@ -467,17 +472,20 @@
 (rf/reg-event-fx
  :provisioning/apply-all
  (fn [{:keys [db]} _]
-   {:db (assoc-in db [:provisioning :plan-job :apply-cancelled?] false)
+   {:db (-> db
+            (assoc-in [:provisioning :plan-job :apply-cancelled?] false)
+            (assoc-in [:provisioning :plan-job :applying?] true))
     :fx [[:dispatch [:provisioning/apply-next-chunk 0]]]}))
 
 (rf/reg-event-fx
  :provisioning/apply-next-chunk
  (fn [{:keys [db]} [_ chunk-idx]]
    (let [plan-job (get-in db [:provisioning :plan-job])]
-     (when (and plan-job (not (:apply-cancelled? plan-job)))
+     (if (or (not plan-job) (:apply-cancelled? plan-job))
+       {}
        (let [applicable (filterv #(contains? #{"Create" "Update"} (:status %)) (:items plan-job))
              chunk      (vec (take apply-chunk-size applicable))]
-         (when (seq chunk)
+         (if (seq chunk)
            (let [chunk-keys (set (map :key chunk))
                  plan-ids   (mapv :plan-id chunk)]
              {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "applying"))
@@ -486,7 +494,8 @@
                              :uri        "/resources/apply/batch"
                              :body       {:plan_ids plan-ids}
                              :on-success #(rf/dispatch [:provisioning/apply-batch-response chunk-idx chunk %])
-                             :on-failure #(rf/dispatch [:provisioning/apply-batch-error chunk])}]]]})))))))
+                             :on-failure #(rf/dispatch [:provisioning/apply-batch-error chunk])}]]]})
+           {:db (assoc-in db [:provisioning :plan-job :applying?] false)}))))))
 
 (rf/reg-event-fx
  :provisioning/apply-batch-response

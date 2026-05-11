@@ -2,9 +2,9 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Flex Heading Text]]
    ["lucide-react" :refer [ArrowLeft ChevronLeft ChevronRight Loader2 Upload]]
-   ["papaparse" :as papa]))
+   ["papaparse" :as papa]
+   [clojure.string :as cs]))
 
-;; ── Pure helpers ─────────────────────────────────────────────────────────────
 
 (defn zebra-bg
   "Returns alternating row background for index i."
@@ -222,3 +222,50 @@
                                (swap! collected conj row-data)
                                (on-row row-data idx)))))]
     (papa/parse file (clj->js opts))))
+
+;; ── CSV download ────────────────────────────────────────────────────────────
+;; Used by the provisioning bulk screens to let the user download a template
+;; CSV pre-filled with the resource_name column from their current selection.
+
+(defn count-csv-rows!
+  "Reads a CSV File and calls `on-count` with the number of data rows (header
+   excluded). Empty lines are ignored. Used to display total-rows before a
+   streaming parse so progress can be shown as 'X of Y'."
+  [file on-count]
+  (let [reader (js/FileReader.)]
+    (set! (.-onload reader)
+          (fn [e]
+            (let [text  (-> e .-target .-result)
+                  lines (->> (.split text "\n")
+                             (remove #(= "" (.trim %))))]
+              (on-count (max 0 (dec (count lines)))))))
+    (.readAsText reader file)))
+
+(defn- csv-cell
+  "Escapes a cell value per RFC 4180: wraps in quotes when it contains a
+   comma, double-quote, or newline; doubles embedded quotes."
+  [v]
+  (let [s (str (or v ""))]
+    (if (re-find #"[\",\n\r]" s)
+      (str "\"" (cs/replace s "\"" "\"\"") "\"")
+      s)))
+
+(defn build-csv
+  "Builds a CSV string from a header vector and a seq of row vectors.
+   Each cell is escaped per RFC 4180."
+  [header rows]
+  (let [encode-row #(cs/join "," (map csv-cell %))]
+    (str (encode-row header) "\n"
+         (cs/join "\n" (map encode-row rows))
+         "\n")))
+
+(defn download-csv!
+  "Triggers a browser download of `csv-string` under `filename`."
+  [filename csv-string]
+  (let [blob (js/Blob. #js [csv-string] #js {:type "text/csv;charset=utf-8"})
+        url  (js/URL.createObjectURL blob)
+        a    (js/document.createElement "a")]
+    (set! (.-href a) url)
+    (set! (.-download a) filename)
+    (.click a)
+    (js/URL.revokeObjectURL url)))

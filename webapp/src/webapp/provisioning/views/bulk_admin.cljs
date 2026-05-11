@@ -44,6 +44,22 @@
                   :on-click on-click}
    (if visible? [:> EyeOff {:size 12}] [:> Eye {:size 12}])])
 
+(def ^:private cred-keys [:username :password])
+
+(defn- ->queue-item
+  "Builds the API payload for a resource whose credentials changed and are valid.
+   Returns nil when the resource has empty creds or hasn't been edited."
+  [{:keys [id name]} cfg initial-cfg]
+  (let [cur                          (get cfg id)
+        {:keys [username password]}  cur]
+    (when (and (seq username)
+               (seq password)
+               (not= (select-keys cur cred-keys)
+                     (select-keys (get initial-cfg id) cred-keys)))
+      {:resource-name name
+       :username      username
+       :password      password})))
+
 (defn- bulk-admin-screen-inner
   [{:keys [resources configs set-configs initial-mode on-cancel on-done]}]
   (let [[mode set-mode]                       (react/useState (or initial-mode "manual"))
@@ -55,6 +71,7 @@
         [apply-progress set-apply-progress]   (react/useState 0)
         [apply-results set-apply-results]     (react/useState nil)
         [visible-pwds set-visible-pwds]       (react/useState #{})
+        [initial-configs _]                   (react/useState configs)
         toggle-pwd!  (fn [id]
                        (set-visible-pwds
                         (fn [s] (if (contains? s id) (disj s id) (conj s id)))))
@@ -96,33 +113,24 @@
                                        acc))
                                    old-cfg
                                    matched)))))}))
-        valid-configs  (filterv
-                        (fn [r]
-                          (let [c (get cfg (:id r))]
-                            (and (seq (:username c)) (seq (:password c)))))
-                        resources)
+        queue          (into [] (keep #(->queue-item % cfg initial-configs)) resources)
+        changed-count  (count queue)
         do-apply!      (fn []
                          (set-applying true)
                          (set-apply-progress 0)
-                         (let [queue (mapv (fn [r]
-                                            (let [c (get cfg (:id r))]
-                                              {:resource-name (:name r)
-                                               :username      (:username c)
-                                               :password      (:password c)}))
-                                          valid-configs)]
-                           (rf/dispatch
-                            [:provisioning/apply-admin-next
-                             {:queue       queue
-                              :agent-id    agent-id
-                              :on-progress (fn [done total]
-                                             (set-apply-progress
-                                              (js/Math.round (* 100 (/ done total)))))
-                              :on-complete (fn [results]
-                                             (let [ok   (count (filter #(= :success (:status %)) results))
-                                                   fail (count (filter #(= :failed (:status %)) results))]
-                                               (set-apply-results {:succeeded ok :failed fail})
-                                               (set-apply-progress 100)
-                                               (rf/dispatch [:provisioning/fetch-resources])))}])))]
+                         (rf/dispatch
+                          [:provisioning/apply-admin-next
+                           {:queue       queue
+                            :agent-id    agent-id
+                            :on-progress (fn [done total]
+                                           (set-apply-progress
+                                            (js/Math.round (* 100 (/ done total)))))
+                            :on-complete (fn [results]
+                                           (let [ok   (count (filter #(= :success (:status %)) results))
+                                                 fail (count (filter #(= :failed (:status %)) results))]
+                                             (set-apply-results {:succeeded ok :failed fail})
+                                             (set-apply-progress 100)
+                                             (rf/dispatch [:provisioning/fetch-resources])))}]))]
     [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
      [shared/bulk-screen-header {:title          "Manage \u2014 admin accounts"
                                  :resource-count (count resources)
@@ -182,8 +190,8 @@
             [shared/spinner {:color "indigo" :size 20}]
             [:> Text {:size "3" :weight "medium"}
              (str "Setting admin credentials\u2026 ("
-                  (js/Math.round (/ (* apply-progress (count valid-configs)) 100))
-                  " of " (count valid-configs) ")")]]
+                  (js/Math.round (/ (* apply-progress changed-count) 100))
+                  " of " changed-count ")")]]
            [:> Box {:style {:width "100%"}}
             [:> Progress {:value apply-progress :size "2" :color "indigo"}]]
            [:> Text {:size "2" :color "gray"}
@@ -332,11 +340,14 @@
 
         ;; Footer
         [shared/bulk-footer
-         {:info-text       (str (count valid-configs) " of " (count resources) " resources have credentials")
+         {:info-text       (if (zero? changed-count)
+                             (str "No changes \u2014 edit credentials to enable apply ("
+                                  (count resources) " resources selected)")
+                             (str (data/pluralize changed-count "resource") " changed of "
+                                  (count resources) " selected"))
           :on-cancel       on-cancel
-          :apply-disabled? (zero? (count valid-configs))
-          :apply-label     (str "Apply to " (data/pluralize (count valid-configs) "resource")
-                                " \u2192")
+          :apply-disabled? (zero? changed-count)
+          :apply-label     (str "Apply " (data/pluralize changed-count "change") " \u2192")
           :on-apply        do-apply!}]])]))
 
 (defn bulk-admin-screen

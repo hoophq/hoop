@@ -60,18 +60,6 @@
                  :variant     "ghost"
                  :color       "gray"}})
 
-;; ── Mock PostgreSQL roles ──────────────────────────────────────────────────────
-(def mock-pg-roles
-  [{:name "pg_read_all_data"  :type "read"      :user-count 3}
-   {:name "pg_write_all_data" :type "readwrite"  :user-count 1}
-   {:name "pg_monitor"        :type "read"       :user-count 0}
-   {:name "data_analyst"      :type "custom"     :user-count 5}
-   {:name "app_readonly"      :type "read"       :user-count 8}
-   {:name "app_readwrite"     :type "readwrite"  :user-count 2}])
-
-(defn get-mock-roles [_db-type]
-  mock-pg-roles)
-
 
 (def ^:private valid-permissions
   #{"SELECT" "INSERT" "UPDATE" "DELETE" "ALL"})
@@ -224,12 +212,6 @@
 
 (defn make-default-config []
   {:method "manual" :username "admin" :password ""})
-
-(def role-type-color
-  {"read"      "green"
-   "readwrite" "blue"
-   "admin"     "red"
-   "custom"    "purple"})
 
 ;; ── Funnel accent colors / step labels ─────────────────────────────────────────
 (def funnel-accent  ["var(--gray-8)" "var(--amber-9)" "var(--blue-9)"])

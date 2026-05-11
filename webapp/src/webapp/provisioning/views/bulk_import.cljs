@@ -122,7 +122,7 @@
 
 (defn- upload-file [{:keys [file-selected file-name* file-size* row-count
                             drag-over? set-drag-over handle-file! clear-file! start-parse! file-input-ref]}]
-  [:> Flex {:direction "column" :gap "4" :style {:max-width 560}}
+  [:> Flex {:direction "column" :gap "4"}
    [:input {:type "file"
             :accept ".csv"
             :ref #(set! (.-current file-input-ref) %)
