@@ -29,7 +29,7 @@
                    :class "gap-1"
                    :on-click #(rf/dispatch [:navigate :machine-identities-roles {} :identity-name name])}
         [:> Text {:size "2" :weight "medium"}
-         "View credentials"]
+         "View roles"]
         [:> ArrowRight {:size 16}]]
 
        [:> DropdownMenu.Root
@@ -42,7 +42,6 @@
         [:> DropdownMenu.Content
          [:> DropdownMenu.Item {:on-click #(rf/dispatch [:navigate :machine-identities-edit {} :identity-name name])}
           "Configure"]
-         [:> DropdownMenu.Separator]
          [:> DropdownMenu.Item {:color "red"
                                 :on-click #(rf/dispatch [:dialog->open
                                                          {:title "Delete Machine Identity"
@@ -83,7 +82,7 @@
           [resource-role-filter/main {:selected @selected-connection
                                       :on-select #(reset! selected-connection %)
                                       :on-clear #(reset! selected-connection nil)
-                                      :label "Connection"}]
+                                      :label "Resource Role"}]
 
           (when (seq all-attributes)
             [:> DropdownMenu.Root

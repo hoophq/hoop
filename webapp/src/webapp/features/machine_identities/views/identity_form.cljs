@@ -116,12 +116,12 @@
             [:> Grid {:columns "7" :gap "7"}
              [:> Box {:grid-column "span 2 / span 2" :class "space-y-radix-4"}
               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-               "Connections configuration"]
+               "Roles configuration"]
               [:> Text {:size "3" :class "text-[--gray-11]"}
-               "Select which Connections to provision credentials for."]
+               "Select which Roles to apply this configuration."]
               [:> Callout.Root {:size "1" :color "gray" :variant "surface"}
                [:> Callout.Icon [:> Info {:size 16}]]
-               [:> Callout.Text "Connections requiring review aren't available."]]]
+               [:> Callout.Text "Roles requiring review aren't available."]]]
              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
               (let [conn-by-name (into {} (map (juxt :name identity)) all-connections)
                     selected-names @(:connection-names state)
@@ -139,8 +139,8 @@
                  {:id "machine-identity-connections-input"
                   :name "machine-identity-connections-input"
                   :required? true
-                  :label "Connections"
-                  :placeholder "Select connections..."
+                  :label "Resources"
+                  :placeholder "Select resources..."
                   :connection-ids selected-conn-ids
                   :selected-connections selected-conns-data
                   :on-connections-change

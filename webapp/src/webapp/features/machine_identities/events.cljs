@@ -121,18 +121,20 @@
 
 (rf/reg-event-fx
  :machine-identities/rotate-credential
- (fn [_ [_ {:keys [identity-name connection-name]}]]
+ (fn [_ [_ {:keys [identity-name connection-name on-complete]}]]
    {:fx [[:dispatch [:fetch
                      {:method "POST"
                       :uri (str "/machineidentities/" identity-name "/credentials/" connection-name "/rotate")
                       :on-success (fn [new-credential]
                                     (rf/dispatch [:machine-identities/replace-credential new-credential])
                                     (rf/dispatch [:show-snackbar {:level :success
-                                                                  :text (str "Credential rotated for " connection-name)}]))
+                                                                  :text (str "Credential rotated for " connection-name)}])
+                                    (when on-complete (on-complete)))
                       :on-failure (fn [error]
                                     (rf/dispatch [:show-snackbar {:level :error
                                                                   :text (or (:message error) "Failed to rotate credential")
-                                                                  :details error}]))}]]]}))
+                                                                  :details error}])
+                                    (when on-complete (on-complete)))}]]]}))
 
 (rf/reg-event-db
  :machine-identities/replace-credential
