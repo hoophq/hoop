@@ -12,6 +12,7 @@
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
+   [webapp.audit.views.session-live-tail :as session-live-tail]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
@@ -138,7 +139,12 @@
     is-dedicated-page? (cs/starts-with? current-path "/sessions/")
     ;; tracks the session id we have an SSE subscription open for, so we
     ;; can subscribe exactly once per machine session and clean up on close
-    subscribed-id (r/atom nil)]
+    subscribed-id (r/atom nil)
+    ;; Once the live tail takes over for this modal, keep it (even after the
+    ;; session ends) so the user doesn't lose their place. The event_stream
+    ;; was loaded in raw wire format and the live tail is the renderer that
+    ;; can decode it; the default raw renderer would show garbage.
+    live-tail-active? (r/atom false)]
 
     (rf/dispatch [:gateway->get-info])
     (when session
@@ -167,6 +173,8 @@
               open? (= (:status session) "open")
               machine-session? (= (:identity_type session) "machine")
               live-machine? (and machine-session? open? (:id session))
+              _ (when live-machine? (reset! live-tail-active? true))
+              show-live-tail? (and machine-session? @live-tail-active?)
               ;; Open/close SSE subscription as the live state changes
               _ (cond
                   (and live-machine? (not= @subscribed-id (:id session)))
@@ -341,9 +349,17 @@
                                      review-groups)
                                (= "PENDING" review-status)))
               [:section {:id "session-event-stream"}
-               (if (= (:status @session-details) :loading)
+               (cond
+                 (= (:status @session-details) :loading)
                  [loading-player]
 
+                 ;; Live or recently-live machine session — dedicated tail view
+                 ;; that decodes the wire protocol (postgres) and auto-scrolls
+                 ;; as new events arrive via SSE.
+                 show-live-tail?
+                 [session-live-tail/main session]
+
+                 :else
                  [:<>
                   (if (= (:verb session) "exec")
                     ;; exec: always results-container/main (table + virtualized plain text)

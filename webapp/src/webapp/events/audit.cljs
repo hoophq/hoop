@@ -229,11 +229,22 @@
          script-size (:script_size session)
          has-large-event? (and event-size (> event-size size-threshold))
          has-large-input? (and script-size (> script-size size-threshold))
-         event-stream (if (= "exec" (:verb session))
+         live-machine? (and (= "machine" (:identity_type session))
+                            (= "open" (:status session)))
+         event-stream (cond
+                        (= "exec" (:verb session))
                         "event_stream=base64"
-                        (if (= "postgres" (:connection_subtype session))
-                          "event_stream=raw-queries"
-                          ""))
+
+                        ;; Live machine session: keep raw wire frames so the
+                        ;; client-side decoder used by session-live-tail can
+                        ;; render historical and streamed events uniformly.
+                        live-machine?
+                        ""
+
+                        (= "postgres" (:connection_subtype session))
+                        "event_stream=raw-queries"
+
+                        :else "")
          expand-parts (cond-> []
                         (not has-large-event?) (conj "event_stream")
                         (not has-large-input?) (conj "session_input"))
