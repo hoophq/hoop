@@ -169,8 +169,6 @@ Requirements:
 
 CI runs integration tests on every PR via the `Integration Test` job in `.github/workflows/pullrequest.yml`.
 
-> **Note**: `-race` is not enabled by default. The enterprise `libhoop` has pre-existing data races in some of its proxy buffer code that the race detector will surface. Enabling `-race` will be addressed in a follow-up ticket alongside fixes to `libhoop`.
-
 ## Swagger / OpenAPI
 
 This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. Make sure to generate it every time a change is made in the API:

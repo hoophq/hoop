@@ -87,17 +87,6 @@ test-oss: libhoop-map generate-wasm
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-# Integration tests run real testcontainers (Postgres today; SSH and MySQL
-# follow in ENG-391 / ENG-387). They require Docker on the host and a
-# functional libhoop (the OSS stub at _libhoop/libhoop.go returns
-# "missing protocol hoop library for X" — CI uses the enterprise libhoop).
-#
-# -race is intentionally NOT enabled here. The enterprise libhoop has
-# pre-existing data races (notably libhoop/agent/postgres/buf.go's
-# blockingReader, see surfaced via the race detector when this target
-# runs with -race). Those need their own ticket in libhoop before we can
-# turn -race on for this target. The concurrency tests in ENG-394 will
-# use -race once those libhoop fixes land.
 test-integration: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./agent/integration/...
 
