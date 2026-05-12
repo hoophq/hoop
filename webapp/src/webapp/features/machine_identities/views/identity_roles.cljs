@@ -165,7 +165,9 @@
                          (string/lower-case (or (:connection_name %) ""))
                          q-lower))
               @selected-connection
-              (filterv #(= (:connection_name %) @selected-connection)))]
+              (filterv #(= (:connection_name %) @selected-connection))
+              @selected-attribute
+              (filterv #(some #{@selected-attribute} (:attributes %))))]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:> Flex {:p "5" :gap "2"}
@@ -206,13 +208,12 @@
                :on-select-attribute #(reset! selected-attribute %)
                :on-clear-attribute #(reset! selected-attribute nil)}]
 
-             [:> Box
+             [:> Box {:class "flex flex-col min-h-[400px]"}
               (if (empty? filtered-credentials)
                 [filtered-empty-state {:entity-name "role"
                                        :entity-name-plural "roles"
-                                       :filter-value (or (when (seq (string/trim @search-q)) @search-q)
-                                                         @selected-connection
-                                                         @selected-attribute)}]
+                                       :message "No roles match the applied filters"
+                                       :subtitle "Try adjusting or clearing your filters to explore more roles."}]
                 (doall
                  (for [cred filtered-credentials]
                    ^{:key (:connection_name cred)}

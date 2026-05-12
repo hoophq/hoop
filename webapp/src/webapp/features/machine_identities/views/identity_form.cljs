@@ -45,10 +45,12 @@
 
 (defn identity-form [form-type identity-data]
   (let [state (create-form-state identity-data)
-        connections (rf/subscribe [:connections->pagination])]
+        connections (rf/subscribe [:connections->pagination])
+        all-attributes (rf/subscribe [:attributes/list-data])]
     (fn []
       (let [identity-name-val (when (= form-type :edit) (:name identity-data))
-            all-connections (or (:data @connections) [])]
+            all-connections (or (:data @connections) [])
+            attributes-data (or @all-attributes [])]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
@@ -153,16 +155,21 @@
                            :description "Select which Attributes to apply this configuration."}
              [multiselect/creatable-select
               {:label "Attributes"
-               :placeholder "Type to add attributes..."
+               :placeholder "Select or type to create..."
+               :options (mapv #(hash-map :value (:name %) :label (:name %)) attributes-data)
                :default-value @(:attributes state)
                :on-change (fn [selected]
-                            (reset! (:attributes state) (vec (js->clj selected :keywordize-keys true))))}]]]]]]))))
+                            (reset! (:attributes state) (vec (js->clj selected :keywordize-keys true))))
+               :on-create-option (fn [input-value]
+                                   (rf/dispatch [:attributes/create-inline {:name input-value}])
+                                   (swap! (:attributes state) conj {:value input-value :label input-value}))}]]]]]]))))
 
 (defn main [mode & [params]]
   (when (= :edit mode)
     (rf/dispatch [:machine-identities/get-identity (:identity-name params)]))
 
   (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
+  (rf/dispatch [:attributes/list])
 
   (fn []
     (r/with-let []

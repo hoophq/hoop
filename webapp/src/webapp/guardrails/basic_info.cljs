@@ -1,13 +1,15 @@
 (ns webapp.guardrails.basic-info
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Grid]]
+   ["@radix-ui/themes" :refer [Box Heading Grid Text]]
    [webapp.components.forms :as forms]))
 
 (defn main [{:keys [name description on-name-change on-description-change]}]
   [:> Grid {:columns "7" :gap "7"}
    [:> Box {:grid-column "span 2 / span 2"}
-    [:> Heading {:as "h3" :size "4" :weight "medium"} "Set Guardrail information"]
-    [:p {:class "text-sm text-gray-500"} "Used to identify your Guardrail in your resource roles."]]
+    [:> Heading {:as "h3" :size "4" :weight "medium"}
+     "Set Guardrail information"]
+    [:> Text {:size "3" :class "text-[--gray-11]"}
+     "Used to identify your Guardrail in your resource roles."]]
 
    [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
     [forms/input
