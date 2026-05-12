@@ -9,7 +9,7 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex IconButton Switch
                                Text TextField Tooltip]]
-   ["lucide-react" :refer [ArrowDown Database Pause Play Search Terminal Zap]]
+   ["lucide-react" :refer [ArrowDown Database Search Terminal Zap]]
    [clojure.string :as string]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -113,7 +113,6 @@
 (defn- header
   [{:keys [state postgres? rows-count query-count duration
            only-queries? on-toggle-only-queries
-           auto-scroll? on-toggle-auto-scroll
            search on-change-search]}]
   [:> Box {:class (str "sticky top-0 z-10 bg-[--gray-1] "
                        "border border-[--gray-a4] rounded-t-3 "
@@ -153,21 +152,7 @@
                      :on-checked-change on-toggle-only-queries
                      :aria-label "Only queries"}]
          [:> Text {:size "2" :class "text-[--gray-11]"}
-          "Only queries"]]])
-
-     [:> Tooltip {:content (if auto-scroll?
-                             "Pause auto-scroll"
-                             "Resume auto-scroll")}
-      [:> IconButton {:size "2"
-                      :variant "soft"
-                      :color (if auto-scroll? "gray" "amber")
-                      :on-click on-toggle-auto-scroll
-                      :aria-label (if auto-scroll?
-                                    "Pause auto-scroll"
-                                    "Resume auto-scroll")}
-       (if auto-scroll?
-         [:> Pause {:size 14}]
-         [:> Play {:size 14}])]]]]])
+          "Only queries"]]])]]])
 
 (defn- query-row [{:keys [seconds sql pg-type-name absolute]}]
   [:> Flex {:gap "3" :align "start"
@@ -246,7 +231,9 @@
   [_session]
   (let [scroll-ref (r/atom nil)
         only-queries? (r/atom true)
-        auto-scroll? (r/atom true)
+        ;; Auto-scroll follows the tail by default. When the user scrolls
+        ;; up to inspect older events we stop fighting them and surface a
+        ;; "Jump to latest" affordance instead.
         user-scrolled-away? (r/atom false)
         search (r/atom "")
         tick (r/atom 0)
@@ -265,7 +252,6 @@
             (reset! user-scrolled-away? (not near-bottom?))))
         jump-to-latest!
         (fn []
-          (reset! auto-scroll? true)
           (reset! user-scrolled-away? false)
           (scroll-to-bottom!))]
     (r/create-class
@@ -276,7 +262,7 @@
 
       :component-did-update
       (fn [_]
-        (when (and @auto-scroll? (not @user-scrolled-away?))
+        (when-not @user-scrolled-away?
           (scroll-to-bottom!)))
 
       :component-did-mount
@@ -317,11 +303,6 @@
                     :duration (duration-since start-date)
                     :only-queries? @only-queries?
                     :on-toggle-only-queries #(reset! only-queries? %)
-                    :auto-scroll? @auto-scroll?
-                    :on-toggle-auto-scroll
-                    (fn []
-                      (swap! auto-scroll? not)
-                      (when @auto-scroll? (jump-to-latest!)))
                     :search @search
                     :on-change-search #(reset! search %)}]
            [:div {:ref (fn [el] (reset! scroll-ref el))

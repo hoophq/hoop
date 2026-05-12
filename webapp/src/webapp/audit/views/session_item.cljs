@@ -52,11 +52,11 @@
 
 (defn- live-badge []
   [:> Tooltip {:content "Machine session is currently running"}
-   [:> Badge {:color "red" :variant "soft" :size "2"
+   [:> Badge {:color "green" :variant "soft" :size "2"
               :class "animate-pulse"
               :aria-label "Live machine session"}
     [:> Flex {:gap "1" :align "center"}
-     [:span {:class "inline-block w-2 h-2 rounded-full bg-[--red-9]"
+     [:span {:class "inline-block w-2 h-2 rounded-full bg-[--green-9]"
              :aria-hidden true}]
      "Live"]]])
 

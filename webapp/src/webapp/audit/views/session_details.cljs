@@ -266,7 +266,6 @@
                                  :on-close #(rf/dispatch [:modal->close])
                                  :clipboard-disabled? @clipboard-disabled?
                                  :has-large-payload? has-large-payload?
-                                 :live? live-machine?
                                  :download-extension (get export-dictionary
                                                           (keyword (:type session))
                                                           "txt")}]
