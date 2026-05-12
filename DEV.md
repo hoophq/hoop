@@ -165,7 +165,7 @@ End-to-end tests under `agent/integration/` that drive the real `controller.Agen
 Requirements:
 
 - **Docker daemon** running on the host — [testcontainers-go](https://golang.testcontainers.org/) manages the upstream container lifecycle.
-- **Enterprise `libhoop`** symlinked in place (the OSS stub at `_libhoop/libhoop.go` returns "missing protocol hoop library for X" and tests will fail at handshake). The Makefile target runs `libhoop-map` as a prerequisite, so if you have the enterprise repo checked out, this works automatically.
+- **Enterprise `libhoop`** checked out as a sibling directory (`../libhoop`, matching the `replace libhoop => ../libhoop` directive in `agent/go.mod` and `gateway/go.mod`). The OSS stub at `_libhoop/libhoop.go` returns "missing protocol hoop library for X" and integration tests will fail at handshake. CI clones `hoophq/libhoop` into `./libhoop` via `secrets.GH_TOKEN` (same as the build jobs).
 - **CGO enabled** — required for the `-race` flag, which is on by default for this target. Production binaries still build with `CGO_ENABLED=0`; only the test binary uses cgo.
 
 CI runs integration tests on every PR via the `Integration Test` job in `.github/workflows/pullrequest.yml`.
