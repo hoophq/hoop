@@ -274,9 +274,17 @@
         (let [start-date (:start_date session)
               connection-subtype (:connection_subtype session)
               postgres? (= connection-subtype "postgres")
-              stream-state (or @(rf/subscribe
-                                 [:audit->session-stream-state (:id session)])
-                               :connecting)
+              ;; Derive the stream pill state. We prefer whatever the SSE
+              ;; effect handler wrote, but if the session has already moved
+              ;; to "done" (e.g. we re-opened a previously-live modal) we
+              ;; force `:ended` so the user doesn't see a stuck "Connecting".
+              raw-state @(rf/subscribe
+                          [:audit->session-stream-state (:id session)])
+              session-done? (= (:status session) "done")
+              stream-state (cond
+                             session-done? :ended
+                             raw-state raw-state
+                             :else :connecting)
               event-stream (or (:event_stream session) [])
               rows (expand-stream postgres? event-stream)
               query-count (count (filter #(= :query (:kind %)) rows))

@@ -667,9 +667,11 @@
 
 (rf/reg-event-fx
  :audit->session-stream-unsubscribe
- (fn [{:keys [db]} [_ session-id]]
-   {:db (update db :audit->session-stream dissoc session-id)
-    :audit->sse-stop session-id}))
+ (fn [_ [_ session-id]]
+   ;; Only tear down the underlying fetch — keep whatever state
+   ;; `session-stream-ended` (or the next subscribe) wrote so the live tail
+   ;; can keep showing "Ended" after the SSE closes.
+   {:audit->sse-stop session-id}))
 
 (rf/reg-event-db
  :audit->set-stream-state
@@ -711,7 +713,15 @@
  (fn [{:keys [db]} [_ session-id]]
    (let [current-session (-> db :audit->session-details :session)
          applies? (= (:id current-session) session-id)
+         was-live? (= :live (get-in db [:audit->session-stream session-id :state]))
          db' (cond-> (assoc-in db [:audit->session-stream session-id :state] :ended)
-               applies? (assoc-in [:audit->session-details :session :status] "done"))]
-     {:db db'
-      :audit->sse-stop session-id})))
+               applies? (assoc-in [:audit->session-details :session :status] "done")
+               applies? (assoc-in [:audit->session-details :session :end_date]
+                                  (.toISOString (js/Date.))))]
+     (cond-> {:db db'
+              :audit->sse-stop session-id}
+       ;; Refresh the sessions list so its "Live" badge for this session
+       ;; clears. We only do this if the stream actually went live — for an
+       ;; already-ended session we wouldn't have anything new to show.
+       was-live?
+       (assoc :fx [[:dispatch [:audit->get-sessions]]])))))
