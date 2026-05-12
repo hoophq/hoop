@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
+	apigdatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -32,19 +33,21 @@ type customEntityTypesEntry struct {
 type datamaskingCreateInput struct {
 	Name                 string                      `json:"name" jsonschema:"unique rule name"`
 	Description          string                      `json:"description,omitempty" jsonschema:"human-readable description"`
-	ConnectionIDs        []string                    `json:"connection_ids,omitempty" jsonschema:"connection IDs to apply this rule to"`
-	SupportedEntityTypes []supportedEntityTypesEntry `json:"supported_entity_types,omitempty" jsonschema:"built-in entity types to detect"`
-	CustomEntityTypes    []customEntityTypesEntry    `json:"custom_entity_types,omitempty" jsonschema:"custom entity type definitions"`
-	ScoreThreshold       *float64                    `json:"score_threshold,omitempty" jsonschema:"minimum confidence score for detection"`
+	ConnectionIDs        []string                    `json:"connection_ids,omitempty" jsonschema:"UUIDs of the connections this rule applies to"`
+	SupportedEntityTypes []supportedEntityTypesEntry `json:"supported_entity_types,omitempty" jsonschema:"built-in entity types to detect. Use a webapp preset key for round-trip with the UI: CONTACT_INFORMATION (EMAIL_ADDRESS, PHONE_NUMBER, PERSON), FINANCIAL_DATA (CREDIT_CARD, IBAN_CODE), NETWORK_IDENTIFIERS (IP_ADDRESS, URL), LOCATION_DATA, TIME_DATA, US_DOCUMENTS, UK_DOCUMENTS, EUROPEAN_DOCUMENTS, ASIA_PACIFIC_DOCUMENTS, MEDICAL_DATA, DEMOGRAPHIC_DATA, CRYPTO_IDENTIFIERS — or CUSTOM_SELECTION for an ad-hoc list. Names must be UPPERCASE."`
+	CustomEntityTypes    []customEntityTypesEntry    `json:"custom_entity_types,omitempty" jsonschema:"custom entity type definitions. Each entry needs a UPPERCASE name and either a regex or a deny_list."`
+	ScoreThreshold       *float64                    `json:"score_threshold,omitempty" jsonschema:"minimum confidence score for detection, between 0.0 and 1.0"`
+	Attributes           []string                    `json:"attributes,omitempty" jsonschema:"connection attribute names this rule should apply to (scoping by attribute)"`
 }
 
 type datamaskingUpdateInput struct {
 	ID                   string                      `json:"id" jsonschema:"data masking rule ID to update"`
 	Description          string                      `json:"description,omitempty" jsonschema:"human-readable description"`
-	ConnectionIDs        []string                    `json:"connection_ids,omitempty" jsonschema:"connection IDs to apply this rule to"`
-	SupportedEntityTypes []supportedEntityTypesEntry `json:"supported_entity_types,omitempty" jsonschema:"built-in entity types to detect"`
-	CustomEntityTypes    []customEntityTypesEntry    `json:"custom_entity_types,omitempty" jsonschema:"custom entity type definitions"`
-	ScoreThreshold       *float64                    `json:"score_threshold,omitempty" jsonschema:"minimum confidence score for detection"`
+	ConnectionIDs        []string                    `json:"connection_ids,omitempty" jsonschema:"UUIDs of the connections this rule applies to"`
+	SupportedEntityTypes []supportedEntityTypesEntry `json:"supported_entity_types,omitempty" jsonschema:"built-in entity types to detect. Use a webapp preset key for round-trip with the UI: CONTACT_INFORMATION (EMAIL_ADDRESS, PHONE_NUMBER, PERSON), FINANCIAL_DATA (CREDIT_CARD, IBAN_CODE), NETWORK_IDENTIFIERS (IP_ADDRESS, URL), LOCATION_DATA, TIME_DATA, US_DOCUMENTS, UK_DOCUMENTS, EUROPEAN_DOCUMENTS, ASIA_PACIFIC_DOCUMENTS, MEDICAL_DATA, DEMOGRAPHIC_DATA, CRYPTO_IDENTIFIERS — or CUSTOM_SELECTION for an ad-hoc list. Names must be UPPERCASE."`
+	CustomEntityTypes    []customEntityTypesEntry    `json:"custom_entity_types,omitempty" jsonschema:"custom entity type definitions. Each entry needs a UPPERCASE name and either a regex or a deny_list."`
+	ScoreThreshold       *float64                    `json:"score_threshold,omitempty" jsonschema:"minimum confidence score for detection, between 0.0 and 1.0"`
+	Attributes           []string                    `json:"attributes,omitempty" jsonschema:"connection attribute names this rule should apply to (scoping by attribute)"`
 }
 
 type datamaskingDeleteInput struct {
@@ -135,7 +138,19 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return errResult("admin access required"), nil, nil
 	}
 
-	// OSS license check: max 1 rule
+	supported := toModelSupportedEntityTypes(args.SupportedEntityTypes)
+	custom := toModelCustomEntityTypes(args.CustomEntityTypes)
+	connectionIDs := filterEmptyStrings(args.ConnectionIDs)
+	payload := apigdatamasking.RulePayload{
+		SupportedEntityTypes: supported,
+		CustomEntityTypes:    custom,
+		ScoreThreshold:       args.ScoreThreshold,
+		ConnectionIDs:        connectionIDs,
+	}
+	if err := apigdatamasking.ValidateRulePayload(payload); err != nil {
+		return errResult(err.Error()), nil, nil
+	}
+
 	if sc.GetLicenseType() == license.OSSType {
 		rules, err := models.ListDataMaskingRules(sc.GetOrgID())
 		if err != nil {
@@ -144,6 +159,9 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		if len(rules) >= 1 {
 			return errResult("data masking rules are limited to 1 rule in the OSS version"), nil, nil
 		}
+		if err := apigdatamasking.ValidateOSSLimits(payload); err != nil {
+			return errResult(err.Error()), nil, nil
+		}
 	}
 
 	rule := &models.DataMaskingRule{
@@ -151,10 +169,10 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		OrgID:                sc.GetOrgID(),
 		Name:                 args.Name,
 		Description:          args.Description,
-		SupportedEntityTypes: toModelSupportedEntityTypes(args.SupportedEntityTypes),
-		CustomEntityTypes:    toModelCustomEntityTypes(args.CustomEntityTypes),
+		SupportedEntityTypes: supported,
+		CustomEntityTypes:    custom,
 		ScoreThreshold:       args.ScoreThreshold,
-		ConnectionIDs:        filterEmptyStrings(args.ConnectionIDs),
+		ConnectionIDs:        connectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	}
 
@@ -162,8 +180,22 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if err == models.ErrAlreadyExists {
 		return errResult("data masking rule already exists"), nil, nil
 	}
+	if err == models.ErrNotFound {
+		return errResult("connection not found: a connection reference in the connection_ids field does not exist"), nil, nil
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating data masking rule: %w", err)
+	}
+
+	if len(args.Attributes) > 0 {
+		orgID, parseErr := uuid.Parse(sc.GetOrgID())
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("invalid org id: %w", parseErr)
+		}
+		if err := models.UpsertDatamaskingRuleAttributes(models.DB, orgID, resp.Name, args.Attributes); err != nil {
+			return nil, nil, fmt.Errorf("failed upserting data masking rule attributes: %w", err)
+		}
+		resp.Attributes = args.Attributes
 	}
 
 	return jsonResult(datamaskingToMap(resp))
@@ -178,14 +210,32 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return errResult("admin access required"), nil, nil
 	}
 
+	supported := toModelSupportedEntityTypes(args.SupportedEntityTypes)
+	custom := toModelCustomEntityTypes(args.CustomEntityTypes)
+	connectionIDs := filterEmptyStrings(args.ConnectionIDs)
+	payload := apigdatamasking.RulePayload{
+		SupportedEntityTypes: supported,
+		CustomEntityTypes:    custom,
+		ScoreThreshold:       args.ScoreThreshold,
+		ConnectionIDs:        connectionIDs,
+	}
+	if err := apigdatamasking.ValidateRulePayload(payload); err != nil {
+		return errResult(err.Error()), nil, nil
+	}
+	if sc.GetLicenseType() == license.OSSType {
+		if err := apigdatamasking.ValidateOSSLimits(payload); err != nil {
+			return errResult(err.Error()), nil, nil
+		}
+	}
+
 	rule := &models.DataMaskingRule{
 		ID:                   args.ID,
 		OrgID:                sc.GetOrgID(),
 		Description:          args.Description,
-		SupportedEntityTypes: toModelSupportedEntityTypes(args.SupportedEntityTypes),
-		CustomEntityTypes:    toModelCustomEntityTypes(args.CustomEntityTypes),
+		SupportedEntityTypes: supported,
+		CustomEntityTypes:    custom,
 		ScoreThreshold:       args.ScoreThreshold,
-		ConnectionIDs:        filterEmptyStrings(args.ConnectionIDs),
+		ConnectionIDs:        connectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	}
 
@@ -195,6 +245,17 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed updating data masking rule: %w", err)
+	}
+
+	if args.Attributes != nil {
+		orgID, parseErr := uuid.Parse(sc.GetOrgID())
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("invalid org id: %w", parseErr)
+		}
+		if err := models.UpsertDatamaskingRuleAttributes(models.DB, orgID, resp.Name, args.Attributes); err != nil {
+			return nil, nil, fmt.Errorf("failed upserting data masking rule attributes: %w", err)
+		}
+		resp.Attributes = args.Attributes
 	}
 
 	return jsonResult(datamaskingToMap(resp))

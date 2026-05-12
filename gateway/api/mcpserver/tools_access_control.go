@@ -31,9 +31,12 @@ func registerAccessControlTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "access_control_set",
-		Description: "Restrict a connection so only the given user groups can access it. " +
-			"Enables the access_control plugin if needed and replaces any existing group list " +
-			"for this connection. Admins and auditors always bypass the restriction.",
+		Description: "Canonical way to restrict which user groups can access a connection — matches the webapp 'Access Control' page. " +
+			"Use this for 'give group X access to connection Y' requests. " +
+			"Enables the access_control plugin if needed and REPLACES any existing group list for this connection. " +
+			"Admins and auditors always bypass the restriction. " +
+			"For approval / just-in-time workflows (require review before access), use access_request_rules_create instead. " +
+			"Do NOT set the deprecated reviewers field on the connection itself.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
 	}, accessControlSetHandler)
 
@@ -147,6 +150,9 @@ func accessControlGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args a
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 	if args.ConnectionName == "" {
 		return errResult("connection_name is required"), nil, nil
 	}
@@ -180,6 +186,9 @@ func accessControlListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ acc
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	plugin, err := models.GetPluginByName(sc.GetOrgID(), plugintypes.PluginAccessControlName)

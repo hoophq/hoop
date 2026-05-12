@@ -69,8 +69,12 @@ func registerAccessRequestRuleTools(server *mcp.Server) {
 	}, accessRequestRulesGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "access_request_rules_create",
-		Description: "Create a new access request rule. Requires admin access. Defines approval workflows for connections",
+		Name: "access_request_rules_create",
+		Description: "Create an approval / just-in-time access workflow rule for one or more connections — matches the webapp 'Access Request' page. " +
+			"Use this when access requires review or time-bound approval. " +
+			"For simple 'this group can access this connection' visibility (no approval), use access_control_set or access_control_create_group instead. " +
+			"Do NOT set the deprecated reviewers field on the connection itself. " +
+			"Requires admin access.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
 	}, accessRequestRulesCreateHandler)
 
