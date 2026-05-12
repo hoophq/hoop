@@ -23,3 +23,29 @@ jobs:
 
       - name: Test
         run: make test-oss
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      # testcontainers-go manages container lifecycle itself via the Docker
+      # daemon. ubuntu-latest runners have Docker pre-installed and running,
+      # so no services: block is required. See:
+      # https://golang.testcontainers.org/system_requirements/
+      - name: Integration Test
+        run: make test-integration

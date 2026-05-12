@@ -144,6 +144,32 @@ To rotate the signing key too, delete `dist/dev/spiffe/priv.pem` before running 
 
 Edit `.env` and change `HOOP_SPIFFE_MODE=enforce` to `HOOP_SPIFFE_MODE=disabled` (or remove the managed block entirely), then restart `run-dev`. `enforce` is the only "on" value — the gateway always rejects invalid SVIDs and never falls back to DSN on a JWT-shaped token.
 
+## Running Tests
+
+### Unit tests
+
+```sh
+make test-oss
+```
+
+Fast, no external dependencies. Runs in CI on every PR.
+
+### Integration tests
+
+```sh
+make test-integration
+```
+
+End-to-end tests under `agent/integration/` that drive the real `controller.Agent` against real upstream servers (Postgres today; SSH and MySQL coming). They live behind the `//go:build integration` tag so they're invisible to `make test-oss`.
+
+Requirements:
+
+- **Docker daemon** running on the host — [testcontainers-go](https://golang.testcontainers.org/) manages the upstream container lifecycle.
+- **Enterprise `libhoop`** symlinked in place (the OSS stub at `_libhoop/libhoop.go` returns "missing protocol hoop library for X" and tests will fail at handshake). The Makefile target runs `libhoop-map` as a prerequisite, so if you have the enterprise repo checked out, this works automatically.
+- **CGO enabled** — required for the `-race` flag, which is on by default for this target. Production binaries still build with `CGO_ENABLED=0`; only the test binary uses cgo.
+
+CI runs integration tests on every PR via the `Integration Test` job in `.github/workflows/pullrequest.yml`.
+
 ## Swagger / OpenAPI
 
 This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. Make sure to generate it every time a change is made in the API:

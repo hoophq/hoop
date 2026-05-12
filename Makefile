@@ -87,8 +87,12 @@ test-oss: libhoop-map generate-wasm
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-test-integration:
-	env CGO_ENABLED=0 go test -tags integration -v -timeout 5m -count=1 ./agent/integration/...
+# Integration tests run real testcontainers (Postgres today; SSH and MySQL
+# follow in ENG-391 / ENG-387). They require Docker on the host and a
+# functional libhoop (the OSS stub at _libhoop/libhoop.go returns
+# "missing protocol hoop library for X" — CI uses the enterprise libhoop).
+test-integration: libhoop-map generate-wasm
+	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
 generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
