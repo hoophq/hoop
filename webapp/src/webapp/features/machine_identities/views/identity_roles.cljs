@@ -84,7 +84,18 @@
                    :alt ""}]]
            [:> Text {:size "3" :weight "medium" :class "text-[--gray-12] truncate"}
             connection_name]]
-          [:> Flex {:align "center" :gap "1" :class "shrink-0"}
+          [:> Flex {:align "center" :gap "4" :class "shrink-0"}
+           [:> IconButton {:size "2"
+                           :variant "ghost"
+                           :color "gray"
+                           :aria-expanded (boolean @expanded?)
+                           :aria-label (if @expanded?
+                                         "Collapse credentials"
+                                         "Expand credentials")
+                           :on-click #(swap! expanded? not)}
+            (if @expanded?
+              [:> ChevronUp {:size 18}]
+              [:> ChevronDown {:size 18}])]
            ;; Destructive action is tucked behind an overflow menu so it can't
            ;; be triggered by mistake — rotating a credential will revoke the
            ;; current one and may crash anything still using it.
@@ -125,18 +136,7 @@
                          :on-complete #(reset! rotating? false)}]))}]))}
               [:> Flex {:align "center" :gap "2"}
                [:> RefreshCw {:size 14}]
-               "Rotate Credentials"]]]]
-           [:> IconButton {:size "2"
-                           :variant "ghost"
-                           :color "gray"
-                           :aria-expanded (boolean @expanded?)
-                           :aria-label (if @expanded?
-                                         "Collapse credentials"
-                                         "Expand credentials")
-                           :on-click #(swap! expanded? not)}
-            (if @expanded?
-              [:> ChevronUp {:size 18}]
-              [:> ChevronDown {:size 18}])]]]
+               "Rotate Credentials"]]]]]]
          (when @expanded?
            [:> Box {:px "5" :pb "5" :pt "2"
                     :class (str "border-t border-[--gray-a6] bg-[--gray-2] transition-opacity duration-300 "
