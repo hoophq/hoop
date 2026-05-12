@@ -55,6 +55,7 @@ func init() {
 	rootCmd.AddCommand(runbooks.MainCmd)
 	rootCmd.AddCommand(config.MainCmd)
 	rootCmd.AddCommand(admin.MainCmd)
+	rootCmd.AddCommand(claudeCmd)
 }
 
 func printErrorAndExit(format string, v ...any) {
