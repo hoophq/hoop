@@ -166,9 +166,10 @@ Requirements:
 
 - **Docker daemon** running on the host — [testcontainers-go](https://golang.testcontainers.org/) manages the upstream container lifecycle.
 - **Enterprise `libhoop`** checked out as a sibling directory (`../libhoop`, matching the `replace libhoop => ../libhoop` directive in `agent/go.mod` and `gateway/go.mod`). The OSS stub at `_libhoop/libhoop.go` returns "missing protocol hoop library for X" and integration tests will fail at handshake. CI clones `hoophq/libhoop` into `./libhoop` via `secrets.GH_TOKEN` (same as the build jobs).
-- **CGO enabled** — required for the `-race` flag, which is on by default for this target. Production binaries still build with `CGO_ENABLED=0`; only the test binary uses cgo.
 
 CI runs integration tests on every PR via the `Integration Test` job in `.github/workflows/pullrequest.yml`.
+
+> **Note**: `-race` is not enabled by default. The enterprise `libhoop` has pre-existing data races in some of its proxy buffer code that the race detector will surface. Enabling `-race` will be addressed in a follow-up ticket alongside fixes to `libhoop`.
 
 ## Swagger / OpenAPI
 
