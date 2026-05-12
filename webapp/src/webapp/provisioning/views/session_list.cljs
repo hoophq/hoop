@@ -8,7 +8,6 @@
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
 
-;; ── Severity → display config ─────────────────────────────────────────────
 (def ^:private severity
   {"warning"        {:color "amber"  :icon [:> AlertCircle {:size 14}]}
    "recommendation" {:color "indigo" :icon [:> Zap {:size 14}]}
@@ -16,46 +15,48 @@
 
 (defn- severity-for [s] (get severity s (get severity "info")))
 
-;; ── Session status → display config ───────────────────────────────────────
 (def ^:private session-status
   {"success" {:color "green" :icon [:> Check {:size 10}]}
    "error"   {:color "red"   :icon [:> X {:size 10}]}})
 
 (defn- session-status-badge [{:keys [status]} & [opts]]
-  (let [{:keys [color icon]} (get session-status status (get session-status "error"))]
+  (let [{:keys [color icon]} (get session-status status 
+                                  (get session-status "error"))]
     [:> Badge {:color color :variant "soft" :size "1"}
      icon (str " " (if (:plain? opts) status status))]))
 
 ;; ── AI insight generation ────────────────────────────────────────────────
-(defn- generate-insights [sessions]
+(defn- generate-insights
+  "Builds the list of AI insights for a set of sessions. Each insight is
+   conditional except the trailing guardrails tip, which always appears."
+  [sessions]
   (let [failed     (filter #(= "error" (:status %)) sessions)
         unique     (set (map :resource-name sessions))
-        has-admin? (some #(cs/includes? (:output %) "CREATE USER") sessions)
-        insights   (atom [])]
-    (when (pos? (count failed))
-      (swap! insights conj
-             {:id "failed" :severity "warning"
-              :title  (str (data/pluralize (count failed) "session")
-                           " failed during provisioning")
-              :detail (str "Resources unreachable: "
-                           (cs/join ", " (distinct (map :resource-name failed)))
-                           ". Check network connectivity and verify agent is reachable.")}))
-    (when (pos? (count unique))
-      (swap! insights conj
-             {:id "masking" :severity "recommendation"
-              :title  "Data masking recommended — PII exposure risk detected"
-              :detail (str (data/pluralize (count unique) "provisioned resource")
-                           " have SELECT-enabled roles without data masking.")}))
-    (when has-admin?
-      (swap! insights conj
-             {:id "jit" :severity "recommendation"
-              :title  "Admin accounts should use JIT access"
-              :detail "Admin accounts with permanent access increase blast radius of credential compromise. JIT reduces exposure to minutes."}))
-    (swap! insights conj
-           {:id "guardrails" :severity "info"
-            :title  "Guardrails can prevent accidental data loss"
-            :detail "Blocking DELETE, DROP, and TRUNCATE at the Hoop layer requires no schema changes and catches mistakes before they reach the database engine."})
-    @insights))
+        has-admin? (some #(cs/includes? (:output %) "CREATE USER") sessions)]
+    (cond-> []
+      (pos? (count failed))
+      (conj {:id "failed" :severity "warning"
+             :title  (str (data/pluralize (count failed) "session")
+                          " failed during provisioning")
+             :detail (str "Resources unreachable: "
+                          (cs/join ", " (distinct (map :resource-name failed)))
+                          ". Check network connectivity and verify agent is reachable.")})
+
+      (pos? (count unique))
+      (conj {:id "masking" :severity "recommendation"
+             :title  "Data masking recommended \u2014 PII exposure risk detected"
+             :detail (str (data/pluralize (count unique) "provisioned resource")
+                          " have SELECT-enabled roles without data masking.")})
+
+      has-admin?
+      (conj {:id "jit" :severity "recommendation"
+             :title  "Admin accounts should use JIT access"
+             :detail "Admin accounts with permanent access increase blast radius of credential compromise. JIT reduces exposure to minutes."})
+
+      :always
+      (conj {:id "guardrails" :severity "info"
+             :title  "Guardrails can prevent accidental data loss"
+             :detail "Blocking DELETE, DROP, and TRUNCATE at the Hoop layer requires no schema changes and catches mistakes before they reach the database engine."}))))
 
 ;; ── Sub-components ────────────────────────────────────────────────────────
 

@@ -34,8 +34,9 @@
     [:> Badge {:color color :variant "soft"} label]))
 
 (defn- action-button
-  "Button shape helper for the header action row. Visibility is the caller's
-   responsibility — either wrap in `when` or filter with `:when` in a `for`."
+  "Button shape helper for the header / footer action rows. Visibility is the
+   caller's responsibility — either wrap in `when` or filter with `:when` in
+   a `for`."
   [{:keys [variant color size icon icon-size label on-click]
     :or   {size "2" icon-size 14}}]
   [:> Button {:variant variant :color color :size size :on-click on-click}
@@ -65,6 +66,17 @@
     :variant  "ghost" :color "gray"
     :label    "Background"
     :on-click on-run-in-background}])
+
+(defn- footer-actions
+  "Action specs for the footer row. Same DSL as `header-actions`."
+  [{:keys [all-planned? plan-done applying? all-done? on-done on-back]}]
+  [{:visible? (and all-planned? (pos? plan-done) (not applying?))
+    :icon     Rocket
+    :label    (str "Apply " (data/pluralize plan-done "role") " \u2192")
+    :on-click #(rf/dispatch [:provisioning/apply-all])}
+   {:visible? all-done?
+    :color    "green" :icon Check :label "Done"
+    :on-click (or on-done on-back)}])
 
 (defn- status-callouts
   "Returns the info-callout specs for the current view state. Each spec carries
@@ -120,44 +132,109 @@
        [:> Text {:size "2" :color "gray"} (:status item)])
      [status-action item]]))
 
+(defn- plan-item-sessions-cell
+  "Renders either a 'View session' button (lazy-fetches the session on first
+   click) or an em-dash when there's no session yet."
+  [{:keys [item session-set on-view-sessions]}]
+  (if (:session-id item)
+    (let [loaded? (contains? session-set (:session-id item))]
+      [:> Button {:size "1" :variant "ghost" :color "indigo"
+                  :on-click (fn []
+                              (when-not loaded?
+                                (rf/dispatch [:provisioning/fetch-plan-session
+                                              (:session-id item)]))
+                              (on-view-sessions
+                               {:resource-id   (:resource-id item)
+                                :resource-name (:resource-name item)}))}
+       [:> ScrollText {:size 12}] " View session"])
+    [:> Text {:size "1" :color "gray"} "\u2014"]))
+
+(defn- plan-item-row
+  [{:keys [item session-set on-view-sessions]}]
+  [:> Table.Row
+   [:> Table.Cell
+    [:> Flex {:direction "column" :gap "1"}
+     [:> Text {:size "2" :weight "medium"} (:resource-name item)]
+     [:> Flex {:align "center" :gap "2"}
+      [:> Text {:size "1" :color "gray"
+                :style {:font-family "var(--font-mono)" :font-size 11}}
+       (:role item)]
+      [:> Text {:size "1" :color "gray"} "\u00b7"]
+      [:> Text {:size "1" :color "gray"
+                :style {:font-family "var(--font-mono)" :font-size 11}}
+       (:database item)]]]]
+   [:> Table.Cell
+    [plan-item-sessions-cell {:item             item
+                              :session-set      session-set
+                              :on-view-sessions on-view-sessions}]]
+   [:> Table.Cell
+    [status-cell item]]])
+
+(defn- derive-view-state
+  "Pure function: takes a plan job + a list of all loaded sessions, returns
+   every value the screen needs to render. Independently unit-testable."
+  [plan-job sessions]
+  (let [items     (or (:items plan-job) [])
+        planning? (or (:planning? plan-job)
+                      (some #(contains? #{"pending" "processing"} (:status %)) items))
+        applying? (or (:applying? plan-job)
+                      (some #(= "applying" (:status %)) items))
+        busy?     (or planning? applying?)
+
+        plan-done       (data/count-by-status items #{"Create" "Update"})
+        failed-count    (data/count-by-status items #{"Failed" "ApplyFailed"})
+        applied-count   (data/count-by-status items "Applied")
+        cancelled-count (data/count-by-status items "Cancelled")
+        total           (count items)
+
+        terminal?    #(contains? #{"Create" "Update" "Failed" "Applied" "ApplyFailed" "Cancelled"} (:status %))
+        apply-done?  #(contains? #{"Applied" "ApplyFailed" "Cancelled"} (:status %))
+        all-planned? (and (pos? total) (not planning?) (every? terminal? items))
+        all-done?    (and all-planned? (not applying?) (zero? plan-done))
+
+        progress (cond
+                   (zero? total) 0
+                   applying?     (js/Math.round
+                                  (* (/ (count (filter apply-done? items)) total) 100))
+                   :else         (js/Math.round
+                                  (* (/ (count (filter terminal? items)) total) 100)))]
+    {:items            items
+     :planning?        planning?
+     :applying?        applying?
+     :busy?            busy?
+     :cancelled?       (:cancelled? plan-job)
+     :apply-cancelled? (:apply-cancelled? plan-job)
+     :plan-done        plan-done
+     :failed-count     failed-count
+     :applied-count    applied-count
+     :cancelled-count  cancelled-count
+     :total            total
+     :all-planned?     all-planned?
+     :all-done?        all-done?
+     :progress         progress
+     :job-sessions     (filterv #(= (:job-id %) (:id plan-job)) sessions)
+     :session-set      (set (map :id sessions))}))
+
+(defn- progress-color [{:keys [busy? failed-count]}]
+  (cond busy?               "indigo"
+        (pos? failed-count) "amber"
+        :else               "green"))
+
+(defn- subtitle-text
+  [{:keys [total applied-count plan-done failed-count cancelled-count]}]
+  (str "Role provisioning \u2014 " total " roles \u00b7 "
+       applied-count " applied \u00b7 "
+       plan-done " ready \u00b7 "
+       failed-count " failed"
+       (when (pos? cancelled-count) (str " \u00b7 " cancelled-count " cancelled"))))
+
 (defn job-detail-screen
   [_props]
   (fn [{:keys [on-back on-done on-run-in-background on-view-sessions]}]
-    (let [plan-job  @(rf/subscribe [:provisioning/plan-job])
-          sessions  @(rf/subscribe [:provisioning/sessions])
-          items     (or (:items plan-job) [])
-
-          planning?       (or (:planning? plan-job)
-                              (some #(contains? #{"pending" "processing"} (:status %)) items))
-          applying?       (or (:applying? plan-job)
-                              (some #(= "applying" (:status %)) items))
-          busy?           (or planning? applying?)
-          cancelled?      (:cancelled? plan-job)
-          apply-cancelled? (:apply-cancelled? plan-job)
-
-          plan-done       (data/count-by-status items #{"Create" "Update"})
-          failed-count    (data/count-by-status items #{"Failed" "ApplyFailed"})
-          applied-count   (data/count-by-status items "Applied")
-          cancelled-count (data/count-by-status items "Cancelled")
-          total           (count items)
-
-          terminal?       #(contains? #{"Create" "Update" "Failed" "Applied" "ApplyFailed" "Cancelled"} (:status %))
-          all-planned?    (and (pos? total) (not planning?) (every? terminal? items))
-          all-done?       (and all-planned?
-                               (not applying?)
-                               (zero? plan-done))
-
-          apply-done?     #(contains? #{"Applied" "ApplyFailed" "Cancelled"} (:status %))
-          progress        (if (pos? total)
-                            (if applying?
-                              (let [done (count (filter apply-done? items))]
-                                (js/Math.round (* (/ done total) 100)))
-                              (let [finished (count (filter terminal? items))]
-                                (js/Math.round (* (/ finished total) 100))))
-                            0)
-
-          job-sessions    (filterv #(= (:job-id %) (:id plan-job)) sessions)
-          session-set     (set (map :id sessions))]
+    (let [plan-job @(rf/subscribe [:provisioning/plan-job])
+          sessions @(rf/subscribe [:provisioning/sessions])
+          {:keys [items progress session-set] :as state}
+          (derive-view-state plan-job sessions)]
 
       [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
        [:> Flex {:align "center" :gap "2" :mb "1"}
@@ -167,47 +244,21 @@
         [:> Flex {:direction "column" :gap "1"}
          [:> Flex {:align "center" :gap "3"}
           [:> Heading {:size "7"} "Provision"]
-          [status-badge {:cancelled?   cancelled?
-                         :busy?        busy?
-                         :planning?    planning?
-                         :applying?    applying?
-                         :failed-count failed-count
-                         :all-done?    all-done?}]]
-         [:> Text {:size "2" :color "gray"}
-          (str "Role provisioning — " total " roles · "
-               applied-count " applied · "
-               plan-done " ready · "
-               failed-count " failed"
-               (when (pos? cancelled-count) (str " · " cancelled-count " cancelled")))]]
+          [status-badge state]]
+         [:> Text {:size "2" :color "gray"} (subtitle-text state)]]
         [:> Flex {:align "center" :gap "2"}
          (for [{:keys [visible? label] :as a}
-               (header-actions {:job-sessions         job-sessions
-                                :planning?            planning?
-                                :cancelled?           cancelled?
-                                :applying?            applying?
-                                :apply-cancelled?     apply-cancelled?
-                                :busy?                busy?
-                                :on-view-sessions     on-view-sessions
-                                :on-run-in-background on-run-in-background})
+               (header-actions (assoc state
+                                      :on-view-sessions     on-view-sessions
+                                      :on-run-in-background on-run-in-background))
                :when visible?]
            ^{:key label}
            [action-button (dissoc a :visible?)])]]
 
        [:> Box {:mb "4"}
-        [:> Progress {:value progress
-                      :color (cond busy?             "indigo"
-                                   (pos? failed-count) "amber"
-                                   :else               "green")}]]
+        [:> Progress {:value progress :color (progress-color state)}]]
 
-       (for [{:keys [visible? color icon text]}
-             (status-callouts {:all-done?       all-done?
-                               :failed-count    failed-count
-                               :plan-done       plan-done
-                               :applied-count   applied-count
-                               :cancelled-count cancelled-count
-                               :all-planned?    all-planned?
-                               :applying?       applying?
-                               :busy?           busy?})
+       (for [{:keys [visible? color icon text]} (status-callouts state)
              :when visible?]
          ^{:key text}
          [shared/info-callout {:color color :icon [:> icon {:size 16}] :text text}])
@@ -222,45 +273,18 @@
            [:> Table.ColumnHeaderCell "Sessions"]
            [:> Table.ColumnHeaderCell "Status"]]]
          [:> Table.Body
-          (doall
-           (for [item items]
-             ^{:key (:key item)}
-             [:> Table.Row
-              [:> Table.Cell
-               [:> Flex {:direction "column" :gap "1"}
-                [:> Text {:size "2" :weight "medium"} (:resource-name item)]
-                [:> Flex {:align "center" :gap "2"}
-                 [:> Text {:size "1" :color "gray"
-                           :style {:font-family "var(--font-mono)" :font-size 11}}
-                  (:role item)]
-                 [:> Text {:size "1" :color "gray"} "·"]
-                 [:> Text {:size "1" :color "gray"
-                           :style {:font-family "var(--font-mono)" :font-size 11}}
-                  (:database item)]]]]
-              [:> Table.Cell
-               (if (:session-id item)
-                 (let [loaded? (contains? session-set (:session-id item))]
-                   [:> Button {:size "1" :variant "ghost" :color "indigo"
-                               :on-click (fn []
-                                           (when-not loaded?
-                                             (rf/dispatch [:provisioning/fetch-plan-session
-                                                           (:session-id item)]))
-                                           (on-view-sessions
-                                            {:resource-id   (:resource-id item)
-                                             :resource-name (:resource-name item)}))}
-                    [:> ScrollText {:size 12}] " View session"])
-                 [:> Text {:size "1" :color "gray"} "—"])]
-              [:> Table.Cell
-               [status-cell item]]]))]]]
+          (for [item items]
+            ^{:key (:key item)}
+            [plan-item-row {:item             item
+                            :session-set      session-set
+                            :on-view-sessions on-view-sessions}])]]]
 
        [:> Flex {:align "center" :justify "between" :pt "4" :mt "4"
                  :style {:border-top "1px solid var(--gray-4)" :flex-shrink 0}}
         [shared/back-button {:on-click on-back :label "Back to catalog"}]
         [:> Flex {:gap "2"}
-         (when (and all-planned? (pos? plan-done) (not applying?))
-           [:> Button {:on-click #(rf/dispatch [:provisioning/apply-all])}
-            [:> Rocket {:size 14}]
-            (str " Apply " (data/pluralize plan-done "role") " →")])
-         (when all-done?
-           [:> Button {:color "green" :on-click (or on-done on-back)}
-            [:> Check {:size 14}] " Done"])]]])))
+         (for [{:keys [visible? label] :as a}
+               (footer-actions (assoc state :on-back on-back :on-done on-done))
+               :when visible?]
+           ^{:key label}
+           [action-button (dissoc a :visible?)])]]])))

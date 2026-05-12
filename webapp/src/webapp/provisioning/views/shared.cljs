@@ -1,8 +1,10 @@
 (ns webapp.provisioning.views.shared
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Callout Flex Heading Text]]
-   ["lucide-react" :refer [ArrowLeft ChevronLeft ChevronRight Loader2 Upload]]
+   ["lucide-react" :refer [ArrowLeft CheckCircle2 ChevronLeft ChevronRight
+                           Loader2 Upload X]]
    ["papaparse" :as papa]
+   ["react" :as react]
    [clojure.string :as cs]))
 
 
@@ -10,8 +12,6 @@
   "Returns alternating row background for index i."
   [i]
   (if (even? i) "var(--color-panel-solid)" "var(--gray-1)"))
-
-;; ── Atomic UI primitives ─────────────────────────────────────────────────────
 
 (defn spinner
   "Animated Loader2 spinner. Wrap any color/size combo from one place."
@@ -26,8 +26,6 @@
   [{:keys [on-click label size] :or {label "Back" size "2"}}]
   [:> Button {:variant "ghost" :color "gray" :size size :on-click on-click}
    [:> ArrowLeft {:size 14}] (str " " label)])
-
-;; ── Callouts ────────────────────────────────────────────────────────────────
 
 (defn info-callout
   "Radix Callout with an icon and a text message. Used for status banners."
@@ -65,8 +63,6 @@
      (when actions
        [:> Flex {:align "center" :gap "2" :style {:flex-shrink 0}} actions])]))
 
-;; ── Page chrome ─────────────────────────────────────────────────────────────
-
 (defn bulk-screen-header
   "Back button + heading + resource count badge."
   [{:keys [title resource-count on-back]}]
@@ -86,8 +82,6 @@
    [:> Flex {:gap "3"}
     [:> Button {:variant "outline" :color "gray" :on-click on-cancel} "Cancel"]
     [:> Button {:disabled apply-disabled? :on-click on-apply} apply-label]]])
-
-;; ── Pagination ──────────────────────────────────────────────────────────────
 
 (defn pagination
   "Prev / page-counter / next. Hides itself entirely when there are no pages
@@ -123,8 +117,6 @@
                       :on-click #(on-change (inc page))}
            [:> ChevronRight {:size 14}]]])])))
 
-;; ── Flex-based table header ─────────────────────────────────────────────────
-
 (defn flex-table-header
   "Sticky header row matching the custom flex-based 'tables' used across views.
    `cols` is a vector of {:flex string|number, :width int, :label string}.
@@ -142,51 +134,114 @@
                        width (assoc :width width :flex-shrink 0))}
        [:> Text {:size "1" :color "gray" :weight "medium"} label]]))])
 
-;; ── CSV drop zone ───────────────────────────────────────────────────────────
+(defn- drop-zone-colors
+  "Resolves border + background colors for the dropzone based on visual state."
+  [{:keys [drag-over? selected?]}]
+  (cond
+    drag-over? {:border "var(--indigo-7)" :background "var(--indigo-1)"}
+    selected?  {:border "var(--green-7)"  :background "var(--green-1)"}
+    :else      {:border "var(--gray-6)"   :background "var(--gray-2)"}))
+
+(defn- drop-zone-selected-content
+  [{:keys [name detail on-remove]}]
+  [:> Flex {:direction "column" :align "center" :gap "2"}
+   [:> Box {:style {:color "var(--green-9)" :display "flex"}}
+    [:> CheckCircle2 {:size 22 :stroke-width 1.75}]]
+   [:> Text {:size "2" :weight "medium"} name]
+   (when detail
+     [:> Text {:size "1" :color "gray"} detail])
+   (when on-remove
+     [:> Button {:variant "ghost" :size "1" :color "gray"
+                 :on-click (fn [e]
+                             (.stopPropagation e)
+                             (on-remove))}
+      [:> X {:size 11}] " Remove"])])
+
+(defn- drop-zone-empty-content
+  [{:keys [hint-text]}]
+  [:> Flex {:direction "column" :align "center" :gap "2"}
+   [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
+   [:> Text {:size "2" :color "gray"}
+    "Drop your CSV here or "
+    [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
+   (when hint-text
+     [:> Text {:size "1" :color "gray"} hint-text])])
+
+(defn- drop-zone-loading-content
+  [{:keys [loading-text]}]
+  [:> Flex {:direction "column" :align "center" :gap "2"}
+   [spinner {:size 20}]
+   [:> Text {:size "2" :color "gray"} (or loading-text "Parsing CSV…")]])
+
+(defn- csv-drop-zone-inner
+  [{:keys [on-file hint-text loading? loading-text selected]}]
+  (let [[drag-over? set-drag-over] (react/useState false)
+        selected?  (some? selected)
+        empty?     (and (not selected?) (not loading?))
+        {:keys [border background]} (drop-zone-colors {:drag-over? drag-over?
+                                                       :selected?  selected?})
+        open-picker! (fn []
+                       (let [input (js/document.createElement "input")]
+                         (set! (.-type input) "file")
+                         (set! (.-accept input) ".csv,text/csv")
+                         (set! (.-onchange input)
+                               (fn [e]
+                                 (when-let [file (-> e .-target .-files (aget 0))]
+                                   (on-file file))))
+                         (.click input)))]
+    [:> Box {:on-click      #(when empty? (open-picker!))
+             :on-drag-over  (fn [e]
+                              (.preventDefault e)
+                              (when empty? (set-drag-over true)))
+             :on-drag-leave #(set-drag-over false)
+             :on-drop       (fn [e]
+                              (.preventDefault e)
+                              (set-drag-over false)
+                              (when empty?
+                                (when-let [file (-> e .-dataTransfer .-files (aget 0))]
+                                  (on-file file))))
+             :style {:border (str "2px dashed " border)
+                     :border-radius "var(--radius-3)"
+                     :padding 40 :background background
+                     :text-align "center"
+                     :cursor (if empty? "pointer" "default")
+                     :transition "border-color 0.12s ease, background 0.12s ease"
+                     :flex 1 :display "flex" :align-items "center"
+                     :justify-content "center"}}
+     (cond
+       loading?  [drop-zone-loading-content  {:loading-text loading-text}]
+       selected? [drop-zone-selected-content selected]
+       :else     [drop-zone-empty-content    {:hint-text hint-text}])]))
 
 (defn csv-drop-zone
-  "Dashed drop zone for CSV file selection. Handles click-to-browse and drag-and-drop.
+  "Dashed drop zone for CSV file selection. Handles click-to-browse,
+   drag-and-drop, and three visual states (empty / loading / selected).
+
    Props:
      :on-file      (fn [File]) — called when user selects or drops a file
-     :hint-text    string      — column description shown below the icon
+     :hint-text    string      — column description shown when empty
      :loading?     boolean     — show spinner instead of the icon
-     :loading-text string      — text shown while loading (default \"Parsing CSV…\")"
-  [{:keys [on-file hint-text loading? loading-text]}]
-  [:> Box {:on-click (fn []
-                       (when-not loading?
-                         (let [input (js/document.createElement "input")]
-                           (set! (.-type input) "file")
-                           (set! (.-accept input) ".csv,text/csv")
-                           (set! (.-onchange input)
-                                 (fn [e]
-                                   (when-let [file (-> e .-target .-files (aget 0))]
-                                     (on-file file))))
-                           (.click input))))
-           :on-drop  (fn [e]
-                       (.preventDefault e)
-                       (when-not loading?
-                         (when-let [file (-> e .-dataTransfer .-files (aget 0))]
-                           (on-file file))))
-           :on-drag-over #(.preventDefault %)
-           :style {:border "2px dashed var(--gray-6)"
-                   :border-radius "var(--radius-3)"
-                   :padding 40 :background "var(--gray-2)"
-                   :text-align "center" :cursor "pointer"
-                   :flex 1 :display "flex" :align-items "center"
-                   :justify-content "center"}}
-   (if loading?
-     [:> Flex {:direction "column" :align "center" :gap "2"}
-      [spinner {:size 20}]
-      [:> Text {:size "2" :color "gray"} (or loading-text "Parsing CSV…")]]
-     [:> Flex {:direction "column" :align "center" :gap "2"}
-      [:> Upload {:size 24 :stroke-width 1.5 :color "var(--gray-9)"}]
-      [:> Text {:size "2" :color "gray"}
-       "Drop your CSV here or "
-       [:> Text {:size "2" :color "indigo" :style {:cursor "pointer"}} "browse"]]
-      (when hint-text
-        [:> Text {:size "1" :color "gray"} hint-text])])])
+     :loading-text string      — text shown while loading (default 'Parsing CSV…')
+     :selected     map | nil   — when present, render the 'file selected' state:
+                                 {:name      string  — file name
+                                  :detail    string  — extra details (e.g. row count)
+                                  :on-remove fn      — called on Remove click}"
+  [props]
+  [:f> csv-drop-zone-inner props])
 
-;; ── CSV parsing ─────────────────────────────────────────────────────────────
+
+(defn count-csv-rows!
+  "Reads `file` as text and passes the non-empty-line count (minus the header
+   row) to `on-count`. Used to set up progress totals before a streaming parse."
+  [file on-count]
+  (let [reader (js/FileReader.)]
+    (set! (.-onload reader)
+          (fn [e]
+            (let [text  (-> e .-target .-result)
+                  lines (->> (.split text "\n")
+                             (remove #(= "" (.trim %))))]
+              (on-count (max 0 (dec (count lines)))))))
+    (.readAsText reader file)))
 
 (defn parse-csv!
   "Parses a CSV file via papaparse. Single entry point for both modes:
@@ -223,24 +278,10 @@
                                (on-row row-data idx)))))]
     (papa/parse file (clj->js opts))))
 
-;; ── CSV download ────────────────────────────────────────────────────────────
-;; Used by the provisioning bulk screens to let the user download a template
-;; CSV pre-filled with the resource_name column from their current selection.
-
-(defn count-csv-rows!
-  "Reads a CSV File and calls `on-count` with the number of data rows (header
-   excluded). Empty lines are ignored. Used to display total-rows before a
-   streaming parse so progress can be shown as 'X of Y'."
-  [file on-count]
-  (let [reader (js/FileReader.)]
-    (set! (.-onload reader)
-          (fn [e]
-            (let [text  (-> e .-target .-result)
-                  lines (->> (.split text "\n")
-                             (remove #(= "" (.trim %))))]
-              (on-count (max 0 (dec (count lines)))))))
-    (.readAsText reader file)))
-
+;; this is for download an template csv file
+;; when the user is in the provisioning bulk he can 
+;; download a tamplate file and fill it with the data and upload it 
+;; the template already has the resource_name from the resources he has selected
 (defn- csv-cell
   "Escapes a cell value per RFC 4180: wraps in quotes when it contains a
    comma, double-quote, or newline; doubles embedded quotes."
