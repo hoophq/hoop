@@ -11,7 +11,8 @@
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri "/serverconfig/misc"
                              :on-success #(rf/dispatch [:infrastructure->get-config-success %])
-                             :on-failure #(rf/dispatch [:infrastructure->get-config-failure %])}]]]}))
+                             :on-failure #(rf/dispatch [:infrastructure->get-config-failure %])}]]
+         [:dispatch [:infrastructure->get-analytics-mode]]]}))
 
 (rf/reg-event-fx
  :infrastructure->get-config-success
@@ -34,7 +35,9 @@
                                                (cs/split #":")
                                                last)}
 
-         updated-db (update db :infrastructure merge {:status :success :data mapped-data})]
+         updated-db (-> db
+                        (assoc-in [:infrastructure :status] :success)
+                        (update-in [:infrastructure :data] merge mapped-data))]
 
      ;; Just update the database - no more pending connection validation needed
      {:db updated-db})))
@@ -95,4 +98,61 @@
    {:db (assoc-in db [:infrastructure :submitting?] false)
     :fx [[:dispatch [:show-snackbar {:level :error
                                      :text "Failed to save infrastructure configuration"
+                                     :details error}]]]}))
+
+;; Analytics mode
+(rf/reg-event-fx
+ :infrastructure->get-analytics-mode
+ (fn [_ _]
+   {:fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/orgs/analytics-mode"
+                             :on-success #(rf/dispatch [:infrastructure->get-analytics-mode-success %])
+                             :on-failure #(rf/dispatch [:infrastructure->get-analytics-mode-failure %])}]]]}))
+
+(rf/reg-event-db
+ :infrastructure->get-analytics-mode-success
+ (fn [db [_ data]]
+   (assoc-in db [:infrastructure :data :analytics-mode] (:analytics_mode data))))
+
+(rf/reg-event-fx
+ :infrastructure->get-analytics-mode-failure
+ (fn [_ [_ error]]
+   {:fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to load analytics privacy settings"
+                                     :details error}]]]}))
+
+(rf/reg-event-fx
+ :infrastructure->set-analytics-mode
+ (fn [{:keys [db]} [_ new-mode]]
+   (let [previous-mode (get-in db [:infrastructure :data :analytics-mode])]
+     (if (or (= previous-mode new-mode)
+             (get-in db [:infrastructure :analytics-saving?]))
+       {:db db}
+       {:db (-> db
+                (assoc-in [:infrastructure :data :analytics-mode] new-mode)
+                (assoc-in [:infrastructure :analytics-saving?] true))
+        :fx [[:dispatch [:fetch {:method "PUT"
+                                 :uri "/orgs/analytics-mode"
+                                 :body {:analytics_mode new-mode}
+                                 :on-success #(rf/dispatch [:infrastructure->set-analytics-mode-success %])
+                                 :on-failure #(rf/dispatch [:infrastructure->set-analytics-mode-failure previous-mode %])}]]]}))))
+
+(rf/reg-event-fx
+ :infrastructure->set-analytics-mode-success
+ (fn [{:keys [db]} [_ response]]
+   {:db (-> db
+            (assoc-in [:infrastructure :data :analytics-mode] (:analytics_mode response))
+            (assoc-in [:infrastructure :analytics-saving?] false))
+    :fx [[:dispatch [:show-snackbar {:level :success
+                                     :text "Analytics privacy updated"}]]
+         [:dispatch [:gateway->get-info]]]}))
+
+(rf/reg-event-fx
+ :infrastructure->set-analytics-mode-failure
+ (fn [{:keys [db]} [_ previous-mode error]]
+   {:db (-> db
+            (assoc-in [:infrastructure :data :analytics-mode] previous-mode)
+            (assoc-in [:infrastructure :analytics-saving?] false))
+    :fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to update analytics privacy"
                                      :details error}]]]}))

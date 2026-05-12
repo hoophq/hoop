@@ -1,12 +1,28 @@
 (ns webapp.settings.infrastructure.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
+   ["lucide-react" :refer [BarChart3 EyeOff ShieldOff]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.callout-link :as callout-link]
    [webapp.components.forms :as forms]
    [webapp.components.loaders :as loaders]
+   [webapp.components.selection-card :refer [selection-card]]
    [webapp.config :as config]))
+
+(def analytics-mode-options
+  [{:value "identified"
+    :icon BarChart3
+    :title "Identified"
+    :description "Share your data with our analytics tools so we can offer onboarding, support, and product updates."}
+   {:value "anonymous"
+    :icon EyeOff
+    :title "Anonymous"
+    :description "Send only hashed identifiers. No personally identifiable information leaves the gateway."}
+   {:value "disabled"
+    :icon ShieldOff
+    :title "Disabled"
+    :description "Stop all analytics events for this organization."}])
 
 (defn main []
   (let [infrastructure-config (rf/subscribe [:infrastructure->config])
@@ -44,6 +60,24 @@
            ;; Content
            [:> Box {:class "rounded-lg p-radix-7"}
             [:> Box {:class "space-y-radix-9"}
+
+             [:> Grid {:columns "7" :gap "7"}
+              [:> Box {:grid-column "span 2 / span 2"}
+               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                "Product analytics"]
+               [:> Text {:size "3" :class "text-[--gray-11]"}
+                "Help us improve Hoop by sharing usage data. Access and resources information are not collected."]]
+
+              [:> Box {:grid-column "span 5 / span 5"}
+               [:> Box {:class "space-y-3"}
+                (for [{:keys [value icon title description]} analytics-mode-options]
+                  ^{:key value}
+                  [selection-card
+                   {:icon (r/as-element [:> icon {:size 20}])
+                    :title title
+                    :description description
+                    :selected? (= (:analytics-mode data) value)
+                    :on-click #(rf/dispatch [:infrastructure->set-analytics-mode value])}])]]]
 
              ;; gRPC configuration section
              [:> Grid {:columns "7" :gap "7"}

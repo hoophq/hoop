@@ -136,9 +136,6 @@
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
-   [webapp.settings.organization.events]
-   [webapp.settings.organization.main :as settings-organization]
-   [webapp.settings.organization.subs]
    [webapp.audit-logs.main :as audit-logs]
    [webapp.features.workflows.events]
    [webapp.features.workflows.subs]
@@ -309,12 +306,6 @@
     [routes/wrap-admin-only
      [routes/wrap-selfhosted-only
       [infrastructure/main]]]]])
-
-(defmethod routes/panels :settings-organization-panel []
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-full"}
-    [routes/wrap-admin-only
-     [settings-organization/main]]]])
 
 (defmethod routes/panels :settings-audit-logs-panel []
   [layout :application-hoop

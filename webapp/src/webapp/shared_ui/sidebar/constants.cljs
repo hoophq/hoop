@@ -61,8 +61,6 @@
              [:> PackageSearch {:size size}])
    "infrastructure" (fn [& [{:keys [size] :or {size 24}}]]
                       [:> LayoutDashboard {:size size}])
-   "organization" (fn [& [{:keys [size] :or {size 24}}]]
-                    [:> ShieldCheck {:size size}])
    "license" (fn [& [{:keys [size] :or {size 24}}]]
                [:> ShieldCheck {:size size}])
    "users" (fn [& [{:keys [size] :or {size 24}}]]
@@ -250,13 +248,6 @@
     :admin-only? true
     :selfhosted-only? false
     :badge "NEW"}
-   {:name "organization"
-    :label "Organization"
-    :uri (routes/url-for :settings-organization)
-    :navigate :settings-organization
-    :free-feature? true
-    :admin-only? true
-    :selfhosted-only? false}
    {:name "infrastructure"
     :label "Infrastructure"
     :uri (routes/url-for :settings-infrastructure)

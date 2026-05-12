@@ -78,7 +78,6 @@
                   [["/" :session-id] :session-details]]
      ["/workflows/" :correlation-id] :workflow-details
      "/settings" [["/license" :license-management]
-                  ["/organization" :settings-organization]
                   ["/infrastructure" :settings-infrastructure]
                   ["/experimental" :settings-experimental]
                   ["/audit-logs" :settings-audit-logs]

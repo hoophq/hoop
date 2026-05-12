@@ -28,3 +28,16 @@
  :<- [:infrastructure->config]
  (fn [config _]
    (:submitting? config)))
+
+;; Analytics mode
+(rf/reg-sub
+ :infrastructure->analytics-mode
+ :<- [:infrastructure->data]
+ (fn [data _]
+   (:analytics-mode data)))
+
+(rf/reg-sub
+ :infrastructure->analytics-saving?
+ :<- [:infrastructure->config]
+ (fn [config _]
+   (:analytics-saving? config)))
