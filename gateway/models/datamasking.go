@@ -67,28 +67,43 @@ func (r *SupportedEntityTypesList) Scan(value any) error {
 
 func CreateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("private.datamasking_rules").Create(rule).Error; err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				return ErrAlreadyExists
-			}
-			return err
-		}
+		return CreateDataMaskingRuleTx(tx, rule)
+	})
+}
 
-		for _, connID := range rule.ConnectionIDs {
-			err := tx.Exec(`
+// CreateDataMaskingRuleTx is the transaction-aware variant of CreateDataMaskingRule.
+// It runs inside the caller's transaction so the rule (and its connection junction rows)
+// can be composed atomically with other writes.
+func CreateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
+	if err := tx.Table("private.datamasking_rules").Create(rule).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return ErrAlreadyExists
+		}
+		return err
+	}
+	for _, connID := range rule.ConnectionIDs {
+		err := tx.Exec(`
 			INSERT INTO private.datamasking_rules_connections (org_id, rule_id, connection_id)
 			VALUES (?, ?, ?)
-			`, rule.OrgID, rule.ID, connID).
-				Error
-			if err == gorm.ErrForeignKeyViolated {
-				return ErrNotFound
-			}
-			if err != nil {
-				return err
-			}
+		`, rule.OrgID, rule.ID, connID).Error
+		if err == gorm.ErrForeignKeyViolated {
+			return ErrNotFound
 		}
-		return nil
-	})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteDataMaskingRulesByRulepackIDTx removes all datamasking rules attached to a
+// rulepack within the caller's transaction. Junction tables (rule-attribute,
+// rule-connection) cascade automatically via their own FK constraints.
+func DeleteDataMaskingRulesByRulepackIDTx(tx *gorm.DB, orgID, rulepackID uuid.UUID) error {
+	return tx.Exec(
+		`DELETE FROM private.datamasking_rules WHERE org_id = ? AND rulepack_id = ?`,
+		orgID, rulepackID,
+	).Error
 }
 
 func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {

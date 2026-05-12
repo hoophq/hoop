@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const RulepackAttributeNamePrefix = "rulepack_"
@@ -121,22 +125,36 @@ func AssertRulepackUsable(orgID string, rulepackIDStr *string) error {
 	return nil
 }
 
-// CreateRulepackWithAttribute creates a rulepack and one rulepack-owned attribute in a
-// single database transaction. The attribute name is derived from the rulepack's
-// display_name (lowercased, slug-cased, prepended with `rulepack_`) and the attribute
-// description is copied from the rulepack's description.
+// RulepackRulesInput groups the three nested rule kinds that a rulepack can carry.
+// On create, each non-empty slice is inserted; an empty slice skips that kind.
+// On update, each slice fully replaces the existing rulepack-owned rules of that kind
+// (an empty slice deletes all of them).
+type RulepackRulesInput struct {
+	DataMaskingRules       []openapi.DataMaskingRuleRequest
+	GuardRailRules         []openapi.GuardRailRuleRequest
+	AISessionAnalyzerRules []openapi.AISessionAnalyzerRuleRequest
+}
+
+// CreateRulepackWithRules creates a rulepack, one rulepack-owned attribute, and any
+// nested rules (data masking, guardrails, AI session analyzer) in a single transaction.
 //
-// Returns ErrRulepackInvalidDisplayName when the display_name slugs to an empty string
-// (e.g., contains only unsupported characters). Returns models.ErrAlreadyExists when the
-// rulepack's display_name OR the derived attribute name collides with an existing row
-// in the org. Two rulepacks whose display names slug to the same value will produce
-// this collision; rename one to disambiguate.
+// The attribute name is derived from the rulepack's display_name (lowercased,
+// slug-cased, prepended with `rulepack_`); the attribute description is copied from
+// the rulepack's description. Every nested data masking and guardrail rule is also
+// tagged with the rulepack attribute via its respective junction so that the rule
+// matches connections sharing that attribute at session time. AI session analyzer
+// rules have no attribute junction; they are linked only via rulepack_id.
+//
+// Returns ErrRulepackInvalidDisplayName when the display_name slugs to empty.
+// Returns models.ErrAlreadyExists when the rulepack's display_name, the derived
+// attribute name, or any nested rule name collides with an existing row in the org.
 //
 // is_managed is passed through unchanged from the input rulepack; callers (e.g. HTTP
 // handler) are responsible for forcing it to false when needed.
-func CreateRulepackWithAttribute(
+func CreateRulepackWithRules(
 	ctx context.Context,
 	rp *models.Rulepack,
+	rules RulepackRulesInput,
 ) (*models.Rulepack, *models.Attribute, error) {
 	attrName := rulepackAttributeNameFromDisplayName(rp.DisplayName)
 	if attrName == "" {
@@ -161,7 +179,7 @@ func CreateRulepackWithAttribute(
 			}
 			return err
 		}
-		return nil
+		return insertRulepackRulesTx(tx, rp, attrName, rules)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -169,25 +187,29 @@ func CreateRulepackWithAttribute(
 	return rp, attr, nil
 }
 
-// UpdateRulepackWithAttribute updates a rulepack and, when the derived attribute name
-// changes (because rp.DisplayName changed), renames the matching rulepack-owned
-// attribute and refreshes its description from rp.Description. All writes occur in a
+// UpdateRulepackWithRules updates a rulepack, syncs the derived attribute when
+// display_name changes, and FULLY REPLACES the rulepack's nested rules (data masking,
+// guardrails, AI session analyzer) with the supplied lists. All writes occur in a
 // single transaction.
 //
-// The matched attribute is the one whose (org_id, rulepack_id, name) equals the OLD
-// derived slug. If no attribute matches (e.g. it was manually renamed or never created),
-// the rulepack still updates and no attribute is touched. Junction tables that reference
-// attributes by name follow the rename automatically via ON UPDATE CASCADE.
+// Pass empty slices to delete all nested rules of that type. Pass the existing list
+// unchanged to leave them intact at the row level (existing rows are deleted then
+// re-inserted, so this is NOT idempotent at the row-ID level — IDs change on every
+// PUT).
 //
-// Returns ErrRulepackInvalidDisplayName when rp.DisplayName slugs to an empty string,
+// Attribute rename behavior is unchanged from previous versions: when the new derived
+// slug differs from the old one, the matching attribute is renamed and its description
+// refreshed; junction tables follow via ON UPDATE CASCADE.
+//
+// Returns ErrRulepackInvalidDisplayName when display_name slugs to empty,
 // models.ErrNotFound if the rulepack does not exist, and models.ErrAlreadyExists when
-// the new display_name OR the new derived attribute name collides with an existing row.
+// display_name, derived attribute name, or any nested rule name collides.
 //
-// is_managed is not checked at this layer; HTTP handlers (or other callers) are
-// responsible for blocking updates to managed rulepacks when appropriate.
-func UpdateRulepackWithAttribute(
+// is_managed is not checked at this layer; HTTP handlers are responsible.
+func UpdateRulepackWithRules(
 	ctx context.Context,
 	rp *models.Rulepack,
+	rules RulepackRulesInput,
 ) (*models.Rulepack, *models.Attribute, error) {
 	newAttrName := rulepackAttributeNameFromDisplayName(rp.DisplayName)
 	if newAttrName == "" {
@@ -206,35 +228,152 @@ func UpdateRulepackWithAttribute(
 			return err
 		}
 
-		if oldAttrName == newAttrName {
-			return nil
-		}
-
-		result := tx.Model(&models.Attribute{}).
-			Where("org_id = ? AND rulepack_id = ? AND name = ?", rp.OrgID, rp.ID, oldAttrName).
-			Updates(map[string]any{
-				"name":        newAttrName,
-				"description": rp.Description,
-			})
-		if result.Error != nil {
-			if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
-				return models.ErrAlreadyExists
+		if oldAttrName != newAttrName {
+			result := tx.Model(&models.Attribute{}).
+				Where("org_id = ? AND rulepack_id = ? AND name = ?", rp.OrgID, rp.ID, oldAttrName).
+				Updates(map[string]any{
+					"name":        newAttrName,
+					"description": rp.Description,
+				})
+			if result.Error != nil {
+				if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+					return models.ErrAlreadyExists
+				}
+				return result.Error
 			}
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil
+			if result.RowsAffected > 0 {
+				var fetched models.Attribute
+				if err := tx.Where("org_id = ? AND name = ?", rp.OrgID, newAttrName).First(&fetched).Error; err != nil {
+					return err
+				}
+				renamedAttr = &fetched
+			}
 		}
 
-		var fetched models.Attribute
-		if err := tx.Where("org_id = ? AND name = ?", rp.OrgID, newAttrName).First(&fetched).Error; err != nil {
+		if err := models.DeleteDataMaskingRulesByRulepackIDTx(tx, rp.OrgID, rp.ID); err != nil {
 			return err
 		}
-		renamedAttr = &fetched
-		return nil
+		if err := models.DeleteGuardRailRulesByRulepackIDTx(tx, rp.OrgID, rp.ID); err != nil {
+			return err
+		}
+		if err := models.DeleteAISessionAnalyzerRulesByRulepackIDTx(tx, rp.OrgID, rp.ID); err != nil {
+			return err
+		}
+
+		return insertRulepackRulesTx(tx, rp, newAttrName, rules)
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	return rp, renamedAttr, nil
+}
+
+// insertRulepackRulesTx inserts each nested rule, tags data masking and guardrail
+// rules with the rulepack attribute via their junction tables, and sets rulepack_id
+// on every rule. Connection associations from each rule's request body are written
+// to the respective rule-connection junctions. Returns models.ErrAlreadyExists if any
+// nested rule's name collides with an existing row.
+func insertRulepackRulesTx(
+	tx *gorm.DB,
+	rp *models.Rulepack,
+	attrName string,
+	rules RulepackRulesInput,
+) error {
+	rulepackUUID := rp.ID
+	rulepackUUIDStr := sql.NullString{String: rulepackUUID.String(), Valid: true}
+
+	for _, req := range rules.DataMaskingRules {
+		dmRule := &models.DataMaskingRule{
+			ID:                   uuid.NewString(),
+			OrgID:                rp.OrgID.String(),
+			Name:                 req.Name,
+			Description:          req.Description,
+			SupportedEntityTypes: toModelSupportedEntityTypes(req.SupportedEntityTypes),
+			CustomEntityTypes:    toModelCustomEntityTypes(req.CustomEntityTypesEntrys),
+			ScoreThreshold:       req.ScoreThreshold,
+			RulepackID:           rulepackUUIDStr,
+			ConnectionIDs:        req.ConnectionIDs,
+			UpdatedAt:            time.Now().UTC(),
+		}
+		if err := models.CreateDataMaskingRuleTx(tx, dmRule); err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&models.DatamaskingRuleAttribute{
+				OrgID:               rp.OrgID,
+				AttributeName:       attrName,
+				DatamaskingRuleName: req.Name,
+			}).Error; err != nil {
+			return err
+		}
+	}
+
+	for _, req := range rules.GuardRailRules {
+		grRule := &models.GuardRailRules{
+			ID:          uuid.NewString(),
+			OrgID:       rp.OrgID.String(),
+			Name:        req.Name,
+			Description: req.Description,
+			Input:       req.Input,
+			Output:      req.Output,
+			RulepackID:  rulepackUUIDStr,
+			CreatedAt:   time.Now().UTC(),
+			UpdatedAt:   time.Now().UTC(),
+		}
+		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, grRule, req.ConnectionIDs, true); err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&models.GuardrailRuleAttribute{
+				OrgID:             rp.OrgID,
+				AttributeName:     attrName,
+				GuardrailRuleName: req.Name,
+			}).Error; err != nil {
+			return err
+		}
+	}
+
+	for _, req := range rules.AISessionAnalyzerRules {
+		aiRule := &models.AISessionAnalyzerRules{
+			OrgID:           rp.OrgID,
+			Name:            req.Name,
+			Description:     req.Description,
+			ConnectionNames: pq.StringArray(req.ConnectionNames),
+			RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
+				LowRiskAction:    models.RiskEvaluationAction(req.RiskEvaluation.LowRiskAction),
+				MediumRiskAction: models.RiskEvaluationAction(req.RiskEvaluation.MediumRiskAction),
+				HighRiskAction:   models.RiskEvaluationAction(req.RiskEvaluation.HighRiskAction),
+			},
+			RulepackID: &rulepackUUID,
+		}
+		if err := models.CreateAISessionAnalyzerRuleTx(tx, aiRule); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func toModelSupportedEntityTypes(in []openapi.SupportedEntityTypesEntry) []models.SupportedEntityTypesEntry {
+	out := make([]models.SupportedEntityTypesEntry, len(in))
+	for i, e := range in {
+		out[i] = models.SupportedEntityTypesEntry{
+			Name:        e.Name,
+			EntityTypes: e.EntityTypes,
+		}
+	}
+	return out
+}
+
+func toModelCustomEntityTypes(in []openapi.CustomEntityTypesEntry) []models.CustomEntityTypesEntry {
+	out := make([]models.CustomEntityTypesEntry, len(in))
+	for i, e := range in {
+		out[i] = models.CustomEntityTypesEntry{
+			Name:     e.Name,
+			Regex:    e.Regex,
+			DenyList: e.DenyList,
+			Score:    e.Score,
+		}
+	}
+	return out
 }

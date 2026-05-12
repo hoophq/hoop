@@ -83,7 +83,12 @@ func Post(c *gin.Context) {
 		IsManaged:   false,
 	}
 
-	rp, _, err = services.CreateRulepackWithAttribute(context.Background(), rp)
+	rules := services.RulepackRulesInput{
+		DataMaskingRules:       req.DataMaskingRules,
+		GuardRailRules:         req.GuardRailRules,
+		AISessionAnalyzerRules: req.AISessionAnalyzerRules,
+	}
+	rp, _, err = services.CreateRulepackWithRules(context.Background(), rp, rules)
 	switch {
 	case errors.Is(err, services.ErrRulepackInvalidDisplayName):
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -152,7 +157,12 @@ func Put(c *gin.Context) {
 	existing.Description = req.Description
 	existing.Tags = pq.StringArray(req.Tags)
 
-	updated, _, err := services.UpdateRulepackWithAttribute(context.Background(), existing)
+	rules := services.RulepackRulesInput{
+		DataMaskingRules:       req.DataMaskingRules,
+		GuardRailRules:         req.GuardRailRules,
+		AISessionAnalyzerRules: req.AISessionAnalyzerRules,
+	}
+	updated, _, err := services.UpdateRulepackWithRules(context.Background(), existing, rules)
 	switch {
 	case errors.Is(err, services.ErrRulepackInvalidDisplayName):
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

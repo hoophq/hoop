@@ -24,7 +24,6 @@ import (
 	apikeys "github.com/hoophq/hoop/gateway/api/apikeys"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
-	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
@@ -50,6 +49,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
+	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
@@ -1182,11 +1182,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiattributes.Delete)
 
 	r.GET("/rulepacks",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apirulepacks.List)
 	r.GET("/rulepacks/:id",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apirulepacks.Get)
 	r.POST("/rulepacks",

@@ -14153,6 +14153,20 @@ const docTemplate = `{
                 "display_name"
             ],
             "properties": {
+                "ai_session_analyzer_rules": {
+                    "description": "AI session analyzer rules to create as part of this rulepack. On PUT, the supplied\nlist fully replaces any existing rulepack-owned AI analyzer rules.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AISessionAnalyzerRuleRequest"
+                    }
+                },
+                "data_masking_rules": {
+                    "description": "Data masking rules to create as part of this rulepack. On PUT, the supplied list\nfully replaces any existing rulepack-owned data masking rules.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DataMaskingRuleRequest"
+                    }
+                },
                 "description": {
                     "description": "Optional description of what the rulepack provides",
                     "type": "string",
@@ -14162,6 +14176,13 @@ const docTemplate = `{
                     "description": "Human-readable display name for the rulepack (unique per organization)",
                     "type": "string",
                     "example": "PCI Database Access"
+                },
+                "guardrail_rules": {
+                    "description": "Guardrail rules to create as part of this rulepack. On PUT, the supplied list\nfully replaces any existing rulepack-owned guardrail rules.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.GuardRailRuleRequest"
+                    }
                 },
                 "tags": {
                     "description": "Tags for grouping and filtering rulepacks",

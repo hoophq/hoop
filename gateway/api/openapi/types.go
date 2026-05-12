@@ -2907,6 +2907,15 @@ type RulepackRequest struct {
 	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
 	// Tags for grouping and filtering rulepacks
 	Tags []string `json:"tags" example:"pci,production"`
+	// Data masking rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned data masking rules.
+	DataMaskingRules []DataMaskingRuleRequest `json:"data_masking_rules,omitempty"`
+	// Guardrail rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned guardrail rules.
+	GuardRailRules []GuardRailRuleRequest `json:"guardrail_rules,omitempty"`
+	// AI session analyzer rules to create as part of this rulepack. On PUT, the supplied
+	// list fully replaces any existing rulepack-owned AI analyzer rules.
+	AISessionAnalyzerRules []AISessionAnalyzerRuleRequest `json:"ai_session_analyzer_rules,omitempty"`
 }
 
 type Rulepack struct {
