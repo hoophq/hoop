@@ -1,6 +1,8 @@
 package apirulepacks
 
 import (
+	"context"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/lib/pq"
 )
@@ -37,7 +40,6 @@ func toResponse(rp *models.Rulepack) openapi.Rulepack {
 		Version:     rp.Version,
 		Tags:        tags,
 		IsManaged:   rp.IsManaged,
-		IsPaid:      rp.IsPaid,
 		CreatedAt:   rp.CreatedAt,
 		UpdatedAt:   rp.UpdatedAt,
 	}
@@ -76,16 +78,18 @@ func Post(c *gin.Context) {
 		OrgID:       orgID,
 		DisplayName: req.DisplayName,
 		Description: req.Description,
-		Version:     req.Version,
+		Version:     nil,
 		Tags:        pq.StringArray(req.Tags),
 		IsManaged:   false,
-		IsPaid:      req.IsPaid,
 	}
 
-	switch err := models.CreateRulepack(models.DB, rp); err {
-	case models.ErrAlreadyExists:
+	rp, _, err = services.CreateRulepackWithAttribute(context.Background(), rp)
+	switch {
+	case errors.Is(err, services.ErrRulepackInvalidDisplayName):
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
-	case nil:
+	case err == nil:
 		c.JSON(http.StatusCreated, toResponse(rp))
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating rulepack: %v", err)
@@ -146,17 +150,18 @@ func Put(c *gin.Context) {
 
 	existing.DisplayName = req.DisplayName
 	existing.Description = req.Description
-	existing.Version = req.Version
 	existing.Tags = pq.StringArray(req.Tags)
-	existing.IsPaid = req.IsPaid
 
-	switch err := models.UpdateRulepack(models.DB, existing); err {
-	case models.ErrNotFound:
+	updated, _, err := services.UpdateRulepackWithAttribute(context.Background(), existing)
+	switch {
+	case errors.Is(err, services.ErrRulepackInvalidDisplayName):
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-	case models.ErrAlreadyExists:
+	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
-	case nil:
-		c.JSON(http.StatusOK, toResponse(existing))
+	case err == nil:
+		c.JSON(http.StatusOK, toResponse(updated))
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating rulepack: %v", err)
 	}

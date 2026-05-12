@@ -10,14 +10,13 @@ CREATE TABLE IF NOT EXISTS rulepacks (
     version      TEXT,
     tags         TEXT[] NOT NULL DEFAULT '{}',
     is_managed   BOOLEAN NOT NULL DEFAULT false,
-    is_paid      BOOLEAN NOT NULL DEFAULT false,
     created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_rulepacks_org_display_name UNIQUE (org_id, display_name)
 );
 
 ALTER TABLE attributes
-    ADD COLUMN rulepack_id UUID NULL REFERENCES rulepacks(id) ON DELETE CASCADE;
+    ADD COLUMN rulepack_id UUID NULL REFERENCES rulepacks(id) ON DELETE CASCADE ON UPDATE CASCADE;
 
 CREATE INDEX idx_attributes_rulepack_id ON attributes(rulepack_id);
 

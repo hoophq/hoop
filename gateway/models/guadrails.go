@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"errors"
 	"time"
 
@@ -19,6 +20,7 @@ type GuardRailRules struct {
 	Description   string         `gorm:"column:description"`
 	Input         map[string]any `gorm:"column:input;serializer:json"`
 	Output        map[string]any `gorm:"column:output;serializer:json"`
+	RulepackID    sql.NullString `gorm:"column:rulepack_id"`
 	CreatedAt     time.Time      `gorm:"column:created_at"`
 	UpdatedAt     time.Time      `gorm:"column:updated_at"`
 	ConnectionIDs []string       `gorm:"-"` // Not stored in DB, populated from join query
@@ -47,20 +49,7 @@ func ListGuardRailRules(orgID string, opts ...GuardRailListOption) ([]*GuardRail
 	query := DB.Table(tableGuardRails).Where("org_id = ?", orgID)
 
 	if !opt.IncludeAllRulepackOwned {
-		query = query.Where(`(
-			NOT EXISTS (
-				SELECT 1 FROM private.guardrail_rules_attributes ja
-				WHERE ja.org_id = ?::uuid AND ja.guardrail_rule_name = `+tableGuardRails+`.name
-			)
-			OR EXISTS (
-				SELECT 1 FROM private.guardrail_rules_attributes ja
-				JOIN private.attributes a
-				  ON a.org_id = ja.org_id AND a.name = ja.attribute_name
-				WHERE ja.org_id = ?::uuid
-				  AND ja.guardrail_rule_name = `+tableGuardRails+`.name
-				  AND a.rulepack_id IS NULL
-			)
-		)`, orgID, orgID)
+		query = query.Where("rulepack_id IS NULL")
 	}
 
 	err := query.Order("name DESC").Find(&rules).Error
@@ -246,11 +235,13 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 			res := tx.Table(tableGuardRails).
 				Model(rule).
 				Clauses(clause.Returning{}).
+				Select("name", "description", "input", "output", "rulepack_id", "updated_at").
 				Updates(GuardRailRules{
 					Name:        rule.Name,
 					Description: rule.Description,
 					Input:       rule.Input,
 					Output:      rule.Output,
+					RulepackID:  rule.RulepackID,
 					UpdatedAt:   rule.UpdatedAt,
 				}).
 				Where("org_id = ? AND id = ?", rule.OrgID, rule.ID)

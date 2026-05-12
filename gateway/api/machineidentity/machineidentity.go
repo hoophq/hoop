@@ -86,12 +86,17 @@ func Create(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "name is required"})
 		return
 	}
+	if err := services.AssertRulepackUsable(ctx.OrgID, req.RulepackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
 
 	mi := &models.MachineIdentity{
 		OrgID:           ctx.OrgID,
 		Name:            req.Name,
 		Description:     req.Description,
 		ConnectionNames: req.ConnectionNames,
+		RulepackID:      services.RulepackIDToNullString(req.RulepackID),
 	}
 
 	result, err := services.CreateMachineIdentity(context.Background(), mi, req.Attributes)
@@ -132,11 +137,15 @@ func Update(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "name is required"})
 		return
 	}
+	if err := services.AssertRulepackUsable(ctx.OrgID, req.RulepackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
 
 	result, err := services.UpdateMachineIdentity(
 		context.Background(), ctx.OrgID, c.Param("name"),
 		req.Name, req.Description,
-		req.ConnectionNames, req.Attributes,
+		req.ConnectionNames, req.Attributes, req.RulepackID,
 	)
 	switch err {
 	case models.ErrNotFound:
@@ -259,6 +268,7 @@ func toOpenAPI(mi models.MachineIdentity, attributes []string) openapi.MachineId
 		Description:     mi.Description,
 		ConnectionNames: mi.ConnectionNames,
 		Attributes:      attributes,
+		RulepackID:      services.RulepackIDFromNullString(mi.RulepackID),
 		CreatedAt:       &mi.CreatedAt,
 		UpdatedAt:       &mi.UpdatedAt,
 	}

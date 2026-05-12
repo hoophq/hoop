@@ -17,7 +17,6 @@ type Rulepack struct {
 	Version     *string        `gorm:"column:version"`
 	Tags        pq.StringArray `gorm:"column:tags;type:text[]"`
 	IsManaged   bool           `gorm:"column:is_managed"`
-	IsPaid      bool           `gorm:"column:is_paid"`
 	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt   time.Time      `gorm:"column:updated_at;autoUpdateTime"`
 }
@@ -87,7 +86,6 @@ func UpdateRulepack(db *gorm.DB, rp *Rulepack) error {
 			"description":  rp.Description,
 			"version":      rp.Version,
 			"tags":         rp.Tags,
-			"is_paid":      rp.IsPaid,
 			"updated_at":   time.Now(),
 		})
 	if result.Error != nil {

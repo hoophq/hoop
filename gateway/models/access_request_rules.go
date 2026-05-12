@@ -25,6 +25,8 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 	MinApprovals      *int `gorm:"column:min_approvals"`
 
+	RulepackID *uuid.UUID `gorm:"column:rulepack_id"`
+
 	RuleAttributes []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AccessRuleName;references:OrgID,Name"`
 
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
@@ -91,22 +93,7 @@ func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRule
 
 	baseQuery := db.Model(&AccessRequestRule{}).Where("org_id = ?", orgID)
 	if !opts.IncludeAllRulepackOwned {
-		hide := `(
-			NOT EXISTS (
-				SELECT 1 FROM private.access_request_rules_attributes ja
-				WHERE ja.org_id = private.access_request_rules.org_id
-				  AND ja.access_rule_name = private.access_request_rules.name
-			)
-			OR EXISTS (
-				SELECT 1 FROM private.access_request_rules_attributes ja
-				JOIN private.attributes a
-				  ON a.org_id = ja.org_id AND a.name = ja.attribute_name
-				WHERE ja.org_id = private.access_request_rules.org_id
-				  AND ja.access_rule_name = private.access_request_rules.name
-				  AND a.rulepack_id IS NULL
-			)
-		)`
-		baseQuery = baseQuery.Where(hide)
+		baseQuery = baseQuery.Where("rulepack_id IS NULL")
 	}
 
 	if err := baseQuery.Count(&total).Error; err != nil {

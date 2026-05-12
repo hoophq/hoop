@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/utils"
 	"gorm.io/gorm"
@@ -116,6 +117,11 @@ func CreateAccessRequestRule(c *gin.Context) {
 		}
 	}
 
+	if err := services.AssertRulepackUsable(ctx.GetOrgID(), req.RulepackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	accessRequestRule := &models.AccessRequestRule{
 		OrgID:                  orgID,
 		Name:                   req.Name,
@@ -128,6 +134,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		ForceApprovalGroups:    req.ForceApprovalGroups,
 		AccessMaxDuration:      req.AccessMaxDuration,
 		MinApprovals:           req.MinApprovals,
+		RulepackID:             services.RulepackIDToUUIDPointer(req.RulepackID),
 	}
 
 	if err := models.CreateAccessRequestRule(models.DB, accessRequestRule); err != nil {
@@ -333,6 +340,11 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
+	if err := services.AssertRulepackUsable(ctx.GetOrgID(), req.RulepackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	// Update fields
 	existingRule.Name = req.Name
 	existingRule.Description = req.Description
@@ -344,6 +356,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	existingRule.ForceApprovalGroups = req.ForceApprovalGroups
 	existingRule.AccessMaxDuration = req.AccessMaxDuration
 	existingRule.MinApprovals = req.MinApprovals
+	existingRule.RulepackID = services.RulepackIDToUUIDPointer(req.RulepackID)
 
 	if err := models.UpdateAccessRequestRule(models.DB, existingRule); err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update access request rule")
@@ -417,6 +430,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		ForceApprovalGroups:    rule.ForceApprovalGroups,
 		AccessMaxDuration:      rule.AccessMaxDuration,
 		MinApprovals:           rule.MinApprovals,
+		RulepackID:             services.RulepackIDFromUUIDPointer(rule.RulepackID),
 		CreatedAt:              rule.CreatedAt,
 		UpdatedAt:              rule.UpdatedAt,
 	}

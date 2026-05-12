@@ -287,12 +287,25 @@ func GetConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string
 	return attributeNames, nil
 }
 
-// UpsertConnectionAttributes replaces all attribute associations for the given connection.
-// If an attribute name does not exist in the attributes table, it is created automatically.
+// UpsertConnectionAttributes replaces the user-owned attribute associations for the given
+// connection. Rulepack-owned attribute associations (those whose attribute row has a non-null
+// rulepack_id) are preserved across the update so that a round-trip from the list endpoint
+// (which omits rulepack-owned attributes from the response) cannot accidentally remove them.
+// If an attribute name in the request does not exist in the attributes table, it is created
+// automatically as a non-rulepack attribute.
 func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string, attributeNames []string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("org_id = ? AND connection_name = ?", orgID, connectionName).
-			Delete(&ConnectionAttribute{}).Error; err != nil {
+		err := tx.Exec(`
+			DELETE FROM private.connections_attributes ca
+			WHERE ca.org_id = ? AND ca.connection_name = ?
+			  AND NOT EXISTS (
+			    SELECT 1 FROM private.attributes a
+			    WHERE a.org_id = ca.org_id
+			      AND a.name = ca.attribute_name
+			      AND a.rulepack_id IS NOT NULL
+			  )
+		`, orgID, connectionName).Error
+		if err != nil {
 			return err
 		}
 		if len(attributeNames) == 0 {

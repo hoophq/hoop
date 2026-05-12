@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -21,6 +22,7 @@ type DataMaskingRule struct {
 	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
+	RulepackID           sql.NullString           `gorm:"column:rulepack_id"`
 	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
 	Attributes           pq.StringArray           `gorm:"column:attributes;type:text[];->"`
 	UpdatedAt            time.Time                `gorm:"column:updated_at"`
@@ -93,12 +95,13 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.datamasking_rules").
 			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "updated_at").
+			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "rulepack_id", "updated_at").
 			Updates(DataMaskingRule{
 				Description:          rule.Description,
 				SupportedEntityTypes: rule.SupportedEntityTypes,
 				CustomEntityTypes:    rule.CustomEntityTypes,
 				ScoreThreshold:       rule.ScoreThreshold,
+				RulepackID:           rule.RulepackID,
 				UpdatedAt:            rule.UpdatedAt,
 			})
 		if res.Error != nil {
@@ -142,27 +145,13 @@ func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMa
 
 	hideClause := ""
 	if !opt.IncludeAllRulepackOwned {
-		hideClause = `
-		AND (
-			NOT EXISTS (
-				SELECT 1 FROM private.datamasking_rules_attributes ja
-				WHERE ja.org_id = r.org_id AND ja.datamasking_rule_name = r.name
-			)
-			OR EXISTS (
-				SELECT 1 FROM private.datamasking_rules_attributes ja
-				JOIN private.attributes a
-				  ON a.org_id = ja.org_id AND a.name = ja.attribute_name
-				WHERE ja.org_id = r.org_id
-				  AND ja.datamasking_rule_name = r.name
-				  AND a.rulepack_id IS NULL
-			)
-		)`
+		hideClause = ` AND r.rulepack_id IS NULL`
 	}
 
 	var rules []DataMaskingRule
 	return rules, DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
@@ -183,7 +172,7 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 	var rule DataMaskingRule
 	err := DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'

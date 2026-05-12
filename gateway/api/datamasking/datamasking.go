@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -166,6 +167,11 @@ func Post(c *gin.Context) {
 		}
 	}
 
+	if err := services.AssertRulepackUsable(ctx.GetOrgID(), req.RulepackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	supportedEntityTypes := []models.SupportedEntityTypesEntry{}
 	for _, entityType := range req.SupportedEntityTypes {
 		supportedEntityTypes = append(supportedEntityTypes, models.SupportedEntityTypesEntry{
@@ -191,6 +197,7 @@ func Post(c *gin.Context) {
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
 		ScoreThreshold:       req.ScoreThreshold,
+		RulepackID:           services.RulepackIDToNullString(req.RulepackID),
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
@@ -252,6 +259,11 @@ func Put(c *gin.Context) {
 		}
 	}
 
+	if err := services.AssertRulepackUsable(ctx.GetOrgID(), req.RulepackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	supportedEntityTypes := []models.SupportedEntityTypesEntry{}
 	for _, entityType := range req.SupportedEntityTypes {
 		supportedEntityTypes = append(supportedEntityTypes, models.SupportedEntityTypesEntry{
@@ -289,6 +301,7 @@ func Put(c *gin.Context) {
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
 		ScoreThreshold:       req.ScoreThreshold,
+		RulepackID:           services.RulepackIDToNullString(req.RulepackID),
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
@@ -412,6 +425,7 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 			SupportedEntityTypes:    entityTypes,
 			CustomEntityTypesEntrys: customEntityTypes,
 			ScoreThreshold:          obj.ScoreThreshold,
+			RulepackID:              services.RulepackIDFromNullString(obj.RulepackID),
 			ConnectionIDs:           obj.ConnectionIDs,
 			Attributes:              obj.Attributes,
 			UpdatedAt:               obj.UpdatedAt,
