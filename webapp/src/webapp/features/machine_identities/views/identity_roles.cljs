@@ -1,7 +1,9 @@
 (ns webapp.features.machine-identities.views.identity-roles
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading IconButton Tabs Text TextField]]
-   ["lucide-react" :refer [ArrowLeft ChevronDown ChevronUp RefreshCw Search]]
+   ["@radix-ui/themes" :refer [Box Button DropdownMenu Flex Grid Heading
+                               IconButton Tabs Text TextField]]
+   ["lucide-react" :refer [ArrowLeft ChevronDown ChevronUp MoreVertical
+                           RefreshCw Search]]
    [clojure.string :as string]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -82,24 +84,55 @@
                    :alt ""}]]
            [:> Text {:size "3" :weight "medium" :class "text-[--gray-12] truncate"}
             connection_name]]
-          [:> Flex {:align "center" :gap "2" :class "shrink-0"}
-           [:> Button {:size "2"
-                       :variant "soft"
-                       :color "gray"
-                       :disabled @rotating?
-                       :on-click (fn []
-                                   (reset! rotating? true)
-                                   (rf/dispatch [:machine-identities/rotate-credential
-                                                 {:identity-name identity-name
-                                                  :connection-name connection_name
-                                                  :on-complete #(reset! rotating? false)}]))}
-            [:> RefreshCw {:size 14
-                           :class (when @rotating? "animate-spin")}]
-            "Rotate"]
+          [:> Flex {:align "center" :gap "1" :class "shrink-0"}
+           ;; Destructive action is tucked behind an overflow menu so it can't
+           ;; be triggered by mistake — rotating a credential will revoke the
+           ;; current one and may crash anything still using it.
+           [:> DropdownMenu.Root
+            [:> DropdownMenu.Trigger
+             [:> IconButton {:size "2"
+                             :variant "ghost"
+                             :color "gray"
+                             :disabled @rotating?
+                             :aria-label "More options"}
+              (if @rotating?
+                [:> RefreshCw {:size 18 :class "animate-spin"}]
+                [:> MoreVertical {:size 18}])]]
+            [:> DropdownMenu.Content {:align "end"}
+             [:> DropdownMenu.Item
+              {:color "red"
+               :on-click
+               (fn []
+                 (rf/dispatch
+                  [:dialog->open
+                   {:title "Rotate Credentials"
+                    :text (str "Rotating the credentials for \""
+                               connection_name
+                               "\" will revoke the current ones immediately. "
+                               "Any machine, job or service still using them will "
+                               "lose access and may crash. Are you sure you want "
+                               "to continue?")
+                    :text-action-button "Rotate Credentials"
+                    :action-button? true
+                    :type :danger
+                    :on-success
+                    (fn []
+                      (reset! rotating? true)
+                      (rf/dispatch
+                       [:machine-identities/rotate-credential
+                        {:identity-name identity-name
+                         :connection-name connection_name
+                         :on-complete #(reset! rotating? false)}]))}]))}
+              [:> Flex {:align "center" :gap "2"}
+               [:> RefreshCw {:size 14}]
+               "Rotate Credentials"]]]]
            [:> IconButton {:size "2"
                            :variant "ghost"
                            :color "gray"
                            :aria-expanded (boolean @expanded?)
+                           :aria-label (if @expanded?
+                                         "Collapse credentials"
+                                         "Expand credentials")
                            :on-click #(swap! expanded? not)}
             (if @expanded?
               [:> ChevronUp {:size 18}]
