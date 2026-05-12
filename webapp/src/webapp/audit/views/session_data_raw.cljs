@@ -35,41 +35,54 @@
                        " p-regular rounded-lg mb-regular")}
           data])])))
 
-(defn event-stream-content [event-stream session-start-date]
-  (let [event-stream-map (for [[seconds event-type event-data] event-stream]
-                           {:seconds seconds
-                            :parsed-date ((fn []
-                                            (let [milliseconds (int (* seconds 1000))
-                                                  date (new js/Date session-start-date)
-                                                  get-time (.getTime date)
-                                                  sum (+ milliseconds get-time)
-                                                  parsed-new-date (new js/Date sum)]
-                                              (formatters/time-parsed->full-date parsed-new-date))))
-                            :event-type event-type
-                            :event-data (utilities/decode-b64 event-data)})
-        searched-events-atom (r/atom event-stream-map)
+(defn- build-event-stream-map [event-stream session-start-date]
+  (for [[seconds event-type event-data] event-stream]
+    {:seconds seconds
+     :parsed-date (let [milliseconds (int (* seconds 1000))
+                        date (new js/Date session-start-date)
+                        get-time (.getTime date)
+                        sum (+ milliseconds get-time)
+                        parsed-new-date (new js/Date sum)]
+                    (formatters/time-parsed->full-date parsed-new-date))
+     :event-type event-type
+     :event-data (utilities/decode-b64 event-data)}))
+
+(defn event-stream-content [_event-stream _session-start-date]
+  ;; Form-2 closure state. `event-stream-map` and `searched-events-atom`
+  ;; are kept reactive so that SSE-driven appends to event-stream show up
+  ;; live. We only honor the searched subset while the user is actively
+  ;; filtering — otherwise we render the current full stream.
+  (let [searched-events-atom (r/atom nil)
         search-focused? (r/atom false)]
-    (fn []
-      [:section {:class "grid gap-small"}
-       [:header {:id "session-details-search-container"}
-        [:div {:class (str "transition-all " (if @search-focused? "w-7/12" "w-1/2"))}
-         [searchbox/main {:options event-stream-map
-                          :clear? true
-                          :hide-results-list true
-                          :on-change-results-cb #(reset! searched-events-atom %)
-                          :on-focus #(reset! search-focused? true)
-                          :on-blur #(reset! search-focused? false)
-                          :display-key :event-data
-                          :name "session-details-search"
-                          :placeholder "Search content in the queries below"
-                          :searchable-keys [:event-data :parsed-date]}]]]
-       [:div
-        {:class (str "rounded-lg border overflow-hidden "
-                     "flex flex-col whitespace-pre")}
-        (doall
-         (for [{:keys [seconds event-type event-data parsed-date]} @searched-events-atom]
-           ^{:key seconds}
-           [event-item event-type event-data parsed-date]))]])))
+    (fn [event-stream session-start-date]
+      (let [event-stream-map (build-event-stream-map event-stream session-start-date)
+            visible-events (or @searched-events-atom event-stream-map)]
+        [:section {:class "grid gap-small"}
+         [:header {:id "session-details-search-container"}
+          [:div {:class (str "transition-all " (if @search-focused? "w-7/12" "w-1/2"))}
+           [searchbox/main {:options event-stream-map
+                            :clear? true
+                            :hide-results-list true
+                            :on-change-results-cb
+                            (fn [results]
+                              (reset! searched-events-atom
+                                      (when (and results
+                                                 (not= (count results)
+                                                       (count event-stream-map)))
+                                        results)))
+                            :on-focus #(reset! search-focused? true)
+                            :on-blur #(reset! search-focused? false)
+                            :display-key :event-data
+                            :name "session-details-search"
+                            :placeholder "Search content in the queries below"
+                            :searchable-keys [:event-data :parsed-date]}]]]
+         [:div
+          {:class (str "rounded-lg border overflow-hidden "
+                       "flex flex-col whitespace-pre")}
+          (doall
+           (for [{:keys [seconds event-type event-data parsed-date]} visible-events]
+             ^{:key seconds}
+             [event-item event-type event-data parsed-date]))]]))))
 
 (defn main [event-stream session-start-date]
   (if (empty? event-stream)

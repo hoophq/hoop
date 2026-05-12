@@ -50,12 +50,25 @@
       [:> Workflow {:size 12}]
       truncated]]))
 
+(defn- live-badge []
+  [:> Tooltip {:content "Machine session is currently running"}
+   [:> Badge {:color "red" :variant "soft" :size "2"
+              :class "animate-pulse"
+              :aria-label "Live machine session"}
+    [:> Flex {:gap "1" :align "center"}
+     [:span {:class "inline-block w-2 h-2 rounded-full bg-[--red-9]"
+             :aria-hidden true}]
+     "Live"]]])
+
 (defn session-item [session]
   (let [user-name (:user_name session)
         review (:review session)
         correlation-id (:correlation_id session)
         has-workflow? (and correlation-id
-                           (not (string/blank? correlation-id)))]
+                           (not (string/blank? correlation-id)))
+        machine? (= (:identity_type session) "machine")
+        open? (= (:status session) "open")
+        live? (and machine? open?)]
     [:> Grid
      {:columns "4"
       :gap "4"
@@ -89,6 +102,7 @@
                :gap "2"
                :align "center"
                :wrap "wrap"}
+      (when live? [live-badge])
       (when review
         [access-request-badge (-> session :review :status)])
       (when has-workflow?

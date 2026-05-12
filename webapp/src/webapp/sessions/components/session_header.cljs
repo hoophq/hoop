@@ -1,6 +1,6 @@
 (ns webapp.sessions.components.session-header
   (:require
-   ["@radix-ui/themes" :refer [Box Button IconButton Flex Heading]]
+   ["@radix-ui/themes" :refer [Badge Box Button IconButton Flex Heading]]
    ["lucide-react" :refer [Link2 Square RotateCw X Download Workflow]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -40,7 +40,16 @@
   (reset! killing-status :loading)
   (rf/dispatch [:audit->kill-session session killing-status]))
 
-(defn main [{:keys [session user on-close clipboard-disabled? has-large-payload? download-extension]}]
+(defn- live-badge []
+  [:> Badge {:color "red" :variant "soft" :size "2"
+             :class "animate-pulse"
+             :aria-label "Live machine session"}
+   [:> Flex {:align "center" :gap "1"}
+    [:span {:class "inline-block w-2 h-2 rounded-full bg-[--red-9]"
+            :aria-hidden true}]
+    "Live"]])
+
+(defn main [{:keys [session user on-close clipboard-disabled? has-large-payload? download-extension live?]}]
   (let [admin? (:admin? user)
         current-user-id (:id user)
         session-user-id (:user_id session)
@@ -66,8 +75,10 @@
     [:> Box {:class "sticky top-0 z-10 bg-white pt-5 pb-5 -mt-6"}
      [:> Flex {:justify "between" :align "start"}
       ;; Left side - Title and role
-      [:> Heading {:as "h2" :size "5" :weight "bold" :class "text-gray-12"}
-       "Session Details"]
+      [:> Flex {:align "center" :gap "3"}
+       [:> Heading {:as "h2" :size "5" :weight "bold" :class "text-gray-12"}
+        "Session Details"]
+       (when live? [live-badge])]
 
       ;; Right side - Action buttons
       [:> Flex {:gap "2" :align "center"}

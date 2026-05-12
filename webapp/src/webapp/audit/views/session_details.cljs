@@ -135,7 +135,10 @@
     clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
     executing-status (r/atom :ready)
     current-path (.-pathname (.-location js/window))
-    is-dedicated-page? (cs/starts-with? current-path "/sessions/")]
+    is-dedicated-page? (cs/starts-with? current-path "/sessions/")
+    ;; tracks the session id we have an SSE subscription open for, so we
+    ;; can subscribe exactly once per machine session and clean up on close
+    subscribed-id (r/atom nil)]
 
     (rf/dispatch [:gateway->get-info])
     (when session
@@ -162,6 +165,21 @@
                   (rf/dispatch [:connections->get-connection-details connection-name]))
               ready? (= (:status session) "ready")
               open? (= (:status session) "open")
+              machine-session? (= (:identity_type session) "machine")
+              live-machine? (and machine-session? open? (:id session))
+              ;; Open/close SSE subscription as the live state changes
+              _ (cond
+                  (and live-machine? (not= @subscribed-id (:id session)))
+                  (do
+                    (when @subscribed-id
+                      (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id]))
+                    (reset! subscribed-id (:id session))
+                    (rf/dispatch [:audit->session-stream-subscribe (:id session)]))
+
+                  (and (not live-machine?) @subscribed-id)
+                  (do
+                    (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id])
+                    (reset! subscribed-id nil)))
               ;; credentials_expire_at is stored in session metadata by the backend
               ;; when connection credentials are issued (see SetSessionCredentialsExpireAt)
               credentials-expire-at (get-in session [:metadata :credentials_expire_at])
@@ -240,6 +258,7 @@
                                  :on-close #(rf/dispatch [:modal->close])
                                  :clipboard-disabled? @clipboard-disabled?
                                  :has-large-payload? has-large-payload?
+                                 :live? live-machine?
                                  :download-extension (get export-dictionary
                                                           (keyword (:type session))
                                                           "txt")}]
@@ -520,6 +539,9 @@
 
 
         (finally
+          (when @subscribed-id
+            (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id])
+            (reset! subscribed-id nil))
           (rf/dispatch [:audit->clear-session])
           (rf/dispatch [:reports->clear-session-report-by-id]))))))
 
