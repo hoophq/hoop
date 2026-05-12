@@ -9,14 +9,11 @@
    [webapp.features.machine-identities.views.empty-state :as empty-state]))
 
 (defn- identity-matches-connection? [identity connection-name]
-  (let [names (or (:resource-role-names identity)
-                  (:connection-names identity)
-                  (when-let [n (:connection-name identity)]
-                    [n]))]
+  (let [names (or (:connection_names identity) [])]
     (boolean (some #(= % connection-name) names))))
 
 (defn identity-item []
-  (fn [{:keys [id name description]}]
+  (fn [{:keys [name description]}]
     [:> Box {:class "first:rounded-t-6 last:rounded-b-6 border-[--gray-a6] border-x border-t last:border-b bg-white"}
      [:> Box {:p "5" :class "flex justify-between items-center gap-4 min-h-[106px]"}
       [:> Flex {:direction "column" :gap "2" :class "flex-1 min-w-0"}
@@ -30,9 +27,9 @@
        [:> Button {:size "2"
                    :variant "soft"
                    :class "gap-1"
-                   :on-click #(rf/dispatch [:navigate :machine-identities-roles {} :identity-id id])}
+                   :on-click #(rf/dispatch [:navigate :machine-identities-roles {} :identity-name name])}
         [:> Text {:size "2" :weight "medium"}
-         "View roles"]
+         "View credentials"]
         [:> ArrowRight {:size 16}]]
 
        [:> DropdownMenu.Root
@@ -43,18 +40,18 @@
                      :aria-label "More options"}
           [:> MoreVertical {:size 20}]]]
         [:> DropdownMenu.Content
-         [:> DropdownMenu.Item {:on-click #(rf/dispatch [:navigate :machine-identities-edit {} :identity-id id])}
+         [:> DropdownMenu.Item {:on-click #(rf/dispatch [:navigate :machine-identities-edit {} :identity-name name])}
           "Configure"]
          [:> DropdownMenu.Separator]
          [:> DropdownMenu.Item {:color "red"
                                 :on-click #(rf/dispatch [:dialog->open
-                                                        {:title "Delete Machine Identity"
-                                                         :text (str "Are you sure you want to delete '" name "'? This action cannot be undone.")
-                                                         :text-action-button "Delete"
-                                                         :action-button? true
-                                                         :type :danger
-                                                         :on-success (fn []
-                                                                       (rf/dispatch [:machine-identities/delete id]))}])}
+                                                         {:title "Delete Machine Identity"
+                                                          :text (str "Are you sure you want to delete '" name "'? This action cannot be undone.")
+                                                          :text-action-button "Delete"
+                                                          :action-button? true
+                                                          :type :danger
+                                                          :on-success (fn []
+                                                                        (rf/dispatch [:machine-identities/delete name]))}])}
           "Delete"]]]]]]))
 
 (defn main []
@@ -86,7 +83,7 @@
           [resource-role-filter/main {:selected @selected-connection
                                       :on-select #(reset! selected-connection %)
                                       :on-clear #(reset! selected-connection nil)
-                                      :label "Resource Role"}]
+                                      :label "Connection"}]
 
           (when (seq all-attributes)
             [:> DropdownMenu.Root
@@ -129,5 +126,5 @@
 
             (doall
              (for [identity processed-identities]
-               ^{:key (:id identity)}
+               ^{:key (:name identity)}
                [identity-item identity])))]]))))

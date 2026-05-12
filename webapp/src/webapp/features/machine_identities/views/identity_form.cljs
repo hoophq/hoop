@@ -21,18 +21,16 @@
           {:value item :label item})
         items))
 
-(defn- resource-role-names-from [identity-data]
-  (vec (or (:resource-role-names identity-data)
+(defn- connection-names-from [identity-data]
+  (vec (or (:connection_names identity-data)
            (:connection-names identity-data)
-           (when-let [n (:connection-name identity-data)]
-             [n])
            [])))
 
 (defn- create-form-state [initial-data]
   (let [identity-data (or initial-data {})]
     {:identity-name (r/atom (or (:name identity-data) ""))
      :description (r/atom (or (:description identity-data) ""))
-     :resource-role-names (r/atom (resource-role-names-from identity-data))
+     :connection-names (r/atom (connection-names-from identity-data))
      :attributes (r/atom (or (array->select-options (:attributes identity-data)) []))}))
 
 (defn- form-section [{:keys [title description]} & children]
@@ -49,19 +47,19 @@
   (let [state (create-form-state identity-data)
         connections (rf/subscribe [:connections->pagination])]
     (fn []
-      (let [identity-id (when (= form-type :edit) (:id identity-data))
-            all-resource-roles (or (:data @connections) [])]
+      (let [identity-name-val (when (= form-type :edit) (:name identity-data))
+            all-connections (or (:data @connections) [])]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
                               (.preventDefault e)
-                              (let [identity-form-data {:name @(:identity-name state)
-                                                        :description @(:description state)
-                                                        :resource-role-names @(:resource-role-names state)
-                                                        :attributes (mapv :value @(:attributes state))}]
+                              (let [form-data {:name @(:identity-name state)
+                                               :description @(:description state)
+                                               :connection_names @(:connection-names state)
+                                               :attributes (mapv :value @(:attributes state))}]
                                 (if (= form-type :create)
-                                  (rf/dispatch [:machine-identities/create identity-form-data])
-                                  (rf/dispatch [:machine-identities/update identity-id identity-form-data]))))}
+                                  (rf/dispatch [:machine-identities/create form-data])
+                                  (rf/dispatch [:machine-identities/update identity-name-val form-data]))))}
 
           [:<>
            [:> Flex {:p "5" :gap "2"}
@@ -86,7 +84,7 @@
                                                       :action-button? true
                                                       :type :danger
                                                       :on-success (fn []
-                                                                    (rf/dispatch [:machine-identities/delete identity-id])
+                                                                    (rf/dispatch [:machine-identities/delete identity-name-val])
                                                                     (let [redirect-fn (fn [] (rf/dispatch [:navigate :machine-identities]))]
                                                                       (js/setTimeout redirect-fn 500)))}])}
                  "Delete"])
@@ -106,7 +104,7 @@
                 (= form-type :create) (assoc :placeholder "e.g. Machine 1"
                                              :autoFocus true
                                              :on-change #(reset! (:identity-name state)
-                                                                 (sanitize-identity-name (-> % .-target .-value))))
+                                                                  (sanitize-identity-name (-> % .-target .-value))))
                 (= form-type :edit) (assoc :disabled true))]
              [forms/textarea
               {:label "Description (Optional)"
@@ -118,38 +116,38 @@
             [:> Grid {:columns "7" :gap "7"}
              [:> Box {:grid-column "span 2 / span 2" :class "space-y-radix-4"}
               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-               "Roles configuration"]
+               "Connections configuration"]
               [:> Text {:size "3" :class "text-[--gray-11]"}
-               "Select which Roles to apply this configuration."]
+               "Select which Connections to provision credentials for."]
               [:> Callout.Root {:size "1" :color "gray" :variant "surface"}
                [:> Callout.Icon [:> Info {:size 16}]]
-               [:> Callout.Text "Roles requiring review aren't available."]]]
+               [:> Callout.Text "Connections requiring review aren't available."]]]
              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-              (let [resource-role-by-name (into {} (map (juxt :name identity)) all-resource-roles)
-                    selected-names @(:resource-role-names state)
-                    selected-resource-roles-data
+              (let [conn-by-name (into {} (map (juxt :name identity)) all-connections)
+                    selected-names @(:connection-names state)
+                    selected-conns-data
                     (mapv (fn [name]
-                            (let [resource-role (get resource-role-by-name name)]
-                              {:id (or (:id resource-role) name)
+                            (let [conn (get conn-by-name name)]
+                              {:id (or (:id conn) name)
                                :name name}))
                           selected-names)
-                    resource-role-ids
+                    selected-conn-ids
                     (mapv (fn [name]
-                            (or (:id (get resource-role-by-name name)) name))
+                            (or (:id (get conn-by-name name)) name))
                           selected-names)]
                 [connections-select/main
-                 {:id "machine-identity-resources-input"
-                  :name "machine-identity-resources-input"
+                 {:id "machine-identity-connections-input"
+                  :name "machine-identity-connections-input"
                   :required? true
-                  :label "Resources"
-                  :placeholder "Select resources..."
-                  :connection-ids resource-role-ids
-                  :selected-connections selected-resource-roles-data
+                  :label "Connections"
+                  :placeholder "Select connections..."
+                  :connection-ids selected-conn-ids
+                  :selected-connections selected-conns-data
                   :on-connections-change
                   (fn [selected-options]
                     (let [selected-js-options (js->clj selected-options :keywordize-keys true)
                           names (mapv :label selected-js-options)]
-                      (reset! (:resource-role-names state) names)))}])]]
+                      (reset! (:connection-names state) names)))}])]]
 
             [form-section {:title "Attributes configuration"
                            :description "Select which Attributes to apply this configuration."}
@@ -162,7 +160,7 @@
 
 (defn main [mode & [params]]
   (when (= :edit mode)
-    (rf/dispatch [:machine-identities/get-identity (:identity-id params)]))
+    (rf/dispatch [:machine-identities/get-identity (:identity-name params)]))
 
   (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
 

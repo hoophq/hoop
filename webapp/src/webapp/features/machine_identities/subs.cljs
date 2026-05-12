@@ -22,3 +22,13 @@
  :<- [:machine-identities/identities]
  (fn [identities [_ id]]
    (first (filter #(= (:id %) id) identities))))
+
+(rf/reg-sub
+ :machine-identities/credentials
+ (fn [db]
+   (or (get-in db [:machine-identities :credentials :data]) [])))
+
+(rf/reg-sub
+ :machine-identities/credentials-status
+ (fn [db]
+   (get-in db [:machine-identities :credentials :status])))

@@ -669,23 +669,22 @@
 (defmethod routes/panels :machine-identities-edit-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
-        identity-id (:identity-id (:route-params current-route))]
+        identity-name (:identity-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [identity-form/main :edit {:identity-id identity-id}]]]]))
+       [identity-form/main :edit {:identity-name identity-name}]]]]))
 
 (defmethod routes/panels :machine-identities-roles-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
-        identity-id (:identity-id (:route-params current-route))]
+        identity-name (:identity-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:machine-identities/list])
     [layout :application-hoop
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [identity-roles/main {:identity-id identity-id}]]]]))
+       [identity-roles/main {:identity-name identity-name}]]]]))
 
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])

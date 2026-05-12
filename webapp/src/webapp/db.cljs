@@ -95,7 +95,8 @@
                      :search-results {:status :idle :data {}}}
    :machine-identities {:status :idle
                         :data []
-                        :current-identity nil}
+                        :current-identity nil
+                        :credentials {:status :idle :data []}}
    :runbooks {:connection-dialog-open? false
               :selected-connection nil
               :list {:status :idle :data [] :error nil}
