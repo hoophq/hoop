@@ -54,6 +54,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.agent_async_ssh": {
+		Name:        "experimental.agent_async_ssh",
+		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 }
 
 // All returns every registered flag, sorted by name.
