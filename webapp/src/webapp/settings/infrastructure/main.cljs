@@ -1,6 +1,6 @@
 (ns webapp.settings.infrastructure.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Switch Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.callout-link :as callout-link]
@@ -44,21 +44,6 @@
            ;; Content
            [:> Box {:class "rounded-lg p-radix-7"}
             [:> Box {:class "space-y-radix-9"}
-
-             ;; Product analytics section
-             [:> Grid {:columns "7" :gap "7"}
-              [:> Box {:grid-column "span 2 / span 2"}
-               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-                "Product analytics"]
-               [:> Text {:size "3" :class "text-[--gray-11]"}
-                "Help us improve Hoop by sharing usage data. Access and resources information are not collected."]]
-
-              [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5"}
-               [:> Flex {:align "center" :gap "3"}
-                [:> Switch {:checked (:analytics-enabled data)
-                            :onCheckedChange #(rf/dispatch [:infrastructure->toggle-analytics %])}]
-                [:> Text {:size "3" :weight "medium"}
-                 (if (:analytics-enabled data) "On" "Off")]]]]
 
              ;; gRPC configuration section
              [:> Grid {:columns "7" :gap "7"}

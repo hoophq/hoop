@@ -15,13 +15,6 @@
  (fn [config _]
    (:data config)))
 
-;; Analytics enabled state
-(rf/reg-sub
- :infrastructure->analytics-enabled?
- :<- [:infrastructure->data]
- (fn [data _]
-   (:analytics-enabled data)))
-
 ;; gRPC URL
 (rf/reg-sub
  :infrastructure->grpc-url

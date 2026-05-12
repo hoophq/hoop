@@ -164,9 +164,6 @@ func (r *catchAll5xxResponseBodyWriter) Write(b []byte) (int, error) {
 
 func sentryCatchAll5xxMiddleware(c *gin.Context) {
 	defer c.Next()
-	if enabled := appconfig.Get().AnalyticsTracking(); !enabled {
-		return
-	}
 
 	rbw := &catchAll5xxResponseBodyWriter{
 		body:           &bytes.Buffer{},

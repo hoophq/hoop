@@ -1158,6 +1158,27 @@ const (
 	AnalyticsTrackingDisabled AnalyticsTrackingStatusType = "disabled"
 )
 
+// AnalyticsModeType represents the per-organization analytics privacy mode.
+// * identified - PII (email, name) is sent to third-party destinations so
+//   the org's users are addressable for support and lifecycle outreach.
+// * anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
+// * disabled   - No analytics events are emitted for the org.
+type AnalyticsModeType string
+
+const (
+	AnalyticsModeIdentified AnalyticsModeType = "identified"
+	AnalyticsModeAnonymous  AnalyticsModeType = "anonymous"
+	AnalyticsModeDisabled   AnalyticsModeType = "disabled"
+)
+
+type OrgAnalyticsModeRequest struct {
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" binding:"required" enums:"identified,anonymous,disabled" example:"identified"`
+}
+
+type OrgAnalyticsModeResponse struct {
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -1254,10 +1275,14 @@ type ServerInfo struct {
 	// * true - Clipboard copy and cut are disabled and not available to users
 	// * false - Clipboard copy and cut are enabled and available to users
 	DisableClipboardCopyCut bool `json:"disable_clipboard_copy_cut"`
-	// Indicates if all tracking and analytics should be enabled or disabled
+	// Indicates if all tracking and analytics should be enabled or disabled.
+	// Derived from analytics_mode for backwards compatibility: "disabled"
+	// when analytics_mode is "disabled"; "enabled" otherwise.
 	// * enabled - Analytics/tracking are enabled
 	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
+	// The analytics privacy mode for the caller's organization
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
@@ -1961,8 +1986,6 @@ type DataMaskingRuleConnection struct {
 }
 
 type ServerMiscConfig struct {
-	// Either to enable or disable the product analytics tracking
-	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
 	// The PostgreSQL server proxy configuration

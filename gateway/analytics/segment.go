@@ -10,7 +10,6 @@ import (
 	"net/url"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -53,10 +52,25 @@ func (s *Segment) Close() {
 	}
 }
 
-// identifyTraits builds the trait set for an Identify call. On OSS installs
-// the user's real email and name are attached so Intercom can address them;
-// Enterprise keeps the pseudonymous hashed user-id as the only identifier.
-func identifyTraits(ctx *types.APIContext, hashedUserID, environmentName string) analytics.Traits {
+// resolveMode picks the analytics mode for a call. It prefers the mode
+// already populated on the APIContext (set at auth time) and falls back to
+// the in-memory cache for callers that build an APIContext manually
+// (signup, login bootstrap).
+func resolveMode(ctx *types.APIContext) string {
+	if ctx == nil {
+		return models.AnalyticsModeAnonymous
+	}
+	if models.IsValidAnalyticsMode(ctx.OrgAnalyticsMode) {
+		return ctx.OrgAnalyticsMode
+	}
+	return GetMode(ctx.OrgID)
+}
+
+// identifyTraits builds the trait set for an Identify call. When the org is
+// in `identified` mode the user's real email and name are attached so
+// Intercom can address them; `anonymous` keeps the pseudonymous hashed
+// user-id as the only identifier.
+func identifyTraits(ctx *types.APIContext, mode, hashedUserID, environmentName string) analytics.Traits {
 	traits := analytics.NewTraits().
 		Set("org-id", ctx.OrgID).
 		Set("user-id", hashedUserID).
@@ -65,7 +79,7 @@ func identifyTraits(ctx *types.APIContext, hashedUserID, environmentName string)
 		Set("status", ctx.UserStatus).
 		Set("client-version", version.Get().Version)
 
-	if ctx.GetLicenseType() == license.OSSType && ctx.UserEmail != "" {
+	if mode == models.AnalyticsModeIdentified && ctx.UserEmail != "" {
 		traits = traits.SetEmail(ctx.UserEmail).SetName(ctx.UserName)
 	}
 
@@ -73,8 +87,12 @@ func identifyTraits(ctx *types.APIContext, hashedUserID, environmentName string)
 }
 
 func (s *Segment) Identify(ctx *types.APIContext) {
-	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" ||
-		!appconfig.Get().AnalyticsTracking() {
+	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" {
+		return
+	}
+
+	mode := resolveMode(ctx)
+	if mode == models.AnalyticsModeDisabled {
 		return
 	}
 
@@ -83,7 +101,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 	_ = s.Client.Enqueue(analytics.Identify{
 		UserId:      hashedUserID,
 		AnonymousId: ctx.UserAnonSubject,
-		Traits:      identifyTraits(ctx, hashedUserID, s.environmentName),
+		Traits:      identifyTraits(ctx, mode, hashedUserID, s.environmentName),
 	})
 
 	_ = s.Client.Enqueue(analytics.Group{
@@ -102,7 +120,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 // - https://segment.com/docs/connections/spec/best-practices-identify/#anonymousid-generation
 // - https://segment.com/docs/connections/spec/best-practices-identify/#merging-identified-and-anonymous-user-profiles
 func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[string]any) {
-	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
+	if s.Client == nil {
 		return
 	}
 	if properties == nil {
@@ -120,23 +138,29 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 }
 
 func (s *Segment) TrackEvent(eventName string, properties map[string]any) {
-	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
+	if s.Client == nil {
 		return
 	}
 	if properties == nil {
 		properties = map[string]any{}
 	}
 
+	// System events (UserId="Gateway") have no user PII; if a specific org
+	// is associated, respect its `disabled` choice so the org can fully
+	// silence outbound telemetry.
+	if orgID, _ := properties["org-id"].(string); orgID != "" {
+		if GetMode(orgID) == models.AnalyticsModeDisabled {
+			return
+		}
+		properties["$groups"] = map[string]any{
+			"org-id": orgID,
+		}
+	}
+
 	if apiUrl, exists := properties["api-hostname"]; (!exists || apiUrl == "") && appconfig.Get().ApiURL() != "" {
 		url, err := url.Parse(appconfig.Get().ApiURL())
 		if err == nil {
 			properties["api-hostname"] = url.Hostname()
-		}
-	}
-
-	if orgID, exists := properties["org-id"]; exists && orgID != "" {
-		properties["$groups"] = map[string]any{
-			"org-id": orgID,
 		}
 	}
 
@@ -152,11 +176,17 @@ func (s *Segment) TrackEvent(eventName string, properties map[string]any) {
 
 // Track generates an event to segment
 func (s *Segment) Track(userID, eventName string, properties map[string]any) {
-	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
+	if s.Client == nil {
 		return
 	}
 	if properties == nil {
 		properties = map[string]any{}
+	}
+
+	if orgID, _ := properties["org-id"].(string); orgID != "" {
+		if GetMode(orgID) == models.AnalyticsModeDisabled {
+			return
+		}
 	}
 
 	if apiUrl, exists := properties["api-hostname"]; (!exists || apiUrl == "") && appconfig.Get().ApiURL() != "" {
@@ -319,7 +349,7 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 	}
 
 	props := sessionUsageProperties(session, connection, agent, guardrails, dataMasking, []*models.AccessRequestRule{jitAccessRequest, commandAccessRequest})
-	log.With("sid", sessionID).Infof("tracking session usage data, event=%s, orgID=%s, userID=%s, props=%+v", eventName, orgID, userID, props)
+	log.With("sid", sessionID).Infof("tracking session usage data, event=%s", eventName)
 
 	s.Track(userID, eventName, props)
 }

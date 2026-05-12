@@ -16,8 +16,7 @@
 (rf/reg-event-fx
  :infrastructure->get-config-success
  (fn [{:keys [db]} [_ data]]
-   (let [mapped-data {:analytics-enabled (= (:product_analytics data) "active")
-                      :grpc-url (:grpc_server_url data)
+   (let [mapped-data {:grpc-url (:grpc_server_url data)
                       :postgres-proxy-port (some-> (:postgres_server_config data)
                                                    :listen_address
                                                    (cs/split #":")
@@ -54,12 +53,6 @@
  (fn [db [_ field value]]
    (assoc-in db [:infrastructure :data field] value)))
 
-;; Toggle analytics
-(rf/reg-event-db
- :infrastructure->toggle-analytics
- (fn [db [_ enabled?]]
-   (assoc-in db [:infrastructure :data :analytics-enabled] enabled?)))
-
 ;; Save infrastructure configuration
 (rf/reg-event-fx
  :infrastructure->save-config
@@ -76,7 +69,6 @@
                            (str "0.0.0.0:" (:http-proxy-port ui-config)))
          ;; Map UI structure back to API format
          api-payload {:grpc_server_url (:grpc-url ui-config)
-                      :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")
                       :postgres_server_config {:listen_address postgres-proxy-port}
                       :ssh_server_config {:listen_address ssh-proxy-port}
                       :rdp_server_config {:listen_address rdp-proxy-port}

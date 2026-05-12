@@ -210,6 +210,7 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL str
 			WithSlackID(ctx.UserSlackID).
 			WithOrgName(ctx.OrgName).
 			WithOrgLicenseData(ctx.OrgLicenseData).
+			WithOrgAnalyticsMode(ctx.OrgAnalyticsMode).
 			WithApiURL(r.apiURL).
 			WithGrpcURL(grpcURL).
 			WithProviderType(providerType),
