@@ -40,11 +40,17 @@
           d (js/Date. (+ start-ms (js/Math.floor (* seconds 1000))))]
       (.toLocaleTimeString d))))
 
-(defn- duration-since [start-date]
+(defn- duration-between
+  "Human-readable duration between `start-date` and `end-date`. When
+  `end-date` is nil we fall back to the current time, so live sessions
+  show an ever-growing elapsed counter."
+  [start-date end-date]
   (when start-date
     (let [start-ms (.getTime (js/Date. start-date))
-          now-ms (.getTime (js/Date.))
-          diff-s (max 0 (js/Math.floor (/ (- now-ms start-ms) 1000)))
+          end-ms (if end-date
+                   (.getTime (js/Date. end-date))
+                   (.getTime (js/Date.)))
+          diff-s (max 0 (js/Math.floor (/ (- end-ms start-ms) 1000)))
           h (js/Math.floor (/ diff-s 3600))
           m (mod (js/Math.floor (/ diff-s 60)) 60)
           s (mod diff-s 60)]
@@ -61,6 +67,7 @@
     (and postgres? (= event-type "i"))
     (let [frames (pg-wire/parse-payload b64)]
       (if (seq frames)
+        ;; Live data: raw PG wire frames concatenated in the payload.
         (map-indexed
          (fn [frame-idx frame]
            {:key (str row-idx "-" frame-idx)
@@ -71,11 +78,15 @@
             :sql (:sql frame)
             :kind (if (pg-wire/query-frame? frame) :query :protocol)})
          frames)
+        ;; Historical data: backend already decoded queries for us via
+        ;; `?event_stream=raw-queries` and the payload is the plain SQL
+        ;; text. Render it as a single Query row.
         [{:key (str row-idx)
           :seconds seconds
           :event-type event-type
-          :kind :protocol
-          :pg-type-name "raw"}]))
+          :pg-type-name "Query"
+          :sql (utilities/decode-b64 b64)
+          :kind :query}]))
 
     :else
     [{:key (str row-idx)
@@ -113,6 +124,7 @@
 (defn- header
   [{:keys [state postgres? rows-count query-count duration
            only-queries? on-toggle-only-queries
+           has-protocol-rows?
            search on-change-search]}]
   [:> Box {:class (str "sticky top-0 z-10 bg-[--gray-1] "
                        "border border-[--gray-a4] rounded-t-3 "
@@ -131,7 +143,9 @@
        (str rows-count " " (if (= 1 rows-count) "event" "events"))]]
      (when duration
        [:> Text {:size "2" :class "text-[--gray-10]"}
-        (str "· " duration " elapsed")])]
+        (str "· "
+             duration " "
+             (if (= state :ended) "total" "elapsed"))])]
 
     [:> Flex {:align "center" :gap "3" :wrap "wrap"}
      [:div {:class "w-56"}
@@ -144,7 +158,7 @@
        [:> TextField.Slot
         [:> Search {:size 14}]]]]
 
-     (when postgres?
+     (when (and postgres? has-protocol-rows?)
        [:> Tooltip {:content "Hide protocol frames (Bind, Describe, Execute, Sync)"}
         [:label {:class "flex items-center gap-2 cursor-pointer select-none"}
          [:> Switch {:size "1"
@@ -288,6 +302,7 @@
               event-stream (or (:event_stream session) [])
               rows (expand-stream postgres? event-stream)
               query-count (count (filter #(= :query (:kind %)) rows))
+              has-protocol-rows? (some #(= :protocol (:kind %)) rows)
               search-term (string/lower-case @search)
               filtered (cond->> rows
                          (and postgres? @only-queries?)
@@ -308,7 +323,8 @@
                     :postgres? postgres?
                     :rows-count (count rows)
                     :query-count query-count
-                    :duration (duration-since start-date)
+                    :has-protocol-rows? has-protocol-rows?
+                    :duration (duration-between start-date (:end_date session))
                     :only-queries? @only-queries?
                     :on-toggle-only-queries #(reset! only-queries? %)
                     :search @search

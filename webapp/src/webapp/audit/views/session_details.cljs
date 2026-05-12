@@ -139,12 +139,7 @@
     is-dedicated-page? (cs/starts-with? current-path "/sessions/")
     ;; tracks the session id we have an SSE subscription open for, so we
     ;; can subscribe exactly once per machine session and clean up on close
-    subscribed-id (r/atom nil)
-    ;; Once the live tail takes over for this modal, keep it (even after the
-    ;; session ends) so the user doesn't lose their place. The event_stream
-    ;; was loaded in raw wire format and the live tail is the renderer that
-    ;; can decode it; the default raw renderer would show garbage.
-    live-tail-active? (r/atom false)]
+    subscribed-id (r/atom nil)]
 
     (rf/dispatch [:gateway->get-info])
     (when session
@@ -173,8 +168,12 @@
               open? (= (:status session) "open")
               machine-session? (= (:identity_type session) "machine")
               live-machine? (and machine-session? open? (:id session))
-              _ (when live-machine? (reset! live-tail-active? true))
-              show-live-tail? (and machine-session? @live-tail-active?)
+              ;; Use the live tail for every machine session — it gives a
+              ;; readable, terminal-style view of the SQL stream, decoded
+              ;; client-side. The same component handles both the raw wire
+              ;; frames pushed via SSE and the pre-decoded SQL the backend
+              ;; returns for finished sessions via `?event_stream=raw-queries`.
+              show-live-tail? machine-session?
               ;; Open/close SSE subscription as the live state changes
               _ (cond
                   (and live-machine? (not= @subscribed-id (:id session)))
@@ -352,9 +351,10 @@
                  (= (:status @session-details) :loading)
                  [loading-player]
 
-                 ;; Live or recently-live machine session — dedicated tail view
-                 ;; that decodes the wire protocol (postgres) and auto-scrolls
-                 ;; as new events arrive via SSE.
+                 ;; Machine session — dedicated terminal-style view that
+                 ;; renders decoded SQL (both the live SSE wire frames and
+                 ;; the historical pre-decoded queries) instead of the
+                 ;; expand/collapse list.
                  show-live-tail?
                  [session-live-tail/main session]
 
