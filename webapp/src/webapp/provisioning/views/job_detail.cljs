@@ -36,10 +36,17 @@
 (defn- action-button
   "Button shape helper for the header / footer action rows. Visibility is the
    caller's responsibility — either wrap in `when` or filter with `:when` in
-   a `for`."
+   a `for`.
+
+   Optional props (`:variant`, `:color`) are only included when non-nil:
+   Radix Themes Button runs every prop through a responsive-object check
+   that calls `Object.keys(value)`; since `typeof null === \"object\"` in JS,
+   passing `nil` would throw `Cannot convert undefined or null to object`."
   [{:keys [variant color size icon icon-size label on-click]
     :or   {size "2" icon-size 14}}]
-  [:> Button {:variant variant :color color :size size :on-click on-click}
+  [:> Button (cond-> {:size size :on-click on-click}
+               variant (assoc :variant variant)
+               color   (assoc :color   color))
    (when icon [:> icon {:size icon-size}])
    (when label (str (when icon " ") label))])
 
@@ -133,8 +140,8 @@
      [status-action item]]))
 
 (defn- plan-item-sessions-cell
-  "Renders either a 'View session' button (lazy-fetches the session on first
-   click) or an em-dash when there's no session yet."
+  "Either a 'View session' button (lazy-fetches the session on first click)
+   or an em-dash when there's no session yet."
   [{:keys [item session-set on-view-sessions]}]
   (if (:session-id item)
     (let [loaded? (contains? session-set (:session-id item))]
