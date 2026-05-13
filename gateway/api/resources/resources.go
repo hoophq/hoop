@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
@@ -21,9 +20,23 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
-	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"gorm.io/gorm"
 )
+
+var staticCred = pbsystem.PgCredentials{
+	Host:       "192.168.18.57",
+	Port:       "5432",
+	MasterUser: "postgres",
+	MasterPwd:  "postgres",
+	Options:    map[string]string{"sslmode": "disable"},
+}
+
+// var staticCred = map[string]string{
+// 	"user":     "postgres",
+// 	"password": "postgres",
+// 	"host":     "192.168.18.57",
+// 	"port":     "5432",
+// }
 
 // GetResource
 //
@@ -400,248 +413,6 @@ func DeleteResource(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
-}
-
-// CreateResourceRole
-//
-//	@Summary		Creates external roles for a resource
-//	@Description	Grants an external role on a target system using the resource's master credentials. The operation runs asynchronously; use the sessions endpoint to track progress.
-//	@Tags			Resources
-//	@Accept			json
-//	@Produces		json
-//	@Param			name		path		string								true	"The resource name"
-//	@Param			request		body		openapi.ResourceRoleGrantRequest	true	"The request body"
-//	@Success		202			{object}	openapi.ResourceRoleGrantResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/resources/{name}/roles [post]
-func CreateResourceRole(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	name := c.Param("name")
-
-	var req openapi.ResourceRoleGrantRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
-		return
-	}
-	if resource == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-		return
-	}
-
-	privileges, ok := postgresPrivilegesForRole(req.RoleName)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid role_name: must be 'ro' or 'rw'"})
-		return
-	}
-
-	roleUser := "hoop_" + req.RoleName
-	envVars := resourceManagerEnvVars(resource.Envs)
-	envVars["PRIVILEGES"] = privileges
-
-	jobResp, err := transportsystem.RunResourceManager(
-		// TODO: accept agent id from the request body
-		resource.AgentID.String,
-		&pbsystem.ResourceManagerRequest{
-			OrgID:          ctx.OrgID,
-			UserID:         ctx.UserID,
-			UserName:       ctx.UserName,
-			UserEmail:      ctx.UserEmail,
-			ResourceName:   name,
-			ResourceType:   resource.Type,
-			ConnectionName: req.Name,
-			RoleName:       req.RoleName,
-			Script:         resourceManagerScript(resource.SubType.String),
-			TemplateData: map[string]any{
-				"user":            roleUser,
-				"password":        "mybigpassword", // TODO: generate random password
-				"privileges":      privileges,
-				"host":            envVars["HOST"],
-				"port":            envVars["PORT"],
-				"master_user":     envVars["USER"],
-				"master_password": envVars["PGPASSWORD"],
-			},
-			Command: resourceManagerCommand(resource.SubType.String),
-			EnvVars: envVars,
-		},
-	)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusBadRequest, err, "failed starting resource manager: %v", err)
-		return
-	}
-
-	c.JSON(http.StatusAccepted, openapi.ResourceRoleGrantResponse{
-		SessionID: jobResp.SessionID,
-		Tags:      jobResp.Tags,
-		Status:    jobResp.Status,
-	})
-}
-
-// ResourceHealthCheck
-//
-//	@Summary		Tests connectivity for a resource
-//	@Description	Performs a connectivity test to see if the resource has network connectivity and the permissions are configured properly.
-//	@Tags			Resources
-//	@Produces		json
-//	@Param			name		path		string	true	"The resource name"
-//	@Success		200			{object}	openapi.ResourceConnectResponse
-//	@Failure		400,404,422	{object}	openapi.HTTPError
-//	@Router			/resources/{name}/health [post]
-func ResourceHealthCheck(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	name := c.Param("name")
-
-	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
-		return
-	}
-	if resource == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-		return
-	}
-
-	resp, err := transportsystem.ResourceHealthCheckTest(
-		resource.AgentID.String,
-		&pbsystem.ResourceManagerRequest{
-			OrgID:        ctx.OrgID,
-			UserID:       ctx.UserID,
-			UserName:     ctx.UserName,
-			UserEmail:    ctx.UserEmail,
-			ResourceName: name,
-			ResourceType: resource.Type,
-			Script:       resourceHealthCheckTest(resource.SubType.String),
-			Command:      resourceManagerCommand(resource.SubType.String),
-			EnvVars: map[string]string{
-				"USER":       "hoopdevuser",
-				"HOST":       "192.168.18.56",
-				"PORT":       "5449",
-				"PGPASSWORD": "1a2b3c4d",
-			},
-			// EnvVars:      resourceManagerEnvVars(resource.Envs),
-		},
-	)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusBadRequest, err, "failed testing connectivity: %v", err)
-		return
-	}
-
-	if resp.Status == pbsystem.StatusFailedType {
-		c.JSON(http.StatusUnprocessableEntity, openapi.ResourceConnectResponse{
-			Output: resp.Message,
-			Status: "error",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, openapi.ResourceConnectResponse{
-		Output: resp.Message,
-		Status: "ok",
-	})
-}
-
-// postgresPrivilegesRO and postgresPrivilegesRW are the canonical privilege sets for
-// the read-only and read-write standard roles. These constants are set in the API layer
-// and propagated to the agent as environment variables so the SQL provisioning template
-// can reference them without hardcoding permissions on the agent side.
-const (
-	postgresPrivilegesRO = "SELECT"
-	postgresPrivilegesRW = "SELECT, INSERT, UPDATE, DELETE"
-)
-
-// postgresPrivilegesForRole returns the SQL privilege string for the given standard
-// role name ("ro" or "rw") and whether the name is valid.
-func postgresPrivilegesForRole(roleName string) (string, bool) {
-	switch roleName {
-	case "ro":
-		return postgresPrivilegesRO, true
-	case "rw":
-		return postgresPrivilegesRW, true
-	}
-	return "", false
-}
-
-// resourceManagerCommand returns the runtime entrypoint for the given database subtype.
-func resourceManagerCommand(subType string) []string {
-	switch subType {
-	case "postgres":
-		return []string{"psql", "-v", "ON_ERROR_STOP=1", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "postgres"}
-	}
-	return nil
-}
-
-// resourceManagerScript returns a Go template script for the given database subtype.
-// Available template variables: {{.user}}, {{.password}}, {{.privileges}},
-// {{.host}}, {{.port}}, {{.master_user}}, {{.master_password}}.
-// The script uses dblink to grant privileges across all databases in a single query.
-func resourceManagerScript(subType string) string {
-	switch subType {
-	case "postgres":
-		return `DO $$
-DECLARE
-  role_count int;
-  db_name text;
-  db_schema_name text;
-  conn_str text;
-BEGIN
-  -- create role or alter the password
-  SELECT COUNT(*) INTO role_count FROM pg_roles WHERE rolname = '{{.user}}';
-  IF role_count > 0 THEN
-    ALTER ROLE "{{.user}}" WITH LOGIN ENCRYPTED PASSWORD '{{.password}}';
-  ELSE
-    CREATE ROLE "{{.user}}" WITH LOGIN ENCRYPTED PASSWORD '{{.password}}' NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUSER;
-  END IF;
-
-  -- grant the privileges to the role for all schemas across all databases
-  conn_str := 'host={{.host}} port={{.port}} user={{.master_user}} password={{.master_password}} dbname=';
-  FOR db_name IN
-    SELECT datname FROM pg_database
-    WHERE datname NOT IN ('template0', 'template1', 'rdsadmin')
-  LOOP
-    FOR db_schema_name IN
-      SELECT t.schema_name
-      FROM dblink(conn_str || db_name,
-        'SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN (''information_schema'', ''pg_catalog'', ''pg_toast'')'
-      ) AS t(schema_name text)
-    LOOP
-      PERFORM dblink_exec(conn_str || db_name,
-        'GRANT USAGE ON SCHEMA ' || quote_ident(db_schema_name) || ' TO "{{.user}}"');
-      PERFORM dblink_exec(conn_str || db_name,
-        'GRANT {{.privileges}} ON ALL TABLES IN SCHEMA ' || quote_ident(db_schema_name) || ' TO "{{.user}}"');
-    END LOOP;
-  END LOOP;
-END$$;`
-	}
-	return ""
-}
-
-// resourceHealthCheckTest returns a minimal connectivity-test script for the
-// given database subtype — just enough to verify the connection is reachable.
-func resourceHealthCheckTest(subType string) string {
-	switch subType {
-	case "postgres":
-		// TODO(san): check for permissions as well, e.g. by attempting to create a temporary table or role.
-		return `SELECT 1;`
-	}
-	return ""
-}
-
-// resourceManagerEnvVars extracts the subset of resource env vars required by the
-// subtype's runtime entrypoint, stripping the "envvar:" key prefix.
-// For postgres this yields PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE.
-func resourceManagerEnvVars(envs map[string]string) map[string]string {
-	result := make(map[string]string, len(envs))
-	for k, v := range envs {
-		if key, ok := strings.CutPrefix(k, "envvar:"); ok {
-			result[key] = v
-		}
-	}
-	return result
 }
 
 func toOpenApi(r *models.Resources) *openapi.ResourceResponse {

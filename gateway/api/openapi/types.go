@@ -2386,6 +2386,56 @@ type ResourceConnectResponse struct {
 	Status string `json:"status" enums:"ok,error" example:"ok"`
 }
 
+type ResourcePlanItem struct {
+	// Type of management of the role, either "managed" or "external". Defaults to managed
+	Type string `json:"type" enums:"managed,external" binding:"required" example:"managed"`
+	// The role to plan provisioning for (e.g., "ro", "rw")
+	Role string `json:"role" binding:"required" example:"ro"`
+	// The list of database and schemas to apply privileges to, formatted as "database" or "database.schema".
+	// In case the schema is omitted, privileges will be applied default schema based on the database type.
+	Scopes []string `json:"scopes" binding:"required" example:"mydb,otherdb"`
+	// The list of privileges to plan granting
+	Privileges []string `json:"privileges" binding:"required" example:"SELECT"`
+	// Force a password rotation
+	RotatePassword bool `json:"rotate_password" example:"true"`
+}
+
+type ResourcePlanRequest struct {
+	// The list of plan items to process
+	Items []ResourcePlanItem `json:"items" binding:"required,min=1"`
+}
+
+type ResourcePlanResult struct {
+	// The session ID for tracking and auditing this plan execution
+	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name this plan result is for
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// The role this plan result is for
+	Role string `json:"role" example:"ro"`
+	// Status of the execution
+	Status string `json:"status" enums:"completed,failed" example:"completed"`
+	// Output message from the execution
+	Message string `json:"message" example:"1\n(1 row)"`
+}
+
+type ResourcePlanResponse struct {
+	// The list of plan results
+	Results []ResourcePlanResult `json:"results"`
+}
+
+type ResourceApplyRequest struct {
+	// The Session ID of the plan to apply
+	SID string `json:"sid" binding:"required" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+}
+
+type ResourceApplyResult struct {
+	SID string `json:"sid"`
+	// Status of the execution
+	Status string `json:"status" enums:"success,failed" example:"success"`
+	// Contains any internal error that happened during the process of applying the migration
+	Message string `json:"message" example:"failed executing command"`
+}
+
 type RunbookConfigurationRequest struct {
 	// The runbook repository configuration
 	Repositories []RunbookRepository `json:"repositories" binding:"required"`
