@@ -1,6 +1,5 @@
 (ns webapp.provisioning.events
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]))
+  (:require [re-frame.core :as rf]))
 
 ;; ── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -549,87 +548,90 @@
                                                     :status     (:status response)
                                                     :session-id (:session-id response)))))))
 
-;; ── Mock session output (dev fallback) ──────────────────────────────────────
+;; ── Session fetch (gateway-backed) ──────────────────────────────────────────
+;;
+;; The gateway returns a session JSON with `event_stream` as an array. With
+;; `?event_stream=utf8` that array becomes a single string with the concat-
+;; enated stdout/stderr ("o" / "e" events). We use that format because it's
+;; the easiest to display in the terminal-style cell.
 
-(defn- mock-session-output
-  "Generates realistic mock session output based on the item's current status."
-  [item]
-  (let [header (str "-- Session for plan: " (:plan-id item) "\n"
-                    "-- Resource: " (:resource-name item) "\n"
-                    "-- Role: " (:role item) "\n"
-                    "-- Database: " (:database item) "\n"
-                    "-- Permissions: " (:permissions item) "\n\n")
-        schema (or (last (cs/split (or (:database item) "") #"\.")) "public")
-        role   (:role item)
-        rname  (:resource-name item)
-        perms  (:permissions item)
-        grant-sql
-        (str "BEGIN;\n"
-             "CREATE ROLE \"" role "\";\n"
-             "GRANT CONNECT ON DATABASE \"" rname "\" TO \"" role "\";\n"
-             "GRANT USAGE ON SCHEMA " schema " TO \"" role "\";\n"
-             "GRANT " perms " ON ALL TABLES IN SCHEMA " schema
-             " TO \"" role "\";\n"
-             "ALTER DEFAULT PRIVILEGES IN SCHEMA " schema "\n"
-             "  GRANT " perms " ON TABLES TO \"" role "\";\n"
-             "COMMIT;\n\n")]
-    (case (:status item)
-      "Failed"
-      (str header
-           "ERROR: could not connect to server: Connection refused\n"
-           "\tIs the server running on host \"" rname ".internal\"\n"
-           "\tand accepting TCP/IP connections on port 5432?\n\n"
-           "-- ✗ Plan failed after 30.0s (connection timeout)")
+(defn- extract-utf8-event-stream
+  "Defensively pulls the displayable output from a gateway session response.
+   Returns the empty string for any unexpected shape; never throws."
+  [resp]
+  (try
+    (let [stream (when (map? resp) (:event_stream resp))]
+      (cond
+        (string? stream)                            stream
+        (and (sequential? stream)
+             (string? (first stream)))              (first stream)
+        :else                                       ""))
+    (catch :default _ "")))
 
-      "Create"
-      (str header
-           "-- DRY RUN: the following statements WILL be executed on apply\n\n"
-           grant-sql
-           "-- ✓ Plan: Create — role does not exist, will be created")
+(defn- compute-duration-ms
+  "Best-effort duration from the session's start/end timestamps. Returns 0
+   when either is missing or malformed."
+  [resp]
+  (try
+    (let [start (:start_date resp)
+          end   (:end_date resp)]
+      (if (and start end)
+        (max 0 (- (.getTime (js/Date. end))
+                  (.getTime (js/Date. start))))
+        0))
+    (catch :default _ 0)))
 
-      "Update"
-      (str header
-           "-- DRY RUN: the following statements WILL be executed on apply\n\n"
-           "BEGIN;\n"
-           "-- Role \"" role "\" already exists, updating grants\n"
-           "REVOKE ALL ON ALL TABLES IN SCHEMA " schema " FROM \"" role "\";\n"
-           "GRANT USAGE ON SCHEMA " schema " TO \"" role "\";\n"
-           "GRANT " perms " ON ALL TABLES IN SCHEMA " schema
-           " TO \"" role "\";\n"
-           "ALTER DEFAULT PRIVILEGES IN SCHEMA " schema "\n"
-           "  GRANT " perms " ON TABLES TO \"" role "\";\n"
-           "COMMIT;\n\n"
-           "-- ✓ Plan: Update — role exists, grants will be refreshed")
-
-      "Applied"
-      (str header grant-sql "-- ✓ Applied successfully in 1.2s")
-
-      "ApplyFailed"
-      (str header
-           "BEGIN;\n"
-           "CREATE ROLE \"" role "\";\n"
-           "ERROR: role \"" role "\" already exists\n"
-           "ROLLBACK;\n\n"
-           "-- ✗ Apply failed: duplicate role — resolve manually or retry with UPDATE strategy")
-
-      (str header "-- Status: " (:status item)))))
+(defn- item-status->session-status [item-status]
+  (if (contains? #{"Failed" "ApplyFailed"} item-status)
+    "error" "success"))
 
 (rf/reg-event-fx
  :provisioning/fetch-plan-session
  (fn [{:keys [db]} [_ session-id]]
    (let [item (some #(when (= (:session-id %) session-id) %)
-                    (get-in db plan-items-path))]
-     {:fx [[:dispatch-later
-            {:ms 300
-             :dispatch
-             [:provisioning/add-sessions
-              [{:id            session-id
-                :job-id        (get-in db [:provisioning :plan-job :id])
-                :resource-id   (:resource-id item)
-                :resource-name (:resource-name item)
-                :role-name     (:role item)
-                :status        (if (contains? #{"Failed" "ApplyFailed"} (:status item))
-                                 "error" "success")
-                :started-at    (.now js/Date)
-                :duration-ms   (+ 500 (rand-int 1000))
-                :output        (mock-session-output item)}]]}]]})))
+                    (get-in db plan-items-path))
+         base {:id            session-id
+               :job-id        (get-in db [:provisioning :plan-job :id])
+               :resource-id   (:resource-id item)
+               :resource-name (:resource-name item)
+               :role-name     (:role item)
+               :started-at    (.now js/Date)
+               :status        (item-status->session-status (:status item))}]
+     {:fx [[:fetch
+            {:method     "GET"
+             :uri        (str "/sessions/" session-id
+                              "?expand=event_stream&event_stream=utf8")
+             :on-success #(rf/dispatch [:provisioning/plan-session-fetched base %])
+             :on-failure #(rf/dispatch [:provisioning/plan-session-fetch-failed base %])}]]})))
+
+(rf/reg-event-fx
+ :provisioning/plan-session-fetched
+ (fn [_ [_ base resp]]
+   (let [output      (extract-utf8-event-stream resp)
+         duration-ms (compute-duration-ms (when (map? resp) resp))]
+     {:fx [[:dispatch
+            [:provisioning/add-sessions
+             [(assoc base
+                     :duration-ms duration-ms
+                     :output      output)]]]]})))
+
+(rf/reg-event-fx
+ :provisioning/plan-session-fetch-failed
+ (fn [_ [_ base err]]
+   ;; Surface the failure inside the session row instead of dropping it —
+   ;; the user already navigated to the session list and expects to see
+   ;; *something*. The error session is appended like any other, so the
+   ;; UI keeps rendering and the user can retry from the plan screen.
+   (let [status   (or (:status err) "?")
+         message  (or (:message err) "Unable to load session output.")
+         body     (str "-- Failed to load session " (:id base) "\n"
+                       "-- HTTP status: " status "\n"
+                       "-- " message "\n\n"
+                       "Tip: the session may not be available yet, or you may "
+                       "not have permission to view it.")]
+     {:fx [[:dispatch
+            [:provisioning/add-sessions
+             [(assoc base
+                     :status      "error"
+                     :duration-ms 0
+                     :output      body)]]]]})))
