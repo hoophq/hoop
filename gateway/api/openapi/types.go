@@ -2674,3 +2674,78 @@ type AttributeRequest struct {
 	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 }
+
+// Event Routing types
+
+type EventSchemaFieldResponse struct {
+	Name     string `json:"name" example:"session_id"`
+	Type     string `json:"type" example:"string"`
+	Required bool   `json:"required" example:"true"`
+}
+
+type EventTypeResponse struct {
+	Name          string                   `json:"name" example:"session.guardrail_violation"`
+	Category      string                   `json:"category" example:"Session"`
+	Description   string                   `json:"description"`
+	Schema        []EventSchemaFieldResponse `json:"schema"`
+	SamplePayload map[string]any           `json:"sample_payload"`
+}
+
+type EventSubscriptionRequest struct {
+	Name              string            `json:"name" binding:"required"`
+	Description       string            `json:"description"`
+	EventTypes        []string          `json:"event_types" binding:"required,min=1"`
+	RunbookRepository string            `json:"runbook_repository" binding:"required"`
+	RunbookFile       string            `json:"runbook_file" binding:"required"`
+	ConnectionName    string            `json:"connection_name" binding:"required"`
+	ParameterMapping  map[string]string `json:"parameter_mapping" binding:"required"`
+	Status            string            `json:"status"`
+}
+
+type EventSubscriptionResponse struct {
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	EventTypes        []string          `json:"event_types"`
+	RunbookRepository string            `json:"runbook_repository"`
+	RunbookFile       string            `json:"runbook_file"`
+	ConnectionID      string            `json:"connection_id"`
+	ConnectionName    string            `json:"connection_name,omitempty"`
+	ParameterMapping  map[string]string `json:"parameter_mapping"`
+	Status            string            `json:"status"`
+	CreatedByEmail    string            `json:"created_by_email"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	DeliveredCount7d  int64             `json:"delivered_count_7d,omitempty"`
+	FailedCount7d     int64             `json:"failed_count_7d,omitempty"`
+	LastError         string            `json:"last_error,omitempty"`
+}
+
+type EventDispatchListItemResponse struct {
+	ID           string     `json:"id"`
+	EventID      string     `json:"event_id"`
+	EventType    string     `json:"event_type"`
+	Status       string     `json:"status"`
+	Attempt      int        `json:"attempt"`
+	SessionID    *string    `json:"session_id,omitempty"`
+	LastError    *string    `json:"last_error,omitempty"`
+	ReplayedFrom *string   `json:"replayed_from,omitempty"`
+	DurationMS   *int64     `json:"duration_ms,omitempty"`
+	OccurredAt   time.Time  `json:"occurred_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	DispatchedAt *time.Time `json:"dispatched_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+type EventDispatchListResponse struct {
+	Items []EventDispatchListItemResponse `json:"items"`
+	Total int64                           `json:"total"`
+	Page  int                             `json:"page"`
+	Limit int                             `json:"limit"`
+}
+
+type EventDispatchDetailResponse struct {
+	EventDispatchListItemResponse
+	EventPayload     json.RawMessage `json:"event_payload,omitempty"`
+	SubscriptionName string          `json:"subscription_name,omitempty"`
+}
