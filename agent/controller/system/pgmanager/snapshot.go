@@ -563,7 +563,7 @@ func inDesired(db, schema string, schemas map[string][]string) bool {
 }
 
 // checkParentExists is the external-mode precondition: the parent
-// role named by inherits_from must already exist in the cluster
+// role named by source_role must already exist in the cluster
 // before we can create children that inherit from it. Returns an
 // error with a clear message if the parent is missing.
 func checkParentExists(conn ConnectionParts, parent string) error {
@@ -576,7 +576,7 @@ func checkParentExists(conn ConnectionParts, parent string) error {
 		return fmt.Errorf("check parent role %q: %w", parent, err)
 	}
 	if strings.TrimSpace(string(out)) != "true" {
-		return fmt.Errorf("parent role %q does not exist (required by inherits_from); "+
+		return fmt.Errorf("parent role %q does not exist (required by source_role); "+
 			"create it via your usual provisioning before running it", parent)
 	}
 	return nil
