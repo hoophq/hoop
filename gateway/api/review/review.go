@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -245,6 +246,15 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		defer trackClient.Close()
 
 		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, rev.SessionID)
+
+		go func() {
+			session, err := models.GetSessionByID(ctx.OrgID, rev.SessionID)
+			if err != nil {
+				log.Warnf("event-routing: failed loading session %s for review event: %v", rev.SessionID, err)
+				return
+			}
+			events.DeriveFromReview(ctx.OrgID, rev, session)
+		}()
 	}
 
 	return rev, nil

@@ -52,6 +52,47 @@ func RunRunbookHook(agentID string, req *pbsystem.RunbookHookRequest) *pbsystem.
 	}
 }
 
+// RunRunbookHookWithTimeout is identical to RunRunbookHook but accepts an
+// explicit timeout instead of using the default 15s. Used by the event
+// routing dispatcher which needs a longer deadline (typically 60s).
+func RunRunbookHookWithTimeout(agentID string, req *pbsystem.RunbookHookRequest, timeout time.Duration) *pbsystem.RunbookHookResponse {
+	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
+	if st == nil {
+		return newRunbookHookErr(req.SID, "agent stream not found for %v", agentID)
+	}
+
+	dataCh := make(chan []byte)
+	systemStore.Set(req.ID, dataCh)
+	defer func() {
+		systemStore.Del(req.ID)
+		close(dataCh)
+	}()
+
+	payload, _ := json.Marshal(req)
+	err := st.Send(&proto.Packet{
+		Type:    pbsystem.RunbookHookRequestType,
+		Payload: payload,
+		Spec:    map[string][]byte{proto.SpecGatewaySessionID: []byte(req.ID)},
+	})
+	if err != nil {
+		return newRunbookHookErr(req.ID, "failed sending provision request packet, reason=%v", err)
+	}
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), timeout)
+	defer cancelFn()
+	select {
+	case payload := <-dataCh:
+		var resp pbsystem.RunbookHookResponse
+		if err := json.Unmarshal(payload, &resp); err != nil {
+			return newRunbookHookErr(req.ID, "unable to decode response: %v", err)
+		}
+		return &resp
+	case <-timeoutCtx.Done():
+		return newRunbookHookErr(req.ID, "timeout (%v) waiting for a response from agent, name=%v, version=%v",
+			timeout.String(), st.AgentName(), st.AgentVersion())
+	}
+}
+
 func newRunbookHookErr(sid, format string, a ...any) *pbsystem.RunbookHookResponse {
 	return &pbsystem.RunbookHookResponse{
 		ID:       sid,

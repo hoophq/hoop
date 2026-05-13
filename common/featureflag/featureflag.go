@@ -54,6 +54,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.event_routing": {
+		Name:        "experimental.event_routing",
+		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.

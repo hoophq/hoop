@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
+	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -104,6 +105,8 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		if err := models.UpsertSession(newSession); err != nil {
 			return fmt.Errorf("failed persisting session to store, reason=%v", err)
 		}
+
+		go events.DeriveFromSessionStart(pctx.OrgID, &newSession, connection)
 
 		trackClient := analytics.New()
 		defer trackClient.Close()
@@ -262,6 +265,10 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 
 		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
 		trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
+
+		if session, loadErr := models.GetSessionByID(pctx.OrgID, pctx.SID); loadErr == nil && session != nil {
+			events.DeriveFromSessionEnd(pctx.OrgID, session)
+		}
 	}()
 }
 
