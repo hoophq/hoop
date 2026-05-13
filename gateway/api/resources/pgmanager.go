@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -134,33 +135,127 @@ func ResourcePlan(c *gin.Context) {
 	}
 
 	resourceName := c.Param("name")
-	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, resourceName, ctx.IsAdmin())
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
+	result, httpStatus := processSinglePlan(ctx, resourceName, req)
+	if httpStatus != http.StatusOK {
+		c.JSON(httpStatus, gin.H{"message": result.Message})
 		return
 	}
-	if resource == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found: " + resourceName})
+	c.JSON(http.StatusOK, result)
+}
+
+// ResourcePlanBatch
+//
+//	@Summary		Creates a batch resource plan
+//	@Description	Validates provisioning plans for a batch of resources by executing a SELECT 1 test query against each target database. Each item in the batch is session-audited and receives its own plan ID. All items are processed concurrently and the response is returned once all have completed.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produces		json
+//	@Param			request		body		openapi.ResourcePlanRequest		true	"The request body"
+//	@Success		200			{object}	openapi.ResourcePlanResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/resources/plan [post]
+func ResourcePlanBatch(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	var req openapi.ResourcePlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+
+	for i, item := range req.Items {
+		if item.ResourceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("item[%d]: resource_name is required", i)})
+			return
+		}
+		var unsupportedPrivileges []string
+		for _, priv := range item.Privileges {
+			if _, ok := supportedPrivileges[priv]; !ok {
+				unsupportedPrivileges = append(unsupportedPrivileges, priv)
+			}
+		}
+		if len(unsupportedPrivileges) > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("item[%d]: found unsupported privileges=%v", i, unsupportedPrivileges)})
+			return
+		}
+	}
+
+	type indexedResult struct {
+		index int
+		res   openapi.ResourcePlanResult
+	}
+
+	resultCh := make(chan indexedResult, len(req.Items))
+	var wg sync.WaitGroup
+
+	for i, item := range req.Items {
+		wg.Add(1)
+		go func(idx int, planItem openapi.ResourcePlanItem) {
+			defer wg.Done()
+			res, _ := processSinglePlan(ctx, planItem.ResourceName, &planItem)
+			resultCh <- indexedResult{index: idx, res: res}
+		}(i, item)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	results := make([]openapi.ResourcePlanResult, len(req.Items))
+	for r := range resultCh {
+		results[r.index] = r.res
+	}
+
+	c.JSON(http.StatusOK, openapi.ResourcePlanResponse{Results: results})
+}
+
+// processSinglePlan executes a plan request for a single resource and returns the result.
+// The second return value is an HTTP status code: http.StatusOK on success, or an error status.
+func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi.ResourcePlanItem) (openapi.ResourcePlanResult, int) {
+	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, resourceName, ctx.IsAdmin())
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return openapi.ResourcePlanResult{
+			ResourceName: resourceName,
+			Role:         req.Role,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed retrieving resource: %v", err),
+		}, http.StatusInternalServerError
+	}
+	if resource == nil {
+		return openapi.ResourcePlanResult{
+			ResourceName: resourceName,
+			Role:         req.Role,
+			Status:       "failed",
+			Message:      "resource not found: " + resourceName,
+		}, http.StatusNotFound
 	}
 
 	roleName := req.Role
 	if req.Type == "managed" {
 		roleName, err = generateSecurePostgresRoleName(resource.Name, req.Role)
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating secure postgres role name: %v", err)
-			return
+			return openapi.ResourcePlanResult{
+				ResourceName: resourceName,
+				Role:         req.Role,
+				Status:       "failed",
+				Message:      fmt.Sprintf("failed generating secure postgres role name: %v", err),
+			}, http.StatusInternalServerError
 		}
 	}
 
 	requestPayload, _ := json.MarshalIndent(req, "", "  ")
 	sess, err := openSession(roleName, resource.Type, resource.SubType.String, string(requestPayload), ctx)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session: %v", err)
-		return
+		return openapi.ResourcePlanResult{
+			ResourceName: resourceName,
+			Role:         roleName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed creating session: %v", err),
+		}, http.StatusInternalServerError
 	}
 
-	resp, err := transportsystem.RunPgManagerPlan(resource.AgentID.String, &pbsystem.PgManagerPlanRequest{
+	resp := transportsystem.RunPgManagerPlan(resource.AgentID.String, &pbsystem.PgManagerPlanRequest{
 		SID:            uuid.NewString(),
 		RoleName:       roleName,
 		Type:           req.Type,
@@ -170,18 +265,9 @@ func ResourcePlan(c *gin.Context) {
 		RotatePassword: req.RotatePassword,
 	})
 
-	var sessionOutput string
-	if err != nil {
-		sessionOutput = err.Error()
-	}
-
-	if resp != nil {
-		switch {
-		case resp.Message != "":
-			sessionOutput = resp.Message
-		case len(resp.StateMigration) > 0:
-			sessionOutput = string(resp.StateMigration)
-		}
+	sessionOutput := resp.Message // message is set only on error
+	if len(resp.StateMigration) > 0 {
+		sessionOutput = string(resp.StateMigration)
 	}
 
 	exitCode := 0
@@ -193,29 +279,13 @@ func ResourcePlan(c *gin.Context) {
 		log.With("sid", sess.SID()).Errorf("failed closing session for pg manager plan: %v", err)
 	}
 
-	c.JSON(http.StatusOK, openapi.ResourcePlanResult{
+	return openapi.ResourcePlanResult{
 		SID:          sess.SID(),
 		ResourceName: resourceName,
 		Role:         roleName,
 		Status:       resp.Status,
 		Message:      resp.Message,
-	})
-}
-
-// ResourcePlanBatch
-//
-//	@Summary		Creates a batch resource plan
-//	@Description	Validates provisioning plans for a batch of resources by executing a SELECT 1 test query against each target database. Each item in the batch is session-audited and receives its own plan ID.
-//	@Tags			Resources
-//	@Accept			json
-//	@Produces		json
-//	@Param			request		body		openapi.ResourcePlanRequest		true	"The request body"
-//	@Success		200			{object}	openapi.ResourcePlanResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/resources/plan [post]
-func ResourcePlanBatch(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	_ = ctx
+	}, http.StatusOK
 }
 
 func ResourceApply(c *gin.Context) {
@@ -227,68 +297,148 @@ func ResourceApply(c *gin.Context) {
 	}
 
 	resourceName := c.Param("name")
-	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, resourceName, ctx.IsAdmin())
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
+	result, httpStatus := processSingleApply(ctx, resourceName, req.SID)
+	if httpStatus != http.StatusOK {
+		c.JSON(httpStatus, gin.H{"message": result.Message})
 		return
 	}
-	if resource == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found: " + resourceName})
+	c.JSON(http.StatusOK, result)
+}
+
+// ResourceApplyBatch
+//
+//	@Summary		Applies a batch of resource plans
+//	@Description	Applies a batch of previously created resource plans. Each item references a plan session by SID and the target resource name. All items are processed concurrently and the response is returned once all have completed.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produces		json
+//	@Param			request		body		openapi.ResourceApplyBatchRequest	true	"The request body"
+//	@Success		200			{object}	openapi.ResourceApplyBatchResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/resources/apply [post]
+func ResourceApplyBatch(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	var req openapi.ResourceApplyBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	planSession, err := models.GetSessionByID(ctx.OrgID, req.SID)
+	for i, item := range req.Items {
+		if item.ResourceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("item[%d]: resource_name is required", i)})
+			return
+		}
+	}
+
+	type indexedResult struct {
+		index int
+		res   openapi.ResourceApplyResult
+	}
+
+	resultCh := make(chan indexedResult, len(req.Items))
+	var wg sync.WaitGroup
+
+	for i, item := range req.Items {
+		wg.Add(1)
+		go func(idx int, applyItem openapi.ResourceApplyRequest) {
+			defer wg.Done()
+			res, _ := processSingleApply(ctx, applyItem.ResourceName, applyItem.SID)
+			resultCh <- indexedResult{index: idx, res: res}
+		}(i, item)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	results := make([]openapi.ResourceApplyResult, len(req.Items))
+	for r := range resultCh {
+		results[r.index] = r.res
+	}
+
+	c.JSON(http.StatusOK, openapi.ResourceApplyBatchResponse{Results: results})
+}
+
+// processSingleApply executes an apply request for a single resource and returns the result.
+// The second return value is an HTTP status code: http.StatusOK on success, or an error status.
+func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (openapi.ResourceApplyResult, int) {
+	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, resourceName, ctx.IsAdmin())
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed retrieving resource: %v", err),
+		}, http.StatusInternalServerError
+	}
+	if resource == nil {
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      "resource not found: " + resourceName,
+		}, http.StatusNotFound
+	}
+
+	planSession, err := models.GetSessionByID(ctx.OrgID, planSID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusNotFound, err, "failed retrieving session: %v", err)
-		return
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed retrieving session: %v", err),
+		}, http.StatusNotFound
 	}
 	if planSession.ConnectionSubtype != "postgres" {
-		httputils.AbortWithErr(c, http.StatusUnprocessableEntity, err, "resource type not implemented: %q", planSession.ConnectionSubtype)
-		return
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("resource type not implemented: %q", planSession.ConnectionSubtype),
+		}, http.StatusUnprocessableEntity
 	}
 	// TODO: validate session tags
 	// TODO: validate plan expiration date
 
 	blob, err := planSession.GetBlobStream()
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining blob stream: %v", err)
-		return
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed obtaining blob stream: %v", err),
+		}, http.StatusInternalServerError
 	}
 	stateMigration, err := parseEventStreamPlan(blob)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing session plan blob stream: %v", err)
-		return
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed parsing session plan blob stream: %v", err),
+		}, http.StatusInternalServerError
 	}
 	// TODO: validate tags!
 
 	sess, err := openSession(planSession.Connection, resource.Type, resource.SubType.String, string(stateMigration), ctx)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session: %v", err)
-		return
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed creating session: %v", err),
+		}, http.StatusInternalServerError
 	}
 
-	resp, err := transportsystem.RunPgManagerApply(resource.AgentID.String, &pbsystem.PgManagerApplyRequest{
+	resp := transportsystem.RunPgManagerApply(resource.AgentID.String, &pbsystem.PgManagerApplyRequest{
 		SID:            sess.SID(),
 		StateMigration: stateMigration,
 		PgCredentials:  staticCred,
 	})
 
-	var sessionOutput string
-	if err != nil {
-		sessionOutput = err.Error()
-	}
-
-	if resp != nil {
-		switch {
-		case resp.Message != "":
-			sessionOutput = resp.Message
-		case len(resp.StateMigration) > 0:
-			sessionOutput = string(resp.StateMigration)
-		}
+	sessionOutput := resp.Message // message is set only on error
+	if len(resp.StateMigration) > 0 {
+		sessionOutput = string(resp.StateMigration)
 	}
 
 	status := resp.Status
-	if status == "success" {
+	if resp.Status == "success" {
 		switch planSession.ConnectionSubtype {
 		case "postgres":
 			err := syncPostgresResourceRole(ctx, resourceName, resp.RoleName, resource.AgentID.String,
@@ -316,30 +466,15 @@ func ResourceApply(c *gin.Context) {
 	}
 
 	if err := sess.close(sessionOutput, exitCode); err != nil {
-		log.With("sid", sess.SID()).Errorf("failed closing session for pg manager plan: %v", err)
+		log.With("sid", sess.SID()).Errorf("failed closing session for pg manager apply: %v", err)
 	}
 
-	c.JSON(http.StatusOK, openapi.ResourceApplyResult{
-		SID:     resp.SID,
-		Status:  status,
-		Message: resp.Message,
-	})
-}
-
-// ResourceApplyBatch
-//
-//	@Summary		Creates a batch resource plan
-//	@Description	Validates provisioning plans for a batch of resources by executing a SELECT 1 test query against each target database. Each item in the batch is session-audited and receives its own plan ID.
-//	@Tags			Resources
-//	@Accept			json
-//	@Produces		json
-//	@Param			request		body		openapi.ResourcePlanRequest		true	"The request body"
-//	@Success		200			{object}	openapi.ResourcePlanResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/resources/plan [post]
-func ResourceApplyBatch(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	_ = ctx
+	return openapi.ResourceApplyResult{
+		SID:          sess.SID(),
+		ResourceName: resourceName,
+		Status:       status,
+		Message:      resp.Message,
+	}, http.StatusOK
 }
 
 // resourceManagerCommand returns the runtime entrypoint for the given database subtype.
@@ -443,7 +578,7 @@ func (s *stateSession) SID() string { return s.session.ID }
 func (s *stateSession) close(output string, exitCode int) error {
 	endTime := time.Now().UTC()
 	return models.UpdateSessionEventStream(models.SessionDone{
-		ID:         s.session.ID,
+		ID:         s.SID(),
 		OrgID:      s.session.OrgID,
 		Metrics:    map[string]any{},
 		BlobStream: toEventStream(output),
