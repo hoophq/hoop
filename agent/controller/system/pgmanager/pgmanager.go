@@ -21,6 +21,7 @@ type planResponse struct {
 }
 
 type StateMigration struct {
+	SID             string    `yaml:"sid"`
 	Config          *Config   `yaml:"config"`
 	CurrentState    *Snapshot `yaml:"current_state"`
 	SQLPlan         yaml.Node `yaml:"sql_plan"`
@@ -46,8 +47,10 @@ func ProcessPlanRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	}
 
 	config := &Config{
+		SID:            sid,
 		Type:           req.Type,
 		RoleName:       req.RoleName,
+		SourceRole:     req.SourceRole,
 		Scopes:         req.Scopes,
 		Privileges:     req.Privileges,
 		RotatePassword: req.RotatePassword,
@@ -145,6 +148,7 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 	}
 
 	migState.CommandOutput = string(cmdOutput)
+	migState.SID = sid
 	stateMigrationBytes, err := yaml.Marshal(migState)
 	if err != nil {
 		log.With("sid", sid).Warnf("failed re-encoding migration state with output: %v", err)
@@ -250,8 +254,10 @@ func expandManaged(c *Config) *Snapshot {
 }
 
 type Config struct {
+	SID            string   `yaml:"-"`
 	Type           string   `yaml:"type"`
 	RoleName       string   `yaml:"role_name"`
+	SourceRole     string   `yaml:"source_role"`
 	Scopes         []string `yaml:"scopes"`
 	Privileges     []string `yaml:"privileges"`
 	RotatePassword bool     `yaml:"rotate_password"`
@@ -267,11 +273,18 @@ type Config struct {
 // the role can reach (or the YAML asks about), reads catalog state
 // per-schema, and the planner emits GRANT/REVOKE statements scoped
 // at "ALL TABLES IN SCHEMA …" granularity.
-func planManaged(config *Config, conn ConnectionParts) (*planResponse, error) {
+func planManaged(c *Config, conn ConnectionParts) (*planResponse, error) {
+	if c.SourceRole != "" {
+		return nil, fmt.Errorf("source_role is only valid for type=external")
+	}
+	if len(c.Scopes) == 0 {
+		return nil, fmt.Errorf("scopes is required for type=managed")
+	}
+
 	current, err := takeSnapshot(SnapshotRequest{
 		Conn:    conn,
-		Role:    config.RoleName,
-		Schemas: schemasOfInterest(config.Scopes),
+		Role:    c.RoleName,
+		Schemas: schemasOfInterest(c.Scopes),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed taking snapshot: %w", err)
@@ -281,7 +294,7 @@ func planManaged(config *Config, conn ConnectionParts) (*planResponse, error) {
 	// (database AND schema present). With "missing schema → error"
 	// as the chosen policy, surface it before generating SQL that
 	// would silently no-op.
-	for _, p := range config.Scopes {
+	for _, p := range c.Scopes {
 		db, schema, _ := splitPath(p)
 		if db == "" {
 			continue
@@ -292,12 +305,12 @@ func planManaged(config *Config, conn ConnectionParts) (*planResponse, error) {
 		}
 	}
 
-	desired := expandManaged(config)
-	return buildPlan(config, current, desired)
+	desired := expandManaged(c)
+	return buildPlan(c, current, desired)
 }
 
 // planExternal runs the reconcile flow for a type=external role. The
-// role inherits all privileges from inherits_from via membership;
+// role inherits all privileges from source_role via membership;
 // it only manages the role's existence, password, and the parent
 // membership.
 //
@@ -308,12 +321,19 @@ func planManaged(config *Config, conn ConnectionParts) (*planResponse, error) {
 // query alone gives us role existence and current memberships, which
 // is all we need.
 func planExternal(c *Config, conn ConnectionParts) (*planResponse, error) {
+	if c.SourceRole == "" {
+		return nil, fmt.Errorf("source_role is required for type=external")
+	}
+	if len(c.Scopes) > 0 || len(c.Privileges) > 0 {
+		return nil, fmt.Errorf("scopes and privileges are not allowed for type=external "+
+			"(privileges are inherited from %q)", c.SourceRole)
+	}
 	// Precondition: the parent role must already exist in the cluster
 	// before we can create children that inherit from it. Fail loudly
 	// with a useful message rather than emitting SQL that will fail
 	// at apply time.
-	if err := checkParentExists(conn, c.RoleName); err != nil {
-		return nil, fmt.Errorf("parent role %q does not exist in the cluster: %w", c.RoleName, err)
+	if err := checkParentExists(conn, c.SourceRole); err != nil {
+		return nil, fmt.Errorf("parent role %q does not exist in the cluster: %w", c.SourceRole, err)
 	}
 
 	current, _, err := clusterSnapshot(conn, c.RoleName)
@@ -329,7 +349,7 @@ func planExternal(c *Config, conn ConnectionParts) (*planResponse, error) {
 		Role:        c.RoleName,
 		Exists:      true,
 		Attributes:  defaultAttributes(),
-		Memberships: []string{c.RoleName},
+		Memberships: []string{c.SourceRole},
 		ScopeStates: map[string]Scope{},
 	}
 	return buildPlan(c, current, desired)
@@ -367,6 +387,7 @@ func buildPlan(config *Config, current, desired *Snapshot) (*planResponse, error
 		return nil, fmt.Errorf("failed generating state migration checksum: %v", err)
 	}
 	stateMigrationYaml, err := yaml.Marshal(&StateMigration{
+		SID:             config.SID,
 		Config:          config,
 		CurrentState:    current,
 		SQLPlanChecksum: sqlPlanChecksum,

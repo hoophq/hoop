@@ -2345,6 +2345,8 @@ type ResourcePlanItem struct {
 	Type string `json:"type" enums:"managed,external" binding:"required" example:"managed"`
 	// The role to plan provisioning for (e.g., "ro", "rw")
 	Role string `json:"role" binding:"required" example:"ro"`
+	// The source role to inherits permissions, it must exists in the instance
+	SourceRole string `json:"source_role" example:"pg_read_all_data"`
 	// The list of database and schemas to apply privileges to, formatted as "database" or "database.schema".
 	// In case the schema is omitted, privileges will be applied default schema based on the database type.
 	Scopes []string `json:"scopes" binding:"required" example:"mydb,otherdb"`

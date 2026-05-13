@@ -16,7 +16,7 @@ import (
 //      isn't in desired, and grant any membership in desired that isn't
 //      in current. Under managed mode desired is empty, so this collapses
 //      to "revoke everything." Under external mode, desired contains the
-//      parent role from inherits_from.
+//      parent role from source_role.
 //   4. Per-database, per-scope, in a transaction:
 //        a. GRANT CONNECT to the database (if missing).
 //        b. GRANT USAGE on the schema (if missing).
@@ -120,7 +120,7 @@ type createRoleSpec struct {
 	Attributes []string
 	// InRole is the list of parent roles to attach via IN ROLE.
 	// Empty for managed-mode roles; populated for external-mode
-	// roles where inherits_from binds the child to its parent.
+	// roles where source_role binds the child to its parent.
 	InRole []string
 }
 

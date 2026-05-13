@@ -231,17 +231,14 @@ func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi
 		}, http.StatusNotFound
 	}
 
-	roleName := req.Role
-	if req.Type == "managed" {
-		roleName, err = generateSecurePostgresRoleName(resource.Name, req.Role)
-		if err != nil {
-			return openapi.ResourcePlanResult{
-				ResourceName: resourceName,
-				Role:         req.Role,
-				Status:       "failed",
-				Message:      fmt.Sprintf("failed generating secure postgres role name: %v", err),
-			}, http.StatusInternalServerError
-		}
+	roleName, err := generateSecurePostgresRoleName(resource.Name, req.Role)
+	if err != nil {
+		return openapi.ResourcePlanResult{
+			ResourceName: resourceName,
+			Role:         req.Role,
+			Status:       "failed",
+			Message:      fmt.Sprintf("failed generating secure postgres role name: %v", err),
+		}, http.StatusInternalServerError
 	}
 
 	requestPayload, _ := json.MarshalIndent(req, "", "  ")
@@ -256,8 +253,9 @@ func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi
 	}
 
 	resp := transportsystem.RunPgManagerPlan(resource.AgentID.String, &pbsystem.PgManagerPlanRequest{
-		SID:            uuid.NewString(),
+		SID:            sess.SID(),
 		RoleName:       roleName,
+		SourceRole:     req.SourceRole,
 		Type:           req.Type,
 		Scopes:         req.Scopes,
 		Privileges:     req.Privileges,
@@ -386,7 +384,7 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 		return openapi.ResourceApplyResult{
 			ResourceName: resourceName,
 			Status:       "failed",
-			Message:      fmt.Sprintf("failed retrieving session: %v", err),
+			Message:      fmt.Sprintf("failed retrieving session %v: %v", planSID, err),
 		}, http.StatusNotFound
 	}
 	if planSession.ConnectionSubtype != "postgres" {

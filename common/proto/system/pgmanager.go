@@ -30,13 +30,17 @@ type PgManagerPlanRequest struct {
 	// has the specified privileges on the specified scopes.
 	RoleName string `yaml:"role_name"`
 
+	// SourceRole is the name of an existent role that will be used
+	// to grant the permission to role name.
+	SourceRole string `yaml:"source_role"`
+
 	//	type: managed   — the tool fully owns the role's grants. scopes
 	//	                  and privileges describe what the role should hold;
 	//	                  the planner reconciles drift in either direction.
 	//	                  This is the default if `type` is omitted.
 	//
 	//	type: external  — the role inherits all privileges from an existing
-	//	                  role (inherits_from) via Postgres GRANT … TO …
+	//	                  role (source_role) via Postgres GRANT … TO …
 	//	                  membership with INHERIT. The tool only manages
 	//	                  the child role's existence, password, and the
 	//	                  parent membership. Privileges themselves are
@@ -79,11 +83,6 @@ type PgManagerPlanRequest struct {
 	// GRANTs, so the admin connection's permissions can be scoped accordingly.
 
 	PgCredentials `yaml:",inline"`
-	// MasterUser string `yaml:"master_user"`
-	// MasterPwd  string `yaml:"master_pwd"`
-	// Host       string `yaml:"host"`
-	// Port       string `yaml:"port"`
-	// Options    map[string]string
 }
 
 type PgManagerPlanResponse struct {
