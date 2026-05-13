@@ -26,6 +26,17 @@ type SSHContainer struct {
 	Container testcontainers.Container
 }
 
+// StartSSHWithForwarding boots an OpenSSH server with TCP forwarding
+// enabled. linuxserver/openssh-server defaults `AllowTcpForwarding no`,
+// which blocks the direct-tcpip channels exercised by port-forward
+// tests. This variant runs an exec inside the container after start
+// to flip the config and reload sshd.
+func StartSSHWithForwarding(t T) *SSHContainer {
+	c := startSSHContainer(t, "")
+	c.enableTCPForwarding(t)
+	return c
+}
+
 // StartSSH boots an OpenSSH server in a container. Password auth is enabled
 // for the test user so password-based credentials match what
 // parseConnectionEnvVars expects.
@@ -33,26 +44,47 @@ type SSHContainer struct {
 // linuxserver/openssh-server takes a few seconds to provision the user; the
 // wait strategy polls the TCP port until it accepts connections rather than
 // scraping logs, which is more reliable across image versions.
+//
+// Use StartSSHWithPublicKey for tests that need pubkey auth.
 func StartSSH(t T) *SSHContainer {
+	return startSSHContainer(t, "")
+}
+
+// StartSSHWithPublicKey boots an OpenSSH server with the given public key
+// installed in the test user's authorized_keys, plus password auth still
+// enabled as a fallback. Pass the public key in OpenSSH authorized-keys
+// format (e.g. "ssh-rsa AAAAB3..."). Used by pubkey-auth tests.
+func StartSSHWithPublicKey(t T, publicKey string) *SSHContainer {
+	return startSSHContainer(t, publicKey)
+}
+
+func startSSHContainer(t T, publicKey string) *SSHContainer {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	const user = "testuser"
 	const password = "testpass"
 
+	env := map[string]string{
+		"PUID":            "1000",
+		"PGID":            "1000",
+		"TZ":              "Etc/UTC",
+		"USER_NAME":       user,
+		"USER_PASSWORD":   password,
+		"PASSWORD_ACCESS": "true",
+		"SUDO_ACCESS":     "false",
+	}
+	if publicKey != "" {
+		// linuxserver/openssh-server's entrypoint reads PUBLIC_KEY
+		// and appends it to the user's authorized_keys file.
+		env["PUBLIC_KEY"] = publicKey
+	}
+
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "lscr.io/linuxserver/openssh-server:latest",
 			ExposedPorts: []string{"2222/tcp"},
-			Env: map[string]string{
-				"PUID":            "1000",
-				"PGID":            "1000",
-				"TZ":              "Etc/UTC",
-				"USER_NAME":       user,
-				"USER_PASSWORD":   password,
-				"PASSWORD_ACCESS": "true",
-				"SUDO_ACCESS":     "false",
-			},
+			Env:          env,
 			WaitingFor: wait.ForListeningPort("2222/tcp").
 				WithStartupTimeout(60 * time.Second),
 		},
@@ -120,6 +152,113 @@ func (c *SSHContainer) waitForBanner(t T) {
 // ConnString returns a host:port string suitable for direct TCP dialing.
 func (c *SSHContainer) ConnString() string {
 	return fmt.Sprintf("%s:%s", c.Host, c.Port)
+}
+
+// enableTCPForwarding edits the sshd_config inside the container so
+// direct-tcpip channels work, then sends a HUP to sshd to pick up
+// the change. linuxserver/openssh-server ships with
+// `AllowTcpForwarding no` and there's no env var to override it.
+//
+// Idempotent — calling twice does no harm.
+func (c *SSHContainer) enableTCPForwarding(t T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Patch the running sshd config, then reload via SIGHUP. The
+	// process pidfile lives at the standard /config/sshd/sshd.pid in
+	// linuxserver, but pkill is simpler and works across versions.
+	_, _, err := c.Container.Exec(ctx, []string{
+		"sh", "-c",
+		"sed -i 's/^AllowTcpForwarding no/AllowTcpForwarding yes/' /config/sshd/sshd_config && " +
+			"pkill -HUP sshd || true",
+	}, tcexec.Multiplexed())
+	if err != nil {
+		t.Fatalf("ssh-container: enableTCPForwarding exec: %v", err)
+	}
+
+	// Settle delay so sshd's HUP reload completes before tests
+	// drive port-forward traffic. SIGHUP causes sshd to re-exec
+	// itself; a few hundred ms is enough.
+	time.Sleep(500 * time.Millisecond)
+}
+
+// HTTPTarget represents a small HTTP server container intended as the
+// destination for SSH direct-tcpip port-forward tests. The
+// ContainerIP and ContainerPort fields point at the in-network
+// address reachable from other containers on the docker bridge
+// network (which is what the SSH container needs); HostPort exposes
+// the same service on the host for sanity-check fetches from the
+// test process.
+type HTTPTarget struct {
+	ContainerIP   string
+	ContainerPort string
+	HostPort      string
+	Container     testcontainers.Container
+}
+
+// StartHTTPTarget boots a minimal nginx container that serves a fixed
+// response. Used by the port-forward test as the target the SSH
+// channel is forwarded to.
+func StartHTTPTarget(t T) *HTTPTarget {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "nginx:alpine",
+			ExposedPorts: []string{"80/tcp"},
+			WaitingFor: wait.ForListeningPort("80/tcp").
+				WithStartupTimeout(30 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to start nginx container: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = container.Terminate(context.Background())
+	})
+
+	port, err := container.MappedPort(ctx, "80/tcp")
+	if err != nil {
+		t.Fatalf("nginx port: %v", err)
+	}
+
+	// Inspect the container to find its IP on the default docker
+	// bridge. We need this address — not the host-mapped one — to
+	// reach nginx from inside the SSH container (which is the
+	// destination of the direct-tcpip forward).
+	state, err := container.Inspect(ctx)
+	if err != nil {
+		t.Fatalf("nginx inspect: %v", err)
+	}
+	var ip string
+	if state != nil && state.NetworkSettings != nil {
+		for _, network := range state.NetworkSettings.Networks {
+			if network != nil && network.IPAddress.IsValid() {
+				ip = network.IPAddress.String()
+				break
+			}
+		}
+	}
+	if ip == "" {
+		t.Fatalf("nginx container has no IP address on any network")
+	}
+
+	return &HTTPTarget{
+		ContainerIP:   ip,
+		ContainerPort: "80",
+		HostPort:      port.Port(),
+		Container:     container,
+	}
+}
+
+// HostURL returns the http://host:port the test process can hit
+// directly (used to verify nginx is actually running before
+// exercising the port-forward path).
+func (h *HTTPTarget) HostURL() string {
+	return fmt.Sprintf("http://127.0.0.1:%s/", h.HostPort)
 }
 
 // EstablishedSSHConnections returns the number of established TCP

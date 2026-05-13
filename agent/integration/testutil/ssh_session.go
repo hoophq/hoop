@@ -24,13 +24,27 @@ func BuildSSHEnvVars(host, port, user, pass string) map[string]any {
 	}
 }
 
-// OpenSSHSession opens an SSH session on the agent and returns the
-// generated session ID after SessionOpenOK is observed. Fails the test if
-// the agent rejects the open or doesn't reply within 10 seconds.
+// OpenSSHSession opens an SSH session on the agent using password
+// authentication and returns the generated session ID after
+// SessionOpenOK is observed. Fails the test if the agent rejects the
+// open or doesn't reply within 10 seconds.
 func OpenSSHSession(t T, tr *MockTransport, host, port, user, pass string) string {
 	t.Helper()
+	return openSSHSession(t, tr, BuildSSHEnvVars(host, port, user, pass))
+}
+
+// OpenSSHSessionWithKey opens an SSH session on the agent using
+// public-key authentication. privateKeyPEM is the PEM-encoded private
+// key the agent will use to authenticate against the upstream sshd
+// (which must trust the corresponding public key).
+func OpenSSHSessionWithKey(t T, tr *MockTransport, host, port, user, privateKeyPEM string) string {
+	t.Helper()
+	return openSSHSession(t, tr, BuildSSHEnvVarsWithKey(host, port, user, privateKeyPEM))
+}
+
+func openSSHSession(t T, tr *MockTransport, envVars map[string]any) string {
+	t.Helper()
 	sessionID := uuid.New().String()
-	envVars := BuildSSHEnvVars(host, port, user, pass)
 	pkt := BuildSessionOpenPacket(sessionID, string(pb.ConnectionTypeSSH), envVars)
 	tr.Inject(pkt)
 
