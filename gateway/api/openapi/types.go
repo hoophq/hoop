@@ -2387,6 +2387,8 @@ type ResourceConnectResponse struct {
 }
 
 type ResourcePlanItem struct {
+	// The resource name to plan provisioning for. Required for batch requests.
+	ResourceName string `json:"resource_name" example:"my-postgres"`
 	// Type of management of the role, either "managed" or "external". Defaults to managed
 	Type string `json:"type" enums:"managed,external" binding:"required" example:"managed"`
 	// The role to plan provisioning for (e.g., "ro", "rw")
@@ -2426,14 +2428,28 @@ type ResourcePlanResponse struct {
 type ResourceApplyRequest struct {
 	// The Session ID of the plan to apply
 	SID string `json:"sid" binding:"required" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name to apply to. Required for batch requests.
+	ResourceName string `json:"resource_name" example:"my-postgres"`
 }
 
 type ResourceApplyResult struct {
 	SID string `json:"sid"`
+	// The resource name this apply result is for
+	ResourceName string `json:"resource_name" example:"my-postgres"`
 	// Status of the execution
 	Status string `json:"status" enums:"success,failed" example:"success"`
 	// Contains any internal error that happened during the process of applying the migration
 	Message string `json:"message" example:"failed executing command"`
+}
+
+type ResourceApplyBatchRequest struct {
+	// The list of apply items to process
+	Items []ResourceApplyRequest `json:"items" binding:"required,min=1"`
+}
+
+type ResourceApplyBatchResponse struct {
+	// The list of apply results
+	Results []ResourceApplyResult `json:"results"`
 }
 
 type RunbookConfigurationRequest struct {

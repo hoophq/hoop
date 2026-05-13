@@ -2,7 +2,6 @@ package transportsystem
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hoophq/hoop/common/proto"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
@@ -11,33 +10,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func RunPgManagerPlan(agentID string, req *pbsystem.PgManagerPlanRequest) (*pbsystem.PgManagerPlanResponse, error) {
+func RunPgManagerPlan(agentID string, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
-		return nil, fmt.Errorf("agent stream not found for %v", agentID)
+		return pbsystem.NewPgManagerPlanError(req.SID, "agent stream not found: %v", agentID)
 	}
-
-	dispatchResp := dispatchPgManagerPlan(st, req)
-	if dispatchResp == nil {
-		return nil, fmt.Errorf("no response received from agent for pg manager plan request")
-	}
-
-	return dispatchResp, nil
+	return dispatchPgManagerPlan(st, req)
 }
 
-func RunPgManagerApply(agentID string, req *pbsystem.PgManagerApplyRequest) (*pbsystem.PgManagerApplyResponse, error) {
+func RunPgManagerApply(agentID string, req *pbsystem.PgManagerApplyRequest) *pbsystem.PgManagerApplyResponse {
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
-		return nil, fmt.Errorf("agent stream not found for %v", agentID)
+		return pbsystem.NewPgManagerApplyError(req.SID, "agent stream not found: %v", agentID)
 	}
-
-	dispatchResp := dispatchPgManagerApply(st, req)
-	if dispatchResp == nil {
-		return nil, fmt.Errorf("no response received from agent for pg manager plan request")
-	}
-
-	// TODO: save the session
-	return dispatchResp, nil
+	return dispatchPgManagerApply(st, req)
 }
 
 func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
