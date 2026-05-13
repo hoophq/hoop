@@ -39,16 +39,9 @@ type ResourceManagerJobResponse struct {
 // The session is closed with a failure exit code if:
 //   - the agent stream cannot be found after the session is created, or
 //   - the dispatch goroutine encounters an error or timeout.
-func RunResourceManager(agentID string, req *pbsystem.ResourceManagerRequest) (*ResourceManagerJobResponse, error) {
+func RunResourceManager(agentID string, tags map[string]string, req *pbsystem.ResourceManagerRequest) (*ResourceManagerJobResponse, error) {
 	sid := uuid.NewString()
 	req.SID = sid
-
-	tags := map[string]string{
-		"system":     "true",
-		"resource":   req.ResourceName,
-		"connection": req.ConnectionName,
-		"role":       req.RoleName,
-	}
 
 	session := models.Session{
 		ID:             sid,
@@ -102,15 +95,113 @@ func RunResourceManager(agentID string, req *pbsystem.ResourceManagerRequest) (*
 	}, nil
 }
 
-// ResourceHealthCheckTest sends a connectivity-test request to the agent synchronously
-// and returns the agent's response. No session is created, so nothing is audited.
-func ResourceHealthCheckTest(agentID string, req *pbsystem.ResourceManagerRequest) (*pbsystem.ResourceManagerResponse, error) {
-	req.SID = uuid.NewString()
-	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
-	if st == nil {
-		return nil, fmt.Errorf("agent stream not found for %v", agentID)
+// BareExec sends a request to the agent synchronously and returns the agent's response. No session is created, so nothing is audited.
+func BareExec(tags map[string]string, usr pbsystem.UserInfo, req *pbsystem.BareExecRequest) (*pbsystem.BareExecResponse, error) {
+	session := models.Session{
+		ID:                req.SID,
+		OrgID:             usr.OrgID,
+		UserID:            usr.ID,
+		UserName:          usr.UserName,
+		UserEmail:         usr.UserEmail,
+		Connection:        "",
+		ConnectionType:    "database",
+		ConnectionSubtype: "postgres",
+		ConnectionTags:    tags,
+		Verb:              proto.ClientVerbExec,
+		Status:            "open",
+		BlobInput:         models.BlobInputType(req.Script),
+		CreatedAt:         time.Now().UTC(),
 	}
-	return dispatchResourceManager(st, req), nil
+
+	if err := models.UpsertSession(session); err != nil {
+		return nil, fmt.Errorf("failed creating session: %v", err)
+	}
+
+	st := streamclient.GetAgentStream(streamtypes.NewStreamID(req.AgentID, ""))
+	if st == nil {
+		return nil, fmt.Errorf("agent stream not found for %v", req.AgentID)
+	}
+	resp := dispatchBareExec(st, req)
+	exitCode := 0
+	if resp.Status == pbsystem.StatusFailedType {
+		exitCode = 1
+	}
+	endTime := time.Now().UTC()
+	if err := models.UpdateSessionEventStream(models.SessionDone{
+		ID:         req.SID,
+		OrgID:      usr.OrgID,
+		Metrics:    map[string]any{},
+		BlobStream: toEventStream(resp.Output),
+		Status:     "done",
+		ExitCode:   &exitCode,
+		EndSession: &endTime,
+	}); err != nil {
+		log.With("sid", req.SID).Errorf("failed closing resource manager bare exec session: %v", err)
+	}
+	return resp, nil
+}
+
+func BareExecV2(req *pbsystem.BareExecRequest) (*pbsystem.BareExecResponse, error) {
+	st := streamclient.GetAgentStream(streamtypes.NewStreamID(req.AgentID, ""))
+	if st == nil {
+		return nil, fmt.Errorf("agent stream not found for %v", req.AgentID)
+	}
+	resp := dispatchBareExec(st, req)
+	if resp.Status == pbsystem.StatusFailedType {
+		return nil, fmt.Errorf("bare exec failed: %v", resp.Output)
+	}
+	return resp, nil
+}
+
+func dispatchBareExec(st *streamclient.AgentStream, req *pbsystem.BareExecRequest) *pbsystem.BareExecResponse {
+	dataCh := make(chan []byte)
+	systemStore.Set(req.SID, dataCh)
+	defer func() {
+		systemStore.Del(req.SID)
+		close(dataCh)
+	}()
+
+	payload, pbType, err := pbsystem.NewBareExecRequest(req)
+	if err != nil {
+		return &pbsystem.BareExecResponse{
+			SessionID: req.SID,
+			Status:    pbsystem.StatusFailedType,
+			Output:    fmt.Sprintf("failed encoding request: %v", err),
+		}
+	}
+
+	if err := st.Send(&proto.Packet{
+		Type:    pbType,
+		Payload: payload,
+		Spec:    map[string][]byte{proto.SpecGatewaySessionID: []byte(req.SID)},
+	}); err != nil {
+		return &pbsystem.BareExecResponse{
+			SessionID: req.SID,
+			Status:    pbsystem.StatusFailedType,
+			Output:    fmt.Sprintf("failed sending request to agent: %v", err),
+		}
+	}
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), resourceManagerTimeout)
+	defer cancelFn()
+	select {
+	case payload := <-dataCh:
+		var resp pbsystem.BareExecResponse
+		if err := json.Unmarshal(payload, &resp); err != nil {
+			return &pbsystem.BareExecResponse{
+				SessionID: req.SID,
+				Status:    pbsystem.StatusFailedType,
+				Output:    fmt.Sprintf("failed decoding agent response: %v", err),
+			}
+		}
+		return &resp
+	case <-timeoutCtx.Done():
+		return &pbsystem.BareExecResponse{
+			SessionID: req.SID,
+			Status:    pbsystem.StatusFailedType,
+			Output:    fmt.Sprintf("timeout (%v) waiting for response from agent %v/%v", resourceManagerTimeout, st.AgentName(), st.AgentVersion()),
+		}
+	}
 }
 
 func dispatchResourceManager(st *streamclient.AgentStream, req *pbsystem.ResourceManagerRequest) *pbsystem.ResourceManagerResponse {

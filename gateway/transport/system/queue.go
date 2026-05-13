@@ -12,7 +12,9 @@ var systemStore = memory.New()
 func Send(packetType, sid string, payload []byte) error {
 	var obj any
 	switch packetType {
-	case pbsystem.ProvisionDBRolesResponse, pbsystem.RunbookHookResponseType, pbsystem.ResourceManagerResponseType:
+	case pbsystem.ProvisionDBRolesResponse, pbsystem.RunbookHookResponseType,
+		pbsystem.ResourceManagerResponseType, pbsystem.BareExecResponseType,
+		pbsystem.PgManagerPlanResponseType, pbsystem.PgManagerApplyResponseType:
 		obj = systemStore.Pop(sid)
 	default:
 		return fmt.Errorf("received unknown system packet: %v", packetType)

@@ -1050,14 +1050,35 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
-	r.POST("/resources/:name/roles",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		resourcesapi.CreateResourceRole)
+
 	r.GET("/resources/:name/health",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.ResourceHealthCheck)
+	r.GET("/resources/health",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ResourceHealthCheckBatch)
+	r.POST("/resources/:name/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourcePlan)
+	r.POST("/resources/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourcePlanBatch)
+	r.POST("/resources/:name/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourceApply)
+	r.POST("/resources/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourceApplyBatch)
 
 	r.GET("/audit/logs",
 		apiroutes.AdminAndAuditorAccessRole,
