@@ -95,8 +95,17 @@ func translateUpstreamError(cause string) string {
 // channels is the gateway-side map of channel-id-string → ssh.Channel
 // (the value the gateway accepted via newCh.Accept()).
 //
-// Writes are best-effort — failures to write or close are logged at
-// the caller's discretion but don't fail the shutdown.
+// After writing the message we Close() each channel so the read
+// goroutines in handleChannel unblock and return promptly. Without
+// the channel Close, those goroutines stay parked in clientCh.Read
+// and hold c.channelWg, forcing handleConnection's flush step to
+// time out (5s) before it can tear down the SSH transport — which
+// would leave the user staring at our message for 5+2 seconds with
+// no apparent reason to be there.
+//
+// Writes and closes are best-effort. Failures during shutdown don't
+// matter to the caller; the next step is sshConn.Close() which will
+// kill the channels anyway.
 func notifyOpenChannels(channels *sync.Map, message string) {
 	if message == "" {
 		return
@@ -108,15 +117,14 @@ func notifyOpenChannels(channels *sync.Map, message string) {
 		if !ok || ch == nil {
 			return true
 		}
-		// Best-effort write; if stderr is already closed or the
-		// transport has gone away, the user won't see this anyway
-		// and we don't want to block the shutdown.
-		if _, err := io.WriteString(ch.Stderr(), line); err != nil {
-			// Log via the caller's logger if needed; here we
-			// silently move on so this helper stays cheap and
-			// log-free for callers to control verbosity.
-			_ = err
-		}
+		_, _ = io.WriteString(ch.Stderr(), line)
+		// Close releases the read goroutine parked in
+		// handleChannel's clientCh.Read loop. The error code is
+		// SSH-protocol "exit-status 1" by convention but the
+		// channel API doesn't expose that here; the simple Close
+		// is enough for the client to see the channel end and
+		// the read goroutine to unblock.
+		_ = ch.Close()
 		return true
 	})
 }

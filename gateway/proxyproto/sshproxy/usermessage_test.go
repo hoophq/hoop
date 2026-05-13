@@ -135,6 +135,14 @@ func TestNotifyOpenChannels_WritesToEveryChannel(t *testing.T) {
 		if !strings.HasSuffix(got, "\r\n") {
 			t.Errorf("channel %s: expected trailing CRLF, got %q", label, got)
 		}
+		// notify must close each channel after the write so the
+		// gateway-side read goroutine parked in clientCh.Read
+		// unblocks. Without this, the gateway's flush wait hits
+		// its 5-second timeout and the user stares at the
+		// message before the connection actually drops.
+		if ch.CloseCount != 1 {
+			t.Errorf("channel %s: expected Close to be called once, got %d", label, ch.CloseCount)
+		}
 	}
 }
 

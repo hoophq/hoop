@@ -366,20 +366,6 @@ func (c *sshConnection) handleConnection() {
 	// either by the client, server, or context cancellation
 	<-c.ctx.Done()
 
-	// Wait for all channel data-forwarding goroutines to flush remaining writes
-	// to the gRPC stream. Without this, SessionClose can be sent before trailing
-	// data packets, causing the agent to tear down the session prematurely.
-	flushDone := make(chan struct{})
-	go func() {
-		c.channelWg.Wait()
-		close(flushDone)
-	}()
-	select {
-	case <-flushDone:
-	case <-time.After(5 * time.Second):
-		log.With("sid", c.sid, "conn", c.id).Warnf("timed out waiting for channel goroutines to finish")
-	}
-
 	ctxErr := context.Cause(c.ctx)
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
 
@@ -393,9 +379,35 @@ func (c *sshConnection) handleConnection() {
 	// addresses, library jargon, or stack traces to end users; it
 	// also returns an empty string for benign causes (e.g. the user
 	// disconnected themselves) so we don't write noise.
+	//
+	// A non-empty message means we're tearing the session down for a
+	// real error — there's no point waiting on the normal flush and
+	// grace period below because the user already knows it's over.
+	// We close the channels inside notifyOpenChannels and skip
+	// straight to closing the SSH transport.
+	hasUserError := false
 	if ctxErr != nil {
 		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
 			notifyOpenChannels(&c.sshChannels, msg)
+			hasUserError = true
+		}
+	}
+
+	if !hasUserError {
+		// Normal (non-error) teardown: wait for all channel
+		// data-forwarding goroutines to flush remaining writes
+		// to the gRPC stream. Without this, SessionClose can be
+		// sent before trailing data packets, causing the agent
+		// to tear down the session prematurely.
+		flushDone := make(chan struct{})
+		go func() {
+			c.channelWg.Wait()
+			close(flushDone)
+		}()
+		select {
+		case <-flushDone:
+		case <-time.After(5 * time.Second):
+			log.With("sid", c.sid, "conn", c.id).Warnf("timed out waiting for channel goroutines to finish")
 		}
 	}
 
@@ -411,8 +423,13 @@ func (c *sshConnection) handleConnection() {
 		return
 	}
 
-	// wait 2 seconds for cleaning up session gracefully
-	time.Sleep(time.Second * 2)
+	// On normal teardown, give the agent 2 seconds to drain its
+	// state before we hang up the transport. On error teardowns the
+	// user has nothing else to see and we already closed the
+	// channels in notifyOpenChannels, so close immediately.
+	if !hasUserError {
+		time.Sleep(time.Second * 2)
+	}
 	_ = c.sshConn.Close()
 	_, _ = c.grpcClient.Close()
 }

@@ -15,16 +15,23 @@ import (
 //
 // The real ssh.Channel interface has more methods than we need; the
 // blank implementations exist purely so the type assertion in
-// notifyOpenChannels succeeds.
+// notifyOpenChannels succeeds. CloseCount lets tests verify the
+// channel was closed after notify, which matters because notify is
+// what unblocks handleChannel's read goroutine on the gateway shutdown
+// path.
 type stderrStubChannel struct {
-	Buffer    bytes.Buffer
-	failWrite bool
+	Buffer     bytes.Buffer
+	failWrite  bool
+	CloseCount int
 }
 
-func (s *stderrStubChannel) Read(p []byte) (int, error)              { return 0, io.EOF }
-func (s *stderrStubChannel) Write(p []byte) (int, error)             { return len(p), nil }
-func (s *stderrStubChannel) Close() error                            { return nil }
-func (s *stderrStubChannel) CloseWrite() error                       { return nil }
+func (s *stderrStubChannel) Read(p []byte) (int, error)  { return 0, io.EOF }
+func (s *stderrStubChannel) Write(p []byte) (int, error) { return len(p), nil }
+func (s *stderrStubChannel) Close() error {
+	s.CloseCount++
+	return nil
+}
+func (s *stderrStubChannel) CloseWrite() error { return nil }
 func (s *stderrStubChannel) SendRequest(string, bool, []byte) (bool, error) {
 	return false, nil
 }
