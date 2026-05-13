@@ -23,3 +23,44 @@ jobs:
 
       - name: Test
         run: make test-oss
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      # Integration tests drive the real controller.Agent against real upstream
+      # containers via libhoop. The OSS _libhoop stub returns "missing protocol
+      # hoop library for X" for every protocol, so we need the enterprise
+      # libhoop checked out at ./libhoop. The Makefile's libhoop-map target
+      # tries to overwrite this with a symlink, but `rm libhoop || true` is a
+      # no-op against a non-empty directory — the checkout wins. Matches the
+      # build jobs in pullrequest-release.yml.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      # testcontainers-go manages container lifecycle itself via the Docker
+      # daemon. ubuntu-latest runners have Docker pre-installed and running,
+      # so no services: block is required. See:
+      # https://golang.testcontainers.org/system_requirements/
+      - name: Integration Test
+        run: make test-integration

@@ -42,6 +42,8 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	registerMeTools(server)
 	registerExecTools(server)
 	registerSchemaTools(server)
+	registerAttributeTools(server)
+	registerAccessControlTools(server)
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return server },
