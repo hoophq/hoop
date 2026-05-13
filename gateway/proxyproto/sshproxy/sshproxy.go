@@ -383,6 +383,22 @@ func (c *sshConnection) handleConnection() {
 	ctxErr := context.Cause(c.ctx)
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
 
+	// Surface the cancellation cause to the user's terminal before
+	// we tear the SSH connection down. Without this, the user sees
+	// only `Connection closed by remote host` and has to ask an
+	// admin to read the gateway logs to find out what went wrong.
+	//
+	// translateUpstreamError sanitizes the raw libhoop / agent text
+	// into a fixed-vocabulary message so we don't leak internal
+	// addresses, library jargon, or stack traces to end users; it
+	// also returns an empty string for benign causes (e.g. the user
+	// disconnected themselves) so we don't write noise.
+	if ctxErr != nil {
+		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
+			notifyOpenChannels(&c.sshChannels, msg)
+		}
+	}
+
 	// notify the server that the session is closing
 	err := c.grpcClient.Send(&pb.Packet{
 		Type: pbagent.SessionClose,
