@@ -59,6 +59,9 @@ const (
 	EventOrgFeatureUpdate            = "hoop-org-feature-update"
 	EventFeatureAskAIChatCompletions = "hoop-feature-askai-chat-completions"
 
+	// org settings
+	EventUpdateOrgAnalyticsMode = "hoop-update-org-analytics-mode"
+
 	// search api
 	EventSearch = "hoop-search"
 

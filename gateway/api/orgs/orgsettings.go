@@ -60,6 +60,7 @@ func UpdateOrgAnalyticsMode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid analytics_mode, accepted values are 'identified', 'anonymous', 'disabled'"})
 		return
 	}
+	previousMode := analytics.GetMode(ctx.OrgID)
 	if err := models.UpdateOrgAnalyticsMode(ctx.OrgID, mode); err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "organization not found"})
@@ -68,6 +69,20 @@ func UpdateOrgAnalyticsMode(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update analytics mode: %v", err)
 		return
 	}
+
+	// Emit BEFORE updating the cache so Track's internal disabled-mode check
+	// reads the previous mode — captures opt-out transitions and respects an
+	// already-disabled org for opt-in transitions.
+	if previousMode != mode {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.Track(ctx.UserID, analytics.EventUpdateOrgAnalyticsMode, map[string]any{
+			"org-id":                  ctx.OrgID,
+			"new-analytics-mode":      mode,
+			"previous-analytics-mode": previousMode,
+		})
+	}
+
 	analytics.SetMode(ctx.OrgID, mode)
 	c.JSON(http.StatusOK, openapi.OrgAnalyticsModeResponse{
 		AnalyticsMode: openapi.AnalyticsModeType(mode),
