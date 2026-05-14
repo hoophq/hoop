@@ -14,8 +14,13 @@ import (
 
 var bareExecTimeout = time.Minute * 5
 
-// BareExec executes a template
+// BareExec executes a bare exec request with the default 5-minute timeout.
 func BareExec(req *pbsystem.BareExecRequest) *pbsystem.BareExecResponse {
+	return BareExecWithTimeout(req, bareExecTimeout)
+}
+
+// BareExecWithTimeout executes a bare exec request with a custom timeout.
+func BareExecWithTimeout(req *pbsystem.BareExecRequest, timeout time.Duration) *pbsystem.BareExecResponse {
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(req.AgentID, ""))
 	if st == nil {
 		return &pbsystem.BareExecResponse{
@@ -24,10 +29,10 @@ func BareExec(req *pbsystem.BareExecRequest) *pbsystem.BareExecResponse {
 			Output:    fmt.Sprintf("agent stream not found for %v", req.AgentID),
 		}
 	}
-	return dispatchBareExec(st, req)
+	return dispatchBareExec(st, req, timeout)
 }
 
-func dispatchBareExec(st *streamclient.AgentStream, req *pbsystem.BareExecRequest) *pbsystem.BareExecResponse {
+func dispatchBareExec(st *streamclient.AgentStream, req *pbsystem.BareExecRequest, timeout time.Duration) *pbsystem.BareExecResponse {
 	dataCh := make(chan []byte)
 	systemStore.Set(req.SID, dataCh)
 	defer func() {
@@ -56,7 +61,7 @@ func dispatchBareExec(st *streamclient.AgentStream, req *pbsystem.BareExecReques
 		}
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), bareExecTimeout)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), timeout)
 	defer cancelFn()
 	select {
 	case payload := <-dataCh:
@@ -73,7 +78,7 @@ func dispatchBareExec(st *streamclient.AgentStream, req *pbsystem.BareExecReques
 		return &pbsystem.BareExecResponse{
 			SessionID: req.SID,
 			Status:    pbsystem.StatusFailedType,
-			Output:    fmt.Sprintf("timeout (%v) waiting for response from agent %v/%v", bareExecTimeout, st.AgentName(), st.AgentVersion()),
+			Output:    fmt.Sprintf("timeout (%v) waiting for response from agent %v/%v", timeout, st.AgentName(), st.AgentVersion()),
 		}
 	}
 }
