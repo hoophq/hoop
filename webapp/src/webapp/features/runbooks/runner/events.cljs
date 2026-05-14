@@ -37,6 +37,21 @@
                                                     :repository repository-str
                                                     :ref-hash ref-hash}}))))
 
+(rf/reg-event-fx
+ :runbooks/initialize-from-query-params
+ (fn [{:keys [db]} _]
+   (let [search-string (.. js/window -location -search)
+         url-params (new js/URLSearchParams search-string)
+         runbook-from-query (.get url-params "runbook")
+         repository-from-query (.get url-params "repository")]
+     (if (and runbook-from-query
+              repository-from-query
+              (not= runbook-from-query "")
+              (not= repository-from-query ""))
+       (let [template {:name runbook-from-query}]
+         {:fx [[:dispatch-later {:ms 1000 :dispatch [:runbooks/set-active-runbook template repository-from-query]}]]})
+       {}))))
+
 ;; Connection Events
 (rf/reg-event-fx
  :runbooks/set-selected-connection

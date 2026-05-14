@@ -1,0 +1,19 @@
+.dropdown {
+  padding: var(--mantine-spacing-xs);
+}
+
+.item {
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.itemDanger {
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-red-9);
+}
+
+.itemDanger:hover {
+  background-color: var(--mantine-color-red-0);
+  color: var(--mantine-color-red-9);
+}

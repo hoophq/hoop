@@ -14,6 +14,11 @@
                       :on-failure #(println "Not allowed to get Users")}]]]}))
 
 (rf/reg-event-fx
+ ::users->clear-loading
+ (fn [{:keys [db]} [_]]
+   {:db (assoc db :users->current-user {:loading false :data nil})}))
+
+(rf/reg-event-fx
  :users->get-user
  (fn
    [{:keys [db]} [_ _]]
@@ -22,11 +27,19 @@
     :fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/userinfo"
+                      :on-failure (fn [_]
+                                    (rf/dispatch [::users->clear-loading])
+                                    (when (.getItem js/localStorage "react-shell")
+                                      (set! js/window.location.href "/login")))
                       :on-success (fn [user]
                                     (rf/dispatch
                                      [:fetch
                                       {:method "GET"
                                        :uri "/serverinfo"
+                                       :on-failure (fn [_]
+                                                     (rf/dispatch [::users->clear-loading])
+                                                     (when (.getItem js/localStorage "react-shell")
+                                                       (set! js/window.location.href "/login")))
                                        :on-success #(rf/dispatch [::users->set-current-user user %])}]))}]]]}))
 
 (rf/reg-event-fx

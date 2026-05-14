@@ -65,8 +65,7 @@
        "Test Connection"])]])
 
 (defn loading-view []
-  [:> Flex {:justify "center" :align "center" :class "rounded-lg border bg-white h-full"}
-   [loaders/simple-loader]])
+  [loaders/page-loading-screen {:full-page false}])
 
 (defn main [connection-name]
   (r/with-let

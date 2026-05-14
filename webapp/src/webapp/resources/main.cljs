@@ -48,8 +48,7 @@
      "."]]])
 
 (defn- loading-list-view []
-  [:> Box {:class "flex items-center justify-center h-96"}
-   [loaders/simple-loader]])
+  [loaders/page-loading-screen {:full-page false}])
 
 (def resource-types
   [{:id "postgres" :value "postgres" :label "PostgreSQL"}
@@ -191,7 +190,7 @@
                                      (fn []
                                        (js/localStorage.setItem "selected-connection" connection)
                                        (rf/dispatch [:database-schema->clear-schema])
-                                       (rf/dispatch [:navigate :editor-plugin-panel]))}
+                                       (rf/dispatch [:navigate :editor-plugin-panel {:role (:name connection)}]))}
                "Open in Web Terminal"])
 
             (when (and (can-hoop-cli? connection)

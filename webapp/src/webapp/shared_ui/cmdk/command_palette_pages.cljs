@@ -75,7 +75,7 @@
       :keywords (filterv some? [repository runbook-name "runbook"])
       :onSelect #(do
                    (rf/dispatch [:runbooks/set-active-runbook template repository])
-                   (rf/dispatch [:navigate :runbooks])
+                   (rf/dispatch [:navigate :runbooks {:runbook runbook-name :repository repository}])
                    (rf/dispatch [:command-palette->close]))}
      [:div {:class "flex items-center gap-2"}
       [:> File {:size 16 :class "text-gray-9"}]
