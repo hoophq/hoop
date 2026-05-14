@@ -32,6 +32,8 @@
      ["/roles/" :connection-name "/configure"] :configure-role
      "/client" :editor-plugin
      "/runbooks" :runbooks
+     "/rulepacks" [["" :rulepacks]
+                   [["/" :rulepack-id] :rulepack-detail]]
      "/dashboard" :dashboard
      "/features" [["/access-control" :access-control]
                   ["/access-control/new" :access-control-new]

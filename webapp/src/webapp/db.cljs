@@ -118,4 +118,9 @@
    :workflows workflows-events/initial-state
    :provisioning {:resources {:status :idle :data []}
                   :jobs      []
-                  :sessions  []}})
+                  :sessions  []}
+   :rulepacks {:list {:status :idle :data []}
+               :active {:status :idle :data nil}
+               :selected-connections #{}
+               :applying? false}
+   :connections->list {:status :idle :data []}})

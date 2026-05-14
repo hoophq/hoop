@@ -96,6 +96,9 @@
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
    [webapp.features.ai-session-analyzer.views.rule-form :as ai-session-analyzer-rule-form]
+   [webapp.features.rulepacks.events]
+   [webapp.features.rulepacks.main :as rulepacks]
+   [webapp.features.rulepacks.subs]
    [webapp.features.attributes.events]
    [webapp.features.attributes.main :as attributes-main]
    [webapp.features.attributes.subs]
@@ -706,6 +709,21 @@
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [identity-roles/main {:identity-name identity-name}]]]]))
+
+(defmethod routes/panels :rulepacks-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [rulepacks/list-page]]])
+
+(defmethod routes/panels :rulepack-detail-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        rulepack-id (:rulepack-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [rulepacks/detail-page {:rulepack-id rulepack-id}]]]))
 
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])

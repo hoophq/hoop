@@ -21,9 +21,11 @@
      - :badge - optional badge component
      - :upgrade-plan-route - upgrade route (defaults to :upgrade-plan)
      - :on-activate - callback after activation (e.g. close mobile sidebar)"
-  [{:keys [uri icon label free-feature? admin-only? admin? current-route free-license? navigate action badge upgrade-plan-route on-activate]
+  [{:keys [uri icon label feature-flag free-feature? admin-only? admin? current-route free-license? navigate action badge upgrade-plan-route on-activate]
     :or {upgrade-plan-route :upgrade-plan}}]
   (let [blocked? (and free-license? (not free-feature?))
+        feature-flag? (not (nil? feature-flag))
+        feature-flag-blocked? (and feature-flag? (not @(rf/subscribe [:gateway->feature-flag-enabled? feature-flag])))
         active? (= uri current-route)
         base-class (str (styles/hover-side-menu-link uri current-route)
                         (:enabled styles/link-styles)
@@ -42,7 +44,7 @@
                   (when blocked?
                     [:div {:class styles/badge-upgrade}
                      "Upgrade"])]]]
-    (when-not (and admin-only? (not admin?))
+    (when-not (or (and admin-only? (not admin?)) feature-flag-blocked?)
       [:li
        (if action
          [:button {:on-click (fn []

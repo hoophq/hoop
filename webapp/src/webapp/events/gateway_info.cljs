@@ -79,3 +79,8 @@
  :gateway->sessions-download-disabled?
  (fn [db _]
    (get-in db [:gateway->info :data :disable_sessions_download] false)))
+
+(rf/reg-sub
+ :gateway->feature-flag-enabled?
+ (fn [db [_ flag-name]]
+   (boolean (get-in db [:gateway->info :data :feature_flags (keyword flag-name)] false))))
