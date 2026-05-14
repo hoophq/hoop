@@ -80,7 +80,9 @@ func printClaudeConfigureSuccess(settingsPath, connectionName, baseURL, token st
 	fmt.Printf("  %s%s\n", labelStyle.Render("Token"), valueStyle.Render(displayToken))
 	fmt.Println()
 	fmt.Println(styles.Fainted("  Claude Code requests are now routed through hoop."))
-	fmt.Println(styles.Fainted("  Run %s to start.", strings.TrimSpace(styles.Keyword(" claude "))))
+	fmt.Println(styles.Fainted("  Run %s%s",
+		strings.TrimSpace(styles.Keyword(" claude ")),
+		styles.Fainted(" to start.")))
 	fmt.Println()
 }
 
