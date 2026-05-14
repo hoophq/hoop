@@ -13,6 +13,10 @@
   inset: 0;
 }
 
+.rt-PopperContent {
+  z-index: 202;
+}
+
 .radix-themes {
   --cursor-button: pointer;
   --cursor-checkbox: default;
