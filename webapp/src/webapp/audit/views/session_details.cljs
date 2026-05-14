@@ -43,23 +43,25 @@
 
 
 (defn large-input-warning [{:keys [session]}]
-  [:> Box {:class "w-full p-regular rounded-lg bg-[--gray-2]"}
-   [:> Callout.Root {:variant "surface"
-                     :size "2"
-                     :class "flex items-center mb-small justify-between"}
-    [:> Callout.Icon
-     [:> Info {:size 16}]]
-    [:> Callout.Text {:class "w-full"}
-     [:> Flex {:gap "4"
-               :class "items-center justify-between"}
-      [:> Text
-       "Input script is too large to display"]
-      [:> Button {:size "2"
-                  :variant "soft"
-                  :class "flex-shrink-0"
-                  :on-click #(rf/dispatch [:audit->session-input-download (:id session)])}
-       "Download"
-       [:> Download {:size 16}]]]]]])
+  (let [download-disabled? @(rf/subscribe [:gateway->sessions-download-disabled?])]
+    [:> Box {:class "w-full p-regular rounded-lg bg-[--gray-2]"}
+     [:> Callout.Root {:variant "surface"
+                       :size "2"
+                       :class "flex items-center mb-small justify-between"}
+      [:> Callout.Icon
+       [:> Info {:size 16}]]
+      [:> Callout.Text {:class "w-full"}
+       [:> Flex {:gap "4"
+                 :class "items-center justify-between"}
+        [:> Text
+         "Input script is too large to display"]
+        (when-not download-disabled?
+          [:> Button {:size "2"
+                      :variant "soft"
+                      :class "flex-shrink-0"
+                      :on-click #(rf/dispatch [:audit->session-input-download (:id session)])}
+           "Download"
+           [:> Download {:size 16}]])]]]]))
 
 (defmulti ^:private session-event-stream identity)
 (defmethod ^:private session-event-stream "command-line"

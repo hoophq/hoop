@@ -74,3 +74,8 @@
  :gateway->clipboard-disabled?
  (fn [db _]
    (get-in db [:gateway->info :data :disable_clipboard_copy_cut] false)))
+
+(rf/reg-sub
+ :gateway->sessions-download-disabled?
+ (fn [db _]
+   (get-in db [:gateway->info :data :disable_sessions_download] false)))

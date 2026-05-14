@@ -93,26 +93,29 @@
    When the content exceeds the client-side threshold and a :session-id is
    available, downloads are delegated to the existing backend token flow."
   [{:keys [results tabular?] :as props}]
-  (when (and results (not (cs/blank? results)))
-    [:> DropdownMenu.Root
-     [:> DropdownMenu.Trigger
-      [:> IconButton {:variant "ghost"
-                      :color "gray"
-                      :size "1"
-                      :aria-label "Download options"}
-       [:> MoreHorizontal {:size 16}]]]
-     [:> DropdownMenu.Content {:align "end"}
-      [:> DropdownMenu.Item {:on-select #(handle-download props :txt)}
-       [:> Flex {:align "center" :gap "2"}
-        [:> FileText {:size 16}]
-        [:> Text {:size "2"} "Download as TXT"]]]
-      (when tabular?
-        [:<>
-         [:> DropdownMenu.Item {:on-select #(handle-download props :csv)}
-          [:> Flex {:align "center" :gap "2"}
-           [:> Sheet {:size 16}]
-           [:> Text {:size "2"} "Download as CSV"]]]
-         [:> DropdownMenu.Item {:on-select #(handle-download props :json)}
-          [:> Flex {:align "center" :gap "2"}
-           [:> Braces {:size 16}]
-           [:> Text {:size "2"} "Download as JSON"]]]])]]))
+  (let [download-disabled? @(rf/subscribe [:gateway->sessions-download-disabled?])]
+    (when (and results
+               (not (cs/blank? results))
+               (not download-disabled?))
+      [:> DropdownMenu.Root
+       [:> DropdownMenu.Trigger
+        [:> IconButton {:variant "ghost"
+                        :color "gray"
+                        :size "1"
+                        :aria-label "Download options"}
+         [:> MoreHorizontal {:size 16}]]]
+       [:> DropdownMenu.Content {:align "end"}
+        [:> DropdownMenu.Item {:on-select #(handle-download props :txt)}
+         [:> Flex {:align "center" :gap "2"}
+          [:> FileText {:size 16}]
+          [:> Text {:size "2"} "Download as TXT"]]]
+        (when tabular?
+          [:<>
+           [:> DropdownMenu.Item {:on-select #(handle-download props :csv)}
+            [:> Flex {:align "center" :gap "2"}
+             [:> Sheet {:size 16}]
+             [:> Text {:size "2"} "Download as CSV"]]]
+           [:> DropdownMenu.Item {:on-select #(handle-download props :json)}
+            [:> Flex {:align "center" :gap "2"}
+             [:> Braces {:size 16}]
+             [:> Text {:size "2"} "Download as JSON"]]]])]])))
