@@ -1,5 +1,6 @@
 (ns webapp.audit.views.results-container
   (:require
+   ["@radix-ui/themes" :refer [Box Flex]]
    ["papaparse" :as papa]
    [clojure.string :as string]
    [reagent.core :as r]
@@ -19,13 +20,13 @@
 (defn tab-container
   [{:keys [results-heads results-body log-view download-props]}
    {:keys [status results]}]
-  [:div {:class "flex flex-col h-96 min-h-96"}
-   [:div {:class "flex justify-between items-center gap-4"}
-    [:div {:class "flex-1 min-w-0"}
+  [:> Flex {:direction "column" :class "h-96 min-h-96"}
+   [:> Flex {:justify "between" :align "center" :gap "4"}
+    [:> Box {:class "flex-1 min-w-0"}
      [tabs/tabs {:on-change #(reset! log-view %)
                  :tabs ["Plain text" "Table"]}]]
     (when download-props
-      [:div {:class "mb-large flex-shrink-0"}
+      [:> Box {:class "mb-large flex-shrink-0"}
        [download-menu/main download-props]])]
    (case @log-view
      "Plain text" [logs/virtualized-container {:status status :logs results}]
@@ -47,9 +48,9 @@
 
 (defmethod results-view :not-sql
   [_ {:keys [results status classes download-props]}]
-  [:div {:class "flex flex-col h-full"}
+  [:> Flex {:direction "column" :class "h-full"}
    (when download-props
-     [:div {:class "flex justify-end mb-small"}
+     [:> Flex {:justify "end" :class "mb-small"}
       [download-menu/main download-props]])
    [logs/virtualized-container {:status status :logs results :classes classes}]])
 

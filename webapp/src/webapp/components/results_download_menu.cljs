@@ -97,7 +97,7 @@
     (when (and results
                (not (cs/blank? results))
                (not download-disabled?))
-      [:> DropdownMenu.Root
+      [:> DropdownMenu.Root {:modal false}
        [:> DropdownMenu.Trigger
         [:> IconButton {:variant "ghost"
                         :color "gray"
@@ -105,17 +105,20 @@
                         :aria-label "Download options"}
          [:> MoreHorizontal {:size 16}]]]
        [:> DropdownMenu.Content {:align "end"}
-        [:> DropdownMenu.Item {:on-select #(handle-download props :txt)}
+        [:> DropdownMenu.Item {:class "cursor-pointer hover:bg-gray-2"
+                               :on-select #(handle-download props :txt)}
          [:> Flex {:align "center" :gap "2"}
           [:> FileText {:size 16}]
           [:> Text {:size "2"} "Download as TXT"]]]
         (when tabular?
           [:<>
-           [:> DropdownMenu.Item {:on-select #(handle-download props :csv)}
+           [:> DropdownMenu.Item {:class "cursor-pointer hover:bg-gray-2"
+                                  :on-select #(handle-download props :csv)}
             [:> Flex {:align "center" :gap "2"}
              [:> Sheet {:size 16}]
              [:> Text {:size "2"} "Download as CSV"]]]
-           [:> DropdownMenu.Item {:on-select #(handle-download props :json)}
+           [:> DropdownMenu.Item {:class "cursor-pointer hover:bg-gray-2"
+                                  :on-select #(handle-download props :json)}
             [:> Flex {:align "center" :gap "2"}
              [:> Braces {:size 16}]
              [:> Text {:size "2"} "Download as JSON"]]]])]])))
