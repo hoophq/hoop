@@ -17,9 +17,9 @@
         params (second params)]
     params))
 
- (defn loading-view []
-   [:> Flex {:justify "center" :align "center"}
-    [loaders/simple-loader {:size "6" :border-size "4"}]])
+(defn loading-view []
+  [:> Flex {:justify "center" :align "center"}
+   [loaders/simple-loader {:size "6" :border-size "4"}]])
 
 (defn main []
   (let [runbooks-rules-list (rf/subscribe [:runbooks-rules/list])
@@ -28,24 +28,32 @@
         active-tab (r/atom "rules")
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))
-        promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))]
+        promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))
+        min-loading-done (r/atom false)]
 
     (rf/dispatch [:runbooks/list])
     (rf/dispatch [:runbooks-rules/get-all])
     (rf/dispatch [:runbooks-configurations/get])
+    (js/setTimeout #(reset! min-loading-done true) 1500)
 
     (fn []
-      (let [has-rules? (seq (or (:data @runbooks-rules-list) []))]
+      (let [has-rules? (seq (or (:data @runbooks-rules-list) []))
+            loading? (or (= :loading (:status @runbooks-rules-list))
+                         (not @min-loading-done))]
 
         (when @url-tab
           (reset! active-tab @url-tab)
           (reset! url-tab nil))
 
-        (if (not @promotion-seen?)
+        (cond
+          loading? [loaders/page-loading-screen {:full-page false}]
+
+          (not @promotion-seen?)
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/runbooks-promotion {:mode :empty-state
                                           :on-promotion-seen #(reset! promotion-seen? true)}]]
 
+          :else
           [:> Box {:class "flex flex-col bg-white px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
            [:> Flex {:direction "column" :gap "5" :class "h-full"}
 

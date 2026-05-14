@@ -363,9 +363,7 @@
                    _ (.addEventListener js/window "scroll" handle-scroll)]
         (let [rule-data (if (= :edit mode) @current-rule {})]
           (if (and (= :edit mode) (= :loading @status))
-            [:> Box {:class "bg-gray-1 h-full"}
-             [:> Flex {:direction "column" :justify "center" :align "center" :height "100%"}
-              [loaders/simple-loader]]]
+            [loaders/page-loading-screen {:full-page false}]
             ^{:key (str mode "-" (:name rule-data))}
             [rule-form mode rule-data scroll-pos]))
         (finally

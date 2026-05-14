@@ -4,7 +4,7 @@
 
 This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`.
 
- with five modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads and a standalone ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions.
+ with five modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
 
  `_libhoop/` is a symlink target; the build uses `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
 
@@ -114,19 +114,20 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - **IMPORTANT**: Migration numbering must to be sequential. Check existing migrations before creating new ones to avoid conflicts. If a migration with the same number already exists in `origin/main`, it migration needs to be renamed to a higher number during merge conflict resolution.
 
 ## Critical Dev Workflows
-| Task                       | Command                                                        | Notes                                                              |
-|----------------------------|----------------------------------------------------------------|--------------------------------------------------------------------|
-| Start Postgres             | `make run-dev-postgres`                                        | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG   |
-| Start Presidio (DLP)       | `make run-dev-presidio`                                        | Optional, for data masking dev                                     |
-| Run gateway + agent        | `make run-dev`                                                 | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
-| Build dev CLI              | `make build-dev-client`                                        | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly)                |
-| Build webapp into gateway  | `make build-dev-webapp`                                        | Then rerun `make run-dev`                                          |
-| Build Rust agent (dev)     | `make build-dev-rust`                                          | Cross-compiles for Linux from macOS                                |
-| Run tests                  | `make test-oss`                                                | Auto-links `libhoop` and generates WASM first                      |
-| Regenerate OpenAPI         | `make generate-openapi-docs`                                   | After any API route/schema change                                  |
-| Format Swagger annotations | `swag fmt`                                                     | Run in `gateway/`                                                  |
-| Create new SQL migration   | `migrate create -ext sql -dir rootfs/app/migrations -seq name` |                                                                    |
-| Publish release            | `make publish`                                                 | Requires GitHub CLI (`gh`)                                         |
+| Task | Command | Notes |
+|------|---------|-------|
+| Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
+| Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
+| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
+| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly) |
+| Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
+| Run React dev server | `cd webapp_v2 && npm run dev` | Vite on :5173; also start CLJS on :8280 |
+| Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
+| Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
+| Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
+| Format Swagger annotations | `swag fmt` | Run in `gateway/` |
+| Create new SQL migration | `migrate create -ext sql -dir rootfs/app/migrations -seq name` | |
+| Publish release | `make publish` | Requires GitHub CLI (`gh`) |
 
 ## External Integrations
 - **PostgreSQL**: Mandatory state store for gateway.
@@ -208,24 +209,27 @@ When merging `main` into a feature branch:
 4. For code conflicts, prefer keeping the feature branch's approach unless it's clearly superseded by main.
 
 ## Key File Reference
-| What                   | Path                                                                   |
-|------------------------|------------------------------------------------------------------------|
-| Go workspace           | `go.work`                                                              |
-| Gateway entrypoint     | `gateway/main.go`                                                      |
-| Agent entrypoint       | `agent/main.go`                                                        |
-| CLI entrypoint         | `client/hoop.go` → `client/cmd/root.go`                                |
-| Proto definition       | `common/proto/transport.proto`                                         |
-| Packet constants       | `common/proto/agent/`, `common/proto/client/`, `common/proto/gateway/` |
-| Agent packet dispatch  | `agent/controller/agent.go` → `processPacket()`                        |
-| App config             | `gateway/appconfig/appconfig.go`                                       |
-| Auth/IDP               | `gateway/idp/core.go`                                                  |
-| API route registration | `gateway/api/server.go` → `buildRoutes()`                              |
-| Role definitions       | `gateway/api/apiroutes/roles.go`                                       |
-| Plugin registration    | `gateway/main.go` (search `RegisteredPlugins`)                         |
-| SQL migrations         | `rootfs/app/migrations/`                                               |
-| Dev run script         | `scripts/dev/run.sh`                                                   |
-| Env sample             | `.env.sample`                                                          |
-| Webapp entry           | `webapp/src/webapp/core.cljs`                                          |
+| What | Path |
+|------|------|
+| Go workspace | `go.work` |
+| Gateway entrypoint | `gateway/main.go` |
+| Agent entrypoint | `agent/main.go` |
+| CLI entrypoint | `client/hoop.go` → `client/cmd/root.go` |
+| Proto definition | `common/proto/transport.proto` |
+| Packet constants | `common/proto/agent/`, `common/proto/client/`, `common/proto/gateway/` |
+| Agent packet dispatch | `agent/controller/agent.go` → `processPacket()` |
+| App config | `gateway/appconfig/appconfig.go` |
+| Auth/IDP | `gateway/idp/core.go` |
+| API route registration | `gateway/api/server.go` → `buildRoutes()` |
+| Role definitions | `gateway/api/apiroutes/roles.go` |
+| Plugin registration | `gateway/main.go` (search `RegisteredPlugins`) |
+| SQL migrations | `rootfs/app/migrations/` |
+| Dev run script | `scripts/dev/run.sh` |
+| Env sample | `.env.sample` |
+| Webapp entry (legacy CLJS) | `webapp/src/webapp/core.cljs` |
+| Webapp entry (React shell) | `webapp_v2/src/main.jsx` |
+| Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
+| Frontend coding rules | `webapp_v2/CLAUDE.md` |
 
 ## Coding
 
@@ -236,3 +240,36 @@ NO HACKS. The user is EXTREMELY concerted about code quality much more than imme
 - DO NOT COMMIT PARTIAL SOLUTIONS OR WORKAROUNDS.
 
 The author appreciates honestly and he WILL be glad and thankful if you respond a request with "I couldn't complete your request because the repository lacked support for X". He will be even happier if you go ahead and update the repo to provide necessary support in a well designed and robust way. But he will be VERY ANGRY if, while attempting to implement a feature, you introduce a workaround that will potentially break things latter.
+
+## Frontend Migration in Progress
+
+**The frontend is being migrated from ClojureScript (`webapp/`) to React (`webapp_v2/`).**
+
+`webapp_v2` is a React Shell that wraps the legacy ClojureScript app: it provides the global shell (Sidebar, CommandPalette) while ClojureScript continues to render page content. Pages are migrated one by one to React until the ClojureScript bundle can be removed entirely.
+
+### Before working on any frontend issue
+
+1. **Read `webapp_v2/CONTEXT_MIGRATION.md`** — explains the architecture, the shell/bridge contracts (`window.hoopSetRoute`, `localStorage.react-shell`, etc.), routing split, and migration status.
+2. **Read `webapp_v2/CLAUDE.md`** — contains all coding rules, styling guidelines (Mantine only, no Tailwind), store/service patterns, and gotchas that apply to every change in `webapp_v2/`.
+
+These two files are the authoritative source of truth for frontend work. Do not skip them.
+
+Additionally, read these before the specific task:
+- **Building UI or adding a component** → also read `webapp_v2/COMPONENTS.md` (catalog of existing components, hooks, stores, services — check before creating anything new).
+- **Migrating a CLJS page to React** → also read `webapp_v2/MIGRATION_CHECKLIST.md` (step-by-step process) and `webapp_v2/CLJS_PATTERNS.md` (CLJS → React pattern mapping).
+
+### Quick orientation
+
+- New React pages live in `webapp_v2/src/pages/`
+- Shared components live in `webapp_v2/src/components/`
+- Global state is managed by Zustand stores in `webapp_v2/src/stores/`
+- The reference implementation for a migrated page is `webapp_v2/src/pages/Agents/`
+- Stack: React 19, Vite, Mantine v8, Zustand, React Router v7, lucide-react
+
+### Dev servers
+
+| Service | Port | Command |
+|---------|------|---------|
+| Vite (React shell) | 5173 | `cd webapp_v2 && npm run dev` |
+| shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev` |
+| Gateway (backend) | 8009 | see `Makefile` |
