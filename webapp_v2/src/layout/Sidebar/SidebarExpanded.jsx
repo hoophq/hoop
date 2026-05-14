@@ -60,33 +60,37 @@ export function SidebarExpanded({ skipLink, navKey }) {
           </Stack>
         </Box>
 
-        <Box component="ul" role="list" aria-labelledby="sidebar-discover-heading" mt="xl" className={classes.navList}>
-          <SectionLabel label="Discover" id="sidebar-discover-heading" />
-          <Stack gap="xs" mb="sm">
-            {DISCOVER_ITEMS.map(item =>
-              <Box component="li" key={item.path} className={classes.listItem}>
-                <NavItem item={item} {...navItemProps} />
-              </Box>
-            )}
-          </Stack>
-        </Box>
+        {isAdmin && (
+          <Box component="ul" role="list" aria-labelledby="sidebar-discover-heading" mt="xl" className={classes.navList}>
+            <SectionLabel label="Discover" id="sidebar-discover-heading" />
+            <Stack gap="xs" mb="sm">
+              {DISCOVER_ITEMS.map(item =>
+                <Box component="li" key={item.path} className={classes.listItem}>
+                  <NavItem item={item} {...navItemProps} />
+                </Box>
+              )}
+            </Stack>
+          </Box>
+        )}
 
-        <Box
-          component="ul"
-          role="list"
-          aria-labelledby="sidebar-organization-heading"
-          mt="xl"
-          className={classes.navList}
-        >
-          <SectionLabel label="Organization" id="sidebar-organization-heading" />
-          <Stack gap="xs" mb="sm">
-            {ORGANIZATION_ITEMS.map(item =>
-              <Box component="li" key={item.path || item.label} className={classes.listItem}>
-                <NavItem item={item} {...navItemProps} />
-              </Box>
-            )}
-          </Stack>
-        </Box>
+        {isAdmin && (
+          <Box
+            component="ul"
+            role="list"
+            aria-labelledby="sidebar-organization-heading"
+            mt="xl"
+            className={classes.navList}
+          >
+            <SectionLabel label="Organization" id="sidebar-organization-heading" />
+            <Stack gap="xs" mb="sm">
+              {ORGANIZATION_ITEMS.map(item =>
+                <Box component="li" key={item.path || item.label} className={classes.listItem}>
+                  <NavItem item={item} {...navItemProps} />
+                </Box>
+              )}
+            </Stack>
+          </Box>
+        )}
 
         <Box mt="auto" pt="lg" pb="sm">
           <ProfileDisclosure user={user} onLogout={handleLogout} gatewayVersion={gatewayVersion} />

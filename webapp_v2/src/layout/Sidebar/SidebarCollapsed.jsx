@@ -39,40 +39,44 @@ export function SidebarCollapsed({ skipLink }) {
           ))}
         </Stack>
 
-        <Box mt="xxl" w="100%">
-          <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
-          <Stack gap={2} align="center" role="list" aria-label="Discover">
-            {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
-              <Box component="li" key={item.path} className={classes.listItem}>
-                <IconBtn {...item} />
-              </Box>
-            ))}
-          </Stack>
-        </Box>
-
-        <Box mt="xxl" w="100%">
-          <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
-          <Stack gap={2} align="center" role="list" aria-label="Organization">
-            {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) =>
-              item.children ? (
-                <Box component="li" key={item.label} className={classes.listItem}>
-                  <IconBtn
-                    icon={item.icon}
-                    label={item.label}
-                    onClick={() => {
-                      setPendingOpenSection(item.label);
-                      toggleSidebarCollapsed();
-                    }}
-                  />
-                </Box>
-              ) : (
+        {isAdmin && (
+          <Box mt="xxl" w="100%">
+            <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
+            <Stack gap={2} align="center" role="list" aria-label="Discover">
+              {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
                 <Box component="li" key={item.path} className={classes.listItem}>
                   <IconBtn {...item} />
                 </Box>
-              )
-            )}
-          </Stack>
-        </Box>
+              ))}
+            </Stack>
+          </Box>
+        )}
+
+        {isAdmin && (
+          <Box mt="xxl" w="100%">
+            <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
+            <Stack gap={2} align="center" role="list" aria-label="Organization">
+              {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) =>
+                item.children ? (
+                  <Box component="li" key={item.label} className={classes.listItem}>
+                    <IconBtn
+                      icon={item.icon}
+                      label={item.label}
+                      onClick={() => {
+                        setPendingOpenSection(item.label);
+                        toggleSidebarCollapsed();
+                      }}
+                    />
+                  </Box>
+                ) : (
+                  <Box component="li" key={item.path} className={classes.listItem}>
+                    <IconBtn {...item} />
+                  </Box>
+                )
+              )}
+            </Stack>
+          </Box>
+        )}
 
         <Box mt="auto" pb="sm">
           <Tooltip label={user?.name || user?.email || 'Profile'} position="right" withArrow>

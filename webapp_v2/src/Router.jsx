@@ -55,7 +55,7 @@ function Router() {
       <Route
         path="/agents"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <Agents />
@@ -67,7 +67,7 @@ function Router() {
       <Route
         path="/agents/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <AgentsCreate />
@@ -81,7 +81,7 @@ function Router() {
       <Route
         path="/settings/infrastructure"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsInfrastructure />
@@ -94,7 +94,7 @@ function Router() {
       <Route
         path="/settings/license"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsLicense />
@@ -108,7 +108,7 @@ function Router() {
       <Route
         path="/settings/api-keys"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsApiKeys />
@@ -120,7 +120,7 @@ function Router() {
       <Route
         path="/settings/api-keys/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsApiKeysForm />
@@ -132,7 +132,7 @@ function Router() {
       <Route
         path="/settings/api-keys/created"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsApiKeysCreated />
@@ -144,7 +144,7 @@ function Router() {
       <Route
         path="/settings/api-keys/:id/configure"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsApiKeysForm />
@@ -158,7 +158,7 @@ function Router() {
       <Route
         path="/settings/attributes"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsAttributes />
@@ -170,7 +170,7 @@ function Router() {
       <Route
         path="/settings/attributes/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsAttributesForm />
@@ -182,7 +182,7 @@ function Router() {
       <Route
         path="/settings/attributes/edit/:name"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsAttributesForm />
@@ -196,7 +196,7 @@ function Router() {
       <Route
         path="/settings/audit-logs"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsAuditLogs />
@@ -210,7 +210,7 @@ function Router() {
       <Route
         path="/organization/users"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <OrganizationUsers />
@@ -224,7 +224,7 @@ function Router() {
       <Route
         path="/settings/experimental"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <SettingsExperimental />
