@@ -2,6 +2,7 @@ package apirulepacks
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -33,16 +34,127 @@ func toResponse(rp *models.Rulepack) openapi.Rulepack {
 		tags = []string{}
 	}
 	return openapi.Rulepack{
-		ID:          rp.ID.String(),
-		OrgID:       rp.OrgID.String(),
-		DisplayName: rp.DisplayName,
-		Description: rp.Description,
-		Version:     rp.Version,
-		Tags:        tags,
-		IsManaged:   rp.IsManaged,
-		CreatedAt:   rp.CreatedAt,
-		UpdatedAt:   rp.UpdatedAt,
+		ID:               rp.ID.String(),
+		OrgID:            rp.OrgID.String(),
+		DisplayName:      rp.DisplayName,
+		Description:      rp.Description,
+		Version:          rp.Version,
+		Tags:             tags,
+		IsManaged:        rp.IsManaged,
+		DataMaskingRules: []openapi.DataMaskingRule{},
+		GuardRailRules:   []openapi.GuardRailRuleResponse{},
+		ConnectionNames:  []string{},
+		CreatedAt:        rp.CreatedAt,
+		UpdatedAt:        rp.UpdatedAt,
 	}
+}
+
+// buildRulepackResponse fetches each nested rule kind plus the list of connections
+// this rulepack has been applied to. Note: three queries per rulepack — callers
+// iterating over a list pay 3N round trips. Acceptable while typical orgs have few
+// rulepacks; revisit if rulepack counts grow.
+func buildRulepackResponse(rp *models.Rulepack) (openapi.Rulepack, error) {
+	resp := toResponse(rp)
+	rulepackID := rp.ID
+
+	dmRules, err := models.ListDataMaskingRules(rp.OrgID.String(), models.DataMaskingListOption{
+		RulepackID: &rulepackID,
+	})
+	if err != nil {
+		return resp, err
+	}
+	resp.DataMaskingRules = make([]openapi.DataMaskingRule, 0, len(dmRules))
+	for i := range dmRules {
+		resp.DataMaskingRules = append(resp.DataMaskingRules, dataMaskingRuleToOpenAPI(&dmRules[i]))
+	}
+
+	grRules, err := models.ListGuardRailRules(rp.OrgID.String(), models.GuardRailListOption{
+		RulepackID: &rulepackID,
+	})
+	if err != nil {
+		return resp, err
+	}
+	resp.GuardRailRules = make([]openapi.GuardRailRuleResponse, 0, len(grRules))
+	for _, gr := range grRules {
+		resp.GuardRailRules = append(resp.GuardRailRules, guardRailRuleToOpenAPI(gr))
+	}
+
+	var connectionNames []string
+	err = models.DB.Table("private.connections_attributes ca").
+		Joins("JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name").
+		Where("a.org_id = ? AND a.rulepack_id = ?", rp.OrgID, rp.ID).
+		Order("ca.connection_name ASC").
+		Pluck("ca.connection_name", &connectionNames).Error
+	if err != nil {
+		return resp, err
+	}
+	if connectionNames == nil {
+		connectionNames = []string{}
+	}
+	resp.ConnectionNames = connectionNames
+
+	return resp, nil
+}
+
+func dataMaskingRuleToOpenAPI(r *models.DataMaskingRule) openapi.DataMaskingRule {
+	supported := make([]openapi.SupportedEntityTypesEntry, len(r.SupportedEntityTypes))
+	for i, e := range r.SupportedEntityTypes {
+		supported[i] = openapi.SupportedEntityTypesEntry{Name: e.Name, EntityTypes: e.EntityTypes}
+	}
+	custom := make([]openapi.CustomEntityTypesEntry, len(r.CustomEntityTypes))
+	for i, e := range r.CustomEntityTypes {
+		custom[i] = openapi.CustomEntityTypesEntry{
+			Name:     e.Name,
+			Regex:    e.Regex,
+			DenyList: e.DenyList,
+			Score:    e.Score,
+		}
+	}
+	attrs := []string(r.Attributes)
+	if attrs == nil {
+		attrs = []string{}
+	}
+	return openapi.DataMaskingRule{
+		ID: r.ID,
+		DataMaskingRuleRequest: openapi.DataMaskingRuleRequest{
+			Name:                    r.Name,
+			Description:             r.Description,
+			Attributes:              attrs,
+			SupportedEntityTypes:    supported,
+			ScoreThreshold:          r.ScoreThreshold,
+			CustomEntityTypesEntrys: custom,
+			RulepackID:              RulepackIDFromNullString(r.RulepackID),
+			UpdatedAt:               r.UpdatedAt,
+		},
+	}
+}
+
+func guardRailRuleToOpenAPI(r *models.GuardRailRules) openapi.GuardRailRuleResponse {
+	attrs := r.Attributes
+	if attrs == nil {
+		attrs = []string{}
+	}
+	return openapi.GuardRailRuleResponse{
+		ID:          r.ID,
+		Name:        r.Name,
+		Description: r.Description,
+		Input:       r.Input,
+		Output:      r.Output,
+		Attributes:  attrs,
+		RulepackID:  RulepackIDFromNullString(r.RulepackID),
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+	}
+}
+
+// RulepackIDFromNullString converts a nullable rulepack_id stored as sql.NullString
+// into the *string form used by openapi response types.
+func RulepackIDFromNullString(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	v := s.String
+	return &v
 }
 
 // CreateRulepack
@@ -86,7 +198,6 @@ func Post(c *gin.Context) {
 	rules := services.RulepackRulesInput{
 		DataMaskingRules:       req.DataMaskingRules,
 		GuardRailRules:         req.GuardRailRules,
-		AISessionAnalyzerRules: req.AISessionAnalyzerRules,
 	}
 	rp, _, err = services.CreateRulepackWithRules(context.Background(), rp, rules)
 	switch {
@@ -95,7 +206,12 @@ func Post(c *gin.Context) {
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case err == nil:
-		c.JSON(http.StatusCreated, toResponse(rp))
+		resp, buildErr := buildRulepackResponse(rp)
+		if buildErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, buildErr, "failed building rulepack response: %v", buildErr)
+			return
+		}
+		c.JSON(http.StatusCreated, resp)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating rulepack: %v", err)
 	}
@@ -160,7 +276,6 @@ func Put(c *gin.Context) {
 	rules := services.RulepackRulesInput{
 		DataMaskingRules:       req.DataMaskingRules,
 		GuardRailRules:         req.GuardRailRules,
-		AISessionAnalyzerRules: req.AISessionAnalyzerRules,
 	}
 	updated, _, err := services.UpdateRulepackWithRules(context.Background(), existing, rules)
 	switch {
@@ -171,7 +286,12 @@ func Put(c *gin.Context) {
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case err == nil:
-		c.JSON(http.StatusOK, toResponse(updated))
+		resp, buildErr := buildRulepackResponse(updated)
+		if buildErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, buildErr, "failed building rulepack response: %v", buildErr)
+			return
+		}
+		c.JSON(http.StatusOK, resp)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating rulepack: %v", err)
 	}
@@ -274,7 +394,12 @@ func List(c *gin.Context) {
 
 	data := make([]openapi.Rulepack, 0, len(rps))
 	for _, rp := range rps {
-		data = append(data, toResponse(rp))
+		resp, buildErr := buildRulepackResponse(rp)
+		if buildErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, buildErr, "failed building rulepack response: %v", buildErr)
+			return
+		}
+		data = append(data, resp)
 	}
 
 	c.JSON(http.StatusOK, openapi.PaginatedResponse[openapi.Rulepack]{
@@ -320,8 +445,68 @@ func Get(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		c.JSON(http.StatusOK, toResponse(rp))
+		resp, buildErr := buildRulepackResponse(rp)
+		if buildErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, buildErr, "failed building rulepack response: %v", buildErr)
+			return
+		}
+		c.JSON(http.StatusOK, resp)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching rulepack: %v", err)
+	}
+}
+
+// ApplyRulepack
+//
+//	@Summary		Apply Rulepack to Connections
+//	@Description	Replace the set of connections this rulepack is applied to. After the call, the rulepack is attached to exactly the supplied connections (additions and removals as needed). Non-rulepack attributes on each affected connection are preserved. Pass an empty array to remove the rulepack from all connections. Returns 400 with a list of missing names if any connection in the request does not exist.
+//	@Tags			Rulepacks
+//	@Accept			json
+//	@Produce		json
+//	@Param			id				path	string							true	"Rulepack ID"
+//	@Param			request			body	openapi.RulepackApplyRequest	true	"Connections to apply the rulepack to"
+//	@Success		204
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/rulepacks/{id}/apply [post]
+func Apply(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	if flagDisabled(c, ctx) {
+		return
+	}
+
+	orgID, err := uuid.Parse(ctx.GetOrgID())
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
+		return
+	}
+
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid rulepack id"})
+		return
+	}
+
+	var req openapi.RulepackApplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	err = services.ApplyRulepackToConnections(context.Background(), orgID, id, req.ConnectionNames)
+	var notFound *services.ConnectionsNotFoundError
+	switch {
+	case errors.As(err, &notFound):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message":          notFound.Error(),
+			"missing_names":    notFound.Names,
+		})
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "rulepack not found"})
+	case errors.Is(err, services.ErrRulepackHasNoAttribute):
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "%v", err)
+	case err == nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed applying rulepack: %v", err)
 	}
 }

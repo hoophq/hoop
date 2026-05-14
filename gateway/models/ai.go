@@ -107,6 +107,9 @@ func DeleteAIProvider(orgID uuid.UUID, feature AIProviderFeature) error {
 
 type AISessionAnalyzerListOption struct {
 	IncludeAllRulepackOwned bool
+	// RulepackID, when non-nil, restricts the result set to rules whose rulepack_id
+	// matches. Setting this implicitly includes rulepack-owned rules.
+	RulepackID *uuid.UUID
 }
 
 func ListAISessionAnalyzerRules(orgID uuid.UUID, connectionNames []string, page, pageSize int, opts ...AISessionAnalyzerListOption) ([]*AISessionAnalyzerRules, int64, error) {
@@ -122,7 +125,10 @@ func ListAISessionAnalyzerRules(orgID uuid.UUID, connectionNames []string, page,
 	if len(connectionNames) > 0 {
 		query = query.Where("connection_names && ?", pq.StringArray(connectionNames))
 	}
-	if !opt.IncludeAllRulepackOwned {
+	switch {
+	case opt.RulepackID != nil:
+		query = query.Where("rulepack_id = ?", *opt.RulepackID)
+	case !opt.IncludeAllRulepackOwned:
 		query = query.Where("rulepack_id IS NULL")
 	}
 

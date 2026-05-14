@@ -6503,6 +6503,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/rulepacks/{id}/apply": {
+            "post": {
+                "description": "Replace the set of connections this rulepack is applied to. After the call, the rulepack is attached to exactly the supplied connections (additions and removals as needed). Non-rulepack attributes on each affected connection are preserved. Pass an empty array to remove the rulepack from all connections. Returns 400 with a list of missing names if any connection in the request does not exist.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Apply Rulepack to Connections",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rulepack ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Connections to apply the rulepack to",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RulepackApplyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/runbooks": {
             "get": {
                 "description": "List all Runbooks",
@@ -14087,11 +14143,25 @@ const docTemplate = `{
         "openapi.Rulepack": {
             "type": "object",
             "properties": {
+                "connection_names": {
+                    "description": "Names of connections this rulepack has been applied to. Populated from the\nrulepack attribute's connection junctions; empty when no connections are tagged.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "data_masking_rules": {
+                    "description": "Data masking rules attached to this rulepack",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DataMaskingRule"
+                    }
                 },
                 "description": {
                     "description": "Optional description",
@@ -14102,6 +14172,13 @@ const docTemplate = `{
                     "description": "Human-readable display name for the rulepack",
                     "type": "string",
                     "example": "PCI Database Access"
+                },
+                "guardrail_rules": {
+                    "description": "Guardrail rules attached to this rulepack",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.GuardRailRuleResponse"
+                    }
                 },
                 "id": {
                     "description": "The resource identifier",
@@ -14147,19 +14224,31 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.RulepackApplyRequest": {
+            "type": "object",
+            "required": [
+                "connection_names"
+            ],
+            "properties": {
+                "connection_names": {
+                    "description": "Names of connections this rulepack should be applied to. Replace-all semantics:\nafter the call, the rulepack is attached to exactly these connections.\nConnections previously tagged with this rulepack that are not in the list lose\nthe tag; non-rulepack attributes on every affected connection are preserved.\nPass an empty array to remove the rulepack from all connections.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                }
+            }
+        },
         "openapi.RulepackRequest": {
             "type": "object",
             "required": [
                 "display_name"
             ],
             "properties": {
-                "ai_session_analyzer_rules": {
-                    "description": "AI session analyzer rules to create as part of this rulepack. On PUT, the supplied\nlist fully replaces any existing rulepack-owned AI analyzer rules.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.AISessionAnalyzerRuleRequest"
-                    }
-                },
                 "data_masking_rules": {
                     "description": "Data masking rules to create as part of this rulepack. On PUT, the supplied list\nfully replaces any existing rulepack-owned data masking rules.",
                     "type": "array",

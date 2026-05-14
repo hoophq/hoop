@@ -1201,6 +1201,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apirulepacks.Delete)
+	r.POST("/rulepacks/:id/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Apply)
 
 	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
 	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)

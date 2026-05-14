@@ -2913,9 +2913,15 @@ type RulepackRequest struct {
 	// Guardrail rules to create as part of this rulepack. On PUT, the supplied list
 	// fully replaces any existing rulepack-owned guardrail rules.
 	GuardRailRules []GuardRailRuleRequest `json:"guardrail_rules,omitempty"`
-	// AI session analyzer rules to create as part of this rulepack. On PUT, the supplied
-	// list fully replaces any existing rulepack-owned AI analyzer rules.
-	AISessionAnalyzerRules []AISessionAnalyzerRuleRequest `json:"ai_session_analyzer_rules,omitempty"`
+}
+
+type RulepackApplyRequest struct {
+	// Names of connections this rulepack should be applied to. Replace-all semantics:
+	// after the call, the rulepack is attached to exactly these connections.
+	// Connections previously tagged with this rulepack that are not in the list lose
+	// the tag; non-rulepack attributes on every affected connection are preserved.
+	// Pass an empty array to remove the rulepack from all connections.
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 }
 
 type Rulepack struct {
@@ -2933,6 +2939,13 @@ type Rulepack struct {
 	Tags []string `json:"tags" example:"pci,production"`
 	// True for Hoop-managed rulepacks (read-only for users)
 	IsManaged bool `json:"is_managed" readonly:"true" example:"false"`
+	// Data masking rules attached to this rulepack
+	DataMaskingRules []DataMaskingRule `json:"data_masking_rules"`
+	// Guardrail rules attached to this rulepack
+	GuardRailRules []GuardRailRuleResponse `json:"guardrail_rules"`
+	// Names of connections this rulepack has been applied to. Populated from the
+	// rulepack attribute's connection junctions; empty when no connections are tagged.
+	ConnectionNames []string `json:"connection_names"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was last updated

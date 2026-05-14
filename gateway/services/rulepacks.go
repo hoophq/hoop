@@ -11,7 +11,6 @@ import (
 	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -59,7 +58,19 @@ var (
 	ErrRulepackNotFound           = errors.New("rulepack_id does not reference an existing rulepack")
 	ErrRulepackIsManaged          = errors.New("managed rulepacks cannot be referenced by user-managed features")
 	ErrRulepackInvalidDisplayName = errors.New("rulepack display_name cannot be converted to a valid attribute name (empty or contains only unsupported characters)")
+	ErrRulepackHasNoAttribute     = errors.New("rulepack has no associated attribute; cannot apply to connections")
 )
+
+// ConnectionsNotFoundError is returned when one or more connection names supplied
+// to an apply operation do not exist in the organization. Callers can inspect the
+// Names slice to surface the missing names back to the user.
+type ConnectionsNotFoundError struct {
+	Names []string
+}
+
+func (e *ConnectionsNotFoundError) Error() string {
+	return "connections not found: " + strings.Join(e.Names, ", ")
+}
 
 const rulepackAttributeNameMaxLen = 255 - len(RulepackAttributeNamePrefix)
 
@@ -130,20 +141,18 @@ func AssertRulepackUsable(orgID string, rulepackIDStr *string) error {
 // On update, each slice fully replaces the existing rulepack-owned rules of that kind
 // (an empty slice deletes all of them).
 type RulepackRulesInput struct {
-	DataMaskingRules       []openapi.DataMaskingRuleRequest
-	GuardRailRules         []openapi.GuardRailRuleRequest
-	AISessionAnalyzerRules []openapi.AISessionAnalyzerRuleRequest
+	DataMaskingRules []openapi.DataMaskingRuleRequest
+	GuardRailRules   []openapi.GuardRailRuleRequest
 }
 
 // CreateRulepackWithRules creates a rulepack, one rulepack-owned attribute, and any
-// nested rules (data masking, guardrails, AI session analyzer) in a single transaction.
+// nested rules (data masking, guardrails) in a single transaction.
 //
 // The attribute name is derived from the rulepack's display_name (lowercased,
 // slug-cased, prepended with `rulepack_`); the attribute description is copied from
-// the rulepack's description. Every nested data masking and guardrail rule is also
-// tagged with the rulepack attribute via its respective junction so that the rule
-// matches connections sharing that attribute at session time. AI session analyzer
-// rules have no attribute junction; they are linked only via rulepack_id.
+// the rulepack's description. Every nested rule is also tagged with the rulepack
+// attribute via its respective junction so that the rule matches connections sharing
+// that attribute at session time.
 //
 // Returns ErrRulepackInvalidDisplayName when the display_name slugs to empty.
 // Returns models.ErrAlreadyExists when the rulepack's display_name, the derived
@@ -189,8 +198,7 @@ func CreateRulepackWithRules(
 
 // UpdateRulepackWithRules updates a rulepack, syncs the derived attribute when
 // display_name changes, and FULLY REPLACES the rulepack's nested rules (data masking,
-// guardrails, AI session analyzer) with the supplied lists. All writes occur in a
-// single transaction.
+// guardrails) with the supplied lists. All writes occur in a single transaction.
 //
 // Pass empty slices to delete all nested rules of that type. Pass the existing list
 // unchanged to leave them intact at the row level (existing rows are deleted then
@@ -254,9 +262,6 @@ func UpdateRulepackWithRules(
 			return err
 		}
 		if err := models.DeleteGuardRailRulesByRulepackIDTx(tx, rp.OrgID, rp.ID); err != nil {
-			return err
-		}
-		if err := models.DeleteAISessionAnalyzerRulesByRulepackIDTx(tx, rp.OrgID, rp.ID); err != nil {
 			return err
 		}
 
@@ -333,24 +338,6 @@ func insertRulepackRulesTx(
 		}
 	}
 
-	for _, req := range rules.AISessionAnalyzerRules {
-		aiRule := &models.AISessionAnalyzerRules{
-			OrgID:           rp.OrgID,
-			Name:            req.Name,
-			Description:     req.Description,
-			ConnectionNames: pq.StringArray(req.ConnectionNames),
-			RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
-				LowRiskAction:    models.RiskEvaluationAction(req.RiskEvaluation.LowRiskAction),
-				MediumRiskAction: models.RiskEvaluationAction(req.RiskEvaluation.MediumRiskAction),
-				HighRiskAction:   models.RiskEvaluationAction(req.RiskEvaluation.HighRiskAction),
-			},
-			RulepackID: &rulepackUUID,
-		}
-		if err := models.CreateAISessionAnalyzerRuleTx(tx, aiRule); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -376,4 +363,85 @@ func toModelCustomEntityTypes(in []openapi.CustomEntityTypesEntry) []models.Cust
 		}
 	}
 	return out
+}
+
+// ApplyRulepackToConnections sets the rulepack's auto-derived attribute on exactly
+// the connections in connectionNames. Connections that previously had the rulepack
+// attribute but are not in the list lose it; connections in the list that did not
+// have it gain it. Other (non-rulepack) attributes on these connections are
+// untouched. Pass an empty list to remove the rulepack from every connection.
+//
+// The operation is idempotent — re-running with the same list produces the same
+// end state.
+//
+// Returns models.ErrNotFound when the rulepack does not exist. Returns a
+// *ConnectionsNotFoundError when one or more connection names do not exist in the
+// org (no junction rows are written; nothing partially applies). Returns
+// ErrRulepackHasNoAttribute as a defensive signal if the rulepack somehow has no
+// associated attribute (should not occur for rulepacks created via the rulepack
+// API).
+func ApplyRulepackToConnections(
+	ctx context.Context,
+	orgID, rulepackID uuid.UUID,
+	connectionNames []string,
+) error {
+	return models.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := models.GetRulepack(tx, orgID, rulepackID); err != nil {
+			return err
+		}
+
+		var attrName string
+		err := tx.Model(&models.Attribute{}).
+			Select("name").
+			Where("org_id = ? AND rulepack_id = ?", orgID, rulepackID).
+			Limit(1).
+			Scan(&attrName).Error
+		if err != nil {
+			return err
+		}
+		if attrName == "" {
+			return ErrRulepackHasNoAttribute
+		}
+
+		if len(connectionNames) > 0 {
+			var existing []string
+			if err := tx.Table("private.connections").
+				Where("org_id = ? AND name IN ?", orgID, connectionNames).
+				Pluck("name", &existing).Error; err != nil {
+				return err
+			}
+			if len(existing) < len(connectionNames) {
+				present := make(map[string]struct{}, len(existing))
+				for _, n := range existing {
+					present[n] = struct{}{}
+				}
+				missing := make([]string, 0, len(connectionNames)-len(existing))
+				for _, n := range connectionNames {
+					if _, ok := present[n]; !ok {
+						missing = append(missing, n)
+					}
+				}
+				return &ConnectionsNotFoundError{Names: missing}
+			}
+		}
+
+		if err := tx.Where("org_id = ? AND attribute_name = ?", orgID, attrName).
+			Delete(&models.ConnectionAttribute{}).Error; err != nil {
+			return err
+		}
+
+		if len(connectionNames) == 0 {
+			return nil
+		}
+
+		rows := make([]models.ConnectionAttribute, 0, len(connectionNames))
+		for _, name := range connectionNames {
+			rows = append(rows, models.ConnectionAttribute{
+				OrgID:          orgID,
+				AttributeName:  attrName,
+				ConnectionName: name,
+			})
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	})
 }

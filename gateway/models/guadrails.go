@@ -37,6 +37,9 @@ type GuardRailConnection struct {
 
 type GuardRailListOption struct {
 	IncludeAllRulepackOwned bool
+	// RulepackID, when non-nil, restricts the result set to rules whose rulepack_id
+	// matches. Setting this implicitly includes rulepack-owned rules.
+	RulepackID *uuid.UUID
 }
 
 func ListGuardRailRules(orgID string, opts ...GuardRailListOption) ([]*GuardRailRules, error) {
@@ -48,7 +51,10 @@ func ListGuardRailRules(orgID string, opts ...GuardRailListOption) ([]*GuardRail
 	var rules []*GuardRailRules
 	query := DB.Table(tableGuardRails).Where("org_id = ?", orgID)
 
-	if !opt.IncludeAllRulepackOwned {
+	switch {
+	case opt.RulepackID != nil:
+		query = query.Where("rulepack_id = ?", *opt.RulepackID)
+	case !opt.IncludeAllRulepackOwned:
 		query = query.Where("rulepack_id IS NULL")
 	}
 

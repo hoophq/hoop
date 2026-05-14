@@ -150,6 +150,10 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 
 type DataMaskingListOption struct {
 	IncludeAllRulepackOwned bool
+	// RulepackID, when non-nil, restricts the result set to rules whose rulepack_id
+	// matches. Setting this implicitly includes rulepack-owned rules even when
+	// IncludeAllRulepackOwned is false.
+	RulepackID *uuid.UUID
 }
 
 func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMaskingRule, error) {
@@ -158,9 +162,14 @@ func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMa
 		opt = opts[0]
 	}
 
-	hideClause := ""
-	if !opt.IncludeAllRulepackOwned {
-		hideClause = ` AND r.rulepack_id IS NULL`
+	extraClause := ""
+	args := []any{orgID, orgID, orgID}
+	switch {
+	case opt.RulepackID != nil:
+		extraClause = ` AND r.rulepack_id = ?`
+		args = append(args, *opt.RulepackID)
+	case !opt.IncludeAllRulepackOwned:
+		extraClause = ` AND r.rulepack_id IS NULL`
 	}
 
 	var rules []DataMaskingRule
@@ -178,7 +187,7 @@ func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMa
 		r.updated_at
 	FROM private.datamasking_rules r
 	WHERE org_id = ?
-	`+hideClause, orgID, orgID, orgID).
+	`+extraClause, args...).
 		Find(&rules).
 		Error
 }
