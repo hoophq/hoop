@@ -66,13 +66,11 @@ func ResourceHealthCheck(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusUnprocessableEntity, err, "invalid resource credentials: %v", err)
 		return
 	}
-	resp, err := transportsystem.BareExec(
-		map[string]string{},
-		pbsystem.UserInfo{},
+	resp := transportsystem.BareExec(
 		&pbsystem.BareExecRequest{
 			SID:     uuid.NewString(),
 			AgentID: resource.AgentID.String,
-			Script:  resourceHealthCheckTest(resource.SubType.String),
+			Script:  resourceHealthCheckTestScript(resource.SubType.String),
 			Command: resourceManagerCommand(resource.SubType.String),
 			EnvVars: map[string]string{
 				"HOST":       creds.Host,
@@ -82,22 +80,10 @@ func ResourceHealthCheck(c *gin.Context) {
 			},
 		},
 	)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusBadRequest, err, "failed testing connectivity: %v", err)
-		return
-	}
 
-	if resp.Status == pbsystem.StatusFailedType {
-		c.JSON(http.StatusUnprocessableEntity, openapi.ResourceConnectResponse{
-			Output: resp.Output,
-			Status: "error",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, openapi.ResourceConnectResponse{
+	c.JSON(http.StatusOK, openapi.ResourcHealthCheckResponse{
 		Output: resp.Output,
-		Status: "ok",
+		Status: resp.Status,
 	})
 }
 
@@ -516,9 +502,9 @@ func resourceManagerCommand(subType string) []string {
 	return nil
 }
 
-// resourceHealthCheckTest returns a minimal connectivity-test script for the
+// resourceHealthCheckTestScript returns a minimal connectivity-test script for the
 // given database subtype — just enough to verify the connection is reachable.
-func resourceHealthCheckTest(subType string) string {
+func resourceHealthCheckTestScript(subType string) string {
 	switch subType {
 	case "postgres":
 		// TODO(san): check for permissions as well, e.g. by attempting to create a temporary table or role.

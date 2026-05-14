@@ -12,6 +12,7 @@ const (
 
 	StatusRunningType   string = "running"
 	StatusCompletedType string = "completed"
+	StatusSuccessType   string = "success"
 	StatusFailedType    string = "failed"
 
 	MessageCompleted            string = "All user roles have been successfully provisioned"

@@ -2,6 +2,7 @@ package transportsystem
 
 import (
 	"context"
+	"time"
 
 	"github.com/hoophq/hoop/common/proto"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
@@ -9,6 +10,8 @@ import (
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"gopkg.in/yaml.v3"
 )
+
+var pgManagerTimeout = time.Second * 120
 
 func RunPgManagerPlan(agentID string, req *pbsystem.PgManagerPlanRequest) *pbsystem.PgManagerPlanResponse {
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
@@ -47,7 +50,7 @@ func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManager
 		return pbsystem.NewPgManagerPlanError(req.SID, "failed sending request to agent: %v", err)
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), resourceManagerTimeout)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), pgManagerTimeout)
 	defer cancelFn()
 	select {
 	case payload := <-dataCh:
@@ -59,7 +62,7 @@ func dispatchPgManagerPlan(st *streamclient.AgentStream, req *pbsystem.PgManager
 	case <-timeoutCtx.Done():
 		return pbsystem.NewPgManagerPlanError(req.SID,
 			"timeout (%v) waiting for response from agent %v/%v",
-			resourceManagerTimeout, st.AgentName(), st.AgentVersion())
+			pgManagerTimeout, st.AgentName(), st.AgentVersion())
 	}
 }
 
@@ -84,7 +87,7 @@ func dispatchPgManagerApply(st *streamclient.AgentStream, req *pbsystem.PgManage
 		return pbsystem.NewPgManagerApplyError(req.SID, "failed sending request to agent: %v", err)
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), resourceManagerTimeout)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), pgManagerTimeout)
 	defer cancelFn()
 	select {
 	case payload := <-dataCh:
@@ -96,6 +99,6 @@ func dispatchPgManagerApply(st *streamclient.AgentStream, req *pbsystem.PgManage
 	case <-timeoutCtx.Done():
 		return pbsystem.NewPgManagerApplyError(req.SID,
 			"timeout (%v) waiting for response from agent %v/%v",
-			resourceManagerTimeout, st.AgentName(), st.AgentVersion())
+			pgManagerTimeout, st.AgentName(), st.AgentVersion())
 	}
 }

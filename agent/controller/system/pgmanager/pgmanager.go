@@ -115,18 +115,20 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 	case typeManaged:
 		resp, err = planManaged(migState.Config, connParts)
 	default:
-		sendApplyResponse(client, newApplyError(sid, "invalid plan type: %q", migState.Config.Type))
+		sendApplyResponse(client, newApplyError(sid, "Invalid plan type: %q", migState.Config.Type))
 		return
 	}
 
 	if err != nil {
-		sendApplyResponse(client, newApplyError(sid, "failed performing plan-apply: %v", err))
+		sendApplyResponse(client, newApplyError(sid, "Failed performing plan-apply: %v", err))
 		return
 	}
 
 	if resp.SQLPlanChecksum != migState.SQLPlanChecksum {
-		sendApplyResponse(client, newApplyError(sid, "sql plan mismatch, got=%v, wanted=%v",
-			resp.SQLPlanChecksum, migState.SQLPlanChecksum))
+		sendApplyResponse(client, newApplyError(sid,
+			"The current database state does not match the desired migration state. "+
+				"Please re-execute the plan to generate a fresh execution.",
+		))
 		return
 	}
 
@@ -135,7 +137,7 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 	if (migState.Config.RotatePassword || !migState.CurrentState.Exists) && resp.Status == "out-of-sync" {
 		rolePwd, err = randomPassword()
 		if err != nil {
-			sendApplyResponse(client, newApplyError(sid, "failed generating password: %v", err))
+			sendApplyResponse(client, newApplyError(sid, "Failed generating random password: %v", err))
 			return
 		}
 		sqlPlan = strings.ReplaceAll(sqlPlan, "ROLE_PASSWORD_PLACEHOLDER", rolePwd)
@@ -146,7 +148,7 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 	if resp.Status == "out-of-sync" {
 		cmdOutput, err := runPsql(connParts.connURI(connParts.DefaultDB), sqlPlan)
 		if err != nil {
-			sendApplyResponse(client, newApplyError(sid, "failed running apply with psql: %v", err))
+			sendApplyResponse(client, newApplyError(sid, "Failed running apply with psql: %v", err))
 			return
 		}
 		migState.CommandOutput = string(cmdOutput)
