@@ -25,13 +25,6 @@
    [webapp.sessions.components.session-details :as session-details-component]
    [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
-(def ^:private export-dictionary
-  {:postgres "csv"
-   :mysql "csv"
-   :database "csv"
-   :custom "txt"
-   :command-line "txt"})
-
 ;; TODO: Change it for send DB in the payload and not the response
 (defn- sanitize-response [response connection-type]
   (cond
@@ -238,11 +231,7 @@
            [session-header/main {:session session
                                  :user user
                                  :on-close #(rf/dispatch [:modal->close])
-                                 :clipboard-disabled? @clipboard-disabled?
-                                 :has-large-payload? has-large-payload?
-                                 :download-extension (get export-dictionary
-                                                          (keyword (:type session))
-                                                          "txt")}]
+                                 :clipboard-disabled? @clipboard-disabled?}]
 
            [:> Box {:class (str "space-y-radix-5 "
                                 (when is-dedicated-page? "pb-radix-6"))}
@@ -349,7 +338,10 @@
                             {:results        results
                              :results-status results-status
                              :fixed-height?  true
-                             :results-id     (:id session)}]])))
+                             :results-id     (:id session)
+                             :session-id     (:id session)
+                             :connection-name (:connection session)
+                             :has-large-payload? has-large-payload?}]])))
 
                     ;; connect: session-event-stream unchanged (video player, raw, etc.)
                     [session-event-stream (:type session) session])])])

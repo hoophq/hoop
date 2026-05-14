@@ -1,7 +1,7 @@
 (ns webapp.sessions.components.session-header
   (:require
    ["@radix-ui/themes" :refer [Box Button IconButton Flex Heading]]
-   ["lucide-react" :refer [Link2 Square RotateCw X Download Workflow]]
+   ["lucide-react" :refer [Link2 Square RotateCw X Workflow]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -40,7 +40,7 @@
   (reset! killing-status :loading)
   (rf/dispatch [:audit->kill-session session killing-status]))
 
-(defn main [{:keys [session user on-close clipboard-disabled? has-large-payload? download-extension]}]
+(defn main [{:keys [session user on-close clipboard-disabled?]}]
   (let [admin? (:admin? user)
         current-user-id (:id user)
         session-user-id (:user_id session)
@@ -112,18 +112,6 @@
            :color "gray"}
           [:> RotateCw {:size 20 :class "text-gray-11"}]
           "Re-run"])
-
-       ;; Download button (shown only for large payloads)
-       (when has-large-payload?
-         [:> Button
-          {:on-click #(rf/dispatch [:audit->session-file-generate
-                                    (:id session)
-                                    download-extension])
-           :variant "soft"
-           :size "2"
-           :color "gray"}
-          [:> Download {:size 20 :class "text-gray-11"}]
-          "Download"])
 
        ;; Share button (copy link)
        (when-not clipboard-disabled?
