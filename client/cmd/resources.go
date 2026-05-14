@@ -52,6 +52,11 @@ var resourcesRolesCreateFlags struct {
 	quietOutput bool
 }
 
+var resourcesHealthFlags struct {
+	jsonOutput  bool
+	quietOutput bool
+}
+
 // ---- commands ----
 
 var resourcesCmd = &cobra.Command{
@@ -129,6 +134,18 @@ var resourcesRolesCreateCmd = &cobra.Command{
 	},
 }
 
+var resourcesHealthCmd = &cobra.Command{
+	Use:   "health <name>",
+	Short: "Check the health of a resource",
+	Long:  "Run a connectivity test against a resource and report the status.",
+	Args:  cobra.ExactArgs(1),
+	Example: `  hoop resources health my-db
+  hoop resources health my-db --json`,
+	Run: func(cmd *cobra.Command, args []string) {
+		runResourcesHealth(args[0])
+	},
+}
+
 func init() {
 	// resources list
 	fl := resourcesListCmd.Flags()
@@ -167,11 +184,17 @@ func init() {
 	_ = resourcesRolesCreateCmd.MarkFlagRequired("type")
 	_ = resourcesRolesCreateCmd.MarkFlagRequired("agent-id")
 
+	// resources health
+	fh := resourcesHealthCmd.Flags()
+	fh.BoolVar(&resourcesHealthFlags.jsonOutput, "json", false, "Output as formatted JSON")
+	fh.BoolVar(&resourcesHealthFlags.quietOutput, "quiet", false, "Output as compact JSON (for scripting)")
+
 	resourcesRolesCmd.AddCommand(resourcesRolesListCmd)
 	resourcesRolesCmd.AddCommand(resourcesRolesCreateCmd)
 	resourcesCmd.AddCommand(resourcesListCmd)
 	resourcesCmd.AddCommand(resourcesCreateCmd)
 	resourcesCmd.AddCommand(resourcesRolesCmd)
+	resourcesCmd.AddCommand(resourcesHealthCmd)
 	rootCmd.AddCommand(resourcesCmd)
 }
 
@@ -450,6 +473,55 @@ func runResourcesRolesCreate(name string) {
 
 	out, _ := json.MarshalIndent(role, "", "  ")
 	fmt.Println(string(out))
+}
+
+// ---- resources health ----
+
+func runResourcesHealth(name string) {
+	config := clientconfig.GetClientConfigOrDie()
+
+	req, err := http.NewRequest("GET", config.ApiURL+"/api/resources/"+name+"/health", nil)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed to create request: %v", err)
+	}
+	setSessionAuthHeaders(req, config)
+
+	httpResp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed to check resource health: %v", err)
+	}
+	defer httpResp.Body.Close()
+
+	log.Debugf("resources health http response %v", httpResp.StatusCode)
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed to read response: %v", err)
+	}
+
+	if httpResp.StatusCode != 200 {
+		styles.PrintErrorAndExit("Failed to check resource health, status=%v, body=%v", httpResp.StatusCode, string(body))
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		styles.PrintErrorAndExit("Failed to decode response: %v", err)
+	}
+
+	if resourcesHealthFlags.quietOutput {
+		fmt.Println(string(body))
+		return
+	}
+	if resourcesHealthFlags.jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Printf("status: %v\n", toStr(result["status"]))
+	if output := toStr(result["output"]); output != "-" {
+		fmt.Printf("output:\n%v\n", output)
+	}
 }
 
 // ---- helpers ----

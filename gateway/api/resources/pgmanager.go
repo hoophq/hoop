@@ -37,6 +37,8 @@ var supportedPrivileges = map[string]string{
 
 const featureName string = "resource-provisioning-hub"
 
+const healthCheckBatchTimeout = 10 * time.Second
+
 // ResourceHealthCheck
 //
 //	@Summary		Tests connectivity for a resource
@@ -44,9 +46,9 @@ const featureName string = "resource-provisioning-hub"
 //	@Tags			Resources
 //	@Produces		json
 //	@Param			name		path		string	true	"The resource name"
-//	@Success		200			{object}	openapi.ResourceConnectResponse
+//	@Success		200			{object}	openapi.ResourcHealthCheckResponse
 //	@Failure		400,404,422	{object}	openapi.HTTPError
-//	@Router			/resources/{name}/health [post]
+//	@Router			/resources/{name}/health [get]
 func ResourceHealthCheck(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
@@ -61,12 +63,94 @@ func ResourceHealthCheck(c *gin.Context) {
 		return
 	}
 
-	creds, err := pgCredentialsFromResource(resource.Envs)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusUnprocessableEntity, err, "invalid resource credentials: %v", err)
+	result := processSingleHealthCheck(resource)
+	c.JSON(http.StatusOK, openapi.ResourcHealthCheckResponse{
+		Output: result.Output,
+		Status: result.Status,
+	})
+}
+
+// ResourceHealthCheckBatch
+//
+//	@Summary		Tests connectivity for multiple resources
+//	@Description	Performs concurrent connectivity tests for the given resources. Each execution has a 10-second timeout.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produces		json
+//	@Param			request	body		openapi.ResourceHealthCheckBatchRequest	true	"The request body"
+//	@Success		200		{object}	openapi.ResourceHealthCheckBatchResponse
+//	@Failure		400		{object}	openapi.HTTPError
+//	@Router			/resources/health [post]
+func ResourceHealthCheckBatch(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	var req openapi.ResourceHealthCheckBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	resp := transportsystem.BareExec(
+	names := req.Names
+
+	type indexedResult struct {
+		index int
+		res   openapi.ResourceHealthCheckResult
+	}
+
+	resultCh := make(chan indexedResult, len(names))
+	var wg sync.WaitGroup
+
+	for i, name := range names {
+		wg.Add(1)
+		go func(idx int, resourceName string) {
+			defer wg.Done()
+			resource, err := models.GetResourceByName(models.DB, ctx.OrgID, resourceName, ctx.IsAdmin())
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				resultCh <- indexedResult{index: idx, res: openapi.ResourceHealthCheckResult{
+					ResourceName: resourceName,
+					Status:       "failed",
+					Output:       fmt.Sprintf("failed retrieving resource: %v", err),
+				}}
+				return
+			}
+			if resource == nil {
+				resultCh <- indexedResult{index: idx, res: openapi.ResourceHealthCheckResult{
+					ResourceName: resourceName,
+					Status:       "failed",
+					Output:       "resource not found",
+				}}
+				return
+			}
+			res := processSingleHealthCheck(resource)
+			resultCh <- indexedResult{index: idx, res: res}
+		}(i, name)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	results := make([]openapi.ResourceHealthCheckResult, len(names))
+	for r := range resultCh {
+		results[r.index] = r.res
+	}
+
+	c.JSON(http.StatusOK, openapi.ResourceHealthCheckBatchResponse{Results: results})
+}
+
+// processSingleHealthCheck runs a connectivity test for a resource and returns the result.
+// The execution uses healthCheckBatchTimeout as the deadline.
+func processSingleHealthCheck(resource *models.Resources) openapi.ResourceHealthCheckResult {
+	creds, err := pgCredentialsFromResource(resource.Envs)
+	if err != nil {
+		return openapi.ResourceHealthCheckResult{
+			ResourceName: resource.Name,
+			Status:       "failed",
+			Output:       fmt.Sprintf("invalid resource credentials: %v", err),
+		}
+	}
+
+	resp := transportsystem.BareExecWithTimeout(
 		&pbsystem.BareExecRequest{
 			SID:     uuid.NewString(),
 			AgentID: resource.AgentID.String,
@@ -79,16 +163,14 @@ func ResourceHealthCheck(c *gin.Context) {
 				"PGPASSWORD": creds.MasterPwd,
 			},
 		},
+		healthCheckBatchTimeout,
 	)
 
-	c.JSON(http.StatusOK, openapi.ResourcHealthCheckResponse{
-		Output: resp.Output,
-		Status: resp.Status,
-	})
-}
-
-func ResourceHealthCheckBatch(c *gin.Context) {
-	// TODO
+	return openapi.ResourceHealthCheckResult{
+		ResourceName: resource.Name,
+		Output:       resp.Output,
+		Status:       resp.Status,
+	}
 }
 
 func ResourcePlan(c *gin.Context) {

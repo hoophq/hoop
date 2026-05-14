@@ -2338,6 +2338,24 @@ type ResourcHealthCheckResponse struct {
 	Status string `json:"status" enums:"failed,success" example:"success"`
 }
 
+type ResourceHealthCheckResult struct {
+	// ResourceName is the name of the resource that was tested
+	ResourceName string `json:"resource_name"`
+	// Output is the raw stdout/stderr returned by the connectivity test query
+	Output string `json:"output"`
+	// Status reports the outcome of the connectivity test
+	Status string `json:"status" enums:"failed,success" example:"success"`
+}
+
+type ResourceHealthCheckBatchRequest struct {
+	// Names is the list of resource names to test
+	Names []string `json:"names" binding:"required,min=1"`
+}
+
+type ResourceHealthCheckBatchResponse struct {
+	Results []ResourceHealthCheckResult `json:"results"`
+}
+
 type ResourcePlanItem struct {
 	// The resource name to plan provisioning for. Required for batch requests.
 	ResourceName string `json:"resource_name" example:"my-postgres"`

@@ -1055,7 +1055,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.ResourceHealthCheck)
-	r.GET("/resources/health",
+	r.POST("/resources/health",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.ResourceHealthCheckBatch)
