@@ -44,7 +44,6 @@ type Config struct {
 	licenseSignerOrgID              string
 	migrationPathFiles              string
 	orgMultitenant                  bool
-	analyticsTracking               bool
 	apiURL                          string
 	grpcURL                         string
 	apiHostname                     string
@@ -235,7 +234,6 @@ func Load() error {
 		licenseSignerOrgID:              allowedOrgID,
 		gcpDLPJsonCredentials:           gcpJsonCred,
 		orgMultitenant:                  os.Getenv("ORG_MULTI_TENANT") == "true",
-		analyticsTracking:               true, // it's set on app startup
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
 		dlpMode:                         dlpMode,
 		hasRedactCredentials:            hasRedactCredentials,
@@ -387,8 +385,6 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
 
-func (c *Config) SetAnalyticsTracking(enabled bool) { c.analyticsTracking = enabled }
-
 // FullApiURL returns the full url which contains the path of the URL
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
@@ -413,7 +409,6 @@ func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnal
 func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
 func (c Config) PgUsername() string                    { return c.pgCred.username }
 func (c Config) PgURI() string                         { return c.pgCred.connectionString }
-func (c Config) AnalyticsTracking() bool               { return c.analyticsTracking }
 func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
 func (c Config) DisableClipboardCopyCut() bool         { return c.disableClipboardCopyCut }
 func (c Config) MigrationPathFiles() string            { return c.migrationPathFiles }

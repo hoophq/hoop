@@ -85,6 +85,7 @@ func Run() {
 	goMigrateStep.OK("")
 
 	services.WarmFeatureFlagCache()
+	analytics.WarmModeCache()
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL
@@ -95,10 +96,6 @@ func Run() {
 		// bundle refreshes, which is visible via agent logs and the
 		// "spiffe: bundle refresh failed" warnings.
 		log.Warnf("failed initializing SPIFFE provider, background refresh will retry: %v", err)
-	}
-
-	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {
-		appconfig.GetRef().SetAnalyticsTracking(enabled)
 	}
 
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
@@ -120,11 +117,15 @@ func Run() {
 			log.Fatal(err)
 		}
 		defaultOrgID = org.ID
+		analytics.SetMode(org.ID, org.AnalyticsMode)
 
 		if isNewOrg {
 			trackClient := analytics.New()
 			defer trackClient.Close()
-			trackClient.TrackEvent(analytics.EventDefaultOrgCreated, map[string]interface{}{"org-id": org.ID})
+			trackClient.TrackEvent(analytics.EventDefaultOrgCreated, map[string]any{
+				"org-id":         org.ID,
+				"analytics-mode": org.AnalyticsMode,
+			})
 		}
 
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)

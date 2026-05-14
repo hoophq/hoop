@@ -98,7 +98,6 @@ func GetAuthConfig(c *gin.Context) {
 			WebappUsersManagement: ptr.String(webappUsersManagement),
 			AdminRoleName:         ptr.String(types.GroupAdmin),
 			AuditorRoleName:       ptr.String(types.GroupAuditor),
-			ProductAnalytics:      nil,
 			GrpcServerURL:         nil,
 			SharedSigningKey:      nil,
 			UpdatedAt:             time.Time{},

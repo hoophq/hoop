@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/license"
@@ -70,15 +69,15 @@ func Get(c *gin.Context) {
 		}
 	}
 
-	serverInfoData.AnalyticsTracking = getAnalyticsTrackingStatus()
-	if serverConfig != nil && serverConfig.ProductAnalytics != nil {
-		serverInfoData.AnalyticsTracking = ptr.ToString(serverConfig.ProductAnalytics)
-		switch serverInfoData.AnalyticsTracking {
-		case "active":
-			serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingEnabled)
-		case "inactive":
-			serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingDisabled)
-		}
+	analyticsMode := org.AnalyticsMode
+	if !models.IsValidAnalyticsMode(analyticsMode) {
+		analyticsMode = models.AnalyticsModeAnonymous
+	}
+	serverInfoData.AnalyticsMode = openapi.AnalyticsModeType(analyticsMode)
+	if analyticsMode == models.AnalyticsModeDisabled {
+		serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingDisabled)
+	} else {
+		serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingEnabled)
 	}
 
 	tenancyType := "selfhosted"
@@ -125,13 +124,6 @@ func defaultOSSLicense() *license.License {
 func isEnvSet(key string) bool {
 	val, isset := os.LookupEnv(key)
 	return isset && val != ""
-}
-
-func getAnalyticsTrackingStatus() string {
-	if appconfig.Get().AnalyticsTracking() == false {
-		return string(openapi.AnalyticsTrackingDisabled)
-	}
-	return string(openapi.AnalyticsTrackingEnabled)
 }
 
 func parseIdpProviderName(conf *models.ServerAuthConfig) openapi.IdpProviderNameType {

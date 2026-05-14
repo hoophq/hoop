@@ -75,6 +75,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
 		return
 	}
+	analytics.SetMode(org.ID, org.AnalyticsMode)
 
 	agentcontroller.Sync()
 	profileName := ctx.UserAnonProfile
@@ -114,7 +115,7 @@ func Post(c *gin.Context) {
 	_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
 
 	log.With("org_name", req.OrgName, "org_id", org.ID).Infof("user signup up with success")
-	identifySignup(user, c.GetHeader("user-agent"), c.Request.Host, ctx.GetLicenseType(), licenseDataJSONBytes)
+	identifySignup(user, c.GetHeader("user-agent"), c.Request.Host, ctx.GetLicenseType(), licenseDataJSONBytes, models.AnalyticsModeIdentified)
 	c.JSON(http.StatusOK, openapi.SignupRequest{
 		OrgID:          org.ID,
 		OrgName:        req.OrgName,
@@ -123,14 +124,15 @@ func Post(c *gin.Context) {
 	})
 }
 
-func identifySignup(u models.User, userAgent, host, licenseType string, licenseData json.RawMessage) {
+func identifySignup(u models.User, userAgent, host, licenseType string, licenseData json.RawMessage, analyticsMode string) {
 	trackClient := analytics.New()
 	trackClient.Identify(&types.APIContext{
-		OrgID:          u.OrgID,
-		OrgLicenseData: &licenseData,
-		UserID:         u.Subject,
-		UserEmail:      u.Email,
-		UserName:       u.Name,
+		OrgID:            u.OrgID,
+		OrgLicenseData:   &licenseData,
+		OrgAnalyticsMode: analyticsMode,
+		UserID:           u.Subject,
+		UserEmail:        u.Email,
+		UserName:         u.Name,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom

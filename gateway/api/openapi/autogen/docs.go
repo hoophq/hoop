@@ -4417,6 +4417,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/analytics-mode": {
+            "get": {
+                "description": "Get the analytics privacy mode of the caller's organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Analytics Mode",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgAnalyticsModeResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update the analytics privacy mode of the caller's organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Organization Analytics Mode",
+                "parameters": [
+                    {
+                        "description": "The new analytics mode",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgAnalyticsModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgAnalyticsModeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/orgs/features": {
             "put": {
                 "description": "Updates a feature configuration. It will report if this feature is available in the user info endpoint.",
@@ -4441,6 +4511,64 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/orgs/invitations": {
+            "post": {
+                "description": "Accept or decline a pending organization invitation. On accept, the current user is migrated to the invited org and the old auto-created org is removed if empty. On decline, the invitation is dismissed permanently.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Handle Organization Invitation",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgInvitationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPSuccess"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -9589,6 +9717,19 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.AnalyticsModeType": {
+            "type": "string",
+            "enum": [
+                "identified",
+                "anonymous",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "AnalyticsModeIdentified",
+                "AnalyticsModeAnonymous",
+                "AnalyticsModeDisabled"
+            ]
+        },
         "openapi.AttributeRequest": {
             "type": "object",
             "required": [
@@ -11248,6 +11389,15 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.HTTPSuccess": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "operation completed successfully"
+                }
+            }
+        },
         "openapi.HttpProxyServerConfig": {
             "type": "object",
             "properties": {
@@ -11891,6 +12041,60 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.OrgAnalyticsModeRequest": {
+            "type": "object",
+            "required": [
+                "analytics_mode"
+            ],
+            "properties": {
+                "analytics_mode": {
+                    "enum": [
+                        "identified",
+                        "anonymous",
+                        "disabled"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AnalyticsModeType"
+                        }
+                    ],
+                    "example": "identified"
+                }
+            }
+        },
+        "openapi.OrgAnalyticsModeResponse": {
+            "type": "object",
+            "properties": {
+                "analytics_mode": {
+                    "enum": [
+                        "identified",
+                        "anonymous",
+                        "disabled"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AnalyticsModeType"
+                        }
+                    ],
+                    "example": "identified"
+                }
+            }
+        },
+        "openapi.OrgInvitationRequest": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "accept",
+                        "decline"
+                    ]
+                }
+            }
+        },
         "openapi.OrgKeyResponse": {
             "type": "object",
             "properties": {
@@ -12017,6 +12221,15 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "openapi.PendingOrgInvitation": {
+            "type": "object",
+            "properties": {
+                "org_name": {
+                    "description": "Organization name",
+                    "type": "string"
                 }
             }
         },
@@ -13791,8 +14004,22 @@ const docTemplate = `{
         "openapi.ServerInfo": {
             "type": "object",
             "properties": {
+                "analytics_mode": {
+                    "description": "The analytics privacy mode for the caller's organization",
+                    "enum": [
+                        "identified",
+                        "anonymous",
+                        "disabled"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AnalyticsModeType"
+                        }
+                    ],
+                    "example": "identified"
+                },
                 "analytics_tracking": {
-                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
+                    "description": "Indicates if all tracking and analytics should be enabled or disabled.\nDerived from analytics_mode for backwards compatibility: \"disabled\"\nwhen analytics_mode is \"disabled\"; \"enabled\" otherwise.\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
                     "type": "string",
                     "enum": [
                         "enabled",
@@ -14015,11 +14242,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.PostgresServerConfig"
                         }
                     ]
-                },
-                "product_analytics": {
-                    "description": "Either to enable or disable the product analytics tracking",
-                    "type": "string",
-                    "example": "active"
                 },
                 "rdp_server_config": {
                     "description": "The RDP server proxy configuration",
@@ -14934,6 +15156,13 @@ const docTemplate = `{
                     "description": "Local auth cases have a password",
                     "type": "string",
                     "example": "mysecurepassword"
+                },
+                "pending_org_invitations": {
+                    "description": "Pending organization invitations for this user. When non-empty, the user can migrate\nto one of these organizations. Only populated in multi-tenant environments.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.PendingOrgInvitation"
+                    }
                 },
                 "picture": {
                     "description": "The profile picture url to display",

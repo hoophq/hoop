@@ -15,13 +15,6 @@
  (fn [config _]
    (:data config)))
 
-;; Analytics enabled state
-(rf/reg-sub
- :infrastructure->analytics-enabled?
- :<- [:infrastructure->data]
- (fn [data _]
-   (:analytics-enabled data)))
-
 ;; gRPC URL
 (rf/reg-sub
  :infrastructure->grpc-url
@@ -35,3 +28,16 @@
  :<- [:infrastructure->config]
  (fn [config _]
    (:submitting? config)))
+
+;; Analytics mode
+(rf/reg-sub
+ :infrastructure->analytics-mode
+ :<- [:infrastructure->data]
+ (fn [data _]
+   (:analytics-mode data)))
+
+(rf/reg-sub
+ :infrastructure->analytics-saving?
+ :<- [:infrastructure->config]
+ (fn [config _]
+   (:analytics-saving? config)))
