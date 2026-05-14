@@ -1,10 +1,11 @@
 (ns webapp.webclient.log-area.main
   (:require ["papaparse" :as papa]
-            ["@radix-ui/themes" :refer [Box]]
+            ["@radix-ui/themes" :refer [Box Flex]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.ag-grid-table :as ag-grid-table]
+            [webapp.components.results-download-menu :as download-menu]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
             [webapp.webclient.log-area.logs :as logs]))
 
@@ -68,7 +69,18 @@
                             {:logs "Logs"}
                             (when (and connection-type-database?
                                        (not parallel-mode-active?))
-                              {:tabular "Tabular"}))]
+                              {:tabular "Tabular"}))
+            tabular-data? (and connection-type-database?
+                               (seq results-heads)
+                               (seq results-body))
+            download-props (when (and response (not (cs/blank? response))
+                                      (= tabular-status :success))
+                             {:results response
+                              :matrix results-transformed
+                              :tabular? (boolean tabular-data?)
+                              :session-id (:session_id (:data @script-response))
+                              :connection-name nil
+                              :has-large-payload? false})]
 
         (when-not (some #(= @selected-tab %) (vals available-tabs))
           (.setItem js/localStorage "webclient-selected-tab" (first (vals available-tabs)))
@@ -76,11 +88,16 @@
 
         [:> Box {:class "flex-1 min-h-0 flex flex-col overflow-hidden"}
          [:> Box {:class "h-full flex flex-col bg-gray-1 border-b border-gray-3"}
-          [tabs {:on-click (fn [_ value]
-                             (.setItem js/localStorage "webclient-selected-tab" value)
-                             (reset! selected-tab value))
-                 :tabs available-tabs
-                 :selected-tab @selected-tab}]
+          [:> Flex {:justify "between" :align "center" :gap "4" :class "pr-small"}
+           [:> Box {:class "flex-1 min-w-0"}
+            [tabs {:on-click (fn [_ value]
+                               (.setItem js/localStorage "webclient-selected-tab" value)
+                               (reset! selected-tab value))
+                   :tabs available-tabs
+                   :selected-tab @selected-tab}]]
+           (when download-props
+             [:> Box {:class "mb-regular pt-small flex-shrink-0"}
+              [download-menu/main download-props]])]
           [:> Box {:role "tabpanel"
                    :id (str "tabpanel-" (case @selected-tab
                                           "Tabular" :tabular
