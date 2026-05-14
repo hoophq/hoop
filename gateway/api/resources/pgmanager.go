@@ -61,48 +61,26 @@ func ResourceHealthCheck(c *gin.Context) {
 		return
 	}
 
+	creds, err := pgCredentialsFromResource(resource.Envs)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusUnprocessableEntity, err, "invalid resource credentials: %v", err)
+		return
+	}
 	resp, err := transportsystem.BareExec(
 		map[string]string{},
-		pbsystem.UserInfo{
-			// ID:             uuid.NewString(),
-			// OrgID:          ctx.OrgID,
-			// Connection:     resource.ConnectionName,
-			// ConnectionType: resource.ConnectionType,
-			// UserID:         ctx.UserID,
-			// UserName:       ctx.UserName,
-			// UserEmail:      ctx.UserEmail,
-		},
+		pbsystem.UserInfo{},
 		&pbsystem.BareExecRequest{
 			SID:     uuid.NewString(),
 			AgentID: resource.AgentID.String,
 			Script:  resourceHealthCheckTest(resource.SubType.String),
 			Command: resourceManagerCommand(resource.SubType.String),
 			EnvVars: map[string]string{
-				// "USER":       staticCred["user"],
-				// "HOST":       staticCred["host"],
-				// "PORT":       staticCred["port"],
-				// "PGPASSWORD": staticCred["password"],
+				"HOST":       creds.Host,
+				"PORT":       creds.Port,
+				"USER":       creds.MasterUser,
+				"PGPASSWORD": creds.MasterPwd,
 			},
-			// EnvVars:      resourceManagerEnvVars(resource.Envs),
 		},
-		// resource.AgentID.String,
-		// &pbsystem.ResourceManagerRequest{
-		// 	OrgID:        ctx.OrgID,
-		// 	UserID:       ctx.UserID,
-		// 	UserName:     ctx.UserName,
-		// 	UserEmail:    ctx.UserEmail,
-		// 	ResourceName: name,
-		// 	ResourceType: resource.Type,
-		// 	Script:       resourceHealthCheckTest(resource.SubType.String),
-		// 	Command:      resourceManagerCommand(resource.SubType.String),
-		// 	EnvVars: map[string]string{
-		// 		"USER":       "hoopdevuser",
-		// 		"HOST":       staticHostIP,
-		// 		"PORT":       "5449",
-		// 		"PGPASSWORD": "1a2b3c4d",
-		// 	},
-		// 	// EnvVars:      resourceManagerEnvVars(resource.Envs),
-		// },
 	)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusBadRequest, err, "failed testing connectivity: %v", err)
@@ -230,6 +208,15 @@ func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi
 			Message:      "resource not found: " + resourceName,
 		}, http.StatusNotFound
 	}
+	creds, err := pgCredentialsFromResource(resource.Envs)
+	if err != nil {
+		return openapi.ResourcePlanResult{
+			ResourceName: resourceName,
+			Role:         req.Role,
+			Status:       "failed",
+			Message:      err.Error(),
+		}, http.StatusUnprocessableEntity
+	}
 
 	roleName, err := generateSecurePostgresRoleName(resource.Name, req.Role)
 	if err != nil {
@@ -259,7 +246,7 @@ func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi
 		Type:           req.Type,
 		Scopes:         req.Scopes,
 		Privileges:     req.Privileges,
-		PgCredentials:  staticCred,
+		PgCredentials:  creds,
 		RotatePassword: req.RotatePassword,
 	})
 
@@ -397,6 +384,15 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 	// TODO: validate session tags
 	// TODO: validate plan expiration date
 
+	creds, err := pgCredentialsFromResource(resource.Envs)
+	if err != nil {
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message:      err.Error(),
+		}, http.StatusUnprocessableEntity
+	}
+
 	blob, err := planSession.GetBlobStream()
 	if err != nil {
 		return openapi.ResourceApplyResult{
@@ -427,7 +423,7 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 	resp := transportsystem.RunPgManagerApply(resource.AgentID.String, &pbsystem.PgManagerApplyRequest{
 		SID:            sess.SID(),
 		StateMigration: stateMigration,
-		PgCredentials:  staticCred,
+		PgCredentials:  creds,
 	})
 
 	sessionOutput := resp.Message // message is set only on error
@@ -440,7 +436,7 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 		switch planSession.ConnectionSubtype {
 		case "postgres":
 			err := syncPostgresResourceRole(ctx, resourceName, resp.RoleName, resource.AgentID.String,
-				resp.RoleName, resp.RolePassword)
+				resp.RoleName, resp.RolePassword, creds)
 			if err != nil {
 				status = "failed"
 				errMsg := fmt.Sprintf("failed updating resource role: %v", err)
@@ -475,7 +471,43 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 	}, http.StatusOK
 }
 
-// resourceManagerCommand returns the runtime entrypoint for the given database subtype.
+// pgCredentialsFromResource builds PgCredentials from the resource env vars.
+// Keys are expected in the form "envvar:HOST", "envvar:PORT", "envvar:USER",
+// "envvar:PASS", and "envvar:SSLMODE" with base64-encoded values.
+// Returns an error if any of the required fields (HOST, PORT, USER, PASS) are missing.
+func pgCredentialsFromResource(envs map[string]string) (pbsystem.PgCredentials, error) {
+	dec := func(v string) string {
+		b, _ := base64.StdEncoding.DecodeString(v)
+		return string(b)
+	}
+	creds := pbsystem.PgCredentials{
+		Host:       dec(envs["envvar:HOST"]),
+		Port:       dec(envs["envvar:PORT"]),
+		MasterUser: dec(envs["envvar:USER"]),
+		MasterPwd:  dec(envs["envvar:PASS"]),
+	}
+	if sslmode := dec(envs["envvar:SSLMODE"]); sslmode != "" {
+		creds.Options = map[string]string{"sslmode": sslmode}
+	}
+	var missing []string
+	if creds.Host == "" {
+		missing = append(missing, "HOST")
+	}
+	if creds.Port == "" {
+		missing = append(missing, "PORT")
+	}
+	if creds.MasterUser == "" {
+		missing = append(missing, "USER")
+	}
+	if creds.MasterPwd == "" {
+		missing = append(missing, "PASS")
+	}
+	if len(missing) > 0 {
+		return pbsystem.PgCredentials{}, fmt.Errorf("resource is missing required credentials: %v", missing)
+	}
+	return creds, nil
+}
+
 func resourceManagerCommand(subType string) []string {
 	switch subType {
 	case "postgres":
@@ -586,7 +618,7 @@ func (s *stateSession) close(output string, exitCode int) error {
 	})
 }
 
-func syncPostgresResourceRole(ctx *storagev2.Context, resourceName, resourceRole, agentID, userRole, userRolePwd string) error {
+func syncPostgresResourceRole(ctx *storagev2.Context, resourceName, resourceRole, agentID, userRole, userRolePwd string, creds pbsystem.PgCredentials) error {
 	err := upsertConnection(ctx, &models.Connection{
 		OrgID:        ctx.OrgID,
 		ID:           uuid.NewString(),
@@ -611,8 +643,8 @@ func syncPostgresResourceRole(ctx *storagev2.Context, resourceName, resourceRole
 		AccessModeConnect:  "enabled",
 		AccessSchema:       "enabled",
 		Envs: map[string]string{
-			"envvar:HOST": b64enc(staticCred.Host),
-			"envvar:PORT": b64enc(staticCred.Port),
+			"envvar:HOST": b64enc(creds.Host),
+			"envvar:PORT": b64enc(creds.Port),
 			"envvar:USER": b64enc(userRole),
 			"envvar:PASS": b64enc(userRolePwd),
 			"envvar:DB":   b64enc("postgres"),

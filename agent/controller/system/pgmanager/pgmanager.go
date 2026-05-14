@@ -132,7 +132,7 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 
 	var rolePwd string
 	sqlPlan := migState.SQLPlan.Value
-	if migState.Config.RotatePassword || !migState.CurrentState.Exists {
+	if (migState.Config.RotatePassword || !migState.CurrentState.Exists) && resp.Status == "out-of-sync" {
 		rolePwd, err = randomPassword()
 		if err != nil {
 			sendApplyResponse(client, newApplyError(sid, "failed generating password: %v", err))
@@ -141,13 +141,18 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 		sqlPlan = strings.ReplaceAll(sqlPlan, "ROLE_PASSWORD_PLACEHOLDER", rolePwd)
 	}
 
-	cmdOutput, err := runPsql(connParts.connURI(connParts.DefaultDB), sqlPlan)
-	if err != nil {
-		sendApplyResponse(client, newApplyError(sid, "failed running apply with psql: %v", err))
-		return
+	// the state is sync
+	status := "skipped"
+	if resp.Status == "out-of-sync" {
+		cmdOutput, err := runPsql(connParts.connURI(connParts.DefaultDB), sqlPlan)
+		if err != nil {
+			sendApplyResponse(client, newApplyError(sid, "failed running apply with psql: %v", err))
+			return
+		}
+		migState.CommandOutput = string(cmdOutput)
+		status = "success"
 	}
 
-	migState.CommandOutput = string(cmdOutput)
 	migState.SID = sid
 	stateMigrationBytes, err := yaml.Marshal(migState)
 	if err != nil {
@@ -156,7 +161,7 @@ func ProcessApplyPlan(client pb.ClientTransport, pkt *pb.Packet) {
 	sendApplyResponse(client, &pbsystem.PgManagerApplyResponse{
 		SID:            sid,
 		StateMigration: stateMigrationBytes,
-		Status:         "success",
+		Status:         status,
 		Message:        "",
 		RoleName:       migState.Config.RoleName,
 		RolePassword:   rolePwd,

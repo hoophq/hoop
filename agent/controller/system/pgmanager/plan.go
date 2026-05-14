@@ -192,18 +192,6 @@ func (p sqlPlan) IsEmpty() bool {
 func buildSQLPlan(rotateRequested bool, desired, current *Snapshot) (sqlPlan, error) {
 	plan := sqlPlan{Role: desired.Role}
 
-	// Validate: asking to rotate a non-existent role is almost always
-	// a YAML mistake. CREATE ROLE sets the initial password as part of
-	// its own statement; there's nothing to rotate before that.
-	if rotateRequested && !current.Exists {
-		return sqlPlan{}, fmt.Errorf(
-			"rotate_password: true is set but role %q does not exist; "+
-				"the initial password is set by CREATE ROLE — "+
-				"set rotate_password: false (or omit it) for the first plan",
-			desired.Role,
-		)
-	}
-
 	// --- 1. CREATE ROLE if missing -----------------------------------------
 	if !current.Exists {
 		pw, err := randomPassword()

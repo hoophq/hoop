@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
@@ -159,7 +160,7 @@ func init() {
 	frc.StringVar(&resourcesRolesCreateFlags.subtype, "subtype", "", "Role subtype (e.g. postgres, mysql, tcp)")
 	frc.StringVar(&resourcesRolesCreateFlags.agentID, "agent-id", "", "Agent UUID (required)")
 	frc.StringArrayVar(&resourcesRolesCreateFlags.command, "command", nil, "Command argument (repeatable, e.g. --command /bin/bash)")
-	frc.StringArrayVar(&resourcesRolesCreateFlags.secrets, "secret", nil, `Secret as KEY=VALUE (repeatable, e.g. --secret "envvar:HOST=base64val")`)
+	frc.StringArrayVar(&resourcesRolesCreateFlags.secrets, "secret", nil, `Secret as KEY=VALUE (repeatable, e.g. --secret "HOST=val")`)
 	frc.BoolVar(&resourcesRolesCreateFlags.jsonOutput, "json", false, "Output created role as formatted JSON")
 	frc.BoolVar(&resourcesRolesCreateFlags.quietOutput, "quiet", false, "Output created role as compact JSON")
 	_ = resourcesRolesCreateCmd.MarkFlagRequired("resource")
@@ -258,9 +259,10 @@ func displayResourcesList(resources []map[string]any) {
 
 func runResourcesCreate(name string) {
 	config := clientconfig.GetClientConfigOrDie()
-
-	envVars := parseKeyValuePairs(resourcesCreateFlags.envVars)
-
+	envVars, err := cmdutils.ParseEnvPerType(resourcesCreateFlags.envVars)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed parsing env vars: %v", err)
+	}
 	payload := map[string]any{
 		"name":     name,
 		"type":     resourcesCreateFlags.resType,
@@ -389,7 +391,10 @@ func displayRolesList(roles []map[string]any) {
 func runResourcesRolesCreate(name string) {
 	config := clientconfig.GetClientConfigOrDie()
 
-	secrets := parseKeyValuePairsAny(resourcesRolesCreateFlags.secrets)
+	secrets, err := cmdutils.ParseEnvPerType(resourcesRolesCreateFlags.secrets)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed parsing env var: %v", err)
+	}
 
 	payload := map[string]any{
 		"name":          name,
@@ -450,16 +455,16 @@ func runResourcesRolesCreate(name string) {
 // ---- helpers ----
 
 // parseKeyValuePairs splits "KEY=VALUE" strings into a map[string]string.
-func parseKeyValuePairs(pairs []string) map[string]string {
-	m := make(map[string]string, len(pairs))
-	for _, p := range pairs {
-		k, v, _ := strings.Cut(p, "=")
-		if k != "" {
-			m[k] = v
-		}
-	}
-	return m
-}
+// func parseKeyValuePairs(pairs []string) map[string]string {
+// 	m := make(map[string]string, len(pairs))
+// 	for _, p := range pairs {
+// 		k, v, _ := strings.Cut(p, "=")
+// 		if k != "" {
+// 			m[k] = v
+// 		}
+// 	}
+// 	return m
+// }
 
 // parseKeyValuePairsAny splits "KEY=VALUE" strings into a map[string]any.
 func parseKeyValuePairsAny(pairs []string) map[string]any {

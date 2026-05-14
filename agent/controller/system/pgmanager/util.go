@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"net/url"
 	"sort"
@@ -134,15 +133,28 @@ func defaultAttributes() map[string]bool {
 	}
 }
 
-// randomPassword generates a 24-byte URL-safe random string, ~32 chars
-// after base64 encoding. The output appears verbatim in apply.sql, so
-// the admin can capture it before executing the file.
 func randomPassword() (string, error) {
-	buf := make([]byte, 24)
-	if _, err := rand.Read(buf); err != nil {
+	// Character set for passwords (lowercase, uppercase, numbers, special chars)
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+	passwordLength := 25
+
+	// Create a byte slice to store the password
+	password := make([]byte, passwordLength)
+
+	// Generate random bytes
+	_, err := rand.Read(password)
+	if err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+
+	// Map random bytes to characters in the charset
+	for i := range passwordLength {
+		// Use modulo to map the random byte to an index in the charset
+		// This ensures the mapping is within the charset boundaries
+		password[i] = charset[int(password[i])%len(charset)]
+	}
+
+	return string(password), nil
 }
 
 // ---------------------------------------------------------------------------

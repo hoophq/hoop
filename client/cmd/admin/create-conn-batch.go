@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -295,7 +296,7 @@ func parseBatchEnvVars(envMap map[string]string) (map[string]string, error) {
 	for key, val := range envMap {
 		// Support the same value formats as the single create command:
 		// raw values, base64://<content>, file:///path
-		resolvedVal, err := getEnvValue(val)
+		resolvedVal, err := cmdutils.GetEnvValue(val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve value for %q: %v", key, err)
 		}
