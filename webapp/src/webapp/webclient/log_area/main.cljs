@@ -96,7 +96,7 @@
                    :tabs available-tabs
                    :selected-tab @selected-tab}]]
            (when download-props
-             [:> Box {:class "mb-regular flex-shrink-0"}
+             [:> Box {:class "mb-regular pt-small flex-shrink-0"}
               [download-menu/main download-props]])]
           [:> Box {:role "tabpanel"
                    :id (str "tabpanel-" (case @selected-tab
