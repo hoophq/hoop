@@ -167,7 +167,6 @@ func RulepackIDFromNullString(s sql.NullString) *string {
 //	@Param			request		body		openapi.RulepackRequest	true	"The request body resource"
 //	@Success		201			{object}	openapi.Rulepack
 //	@Failure		400,409,500	{object}	openapi.HTTPError
-//	@Router			/rulepacks [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	if flagDisabled(c, ctx) {
@@ -196,8 +195,8 @@ func Post(c *gin.Context) {
 	}
 
 	rules := services.RulepackRulesInput{
-		DataMaskingRules:       req.DataMaskingRules,
-		GuardRailRules:         req.GuardRailRules,
+		DataMaskingRules: req.DataMaskingRules,
+		GuardRailRules:   req.GuardRailRules,
 	}
 	rp, _, err = services.CreateRulepackWithRules(context.Background(), rp, rules)
 	switch {
@@ -228,7 +227,6 @@ func Post(c *gin.Context) {
 //	@Param			request			body		openapi.RulepackRequest	true	"The request body resource"
 //	@Success		200				{object}	openapi.Rulepack
 //	@Failure		400,403,404,500	{object}	openapi.HTTPError
-//	@Router			/rulepacks/{id} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	if flagDisabled(c, ctx) {
@@ -274,8 +272,8 @@ func Put(c *gin.Context) {
 	existing.Tags = pq.StringArray(req.Tags)
 
 	rules := services.RulepackRulesInput{
-		DataMaskingRules:       req.DataMaskingRules,
-		GuardRailRules:         req.GuardRailRules,
+		DataMaskingRules: req.DataMaskingRules,
+		GuardRailRules:   req.GuardRailRules,
 	}
 	updated, _, err := services.UpdateRulepackWithRules(context.Background(), existing, rules)
 	switch {
@@ -306,7 +304,6 @@ func Put(c *gin.Context) {
 //	@Param			id				path	string	true	"Rulepack ID"
 //	@Success		204
 //	@Failure		400,403,404,500	{object}	openapi.HTTPError
-//	@Router			/rulepacks/{id} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	if flagDisabled(c, ctx) {
@@ -497,8 +494,8 @@ func Apply(c *gin.Context) {
 	switch {
 	case errors.As(err, &notFound):
 		c.JSON(http.StatusBadRequest, gin.H{
-			"message":          notFound.Error(),
-			"missing_names":    notFound.Names,
+			"message":       notFound.Error(),
+			"missing_names": notFound.Names,
 		})
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "rulepack not found"})
