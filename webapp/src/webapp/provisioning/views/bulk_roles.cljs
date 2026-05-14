@@ -4,22 +4,30 @@
    ["lucide-react" :refer [AlertTriangle Check ChevronDown
                            ChevronRight Circle FileText Info XCircle]]
    ["react" :as react]
+   [clojure.string :as cs]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
 
 (def ^:private csv-preview-cols
   [{:flex "1.2 1 0" :label "Resource"}
-   {:flex "1.2 1 0" :label "Role"}
-   {:flex "1 1 0"   :label "Database"}
+   {:flex "0.7 1 0" :label "Type"}
+   {:flex "0.7 1 0" :label "Role"}
+   {:flex "1.2 1 0" :label "Scopes"}
    {:flex "1 1 0"   :label "Permissions"}
    {:width 110      :label "Status"}])
 
 (defn- invalid-reason [row]
-  (if (= (:error row) :bad-permissions)
+  (case (:error row)
+    :bad-permissions
     {:badge "Bad permissions"
-     :text  "Permissions must be valid SQL grants (SELECT, INSERT, UPDATE, DELETE, ALL)"}
+     :text  "Permissions must be valid SQL grants (SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, EXECUTE)"}
+
+    :bad-role-type
+    {:badge "Bad role/type"
+     :text  "Type must be managed or external, and role must be ro or rw"}
+
     {:badge "Missing field"
-     :text  "All columns are required: resource_name, role, database, permissions"}))
+     :text  "All columns are required: resource_name, type, role, scopes, permissions"}))
 
 (def ^:private row-variants
   "Spec for each row type. `:reason` and `:badge-content` may be either a
@@ -32,7 +40,7 @@
                :badge-content "Duplicate"
                :bg            "var(--gray-2)"
                :opacity       0.65
-               :reason        "Duplicate of line with same resource, role, database & permissions"}
+               :reason        "Duplicate of line with same resource, type, role, scopes & permissions"}
    :skipped   {:badge-color   "gray"
                :badge-icon    [:> Circle {:size 10}]
                :badge-content "Skipped"
@@ -59,14 +67,19 @@
       [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
        [:> Text {:size "2" :style (when dimmed? {:color "var(--gray-8)"})}
         (:resource-name row)]]
-      [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+      [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
+       (when (seq (:type row))
+         [:> Badge {:color (if dimmed? "gray" "gray") :variant "soft" :size "1"
+                    :style (when dimmed? {:opacity 0.7})}
+          (:type row)])]
+      [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
        [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
                                    :color (when dimmed? "var(--gray-8)")}}
         (:role row)]]
-      [:> Box {:style {:flex "1 1 0" :min-width 0}}
+      [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
        [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
                                    :color (when dimmed? "var(--gray-8)")}}
-        (:database row)]]
+        (:scopes row)]]
       [:> Box {:style {:flex "1 1 0" :min-width 0}}
        [:> Text {:size "1" :color "gray"} (:permissions row)]]
       [:> Box {:style {:width 110 :flex-shrink 0}}
@@ -118,12 +131,15 @@
    [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
     [:> Text {:size "2"} (:resource-name row)]
     [:> Badge {:color "amber" :variant "soft" :size "1"} (str "line " (:line-num row))]]
-   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+   [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
+    (when (seq (:type row))
+      [:> Badge {:color "gray" :variant "soft" :size "1"} (:type row)])]
+   [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
     [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
      (:role row)]]
-   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
     [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
-     (:database row)]]
+     (:scopes row)]]
    [:> Box {:style {:flex "1 1 0" :min-width 0}}
     [:> Text {:size "1" :color "gray"} (:permissions row)]]
    [:> Box {:style {:width 110 :flex-shrink 0}}
@@ -143,21 +159,39 @@
                         :on-pick #(on-pick line)}]))]))
 
 
+(defn- skipped-resources-section-inner
+  "Collapsible — the badge grid grows linearly with the count, so a thousand
+   skipped resources would otherwise push the valid-rows table off-screen.
+   Default collapsed; the expanded grid is height-capped with its own scroll
+   so it can't dominate the viewport even when the user opens it."
+  [{:keys [skipped-resources]}]
+  (let [[open? set-open] (react/useState false)
+        n                (count skipped-resources)]
+    (when (pos? n)
+      [:> Box {:mt "3"
+               :style {:border "1px solid var(--gray-5)"
+                       :border-radius "var(--radius-2)"
+                       :background "var(--gray-2)"}}
+       [:> Flex {:align "center" :gap "2" :px "3" :py "2"
+                 :on-click #(set-open (not open?))
+                 :style {:cursor "pointer" :user-select "none"}}
+        (if open?
+          [:> ChevronDown  {:size 14 :color "var(--gray-9)"}]
+          [:> ChevronRight {:size 14 :color "var(--gray-9)"}])
+        [:> Info {:size 14 :color "var(--gray-9)"}]
+        [:> Text {:size "2" :weight "medium" :color "gray"}
+         (str (data/pluralize n "selected resource")
+              " had no matching CSV rows")]]
+       (when open?
+         [:> Box {:px "3" :pb "3"
+                  :style {:max-height 160 :overflow-y "auto"}}
+          [:> Flex {:gap "2" :style {:flex-wrap "wrap"}}
+           (for [r skipped-resources]
+             ^{:key (:id r)}
+             [:> Badge {:color "gray" :variant "soft" :size "1"} (:name r)])]])])))
+
 (defn- skipped-resources-section [skipped-resources]
-  (when (seq skipped-resources)
-    [:> Box {:mt "3" :p "3"
-             :style {:border "1px solid var(--gray-5)"
-                     :border-radius "var(--radius-2)"
-                     :background "var(--gray-2)"}}
-     [:> Flex {:align "center" :gap "2" :mb "2"}
-      [:> Info {:size 14 :color "var(--gray-9)"}]
-      [:> Text {:size "2" :weight "medium" :color "gray"}
-       (str (data/pluralize (count skipped-resources) "selected resource")
-            " had no matching CSV rows")]]
-     [:> Flex {:gap "2" :style {:flex-wrap "wrap"}}
-      (for [r skipped-resources]
-        ^{:key (:id r)}
-        [:> Badge {:color "gray" :variant "soft" :size "1"} (:name r)])]]))
+  [:f> skipped-resources-section-inner {:skipped-resources skipped-resources}])
 
 
 (defn- preview-callout [{:keys [has-conflicts? has-invalid?]}]
@@ -173,9 +207,9 @@
                (and has-conflicts? has-invalid?)
                "Some rows have conflicts or errors. Resolve all conflicts (pick one row per group) and fix invalid rows before applying."
                has-conflicts?
-               "Some rows have the same resource, role, and database but different permissions. Pick which row to keep for each conflict group."
+               "Some rows have the same resource, type, role, and scopes but different permissions. Pick which row to keep for each conflict group."
                :else
-               "Some rows have missing fields or invalid permissions. They will be excluded from provisioning.")}]))
+               "Some rows have missing fields, invalid permissions, or invalid type/role values. They will be excluded from provisioning.")}]))
 
 (defn- flat-rows-from-classification
   "Linearises the four bucket vectors into a single tagged stream in display order."
@@ -220,15 +254,25 @@
    (map-indexed
     (fn [idx row]
       {:resource-name (or (:resource_name row) "")
+       :type          (or (:type row) "")
        :role          (or (:role row) "")
-       :database      (or (:database row) "")
+       :scopes        (or (:scopes row) "")
        :permissions   (or (:permissions row) "")
        :line-num      (+ idx 2)})
     rows)))
 
+(defn- row->plan-entry
+  "Transforms a validated CSV row into the {:type :role :scopes :privileges}
+   shape that :provisioning/start-role-plans expects."
+  [row]
+  {:type       (cs/lower-case (cs/trim (:type row)))
+   :role       (cs/lower-case (cs/trim (:role row)))
+   :scopes     (data/split-csv-list (:scopes row))
+   :privileges (mapv cs/upper-case (data/split-csv-list (:permissions row)))})
+
 (defn- build-roles-payload
   "Reduces a classification + user's conflict picks into the API shape:
-   {resource-id [{:role :database :permissions} …]}."
+   {resource-id [{:type :role :scopes :privileges} …]}."
   [classification cur-picks resources]
   (let [kept-conflict-rows
         (vec (keep (fn [[cid rows]]
@@ -241,7 +285,7 @@
     (into {}
           (keep (fn [[rname rows]]
                   (when-let [r (get res-by-name rname)]
-                    [(:id r) (mapv #(select-keys % [:role :database :permissions]) rows)])))
+                    [(:id r) (mapv row->plan-entry rows)])))
           by-name)))
 
 (defn- download-template!
@@ -250,9 +294,9 @@
   [resources]
   (let [rows (->> resources
                   (sort-by :name)
-                  (map (fn [r] [(:name r) "" "" ""])))
+                  (map (fn [r] [(:name r) "" "" "" ""])))
         csv  (shared/build-csv
-              ["resource_name" "role" "database" "permissions"]
+              ["resource_name" "type" "role" "scopes" "permissions"]
               rows)]
     (shared/download-csv! "hoop-roles-template.csv" csv)))
 
@@ -313,7 +357,7 @@
                              :open?     res-list-open?
                              :toggle    toggle-res-list}]
    [shared/csv-drop-zone {:on-file   handle-file!
-                          :hint-text "Columns: resource_name, role, database, permissions"
+                          :hint-text "Columns: resource_name, type, role, scopes, permissions"
                           :loading?  csv-parsing?}]
    [:> Flex {:justify "end"}
     [:> Button {:variant "ghost" :size "1" :color "gray"
@@ -333,18 +377,14 @@
                  :conflict-picks     cur-picks
                  :set-conflict-picks set-conflict-picks}]])
 
-;; ── Main screen ──────────────────────────────────────────────────────────────
-
 (defn- bulk-roles-screen-inner
   [{:keys [resources on-apply on-cancel]}]
-  (let [;; ── React hooks ───────────────────────────────────────
-        [csv-parsing?   set-csv-parsing]    (react/useState false)
+  (let [[csv-parsing?   set-csv-parsing]    (react/useState false)
         [csv-parsed     set-csv-parsed]     (react/useState nil)
         [classification set-classification] (react/useState nil)
         [conflict-picks set-conflict-picks] (react/useState {})
         [res-list-open? set-res-list-open]  (react/useState false)
 
-        ;; ── Derived state ─────────────────────────────────────
         cur-picks       conflict-picks
         unresolved      (count-unresolved-conflicts classification cur-picks)
         valid-count     (count (:valid classification))
@@ -355,7 +395,6 @@
         apply-label     (str "Provision " (provision-total classification cur-picks)
                              " roles \u2192")
 
-        ;; ── Callbacks ─────────────────────────────────────────
         handle-file!  (fn [file]
                         (set-csv-parsing true)
                         (shared/parse-csv!

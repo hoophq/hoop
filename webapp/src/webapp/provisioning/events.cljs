@@ -1,8 +1,6 @@
 (ns webapp.provisioning.events
   (:require [re-frame.core :as rf]))
 
-;; ── Pure helpers ────────────────────────────────────────────────────────────
-
 (defn- update-items-where
   "Walk `items`, applying `f` to each item where `pred` returns truthy.
    Used by every event that mutates :provisioning/plan-job/:items."
@@ -13,8 +11,6 @@
   "Convenience wrapper: set :status on each item matching pred."
   [items pred new-status]
   (update-items-where items pred #(assoc % :status new-status)))
-
-;; ── Env-var encoding helpers ────────────────────────────────────────────────
 
 (def ^:private envvar-prefix "envvar:")
 
@@ -47,10 +43,8 @@
              {}
              (or envs {})))
 
-;; ── Resource transforms ─────────────────────────────────────────────────────
-
 (defn- derive-stage [env]
-  (if (get env :envvar:ADMIN_ACCOUNT)
+  (if (get env :envvar:USER)
     :needs-roles
     :needs-admin))
 
@@ -75,7 +69,7 @@
      :host       host
      :port       port
      :agent-id   (:agent_id resource)
-     :admin      (decode-env env "ADMIN_ACCOUNT")
+     :admin      (decode-env env "USER")
      ;; Decoded only so the bulk-admin screen can pre-fill the field when
      ;; editing existing credentials. The value still travels base64-encoded
      ;; over the wire (see encode-envs).
@@ -93,8 +87,6 @@
 
 (defn- resource-catalog? [resource]
   (some? (get (:env_vars resource) :envvar:RESOURCE_CATALOG)))
-
-;; ── Resource list fetch ─────────────────────────────────────────────────────
 
 (defn- fetch-resources-page!
   "Fetches a single page. Accumulates results and recurses until all pages are fetched."
@@ -138,7 +130,7 @@
  (fn [db [_ new-resources]]
    (update-in db [:provisioning :resources :data] into new-resources)))
 
-;; ── Resource update flow (fetch → merge envs → PUT) ─────────────────────────
+;; Resource update flow: fetch → merge envs → PUT
 
 (defn- merge-and-put-resource!
   "Fetches /resources/{name}, merges `env-overrides` into env_vars, PUTs the result.
@@ -205,15 +197,13 @@
  (fn [_ [_ {:keys [resource-name username password agent-id on-success on-failure]}]]
    (merge-and-put-resource!
     {:resource-name resource-name
-     :env-overrides (encode-envs {"USER"          username
-                                  "PASS"          password
-                                  "ADMIN_ACCOUNT" username})
+     :env-overrides (encode-envs {"USER" username
+                                  "PASS" password})
      :agent-id      agent-id
      :on-success    on-success
      :on-failure    on-failure})
    {}))
 
-;; ── Generic async-queue dispatcher ──────────────────────────────────────────
 ;; Used by both import and admin-credential flows. Caller supplies a `step-fn`
 ;; that, given a queue item plus continuation callbacks, kicks off one async unit.
 
@@ -275,7 +265,6 @@
                  :on-success    (fn [name _resp] (continue! {:name name :status :success}))
                  :on-failure    (fn [name err]   (continue! {:name name :status :failed :error err}))}]))}]]]}))
 
-;; ── DB-update events ────────────────────────────────────────────────────────
 
 (rf/reg-event-db
  :provisioning/update-resources
@@ -295,9 +284,18 @@
 (rf/reg-event-db
  :provisioning/add-sessions
  (fn [db [_ new-sessions]]
-   (update-in db [:provisioning :sessions] into new-sessions)))
+   ;; Dedupe by :id (later writes win) so a synthesized skeleton can be
+   ;; replaced by its loaded counterpart without piling up duplicate rows.
+   ;; Preserves the original insertion order: existing entries stay in place
+   ;; (with any matching new entry merged onto them), then truly new ids are
+   ;; appended in the order they were passed in.
+   (let [existing (or (get-in db [:provisioning :sessions]) [])
+         by-id    (into {} (map (juxt :id identity)) new-sessions)
+         seen-ids (set (map :id existing))
+         merged   (mapv #(merge % (get by-id (:id %) {})) existing)
+         appended (filterv #(not (contains? seen-ids (:id %))) new-sessions)]
+     (assoc-in db [:provisioning :sessions] (into merged appended)))))
 
-;; ── Plan-job item helpers ───────────────────────────────────────────────────
 
 (def ^:private plan-items-path [:provisioning :plan-job :items])
 
@@ -314,19 +312,39 @@
    (assoc-in db [:provisioning :plan-job] plan-job)))
 
 (rf/reg-event-db
+ :provisioning/clear-plan-job
+ (fn [db _]
+   ;; Drops both the current plan-job and any sessions tied to it. The
+   ;; inventory banner is keyed off (seq (:items plan-job)), so removing
+   ;; the job here also dismisses the banner. Sessions belonging to *other*
+   ;; jobs (not this plan-job) are preserved.
+   (let [job-id   (get-in db [:provisioning :plan-job :id])
+         sessions (or (get-in db [:provisioning :sessions]) [])
+         kept     (if job-id
+                    (filterv #(not= job-id (:job-id %)) sessions)
+                    sessions)]
+     (-> db
+         (assoc-in [:provisioning :plan-job] nil)
+         (assoc-in [:provisioning :sessions] kept)))))
+
+(rf/reg-event-db
  :provisioning/update-plan-item
  (fn [db [_ item-key update-fn]]
    (update-plan-items db #(update-items-where % (key= item-key) update-fn))))
 
-;; ── Batch chunking helpers ──────────────────────────────────────────────────
 
 (def ^:private plan-chunk-size 50)
 (def ^:private apply-chunk-size 50)
 
-(defn- split-permissions [perms-str]
-  (vec (.split (or perms-str "") #"\s*,\s*")))
 
-;; ── Plan flow (batch) ───────────────────────────────────────────────────────
+(defn- plan-item-payload
+  "Translates an in-memory plan-item into a ResourcePlanItem body for the API."
+  [item]
+  {:resource_name (:resource-name item)
+   :type          (:type item)
+   :role          (:role-input item)
+   :scopes        (vec (:scopes item))
+   :privileges    (vec (:privileges item))})
 
 (rf/reg-event-fx
  :provisioning/start-role-plans
@@ -341,12 +359,13 @@
                             {:key           (str rid "-" idx)
                              :resource-id   rid
                              :resource-name (:name r)
-                             :role          (:role role-entry)
-                             :database      (:database role-entry)
-                             :permissions   (:permissions role-entry)
+                             :type          (:type role-entry)
+                             :role-input    (:role role-entry)
+                             :role-name     nil
+                             :scopes        (vec (:scopes role-entry))
+                             :privileges    (vec (:privileges role-entry))
                              :status        "pending"
-                             :plan-id       nil
-                             :session-id    nil})
+                             :sid           nil})
                           role-list)))
                      roles-by-resource))
          plan-job  {:id         (str "plan-" (.now js/Date))
@@ -367,16 +386,11 @@
              chunk   (vec (take plan-chunk-size pending))]
          (if (seq chunk)
            (let [chunk-keys (set (map :key chunk))
-                 payload    {:items (mapv (fn [it]
-                                            {:resource_name (:resource-name it)
-                                             :role          (:role it)
-                                             :database      (:database it)
-                                             :permissions   (split-permissions (:permissions it))})
-                                          chunk)}]
+                 payload    {:items (mapv plan-item-payload chunk)}]
              {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "processing"))
               :fx [[:dispatch
                     [:fetch {:method     "POST"
-                             :uri        "/resources/plan/batch"
+                             :uri        "/resources/plan"
                              :body       payload
                              :on-success #(rf/dispatch [:provisioning/plan-batch-response chunk-idx chunk %])
                              :on-failure #(rf/dispatch [:provisioning/plan-batch-error chunk])}]]]})
@@ -384,18 +398,22 @@
 
 (rf/reg-event-fx
  :provisioning/plan-batch-response
- (fn [{:keys [db]} [_ chunk-idx _chunk resp]]
-   (let [result-map (into {}
-                          (map (fn [r] [(str (:resource_name r) "|" (:role r)) r])
-                               (:results resp)))
-         apply-result (fn [it]
-                        (if-let [r (get result-map
-                                        (str (:resource-name it) "|" (:role it)))]
-                          (assoc it
-                                 :status     (:status r)
-                                 :plan-id    (:plan_id r)
-                                 :session-id (:session_id r))
-                          it))]
+ (fn [{:keys [db]} [_ chunk-idx chunk resp]]
+   ;; The plan API returns results in input order; match by index so we don't
+   ;; rely on the (potentially server-generated) role name to correlate rows.
+   (let [results       (vec (:results resp))
+         results-by-key (into {}
+                              (map-indexed (fn [idx it]
+                                             [(:key it) (get results idx)])
+                                           chunk))
+         apply-result   (fn [it]
+                          (if-let [r (get results-by-key (:key it))]
+                            (assoc it
+                                   :status    (:status r)
+                                   :sid       (:sid r)
+                                   :role-name (:role r)
+                                   :message   (:message r))
+                            it))]
      {:db (update-plan-items db #(mapv apply-result %))
       :fx [[:dispatch [:provisioning/plan-next-chunk (inc chunk-idx)]]]})))
 
@@ -403,7 +421,7 @@
  :provisioning/plan-batch-error
  (fn [{:keys [db]} [_ chunk]]
    (let [chunk-keys (set (map :key chunk))]
-     {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "Failed"))
+     {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "failed"))
       :fx [[:dispatch [:provisioning/plan-next-chunk 0]]]})))
 
 (rf/reg-event-db
@@ -413,9 +431,10 @@
                       #(update-items-where % (key= item-key)
                                            (fn [it]
                                              (assoc it
-                                                    :status     (:status response)
-                                                    :plan-id    (:plan-id response)
-                                                    :session-id (:session-id response)))))))
+                                                    :status    (:status response)
+                                                    :sid       (:sid response)
+                                                    :role-name (:role-name response)
+                                                    :message   (:message response)))))))
 
 ;; Single-item retry still uses the individual endpoint
 (rf/reg-event-fx
@@ -423,9 +442,7 @@
  (fn [{:keys [db]} [_ item-key]]
    (when-let [item (some #(when (= (:key %) item-key) %)
                          (get-in db plan-items-path))]
-     (let [payload {:role        (:role item)
-                    :database    (:database item)
-                    :permissions (split-permissions (:permissions item))}]
+     (let [payload (plan-item-payload item)]
        {:db (update-plan-items db #(set-status-where % (key= item-key) "processing"))
         :fx [[:dispatch
               [:fetch {:method     "POST"
@@ -433,14 +450,14 @@
                        :body       payload
                        :on-success #(rf/dispatch
                                      [:provisioning/plan-response item-key
-                                      {:plan-id    (:plan_id %)
-                                       :status     (:status %)
-                                       :session-id (:session_id %)}])
+                                      {:status    (:status %)
+                                       :sid       (:sid %)
+                                       :role-name (:role %)
+                                       :message   (:message %)}])
                        :on-failure #(rf/dispatch
                                      [:provisioning/plan-response item-key
-                                      {:plan-id nil :status "Failed" :session-id nil}])}]]]}))))
-
-;; ── Cancel flow ─────────────────────────────────────────────────────────────
+                                      {:status "failed" :sid nil :role-name nil
+                                       :message nil}])}]]]}))))
 
 (rf/reg-event-db
  :provisioning/cancel-plan
@@ -456,17 +473,15 @@
    (-> db
        (assoc-in [:provisioning :plan-job :apply-cancelled?] true)
        (assoc-in [:provisioning :plan-job :applying?] false)
-       (update-plan-items #(set-status-where % (comp #{"Create" "Update"} :status) "Cancelled")))))
+       (update-plan-items #(set-status-where % (comp #{"out-of-sync"} :status) "Cancelled")))))
 
 (rf/reg-event-db
  :provisioning/cancel-plan-item
  (fn [db [_ item-key]]
    (let [cancellable? (fn [it]
                         (and (= (:key it) item-key)
-                             (contains? #{"pending" "Create" "Update"} (:status it))))]
+                             (contains? #{"pending" "out-of-sync"} (:status it))))]
      (update-plan-items db #(set-status-where % cancellable? "Cancelled")))))
-
-;; ── Apply flow (batch) ──────────────────────────────────────────────────────
 
 (rf/reg-event-fx
  :provisioning/apply-all
@@ -482,30 +497,46 @@
    (let [plan-job (get-in db [:provisioning :plan-job])]
      (if (or (not plan-job) (:apply-cancelled? plan-job))
        {}
-       (let [applicable (filterv #(contains? #{"Create" "Update"} (:status %)) (:items plan-job))
+       (let [applicable (filterv #(contains? #{"out-of-sync"} (:status %)) (:items plan-job))
              chunk      (vec (take apply-chunk-size applicable))]
          (if (seq chunk)
            (let [chunk-keys (set (map :key chunk))
-                 plan-ids   (mapv :plan-id chunk)]
+                 payload    {:items (mapv (fn [it]
+                                            {:sid           (:sid it)
+                                             :resource_name (:resource-name it)})
+                                          chunk)}]
              {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "applying"))
               :fx [[:dispatch
                     [:fetch {:method     "POST"
-                             :uri        "/resources/apply/batch"
-                             :body       {:plan_ids plan-ids}
+                             :uri        "/resources/apply"
+                             :body       payload
                              :on-success #(rf/dispatch [:provisioning/apply-batch-response chunk-idx chunk %])
                              :on-failure #(rf/dispatch [:provisioning/apply-batch-error chunk])}]]]})
            {:db (assoc-in db [:provisioning :plan-job :applying?] false)}))))))
 
 (rf/reg-event-fx
  :provisioning/apply-batch-response
- (fn [{:keys [db]} [_ chunk-idx _chunk resp]]
-   (let [result-map (into {} (map (fn [r] [(:plan_id r) r]) (:results resp)))
-         apply-result (fn [it]
-                        (if-let [r (get result-map (:plan-id it))]
-                          (assoc it
-                                 :status     (:status r)
-                                 :session-id (:session_id r))
-                          it))]
+ (fn [{:keys [db]} [_ chunk-idx chunk resp]]
+   ;; The apply API preserves request order in its results array, so match by
+   ;; index keyed on the row's :key. We can't correlate by :sid because the
+   ;; gateway opens a fresh apply session and returns that new SID, not the
+   ;; plan SID we sent in.
+   (let [results        (vec (:results resp))
+         results-by-key (into {}
+                              (map-indexed (fn [idx it]
+                                             [(:key it) (get results idx)])
+                                           chunk))
+         apply-result   (fn [it]
+                          (if-let [r (get results-by-key (:key it))]
+                            (assoc it
+                                   :status  (:status r)
+                                   ;; Point the row at the apply session so
+                                   ;; "View session" opens the apply transcript
+                                   ;; (CREATE ROLE / GRANT output) instead of
+                                   ;; the plan dry-run.
+                                   :sid     (or (:sid r) (:sid it))
+                                   :message (:message r))
+                            it))]
      {:db (update-plan-items db #(mapv apply-result %))
       :fx [[:dispatch [:provisioning/apply-next-chunk (inc chunk-idx)]]]})))
 
@@ -513,7 +544,7 @@
  :provisioning/apply-batch-error
  (fn [{:keys [db]} [_ chunk]]
    (let [chunk-keys (set (map :key chunk))]
-     {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "ApplyFailed"))
+     {:db (update-plan-items db #(set-status-where % (comp chunk-keys :key) "failed"))
       :fx [[:dispatch [:provisioning/apply-next-chunk 0]]]})))
 
 ;; Single-item apply still uses the individual endpoint
@@ -526,17 +557,18 @@
       :fx [[:dispatch
             [:fetch {:method     "POST"
                      :uri        (str "/resources/" (:resource-name item) "/apply")
-                     :body       {:plan_id (:plan-id item)}
+                     :body       {:sid           (:sid item)
+                                  :resource_name (:resource-name item)}
                      :on-success #(rf/dispatch
                                    [:provisioning/apply-response item-key
-                                    {:status     (:status %)
-                                     :session-id (:session_id %)
-                                     :plan-id    (:plan_id %)}])
+                                    {:status  (:status %)
+                                     :sid     (:sid %)
+                                     :message (:message %)}])
                      :on-failure #(rf/dispatch
                                    [:provisioning/apply-response item-key
-                                    {:status     "ApplyFailed"
-                                     :session-id nil
-                                     :plan-id    (:plan-id item)}])}]]]})))
+                                    {:status  "failed"
+                                     :sid     (:sid item)
+                                     :message nil}])}]]]})))
 
 (rf/reg-event-db
  :provisioning/apply-response
@@ -545,11 +577,10 @@
                       #(update-items-where % (key= item-key)
                                            (fn [it]
                                              (assoc it
-                                                    :status     (:status response)
-                                                    :session-id (:session-id response)))))))
+                                                    :status  (:status response)
+                                                    :sid     (or (:sid response) (:sid it))
+                                                    :message (:message response)))))))
 
-;; ── Session fetch (gateway-backed) ──────────────────────────────────────────
-;;
 ;; The gateway returns a session JSON with `event_stream` as an array. With
 ;; `?event_stream=utf8` that array becomes a single string with the concat-
 ;; enated stdout/stderr ("o" / "e" events). We use that format because it's
@@ -582,27 +613,60 @@
     (catch :default _ 0)))
 
 (defn- item-status->session-status [item-status]
-  (if (contains? #{"Failed" "ApplyFailed"} item-status)
+  (if (contains? #{"failed"} item-status)
     "error" "success"))
 
 (rf/reg-event-fx
+ :provisioning/load-job-sessions
+ ;; Populates :provisioning :sessions with one skeleton entry per plan-item
+ ;; that has a :sid. Skeletons carry status/role-name/resource info but no
+ ;; output, and are flagged `:loaded? false` so the session-list view can
+ ;; lazy-fetch the body when the user expands a row. Sessions that have
+ ;; already been fetched (via the per-row "View session" button) keep their
+ ;; loaded state thanks to `:provisioning/add-sessions`' dedupe-by-:id.
+ (fn [{:keys [db]} _]
+   (let [plan-job (get-in db [:provisioning :plan-job])
+         items    (or (:items plan-job) [])
+         job-id   (:id plan-job)
+         existing (set (map :id (or (get-in db [:provisioning :sessions]) [])))
+         now      (.now js/Date)
+         skeletons (vec
+                    (keep (fn [item]
+                            (when (and (:sid item)
+                                       (not (existing (:sid item))))
+                              {:id            (:sid item)
+                               :job-id        job-id
+                               :resource-id   (:resource-id item)
+                               :resource-name (:resource-name item)
+                               :role-name     (or (:role-name item) (:role-input item))
+                               :started-at    now
+                               :status        (item-status->session-status (:status item))
+                               :duration-ms   0
+                               :output        ""
+                               :loaded?       false}))
+                          items))]
+     (if (seq skeletons)
+       {:fx [[:dispatch [:provisioning/add-sessions skeletons]]]}
+       {}))))
+
+(rf/reg-event-fx
  :provisioning/fetch-plan-session
- (fn [{:keys [db]} [_ session-id]]
-   (let [item (some #(when (= (:session-id %) session-id) %)
+ (fn [{:keys [db]} [_ sid]]
+   (let [item (some #(when (= (:sid %) sid) %)
                     (get-in db plan-items-path))
-         base {:id            session-id
+         base {:id            sid
                :job-id        (get-in db [:provisioning :plan-job :id])
                :resource-id   (:resource-id item)
                :resource-name (:resource-name item)
-               :role-name     (:role item)
+               :role-name     (or (:role-name item) (:role-input item))
                :started-at    (.now js/Date)
                :status        (item-status->session-status (:status item))}]
-     {:fx [[:fetch
-            {:method     "GET"
-             :uri        (str "/sessions/" session-id
-                              "?expand=event_stream&event_stream=utf8")
-             :on-success #(rf/dispatch [:provisioning/plan-session-fetched base %])
-             :on-failure #(rf/dispatch [:provisioning/plan-session-fetch-failed base %])}]]})))
+     {:fx [[:dispatch
+            [:fetch {:method     "GET"
+                     :uri        (str "/sessions/" sid
+                                      "?expand=event_stream&event_stream=utf8")
+                     :on-success #(rf/dispatch [:provisioning/plan-session-fetched base %])
+                     :on-failure #(rf/dispatch [:provisioning/plan-session-fetch-failed base %])}]]]})))
 
 (rf/reg-event-fx
  :provisioning/plan-session-fetched
@@ -613,7 +677,8 @@
             [:provisioning/add-sessions
              [(assoc base
                      :duration-ms duration-ms
-                     :output      output)]]]]})))
+                     :output      output
+                     :loaded?     true)]]]]})))
 
 (rf/reg-event-fx
  :provisioning/plan-session-fetch-failed
@@ -634,4 +699,5 @@
              [(assoc base
                      :status      "error"
                      :duration-ms 0
-                     :output      body)]]]]})))
+                     :output      body
+                     :loaded?     true)]]]]})))

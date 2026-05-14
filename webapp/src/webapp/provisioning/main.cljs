@@ -121,10 +121,18 @@
       :job-detail [job-detail/job-detail-screen
                    {:on-back              #(set-screen! :hub)
                     :on-done              (fn []
+                                            (rf/dispatch [:provisioning/clear-plan-job])
                                             (rf/dispatch [:provisioning/fetch-resources])
                                             (set-screen! :hub))
                     :on-run-in-background #(set-screen! :hub)
                      :on-view-sessions     (fn [filter-opt]
+                                             ;; When the user opens the "all sessions" view
+                                             ;; (no per-row filter), synthesize skeletons for
+                                             ;; every plan-item with a :sid so the list shows
+                                             ;; everything immediately. Outputs are loaded on
+                                             ;; demand when each row is expanded.
+                                             (when (nil? filter-opt)
+                                               (rf/dispatch [:provisioning/load-job-sessions]))
                                              (let [plan-job @(rf/subscribe [:provisioning/plan-job])]
                                                (navigate-sessions!
                                                 {:job-id      (:id plan-job)

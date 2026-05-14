@@ -3,6 +3,7 @@
    ["@radix-ui/themes" :refer [Badge Box Flex Heading Text]]
    ["lucide-react" :refer [Check ChevronDown ChevronUp Info X]]
    ["react" :as react]
+   [re-frame.core :as rf]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
 
@@ -36,10 +37,20 @@
     title]
    [session-status-badge {:status status} {:plain? true}]])
 
-(defn- terminal-body [output]
+(defn- terminal-body
+  "Renders the dark terminal body. Height tracks the content — no max-height
+   and no vertical scrollbar inside the terminal, so a 6-line session takes
+   up exactly 6 lines of dark space (the page already scrolls if needed via
+   the session-list's outer overflow container). Horizontal overflow stays
+   auto so a stray long line doesn't blow out the row width.
+
+   When `loaded?` is false we show a faint 'Loading…' line instead of the
+   empty `output` placeholder — sessions synthesized from plan-items start
+   empty and only fill in once the user expands the row."
+  [{:keys [output loaded?]}]
   [:> Box {:style {:background "var(--gray-12)"
                    :padding "14px 18px"
-                   :overflow "auto" :max-height 260}}
+                   :overflow-x "auto"}}
    [:> Text {:size "1"
              :style {:color "var(--gray-4)"
                      :font-family "var(--font-mono)"
@@ -47,11 +58,13 @@
                      :white-space "pre"
                      :display "block"
                      :line-height 1.72}}
-    output]])
+    (if (and (not loaded?) (empty? output))
+      "Loading session output\u2026"
+      output)]])
 
 (defn- session-row
   [{:keys [session index total expanded? on-toggle]}]
-  (let [{:keys [resource-name resource-type role-name status duration-ms output]} session
+  (let [{:keys [resource-name resource-type role-name status duration-ms output loaded?]} session
         last? (= index (dec total))
         bg    (shared/zebra-bg index)]
     [:<>
@@ -85,13 +98,23 @@
                          :border "1px solid var(--gray-a4)"}}
          [terminal-chrome {:title (str resource-name " — " role-name)
                            :status status}]
-         [terminal-body output]]])]))
+         [terminal-body {:output output :loaded? loaded?}]]])]))
 
 (defn- session-list-screen-inner
   [{:keys [sessions title subtitle on-back]}]
   (let [[expanded-id set-expanded-id] (react/useState nil)
-        toggle-expanded! (fn [id]
-                           (set-expanded-id (if (= expanded-id id) nil id)))]
+        toggle-expanded!
+        (fn [id]
+          (let [collapsing? (= expanded-id id)
+                next-id     (when-not collapsing? id)]
+            ;; Lazy-load: when expanding a synthesized (not-yet-loaded)
+            ;; row, kick off the fetch so the output streams in. Already
+            ;; loaded rows and collapse actions are no-ops here.
+            (when next-id
+              (let [sess (some #(when (= (:id %) next-id) %) sessions)]
+                (when (and sess (not (:loaded? sess)))
+                  (rf/dispatch [:provisioning/fetch-plan-session next-id]))))
+            (set-expanded-id next-id)))]
     [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
      [:> Flex {:align "center" :gap "2" :mb "1"}
       [shared/back-button {:on-click on-back}]]

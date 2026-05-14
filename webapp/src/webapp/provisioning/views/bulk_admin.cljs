@@ -2,8 +2,8 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading
                                 IconButton Progress Select Text TextField]]
-   ["lucide-react" :refer [AlertCircle Check CheckCircle2 Eye EyeOff
-                            Server Upload UserCog X]]
+   ["lucide-react" :refer [AlertCircle CheckCircle2 Eye EyeOff
+                            Pencil Plus Server Upload UserCog X]]
    ["react" :as react]
    [re-frame.core :as rf]
    [webapp.provisioning.data :as data]
@@ -37,20 +37,63 @@
 
 (def ^:private cred-keys [:username :password])
 
+(defn- row-changed?
+  "Single source of truth for 'this row will be POSTed when Apply is clicked'.
+   True iff the row has both credentials AND differs from the snapshot taken
+   when the screen mounted. Used by both the apply-queue builder and the
+   CSV-preview status classifier so badge wording can't drift from behavior."
+  [resource cfg initial-cfg]
+  (let [id      (:id resource)
+        cur     (select-keys (get cfg id) cred-keys)
+        initial (select-keys (get initial-cfg id) cred-keys)
+        {:keys [username password]} cur]
+    (and (seq username)
+         (seq password)
+         (not= cur initial))))
+
 (defn- ->queue-item
   "Builds the API payload for a resource whose credentials changed and are valid.
-   Returns nil when the resource has empty creds or hasn't been edited."
-  [{:keys [id name]} cfg initial-cfg]
-  (let [cur                          (get cfg id)
-        {:keys [username password]}  cur]
-    (when (and (seq username)
-               (seq password)
-               (not= (select-keys cur cred-keys)
-                     (select-keys (get initial-cfg id) cred-keys)))
+   Returns nil when the resource isn't part of the apply set."
+  [{:keys [id name] :as resource} cfg initial-cfg]
+  (when (row-changed? resource cfg initial-cfg)
+    (let [{:keys [username password]} (get cfg id)]
       {:resource-name name
        :username      username
        :password      password})))
 
+
+(def ^:private csv-status-badge
+  "Display config for the four CSV-preview row states. Order matters for the
+   summary strip — kept consistent with `status-sort-priority` below."
+  {:added      {:color "green" :label "Added"      :icon Plus
+                :row-bg "var(--green-1)"}
+   :updated    {:color "green" :label "Updated"    :icon Pencil
+                :row-bg "var(--green-1)"}
+   :unchanged  {:color "gray"  :label "Unchanged"  :icon nil
+                :row-bg nil}
+   :not-in-csv {:color "gray"  :label "Not in CSV" :icon nil
+                :row-bg nil}})
+
+(def ^:private status-sort-priority
+  "Lower number sorts earlier — green rows surface above the noise."
+  {:added 0 :updated 1 :unchanged 2 :not-in-csv 3})
+
+(defn- csv-row-status
+  "Classifies a row in the CSV preview as :added / :updated / :unchanged /
+   :not-in-csv.
+
+   * `:not-in-csv` keys off `csv-matched-ids` rather than cfg state so
+     pre-filled inventory credentials don't masquerade as CSV matches.
+   * `:added` vs `:updated` keys off the resource's original `:admin` field
+     (i.e. what the gateway returned) rather than the cfg snapshot, since
+     the pre-fill for an unconfigured resource sets a placeholder username
+     of `\"admin\"` that would otherwise look like a real prior value."
+  [resource cfg initial-cfg csv-matched-ids]
+  (cond
+    (not (contains? csv-matched-ids (:id resource))) :not-in-csv
+    (not (row-changed? resource cfg initial-cfg))    :unchanged
+    (seq (:admin resource))                          :updated
+    :else                                            :added))
 
 (defn- eye-toggle
   "Small ghost icon button that flips between Eye / EyeOff."
@@ -166,32 +209,35 @@
       [eye-toggle {:visible? pwd-visible? :on-click on-toggle-pwd}]]]]])
 
 (defn- csv-preview-row
-  "One read-only row in the CSV preview table: name + matched-or-missing badge."
-  [{:keys [resource cfg-row index total zebra-bg]}]
-  (let [has-creds? (and (seq (:username cfg-row)) (seq (:password cfg-row)))]
+  "One read-only row in the CSV preview table. The `:status` keyword drives
+   the badge wording, row tint, and whether the credential cells render the
+   live cfg values or an em-dash placeholder (for rows the CSV doesn't touch)."
+  [{:keys [resource cfg-row status index total zebra-bg]}]
+  (let [{:keys [color label icon row-bg]} (get csv-status-badge status)
+        show-creds? (contains? #{:added :updated :unchanged} status)]
     [:> Flex {:px "3" :py "2" :align "center"
               :style {:border-bottom (when (< index (dec total)) "1px solid var(--gray-3)")
                       :min-height 44
-                      :background (if has-creds? "var(--green-1)" zebra-bg)}}
+                      :background (or row-bg zebra-bg)}}
      [:> Flex {:align "center" :gap "2" :style {:flex 1}}
       [:> Text {:size "2" :weight "medium"} (:name resource)]
       [:> Badge {:color "gray" :variant "soft" :size "1"} (:db-type resource)]]
      [:> Box {:style {:width 120 :flex-shrink 0}}
-      (if has-creds?
+      (if show-creds?
         [:> Text {:size "2"} (:username cfg-row)]
-        [:> Text {:size "1" :color "gray" :style {:font-style "italic"}} "no match"])]
+        [:> Text {:size "1" :color "gray" :style {:font-style "italic"}} "\u2014"])]
      [:> Box {:style {:width 180 :flex-shrink 0}}
-      (when has-creds?
+      (when show-creds?
         [:> Text {:size "1" :color "gray"
                   :style {:font-family "var(--font-mono)" :font-size 11
                           :overflow "hidden" :text-overflow "ellipsis"
                           :white-space "nowrap"}}
          (mask-password (:password cfg-row))])]
-     [:> Box {:style {:width 80}}
-      (if has-creds?
-        [:> Badge {:color "green" :variant "soft" :size "1"}
-         [:> Check {:size 10}] " Matched"]
-        [:> Badge {:color "gray"  :variant "soft" :size "1"} "Missing"])]]))
+     [:> Box {:style {:width 110}}
+      (if icon
+        [:> Badge {:color color :variant "soft" :size "1"}
+         [:> icon {:size 10}] (str " " label)]
+        [:> Badge {:color color :variant "soft" :size "1"} label])]]))
 
 
 (defn- manual-mode-body
@@ -224,18 +270,57 @@
    [shared/csv-drop-zone {:on-file   on-file
                           :hint-text "Columns: name, admin_user, password"}]])
 
+(defn- csv-summary-strip
+  "Compact badge row that summarizes what the uploaded CSV will do.
+
+   `:counts` is a map keyed by status keyword (:added/:updated/:unchanged/
+   :not-in-csv); `:unmatched-csv` is the number of CSV rows that don't
+   target any selected resource."
+  [{:keys [counts unmatched-csv on-clear]}]
+  [:> Flex {:align "center" :gap "3" :mb "2" :wrap "wrap"}
+   (when (pos? (:added counts))
+     [:> Badge {:color "green" :variant "soft"}
+      [:> Plus {:size 10}] (str " " (:added counts) " added")])
+   (when (pos? (:updated counts))
+     [:> Badge {:color "green" :variant "soft"}
+      [:> Pencil {:size 10}] (str " " (:updated counts) " updated")])
+   (when (pos? (:unchanged counts))
+     [:> Badge {:color "gray" :variant "soft"}
+      (str (:unchanged counts) " unchanged")])
+   (when (pos? (:not-in-csv counts))
+     [:> Badge {:color "gray" :variant "soft"}
+      (str (:not-in-csv counts) " not in CSV")])
+   (when (pos? unmatched-csv)
+     [:> Badge {:color "amber" :variant "soft"}
+      (str unmatched-csv " CSV "
+           (if (= 1 unmatched-csv) "row" "rows") " didn't match")])
+   [:> Button {:variant "ghost" :size "1" :color "gray" :on-click on-clear}
+    [:> X {:size 11}] " Clear"]])
+
 (defn- csv-mode-preview
-  [{:keys [resources cfg csv-match-count csv-row-count on-clear]}]
-  (let [total (count resources)]
+  [{:keys [resources cfg initial-cfg csv-matched-ids
+           csv-match-count csv-row-count on-clear]}]
+  (let [classified    (mapv (fn [r]
+                              {:resource r
+                               :cfg-row  (get cfg (:id r))
+                               :status   (csv-row-status r cfg initial-cfg csv-matched-ids)})
+                            resources)
+        ;; Sort green rows to the top so the user immediately sees what
+        ;; the CSV is doing instead of scrolling past hundreds of
+        ;; pre-filled inventory rows. `sort-by` is stable in CLJS, so
+        ;; original selection order is preserved within each status group.
+        sorted        (vec (sort-by (comp status-sort-priority :status) classified))
+        by-status     (group-by :status classified)
+        counts        {:added      (count (:added      by-status))
+                       :updated    (count (:updated    by-status))
+                       :unchanged  (count (:unchanged  by-status))
+                       :not-in-csv (count (:not-in-csv by-status))}
+        unmatched-csv (max 0 (- csv-row-count csv-match-count))
+        total         (count sorted)]
     [:> Flex {:direction "column" :gap "3" :style {:flex 1 :min-height 0}}
-     [:> Flex {:align "center" :gap "3" :mb "2"}
-      [:> Badge {:color "green" :variant "soft"} (str csv-match-count " matched")]
-      [:> Badge {:color "gray"  :variant "soft"} (str csv-row-count " rows in CSV")]
-      (when (< csv-match-count csv-row-count)
-        [:> Badge {:color "amber" :variant "soft"}
-         (str (- csv-row-count csv-match-count) " unmatched")])
-      [:> Button {:variant "ghost" :size "1" :color "gray" :on-click on-clear}
-       [:> X {:size 11}] " Clear"]]
+     [csv-summary-strip {:counts        counts
+                         :unmatched-csv unmatched-csv
+                         :on-clear      on-clear}]
 
      (when (zero? csv-match-count)
        [shared/info-callout
@@ -250,11 +335,12 @@
        [{:flex 1    :label "Resource"}
         {:width 120 :label "Admin user"}
         {:width 180 :label "Password"}
-        {:width 80  :label "Status"}]]
-      (for [[i r] (map-indexed vector resources)]
-        ^{:key (:id r)}
-        [csv-preview-row {:resource r
-                          :cfg-row  (get cfg (:id r))
+        {:width 110 :label "Status"}]]
+      (for [[i row] (map-indexed vector sorted)]
+        ^{:key (:id (:resource row))}
+        [csv-preview-row {:resource (:resource row)
+                          :cfg-row  (:cfg-row row)
+                          :status   (:status row)
                           :index    i
                           :total    total
                           :zebra-bg (shared/zebra-bg i)}])]]))
@@ -267,6 +353,11 @@
         [csv-parsed set-csv-parsed]           (react/useState false)
         [csv-match-count set-csv-match-count] (react/useState 0)
         [csv-row-count set-csv-row-count]     (react/useState 0)
+        ;; Set of resource ids whose name actually appeared in the uploaded
+        ;; CSV. The preview badge ("Added"/"Updated"/"Unchanged"/"Not in CSV")
+        ;; keys off this rather than cfg state, because pre-filled inventory
+        ;; credentials would otherwise read as CSV matches.
+        [csv-matched-ids set-csv-matched-ids] (react/useState #{})
         [agent-id set-agent-id]               (react/useState "")
         [applying? set-applying]              (react/useState false)
         [apply-progress set-apply-progress]   (react/useState 0)
@@ -307,10 +398,14 @@
                         (fn [rows]
                           (let [by-name     (rows->admin-credentials rows)
                                 matched     (select-keys by-name resource-names)
-                                match-count (count matched)]
-                            (set-csv-row-count (count rows))
+                                match-count (count matched)
+                                matched-ids (into #{}
+                                                  (keep #(:id (get resources-by-name %)))
+                                                  (keys matched))]
+                            (set-csv-row-count   (count rows))
                             (set-csv-match-count match-count)
-                            (set-csv-parsed true)
+                            (set-csv-matched-ids matched-ids)
+                            (set-csv-parsed      true)
                             (set-configs
                              (fn [old-cfg]
                                (reduce-kv
@@ -321,8 +416,17 @@
                                 old-cfg
                                 matched)))))}))
         clear-csv!  (fn []
+                      ;; Reverts to the pre-CSV snapshot rather than wiping
+                      ;; all configs. In the edit flow this matters — the
+                      ;; pre-fill carries each resource's existing admin
+                      ;; from `env_vars`, and clearing the CSV should
+                      ;; "undo the upload", not "erase what was already
+                      ;; configured server-side".
                       (set-csv-parsed false)
-                      (set-configs (constantly {}))
+                      (set-csv-matched-ids #{})
+                      (set-csv-row-count 0)
+                      (set-csv-match-count 0)
+                      (set-configs (constantly initial-configs))
                       (when-let [el (.-current file-input-ref)]
                         (set! (.-value el) "")))
         do-apply!   (fn []
@@ -380,6 +484,8 @@
             [csv-mode-upload  {:on-file handle-csv!}]
             [csv-mode-preview {:resources       resources
                                :cfg             cfg
+                               :initial-cfg     initial-configs
+                               :csv-matched-ids csv-matched-ids
                                :csv-match-count csv-match-count
                                :csv-row-count   csv-row-count
                                :on-clear        clear-csv!}]))

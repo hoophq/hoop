@@ -10,8 +10,6 @@
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
 
-;; ── Shared visual primitives ───────────────────────────────────────────────────
-
 (defn- status-dot
   "Small color-coded circle used for status indicators."
   [{:keys [color size] :or {size 7}}]
@@ -20,8 +18,6 @@
                    :border-radius "50%"
                    :background    (str "var(--" color "-9)")
                    :flex-shrink   0}}])
-
-;; ── Progress bar ───────────────────────────────────────────────────────────────
 
 (defn progress-bar [resource]
   (let [completed (count (filter #(= "done" (data/get-segment-state (:key %) resource))
@@ -42,8 +38,6 @@
       [:> Text {:size "1" :color "gray"
                 :style {:white-space "nowrap" :min-width 28 :text-align "right"}}
        (str completed " / " (count data/segments))]]]))
-
-;; ── Funnel cards ───────────────────────────────────────────────────────────────
 
 (defn funnel-cards [resources]
   (let [total       (count resources)
@@ -100,8 +94,6 @@
                              :border-radius 99
                              :transition "width 0.6s ease"}}]]]]]))]))
 
-;; ── Stage banner ───────────────────────────────────────────────────────────────
-
 (defn stage-banner [{:keys [tab total-in-stage selected-in-stage on-action on-import-csv]}]
   (when (and (not= tab :inventory) (pos? total-in-stage))
     (let [count-val (if (pos? selected-in-stage) selected-in-stage total-in-stage)
@@ -127,8 +119,6 @@
                                :on-click on-action}
                     (if manage? [:> UserCog {:size 14}] [:> Key {:size 14}])
                     (str " " (if manage? "Set up " "Provision ") label-str " →")]]}])))
-
-;; ── Job status bar ─────────────────────────────────────────────────────────────
 
 (defn job-status-bar [{:keys [job on-view on-dismiss]}]
   (let [done     (data/count-by-status (:items job) "done")
@@ -161,14 +151,24 @@
 
 (defn plan-job-banner
   "Shows the active plan-job status when the user navigates back to the inventory
-   while planning or applying is still running, or when results are ready."
-  [{:keys [on-view]}]
+   while planning or applying is still running, or when results are ready.
+
+   `:on-dismiss` is invoked when the user clicks the X to clear a finished job.
+   The X is only offered when the job is no longer running — interrupting an
+   in-flight planning/applying run from this banner would be surprising."
+  [{:keys [on-view on-dismiss]}]
   (let [plan-job @(rf/subscribe [:provisioning/plan-job])
         items    (or (:items plan-job) [])]
     (when (seq items)
-      (let [applied   (data/count-by-status items "Applied")
-            failed    (data/count-by-status items #{"Failed" "ApplyFailed"})
-            ready     (data/count-by-status items #{"Create" "Update"})
+      ;; Status vocabulary follows what the agent emits — see
+      ;; `webapp.provisioning.data/plan-item-status`. "out-of-sync" means
+      ;; "plan ran, apply has work to do" (=> ready); "in-sync" means
+      ;; "plan ran, already at desired state" (no apply needed, no banner
+      ;; noise but counted as done).
+      (let [applied   (data/count-by-status items "success")
+            failed    (data/count-by-status items "failed")
+            ready     (data/count-by-status items "out-of-sync")
+            in-sync   (data/count-by-status items "in-sync")
             cancelled (data/count-by-status items "Cancelled")
             planning  (some #(contains? #{"pending" "processing"} (:status %)) items)
             applying  (some #(= "applying" (:status %)) items)
@@ -186,7 +186,8 @@
                         all-done     [:> Check {:size 14}]
                         (pos? ready) [:> Rocket {:size 14}]
                         :else        [:> AlertCircle {:size 14}])
-            suffix    (str (when (pos? failed) (str ", " failed " failed"))
+            suffix    (str (when (pos? failed)    (str ", " failed    " failed"))
+                           (when (pos? in-sync)   (str ", " in-sync   " in sync"))
                            (when (pos? cancelled) (str ", " cancelled " cancelled")))
             progress  (cond
                         planning (str "Planning — " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
@@ -201,10 +202,13 @@
             :extra   [:> Flex {:align "center" :gap "3"}
                       [:> Text {:size "2" :weight "medium"} "Role provisioning"]
                       [:> Text {:size "2" :color "gray"} progress]]
-            :actions [:> Button {:size "1" :variant "ghost" :on-click on-view}
-                      (if busy? "View progress" "View results")]}])))))
-
-;; ── Floating action bar ────────────────────────────────────────────────────────
+            :actions [:<>
+                      [:> Button {:size "1" :variant "ghost" :on-click on-view}
+                       (if busy? "View progress" "View results")]
+                      (when (and (not busy?) on-dismiss)
+                        [:> Button {:size "1" :variant "ghost" :color "gray"
+                                    :on-click on-dismiss}
+                         [:> X {:size 12}]])]}])))))
 
 (defn floating-action-bar
   "Bottom-floating action bar shown when at least one resource is selected.
@@ -246,8 +250,6 @@
      [:> Text {:size "2" :color "gray"} "No actions available."])
    [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
     [:> X {:size 14}]]])
-
-;; ── Layout sections ────────────────────────────────────────────────────────────
 
 (defn- inventory-header [{:keys [total-resources ready-count on-open-bulk-import]}]
   [:> Flex {:align "center" :justify "between" :mb "6"}
@@ -502,7 +504,8 @@
                         :on-dismiss #(set-dismissed-job-ids
                                       (fn [s] (conj s (:id latest-active-job))))}])
 
-     [plan-job-banner {:on-view #(on-set-screen :job-detail)}]
+     [plan-job-banner {:on-view    #(on-set-screen :job-detail)
+                       :on-dismiss #(rf/dispatch [:provisioning/clear-plan-job])}]
 
      [inventory-tabs {:active-tab active-tab
                       :counts     counts

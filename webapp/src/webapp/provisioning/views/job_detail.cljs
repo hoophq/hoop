@@ -1,9 +1,10 @@
 (ns webapp.provisioning.views.job-detail
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Heading
-                                Progress Table Text]]
+                               Progress Table Text]]
    ["lucide-react" :refer [AlertCircle Ban Check CheckCircle2
-                            RefreshCw Rocket ScrollText X]]
+                           RefreshCw Rocket ScrollText X]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
@@ -54,12 +55,12 @@
   "Returns the header action specs for the current view state. Each spec has
    a `:visible?` predicate that the render loop filters on, plus the props
    consumed by `action-button`."
-  [{:keys [job-sessions planning? cancelled? applying? apply-cancelled? busy?
+  [{:keys [job-sessions-count planning? cancelled? applying? apply-cancelled? busy?
            on-view-sessions on-run-in-background]}]
-  [{:visible? (pos? (count job-sessions))
+  [{:visible? (pos? job-sessions-count)
     :variant  "outline" :color "gray" :size "1"
     :icon     ScrollText :icon-size 13
-    :label    (data/pluralize (count job-sessions) "session")
+    :label    (data/pluralize job-sessions-count "session")
     :on-click #(on-view-sessions nil)}
    {:visible? (and planning? (not cancelled?))
     :variant  "outline" :color "red"
@@ -75,15 +76,27 @@
     :on-click on-run-in-background}])
 
 (defn- footer-actions
-  "Action specs for the footer row. Same DSL as `header-actions`."
-  [{:keys [all-planned? plan-done applying? all-done? on-done on-back]}]
-  [{:visible? (and all-planned? (pos? plan-done) (not applying?))
-    :icon     Rocket
-    :label    (str "Apply " (data/pluralize plan-done "role") " \u2192")
-    :on-click #(rf/dispatch [:provisioning/apply-all])}
-   {:visible? all-done?
-    :color    "green" :icon Check :label "Done"
-    :on-click (or on-done on-back)}])
+  "Action specs for the footer row. Same DSL as `header-actions`.
+
+   When the run finishes, the confirm button always clears the plan-job
+   through `on-done`. Its label/color shifts based on outcome so a green
+   'Done' check isn't shown next to a sea of failed rows."
+  [{:keys [all-planned? plan-done applying? all-done? failed-count
+           applied-count on-done on-back]}]
+  (let [any-failed? (pos? failed-count)
+        none-applied? (zero? applied-count)
+        [color label]
+        (cond
+          (and any-failed? none-applied?) ["gray"  "Dismiss results"]
+          any-failed?                     ["amber" "Dismiss results"]
+          :else                           ["green" "Done"])]
+    [{:visible? (and all-planned? (pos? plan-done) (not applying?))
+      :icon     Rocket
+      :label    (str "Apply " (data/pluralize plan-done "role") " \u2192")
+      :on-click #(rf/dispatch [:provisioning/apply-all])}
+     {:visible? all-done?
+      :color    color :icon Check :label label
+      :on-click (or on-done on-back)}]))
 
 (defn- status-callouts
   "Returns the info-callout specs for the current view state. Each spec carries
@@ -143,13 +156,13 @@
   "Either a 'View session' button (lazy-fetches the session on first click)
    or an em-dash when there's no session yet."
   [{:keys [item session-set on-view-sessions]}]
-  (if (:session-id item)
-    (let [loaded? (contains? session-set (:session-id item))]
+  (if (:sid item)
+    (let [loaded? (contains? session-set (:sid item))]
       [:> Button {:size "1" :variant "ghost" :color "indigo"
                   :on-click (fn []
                               (when-not loaded?
                                 (rf/dispatch [:provisioning/fetch-plan-session
-                                              (:session-id item)]))
+                                              (:sid item)]))
                               (on-view-sessions
                                {:resource-id   (:resource-id item)
                                 :resource-name (:resource-name item)}))}
@@ -165,11 +178,11 @@
      [:> Flex {:align "center" :gap "2"}
       [:> Text {:size "1" :color "gray"
                 :style {:font-family "var(--font-mono)" :font-size 11}}
-       (:role item)]
+       (or (:role-name item) (:role-input item))]
       [:> Text {:size "1" :color "gray"} "\u00b7"]
       [:> Text {:size "1" :color "gray"
                 :style {:font-family "var(--font-mono)" :font-size 11}}
-       (:database item)]]]]
+       (cs/join ", " (:scopes item))]]]]
    [:> Table.Cell
     [plan-item-sessions-cell {:item             item
                               :session-set      session-set
@@ -188,14 +201,22 @@
                       (some #(= "applying" (:status %)) items))
         busy?     (or planning? applying?)
 
-        plan-done       (data/count-by-status items #{"Create" "Update"})
-        failed-count    (data/count-by-status items #{"Failed" "ApplyFailed"})
-        applied-count   (data/count-by-status items "Applied")
+        ;; Status vocabulary matches what the agent emits — see
+        ;; `webapp.provisioning.data/plan-item-status`.
+        ;; "out-of-sync" = plan ran, apply has work to do (= "ready to apply").
+        ;; "in-sync"     = plan ran, role already matches desired state (no-op).
+        plan-done       (data/count-by-status items "out-of-sync")
+        in-sync-count   (data/count-by-status items "in-sync")
+        failed-count    (data/count-by-status items "failed")
+        applied-count   (data/count-by-status items "success")
         cancelled-count (data/count-by-status items "Cancelled")
         total           (count items)
 
-        terminal?    #(contains? #{"Create" "Update" "Failed" "Applied" "ApplyFailed" "Cancelled"} (:status %))
-        apply-done?  #(contains? #{"Applied" "ApplyFailed" "Cancelled"} (:status %))
+        terminal?    #(contains? #{"out-of-sync" "in-sync" "failed"
+                                   "success" "Cancelled"} (:status %))
+        ;; in-sync items never enter apply, but they're effectively done as
+        ;; far as the apply-progress bar is concerned.
+        apply-done?  #(contains? #{"success" "failed" "Cancelled" "in-sync"} (:status %))
         all-planned? (and (pos? total) (not planning?) (every? terminal? items))
         all-done?    (and all-planned? (not applying?) (zero? plan-done))
 
@@ -212,6 +233,7 @@
      :cancelled?       (:cancelled? plan-job)
      :apply-cancelled? (:apply-cancelled? plan-job)
      :plan-done        plan-done
+     :in-sync-count    in-sync-count
      :failed-count     failed-count
      :applied-count    applied-count
      :cancelled-count  cancelled-count
@@ -219,8 +241,12 @@
      :all-planned?     all-planned?
      :all-done?        all-done?
      :progress         progress
-     :job-sessions     (filterv #(= (:job-id %) (:id plan-job)) sessions)
-     :session-set      (set (map :id sessions))}))
+     ;; Count of sessions available for the "N sessions" header button.
+     ;; Sourced from plan-items (every item with a :sid corresponds to a
+     ;; server-side session) rather than the loaded sessions list, so the
+     ;; button surfaces all sessions even before any have been opened.
+     :job-sessions-count (count (filter :sid items))
+     :session-set      (set (map :id (filter :loaded? sessions)))}))
 
 (defn- progress-color [{:keys [busy? failed-count]}]
   (cond busy?               "indigo"
@@ -228,11 +254,12 @@
         :else               "green"))
 
 (defn- subtitle-text
-  [{:keys [total applied-count plan-done failed-count cancelled-count]}]
+  [{:keys [total applied-count plan-done in-sync-count failed-count cancelled-count]}]
   (str "Role provisioning \u2014 " total " roles \u00b7 "
        applied-count " applied \u00b7 "
        plan-done " ready \u00b7 "
        failed-count " failed"
+       (when (pos? in-sync-count)   (str " \u00b7 " in-sync-count " in sync"))
        (when (pos? cancelled-count) (str " \u00b7 " cancelled-count " cancelled"))))
 
 (defn job-detail-screen
