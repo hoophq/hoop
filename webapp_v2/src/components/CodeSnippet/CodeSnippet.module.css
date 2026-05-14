@@ -1,0 +1,28 @@
+.root {
+  background-color: var(--mantine-color-dark-8);
+  border-radius: var(--mantine-radius-md);
+}
+
+.scroll {
+  overflow-x: auto;
+  padding-right: 28px;
+}
+
+.pre {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-gray-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  line-height: var(--mantine-line-height-md);
+}
+
+.copyBtn {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.copyBtn[data-visible] {
+  opacity: 1;
+}

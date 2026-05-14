@@ -1,7 +1,7 @@
 (ns webapp.sessions.components.session-header
   (:require
    ["@radix-ui/themes" :refer [Box Button IconButton Flex Heading]]
-   ["lucide-react" :refer [Link2 Square RotateCw X Download]]
+   ["lucide-react" :refer [Link2 Square RotateCw X Workflow]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -26,6 +26,7 @@
                                       :params params
                                       :connection-name connection-name
                                       :repository repository
+                                      :correlation-id (:correlation_id session)
                                       :on-success on-success
                                       :on-failure on-failure}]))
       (rf/dispatch [:audit->clear-session-details-state {:status :loading}]))
@@ -39,7 +40,7 @@
   (reset! killing-status :loading)
   (rf/dispatch [:audit->kill-session session killing-status]))
 
-(defn main [{:keys [session user on-close clipboard-disabled? has-large-payload? download-extension]}]
+(defn main [{:keys [session user on-close clipboard-disabled?]}]
   (let [admin? (:admin? user)
         current-user-id (:id user)
         session-user-id (:user_id session)
@@ -50,11 +51,12 @@
         session-url (str (-> js/document .-location .-origin)
                          (routes/url-for :sessions)
                          "/" (:id session))
+        correlation-id (:correlation_id session)
+        has-workflow? (and correlation-id (not (cs/blank? correlation-id)))
         can-kill-session? (and (or is-session-owner?
                                    admin?)
                                (= (:verb session) "exec")
                                (not (= session-status "done")))
-        ;; Check if we're on a dedicated session page (e.g., /sessions/{id})
         current-path (.-pathname (.-location js/window))
         is-dedicated-page? (cs/starts-with? current-path "/sessions/")
         copy-to-clipboard (fn []
@@ -69,6 +71,26 @@
 
       ;; Right side - Action buttons
       [:> Flex {:gap "2" :align "center"}
+       ;; View Timeline button (when session has a correlation id)
+       (when has-workflow?
+         [:> Button
+          {:on-click (if is-dedicated-page?
+                       #(rf/dispatch [:navigate :workflow-details
+                                      {}
+                                      :correlation-id
+                                      (js/encodeURIComponent correlation-id)])
+                       #(js/open
+                         (str (-> js/document .-location .-origin)
+                              (routes/url-for :workflow-details
+                                              :correlation-id
+                                              (js/encodeURIComponent correlation-id)))
+                         "_blank"))
+           :variant "soft"
+           :size "2"
+           :color "gray"}
+          [:> Workflow {:size 20 :class "text-gray-11"}]
+          "View Timeline"])
+
        ;; Kill session button
        (when can-kill-session?
          [:div {:class "relative group"}
@@ -90,18 +112,6 @@
            :color "gray"}
           [:> RotateCw {:size 20 :class "text-gray-11"}]
           "Re-run"])
-
-       ;; Download button (shown only for large payloads)
-       (when has-large-payload?
-         [:> Button
-          {:on-click #(rf/dispatch [:audit->session-file-generate
-                                    (:id session)
-                                    download-extension])
-           :variant "soft"
-           :size "2"
-           :color "gray"}
-          [:> Download {:size 20 :class "text-gray-11"}]
-          "Download"])
 
        ;; Share button (copy link)
        (when-not clipboard-disabled?

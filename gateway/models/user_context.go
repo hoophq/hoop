@@ -30,6 +30,7 @@ type Context struct {
 	OrgID              string          `gorm:"column:org_id"`
 	OrgName            string          `gorm:"column:org_name"`
 	OrgLicenseData     json.RawMessage `gorm:"column:org_license_data"`
+	OrgAnalyticsMode   string          `gorm:"column:org_analytics_mode"`
 	UserID             string          `gorm:"column:user_id"`
 	UserSubject        string          `gorm:"column:user_subject"`
 	UserEmail          string          `gorm:"column:user_email"`
@@ -79,6 +80,7 @@ func GetUserContext(subject string) (*Context, error) {
 		o.id AS org_id,
 		o.name AS org_name,
 		o.license_data AS org_license_data,
+		o.analytics_mode AS org_analytics_mode,
 		u.id AS user_id,
 		u.subject AS user_subject,
 		u.email AS user_email,

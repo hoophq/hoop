@@ -1,7 +1,7 @@
 (ns webapp.events.components.toast
   (:require
    [re-frame.core :as rf]
-   [webapp.components.toast :refer [toast-success toast-error]]))
+   [webapp.components.toast :refer [toast-success toast-error toast-info]]))
 
 (rf/reg-event-fx
  :hide-snackbar
@@ -21,6 +21,7 @@
      :error (toast-error
              (:text data)
              nil
-             (:details data)))
+             (:details data))
+     :info (toast-info (:text data) (:description data)))
 
    {}))

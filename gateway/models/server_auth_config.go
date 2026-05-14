@@ -22,7 +22,6 @@ type ServerAuthConfig struct {
 	AdminRoleName         *string               `gorm:"column:admin_role_name"`
 	AuditorRoleName       *string               `gorm:"column:auditor_role_name"`
 	OrgLicenseData        json.RawMessage       `gorm:"column:license_data;->"`
-	ProductAnalytics      *string               `gorm:"column:product_analytics;->"`
 	GrpcServerURL         *string               `gorm:"column:grpc_server_url;->"`
 	SharedSigningKey      *string               `gorm:"column:shared_signing_key;->"`
 	UpdatedAt             time.Time             `gorm:"column:updated_at"`
@@ -58,7 +57,7 @@ func GetServerAuthConfig() (*ServerAuthConfig, error) {
 		FROM private.authconfig a
 		LEFT JOIN private.orgs o ON a.org_id = o.id
 	), serverconfig AS (
-		SELECT product_analytics, grpc_server_url, shared_signing_key FROM private.serverconfig
+		SELECT grpc_server_url, shared_signing_key FROM private.serverconfig
 	)
 	SELECT * FROM authconfig
 	FULL OUTER JOIN serverconfig ON true;

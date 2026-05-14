@@ -28,9 +28,7 @@
             limit-reached? (and free-license? (>= (count rules) 1))]
         (cond
           loading?
-          [:> Flex {:height "100%" :direction "column" :gap "5"
-                    :class "bg-gray-1" :align "center" :justify "center"}
-           [loaders/simple-loader]]
+          [loaders/page-loading-screen {:full-page false}]
 
           (empty? rules)
           [:> Box {:class "bg-gray-1 h-full"}

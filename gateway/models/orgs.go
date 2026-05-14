@@ -10,12 +10,27 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	AnalyticsModeIdentified = "identified"
+	AnalyticsModeAnonymous  = "anonymous"
+	AnalyticsModeDisabled   = "disabled"
+)
+
+func IsValidAnalyticsMode(mode string) bool {
+	switch mode {
+	case AnalyticsModeIdentified, AnalyticsModeAnonymous, AnalyticsModeDisabled:
+		return true
+	}
+	return false
+}
+
 type Organization struct {
-	ID          string          `gorm:"column:id"`
-	Name        string          `gorm:"column:name"`
-	CreatedAt   time.Time       `gorm:"column:created_at"`
-	LicenseData json.RawMessage `gorm:"column:license_data"`
-	TotalUsers  int64           `gorm:"column:total_users;->"`
+	ID            string          `gorm:"column:id"`
+	Name          string          `gorm:"column:name"`
+	CreatedAt     time.Time       `gorm:"column:created_at"`
+	LicenseData   json.RawMessage `gorm:"column:license_data"`
+	AnalyticsMode string          `gorm:"column:analytics_mode"`
+	TotalUsers    int64           `gorm:"column:total_users;->"`
 }
 
 func ListAllOrganizations() ([]Organization, error) {
@@ -27,7 +42,7 @@ func ListAllOrganizations() ([]Organization, error) {
 func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 	var org Organization
 	err := DB.Raw(`
-	SELECT o.id, o.name, license_data,
+	SELECT o.id, o.name, license_data, analytics_mode,
 	(SELECT count(*) FROM private.users u WHERE u.org_id = o.id) AS total_users
 	FROM private.orgs o
 	WHERE (o.id::TEXT = ? OR o.name = ?)`, nameOrID, nameOrID).
@@ -37,6 +52,16 @@ func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 		return nil, ErrNotFound
 	}
 	return &org, err
+}
+
+func UpdateOrgAnalyticsMode(orgID, mode string) error {
+	if !IsValidAnalyticsMode(mode) {
+		return fmt.Errorf("invalid analytics_mode %q", mode)
+	}
+	return DB.Table("private.orgs").
+		Where("id = ?", orgID).
+		Update("analytics_mode", mode).
+		Error
 }
 
 func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organization, bool, error) {
@@ -53,10 +78,11 @@ func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organizatio
 
 func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, error) {
 	org := Organization{
-		ID:          uuid.NewString(),
-		Name:        name,
-		LicenseData: licenseDataJSON,
-		TotalUsers:  0,
+		ID:            uuid.NewString(),
+		Name:          name,
+		LicenseData:   licenseDataJSON,
+		AnalyticsMode: AnalyticsModeIdentified,
+		TotalUsers:    0,
 	}
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -96,4 +122,32 @@ func UpdateOrgLicense(orgID string, licenseDataJSON []byte) error {
 		Where("id = ?", orgID).
 		Update("license_data", licenseDataJSON).
 		Error
+}
+
+// DeleteOrganizationIfEmpty removes an org and its default scaffolding data (plugins, runbooks).
+// It returns an error if the org still has users or if FK constraints prevent deletion
+// (connections, sessions, agents, etc.).
+func DeleteOrganizationIfEmpty(orgID string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var userCount int64
+		if err := tx.Table("private.users").Where("org_id = ?", orgID).Count(&userCount).Error; err != nil {
+			return err
+		}
+		if userCount > 0 {
+			return fmt.Errorf("org %s still has %d users, cannot delete", orgID, userCount)
+		}
+		if err := tx.Exec(`DELETE FROM private.user_groups WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM private.runbook_rules WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM private.runbooks WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM private.plugins WHERE org_id = ?`, orgID).Error; err != nil {
+			return err
+		}
+		return tx.Table("private.orgs").Where("id = ?", orgID).Delete(nil).Error
+	})
 }

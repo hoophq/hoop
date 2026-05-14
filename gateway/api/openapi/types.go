@@ -12,6 +12,15 @@ type HTTPError struct {
 	Message string `json:"message" example:"the error description"`
 }
 
+type HTTPSuccess struct {
+	Message string `json:"message" example:"operation completed successfully"`
+}
+
+// OrgInvitationRequest is used to accept or decline a pending org invitation
+type OrgInvitationRequest struct {
+	Action string `json:"action" binding:"required" enums:"accept,decline"`
+}
+
 type Login struct {
 	// The URL to redirect the user to the identity provider
 	URL string `json:"login_url"`
@@ -85,6 +94,13 @@ type UserGroup struct {
 	Name string `json:"name" binding:"required" example:"engineering"`
 }
 
+// PendingOrgInvitation represents an organization the user has been invited to
+// but has not yet joined. Only populated in multi-tenant environments.
+type PendingOrgInvitation struct {
+	// Organization name
+	OrgName string `json:"org_name"`
+}
+
 type UserInfo struct {
 	User `json:",inline"`
 	// DEPRECATED in flavor of role
@@ -111,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// Pending organization invitations for this user. When non-empty, the user can migrate
+	// to one of these organizations. Only populated in multi-tenant environments.
+	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
 }
 
 type ServiceAccountStatusType string
@@ -763,6 +782,12 @@ type Session struct {
 	// GuardRailsInfo contains information about guardrail rules that matched during the session.
 	// A non-empty list indicates the session was blocked by at least one guardrail rule.
 	GuardRailsInfo []SessionGuardRailsInfo `json:"guardrails_info" readonly:"true"`
+	// The type of identity that created this session
+	// * user - a human user
+	// * machine - a machine identity (non-human identity)
+	IdentityType string `json:"identity_type" enums:"user,machine" example:"user"`
+	// The machine identity ID if this session was created by a machine identity
+	MachineIdentityID *string `json:"machine_identity_id,omitempty" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
 }
 
 type ProvisionSession struct {
@@ -1133,6 +1158,27 @@ const (
 	AnalyticsTrackingDisabled AnalyticsTrackingStatusType = "disabled"
 )
 
+// AnalyticsModeType represents the per-organization analytics privacy mode.
+// * identified - PII (email, name) is sent to third-party destinations so
+//   the org's users are addressable for support and lifecycle outreach.
+// * anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
+// * disabled   - No analytics events are emitted for the org.
+type AnalyticsModeType string
+
+const (
+	AnalyticsModeIdentified AnalyticsModeType = "identified"
+	AnalyticsModeAnonymous  AnalyticsModeType = "anonymous"
+	AnalyticsModeDisabled   AnalyticsModeType = "disabled"
+)
+
+type OrgAnalyticsModeRequest struct {
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" binding:"required" enums:"identified,anonymous,disabled" example:"identified"`
+}
+
+type OrgAnalyticsModeResponse struct {
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -1229,10 +1275,14 @@ type ServerInfo struct {
 	// * true - Clipboard copy and cut are disabled and not available to users
 	// * false - Clipboard copy and cut are enabled and available to users
 	DisableClipboardCopyCut bool `json:"disable_clipboard_copy_cut"`
-	// Indicates if all tracking and analytics should be enabled or disabled
+	// Indicates if all tracking and analytics should be enabled or disabled.
+	// Derived from analytics_mode for backwards compatibility: "disabled"
+	// when analytics_mode is "disabled"; "enabled" otherwise.
 	// * enabled - Analytics/tracking are enabled
 	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
+	// The analytics privacy mode for the caller's organization
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
@@ -1936,8 +1986,6 @@ type DataMaskingRuleConnection struct {
 }
 
 type ServerMiscConfig struct {
-	// Either to enable or disable the product analytics tracking
-	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
 	// The PostgreSQL server proxy configuration
@@ -2748,4 +2796,51 @@ type EventDispatchDetailResponse struct {
 	EventDispatchListItemResponse
 	EventPayload     json.RawMessage `json:"event_payload,omitempty"`
 	SubscriptionName string          `json:"subscription_name,omitempty"`
+}
+
+type MachineIdentity struct {
+	ID              string     `json:"id" readonly:"true" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
+	Name            string     `json:"name" binding:"required" example:"backend-prod"`
+	Description     string     `json:"description" example:"Production backend service identity"`
+	ConnectionNames []string   `json:"connection_names" example:"prod-postgres,api-proxy"`
+	Attributes      []string   `json:"attributes" example:"env:prod,team:backend"`
+	CreatedAt       *time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	UpdatedAt       *time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type MachineIdentityCreateResponse struct {
+	MachineIdentity
+	Credentials []MachineIdentityCredentialResponse `json:"credentials"`
+}
+
+type MachineIdentityUpdateResponse struct {
+	MachineIdentity
+	NewCredentials []MachineIdentityCredentialResponse `json:"new_credentials"`
+}
+
+type MachineIdentityCredentialResponse struct {
+	ConnectionName     string `json:"connection_name"`
+	ConnectionType     string `json:"connection_type"`
+	ConnectionSubType  string `json:"connection_subtype,omitempty"`
+	SecretKey          string `json:"secret_key"`
+	Hostname           string `json:"hostname,omitempty"`
+	Port               string `json:"port,omitempty"`
+	DatabaseName       string `json:"database_name,omitempty"`
+	ConnectionString   string `json:"connection_string,omitempty"`
+	Username           string `json:"username,omitempty"`
+	Password           string `json:"password,omitempty"`
+	Command            string `json:"command,omitempty"`
+	ProxyToken         string `json:"proxy_token,omitempty"`
+	EndpointURL        string `json:"endpoint_url,omitempty"`
+	AwsAccessKeyId     string `json:"aws_access_key_id,omitempty"`
+	AwsSecretAccessKey string `json:"aws_secret_access_key,omitempty"`
+}
+
+type MachineIdentityCredentialInfo struct {
+	ConnectionName    string     `json:"connection_name"`
+	ConnectionType    string     `json:"connection_type"`
+	ConnectionSubType string     `json:"connection_subtype,omitempty"`
+	Hostname          string     `json:"hostname,omitempty"`
+	Port              string     `json:"port,omitempty"`
+	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
 }

@@ -157,6 +157,7 @@
     (rf/dispatch [:editor-plugin->clear-script])
     (rf/dispatch [:runbooks/load-persisted-connection])
     (rf/dispatch [:jira-integration->get])
+    (rf/dispatch [:runbooks/initialize-from-query-params])
 
     (fn []
       (when (and (seq @search-term)

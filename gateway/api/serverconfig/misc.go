@@ -50,15 +50,7 @@ func GetServerMisc(c *gin.Context) {
 	}
 
 	appc := appconfig.Get()
-	productAnalytics := "active"
-	if !appc.AnalyticsTracking() {
-		productAnalytics = "inactive"
-	}
-
 	grpcURL := appc.GrpcURL()
-	if config.ProductAnalytics != nil {
-		productAnalytics = *config.ProductAnalytics
-	}
 	if config.GrpcServerURL != nil {
 		grpcURL = *config.GrpcServerURL
 	}
@@ -91,7 +83,6 @@ func GetServerMisc(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics:      productAnalytics,
 		GrpcServerURL:         grpcURL,
 		PostgresServerConfig:  pgServerConfig,
 		SSHServerConfig:       sshServerConfig,
@@ -208,7 +199,6 @@ func UpdateServerMisc(c *gin.Context) {
 	}
 
 	evt := audit.NewEvent(audit.ResourceServerConfig, audit.ActionUpdate).
-		Set("product_analytics", ptr.ToString(newState.ProductAnalytics)).
 		Set("grpc_server_url", ptr.ToString(newState.GrpcServerURL)).
 		Set("postgres_server_config", newState.PostgresServerConfig).
 		Set("ssh_server_config", newState.SSHServerConfig).
@@ -217,7 +207,6 @@ func UpdateServerMisc(c *gin.Context) {
 	defer func() { evt.Log(c) }()
 
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
-		ProductAnalytics:      newState.ProductAnalytics,
 		GrpcServerURL:         newState.GrpcServerURL,
 		PostgresServerConfig:  newState.PostgresServerConfig,
 		SSHServerConfig:       newState.SSHServerConfig,
@@ -229,8 +218,6 @@ func UpdateServerMisc(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update server config")
 		return
 	}
-
-	updateAnalyticsTracking(newState.ProductAnalytics)
 
 	var pgServerConfig *openapi.PostgresServerConfig
 	if updatedConfig.PostgresServerConfig != nil {
@@ -260,7 +247,6 @@ func UpdateServerMisc(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics:      ptr.ToString(updatedConfig.ProductAnalytics),
 		GrpcServerURL:         ptr.ToString(updatedConfig.GrpcServerURL),
 		PostgresServerConfig:  pgServerConfig,
 		SSHServerConfig:       sshServerConfig,
@@ -273,11 +259,6 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	var req openapi.ServerMiscConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		return nil, fmt.Errorf("invalid request body, err=%v", err)
-	}
-
-	invalidStatus := req.ProductAnalytics != "active" && req.ProductAnalytics != "inactive"
-	if invalidStatus {
-		return nil, fmt.Errorf("invalid attribute for 'product_analytics', accepted values are 'active' or 'inactive'")
 	}
 
 	if req.GrpcServerURL == "" {
@@ -343,7 +324,6 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	}
 
 	return &models.ServerMiscConfig{
-		ProductAnalytics:      &req.ProductAnalytics,
 		GrpcServerURL:         &req.GrpcServerURL,
 		PostgresServerConfig:  pgServerConfig,
 		SSHServerConfig:       sshServerConfig,
@@ -463,8 +443,4 @@ func newEd25519PrivateKey() (privateKey []byte, err error) {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
 	return sshproxy.EncodePrivateKeyToOpenSSH(privKey)
-}
-
-func updateAnalyticsTracking(newState *string) {
-	appconfig.GetRef().SetAnalyticsTracking(newState == nil || *newState == "active")
 }

@@ -19,6 +19,9 @@ const (
 	EventCreateInvitedUser            = "hoop-create-invited-user"
 	EventCreateServiceAccount         = "hoop-create-serviceaccount"
 	EventUpdateServiceAccount         = "hoop-update-serviceaccount"
+	EventCreateMachineIdentity        = "hoop-create-machine-identity"
+	EventUpdateMachineIdentity        = "hoop-update-machine-identity"
+	EventDeleteMachineIdentity        = "hoop-delete-machine-identity"
 	EventCreateApiKey                 = "hoop-create-apikey"
 	EventUpdateApiKey                 = "hoop-update-apikey"
 	EventRevokeApiKey                 = "hoop-revoke-apikey"
@@ -55,6 +58,9 @@ const (
 	// features
 	EventOrgFeatureUpdate            = "hoop-org-feature-update"
 	EventFeatureAskAIChatCompletions = "hoop-feature-askai-chat-completions"
+
+	// org settings
+	EventUpdateOrgAnalyticsMode = "hoop-update-org-analytics-mode"
 
 	// search api
 	EventSearch = "hoop-search"

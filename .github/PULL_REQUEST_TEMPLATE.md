@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> Every PR MUST have **exactly one** of these labels, the merge is blocked otherwise:
+> - `major` / `minor` / `patch` publishes a new release on merge with the corresponding semver bump.
+> - `skip-release` merges without publishing a release (use for docs, CI changes, refactors, etc.).
+
 ## 📝 Description
 
 <!-- Please provide a brief description of the changes in this PR -->

@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -232,6 +233,21 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			subject = userSubjectVal[0]
+
+			// Machine-identity sessions reach the interceptor through the same
+			// impersonation path proxies use for human credentials. They are
+			// distinguished by the `is-machine-credential` header set by each
+			// protocol proxy when the credential resolves to a machine identity.
+			if commongrpc.MetaGet(md, grpckey.MachineIdentityFlagHeaderKey) == "true" {
+				miCtx, err := i.authenticateMachineIdentity(subject, commongrpc.MetaGet(md, grpckey.MachineIdentityOrgIDHeaderKey), md)
+				if err != nil {
+					return err
+				}
+				if miCtx != nil {
+					ctxVal = miCtx
+					break
+				}
+			}
 		} else {
 			// first we check if the auth method is local, if so, we authenticate the user
 			// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
@@ -327,6 +343,66 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 		log.Debugf("unrecognized agent token shape, tokenlength=%v", len(bearerToken))
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
+}
+
+// authenticateMachineIdentity resolves the impersonation request as a
+// machine-identity session. The caller has already confirmed the proxy
+// flagged this request as a machine credential via the
+// `is-machine-credential` header. The MI is loaded directly by org id +
+// subject (the MI's UUID), avoiding any reliance on a pre-existing
+// session row.
+//
+// Returns (ctx, nil) on success or (nil, err) on failure.
+//
+// A synthetic admin context is built — same shape the static API-key path
+// uses — so downstream RBAC treats the MI as authorized to reach any
+// connection it presents a valid credential for.
+func (i *interceptor) authenticateMachineIdentity(subject, orgID string, md metadata.MD) (*GatewayContext, error) {
+	if orgID == "" {
+		log.Warn("machine identity auth missing org id header")
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	mi, err := models.GetMachineIdentity(orgID, subject)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			log.Debugf("machine identity not found, org=%v id=%v", orgID, subject)
+			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		log.Errorf("failed loading machine identity, org=%v id=%v err=%v", orgID, subject, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error")
+	}
+	org, err := models.GetOrganizationByNameOrID(orgID)
+	if err != nil {
+		log.Errorf("failed loading org for machine identity, org=%v err=%v", orgID, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error")
+	}
+	ctx := &models.Context{
+		OrgID:          org.ID,
+		OrgName:        org.Name,
+		OrgLicenseData: org.LicenseData,
+		UserID:         mi.ID,
+		UserSubject:    mi.ID,
+		UserName:       mi.Name,
+		UserStatus:     "active",
+		UserGroups:     []string{types.GroupAdmin},
+	}
+	gwctx := &GatewayContext{
+		UserContext:       *ctx,
+		IdentityType:      plugintypes.IdentityTypeMachine,
+		MachineIdentityID: mi.ID,
+	}
+	connectionName := commongrpc.MetaGet(md, "connection-name")
+	conn, err := i.getConnection(connectionName, ctx)
+	if err != nil {
+		return nil, err
+	}
+	if conn == nil {
+		return nil, status.Errorf(codes.NotFound, "connection not found")
+	}
+	gwctx.Connection = *conn
+	return gwctx, nil
 }
 
 func (i *interceptor) authenticateAgentStatic(bearerToken string, md metadata.MD) (*models.Agent, error) {

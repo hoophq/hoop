@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/analytics"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,14 +32,14 @@ type connectionsCreateInput struct {
 	Type                    string            `json:"type" jsonschema:"connection type: database, application, or custom"`
 	SubType                 string            `json:"subtype,omitempty" jsonschema:"connection subtype (postgres, mysql, mongodb, mssql, oracledb, tcp, ssh, httpproxy)"`
 	AgentID                 string            `json:"agent_id,omitempty" jsonschema:"agent UUID to associate with"`
-	Command                 []string          `json:"command,omitempty" jsonschema:"shell command to execute"`
-	Secrets                 map[string]string `json:"secrets,omitempty" jsonschema:"environment variables (base64-encoded values)"`
+	Command                 []string          `json:"command,omitempty" jsonschema:"shell command to execute. Optional for known database subtypes (postgres/mysql/mssql/oracledb/mongodb) — the gateway fills the runtime command (psql/mysql/sqlcmd/sqlplus/mongo). Set explicitly only for type=custom or to override the default."`
+	Secrets                 map[string]string `json:"secrets,omitempty" jsonschema:"environment variables (base64-encoded values). Keys must use the prefix 'envvar:' (e.g. 'envvar:HOST', 'envvar:PORT', 'envvar:USER', 'envvar:PASS', 'envvar:DB', 'envvar:SSLMODE'). Values must be base64-encoded strings."`
 	ConnectionTags          map[string]string `json:"tags,omitempty" jsonschema:"key-value tags"`
 	AccessModeRunbooks      string            `json:"access_mode_runbooks,omitempty" jsonschema:"access mode for runbooks (enabled or disabled)"`
 	AccessModeExec          string            `json:"access_mode_exec,omitempty" jsonschema:"access mode for exec (enabled or disabled)"`
 	AccessModeConnect       string            `json:"access_mode_connect,omitempty" jsonschema:"access mode for connect (enabled or disabled)"`
 	GuardRailRules          []string          `json:"guardrail_rules,omitempty" jsonschema:"list of guardrail rule IDs to apply"`
-	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"list of reviewer group names"`
+	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"DEPRECATED legacy per-connection reviewer list, kept for backwards compatibility. For approval/JIT workflows use access_request_rules_create. For restricting which user groups can access a connection use access_control_set. Do not set this field in new automation."`
 	RedactTypes             []string          `json:"redact_types,omitempty" jsonschema:"list of data types to redact"`
 	MandatoryMetadataFields []string          `json:"mandatory_metadata_fields,omitempty" jsonschema:"required metadata fields for sessions"`
 }
@@ -45,14 +47,14 @@ type connectionsCreateInput struct {
 type connectionsUpdateInput struct {
 	Name                    string            `json:"name" jsonschema:"connection name or ID to update"`
 	AgentID                 *string           `json:"agent_id,omitempty" jsonschema:"agent UUID to associate with"`
-	Command                 []string          `json:"command,omitempty" jsonschema:"shell command to execute"`
-	Secrets                 map[string]string `json:"secrets,omitempty" jsonschema:"environment variables (base64-encoded values)"`
+	Command                 []string          `json:"command,omitempty" jsonschema:"shell command to execute. Optional for known database subtypes (postgres/mysql/mssql/oracledb/mongodb) — the gateway fills the runtime command (psql/mysql/sqlcmd/sqlplus/mongo). Set explicitly only for type=custom or to override the default."`
+	Secrets                 map[string]string `json:"secrets,omitempty" jsonschema:"environment variables (base64-encoded values). Keys must use the prefix 'envvar:' (e.g. 'envvar:HOST', 'envvar:PORT', 'envvar:USER', 'envvar:PASS', 'envvar:DB', 'envvar:SSLMODE'). Values must be base64-encoded strings."`
 	ConnectionTags          map[string]string `json:"tags,omitempty" jsonschema:"key-value tags"`
 	AccessModeRunbooks      string            `json:"access_mode_runbooks,omitempty" jsonschema:"access mode for runbooks (enabled or disabled)"`
 	AccessModeExec          string            `json:"access_mode_exec,omitempty" jsonschema:"access mode for exec (enabled or disabled)"`
 	AccessModeConnect       string            `json:"access_mode_connect,omitempty" jsonschema:"access mode for connect (enabled or disabled)"`
 	GuardRailRules          []string          `json:"guardrail_rules,omitempty" jsonschema:"list of guardrail rule IDs to apply"`
-	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"list of reviewer group names"`
+	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"DEPRECATED legacy per-connection reviewer list, kept for backwards compatibility. For approval/JIT workflows use access_request_rules_create. For restricting which user groups can access a connection use access_control_set. Do not set this field in new automation."`
 	RedactTypes             []string          `json:"redact_types,omitempty" jsonschema:"list of data types to redact"`
 	MandatoryMetadataFields []string          `json:"mandatory_metadata_fields,omitempty" jsonschema:"required metadata fields for sessions"`
 }
@@ -80,7 +82,14 @@ func registerConnectionTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "connections_create",
-		Description: "Create a new connection. Requires admin access. Specify connection type, agent, command, secrets, and access modes",
+		Description: "Create a new connection. Requires admin access. " +
+			"Required envs by subtype (keys must use the 'envvar:' prefix, values base64-encoded): " +
+			"postgres/mysql/mssql -> HOST, USER, PASS, PORT, DB; " +
+			"oracledb -> HOST, USER, PASS, PORT, SID; " +
+			"mongodb -> CONNECTION_STRING (or HOST, USER, PASS); " +
+			"tcp -> HOST, PORT; httpproxy -> REMOTE_URL; " +
+			"ssh -> HOST, USER, and PASS or AUTHORIZED_SERVER_KEYS. " +
+			"For known database subtypes the gateway auto-fills the runtime command — leave 'command' empty unless overriding.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
 	}, connectionsCreateHandler)
 
@@ -183,10 +192,25 @@ func connectionsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		RedactTypes:             args.RedactTypes,
 		MandatoryMetadataFields: args.MandatoryMetadataFields,
 	}
+	apiconnections.ApplyDefaultsToModel(conn)
 
 	resp, err := models.UpsertConnection(sc, conn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating connection: %w", err)
+	}
+
+	if sc.UserEmail != "" && sc.OrgID != "" {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+			OrgID:       sc.OrgID,
+			UserID:      sc.UserID,
+			Source:      "mcp",
+			LicenseType: sc.GetLicenseType(),
+			Type:        conn.Type,
+			SubType:     conn.SubType.String,
+			Command:     conn.Command,
+		})
 	}
 
 	return jsonResult(connectionToMap(resp, false))
@@ -247,6 +271,7 @@ func connectionsUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if args.MandatoryMetadataFields != nil {
 		existing.MandatoryMetadataFields = args.MandatoryMetadataFields
 	}
+	apiconnections.ApplyDefaultsToModel(existing)
 
 	resp, err := models.UpsertConnection(sc, existing)
 	if err != nil {

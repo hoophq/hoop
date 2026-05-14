@@ -44,6 +44,9 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 				properties["mode"] = fmt.Sprintf("%v", agentMode)
 			}
 		case analytics.EventUpdateConnection, analytics.EventCreateConnection:
+			if eventName == analytics.EventCreateConnection {
+				properties["source"] = "connections-api"
+			}
 			requestBody, _ := io.ReadAll(c.Request.Body)
 			data := getBodyAsMap(requestBody)
 			reCopyBody(requestBody, c)
@@ -161,9 +164,6 @@ func (r *catchAll5xxResponseBodyWriter) Write(b []byte) (int, error) {
 
 func sentryCatchAll5xxMiddleware(c *gin.Context) {
 	defer c.Next()
-	if enabled := appconfig.Get().AnalyticsTracking(); !enabled {
-		return
-	}
 
 	rbw := &catchAll5xxResponseBodyWriter{
 		body:           &bytes.Buffer{},

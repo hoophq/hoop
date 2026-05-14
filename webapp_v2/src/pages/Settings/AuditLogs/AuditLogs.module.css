@@ -1,0 +1,12 @@
+.expandableRow {
+  cursor: pointer;
+}
+
+.scrollableDropdown {
+  overflow-y: auto;
+}
+
+.codeBlock {
+  max-height: 200px;
+  overflow-y: auto;
+}

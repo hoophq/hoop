@@ -27,9 +27,7 @@
 
         (cond
           loading?
-          [:> Box {:class "bg-gray-1 h-full"}
-           [:> Flex {:direction "column" :justify "center" :align "center" :height "100%"}
-            [loaders/simple-loader]]]
+          [loaders/page-loading-screen {:full-page false}]
 
           (not installed?)
           [:> Box {:class "bg-gray-1 h-full"}

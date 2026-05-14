@@ -7,6 +7,16 @@
 @tailwind components;
 @tailwind utilities;
 
+.rt-BaseDialogOverlay {
+  z-index: 201;
+  position: fixed;
+  inset: 0;
+}
+
+.rt-PopperContent {
+  z-index: 202;
+}
+
 .radix-themes {
   --cursor-button: pointer;
   --cursor-checkbox: default;

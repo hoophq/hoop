@@ -25,13 +25,6 @@
    [webapp.sessions.components.session-details :as session-details-component]
    [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
-(def ^:private export-dictionary
-  {:postgres "csv"
-   :mysql "csv"
-   :database "csv"
-   :custom "txt"
-   :command-line "txt"})
-
 ;; TODO: Change it for send DB in the payload and not the response
 (defn- sanitize-response [response connection-type]
   (cond
@@ -50,23 +43,25 @@
 
 
 (defn large-input-warning [{:keys [session]}]
-  [:> Box {:class "w-full p-regular rounded-lg bg-[--gray-2]"}
-   [:> Callout.Root {:variant "surface"
-                     :size "2"
-                     :class "flex items-center mb-small justify-between"}
-    [:> Callout.Icon
-     [:> Info {:size 16}]]
-    [:> Callout.Text {:class "w-full"}
-     [:> Flex {:gap "4"
-               :class "items-center justify-between"}
-      [:> Text
-       "Input script is too large to display"]
-      [:> Button {:size "2"
-                  :variant "soft"
-                  :class "flex-shrink-0"
-                  :on-click #(rf/dispatch [:audit->session-input-download (:id session)])}
-       "Download"
-       [:> Download {:size 16}]]]]]])
+  (let [download-disabled? @(rf/subscribe [:gateway->sessions-download-disabled?])]
+    [:> Box {:class "w-full p-regular rounded-lg bg-[--gray-2]"}
+     [:> Callout.Root {:variant "surface"
+                       :size "2"
+                       :class "flex items-center mb-small justify-between"}
+      [:> Callout.Icon
+       [:> Info {:size 16}]]
+      [:> Callout.Text {:class "w-full"}
+       [:> Flex {:gap "4"
+                 :class "items-center justify-between"}
+        [:> Text
+         "Input script is too large to display"]
+        (when-not download-disabled?
+          [:> Button {:size "2"
+                      :variant "soft"
+                      :class "flex-shrink-0"
+                      :on-click #(rf/dispatch [:audit->session-input-download (:id session)])}
+           "Download"
+           [:> Download {:size 16}]])]]]]))
 
 (defmulti ^:private session-event-stream identity)
 (defmethod ^:private session-event-stream "command-line"
@@ -238,11 +233,7 @@
            [session-header/main {:session session
                                  :user user
                                  :on-close #(rf/dispatch [:modal->close])
-                                 :clipboard-disabled? @clipboard-disabled?
-                                 :has-large-payload? has-large-payload?
-                                 :download-extension (get export-dictionary
-                                                          (keyword (:type session))
-                                                          "txt")}]
+                                 :clipboard-disabled? @clipboard-disabled?}]
 
            [:> Box {:class (str "space-y-radix-5 "
                                 (when is-dedicated-page? "pb-radix-6"))}
@@ -349,7 +340,10 @@
                             {:results        results
                              :results-status results-status
                              :fixed-height?  true
-                             :results-id     (:id session)}]])))
+                             :results-id     (:id session)
+                             :session-id     (:id session)
+                             :connection-name (:connection session)
+                             :has-large-payload? has-large-payload?}]])))
 
                     ;; connect: session-event-stream unchanged (video player, raw, etc.)
                     [session-event-stream (:type session) session])])])
@@ -455,6 +449,7 @@
             ;; Connect button for approved credential requests (verb = connect).
             (when (and (= (:verb session) "connect")
                        (not= (:status session) "open")
+                       has-review?
                        is-session-owner?)
               (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
                     has-valid-credentials? (and existing-session

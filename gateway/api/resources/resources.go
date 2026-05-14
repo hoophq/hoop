@@ -7,7 +7,9 @@ import (
 	"net/url"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -176,6 +178,23 @@ func CreateResource(c *gin.Context) {
 		evt.Err(err)
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating resource: %v", err)
 		return
+	}
+
+	if len(connections) > 0 && ctx.UserEmail != "" && ctx.OrgID != "" {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+			OrgID:         ctx.OrgID,
+			UserID:        ctx.UserID,
+			Source:        "resources-api",
+			LicenseType:   ctx.GetLicenseType(),
+			Type:          req.Type,
+			SubType:       req.SubType,
+			Command:       connections[0].Command,
+			ContentLength: c.Request.ContentLength,
+			UserAgent:     apiutils.NormalizeUserAgent(c.Request.Header.Values),
+			APIHostname:   c.Request.Host,
+		})
 	}
 
 	c.JSON(http.StatusCreated, toOpenApi(&resource))

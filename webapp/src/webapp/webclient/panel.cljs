@@ -446,6 +446,7 @@
   (r/create-class
    {:component-did-mount
     (fn []
+      (rf/dispatch [:primary-connection/initialize-with-persistence])
       (rf/dispatch [:plugins->get-my-plugins])
       (rf/dispatch [:jira-templates->get-all])
       (rf/dispatch [:jira-integration->get]))

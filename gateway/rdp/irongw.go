@@ -19,7 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
 var (
@@ -74,17 +74,19 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 		return
 	}
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		log.Errorf("failed to load IDP provider: %v", err)
-		c.String(http.StatusBadRequest, "Invalid request")
-		return
-	}
+	if !models.IsMachineIdentityCredential(dba.ID) {
+		tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			log.Errorf("failed to load IDP provider: %v", err)
+			c.String(http.StatusBadRequest, "Invalid request")
+			return
+		}
 
-	if err = transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		log.Errorf("Error verifying the user token: %v", err)
-		c.String(http.StatusBadRequest, "Invalid request")
-		return
+		if err = usertoken.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+			log.Errorf("Error verifying the user token: %v", err)
+			c.String(http.StatusBadRequest, "Invalid request")
+			return
+		}
 	}
 
 	// We don't need to do extended checks now because websocket will do it.
@@ -136,7 +138,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	cppVersion := p.Version
 	log := log.With("sid", sessionID, "conn", cID, "cppVersion", cppVersion)
 
-	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, err := checkAndPrepareRDP(p.X224ConnectionPDU)
+	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, isMachineCredential, err := checkAndPrepareRDP(p.X224ConnectionPDU)
 	if errors.Is(err, models.ErrNotFound) {
 		response := RDCleanPathPdu{
 			Version:           cppVersion,
@@ -183,19 +185,30 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	}
 
 	// Get user context for session recording
-	userCtx, err := models.GetUserContext(dba.UserSubject)
-	if err != nil {
-		log.Errorf("Failed to get user context: %v", err)
-		return
+	var recorderOrgID, recorderUserID, recorderUserName, recorderUserEmail string
+	if isMachineCredential {
+		recorderOrgID = dba.OrgID
+		recorderUserID = dba.UserSubject
+		recorderUserName = "machine-identity"
+	} else {
+		userCtx, err := models.GetUserContext(dba.UserSubject)
+		if err != nil {
+			log.Errorf("Failed to get user context: %v", err)
+			return
+		}
+		recorderOrgID = userCtx.OrgID
+		recorderUserID = userCtx.UserID
+		recorderUserName = userCtx.UserName
+		recorderUserEmail = userCtx.UserEmail
 	}
 
 	// Initialize RDP session recorder
 	recorder := NewRDPSessionRecorder(
 		sessionID,
-		userCtx.OrgID,
-		userCtx.UserID,
-		userCtx.UserName,
-		userCtx.UserEmail,
+		recorderOrgID,
+		recorderUserID,
+		recorderUserName,
+		recorderUserEmail,
 		connectionModel.Name,
 		"", // connection subtype
 	)
@@ -206,9 +219,11 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		// Continue anyway - recording is optional
 	}
 
-	transport.PollingUserToken(context.Background(), func(cause error) {
-		session.Close()
-	}, tokenVerifier, dba.UserSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(context.Background(), func(cause error) {
+			session.Close()
+		}, tokenVerifier, dba.UserSubject)
+	}
 
 	// Clean up session on exit
 	var sessionErrMu sync.Mutex
@@ -305,6 +320,12 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 				sessionErrMu.Lock()
 				sessionErr = err
 				sessionErrMu.Unlock()
+				// The outer loop blocks on tlsClient.Read until the agent-side
+				// TLS connection drops on its own, which can take tens of
+				// seconds (or never on a silent disconnect). Close it here so
+				// the outer loop returns immediately and recorder.Close + the
+				// session-ended persistence path run promptly.
+				_ = tlsClient.Close()
 				return
 			}
 
@@ -316,6 +337,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 				sessionErrMu.Lock()
 				sessionErr = err
 				sessionErrMu.Unlock()
+				_ = tlsClient.Close()
 				return
 			}
 		}
@@ -344,8 +366,10 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		}
 	}
 
-	// Close tlsClient to unblock any pending reads/writes
-	tlsClient.Close()
+	// Make sure the TLS connection is torn down (idempotent if the goroutine
+	// already closed it on browser disconnect) so the websocket-reader goroutine
+	// also unblocks and exits.
+	_ = tlsClient.Close()
 
 	// Wait for the websocket read goroutine to finish
 	<-done

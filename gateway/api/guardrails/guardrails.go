@@ -1,17 +1,56 @@
 package apiguardrails
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
+
+func getLicenseType(ctx *storagev2.Context) string {
+	licenseType := license.OSSType
+	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+		var l license.License
+		if err := json.Unmarshal(*ctx.OrgLicenseData, &l); err == nil {
+			licenseType = l.Payload.Type
+		}
+	}
+	return licenseType
+}
+
+func countRules(ruleMap map[string]any) int {
+	if ruleMap == nil {
+		return 0
+	}
+	rules, ok := ruleMap["rules"]
+	if !ok {
+		return 0
+	}
+	list, ok := rules.([]interface{})
+	if !ok {
+		return 0
+	}
+	return len(list)
+}
+
+func validateOssRulesLimitations(req *openapi.GuardRailRuleRequest) error {
+	if countRules(req.Input) > 1 {
+		return fmt.Errorf("input rules are limited to 1 rule in OSS version")
+	}
+	if countRules(req.Output) > 1 {
+		return fmt.Errorf("output rules are limited to 1 rule in OSS version")
+	}
+	return nil
+}
 
 // CreateGuardRailRules
 //
@@ -29,6 +68,22 @@ func Post(c *gin.Context) {
 	req := parseRequestPayload(c)
 	if req == nil {
 		return
+	}
+
+	if getLicenseType(ctx) == license.OSSType {
+		rules, err := models.ListGuardRailRules(ctx.GetOrgID())
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guardrail rules: %v", err)
+			return
+		}
+		if len(rules) >= 1 {
+			c.JSON(http.StatusForbidden, gin.H{"message": "guardrail rules are limited to 1 rule in OSS version"})
+			return
+		}
+		if err := validateOssRulesLimitations(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	// Filter out empty connection IDs
@@ -87,6 +142,13 @@ func Put(c *gin.Context) {
 	req := parseRequestPayload(c)
 	if req == nil {
 		return
+	}
+
+	if getLicenseType(ctx) == license.OSSType {
+		if err := validateOssRulesLimitations(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	// Filter out empty connection IDs

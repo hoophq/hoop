@@ -9,8 +9,7 @@
    [webapp.resources.add-role.events]))
 
 (defn loading-view []
-  [:div {:class "flex items-center justify-center bg-gray-1 h-full"}
-   [loaders/simple-loader]])
+  [loaders/page-loading-screen {:full-page false}])
 
 (defn main [resource-id]
   (let [current-step (rf/subscribe [:resource-setup/current-step])
