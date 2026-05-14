@@ -432,7 +432,7 @@ func runResourcesApply(resourceName string) {
 		result.ResourceName = resourceName
 	}
 
-	outputApplyResults(config, []planResultItem{result}, respBody, false)
+	outputApplyResults(config, []planResultItem{result}, false)
 }
 
 func runResourcesApplyBatch(config *clientconfig.Config) {
@@ -454,15 +454,24 @@ func runResourcesApplyBatch(config *clientconfig.Config) {
 		ResourceName string `json:"resource_name"`
 	}
 	var items []applyItem
+	var skippedResults []planResultItem
 	for _, r := range pf.Results {
-		if r.Status == "failed" {
-			log.Warnf("skipping resource %q: plan status is %q", r.ResourceName, r.Status)
-			continue
+		if r.Status == "out-of-sync" {
+			items = append(items, applyItem{SID: r.SID, ResourceName: r.ResourceName})
+		} else {
+			skippedResults = append(skippedResults, planResultItem{
+				SID:          r.SID,
+				ResourceName: r.ResourceName,
+				Role:         r.Role,
+				SourceRole:   r.SourceRole,
+				Status:       r.Status,
+				Message:      "",
+			})
 		}
-		items = append(items, applyItem{SID: r.SID, ResourceName: r.ResourceName})
 	}
 	if len(items) == 0 {
-		styles.PrintErrorAndExit("No applicable plan results to apply")
+		outputApplyResults(config, skippedResults, true)
+		return
 	}
 
 	payload := map[string]any{"items": items}
@@ -502,12 +511,21 @@ func runResourcesApplyBatch(config *clientconfig.Config) {
 		styles.PrintErrorAndExit("Failed to decode response: %v", err)
 	}
 
-	outputApplyResults(config, applyResp.Results, respBody, true)
+	outputApplyResults(config, append(applyResp.Results, skippedResults...), true)
 }
 
-func outputApplyResults(config *clientconfig.Config, results []planResultItem, rawBody []byte, isBatch bool) {
+func outputApplyResults(config *clientconfig.Config, results []planResultItem, isBatch bool) {
 	if resourcesApplyFlags.quietOutput {
-		fmt.Println(string(rawBody))
+		if isBatch {
+			wrapper := struct {
+				Results []planResultItem `json:"results"`
+			}{Results: results}
+			out, _ := json.Marshal(wrapper)
+			fmt.Println(string(out))
+		} else if len(results) > 0 {
+			out, _ := json.Marshal(results[0])
+			fmt.Println(string(out))
+		}
 		return
 	}
 	if resourcesApplyFlags.jsonOutput {

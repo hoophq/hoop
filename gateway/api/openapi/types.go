@@ -2379,11 +2379,11 @@ type ResourceRoleGrantResponse struct {
 	Status string `json:"status" enums:"pending" example:"pending"`
 }
 
-type ResourceConnectResponse struct {
+type ResourcHealthCheckResponse struct {
 	// Output is the raw stdout/stderr returned by the connectivity test query
 	Output string `json:"output"`
 	// Status reports the outcome of the connectivity test
-	Status string `json:"status" enums:"ok,error" example:"ok"`
+	Status string `json:"status" enums:"failed,success" example:"success"`
 }
 
 type ResourcePlanItem struct {
