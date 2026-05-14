@@ -20,7 +20,7 @@
   [{:keys [results-heads results-body log-view download-props]}
    {:keys [status results]}]
   [:div {:class "flex flex-col h-96 min-h-96"}
-   [:div {:class "flex justify-between items-end gap-4"}
+   [:div {:class "flex justify-between items-center gap-4"}
     [:div {:class "flex-1 min-w-0"}
      [tabs/tabs {:on-change #(reset! log-view %)
                  :tabs ["Plain text" "Table"]}]]

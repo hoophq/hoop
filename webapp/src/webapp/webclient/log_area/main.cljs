@@ -88,7 +88,7 @@
 
         [:> Box {:class "flex-1 min-h-0 flex flex-col overflow-hidden"}
          [:> Box {:class "h-full flex flex-col bg-gray-1 border-b border-gray-3"}
-          [:> Flex {:justify "between" :align "end" :gap "4" :class "pr-small"}
+          [:> Flex {:justify "between" :align "center" :gap "4" :class "pr-small"}
            [:> Box {:class "flex-1 min-w-0"}
             [tabs {:on-click (fn [_ value]
                                (.setItem js/localStorage "webclient-selected-tab" value)

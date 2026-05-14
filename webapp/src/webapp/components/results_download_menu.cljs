@@ -1,6 +1,6 @@
 (ns webapp.components.results-download-menu
   (:require
-   ["@radix-ui/themes" :refer [DropdownMenu IconButton]]
+   ["@radix-ui/themes" :refer [DropdownMenu Flex IconButton Text]]
    ["lucide-react" :refer [MoreHorizontal FileText Sheet Braces]]
    ["papaparse" :as papa]
    [clojure.string :as cs]
@@ -102,20 +102,17 @@
                       :aria-label "Download options"}
        [:> MoreHorizontal {:size 16}]]]
      [:> DropdownMenu.Content {:align "end"}
-      [:> DropdownMenu.Item
-       {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
-        :on-click #(handle-download props :txt)}
-       "Download as TXT"
-       [:> FileText {:size 16 :class "text-gray-10"}]]
+      [:> DropdownMenu.Item {:on-select #(handle-download props :txt)}
+       [:> Flex {:align "center" :gap "2"}
+        [:> FileText {:size 16}]
+        [:> Text {:size "2"} "Download as TXT"]]]
       (when tabular?
         [:<>
-         [:> DropdownMenu.Item
-          {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
-           :on-click #(handle-download props :csv)}
-          "Download as CSV"
-          [:> Sheet {:size 16 :class "text-gray-10"}]]
-         [:> DropdownMenu.Item
-          {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
-           :on-click #(handle-download props :json)}
-          "Download as JSON"
-          [:> Braces {:size 16 :class "text-gray-10"}]]])]]))
+         [:> DropdownMenu.Item {:on-select #(handle-download props :csv)}
+          [:> Flex {:align "center" :gap "2"}
+           [:> Sheet {:size 16}]
+           [:> Text {:size "2"} "Download as CSV"]]]
+         [:> DropdownMenu.Item {:on-select #(handle-download props :json)}
+          [:> Flex {:align "center" :gap "2"}
+           [:> Braces {:size 16}]
+           [:> Text {:size "2"} "Download as JSON"]]]])]]))
