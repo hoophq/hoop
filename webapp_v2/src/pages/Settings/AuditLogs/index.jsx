@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Button, Code, Group, Popover, Stack, Text, Title } from '@mantine/core'
-import { Network, CircleAlert, ChevronDown, ChevronRight, User } from 'lucide-react'
+import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -41,7 +41,7 @@ function OutcomeBadge({ httpStatus }) {
 function ExpandedRow({ log }) {
   return (
     <Box bg="gray.0" p="md">
-      <Stack gap="sm">
+      <Stack gap="lg">
         <Group gap="xs">
           <Network size={16} />
           <Text size="sm" c="dimmed">IP Address:</Text>
@@ -65,7 +65,7 @@ function ExpandedRow({ log }) {
         {log.request_payload_redacted && Object.keys(log.request_payload_redacted).length > 0 && (
           <Stack gap="xs">
             <Text size="sm" fw={700}>Raw Payload</Text>
-            <Code block bg="gray.9" c="gray.0" className={classes.codeBlock}>
+            <Code block bg="black" c="gray.0" className={classes.codeBlock}>
               {JSON.stringify(log.request_payload_redacted, null, 2)}
             </Code>
           </Stack>

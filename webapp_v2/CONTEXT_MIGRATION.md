@@ -75,6 +75,7 @@ Gateway backend (port 8009)
 | `/settings/attributes/new` | React | Done |
 | `/settings/attributes/edit/:name` | React | Done |
 | `/settings/audit-logs` | React | Done |
+| `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 

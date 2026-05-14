@@ -27,10 +27,11 @@ export function SidebarNavLink({
   return (
     <NavLink
       classNames={{
-        root:    rootClass,
-        label:   classes.navLinkLabel,
-        section: classes.navLinkSection,
-        chevron: classes.navLinkChevron,
+        root:     rootClass,
+        label:    classes.navLinkLabel,
+        section:  classes.navLinkSection,
+        chevron:  classes.navLinkChevron,
+        children: classes.navLinkChildren,
         ...extra,
       }}
       {...props}

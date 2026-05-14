@@ -309,11 +309,23 @@
 .badgeUpgrade {
   color: rgba(255, 255, 255, 0.5);
   border-color: rgba(255, 255, 255, 0.25);
+  border-width: 1px;
+  border-style: solid;
   flex-shrink: 0;
 }
 
 .badgeFilled {
+  border-width: 1px;
+  border-style: solid;
+  border-color: transparent;
   flex-shrink: 0;
+}
+
+.navLinkChildren {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  padding-top: var(--mantine-spacing-xs);
 }
 
 .shortcutText {

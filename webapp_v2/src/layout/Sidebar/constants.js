@@ -136,6 +136,13 @@ export const ORGANIZATION_ITEMS = [
         adminOnly: true,
         selfhostedOnly: true
       },
+      {
+        label: 'Experimental',
+        path: '/settings/experimental',
+        freeFeature: true,
+        adminOnly: true,
+        badge: { text: 'BETA', color: 'indigo' }
+      },
       { label: 'License', path: '/settings/license', freeFeature: true, adminOnly: true },
       { label: 'Internal Audit Logs', path: '/settings/audit-logs', freeFeature: true, adminOnly: true },
       { label: 'Users', path: '/organization/users', freeFeature: true, adminOnly: true }
