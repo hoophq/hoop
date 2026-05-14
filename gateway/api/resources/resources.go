@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
-	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -22,21 +21,6 @@ import (
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"gorm.io/gorm"
 )
-
-var staticCred = pbsystem.PgCredentials{
-	Host:       "192.168.18.57",
-	Port:       "5432",
-	MasterUser: "postgres",
-	MasterPwd:  "postgres",
-	Options:    map[string]string{"sslmode": "disable"},
-}
-
-// var staticCred = map[string]string{
-// 	"user":     "postgres",
-// 	"password": "postgres",
-// 	"host":     "192.168.18.57",
-// 	"port":     "5432",
-// }
 
 // GetResource
 //
