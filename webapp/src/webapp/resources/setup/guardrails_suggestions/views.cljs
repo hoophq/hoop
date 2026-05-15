@@ -34,6 +34,14 @@
          :on-pointer-down #(.stopPropagation %)}
    node])
 
+(defn- right-slot-with-pill
+  "Right-side group used when an accordion item is checked: green check
+  pill followed by the default chevron, sharing the same trigger area."
+  []
+  [:div {:className "flex space-x-3 items-center"}
+   [check-pill]
+   [accordion/chevron-icon]])
+
 (defn- suggestion-content [suggestion roles selected-roles checked? pending? disabled-by-plan?]
   [:> Flex {:justify "between" :align "start" :gap "6"}
    [:> Box {:class "flex-1"}
@@ -78,15 +86,9 @@
                   (rf/dispatch [:guardrails-suggestions/toggle-checkbox
                                 suggestion all-conn-ids]))}]]
         right (cond
-                plan-blocked?
-                [stop-propagation [upgrade-button]]
-
-                checked?
-                [:div {:className "flex space-x-3 items-center"}
-                 [check-pill]
-                 [accordion/chevron-icon]]
-
-                :else nil)]
+                plan-blocked?  [stop-propagation [upgrade-button]]
+                checked?       [right-slot-with-pill]
+                :else          nil)]
     [accordion/accordion-item
      {:value sname
       :disabled plan-blocked?
@@ -147,10 +149,7 @@
                 (fn [_]
                   (rf/dispatch [:guardrails-suggestions/toggle-existing-checkbox
                                 guardrail all-new-conn-ids]))}]]
-        right (when checked?
-                [:div {:className "flex space-x-3 items-center"}
-                 [check-pill]
-                 [accordion/chevron-icon]])]
+        right (when checked? [right-slot-with-pill])]
     [accordion/accordion-item
      {:value id
       :title (:name guardrail)

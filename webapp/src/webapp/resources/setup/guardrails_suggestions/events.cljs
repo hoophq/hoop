@@ -20,9 +20,9 @@
 (defn- guardrails-list [db]
   (get-in db [:guardrails->list :data] []))
 
-(defn- find-by-name [db name]
+(defn- find-by-name [db guardrail-name]
   (->> (guardrails-list db)
-       (some #(when (= (:name %) name) %))))
+       (some #(when (= (:name %) guardrail-name) %))))
 
 (defn- existing-map [db]
   (->> (guardrails-list db)
@@ -84,7 +84,10 @@
                                    (when (and conn (:id conn))
                                      (rf/dispatch [:guardrails-suggestions/add-role
                                                    {:id (:id conn) :name (:name conn)}]))))
-                   :on-failure (fn [_] nil)}]])
+                   :on-failure (fn [error]
+                                 (js/console.warn
+                                  "[guardrails-suggestions] failed to fetch role"
+                                  name error))}]])
               role-names)}))
 
 (rf/reg-event-db
@@ -109,12 +112,6 @@
        ;; later PUT from clobbering connection_ids the user just added.
        (update-in (conj state-path :original-ids)
                   #(merge (original-ids-from-list db) %)))))
-
-(rf/reg-event-db
- :guardrails-suggestions/set-toggle
- (fn [db [_ suggestion-name conn-id on?]]
-   (update-in db (conj state-path :selected-toggles suggestion-name)
-              (fnil (if on? conj disj) #{}) conn-id)))
 
 (rf/reg-event-db
  :guardrails-suggestions/mark-pending

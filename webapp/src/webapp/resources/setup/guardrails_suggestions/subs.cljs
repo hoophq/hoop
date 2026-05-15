@@ -63,12 +63,6 @@
          pick (first (filter seq [fetched from-roles from-resource-connections from-resource-roles]))]
      (mapv #(select-keys % [:id :name]) (or pick [])))))
 
-(rf/reg-sub
- :guardrails-suggestions/all-role-ids
- :<- [:guardrails-suggestions/roles-with-ids]
- (fn [roles _]
-   (mapv :id roles)))
-
 ;; Top 3 existing guardrails by connection_ids count (most "used" first).
 ;; Includes guardrails whose name matches a suggestion for the current
 ;; subtype - those are excluded from suggestions and surfaced here so the
