@@ -35,6 +35,8 @@
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
+   [webapp.resources.setup.guardrails-suggestions.events]
+   [webapp.resources.setup.guardrails-suggestions.subs]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
    [webapp.resources.configure-role.main :as configure-role]
