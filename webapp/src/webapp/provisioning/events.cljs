@@ -204,6 +204,22 @@
      :on-failure    on-failure})
    {}))
 
+;; Edits the inventory-level attributes (host, port) of an existing resource.
+;; Mirrors `:provisioning/set-admin-credentials` but for the HOST/PORT envvars,
+;; reusing `merge-and-put-resource!` so unrelated env vars (USER, PASS,
+;; RESOURCE_CATALOG, …) are preserved across the PUT.
+(rf/reg-event-fx
+ :provisioning/set-inventory-attrs
+ (fn [_ [_ {:keys [resource-name host port on-success on-failure]}]]
+   (merge-and-put-resource!
+    {:resource-name resource-name
+     :env-overrides (encode-envs (cond-> {}
+                                   (seq host) (assoc "HOST" host)
+                                   (seq port) (assoc "PORT" (str port))))
+     :on-success    on-success
+     :on-failure    on-failure})
+   {}))
+
 ;; Used by both import and admin-credential flows. Caller supplies a `step-fn`
 ;; that, given a queue item plus continuation callbacks, kicks off one async unit.
 
@@ -262,6 +278,26 @@
                  :username      username
                  :password      password
                  :agent-id      agent-id
+                 :on-success    (fn [name _resp] (continue! {:name name :status :success}))
+                 :on-failure    (fn [name err]   (continue! {:name name :status :failed :error err}))}]))}]]]}))
+
+(rf/reg-event-fx
+ :provisioning/apply-inventory-next
+ (fn [_ [_ {:keys [queue on-progress on-complete]}]]
+   {:fx [[:dispatch
+          [:provisioning/run-queue-next
+           {:queue       queue
+            :index       0
+            :results     []
+            :on-progress on-progress
+            :on-complete on-complete
+            :step-fn
+            (fn [{:keys [resource-name host port]} continue!]
+              (rf/dispatch
+               [:provisioning/set-inventory-attrs
+                {:resource-name resource-name
+                 :host          host
+                 :port          port
                  :on-success    (fn [name _resp] (continue! {:name name :status :success}))
                  :on-failure    (fn [name err]   (continue! {:name name :status :failed :error err}))}]))}]]]}))
 

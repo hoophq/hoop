@@ -216,11 +216,14 @@
    Primary actions (`Manage`, `Provision`) appear for stages that haven't
    completed yet. Edit actions (`Edit admin`, `Edit provision`) appear for
    stages that are already finished — independent of each other, so a user
-   who has only configured admin can still re-open admin to update it."
+   who has only configured admin can still re-open admin to update it.
+
+   `Edit inventory` is unconditional: every resource carries a host and port,
+   so the action applies regardless of stage."
   [{:keys [count-val admin-count roles-count
             edit-admin-count edit-provision-count
             on-add-admin on-configure-roles
-            on-edit-admin on-edit-provision on-clear]}]
+            on-edit-admin on-edit-provision on-edit-inventory on-clear]}]
   [:> Flex {:align "center" :gap "3" :px "5" :py "3"
             :style {:position    "fixed"
                     :bottom      80
@@ -246,8 +249,8 @@
    (when (pos? edit-provision-count)
      [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-provision}
       [:> Pencil {:size 14}] (str " Edit provision (" edit-provision-count ")")])
-   (when (zero? (+ admin-count roles-count edit-admin-count edit-provision-count))
-     [:> Text {:size "2" :color "gray"} "No actions available."])
+   [:> Button {:size "2" :variant "soft" :color "gray" :on-click on-edit-inventory}
+    [:> Pencil {:size 14}] (str " Edit inventory (" count-val ")")]
    [:> Button {:size "2" :variant "ghost" :color "gray" :on-click on-clear}
     [:> X {:size 14}]]])
 
@@ -418,7 +421,8 @@
            page set-page
            jobs dismissed-job-ids set-dismissed-job-ids
            hovered-row set-hovered-row
-           on-set-screen on-open-bulk-admin on-open-bulk-roles on-open-bulk-import]
+           on-set-screen on-open-bulk-admin on-open-bulk-roles
+           on-open-bulk-inventory on-open-bulk-import]
     :as   props}]
   (let [stage-filter   (get data/tab->stage active-tab)
         stage-filtered (if stage-filter
@@ -553,4 +557,5 @@
          :on-configure-roles   #(on-open-bulk-roles (vec selected-needing-roles))
          :on-edit-admin        #(on-open-bulk-admin (vec selected-with-admin))
          :on-edit-provision    #(on-open-bulk-roles (vec selected-with-provision))
+         :on-edit-inventory    #(on-open-bulk-inventory (vec selected-resources))
          :on-clear             #(set-selected-ids #{})}])]))

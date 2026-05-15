@@ -8,6 +8,7 @@
    [webapp.provisioning.subs]
    [webapp.provisioning.views.bulk-admin :as bulk-admin]
    [webapp.provisioning.views.bulk-import :as bulk-import]
+   [webapp.provisioning.views.bulk-inventory :as bulk-inventory]
    [webapp.provisioning.views.bulk-roles :as bulk-roles]
    [webapp.provisioning.views.inventory.main :as inventory]
    [webapp.provisioning.views.job-detail :as job-detail]
@@ -60,6 +61,19 @@
                            (set-bulk-resources (vec targets))
                            (set-hub-screen :bulk-roles))
 
+        open-bulk-inventory! (fn [targets]
+                               (set-bulk-resources (vec targets))
+                               ;; Snapshot the resource's current host/port so the manual
+                               ;; mode renders the live values and the apply-queue can
+                               ;; tell which rows actually changed.
+                               (set-bulk-configs
+                                (into {} (map (fn [r]
+                                                [(:id r)
+                                                 {:host (or (:host r) "")
+                                                  :port (or (:port r) "")}])
+                                              targets)))
+                               (set-hub-screen :bulk-inventory))
+
         navigate-sessions!
         (fn [filter-map return-to]
           (set-session-filter filter-map)
@@ -96,10 +110,11 @@
               :set-dismissed-job-ids set-dismissed-job-ids
               :hovered-row         hovered-row
               :set-hovered-row     set-hovered-row
-              :on-set-screen       set-screen!
-              :on-open-bulk-admin  open-bulk-admin!
-              :on-open-bulk-roles  open-bulk-roles!
-              :on-open-bulk-import #(set-bulk-import-open true)}]
+              :on-set-screen          set-screen!
+              :on-open-bulk-admin     open-bulk-admin!
+              :on-open-bulk-roles     open-bulk-roles!
+              :on-open-bulk-inventory open-bulk-inventory!
+              :on-open-bulk-import    #(set-bulk-import-open true)}]
        :bulk-admin [bulk-admin/bulk-admin-screen
                     {:resources    bulk-resources
                      :configs      bulk-configs
@@ -110,6 +125,14 @@
                                      (rf/dispatch [:provisioning/fetch-resources])
                                      (set-active-tab :provision)
                                      (set-screen! :hub))}]
+       :bulk-inventory [bulk-inventory/bulk-inventory-screen
+                        {:resources   bulk-resources
+                         :configs     bulk-configs
+                         :set-configs set-bulk-configs
+                         :on-cancel   #(set-screen! :hub)
+                         :on-done     (fn []
+                                        (rf/dispatch [:provisioning/fetch-resources])
+                                        (set-screen! :hub))}]
        :bulk-roles [bulk-roles/bulk-roles-screen
                     {:resources      bulk-resources
                      :on-cancel      #(set-screen! :hub)
