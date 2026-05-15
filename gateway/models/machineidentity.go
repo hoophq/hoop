@@ -1,7 +1,6 @@
 package models
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -18,7 +17,6 @@ type MachineIdentity struct {
 	Name            string         `gorm:"column:name"`
 	Description     string         `gorm:"column:description"`
 	ConnectionNames pq.StringArray `gorm:"column:connection_names;type:text[]"`
-	RulepackID      sql.NullString `gorm:"column:rulepack_id"`
 	CreatedAt       time.Time      `gorm:"column:created_at"`
 	UpdatedAt       time.Time      `gorm:"column:updated_at"`
 }
@@ -73,7 +71,6 @@ func UpdateMachineIdentity(mi *MachineIdentity) error {
 			"name":             mi.Name,
 			"description":      mi.Description,
 			"connection_names": mi.ConnectionNames,
-			"rulepack_id":      mi.RulepackID,
 			"updated_at":       time.Now().UTC(),
 		})
 	if res.Error != nil {
