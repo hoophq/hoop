@@ -3,7 +3,7 @@
    ["@radix-ui/react-accordion" :as Accordion]
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Checkbox Flex
                                Heading Switch Text]]
-   ["lucide-react" :refer [Check ChevronDown ChevronRight]]
+   ["lucide-react" :refer [Cable Check ChevronRight]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.features.promotion :as promotion]))
@@ -36,10 +36,11 @@
     [:> (.-Item Accordion)
      {:value sname
       :disabled (and disabled-by-plan? (not checked?))
-      :className (str "border-b last:border-b-0 border-[--gray-a4] "
-                      "data-[state=open]:bg-[--accent-2] "
+      :className (str "group/item border-b last:border-b-0 border-[--gray-a4] "
                       "data-[disabled]:opacity-90")}
-     [:> Flex {:align "center" :gap "3" :class "px-4 py-3 w-full"}
+     [:> Flex {:align "center" :gap "3"
+               :class (str "px-5 py-4 w-full "
+                           "group-data-[state=open]/item:bg-[--accent-2]")}
       [:> Checkbox
        {:checked checked?
         :disabled disabled?
@@ -62,40 +63,43 @@
          [:> (.-Trigger Accordion) {:asChild true}
           [:> Button {:size "1" :variant "ghost" :color "gray"
                       :class "group p-1"}
-           [:> ChevronDown {:size 18
-                            :className "transition-transform duration-200 group-data-[state=open]:rotate-180"}]]]]
+           [:> ChevronRight {:size 18
+                             :className "transition-transform duration-200 group-data-[state=open]:rotate-90"}]]]]
 
         :else
         [:> (.-Trigger Accordion) {:asChild true}
          [:> Button {:size "1" :variant "ghost" :color "gray"
                      :class "group p-1"
                      :disabled disabled?}
-          [:> ChevronDown {:size 18
-                           :className "transition-transform duration-200 group-data-[state=open]:rotate-180"}]]])]
-         [:> (.-Content Accordion)
-          [:> Box {:class "px-4 pb-4 border-t border-[--gray-a4]"}
-           [:> Box {:class "pt-4 pb-2"}
-            [:> Text {:as "div" :size "2" :weight "bold" :class "text-[--gray-12]"}
-             "Configure roles"]
-            [:> Text {:as "div" :size "1" :class "text-[--gray-11]"}
-             "Select which roles will receive this Guardrails rule"]]
-           [:> Flex {:direction "column" :gap "3" :class "pt-2"}
-            (for [role roles
-                  :let [conn-id (:id role)
-                        on? (contains? selected-roles conn-id)]]
-              ^{:key conn-id}
-              [:> Flex {:align "center" :gap "3"}
-               [:> Switch
-                {:checked on?
-                 :size "2"
-                 :disabled (or pending?
-                               (and disabled-by-plan? (not checked?)))
-                 :onCheckedChange
-                 (fn [next-on?]
-                   (rf/dispatch [:guardrails-suggestions/toggle-role
-                                 suggestion conn-id next-on?]))}]
-               [:> Badge {:size "2" :variant "soft" :color "indigo"}
-                (:name role)]])]]]]))
+          [:> ChevronRight {:size 18
+                            :className "transition-transform duration-200 group-data-[state=open]:rotate-90"}]]])]
+     [:> (.-Content Accordion)
+      [:> Box {:class "px-7 py-7 border-t border-[--gray-a4] bg-white"}
+       [:> Flex {:justify "between" :align "start" :gap "6"}
+        [:> Box {:class "flex-1"}
+         [:> Text {:as "div" :size "3" :weight "bold" :class "text-[--gray-12]"}
+          "Configure roles"]
+         [:> Text {:as "div" :size "2" :class "text-[--gray-11]"}
+          "Select which roles will receive this Guardrails rule"]]
+        [:> Flex {:direction "column" :gap "3" :class "shrink-0"}
+         (for [role roles
+               :let [conn-id (:id role)
+                     on? (contains? selected-roles conn-id)]]
+           ^{:key conn-id}
+           [:> Flex {:align "center" :gap "3"}
+            [:> Switch
+             {:checked on?
+              :size "2"
+              :disabled (or pending?
+                            (and disabled-by-plan? (not checked?)))
+              :onCheckedChange
+              (fn [next-on?]
+                (rf/dispatch [:guardrails-suggestions/toggle-role
+                              suggestion conn-id next-on?]))}]
+            [:> Badge {:size "2" :variant "soft" :color "indigo"
+                       :class "gap-1"}
+             [:> Cable {:size 12}]
+             (:name role)]])]]]]]))
 
 (defn- your-guardrail-card
   "Read-only card for an existing guardrail. Free-plan users see Upgrade
