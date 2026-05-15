@@ -338,13 +338,22 @@
 
 
 (defn- plan-item-payload
-  "Translates an in-memory plan-item into a ResourcePlanItem body for the API."
+  "Translates an in-memory plan-item into a ResourcePlanItem body for the API.
+   The payload shape is type-aware: managed items send scopes + privileges;
+   external items send source_role. Empty fields are still included for the
+   non-active branch so the JSON encodes them as `[]` / `\"\"`, matching the
+   backend's `binding:\"required\"` rules on each field (see openapi/types.go
+   `ResourcePlanItem`) — the agent's planManaged / planExternal then
+   reject the wrong combinations with a clear error."
   [item]
-  {:resource_name (:resource-name item)
-   :type          (:type item)
-   :role          (:role-input item)
-   :scopes        (vec (:scopes item))
-   :privileges    (vec (:privileges item))})
+  (let [type (:type item)]
+    (cond-> {:resource_name (:resource-name item)
+             :type          type
+             :role          (:role-input item)
+             :scopes        (vec (:scopes item))
+             :privileges    (vec (:privileges item))}
+      (= type "external")
+      (assoc :source_role (or (:source-role item) "")))))
 
 (rf/reg-event-fx
  :provisioning/start-role-plans
@@ -356,6 +365,11 @@
                        (let [r (get res-by-id rid)]
                          (map-indexed
                           (fn [idx role-entry]
+                            ;; `:source-role` is carried through even on
+                            ;; managed entries (where it'll be nil/empty)
+                            ;; so the plan-item shape stays uniform; the
+                            ;; payload encoder drops the field for non-
+                            ;; external entries.
                             {:key           (str rid "-" idx)
                              :resource-id   rid
                              :resource-name (:name r)
@@ -364,6 +378,7 @@
                              :role-name     nil
                              :scopes        (vec (:scopes role-entry))
                              :privileges    (vec (:privileges role-entry))
+                             :source-role   (:source-role role-entry)
                              :status        "pending"
                              :sid           nil})
                           role-list)))

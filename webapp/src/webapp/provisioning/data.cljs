@@ -117,29 +117,62 @@
   [s]
   (cs/lower-case (cs/trim (or s ""))))
 
-(defn- has-required-fields? [row]
+;; Per-type field rules. The agent enforces the same shape on the backend
+;; (see `planManaged` / `planExternal` in agent/controller/system/pgmanager).
+;; Mirroring it here lets us reject mismatched rows before the API call
+;; instead of after a round-trip to the agent.
+(def ^:private type-required-fields
+  {"managed"  #{:resource-name :type :role :scopes :permissions}
+   "external" #{:resource-name :type :role :source-role}})
+
+(def ^:private type-forbidden-fields
+  {"managed"  #{:source-role}
+   "external" #{:scopes :permissions}})
+
+(defn- always-required? [row]
   (and (seq (:resource-name row))
        (seq (:type row))
-       (seq (:role row))
-       (seq (:scopes row))
-       (seq (:permissions row))))
+       (seq (:role row))))
+
+(defn- has-type-required-fields?
+  "True when the row has every field required for its declared type. Falls
+   back to the legacy 'all five' check when the type isn't recognized; the
+   subsequent enum validator will reject the bad type anyway."
+  [row]
+  (let [type     (normalize-token (:type row))
+        required (get type-required-fields type)]
+    (if required
+      (every? #(seq (get row %)) required)
+      (always-required? row))))
+
+(defn- has-no-forbidden-fields?
+  "True when the row leaves all fields *forbidden* for its declared type
+   empty. Unrecognized types are treated as having no forbidden fields —
+   `valid-type-and-role?` will reject them separately."
+  [row]
+  (let [forbidden (get type-forbidden-fields (normalize-token (:type row)) #{})]
+    (every? #(empty? (get row %)) forbidden)))
 
 (defn- valid-type-and-role? [row]
   (and (contains? valid-types (normalize-token (:type row)))
        (contains? valid-roles (normalize-token (:role row)))))
 
+;; Dedup/conflict keys must fingerprint *every* field the backend
+;; distinguishes — including source-role, otherwise two external rows for
+;; the same (resource, role) with different parent roles would silently
+;; collapse into one or fail the conflict check.
 (defn- dedup-group-key [r]
   [(:resource-name r)
    (normalize-token (:type r))
    (normalize-token (:role r))
    (normalize-scopes (:scopes r))
-   (normalize-permissions (:permissions r))])
+   (normalize-permissions (:permissions r))
+   (normalize-token (:source-role r))])
 
 (defn- conflict-group-key [r]
   [(:resource-name r)
    (normalize-token (:type r))
-   (normalize-token (:role r))
-   (normalize-scopes (:scopes r))])
+   (normalize-token (:role r))])
 
 (defn- partition-by-pred
   "Like clojure.core/group-by with a boolean pred but returns
@@ -176,7 +209,12 @@
   "Takes parsed CSV rows and the selected resources.
    Returns {:valid [...] :conflicts {conflict-id [rows...]}
             :duplicates [...] :skipped-csv [...] :skipped-resources [...]
-            :invalid [...]}."
+            :invalid [...]}.
+
+   Validation order matters: enum-validity (type/role) is checked before the
+   per-type field-shape rules so we don't tell a user that `source_role is
+   required for type=external` when their `type` cell actually says
+   `manage` or some other typo."
   [parsed-rows resources]
   (let [resource-names (set (map :name resources))
         ;; 1. partition unmatched (resource not selected) from matched rows
@@ -184,25 +222,40 @@
         (partition-by-pred #(contains? resource-names (:resource-name %))
                            parsed-rows)
 
-        ;; 2. drop rows missing required fields
-        {valid-fields :matches missing-fields :rest}
-        (partition-by-pred has-required-fields? matched)
+        ;; 2. drop rows missing the always-required fields (resource, type, role)
+        {has-base :matches missing-base :rest}
+        (partition-by-pred always-required? matched)
 
         ;; 3. drop rows with invalid type/role enum values
         {good-enums :matches bad-enums :rest}
-        (partition-by-pred valid-type-and-role? valid-fields)
+        (partition-by-pred valid-type-and-role? has-base)
 
-        ;; 4. drop rows with malformed permissions
+        ;; 4. drop rows missing fields required for their declared type
+        ;;    (managed → scopes+permissions, external → source_role)
+        {has-type-fields :matches missing-type-fields :rest}
+        (partition-by-pred has-type-required-fields? good-enums)
+
+        ;; 5. drop rows that set fields forbidden for their type
+        ;;    (managed → source_role, external → scopes/permissions)
+        {clean-fields :matches forbidden-fields :rest}
+        (partition-by-pred has-no-forbidden-fields? has-type-fields)
+
+        ;; 6. drop rows with malformed permissions (managed rows only —
+        ;;    external rows have an empty permissions cell at this point)
         {good-perms :matches bad-perms :rest}
-        (partition-by-pred #(validate-permissions (:permissions %)) good-enums)
+        (partition-by-pred (fn [r]
+                             (if (= "external" (normalize-token (:type r)))
+                               true
+                               (validate-permissions (:permissions r))))
+                           clean-fields)
 
-        ;; 5. dedupe identical rows
+        ;; 7. dedupe identical rows
         [unique-rows duplicate-rows] (split-duplicates good-perms)
 
-        ;; 6. extract conflicts vs clean rows
+        ;; 8. extract conflicts vs clean rows
         [conflict-map valid-rows]    (split-conflicts unique-rows)
 
-        ;; 7. surface resources that have no CSV row at all
+        ;; 9. surface resources that have no CSV row at all
         csv-resource-names (set (map :resource-name (or parsed-rows [])))
         skipped-resources  (vec (remove #(contains? csv-resource-names (:name %))
                                         resources))]
@@ -211,10 +264,12 @@
      :duplicates        duplicate-rows
      :skipped-csv       unmatched
      :skipped-resources skipped-resources
-     :invalid           (into (mapv #(assoc % :error :missing-field) missing-fields)
-                              (concat
-                               (map #(assoc % :error :bad-role-type) bad-enums)
-                               (map #(assoc % :error :bad-permissions) bad-perms)))}))
+     :invalid           (vec (concat
+                              (map #(assoc % :error :missing-field)            missing-base)
+                              (map #(assoc % :error :bad-role-type)            bad-enums)
+                              (map #(assoc % :error :missing-required-for-type) missing-type-fields)
+                              (map #(assoc % :error :forbidden-for-type)       forbidden-fields)
+                              (map #(assoc % :error :bad-permissions)          bad-perms)))}))
 
 (defn count-by-status
   "Count items whose :status is in the given set (or equals a single string)."

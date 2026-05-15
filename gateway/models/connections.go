@@ -334,61 +334,6 @@ func UpsertBatchConnections(db *gorm.DB, connections []*Connection) error {
 	return nil
 }
 
-// UpsertResourceConnection upserts a single connection scoped by (org_id, name, resource_name).
-// Unlike UpsertBatchConnections which looks up by (org_id, name) only, this
-// version allows the same connection name to exist on different resources.
-func UpsertResourceConnection(db *gorm.DB, c *Connection) error {
-	var connID string
-	err := db.Raw(`SELECT id FROM private.connections WHERE org_id = ? AND resource_name = ? AND name = ?`,
-		c.OrgID, c.ResourceName, c.Name).
-		First(&connID).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("failed obtaining connection %v for resource %v, reason=%v", c.Name, c.ResourceName, err)
-	}
-	c.ID = connID
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.ID = uuid.NewString()
-	}
-
-	err = db.Table(tableConnections).Save(c).Error
-	if err != nil {
-		return fmt.Errorf("failed saving connection, reason=%v", err)
-	}
-
-	err = db.Table("private.env_vars").Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
-	if err != nil {
-		return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
-	}
-
-	if err := updateBatchConnectionTags(db, c.OrgID, c.ID, c.ConnectionTags); err != nil {
-		return fmt.Errorf("failed updating connection tags, reason=%v", err)
-	}
-
-	err = db.Exec(`INSERT INTO private.plugins (org_id, name) VALUES (?, 'review') ON CONFLICT DO NOTHING`, c.OrgID).Error
-	if err != nil {
-		return fmt.Errorf("failed to create review plugin, reason: %v", err)
-	}
-	err = db.Exec(`INSERT INTO private.plugins (org_id, name) VALUES (?, 'dlp') ON CONFLICT DO NOTHING`, c.OrgID).Error
-	if err != nil {
-		return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
-	}
-
-	for _, pluginName := range defaultPluginNames {
-		var config pq.StringArray
-		switch pluginName {
-		case plugintypes.PluginReviewName:
-			config = c.Reviewers
-		case plugintypes.PluginDLPName:
-			config = c.RedactTypes
-		}
-		err := addPluginConnection(c.OrgID, c.ID, pluginName, config, db)
-		if err != nil {
-			return fmt.Errorf("failed to create plugin connection for %v, reason: %v", pluginName, err)
-		}
-	}
-	return nil
-}
-
 func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
 	rulesAssocList := dedupeResourceNames(c.GuardRailRules)
 	// remove all rules association

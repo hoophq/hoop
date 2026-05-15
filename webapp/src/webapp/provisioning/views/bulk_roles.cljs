@@ -10,13 +10,22 @@
 
 (def ^:private csv-preview-cols
   [{:flex "1.2 1 0" :label "Resource"}
-   {:flex "0.7 1 0" :label "Type"}
-   {:flex "0.7 1 0" :label "Role"}
-   {:flex "1.2 1 0" :label "Scopes"}
-   {:flex "1 1 0"   :label "Permissions"}
+   {:flex "0.6 1 0" :label "Type"}
+   {:flex "0.5 1 0" :label "Role"}
+   {:flex "1 1 0"   :label "Scopes"}
+   {:flex "0.8 1 0" :label "Permissions"}
+   {:flex "0.9 1 0" :label "Source role"}
    {:width 110      :label "Status"}])
 
-(defn- invalid-reason [row]
+(defn- row-type [row]
+  (cs/lower-case (cs/trim (or (:type row) ""))))
+
+(defn- invalid-reason
+  "Maps the `:error` keyword the classifier attached to an invalid row to
+   the badge label + reason text shown in the preview. Messages for the
+   type-specific errors branch on the row's declared `:type` so the
+   feedback names the exact field the user needs to fix."
+  [row]
   (case (:error row)
     :bad-permissions
     {:badge "Bad permissions"
@@ -26,8 +35,22 @@
     {:badge "Bad role/type"
      :text  "Type must be managed or external, and role must be ro or rw"}
 
+    :missing-required-for-type
     {:badge "Missing field"
-     :text  "All columns are required: resource_name, type, role, scopes, permissions"}))
+     :text  (case (row-type row)
+              "managed"  "type=managed requires scopes and permissions"
+              "external" "type=external requires source_role"
+              "All required columns must be filled")}
+
+    :forbidden-for-type
+    {:badge "Wrong fields for type"
+     :text  (case (row-type row)
+              "managed"  "type=managed must leave source_role empty"
+              "external" "type=external must leave scopes and permissions empty (privileges come from source_role)"
+              "Fields conflict with the declared type")}
+
+    {:badge "Missing field"
+     :text  "All required columns must be filled: resource_name, type, role"}))
 
 (def ^:private row-variants
   "Spec for each row type. `:reason` and `:badge-content` may be either a
@@ -67,21 +90,25 @@
       [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
        [:> Text {:size "2" :style (when dimmed? {:color "var(--gray-8)"})}
         (:resource-name row)]]
-      [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
+      [:> Box {:style {:flex "0.6 1 0" :min-width 0}}
        (when (seq (:type row))
-         [:> Badge {:color (if dimmed? "gray" "gray") :variant "soft" :size "1"
+         [:> Badge {:color "gray" :variant "soft" :size "1"
                     :style (when dimmed? {:opacity 0.7})}
           (:type row)])]
-      [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
+      [:> Box {:style {:flex "0.5 1 0" :min-width 0}}
        [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
                                    :color (when dimmed? "var(--gray-8)")}}
         (:role row)]]
-      [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+      [:> Box {:style {:flex "1 1 0" :min-width 0}}
        [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
                                    :color (when dimmed? "var(--gray-8)")}}
         (:scopes row)]]
-      [:> Box {:style {:flex "1 1 0" :min-width 0}}
+      [:> Box {:style {:flex "0.8 1 0" :min-width 0}}
        [:> Text {:size "1" :color "gray"} (:permissions row)]]
+      [:> Box {:style {:flex "0.9 1 0" :min-width 0}}
+       [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12
+                                   :color (when dimmed? "var(--gray-8)")}}
+        (:source-role row)]]
       [:> Box {:style {:width 110 :flex-shrink 0}}
        [:> Badge {:color badge-color :variant "soft" :size "1"}
         badge-icon " " badge-content]]]
@@ -131,17 +158,20 @@
    [:> Flex {:align "center" :gap "2" :style {:flex "1.2 1 0" :min-width 0}}
     [:> Text {:size "2"} (:resource-name row)]
     [:> Badge {:color "amber" :variant "soft" :size "1"} (str "line " (:line-num row))]]
-   [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
+   [:> Box {:style {:flex "0.6 1 0" :min-width 0}}
     (when (seq (:type row))
       [:> Badge {:color "gray" :variant "soft" :size "1"} (:type row)])]
-   [:> Box {:style {:flex "0.7 1 0" :min-width 0}}
+   [:> Box {:style {:flex "0.5 1 0" :min-width 0}}
     [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
      (:role row)]]
-   [:> Box {:style {:flex "1.2 1 0" :min-width 0}}
+   [:> Box {:style {:flex "1 1 0" :min-width 0}}
     [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
      (:scopes row)]]
-   [:> Box {:style {:flex "1 1 0" :min-width 0}}
+   [:> Box {:style {:flex "0.8 1 0" :min-width 0}}
     [:> Text {:size "1" :color "gray"} (:permissions row)]]
+   [:> Box {:style {:flex "0.9 1 0" :min-width 0}}
+    [:> Text {:size "2" :style {:font-family "var(--font-mono)" :font-size 12}}
+     (:source-role row)]]
    [:> Box {:style {:width 110 :flex-shrink 0}}
     [:> Badge {:color "amber" :variant "soft" :size "1"}
      [:> AlertTriangle {:size 10}] " Conflict"]]])
@@ -207,9 +237,9 @@
                (and has-conflicts? has-invalid?)
                "Some rows have conflicts or errors. Resolve all conflicts (pick one row per group) and fix invalid rows before applying."
                has-conflicts?
-               "Some rows have the same resource, type, role, and scopes but different permissions. Pick which row to keep for each conflict group."
+               "Some rows describe the same resource, type, and role with different fields. Pick which row to keep for each conflict group."
                :else
-               "Some rows have missing fields, invalid permissions, or invalid type/role values. They will be excluded from provisioning.")}]))
+               "Some rows have missing fields, invalid permissions, mismatched fields for their type, or invalid type/role values. They will be excluded from provisioning.")}]))
 
 (defn- flat-rows-from-classification
   "Linearises the four bucket vectors into a single tagged stream in display order."
@@ -248,7 +278,9 @@
      [skipped-resources-section skipped-resources]]))
 
 (defn- normalize-roles-rows
-  "Converts raw papa-parsed rows into the role-row shape the classifier expects."
+  "Converts raw papa-parsed rows into the role-row shape the classifier expects.
+   Tolerant of missing `source_role` columns so older CSVs (managed-only)
+   keep parsing — the field just defaults to an empty string."
   [rows]
   (vec
    (map-indexed
@@ -258,21 +290,35 @@
        :role          (or (:role row) "")
        :scopes        (or (:scopes row) "")
        :permissions   (or (:permissions row) "")
+       :source-role   (or (:source_role row) "")
        :line-num      (+ idx 2)})
     rows)))
 
 (defn- row->plan-entry
-  "Transforms a validated CSV row into the {:type :role :scopes :privileges}
-   shape that :provisioning/start-role-plans expects.
+  "Transforms a validated CSV row into the role-entry shape that
+   :provisioning/start-role-plans expects.
+
+   The shape is type-aware: managed rows carry :scopes + :privileges,
+   external rows carry :source-role. Empty fields are omitted so the
+   downstream API payload doesn't send empty strings the backend would
+   reject (planManaged rejects `source_role`; planExternal rejects
+   scopes/privileges).
 
    Scopes are strictly `;`-separated (see `data/split-csv-list`); permissions
    accept `,`, `;`, or whitespace so users can mirror SQL grant syntax
    (`SELECT, INSERT, UPDATE`) when authoring the CSV."
   [row]
-  {:type       (cs/lower-case (cs/trim (:type row)))
-   :role       (cs/lower-case (cs/trim (:role row)))
-   :scopes     (data/split-csv-list (:scopes row))
-   :privileges (mapv cs/upper-case (data/split-privileges-list (:permissions row)))})
+  (let [type (cs/lower-case (cs/trim (:type row)))
+        src  (cs/trim (or (:source-role row) ""))]
+    (cond-> {:type type
+             :role (cs/lower-case (cs/trim (:role row)))}
+      (= type "managed")
+      (assoc :scopes     (data/split-csv-list (:scopes row))
+             :privileges (mapv cs/upper-case
+                               (data/split-privileges-list (:permissions row))))
+
+      (and (= type "external") (seq src))
+      (assoc :source-role src))))
 
 (defn- build-roles-payload
   "Reduces a classification + user's conflict picks into the API shape:
@@ -294,13 +340,16 @@
 
 (defn- download-template!
   "Generates and downloads a CSV template pre-filled with the selected
-   resource names; other columns are left empty for the user to fill."
+   resource names; other columns are left empty for the user to fill.
+
+   The header includes `source_role` so the column is discoverable even
+   though most rows (managed roles) leave it blank."
   [resources]
   (let [rows (->> resources
                   (sort-by :name)
-                  (map (fn [r] [(:name r) "" "" "" ""])))
+                  (map (fn [r] [(:name r) "" "" "" "" ""])))
         csv  (shared/build-csv
-              ["resource_name" "type" "role" "scopes" "permissions"]
+              ["resource_name" "type" "role" "scopes" "permissions" "source_role"]
               rows)]
     (shared/download-csv! "hoop-roles-template.csv" csv)))
 
@@ -361,7 +410,7 @@
                              :open?     res-list-open?
                              :toggle    toggle-res-list}]
    [shared/csv-drop-zone {:on-file   handle-file!
-                          :hint-text "Columns: resource_name, type, role, scopes, permissions \u2014 separate multiple scopes with ';' (permissions accept ',' or ';')"
+                          :hint-text "Columns: resource_name, type, role, scopes, permissions, source_role \u2014 managed rows need scopes+permissions; external rows need source_role"
                           :loading?  csv-parsing?}]
    [:> Flex {:justify "end"}
     [:> Button {:variant "ghost" :size "1" :color "gray"

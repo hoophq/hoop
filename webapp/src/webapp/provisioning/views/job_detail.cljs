@@ -170,6 +170,13 @@
 
 (defn- plan-item-row
   [{:keys [item session-set on-view-sessions]}]
+  ;; Managed rows render their scopes as a wrap-friendly row of gray
+  ;; badges. External rows have no scopes (the agent forbids them — see
+  ;; planExternal) and instead inherit from `source_role`, so they get a
+  ;; single "inherits <source_role>" badge styled the same way; this keeps
+  ;; the row visually consistent across types and signals at a glance
+  ;; that the privileges come from a parent role rather than an explicit
+  ;; grant list.
   [:> Table.Row
    [:> Table.Cell
     [:> Flex {:direction "column" :gap "1"}
@@ -179,11 +186,15 @@
                 :style {:font-family "var(--font-mono)" :font-size 11}}
        (or (:role-name item) (:role-input item))]
       [:> Text {:size "1" :color "gray"} "\u00b7"]
-      (for [scope (:scopes item)]
-        ^{:key scope}
+      (if (= (:type item) "external")
         [:> Badge {:color "gray" :variant "soft" :size "1"
                    :style {:font-family "var(--font-mono)" :font-size 11}}
-         scope])]]]
+         (str "inherits " (or (:source-role item) "\u2014"))]
+        (for [scope (:scopes item)]
+          ^{:key scope}
+          [:> Badge {:color "gray" :variant "soft" :size "1"
+                     :style {:font-family "var(--font-mono)" :font-size 11}}
+           scope]))]]]
    [:> Table.Cell
     [plan-item-sessions-cell {:item             item
                               :session-set      session-set
