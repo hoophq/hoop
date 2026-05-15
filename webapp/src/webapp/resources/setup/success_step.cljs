@@ -27,7 +27,6 @@
 
 (defn main []
   (let [context @(rf/subscribe [:resource-setup/context])
-        resource-id @(rf/subscribe [:resource-setup/resource-id])
         created-roles @(rf/subscribe [:resources->last-created-roles])
         processed-roles @(rf/subscribe [:resource-setup/processed-roles])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
@@ -44,7 +43,9 @@
      ;; Success icon
      [:> Flex {:justify "center" :class "mb-8"}
       [:> Box {:class "flex items-center justify-center w-20 h-20 rounded-full bg-green-3"}
-       [:> ShieldCheck {:size 40 :class "text-green-11"}]]]
+       [:img {:src "/icons/icon-lock-big.svg"
+              :class "w-[150px] h-[150px]"
+              :alt "Lock icon, success."}]]]
 
      ;; Success message
      [:> Box {:class "text-center mb-12"}
@@ -77,14 +78,14 @@
                       :title "Configure additional features"
                       :description "Advanced protections like AI Data Masking, Runbooks and more"
                       :on-click (fn []
-                                  (rf/dispatch [:plugins->get-my-plugins])
+                                  (rf/dispatch-sync [:plugins->get-my-plugins])
                                   (rf/dispatch [:navigate :configure-role {} :connection-name (:name first-role)]))}])
       ;; 2. Add another resource
       [action-card {:icon PackagePlus
                     :title "Add another resource"
                     :description "Set up a new resource from scratch"
                     :on-click (fn []
-                                (rf/dispatch [:navigate :resource-setup-new]))}]
+                                (rf/dispatch [:navigate :resource-catalog]))}]
       ;; 3. Setup Native Access (only single-role + native capable)
       (when (and single-role? can-native-client?)
         [action-card {:icon Wrench
@@ -101,7 +102,7 @@
                       :description "Start using your resource immediately in your browser"
                       :on-click (fn []
                                   (js/localStorage.setItem "selected-connection" {:name (:name first-role)})
-                                  (rf/dispatch [:database-schema->clear-schema])
+                                  (rf/dispatch-sync [:database-schema->clear-schema])
                                   (rf/dispatch [:navigate :editor-plugin-panel]))}]
 
         (not single-role?)
@@ -110,7 +111,7 @@
                       :description "Start using your resource immediately in your browser"
                       :on-click (fn []
                                   (rf/dispatch-sync [:primary-connection/clear-selected])
-                                  (rf/dispatch [:database-schema->clear-schema])
+                                  (rf/dispatch-sync [:database-schema->clear-schema])
                                   (rf/dispatch [:navigate :editor-plugin-panel]))}])]
 
      ;; Footer action — only the onboarding "Go Home" remains

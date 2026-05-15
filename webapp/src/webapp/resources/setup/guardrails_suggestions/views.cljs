@@ -29,16 +29,16 @@
   "Wraps a node so that mouse and keyboard events do not bubble up to the
   Accordion.Trigger that wraps the entire row."
   [node]
-  [:div {:on-click #(.stopPropagation %)
-         :on-key-down #(.stopPropagation %)
-         :on-pointer-down #(.stopPropagation %)}
+  [:> Box {:on-click #(.stopPropagation %)
+           :on-key-down #(.stopPropagation %)
+           :on-pointer-down #(.stopPropagation %)}
    node])
 
 (defn- right-slot-with-pill
   "Right-side group used when an accordion item is checked: green check
   pill followed by the default chevron, sharing the same trigger area."
   []
-  [:div {:className "flex space-x-3 items-center"}
+  [:> Box {:className "flex space-x-3 items-center"}
    [check-pill]
    [accordion/chevron-icon]])
 
@@ -193,7 +193,7 @@
         [:> Box {:class "space-y-8 mb-12"}
          (when (seq suggestions)
            [:> Box
-            [:> Flex {:justify "between" :align "center" :class "mb-3"}
+            [:> Flex {:gap "3" :align "center" :class "mb-3"}
              [:> Heading {:as "h3" :size "3" :weight "bold" :class "text-[--gray-12]"}
               "Protect your resource with Guardrails"]
              [:> Badge {:size "1" :variant "soft" :color "indigo"}
@@ -209,7 +209,7 @@
                 [suggestion-card s roles disabled-by-plan?])]]])
          (when (seq your-guardrails)
            [:> Box
-            [:> Flex {:justify "between" :align "center" :class "mb-3"}
+            [:> Flex {:gap "3" :align "center" :class "mb-3"}
              [:> Heading {:as "h3" :size "3" :weight "bold" :class "text-[--gray-12]"}
               "Your Guardrails"]
              [:> Badge {:size "1" :variant "soft" :color "indigo"}
