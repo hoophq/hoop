@@ -44,7 +44,8 @@
      {:db (assoc-in db state-path {:selected-toggles {}
                                    :pending #{}
                                    :existing {}
-                                   :roles []})
+                                   :roles []
+                                   :open-items #{}})
       :fx (cond-> [[:dispatch
                     [:fetch
                      {:method "GET"
@@ -189,6 +190,16 @@
  (fn [db [_ suggestion-name]]
    (update-in db (conj state-path :selected-toggles) dissoc suggestion-name)))
 
+(rf/reg-event-db
+ :guardrails-suggestions/set-open-items
+ (fn [db [_ names]]
+   (assoc-in db (conj state-path :open-items) (set names))))
+
+(rf/reg-event-db
+ :guardrails-suggestions/open-item
+ (fn [db [_ name]]
+   (update-in db (conj state-path :open-items) (fnil conj #{}) name)))
+
 ;; Higher-level handlers wired to UI events.
 
 ;; Toggle a single role (Switch). Side effects depend on whether the
@@ -230,4 +241,5 @@
        {:fx [[:dispatch [:guardrails-suggestions/delete sname]]]}
        (let [conn-set (set all-conn-ids)]
          {:db (assoc-in db (conj state-path :selected-toggles sname) conn-set)
-          :fx [[:dispatch [:guardrails-suggestions/create suggestion conn-set]]]})))))
+          :fx [[:dispatch [:guardrails-suggestions/open-item sname]]
+               [:dispatch [:guardrails-suggestions/create suggestion conn-set]]]})))))

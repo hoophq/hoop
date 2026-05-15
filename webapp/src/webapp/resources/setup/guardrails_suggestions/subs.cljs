@@ -10,7 +10,14 @@
  (fn [db _]
    (get-in db state-path {:selected-toggles {}
                           :pending #{}
-                          :existing {}})))
+                          :existing {}
+                          :open-items #{}})))
+
+(rf/reg-sub
+ :guardrails-suggestions/open-items
+ :<- [:guardrails-suggestions/state]
+ (fn [state _]
+   (vec (:open-items state #{}))))
 
 (rf/reg-sub
  :guardrails-suggestions/list-for-subtype

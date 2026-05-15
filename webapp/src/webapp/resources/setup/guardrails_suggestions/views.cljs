@@ -97,6 +97,7 @@
       :title-weight "bold"
       :trigger-padding "px-5 py-4"
       :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
+                       "data-[state=open]:bg-[--accent-2] "
                        "data-[disabled]:opacity-90")
       :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
       :left-slot left
@@ -145,7 +146,11 @@
              "Protect your resource with Guardrails"]
             [:> Card {:size "1" :class "p-0 overflow-hidden"}
              [:> (.-Root Accordion)
-              {:type "multiple" :className "w-full"}
+              {:type "multiple"
+               :className "w-full"
+               :value (clj->js @(rf/subscribe [:guardrails-suggestions/open-items]))
+               :onValueChange #(rf/dispatch [:guardrails-suggestions/set-open-items
+                                             (js->clj %)])}
               (for [s suggestions]
                 ^{:key (:name s)}
                 [suggestion-card s roles disabled-by-plan?])]]])
