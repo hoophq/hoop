@@ -3,7 +3,7 @@
    ["@radix-ui/react-accordion" :as Accordion]
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Checkbox Flex
                                Heading Switch Text]]
-   ["lucide-react" :refer [Cable Check]]
+   ["lucide-react" :refer [ArrowRight Cable Check]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.accordion :as accordion]
@@ -182,9 +182,11 @@
         [:> Box {:class "space-y-6 mb-8"}
          (when (seq suggestions)
            [:> Box
-            [:> Heading {:as "h3" :size "3" :weight "bold"
-                         :class "text-[--gray-12] mb-3"}
-             "Protect your resource with Guardrails"]
+            [:> Flex {:justify "between" :align "center" :class "mb-3"}
+             [:> Heading {:as "h3" :size "3" :weight "bold" :class "text-[--gray-12]"}
+              "Protect your resource with Guardrails"]
+             [:> Badge {:size "1" :variant "soft" :color "indigo"}
+              "Recommended"]]
             [:> Card {:size "1" :class "p-0 overflow-hidden"}
              [:> (.-Root Accordion)
               {:type "multiple"
@@ -196,9 +198,11 @@
                 [suggestion-card s roles disabled-by-plan?])]]])
          (when (seq your-guardrails)
            [:> Box
-            [:> Heading {:as "h3" :size "3" :weight "bold"
-                         :class "text-[--gray-12] mb-3"}
-             "Your Guardrails"]
+            [:> Flex {:justify "between" :align "center" :class "mb-3"}
+             [:> Heading {:as "h3" :size "3" :weight "bold" :class "text-[--gray-12]"}
+              "Your Guardrails"]
+             [:> Badge {:size "1" :variant "soft" :color "indigo"}
+              "Recommended"]]
             [:> Card {:size "1" :class "p-0 overflow-hidden"}
              [:> (.-Root Accordion)
               {:type "multiple"
@@ -207,4 +211,12 @@
                :onValueChange on-value-change}
               (for [g your-guardrails]
                 ^{:key (:id g)}
-                [your-guardrail-card g roles])]]])]))))
+                [your-guardrail-card g roles])]]
+            [:> Flex {:justify "end" :class "mt-2"}
+             [:a {:href "#"
+                  :class "inline-flex items-center gap-1 text-[--accent-11] hover:text-[--accent-12] text-sm font-medium"
+                  :on-click (fn [e]
+                              (.preventDefault e)
+                              (rf/dispatch [:navigate :guardrails]))}
+              "See all your Guardrails"
+              [:> ArrowRight {:size 14}]]]])]))))
