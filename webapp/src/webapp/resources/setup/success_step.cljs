@@ -40,14 +40,14 @@
         can-web-terminal? (helpers/can-open-web-terminal? first-role)
         can-native-client? (helpers/can-access-native-client? first-role)]
 
-    [:> Box {:class "max-w-[840px] mx-auto p-8"}
+    [:> Box {:class "px-[98px] py-10"}
      ;; Success icon
      [:> Flex {:justify "center" :class "mb-8"}
       [:> Box {:class "flex items-center justify-center w-20 h-20 rounded-full bg-green-3"}
        [:> ShieldCheck {:size 40 :class "text-green-11"}]]]
 
      ;; Success message
-     [:> Box {:class "text-center mb-10"}
+     [:> Box {:class "text-center mb-12"}
       [:> Heading {:as "h2" :size "7" :weight "bold" :class "text-gray-12 mb-3"}
        "Your resource is ready"]
       [:> Text {:as "p" :size "3" :class "text-gray-11"}
@@ -67,7 +67,7 @@
      [guardrails-suggestions/main]
 
      ;; What else you can do
-     [:> Box {:class "mb-3"}
+     [:> Box {:class "mb-4"}
       [:> Heading {:as "h3" :size "3" :weight "bold" :class "text-[--gray-12]"}
        "What else you can do"]]
      [:> Box {:class "space-y-3"}
@@ -113,20 +113,10 @@
                                   (rf/dispatch [:database-schema->clear-schema])
                                   (rf/dispatch [:navigate :editor-plugin-panel]))}])]
 
-     ;; Footer action
-     [:> Flex {:justify "center" :class "mt-8"}
-      (if (and onboarding? (not single-role?))
+     ;; Footer action — only the onboarding "Go Home" remains
+     (when (and onboarding? (not single-role?))
+       [:> Flex {:justify "center" :class "mt-10"}
         [:> Button {:size "3"
                     :variant "soft"
                     :on-click #(rf/dispatch [:navigate :home])}
-         "Go Home"]
-        [:> Button {:size "3"
-                    :variant "ghost"
-                    :color "gray"
-                    :on-click (fn []
-                                (if (= context :add-role)
-                                  ;; Add-role: go back to resource configure roles tab
-                                  (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-id])
-                                  ;; Setup: go to connections list
-                                  (rf/dispatch [:navigate :resources])))}
-         "Skip and configure later"])]]))
+         "Go Home"]])]))

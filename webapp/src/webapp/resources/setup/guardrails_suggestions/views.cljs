@@ -179,7 +179,7 @@
           on-value-change #(rf/dispatch [:guardrails-suggestions/set-open-items
                                          (js->clj %)])]
       (when (or (seq suggestions) (seq your-guardrails))
-        [:> Box {:class "space-y-6 mb-8"}
+        [:> Box {:class "space-y-8 mb-12"}
          (when (seq suggestions)
            [:> Box
             [:> Flex {:justify "between" :align "center" :class "mb-3"}
