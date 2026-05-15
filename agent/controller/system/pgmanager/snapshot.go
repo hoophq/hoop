@@ -334,6 +334,7 @@ func runPsql(conn, sql string) ([]byte, error) {
 		"--set", "ON_ERROR_STOP=1",
 		"--dbname", conn,
 	)
+	cmd.Env = append(cmd.Env, "PGCONNECT_TIMEOUT=5")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdin = strings.NewReader(sql)
 	cmd.Stdout = &stdout
