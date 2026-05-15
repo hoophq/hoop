@@ -123,7 +123,6 @@ func dataMaskingRuleToOpenAPI(r *models.DataMaskingRule) openapi.DataMaskingRule
 			SupportedEntityTypes:    supported,
 			ScoreThreshold:          r.ScoreThreshold,
 			CustomEntityTypesEntrys: custom,
-			RulepackID:              RulepackIDFromNullString(r.RulepackID),
 			UpdatedAt:               r.UpdatedAt,
 		},
 	}
@@ -141,7 +140,6 @@ func guardRailRuleToOpenAPI(r *models.GuardRailRules) openapi.GuardRailRuleRespo
 		Input:       r.Input,
 		Output:      r.Output,
 		Attributes:  attrs,
-		RulepackID:  RulepackIDFromNullString(r.RulepackID),
 		CreatedAt:   r.CreatedAt,
 		UpdatedAt:   r.UpdatedAt,
 	}

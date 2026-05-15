@@ -13,7 +13,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -87,11 +86,6 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	if err := services.AssertRulepackUsable(ctx.GetOrgID(), req.RulepackID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
 	// Filter out empty connection IDs
 	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
 
@@ -102,7 +96,6 @@ func Post(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
-		RulepackID:  services.RulepackIDToNullString(req.RulepackID),
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
@@ -125,7 +118,6 @@ func Post(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    req.Attributes,
-			RulepackID:    services.RulepackIDFromNullString(rule.RulepackID),
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -159,11 +151,6 @@ func Put(c *gin.Context) {
 		}
 	}
 
-	if err := services.AssertRulepackUsable(ctx.GetOrgID(), req.RulepackID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
 	// Filter out empty connection IDs
 	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
 
@@ -174,7 +161,6 @@ func Put(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
-		RulepackID:  services.RulepackIDToNullString(req.RulepackID),
 		UpdatedAt:   time.Now().UTC(),
 	}
 
@@ -197,7 +183,6 @@ func Put(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    req.Attributes,
-			RulepackID:    services.RulepackIDFromNullString(rule.RulepackID),
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -234,7 +219,6 @@ func List(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
-			RulepackID:    services.RulepackIDFromNullString(rule.RulepackID),
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -268,7 +252,6 @@ func Get(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
-			RulepackID:    services.RulepackIDFromNullString(rule.RulepackID),
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})

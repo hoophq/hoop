@@ -9950,12 +9950,6 @@ const docTemplate = `{
                         "dba"
                     ]
                 },
-                "rulepack_id": {
-                    "description": "Optional rulepack this rule was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                },
                 "updated_at": {
                     "description": "The time the resource was updated",
                     "type": "string",
@@ -10062,12 +10056,6 @@ const docTemplate = `{
                         "sre",
                         "dba"
                     ]
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this rule was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },
@@ -10423,12 +10411,6 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
-                },
-                "rulepack_id": {
-                    "description": "The rulepack this attribute belongs to (when set, attribute is managed via the rulepack)",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },
@@ -11487,12 +11469,6 @@ const docTemplate = `{
                     "type": "string",
                     "example": "mask-email"
                 },
-                "rulepack_id": {
-                    "description": "Optional rulepack this rule was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                },
                 "score_threshold": {
                     "description": "The minimal detection score threshold for the entities to be masked.",
                     "type": "number",
@@ -11608,12 +11584,6 @@ const docTemplate = `{
                     "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
                     "example": "mask-email"
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this rule was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "score_threshold": {
                     "description": "The minimal detection score threshold for the entities to be masked.",
@@ -11868,12 +11838,6 @@ const docTemplate = `{
                     "description": "The output rule\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this rule was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },
@@ -11934,12 +11898,6 @@ const docTemplate = `{
                     "description": "The output rule\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this rule was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "updated_at": {
                     "description": "The time the resource was updated",

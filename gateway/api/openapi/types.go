@@ -1513,8 +1513,6 @@ type GuardRailRuleRequest struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
-	// Optional rulepack this rule was provisioned by.
-	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 }
 
 type GuardRailRuleResponse struct {
@@ -1566,8 +1564,6 @@ type GuardRailRuleResponse struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
-	// Optional rulepack this rule was provisioned by.
-	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -1947,8 +1943,6 @@ type DataMaskingRuleRequest struct {
 	ScoreThreshold *float64 `json:"score_threshold" example:"0.6"`
 	// The custom entity types that this rule applies to
 	CustomEntityTypesEntrys []CustomEntityTypesEntry `json:"custom_entity_types"`
-	// Optional rulepack this rule was provisioned by.
-	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The timestamp when the rule was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2023-08-15T14:30:45Z"`
 }
@@ -2761,8 +2755,6 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
-	// Optional rulepack this rule was provisioned by.
-	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2792,8 +2784,6 @@ type AccessRequestRuleRequest struct {
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
-	// Optional rulepack this rule was provisioned by.
-	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 }
 
 type AIProviderRequest struct {
@@ -2870,8 +2860,6 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
-	// The rulepack this attribute belongs to (when set, attribute is managed via the rulepack)
-	RulepackID *string `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute

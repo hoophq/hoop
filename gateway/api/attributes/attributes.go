@@ -420,18 +420,11 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		accessControlGroups[i] = acg.GroupName
 	}
 
-	var rulepackID *string
-	if a.RulepackID != nil {
-		s := a.RulepackID.String()
-		rulepackID = &s
-	}
-
 	return openapi.Attributes{
 		ID:                      a.ID.String(),
 		OrgID:                   a.OrgID.String(),
 		Name:                    a.Name,
 		Description:             a.Description,
-		RulepackID:              rulepackID,
 		ConnectionNames:         connections,
 		AccessRequestRuleNames:  accessRequest,
 		GuardrailRuleNames:      guardrail,
