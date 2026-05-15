@@ -70,42 +70,46 @@
 
 (defn suggestion-card
   "Renders one suggestion row using the shared accordion component."
-  [suggestion roles disabled-by-plan?]
+  [suggestion _roles _disabled-by-plan?]
   (let [sname (:name suggestion)
-        {:keys [checked? selected-roles pending?]}
-        @(rf/subscribe [:guardrails-suggestions/suggestion-state sname])
-        all-conn-ids (mapv :id roles)
-        plan-blocked? (and disabled-by-plan? (not checked?))
-        checkbox-disabled? (or pending? plan-blocked?)
-        left [stop-propagation
-              [:> Checkbox
-               {:checked checked?
-                :disabled checkbox-disabled?
-                :onCheckedChange
-                (fn [_]
-                  (rf/dispatch [:guardrails-suggestions/toggle-checkbox
-                                suggestion all-conn-ids]))}]]
-        right (cond
-                plan-blocked?  [stop-propagation [upgrade-button]]
-                checked?       [right-slot-with-pill]
-                :else          nil)]
-    [accordion/accordion-item
-     {:value sname
-      :disabled plan-blocked?
-      :title (:title suggestion)
-      :subtitle (:card-description suggestion)
-      :title-size "3"
-      :subtitle-size "2"
-      :title-weight "bold"
-      :trigger-padding "px-5 py-4"
-      :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
-                       "data-[state=open]:bg-[--accent-2] "
-                       "data-[disabled]:opacity-90")
-      :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
-      :left-slot left
-      :right-slot right
-      :content [suggestion-content suggestion roles selected-roles
-                checked? pending? disabled-by-plan?]}]))
+        suggestion-state (rf/subscribe [:guardrails-suggestions/suggestion-state sname])]
+    (fn [suggestion roles disabled-by-plan?]
+      (let [{:keys [checked? selected-roles pending?]} @suggestion-state
+            all-conn-ids (mapv :id roles)
+            plan-blocked? (and disabled-by-plan? (not checked?))
+            checkbox-disabled? (or pending? plan-blocked?)
+            left [stop-propagation
+                  [:> Checkbox
+                   {:checked checked?
+                    :disabled checkbox-disabled?
+                    :onCheckedChange
+                    (fn [_]
+                      (rf/dispatch [:guardrails-suggestions/toggle-checkbox
+                                    suggestion all-conn-ids]))}]]
+            right (cond
+                    plan-blocked?  [stop-propagation [upgrade-button]]
+                    checked?       [right-slot-with-pill]
+                    :else          nil)]
+        [accordion/accordion-item
+         {:value sname
+          ;; Intentionally NOT passing :disabled when plan-blocked — Radix
+          ;; turns a disabled AccordionItem into a <button disabled>, which
+          ;; blocks pointer events on the Upgrade button rendered inside the
+          ;; right-slot. Visual muting is handled via :item-class instead.
+          :title (:title suggestion)
+          :subtitle (:card-description suggestion)
+          :title-size "3"
+          :subtitle-size "2"
+          :title-weight "bold"
+          :trigger-padding "px-5 py-4"
+          :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
+                           "data-[state=open]:bg-[--accent-2] "
+                           (when plan-blocked? "opacity-90 "))
+          :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
+          :left-slot left
+          :right-slot right
+          :content [suggestion-content suggestion roles selected-roles
+                    checked? pending? disabled-by-plan?]}]))))
 
 (defn- your-guardrail-content [guardrail roles selected-roles pending?]
   [:> Flex {:justify "between" :align "start" :gap "6"}
@@ -136,47 +140,52 @@
   "Renders an existing guardrail with additive role logic. Checking adds
   the new resource's role connection_ids to the guardrail; unchecking
   reverts to the original snapshot. The guardrail is never deleted."
-  [guardrail roles]
+  [guardrail _roles]
   (let [id (:id guardrail)
-        {:keys [checked? selected-roles pending?]}
-        @(rf/subscribe [:guardrails-suggestions/your-state id])
-        all-new-conn-ids (mapv :id roles)
-        left [stop-propagation
-              [:> Checkbox
-               {:checked checked?
-                :disabled pending?
-                :onCheckedChange
-                (fn [_]
-                  (rf/dispatch [:guardrails-suggestions/toggle-existing-checkbox
-                                guardrail all-new-conn-ids]))}]]
-        right (when checked? [right-slot-with-pill])]
-    [accordion/accordion-item
-     {:value id
-      :title (:name guardrail)
-      :subtitle (:description guardrail)
-      :title-size "3"
-      :subtitle-size "2"
-      :title-weight "bold"
-      :trigger-padding "px-5 py-4"
-      :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
-                       "data-[state=open]:bg-[--accent-2]")
-      :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
-      :left-slot left
-      :right-slot right
-      :content [your-guardrail-content guardrail roles selected-roles pending?]}]))
+        your-state (rf/subscribe [:guardrails-suggestions/your-state id])]
+    (fn [guardrail roles]
+      (let [{:keys [checked? selected-roles pending?]} @your-state
+            all-new-conn-ids (mapv :id roles)
+            left [stop-propagation
+                  [:> Checkbox
+                   {:checked checked?
+                    :disabled pending?
+                    :onCheckedChange
+                    (fn [_]
+                      (rf/dispatch [:guardrails-suggestions/toggle-existing-checkbox
+                                    guardrail all-new-conn-ids]))}]]
+            right (when checked? [right-slot-with-pill])]
+        [accordion/accordion-item
+         {:value id
+          :title (:name guardrail)
+          :subtitle (:description guardrail)
+          :title-size "3"
+          :subtitle-size "2"
+          :title-weight "bold"
+          :trigger-padding "px-5 py-4"
+          :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
+                           "data-[state=open]:bg-[--accent-2]")
+          :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
+          :left-slot left
+          :right-slot right
+          :content [your-guardrail-content guardrail roles selected-roles pending?]}]))))
 
 (defn main []
   (rf/dispatch [:guardrails-suggestions/init])
-  (fn []
-    (let [suggestions @(rf/subscribe [:guardrails-suggestions/list-for-subtype])
-          roles @(rf/subscribe [:guardrails-suggestions/roles-with-ids])
-          your-guardrails @(rf/subscribe [:guardrails-suggestions/your-guardrails])
-          open-items @(rf/subscribe [:guardrails-suggestions/open-items])
-          free? @(rf/subscribe [:guardrails-suggestions/free-license?])
-          limit-reached? @(rf/subscribe [:guardrails-suggestions/limit-reached?])
-          disabled-by-plan? (and free? limit-reached?)
-          on-value-change #(rf/dispatch [:guardrails-suggestions/set-open-items
-                                         (js->clj %)])]
+  (let [suggestions (rf/subscribe [:guardrails-suggestions/list-for-subtype])
+        roles (rf/subscribe [:guardrails-suggestions/roles-with-ids])
+        your-guardrails (rf/subscribe [:guardrails-suggestions/your-guardrails])
+        open-items (rf/subscribe [:guardrails-suggestions/open-items])
+        free? (rf/subscribe [:guardrails-suggestions/free-license?])
+        limit-reached? (rf/subscribe [:guardrails-suggestions/limit-reached?])
+        on-value-change #(rf/dispatch [:guardrails-suggestions/set-open-items
+                                       (js->clj %)])]
+    (fn []
+      (let [suggestions @suggestions
+            roles @roles
+            your-guardrails @your-guardrails
+            open-items @open-items
+            disabled-by-plan? (and @free? @limit-reached?)]
       (when (or (seq suggestions) (seq your-guardrails))
         [:> Box {:class "space-y-8 mb-12"}
          (when (seq suggestions)
@@ -218,4 +227,4 @@
                               (.preventDefault e)
                               (rf/dispatch [:navigate :guardrails]))}
               "See all your Guardrails"
-              [:> ArrowRight {:size 14}]]]])]))))
+              [:> ArrowRight {:size 14}]]]])])))))
