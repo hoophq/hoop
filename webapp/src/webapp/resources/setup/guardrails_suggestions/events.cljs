@@ -86,9 +86,7 @@
                                      (rf/dispatch [:guardrails-suggestions/add-role
                                                    {:id (:id conn) :name (:name conn)}]))))
                    :on-failure (fn [error]
-                                 (js/console.warn
-                                  "[guardrails-suggestions] failed to fetch role"
-                                  name error))}]])
+                                 (rf/dispatch [:show-snackbar {:level :error :text (str "Failed to fetch role: " name)}]))}]])
               role-names)}))
 
 (rf/reg-event-db
