@@ -62,7 +62,7 @@
    [:> (.-Header Accordion)
     [:> (.-Trigger Accordion) {:className (str "group flex justify-between items-center w-full "
                                                (or trigger-padding "p-5"))}
-     [:> Flex {:align "center" :gap "5" :class "flex-1 min-w-0"}
+     [:> Flex {:align "center" :gap "5"}
       (or left-slot
           [:> Avatar {:size "5"
                       :variant "soft"
@@ -75,8 +75,7 @@
        [:> Text {:size (or title-size "5")
                  :weight (or title-weight "bold")
                  :className "text-[--gray-12]"} title]
-       (when subtitle
-         [:> Text {:size (or subtitle-size "3") :className "text-[--gray-11] text-left"} subtitle])]]
+       [:> Text {:size (or subtitle-size "3") :className "text-[--gray-11] text-left"} subtitle]]]
 
      (or right-slot
          [:div {:className "flex space-x-3 items-center"}
