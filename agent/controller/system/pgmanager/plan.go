@@ -390,13 +390,6 @@ func buildSQLPlan(rotateRequested bool, desired, current *Snapshot) (sqlPlan, er
 const sqlPlanTmpl = `{{ if .IsEmpty -}}
 -- no changes
 {{ else -}}
--- pgdiff apply plan
---
--- Run with: psql -f apply.sql -v ON_ERROR_STOP=1
--- Each per-database block is wrapped in BEGIN/COMMIT.
--- Cluster-level statements (CREATE/ALTER ROLE) run outside
--- transactions because they affect catalog state above any
--- single database.
 
 -- =========================================================
 -- Role: {{ .Role }}

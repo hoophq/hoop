@@ -2383,45 +2383,51 @@ type ResourceRoleGrantResponse struct {
 
 type ResourcHealthCheckResponse struct {
 	// Output is the raw stdout/stderr returned by the connectivity test query
-	Output string `json:"output"`
+	Output string `json:"output" example:"1\n(1 row)\n"`
 	// Status reports the outcome of the connectivity test
 	Status string `json:"status" enums:"failed,success" example:"success"`
 }
 
 type ResourceHealthCheckResult struct {
 	// ResourceName is the name of the resource that was tested
-	ResourceName string `json:"resource_name"`
+	ResourceName string `json:"resource_name" example:"my-postgres"`
 	// Output is the raw stdout/stderr returned by the connectivity test query
-	Output string `json:"output"`
+	Output string `json:"output" example:"1\n(1 row)\n"`
 	// Status reports the outcome of the connectivity test
 	Status string `json:"status" enums:"failed,success" example:"success"`
 }
 
 type ResourceHealthCheckBatchRequest struct {
 	// Names is the list of resource names to test
-	Names []string `json:"names" binding:"required,min=1"`
+	Names []string `json:"names" binding:"required,min=1" example:"my-postgres,analytics-db"`
 }
 
 type ResourceHealthCheckBatchResponse struct {
+	// Results contains one entry per requested resource, in the same order as the input names
 	Results []ResourceHealthCheckResult `json:"results"`
 }
 
 type ResourcePlanItem struct {
 	// The resource name to plan provisioning for. Required for batch requests.
 	ResourceName string `json:"resource_name" example:"my-postgres"`
-	// Type of management of the role, either "managed" or "external". Defaults to managed
+	// Role management mode. "managed" creates and fully owns the postgres role (password managed by hoop).
+	// "external" attaches the role as a member of an existing parent role specified by source_role.
 	Type string `json:"type" enums:"managed,external" binding:"required" example:"managed"`
-	// The role to plan provisioning for (e.g., "ro", "rw")
+	// A short label used to derive the generated postgres role name (e.g. "ro", "rw", "analyst").
+	// The actual role created in postgres is a deterministic slug of the form hoopdev_<resource>_<role>_<hash>.
 	Role string `json:"role" binding:"required" example:"ro"`
-	// The source role to inherits permissions, it must exists in the instance
+	// An existing postgres role whose privileges the new role will inherit via membership.
+	// Only relevant when type is "external"; ignored for "managed".
 	SourceRole string `json:"source_role" example:"pg_read_all_data"`
-	// The list of database and schemas to apply privileges to, formatted as "database" or "database.schema".
-	// In case the schema is omitted, privileges will be applied default schema based on the database type.
-	Scopes []string `json:"scopes" binding:"required" example:"mydb,otherdb"`
-	// The list of privileges to plan granting
-	Privileges []string `json:"privileges" binding:"required" example:"SELECT"`
-	// Force a password rotation
-	RotatePassword bool `json:"rotate_password" example:"true"`
+	// The list of databases and schemas to apply privileges to, formatted as "database" or "database.schema".
+	// If the schema is omitted, privileges are applied to the public schema of that database.
+	Scopes []string `json:"scopes" binding:"required" example:"mydb,otherdb.public"`
+	// The list of privileges to grant on all tables in each scope.
+	// Supported values: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, EXECUTE.
+	Privileges []string `json:"privileges" binding:"required" example:"SELECT,INSERT"`
+	// When true, rotates the role's password on this plan run. Only takes effect if the role already exists;
+	// new roles always receive a freshly generated password regardless of this flag.
+	RotatePassword bool `json:"rotate_password" example:"false"`
 }
 
 type ResourcePlanRequest struct {
@@ -2434,12 +2440,13 @@ type ResourcePlanResult struct {
 	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
 	// The resource name this plan result is for
 	ResourceName string `json:"resource_name" example:"my-postgres"`
-	// The role this plan result is for
-	Role string `json:"role" example:"ro"`
-	// Status of the execution
-	Status string `json:"status" enums:"completed,failed" example:"completed"`
-	// Output message from the execution
-	Message string `json:"message" example:"1\n(1 row)"`
+	// The generated postgres role name derived from the resource name and role label
+	// (format: hoopdev_<resource-slug>_<role-label>_<8-char-hash>).
+	Role string `json:"role" example:"hoopdev_my_postgres_ro_ab3c1f7e"`
+	// Status of the plan execution
+	Status string `json:"status" enums:"success,failed" example:"success"`
+	// Error message populated when status is "failed"; empty on success
+	Message string `json:"message" example:"failed retrieving resource: connection refused"`
 }
 
 type ResourcePlanResponse struct {
@@ -2455,13 +2462,14 @@ type ResourceApplyRequest struct {
 }
 
 type ResourceApplyResult struct {
-	SID string `json:"sid"`
+	// The session ID for tracking and auditing this apply execution
+	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
 	// The resource name this apply result is for
 	ResourceName string `json:"resource_name" example:"my-postgres"`
-	// Status of the execution
+	// Status of the apply execution
 	Status string `json:"status" enums:"success,failed" example:"success"`
-	// Contains any internal error that happened during the process of applying the migration
-	Message string `json:"message" example:"failed executing command"`
+	// Error message populated when status is "failed"; empty on success
+	Message string `json:"message" example:"failed obtaining blob stream: empty blob stream"`
 }
 
 type ResourceApplyBatchRequest struct {

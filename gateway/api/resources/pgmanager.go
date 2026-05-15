@@ -42,12 +42,12 @@ const healthCheckBatchTimeout = 10 * time.Second
 // ResourceHealthCheck
 //
 //	@Summary		Tests connectivity for a resource
-//	@Description	Performs a connectivity test to see if the resource has network connectivity and the permissions are configured properly.
+//	@Description	Performs a connectivity test against the resource's master credentials to verify network connectivity. Uses a minimal query (e.g. SELECT 1) to confirm the host is reachable and the master user can authenticate.
 //	@Tags			Resources
 //	@Produces		json
-//	@Param			name		path		string	true	"The resource name"
-//	@Success		200			{object}	openapi.ResourcHealthCheckResponse
-//	@Failure		400,404,422	{object}	openapi.HTTPError
+//	@Param			name	path		string	true	"The resource name"
+//	@Success		200		{object}	openapi.ResourcHealthCheckResponse
+//	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/resources/{name}/health [get]
 func ResourceHealthCheck(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -173,6 +173,18 @@ func processSingleHealthCheck(resource *models.Resources) openapi.ResourceHealth
 	}
 }
 
+// ResourcePlan
+//
+//	@Summary		Creates a resource plan
+//	@Description	Validates a provisioning plan for a single resource by computing the diff between the desired and current role state. The plan is session-audited and returns a plan ID (SID) that can be referenced when applying.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produces		json
+//	@Param			name			path		string						true	"The resource name"
+//	@Param			request			body		openapi.ResourcePlanItem	true	"The request body"
+//	@Success		200				{object}	openapi.ResourcePlanResult
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/resources/{name}/plan [post]
 func ResourcePlan(c *gin.Context) {
 	ctx, req, err := parseResourcePlanRequest(c)
 	if err != nil {
@@ -191,14 +203,14 @@ func ResourcePlan(c *gin.Context) {
 
 // ResourcePlanBatch
 //
-//	@Summary		Creates a batch resource plan
-//	@Description	Validates provisioning plans for a batch of resources by executing a SELECT 1 test query against each target database. Each item in the batch is session-audited and receives its own plan ID. All items are processed concurrently and the response is returned once all have completed.
+//	@Summary		Creates a batch of resource plans
+//	@Description	Validates provisioning plans for a batch of resources by computing the diff between the desired and current role state for each resource. Each item is session-audited and receives its own plan ID (SID) that can be referenced when applying. All items are processed concurrently and the response is returned once all have completed. Per-item failures are embedded in the results with status "failed" rather than returned as HTTP errors.
 //	@Tags			Resources
 //	@Accept			json
 //	@Produces		json
-//	@Param			request		body		openapi.ResourcePlanRequest		true	"The request body"
-//	@Success		200			{object}	openapi.ResourcePlanResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Param			request	body		openapi.ResourcePlanRequest	true	"The request body"
+//	@Success		200		{object}	openapi.ResourcePlanResponse
+//	@Failure		400		{object}	openapi.HTTPError
 //	@Router			/resources/plan [post]
 func ResourcePlanBatch(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -341,6 +353,18 @@ func processSinglePlan(ctx *storagev2.Context, resourceName string, req *openapi
 	}, http.StatusOK
 }
 
+// ResourceApply
+//
+//	@Summary		Applies a resource plan
+//	@Description	Applies a previously created provisioning plan to a single resource. The plan session referenced by SID must have been created by the plan endpoint. On success, the resulting role and its credentials are synced as a connection.
+//	@Tags			Resources
+//	@Accept			json
+//	@Produces		json
+//	@Param			name			path		string							true	"The resource name"
+//	@Param			request			body		openapi.ResourceApplyRequest	true	"The request body"
+//	@Success		200				{object}	openapi.ResourceApplyResult
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/resources/{name}/apply [post]
 func ResourceApply(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.ResourceApplyRequest
@@ -361,13 +385,13 @@ func ResourceApply(c *gin.Context) {
 // ResourceApplyBatch
 //
 //	@Summary		Applies a batch of resource plans
-//	@Description	Applies a batch of previously created resource plans. Each item references a plan session by SID and the target resource name. All items are processed concurrently and the response is returned once all have completed.
+//	@Description	Applies a batch of previously created resource plans. Each item references a plan session by SID and the target resource name. All items are processed concurrently and the response is returned once all have completed. Per-item failures are embedded in the results with status "failed" rather than returned as HTTP errors.
 //	@Tags			Resources
 //	@Accept			json
 //	@Produces		json
-//	@Param			request		body		openapi.ResourceApplyBatchRequest	true	"The request body"
-//	@Success		200			{object}	openapi.ResourceApplyBatchResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Param			request	body		openapi.ResourceApplyBatchRequest	true	"The request body"
+//	@Success		200		{object}	openapi.ResourceApplyBatchResponse
+//	@Failure		400		{object}	openapi.HTTPError
 //	@Router			/resources/apply [post]
 func ResourceApplyBatch(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -449,8 +473,17 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 			Message:      fmt.Sprintf("resource type not implemented: %q", planSession.ConnectionSubtype),
 		}, http.StatusUnprocessableEntity
 	}
-	// TODO: validate session tags
-	// TODO: validate plan expiration date
+	if len(planSession.ConnectionTags) == 0 {
+		planSession.ConnectionTags = map[string]string{}
+	}
+	if planSession.ConnectionTags["hoopdev/managed-by"] != featureName {
+		return openapi.ResourceApplyResult{
+			ResourceName: resourceName,
+			Status:       "failed",
+			Message: fmt.Sprintf("plan sid %v is not managed by %v, missing default system tag",
+				planSID, featureName),
+		}, http.StatusBadRequest
+	}
 
 	creds, err := pgCredentialsFromResource(resource.Envs)
 	if err != nil {
@@ -477,7 +510,6 @@ func processSingleApply(ctx *storagev2.Context, resourceName, planSID string) (o
 			Message:      fmt.Sprintf("failed parsing session plan blob stream: %v", err),
 		}, http.StatusInternalServerError
 	}
-	// TODO: validate tags!
 
 	sess, err := openSession(planSession.Connection, resource.Type, resource.SubType.String, string(stateMigration), ctx)
 	if err != nil {

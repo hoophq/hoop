@@ -5699,7 +5699,7 @@ const docTemplate = `{
         },
         "/resources/apply": {
             "post": {
-                "description": "Applies a batch of previously created resource plans. Each item references a plan session by SID and the target resource name. All items are processed concurrently and the response is returned once all have completed.",
+                "description": "Applies a batch of previously created resource plans. Each item references a plan session by SID and the target resource name. All items are processed concurrently and the response is returned once all have completed. Per-item failures are embedded in the results with status \"failed\" rather than returned as HTTP errors.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5727,18 +5727,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -5785,14 +5773,14 @@ const docTemplate = `{
         },
         "/resources/plan": {
             "post": {
-                "description": "Validates provisioning plans for a batch of resources by executing a SELECT 1 test query against each target database. Each item in the batch is session-audited and receives its own plan ID. All items are processed concurrently and the response is returned once all have completed.",
+                "description": "Validates provisioning plans for a batch of resources by computing the diff between the desired and current role state for each resource. Each item is session-audited and receives its own plan ID (SID) that can be referenced when applying. All items are processed concurrently and the response is returned once all have completed. Per-item failures are embedded in the results with status \"failed\" rather than returned as HTTP errors.",
                 "consumes": [
                     "application/json"
                 ],
                 "tags": [
                     "Resources"
                 ],
-                "summary": "Creates a batch resource plan",
+                "summary": "Creates a batch of resource plans",
                 "parameters": [
                     {
                         "description": "The request body",
@@ -5813,18 +5801,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -5966,9 +5942,71 @@ const docTemplate = `{
                 }
             }
         },
+        "/resources/{name}/apply": {
+            "post": {
+                "description": "Applies a previously created provisioning plan to a single resource. The plan session referenced by SID must have been created by the plan endpoint. On success, the resulting role and its credentials are synced as a connection.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Applies a resource plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceApplyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceApplyResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/resources/{name}/health": {
             "get": {
-                "description": "Performs a connectivity test to see if the resource has network connectivity and the permissions are configured properly.",
+                "description": "Performs a connectivity test against the resource's master credentials to verify network connectivity. Uses a minimal query (e.g. SELECT 1) to confirm the host is reachable and the master user can authenticate.",
                 "tags": [
                     "Resources"
                 ],
@@ -5989,6 +6027,56 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.ResourcHealthCheckResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/{name}/plan": {
+            "post": {
+                "description": "Validates a provisioning plan for a single resource by computing the diff between the desired and current role state. The plan is session-audited and returns a plan ID (SID) that can be referenced when applying.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Creates a resource plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcePlanItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcePlanResult"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -6003,6 +6091,12 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -12842,7 +12936,8 @@ const docTemplate = `{
             "properties": {
                 "output": {
                     "description": "Output is the raw stdout/stderr returned by the connectivity test query",
-                    "type": "string"
+                    "type": "string",
+                    "example": "1\n(1 row)\n"
                 },
                 "status": {
                     "description": "Status reports the outcome of the connectivity test",
@@ -12906,9 +13001,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "message": {
-                    "description": "Contains any internal error that happened during the process of applying the migration",
+                    "description": "Error message populated when status is \"failed\"; empty on success",
                     "type": "string",
-                    "example": "failed executing command"
+                    "example": "failed obtaining blob stream: empty blob stream"
                 },
                 "resource_name": {
                     "description": "The resource name this apply result is for",
@@ -12916,10 +13011,13 @@ const docTemplate = `{
                     "example": "my-postgres"
                 },
                 "sid": {
-                    "type": "string"
+                    "description": "The session ID for tracking and auditing this apply execution",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5701046A-7B7A-4A78-ABB0-A24C95E6FE54"
                 },
                 "status": {
-                    "description": "Status of the execution",
+                    "description": "Status of the apply execution",
                     "type": "string",
                     "enum": [
                         "success",
@@ -12941,7 +13039,11 @@ const docTemplate = `{
                     "minItems": 1,
                     "items": {
                         "type": "string"
-                    }
+                    },
+                    "example": [
+                        "my-postgres",
+                        "analytics-db"
+                    ]
                 }
             }
         },
@@ -12949,6 +13051,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "results": {
+                    "description": "Results contains one entry per requested resource, in the same order as the input names",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ResourceHealthCheckResult"
@@ -12961,11 +13064,13 @@ const docTemplate = `{
             "properties": {
                 "output": {
                     "description": "Output is the raw stdout/stderr returned by the connectivity test query",
-                    "type": "string"
+                    "type": "string",
+                    "example": "1\n(1 row)\n"
                 },
                 "resource_name": {
                     "description": "ResourceName is the name of the resource that was tested",
-                    "type": "string"
+                    "type": "string",
+                    "example": "my-postgres"
                 },
                 "status": {
                     "description": "Status reports the outcome of the connectivity test",
@@ -12988,13 +13093,14 @@ const docTemplate = `{
             ],
             "properties": {
                 "privileges": {
-                    "description": "The list of privileges to plan granting",
+                    "description": "The list of privileges to grant on all tables in each scope.\nSupported values: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, EXECUTE.",
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
                     "example": [
-                        "SELECT"
+                        "SELECT",
+                        "INSERT"
                     ]
                 },
                 "resource_name": {
@@ -13003,33 +13109,33 @@ const docTemplate = `{
                     "example": "my-postgres"
                 },
                 "role": {
-                    "description": "The role to plan provisioning for (e.g., \"ro\", \"rw\")",
+                    "description": "A short label used to derive the generated postgres role name (e.g. \"ro\", \"rw\", \"analyst\").\nThe actual role created in postgres is a deterministic slug of the form hoopdev_\u003cresource\u003e_\u003crole\u003e_\u003chash\u003e.",
                     "type": "string",
                     "example": "ro"
                 },
                 "rotate_password": {
-                    "description": "Force a password rotation",
+                    "description": "When true, rotates the role's password on this plan run. Only takes effect if the role already exists;\nnew roles always receive a freshly generated password regardless of this flag.",
                     "type": "boolean",
-                    "example": true
+                    "example": false
                 },
                 "scopes": {
-                    "description": "The list of database and schemas to apply privileges to, formatted as \"database\" or \"database.schema\".\nIn case the schema is omitted, privileges will be applied default schema based on the database type.",
+                    "description": "The list of databases and schemas to apply privileges to, formatted as \"database\" or \"database.schema\".\nIf the schema is omitted, privileges are applied to the public schema of that database.",
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
                     "example": [
                         "mydb",
-                        "otherdb"
+                        "otherdb.public"
                     ]
                 },
                 "source_role": {
-                    "description": "The source role to inherits permissions, it must exists in the instance",
+                    "description": "An existing postgres role whose privileges the new role will inherit via membership.\nOnly relevant when type is \"external\"; ignored for \"managed\".",
                     "type": "string",
                     "example": "pg_read_all_data"
                 },
                 "type": {
-                    "description": "Type of management of the role, either \"managed\" or \"external\". Defaults to managed",
+                    "description": "Role management mode. \"managed\" creates and fully owns the postgres role (password managed by hoop).\n\"external\" attaches the role as a member of an existing parent role specified by source_role.",
                     "type": "string",
                     "enum": [
                         "managed",
@@ -13071,9 +13177,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "message": {
-                    "description": "Output message from the execution",
+                    "description": "Error message populated when status is \"failed\"; empty on success",
                     "type": "string",
-                    "example": "1\n(1 row)"
+                    "example": "failed retrieving resource: connection refused"
                 },
                 "resource_name": {
                     "description": "The resource name this plan result is for",
@@ -13081,9 +13187,9 @@ const docTemplate = `{
                     "example": "my-postgres"
                 },
                 "role": {
-                    "description": "The role this plan result is for",
+                    "description": "The generated postgres role name derived from the resource name and role label\n(format: hoopdev_\u003cresource-slug\u003e_\u003crole-label\u003e_\u003c8-char-hash\u003e).",
                     "type": "string",
-                    "example": "ro"
+                    "example": "hoopdev_my_postgres_ro_ab3c1f7e"
                 },
                 "sid": {
                     "description": "The session ID for tracking and auditing this plan execution",
@@ -13092,13 +13198,13 @@ const docTemplate = `{
                     "example": "5701046A-7B7A-4A78-ABB0-A24C95E6FE54"
                 },
                 "status": {
-                    "description": "Status of the execution",
+                    "description": "Status of the plan execution",
                     "type": "string",
                     "enum": [
-                        "completed",
+                        "success",
                         "failed"
                     ],
-                    "example": "completed"
+                    "example": "success"
                 }
             }
         },
