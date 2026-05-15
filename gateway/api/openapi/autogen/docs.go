@@ -10312,15 +10312,8 @@ const docTemplate = `{
                     ]
                 },
                 "name": {
-                    "description": "The name of the attribute. When rulepack_id is set, the name MUST start with ` + "`" + `rulepack_` + "`" + `.",
                     "type": "string",
                     "example": "default-session-attribute"
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this attribute belongs to. When set, the name must use the ` + "`" + `rulepack_` + "`" + ` prefix.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },
@@ -12395,12 +12388,6 @@ const docTemplate = `{
                     "type": "string",
                     "example": "backend-prod"
                 },
-                "rulepack_id": {
-                    "description": "Optional rulepack this machine identity was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                },
                 "updated_at": {
                     "type": "string",
                     "readOnly": true,
@@ -12458,12 +12445,6 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "backend-prod"
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this machine identity was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "updated_at": {
                     "type": "string",
@@ -12572,12 +12553,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
                     }
-                },
-                "rulepack_id": {
-                    "description": "Optional rulepack this machine identity was provisioned by.",
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "updated_at": {
                     "type": "string",

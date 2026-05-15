@@ -143,7 +143,7 @@ func CreateMachineIdentity(ctx context.Context, mi *models.MachineIdentity, attr
 	}, nil
 }
 
-func UpdateMachineIdentity(ctx context.Context, orgID, currentName string, newName, description string, connectionNames []string, attributes []string, rulepackID *string) (*MachineIdentityUpdateResult, error) {
+func UpdateMachineIdentity(ctx context.Context, orgID, currentName string, newName, description string, connectionNames []string, attributes []string) (*MachineIdentityUpdateResult, error) {
 	existing, err := models.GetMachineIdentityByName(orgID, currentName)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching machine identity: %w", err)
@@ -224,7 +224,6 @@ func UpdateMachineIdentity(ctx context.Context, orgID, currentName string, newNa
 		Name:            newName,
 		Description:     description,
 		ConnectionNames: connectionNames,
-		RulepackID:      RulepackIDToNullString(rulepackID),
 	}
 	if err := models.UpdateMachineIdentity(updated); err != nil {
 		return nil, fmt.Errorf("failed updating machine identity: %w", err)

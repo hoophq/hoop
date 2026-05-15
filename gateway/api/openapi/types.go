@@ -2875,12 +2875,9 @@ type Attributes struct {
 }
 
 type AttributeRequest struct {
-	// The name of the attribute. When rulepack_id is set, the name MUST start with `rulepack_`.
 	Name string `json:"name" binding:"required" example:"default-session-attribute"`
 	// The description of the attribute
-	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
-	// Optional rulepack this attribute belongs to. When set, the name must use the `rulepack_` prefix.
-	RulepackID              *string  `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
 	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
 	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
@@ -2941,15 +2938,13 @@ type Rulepack struct {
 }
 
 type MachineIdentity struct {
-	ID              string   `json:"id" readonly:"true" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
-	Name            string   `json:"name" binding:"required" example:"backend-prod"`
-	Description     string   `json:"description" example:"Production backend service identity"`
-	ConnectionNames []string `json:"connection_names" example:"prod-postgres,api-proxy"`
-	Attributes      []string `json:"attributes" example:"env:prod,team:backend"`
-	// Optional rulepack this machine identity was provisioned by.
-	RulepackID *string    `json:"rulepack_id,omitempty" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	CreatedAt  *time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
-	UpdatedAt  *time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	ID              string     `json:"id" readonly:"true" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
+	Name            string     `json:"name" binding:"required" example:"backend-prod"`
+	Description     string     `json:"description" example:"Production backend service identity"`
+	ConnectionNames []string   `json:"connection_names" example:"prod-postgres,api-proxy"`
+	Attributes      []string   `json:"attributes" example:"env:prod,team:backend"`
+	CreatedAt       *time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	UpdatedAt       *time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 type MachineIdentityCreateResponse struct {

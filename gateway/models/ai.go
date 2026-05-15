@@ -56,7 +56,6 @@ type AISessionAnalyzerRules struct {
 	Description     *string                         `gorm:"column:description"`
 	ConnectionNames pq.StringArray                  `gorm:"column:connection_names;type:text[]"`
 	RiskEvaluation  AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;type:jsonb;serializer:json"`
-	RulepackID      *uuid.UUID                      `gorm:"column:rulepack_id"`
 
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
@@ -105,31 +104,13 @@ func DeleteAIProvider(orgID uuid.UUID, feature AIProviderFeature) error {
 	return nil
 }
 
-type AISessionAnalyzerListOption struct {
-	IncludeAllRulepackOwned bool
-	// RulepackID, when non-nil, restricts the result set to rules whose rulepack_id
-	// matches. Setting this implicitly includes rulepack-owned rules.
-	RulepackID *uuid.UUID
-}
-
-func ListAISessionAnalyzerRules(orgID uuid.UUID, connectionNames []string, page, pageSize int, opts ...AISessionAnalyzerListOption) ([]*AISessionAnalyzerRules, int64, error) {
-	var opt AISessionAnalyzerListOption
-	if len(opts) > 0 {
-		opt = opts[0]
-	}
-
+func ListAISessionAnalyzerRules(orgID uuid.UUID, connectionNames []string, page, pageSize int) ([]*AISessionAnalyzerRules, int64, error) {
 	var rules []*AISessionAnalyzerRules
 	var total int64
 
 	query := DB.Where("org_id = ?", orgID)
 	if len(connectionNames) > 0 {
 		query = query.Where("connection_names && ?", pq.StringArray(connectionNames))
-	}
-	switch {
-	case opt.RulepackID != nil:
-		query = query.Where("rulepack_id = ?", *opt.RulepackID)
-	case !opt.IncludeAllRulepackOwned:
-		query = query.Where("rulepack_id IS NULL")
 	}
 
 	// Get total count
@@ -175,11 +156,7 @@ func GetAISessionAnalyzerRuleByConnection(db *gorm.DB, orgID uuid.UUID, connecti
 }
 
 func CreateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
-	return CreateAISessionAnalyzerRuleTx(DB, rule)
-}
-
-func CreateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) error {
-	err := tx.Create(rule).Error
+	err := DB.Create(rule).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return ErrAlreadyExists
@@ -187,15 +164,6 @@ func CreateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) er
 		return err
 	}
 	return nil
-}
-
-// DeleteAISessionAnalyzerRulesByRulepackIDTx removes all AI analyzer rules attached to
-// a rulepack within the caller's transaction.
-func DeleteAISessionAnalyzerRulesByRulepackIDTx(tx *gorm.DB, orgID, rulepackID uuid.UUID) error {
-	return tx.Exec(
-		`DELETE FROM private.ai_session_analyzer_rules WHERE org_id = ? AND rulepack_id = ?`,
-		orgID, rulepackID,
-	).Error
 }
 
 func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {

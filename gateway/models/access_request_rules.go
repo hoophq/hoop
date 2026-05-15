@@ -25,8 +25,6 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 	MinApprovals      *int `gorm:"column:min_approvals"`
 
-	RulepackID *uuid.UUID `gorm:"column:rulepack_id"`
-
 	RuleAttributes []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AccessRuleName;references:OrgID,Name"`
 
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
