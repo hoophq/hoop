@@ -67,44 +67,54 @@
 (def ^:private valid-roles
   #{"ro" "rw"})
 
-(defn split-csv-list
-  "Splits a comma-separated string, trims tokens, drops empties.
-   Only splits on commas — tokens may themselves contain whitespace or dots
-   (e.g. `dbprod.public`). Returns a vector."
-  [s]
-  (->> (cs/split (or s "") #",")
+;; Separators for the two multi-value CSV columns. Scopes are strict (`;`)
+;; because scope names are opaque and a stray `,` would silently split a
+;; legitimate value. Permissions are a closed vocabulary (SELECT, INSERT, …),
+;; so accepting `,`, `;`, or whitespace is unambiguous and matches how the
+;; same list appears in actual SQL grant statements.
+(def ^:private scope-sep      #";")
+(def ^:private privileges-sep #"[,;\s]+")
+
+(defn- tokenize
+  "Split → trim → drop empties. Single owner of the tokenisation contract
+   for multi-value CSV cells."
+  [s sep]
+  (->> (cs/split (or s "") sep)
        (map cs/trim)
        (filter seq)
        vec))
 
-(defn- normalize-permissions
-  "Uppercases and re-joins permission tokens for consistent comparison."
-  [perms-str]
-  (->> (cs/split (cs/upper-case (cs/trim (or perms-str ""))) #"[,\s]+")
-       (filter seq)
-       sort
-       (cs/join ", ")))
+(defn split-csv-list
+  "Tokenises a scopes cell. See `scope-sep` for the rationale on strictness."
+  [s]
+  (tokenize s scope-sep))
 
-(defn- normalize-scopes
-  "Lowercases and re-joins scope tokens (only split on commas — scope names
-   may contain dots, e.g. `dbprod.public`)."
-  [scopes-str]
-  (->> (cs/split (cs/lower-case (cs/trim (or scopes-str ""))) #"\s*,\s*")
-       (filter seq)
-       sort
-       (cs/join ", ")))
+(defn split-privileges-list
+  "Tokenises a permissions cell. See `privileges-sep` for the rationale on
+   accepting `,`, `;`, or whitespace."
+  [s]
+  (tokenize s privileges-sep))
+
+(defn- normalize-tokens
+  "Case-folded, sorted, ', '-joined comparison fingerprint used by
+   `dedup-group-key` / `conflict-group-key`. Goes through `tokenize` so the
+   set of accepted separators stays in lock-step with the `split-*`
+   functions."
+  [s sep case-fn]
+  (cs/join ", " (sort (tokenize (case-fn (or s "")) sep))))
+
+(defn- normalize-scopes      [s] (normalize-tokens s scope-sep      cs/lower-case))
+(defn- normalize-permissions [s] (normalize-tokens s privileges-sep cs/upper-case))
 
 (defn- validate-permissions
   "Returns true if every token in the permissions string is recognized."
-  [perms-str]
-  (let [tokens (cs/split (cs/upper-case (cs/trim (or perms-str ""))) #"[,\s]+")
-        tokens (filter seq tokens)]
+  [s]
+  (let [tokens (mapv cs/upper-case (split-privileges-list s))]
     (and (seq tokens) (every? valid-permissions tokens))))
 
-(defn- normalize-role-token [s]
-  (cs/lower-case (cs/trim (or s ""))))
-
-(defn- normalize-type-token [s]
+(defn- normalize-token
+  "Canonical form for enum-ish single-value cells like `:type` and `:role`."
+  [s]
   (cs/lower-case (cs/trim (or s ""))))
 
 (defn- has-required-fields? [row]
@@ -115,20 +125,20 @@
        (seq (:permissions row))))
 
 (defn- valid-type-and-role? [row]
-  (and (contains? valid-types (normalize-type-token (:type row)))
-       (contains? valid-roles (normalize-role-token (:role row)))))
+  (and (contains? valid-types (normalize-token (:type row)))
+       (contains? valid-roles (normalize-token (:role row)))))
 
 (defn- dedup-group-key [r]
   [(:resource-name r)
-   (normalize-type-token (:type r))
-   (normalize-role-token (:role r))
+   (normalize-token (:type r))
+   (normalize-token (:role r))
    (normalize-scopes (:scopes r))
    (normalize-permissions (:permissions r))])
 
 (defn- conflict-group-key [r]
   [(:resource-name r)
-   (normalize-type-token (:type r))
-   (normalize-role-token (:role r))
+   (normalize-token (:type r))
+   (normalize-token (:role r))
    (normalize-scopes (:scopes r))])
 
 (defn- partition-by-pred

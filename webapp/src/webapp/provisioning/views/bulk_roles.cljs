@@ -263,12 +263,16 @@
 
 (defn- row->plan-entry
   "Transforms a validated CSV row into the {:type :role :scopes :privileges}
-   shape that :provisioning/start-role-plans expects."
+   shape that :provisioning/start-role-plans expects.
+
+   Scopes are strictly `;`-separated (see `data/split-csv-list`); permissions
+   accept `,`, `;`, or whitespace so users can mirror SQL grant syntax
+   (`SELECT, INSERT, UPDATE`) when authoring the CSV."
   [row]
   {:type       (cs/lower-case (cs/trim (:type row)))
    :role       (cs/lower-case (cs/trim (:role row)))
    :scopes     (data/split-csv-list (:scopes row))
-   :privileges (mapv cs/upper-case (data/split-csv-list (:permissions row)))})
+   :privileges (mapv cs/upper-case (data/split-privileges-list (:permissions row)))})
 
 (defn- build-roles-payload
   "Reduces a classification + user's conflict picks into the API shape:
@@ -357,7 +361,7 @@
                              :open?     res-list-open?
                              :toggle    toggle-res-list}]
    [shared/csv-drop-zone {:on-file   handle-file!
-                          :hint-text "Columns: resource_name, type, role, scopes, permissions"
+                          :hint-text "Columns: resource_name, type, role, scopes, permissions \u2014 separate multiple scopes with ';' (permissions accept ',' or ';')"
                           :loading?  csv-parsing?}]
    [:> Flex {:justify "end"}
     [:> Button {:variant "ghost" :size "1" :color "gray"

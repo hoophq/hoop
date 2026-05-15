@@ -4,7 +4,6 @@
                                Progress Table Text]]
    ["lucide-react" :refer [AlertCircle Ban Check CheckCircle2
                            RefreshCw Rocket ScrollText X]]
-   [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.provisioning.data :as data]
    [webapp.provisioning.views.shared :as shared]))
@@ -175,14 +174,16 @@
    [:> Table.Cell
     [:> Flex {:direction "column" :gap "1"}
      [:> Text {:size "2" :weight "medium"} (:resource-name item)]
-     [:> Flex {:align "center" :gap "2"}
+     [:> Flex {:align "center" :gap "2" :wrap "wrap"}
       [:> Text {:size "1" :color "gray"
                 :style {:font-family "var(--font-mono)" :font-size 11}}
        (or (:role-name item) (:role-input item))]
       [:> Text {:size "1" :color "gray"} "\u00b7"]
-      [:> Text {:size "1" :color "gray"
-                :style {:font-family "var(--font-mono)" :font-size 11}}
-       (cs/join ", " (:scopes item))]]]]
+      (for [scope (:scopes item)]
+        ^{:key scope}
+        [:> Badge {:color "gray" :variant "soft" :size "1"
+                   :style {:font-family "var(--font-mono)" :font-size 11}}
+         scope])]]]
    [:> Table.Cell
     [plan-item-sessions-cell {:item             item
                               :session-set      session-set
