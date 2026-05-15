@@ -20,7 +20,7 @@ function SectionLabel({ label, id }) {
 export function SidebarExpanded({ skipLink, navKey }) {
   const navigate = useNavigate();
   const { toggleSidebarCollapsed } = useUIStore();
-  const { user, isAdmin, isSelfHosted, isFreeLicense, gatewayVersion } = useUserStore();
+  const { user, isAdmin, isSelfHosted, isFreeLicense, gatewayVersion, featureFlags } = useUserStore();
   const { logout } = useAuthStore();
 
   const navItemProps = { isAdmin, isFreeLicense, isSelfHosted };
@@ -64,11 +64,13 @@ export function SidebarExpanded({ skipLink, navKey }) {
           <Box component="ul" role="list" aria-labelledby="sidebar-discover-heading" mt="xl" className={classes.navList}>
             <SectionLabel label="Discover" id="sidebar-discover-heading" />
             <Stack gap="xs" mb="sm">
-              {DISCOVER_ITEMS.map(item =>
-                <Box component="li" key={item.path} className={classes.listItem}>
-                  <NavItem item={item} {...navItemProps} />
-                </Box>
-              )}
+              {DISCOVER_ITEMS
+                .filter(item => !(item.featureFlag && !featureFlags[item.featureFlag]))
+                .map(item =>
+                  <Box component="li" key={item.path} className={classes.listItem}>
+                    <NavItem item={item} {...navItemProps} />
+                  </Box>
+                )}
             </Stack>
           </Box>
         )}

@@ -16,6 +16,7 @@ import {
   Puzzle,
   Settings,
   Search,
+  WandSparkles,
   Layers
 } from 'lucide-react';
 import { openCommandPalette } from '@/features/CommandPalette/spotlight';
@@ -79,6 +80,14 @@ export const DISCOVER_ITEMS = [
     icon: UserRoundCheck,
     freeFeature: true,
     adminOnly: true
+  },
+  {
+    label: 'Rulepacks',
+    path: '/rulepacks',
+    icon: WandSparkles,
+    freeFeature: false,
+    adminOnly: true,
+    featureFlag: 'experimental.rulepacks'
   },
   {
     label: 'Resource Discovery',

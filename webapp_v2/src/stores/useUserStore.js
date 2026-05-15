@@ -23,6 +23,7 @@ export const useUserStore = create((set, get) => ({
   analyticsTracking: false,
   disableClipboard: false,
   gatewayVersion: null,
+  featureFlags: {},
   loading: false,
 
   setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
@@ -33,10 +34,11 @@ export const useUserStore = create((set, get) => ({
     const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
     set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, disableClipboard })
   },
+  setFeatureFlags: (flags) => set({ featureFlags: flags }),
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, disableClipboard: false, gatewayVersion: null })
+    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, disableClipboard: false, gatewayVersion: null, featureFlags: {} })
   },
 
   initIntercom: (user) => {

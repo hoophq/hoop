@@ -4,12 +4,13 @@ import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
+import { featureFlagsService } from '@/services/featureFlags'
 import PageLoader from '@/components/PageLoader'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, isAdmin, setUser, setLoading, setServerInfo, initIntercom } = useUserStore()
+  const { user, isAdmin, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom } = useUserStore()
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
@@ -55,6 +56,11 @@ function ProtectedRoute({ children, adminOnly = false }) {
           }
           currentUser = userData
         }
+
+        // Get feature flag
+        const { data: featureFlagsData } = await featureFlagsService.list()
+        const featureFlags = Object.fromEntries(featureFlagsData.map(flag => [flag.name, flag.enabled]))
+        setFeatureFlags(featureFlags)
 
         // Check onboarding: admin with no connections must go through onboarding.
         // Skip if already on onboarding routes to avoid a redirect loop.
