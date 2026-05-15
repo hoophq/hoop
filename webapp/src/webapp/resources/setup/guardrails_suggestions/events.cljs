@@ -14,8 +14,8 @@
 
 (defn- sanitize [guardrail]
   (-> guardrail
-      (update :input gr-events/process-rules)
-      (update :output gr-events/process-rules)))
+      (update :input #(gr-events/process-rules (:rules %)))
+      (update :output #(gr-events/process-rules (:rules %)))))
 
 (defn- guardrails-list [db]
   (get-in db [:guardrails->list :data] []))
