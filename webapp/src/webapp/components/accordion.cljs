@@ -34,6 +34,12 @@
   Optional keys:
   - :left-slot   replaces the default Avatar block on the left
   - :right-slot  replaces the entire right-side area (status-icon + chevron)
+  - :right-slot-outside?  renders :right-slot as a SIBLING of the Trigger
+                          instead of inside it. Use this when the right slot
+                          contains an interactive element (e.g. an Upgrade
+                          button) AND the item is :disabled — Radix turns a
+                          disabled item's Trigger into <button disabled>,
+                          which blocks pointer events on any child button.
   - :item-class  replaces the default Item className
   - :content-class replaces the default Content wrapper className
   - :title-size / :subtitle-size override the Text sizes (default 5/3)
@@ -49,42 +55,61 @@
            show-icon?
            left-slot
            right-slot
+           right-slot-outside?
            item-class
            content-class
            title-size
            subtitle-size
            title-weight
            trigger-padding]}]
-  [:> (.-Item Accordion)
-   {:value value
-    :disabled disabled
-    :className (or item-class default-item-class)}
-   [:> (.-Header Accordion)
-    [:> (.-Trigger Accordion) {:className (str "group flex justify-between items-center w-full "
-                                               (or trigger-padding "p-5"))}
-     [:> Flex {:align "center" :gap "5"}
-      (or left-slot
-          [:> Avatar {:size "5"
-                      :variant "soft"
-                      :color "gray"
-                      :fallback (r/as-element (if avatar-icon
-                                                avatar-icon
-                                                [:> User {:size 16}]))}])
-
-      [:div {:className "flex flex-col items-start"}
-       [:> Text {:size (or title-size "5")
-                 :weight (or title-weight "bold")
-                 :className "text-[--gray-12]"} title]
-       [:> Text {:size (or subtitle-size "3") :className "text-[--gray-11] text-left"} subtitle]]]
-
-     (or right-slot
-         [:div {:className "flex space-x-3 items-center"}
-          (when show-icon? [status-icon status])
-          [chevron-icon]])]]
-
-   [:> (.-Content Accordion)
-    [:> Box {:px "5" :py "7" :className (or content-class default-content-class)}
-     content]]])
+  (let [trigger-padding-class (or trigger-padding "p-5")
+        title+subtitle [:div {:className "flex flex-col items-start"}
+                        [:> Text {:size (or title-size "5")
+                                  :weight (or title-weight "bold")
+                                  :className "text-[--gray-12]"} title]
+                        [:> Text {:size (or subtitle-size "3")
+                                  :className "text-[--gray-11] text-left"} subtitle]]
+        avatar-or-left (or left-slot
+                           [:> Avatar {:size "5"
+                                       :variant "soft"
+                                       :color "gray"
+                                       :fallback (r/as-element (if avatar-icon
+                                                                 avatar-icon
+                                                                 [:> User {:size 16}]))}])
+        default-right [:div {:className "flex space-x-3 items-center"}
+                       (when show-icon? [status-icon status])
+                       [chevron-icon]]]
+    [:> (.-Item Accordion)
+     {:value value
+      :disabled disabled
+      :className (or item-class default-item-class)}
+     [:> (.-Header Accordion)
+      (if right-slot-outside?
+        ;; Trigger only wraps the left side; right-slot is a sibling so
+        ;; that any interactive element inside it stays clickable even
+        ;; when the Item is :disabled.
+        [:div {:className "flex justify-between items-center w-full"}
+         [:> (.-Trigger Accordion)
+          {:className (str "group flex items-center gap-5 flex-1 "
+                           trigger-padding-class)}
+          [:> Flex {:align "center" :gap "5"}
+           avatar-or-left
+           title+subtitle]]
+         (when right-slot
+           [:div {:className "flex items-center pr-5"}
+            right-slot])]
+        ;; Default: right-slot lives inside the Trigger so the whole row
+        ;; toggles the accordion on click.
+        [:> (.-Trigger Accordion)
+         {:className (str "group flex justify-between items-center w-full "
+                          trigger-padding-class)}
+         [:> Flex {:align "center" :gap "5"}
+          avatar-or-left
+          title+subtitle]
+         (or right-slot default-right)])]
+     [:> (.-Content Accordion)
+      [:> Box {:px "5" :py "7" :className (or content-class default-content-class)}
+       content]]]))
 
 (defn root
   "Main component for the Accordion that renders a list of expandable items.

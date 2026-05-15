@@ -92,10 +92,13 @@
                     :else          nil)]
         [accordion/accordion-item
          {:value sname
-          ;; Intentionally NOT passing :disabled when plan-blocked — Radix
-          ;; turns a disabled AccordionItem into a <button disabled>, which
-          ;; blocks pointer events on the Upgrade button rendered inside the
-          ;; right-slot. Visual muting is handled via :item-class instead.
+          ;; When the org's free-plan limit is reached, disable the Item so
+          ;; the row can't be expanded, AND render the :right-slot OUTSIDE
+          ;; the Trigger so the Upgrade button stays clickable (Radix turns
+          ;; a disabled Item's Trigger into <button disabled>, which would
+          ;; otherwise eat pointer events on any descendant button).
+          :disabled plan-blocked?
+          :right-slot-outside? plan-blocked?
           :title (:title suggestion)
           :subtitle (:card-description suggestion)
           :title-size "3"
@@ -104,7 +107,7 @@
           :trigger-padding "px-5 py-4"
           :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
                            "data-[state=open]:bg-[--accent-2] "
-                           (when plan-blocked? "opacity-90 "))
+                           "data-[disabled]:opacity-90")
           :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
           :left-slot left
           :right-slot right
