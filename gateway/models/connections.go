@@ -474,7 +474,8 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		), ARRAY[]::TEXT[]) AS guardrail_rules,
 		COALESCE((
 			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
-			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.rulepack_id IS NULL
 		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id

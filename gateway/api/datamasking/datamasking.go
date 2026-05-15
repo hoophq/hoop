@@ -255,7 +255,7 @@ func Put(c *gin.Context) {
 			return
 		case nil:
 			if existing.RulepackID.Valid {
-				c.JSON(http.StatusConflict, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
+				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
 				return
 			}
 		default:
@@ -397,7 +397,7 @@ func Delete(c *gin.Context) {
 			return
 		case nil:
 			if existing.RulepackID.Valid {
-				c.JSON(http.StatusConflict, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
+				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
 				return
 			}
 		default:
