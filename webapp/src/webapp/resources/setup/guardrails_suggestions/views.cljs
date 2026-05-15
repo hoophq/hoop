@@ -35,8 +35,10 @@
                       (and disabled-by-plan? (not checked?)))]
     [:> (.-Item Accordion)
      {:value sname
+      :disabled (and disabled-by-plan? (not checked?))
       :className (str "border-b last:border-b-0 border-[--gray-a4] "
-                      "data-[state=open]:bg-[--accent-2]")}
+                      "data-[state=open]:bg-[--accent-2] "
+                      "data-[disabled]:opacity-90")}
      [:> Flex {:align "center" :gap "3" :class "px-4 py-3 w-full"}
       [:> Checkbox
        {:checked checked?
@@ -55,7 +57,7 @@
         [upgrade-button]
 
         checked?
-        [:> Flex {:align "center" :gap "2"}
+        [:> Flex {:align "center" :gap "4"}
          [check-pill]
          [:> (.-Trigger Accordion) {:asChild true}
           [:> Button {:size "1" :variant "ghost" :color "gray"
@@ -138,7 +140,7 @@
              "Protect your resource with Guardrails"]
             [:> Card {:size "1" :class "p-0 overflow-hidden"}
              [:> (.-Root Accordion)
-              {:type "single" :collapsible true :className "w-full"}
+              {:type "multiple" :className "w-full"}
               (for [s suggestions]
                 ^{:key (:name s)}
                 [suggestion-card s roles disabled-by-plan?])]]])

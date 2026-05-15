@@ -35,18 +35,54 @@
 (rf/reg-event-fx
  :guardrails-suggestions/init
  (fn [{:keys [db]} _]
-   {:db (assoc-in db state-path {:selected-toggles {}
-                                 :pending #{}
-                                 :existing {}})
-    :fx [[:dispatch
-          [:fetch
-           {:method "GET"
-            :uri "/guardrails"
-            :on-success (fn [list]
-                          (rf/dispatch [:guardrails->set-all list])
-                          (rf/dispatch [:guardrails-suggestions/hydrate]))
-            :on-failure (fn [error]
-                          (rf/dispatch [:guardrails->set-all nil error]))}]]]}))
+   (let [processed (get-in db [:resource-setup :processed-roles] [])
+         last-created (get-in db [:resources :last-created-roles] [])
+         role-names (->> (concat processed last-created)
+                         (keep :name)
+                         distinct
+                         vec)]
+     {:db (assoc-in db state-path {:selected-toggles {}
+                                   :pending #{}
+                                   :existing {}
+                                   :roles []})
+      :fx (cond-> [[:dispatch
+                    [:fetch
+                     {:method "GET"
+                      :uri "/guardrails"
+                      :on-success (fn [list]
+                                    (rf/dispatch [:guardrails->set-all list])
+                                    (rf/dispatch [:guardrails-suggestions/hydrate]))
+                      :on-failure (fn [error]
+                                    (rf/dispatch [:guardrails->set-all nil error]))}]]]
+            (seq role-names)
+            (conj [:dispatch [:guardrails-suggestions/fetch-roles role-names]]))})))
+
+(rf/reg-event-fx
+ :guardrails-suggestions/fetch-roles
+ (fn [_ [_ role-names]]
+   {:fx (mapv (fn [name]
+                [:dispatch
+                 [:fetch
+                  {:method "GET"
+                   :uri (str "/connections?name=" (js/encodeURIComponent name)
+                             "&page=1&page_size=1")
+                   :on-success (fn [response]
+                                 (let [conn (or (-> response :data first)
+                                                (when (vector? response) (first response)))]
+                                   (when (and conn (:id conn))
+                                     (rf/dispatch [:guardrails-suggestions/add-role
+                                                   {:id (:id conn) :name (:name conn)}]))))
+                   :on-failure (fn [_] nil)}]])
+              role-names)}))
+
+(rf/reg-event-db
+ :guardrails-suggestions/add-role
+ (fn [db [_ role]]
+   (let [existing (get-in db (conj state-path :roles) [])
+         already? (some #(= (:id %) (:id role)) existing)]
+     (if already?
+       db
+       (update-in db (conj state-path :roles) (fnil conj []) role)))))
 
 (rf/reg-event-db
  :guardrails-suggestions/hydrate

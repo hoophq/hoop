@@ -28,18 +28,22 @@
     :checked? (some? (get existing suggestion-name))}))
 
 ;; Roles available for the just-created resource. We try, in order:
-;; 1. last-created-roles (add-role flow: full connection responses with :id)
-;; 2. last-created.connections (setup flow: roles embedded in resource response)
-;; 3. last-created.roles (alternate shape from POST /resources)
+;; 1. roles fetched explicitly via GET /connections?name=<role-name> (works
+;;    for both setup and add-role flows)
+;; 2. last-created-roles (add-role flow: full connection responses with :id)
+;; 3. last-created.connections / last-created.roles (when POST /resources
+;;    returns roles inline)
 (rf/reg-sub
  :guardrails-suggestions/roles-with-ids
+ :<- [:guardrails-suggestions/state]
  :<- [:resources->last-created]
  :<- [:resources->last-created-roles]
- (fn [[last-created last-created-roles] _]
-   (let [from-roles (filter :id last-created-roles)
+ (fn [[state last-created last-created-roles] _]
+   (let [fetched (:roles state)
+         from-roles (filter :id last-created-roles)
          from-resource-connections (filter :id (:connections last-created))
          from-resource-roles (filter :id (:roles last-created))
-         pick (first (filter seq [from-roles from-resource-connections from-resource-roles]))]
+         pick (first (filter seq [fetched from-roles from-resource-connections from-resource-roles]))]
      (mapv #(select-keys % [:id :name]) (or pick [])))))
 
 (rf/reg-sub

@@ -47,7 +47,7 @@
         can-web-terminal? (helpers/can-open-web-terminal? first-role)
         can-native-client? (helpers/can-access-native-client? first-role)]
 
-    [:> Box {:class "max-w-[640px] mx-auto p-8"}
+    [:> Box {:class "max-w-[840px] mx-auto p-8"}
      ;; Success icon
      [:> Flex {:justify "center" :class "mb-8"}
       [:> Box {:class "flex items-center justify-center w-20 h-20 rounded-full bg-green-3"}
