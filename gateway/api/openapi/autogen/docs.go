@@ -10237,6 +10237,7 @@ const docTemplate = `{
                 "access_mode_exec",
                 "access_mode_runbooks",
                 "access_schema",
+                "agent_id",
                 "name",
                 "type"
             ],

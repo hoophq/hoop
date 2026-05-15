@@ -56,7 +56,11 @@
    consumed by `action-button`."
   [{:keys [job-sessions-count planning? cancelled? applying? apply-cancelled? busy?
            on-view-sessions on-run-in-background]}]
-  [{:visible? (pos? job-sessions-count)
+  ;; Sessions list is hidden while an apply is in progress — exposing
+  ;; mid-apply, partially-streamed sessions would let the user open
+  ;; rows whose output is still being written by the agent. Once the
+  ;; apply finishes (all items terminal), the button reappears.
+  [{:visible? (and (pos? job-sessions-count) (not applying?))
     :variant  "outline" :color "gray" :size "1"
     :icon     ScrollText :icon-size 13
     :label    (data/pluralize job-sessions-count "session")
@@ -81,12 +85,16 @@
    through `on-done`. Its label/color shifts based on outcome so a green
    'Done' check isn't shown next to a sea of failed rows."
   [{:keys [all-planned? plan-done applying? all-done? failed-count
-           applied-count on-done on-back]}]
+           applied-count skipped-count on-done on-back]}]
+  ;; "Nothing accomplished" means no roles ended up at desired state from
+  ;; this run. Skipped roles count toward accomplishment (they were left
+  ;; in sync) just like applied roles, so a run of all-skipped + one
+  ;; failure is amber ("partial"), not gray ("nothing happened").
   (let [any-failed? (pos? failed-count)
-        none-applied? (zero? applied-count)
+        nothing-ok? (zero? (+ applied-count skipped-count))
         [color label]
         (cond
-          (and any-failed? none-applied?) ["gray"  "Dismiss results"]
+          (and any-failed? nothing-ok?)   ["gray"  "Dismiss results"]
           any-failed?                     ["amber" "Dismiss results"]
           :else                           ["green" "Done"])]
     [{:visible? (and all-planned? (pos? plan-done) (not applying?))
@@ -100,11 +108,19 @@
 (defn- status-callouts
   "Returns the info-callout specs for the current view state. Each spec carries
    its own `:visible?` predicate; multiple callouts may appear simultaneously."
-  [{:keys [all-done? failed-count plan-done applied-count cancelled-count
-           all-planned? applying? busy?]}]
+  [{:keys [all-done? failed-count plan-done applied-count skipped-count
+           cancelled-count all-planned? applying? busy?]}]
+  ;; `applied-count` counts new SQL runs ("success") and `skipped-count`
+  ;; counts roles the agent re-checked and found already in sync. Both
+  ;; leave the role at the desired state, so the celebratory message
+  ;; folds them together.
   [{:visible? (and all-done? (zero? failed-count))
     :color    "green" :icon CheckCircle2
-    :text     (str "All " applied-count " roles applied successfully.")}
+    :text     (let [total-ok (+ applied-count skipped-count)]
+                (str "All " total-ok " roles in sync"
+                     (when (pos? skipped-count)
+                       (str " (" skipped-count " already up to date)"))
+                     "."))}
    {:visible? (and all-done? (pos? failed-count))
     :color    "amber" :icon AlertCircle
     :text     (str (data/pluralize failed-count "role")
@@ -153,9 +169,15 @@
 
 (defn- plan-item-sessions-cell
   "Either a 'View session' button (lazy-fetches the session on first click)
-   or an em-dash when there's no session yet."
-  [{:keys [item session-set on-view-sessions]}]
-  (if (:sid item)
+   or an em-dash when there's no session yet.
+
+   While an apply is in progress (`applying?`), the button is suppressed
+   even for items that already have a `:sid` — the agent may still be
+   streaming output, so we don't let the user navigate into a partially
+   filled session view. The em-dash is shown instead to keep the cell
+   from collapsing to empty space."
+  [{:keys [item session-set applying? on-view-sessions]}]
+  (if (and (:sid item) (not applying?))
     (let [loaded? (contains? session-set (:sid item))]
       [:> Button {:size "1" :variant "ghost" :color "indigo"
                   :on-click (fn []
@@ -169,7 +191,7 @@
     [:> Text {:size "1" :color "gray"} "\u2014"]))
 
 (defn- plan-item-row
-  [{:keys [item session-set on-view-sessions]}]
+  [{:keys [item session-set applying? on-view-sessions]}]
   ;; Managed rows render their scopes as a wrap-friendly row of gray
   ;; badges. External rows have no scopes (the agent forbids them — see
   ;; planExternal) and instead inherit from `source_role`, so they get a
@@ -198,6 +220,7 @@
    [:> Table.Cell
     [plan-item-sessions-cell {:item             item
                               :session-set      session-set
+                              :applying?        applying?
                               :on-view-sessions on-view-sessions}]]
    [:> Table.Cell
     [status-cell item]]])
@@ -216,19 +239,26 @@
         ;; Status vocabulary matches what the agent emits — see
         ;; `webapp.provisioning.data/plan-item-status`.
         ;; "out-of-sync" = plan ran, apply has work to do (= "ready to apply").
-        ;; "in-sync"     = plan ran, role already matches desired state (no-op).
+        ;; "in-sync"     = plan ran, role already matches desired state (no-op
+        ;;                 at plan-time; no apply needed).
+        ;; "skipped"     = apply ran but the agent re-checked state and found
+        ;;                 it already matched; no psql was executed. Treated
+        ;;                 the same as "success" for progress / done-ness.
         plan-done       (data/count-by-status items "out-of-sync")
         in-sync-count   (data/count-by-status items "in-sync")
+        skipped-count   (data/count-by-status items "skipped")
         failed-count    (data/count-by-status items "failed")
         applied-count   (data/count-by-status items "success")
         cancelled-count (data/count-by-status items "Cancelled")
         total           (count items)
 
         terminal?    #(contains? #{"out-of-sync" "in-sync" "failed"
-                                   "success" "Cancelled"} (:status %))
+                                   "success" "skipped" "Cancelled"} (:status %))
         ;; in-sync items never enter apply, but they're effectively done as
-        ;; far as the apply-progress bar is concerned.
-        apply-done?  #(contains? #{"success" "failed" "Cancelled" "in-sync"} (:status %))
+        ;; far as the apply-progress bar is concerned. "skipped" is the
+        ;; apply-time equivalent (agent re-checked and found nothing to do).
+        apply-done?  #(contains? #{"success" "skipped" "failed"
+                                   "Cancelled" "in-sync"} (:status %))
         all-planned? (and (pos? total) (not planning?) (every? terminal? items))
         all-done?    (and all-planned? (not applying?) (zero? plan-done))
 
@@ -246,6 +276,7 @@
      :apply-cancelled? (:apply-cancelled? plan-job)
      :plan-done        plan-done
      :in-sync-count    in-sync-count
+     :skipped-count    skipped-count
      :failed-count     failed-count
      :applied-count    applied-count
      :cancelled-count  cancelled-count
@@ -266,12 +297,14 @@
         :else               "green"))
 
 (defn- subtitle-text
-  [{:keys [total applied-count plan-done in-sync-count failed-count cancelled-count]}]
+  [{:keys [total applied-count plan-done in-sync-count skipped-count
+           failed-count cancelled-count]}]
   (str "Role provisioning \u2014 " total " roles \u00b7 "
        applied-count " applied \u00b7 "
        plan-done " ready \u00b7 "
        failed-count " failed"
        (when (pos? in-sync-count)   (str " \u00b7 " in-sync-count " in sync"))
+       (when (pos? skipped-count)   (str " \u00b7 " skipped-count " skipped"))
        (when (pos? cancelled-count) (str " \u00b7 " cancelled-count " cancelled"))))
 
 (defn job-detail-screen
@@ -279,7 +312,7 @@
   (fn [{:keys [on-back on-done on-run-in-background on-view-sessions]}]
     (let [plan-job @(rf/subscribe [:provisioning/plan-job])
           sessions @(rf/subscribe [:provisioning/sessions])
-          {:keys [items progress session-set] :as state}
+          {:keys [items progress session-set applying?] :as state}
           (derive-view-state plan-job sessions)]
 
       [:> Flex {:direction "column" :style {:flex 1 :min-height 0}}
@@ -323,6 +356,7 @@
             ^{:key (:key item)}
             [plan-item-row {:item             item
                             :session-set      session-set
+                            :applying?        applying?
                             :on-view-sessions on-view-sessions}])]]]
 
        [:> Flex {:align "center" :justify "between" :pt "4" :mt "4"

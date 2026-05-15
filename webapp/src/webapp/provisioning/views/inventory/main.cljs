@@ -164,11 +164,13 @@
       ;; `webapp.provisioning.data/plan-item-status`. "out-of-sync" means
       ;; "plan ran, apply has work to do" (=> ready); "in-sync" means
       ;; "plan ran, already at desired state" (no apply needed, no banner
-      ;; noise but counted as done).
+      ;; noise but counted as done); "skipped" is the apply-time analogue
+      ;; (apply ran but agent re-checked and found nothing to do).
       (let [applied   (data/count-by-status items "success")
             failed    (data/count-by-status items "failed")
             ready     (data/count-by-status items "out-of-sync")
             in-sync   (data/count-by-status items "in-sync")
+            skipped   (data/count-by-status items "skipped")
             cancelled (data/count-by-status items "Cancelled")
             planning  (some #(contains? #{"pending" "processing"} (:status %)) items)
             applying  (some #(= "applying" (:status %)) items)
@@ -186,13 +188,18 @@
                         all-done     [:> Check {:size 14}]
                         (pos? ready) [:> Rocket {:size 14}]
                         :else        [:> AlertCircle {:size 14}])
+            ;; The apply-progress numerator counts roles that have left the
+            ;; "applying" state in any terminal way that didn't fail — both
+            ;; freshly-applied SQL and skipped (already-in-sync) roles.
+            applied-or-skipped (+ applied skipped)
             suffix    (str (when (pos? failed)    (str ", " failed    " failed"))
                            (when (pos? in-sync)   (str ", " in-sync   " in sync"))
+                           (when (pos? skipped)   (str ", " skipped   " skipped"))
                            (when (pos? cancelled) (str ", " cancelled " cancelled")))
             progress  (cond
                         planning (str "Planning — " (- total (data/count-by-status items #{"pending" "processing"})) "/" total)
-                        applying (str "Applying — " applied "/" total)
-                        all-done (str applied " applied" suffix)
+                        applying (str "Applying — " applied-or-skipped "/" total)
+                        all-done (str applied-or-skipped " applied" suffix)
                         :else    (str ready " ready to apply" suffix))]
         (when-not all-success?
           [shared/callout-bar

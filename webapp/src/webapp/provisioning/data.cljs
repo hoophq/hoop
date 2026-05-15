@@ -289,6 +289,12 @@
 ;;   apply response: "success" | "failed"
 ;; The remaining keys (pending/processing/applying/Cancelled) are assigned
 ;; client-side as items move through the chunked plan/apply pipelines.
+;; Status vocabulary the agent emits — see `agent/controller/system/pgmanager`.
+;; "skipped" is the agent's apply response when the role's current state
+;; already matched the desired state at apply-time (no psql was run). Treat
+;; it as a successful no-op: same green check as "in-sync", just labelled to
+;; distinguish "already in sync at plan-time" from "drifted to in-sync
+;; between plan and apply".
 (def plan-item-status
   {"pending"      {:color "gray"   :label "Pending"}
    "processing"   {:color "indigo" :label "Planning…" :spinner? true}
@@ -297,6 +303,7 @@
    "failed"       {:color "red"    :label "Failed"}
    "applying"     {:color "indigo" :label "Applying…" :spinner? true}
    "success"      {:color "green"  :label "Applied"   :icon :check}
+   "skipped"      {:color "green"  :label "Skipped"   :icon :check}
    "Cancelled"    {:color "gray"   :label "Cancelled" :icon :ban}})
 
 ;; Maps status → action button shown on the right side of the status cell.
