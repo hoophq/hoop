@@ -6,6 +6,7 @@
    ["lucide-react" :refer [Cable Check ChevronRight]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.components.accordion :as accordion]
    [webapp.features.promotion :as promotion]))
 
 (defn- upgrade-button []
@@ -24,87 +25,87 @@
               :radius "full"
               :fallback (r/as-element [:> Check {:size 14}])}])
 
+(defn- stop-propagation
+  "Wraps a node so that mouse and keyboard events do not bubble up to the
+  Accordion.Trigger that wraps the entire row."
+  [node]
+  [:div {:on-click #(.stopPropagation %)
+         :on-key-down #(.stopPropagation %)
+         :on-pointer-down #(.stopPropagation %)}
+   node])
+
+(defn- suggestion-content [suggestion roles selected-roles checked? pending? disabled-by-plan?]
+  [:> Flex {:justify "between" :align "start" :gap "6"}
+   [:> Box {:class "flex-1"}
+    [:> Text {:as "div" :size "3" :weight "bold" :class "text-[--gray-12]"}
+     "Configure roles"]
+    [:> Text {:as "div" :size "2" :class "text-[--gray-11]"}
+     "Select which roles will receive this Guardrails rule"]]
+   [:> Flex {:direction "column" :gap "3" :class "shrink-0"}
+    (for [role roles
+          :let [conn-id (:id role)
+                on? (contains? selected-roles conn-id)]]
+      ^{:key conn-id}
+      [:> Flex {:align "center" :gap "3"}
+       [:> Switch
+        {:checked on?
+         :size "2"
+         :disabled (or pending?
+                       (and disabled-by-plan? (not checked?)))
+         :onCheckedChange
+         (fn [next-on?]
+           (rf/dispatch [:guardrails-suggestions/toggle-role
+                         suggestion conn-id next-on?]))}]
+       [:> Badge {:size "2" :variant "soft" :color "indigo" :class "gap-1"}
+        [:> Cable {:size 12}]
+        (:name role)]])]])
+
 (defn suggestion-card
-  "Renders one suggestion row with checkbox + accordion of role toggles."
+  "Renders one suggestion row using the shared accordion component."
   [suggestion roles disabled-by-plan?]
   (let [sname (:name suggestion)
         {:keys [checked? selected-roles pending?]}
         @(rf/subscribe [:guardrails-suggestions/suggestion-state sname])
         all-conn-ids (mapv :id roles)
-        disabled? (or pending?
-                      (and disabled-by-plan? (not checked?)))]
-    [:> (.-Item Accordion)
+        plan-blocked? (and disabled-by-plan? (not checked?))
+        checkbox-disabled? (or pending? plan-blocked?)
+        left [stop-propagation
+              [:> Checkbox
+               {:checked checked?
+                :disabled checkbox-disabled?
+                :onCheckedChange
+                (fn [_]
+                  (rf/dispatch [:guardrails-suggestions/toggle-checkbox
+                                suggestion all-conn-ids]))}]]
+        right (cond
+                plan-blocked?
+                [stop-propagation [upgrade-button]]
+
+                checked?
+                [:div {:className "flex space-x-3 items-center"}
+                 [check-pill]
+                 [accordion/chevron-icon]]
+
+                :else nil)]
+    [accordion/accordion-item
      {:value sname
-      :disabled (and disabled-by-plan? (not checked?))
-      :className (str "group/item border-b last:border-b-0 border-[--gray-a4] "
-                      "data-[disabled]:opacity-90")}
-     [:> Flex {:align "center" :gap "3"
-               :class (str "px-5 py-4 w-full "
-                           "group-data-[state=open]/item:bg-[--accent-2]")}
-      [:> Checkbox
-       {:checked checked?
-        :disabled disabled?
-        :onCheckedChange
-        (fn [_]
-          (rf/dispatch [:guardrails-suggestions/toggle-checkbox
-                        suggestion all-conn-ids]))}]
-      [:> Box {:class "flex-1"}
-       [:> Text {:as "div" :size "3" :weight "bold" :class "text-[--gray-12]"}
-        (:title suggestion)]
-       [:> Text {:as "div" :size "2" :class "text-[--gray-11]"}
-        (:card-description suggestion)]]
-      (cond
-        (and disabled-by-plan? (not checked?))
-        [upgrade-button]
-
-        checked?
-        [:> Flex {:align "center" :gap "4"}
-         [check-pill]
-         [:> (.-Trigger Accordion) {:asChild true}
-          [:> Button {:size "1" :variant "ghost" :color "gray"
-                      :class "group p-1"}
-           [:> ChevronRight {:size 18
-                             :className "transition-transform duration-200 group-data-[state=open]:rotate-90"}]]]]
-
-        :else
-        [:> (.-Trigger Accordion) {:asChild true}
-         [:> Button {:size "1" :variant "ghost" :color "gray"
-                     :class "group p-1"
-                     :disabled disabled?}
-          [:> ChevronRight {:size 18
-                            :className "transition-transform duration-200 group-data-[state=open]:rotate-90"}]]])]
-     [:> (.-Content Accordion)
-      [:> Box {:class "px-7 py-7 border-t border-[--gray-a4] bg-white"}
-       [:> Flex {:justify "between" :align "start" :gap "6"}
-        [:> Box {:class "flex-1"}
-         [:> Text {:as "div" :size "3" :weight "bold" :class "text-[--gray-12]"}
-          "Configure roles"]
-         [:> Text {:as "div" :size "2" :class "text-[--gray-11]"}
-          "Select which roles will receive this Guardrails rule"]]
-        [:> Flex {:direction "column" :gap "3" :class "shrink-0"}
-         (for [role roles
-               :let [conn-id (:id role)
-                     on? (contains? selected-roles conn-id)]]
-           ^{:key conn-id}
-           [:> Flex {:align "center" :gap "3"}
-            [:> Switch
-             {:checked on?
-              :size "2"
-              :disabled (or pending?
-                            (and disabled-by-plan? (not checked?)))
-              :onCheckedChange
-              (fn [next-on?]
-                (rf/dispatch [:guardrails-suggestions/toggle-role
-                              suggestion conn-id next-on?]))}]
-            [:> Badge {:size "2" :variant "soft" :color "indigo"
-                       :class "gap-1"}
-             [:> Cable {:size 12}]
-             (:name role)]])]]]]]))
+      :disabled plan-blocked?
+      :title (:title suggestion)
+      :subtitle (:card-description suggestion)
+      :title-size "3"
+      :subtitle-size "2"
+      :title-weight "bold"
+      :trigger-padding "px-5 py-4"
+      :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
+                       "data-[disabled]:opacity-90")
+      :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
+      :left-slot left
+      :right-slot right
+      :content [suggestion-content suggestion roles selected-roles
+                checked? pending? disabled-by-plan?]}]))
 
 (defn- your-guardrail-card
-  "Read-only card for an existing guardrail. Free-plan users see Upgrade
-  in place of the chevron; paid users get a chevron that navigates to
-  the edit screen."
+  "Read-only card for an existing guardrail."
   [guardrail free?]
   [:> Card {:size "2"
             :variant "surface"
