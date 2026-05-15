@@ -64,7 +64,8 @@
                                    :roles []
                                    :open-items #{}
                                    :original-ids {}
-                                   :new-selected {}})
+                                   :new-selected {}
+                                   :initial-guardrails nil})
       :fx (cond-> [[:dispatch [:guardrails-suggestions/refetch]]]
             (seq role-names)
             (conj [:dispatch [:guardrails-suggestions/fetch-roles role-names]]))})))
@@ -102,16 +103,24 @@
 (rf/reg-event-db
  :guardrails-suggestions/hydrate
  (fn [db _]
-   (-> db
-       (assoc-in (conj state-path :existing) (existing-map db))
-       (update-in (conj state-path :selected-toggles)
-                  #(merge (selected-toggles-from-list db) %))
+   (let [already-captured? (some? (get-in db (conj state-path :initial-guardrails)))]
+     (cond-> db
+       true (assoc-in (conj state-path :existing) (existing-map db))
+       true (update-in (conj state-path :selected-toggles)
+                       #(merge (selected-toggles-from-list db) %))
        ;; Snapshot connection_ids per guardrail. Existing entries are kept
        ;; as first-load values; only new guardrails (e.g. ones just created
        ;; via a suggestion checkbox) get a fresh snapshot. This prevents a
        ;; later PUT from clobbering connection_ids the user just added.
-       (update-in (conj state-path :original-ids)
-                  #(merge (original-ids-from-list db) %)))))
+       true (update-in (conj state-path :original-ids)
+                       #(merge (original-ids-from-list db) %))
+       ;; Snapshot of the full guardrails list captured ONCE on the first
+       ;; hydrate of this flow. Drives :list-for-subtype and :your-guardrails
+       ;; so that creating/deleting a guardrail mid-flow does not move
+       ;; suggestions across sections. The snapshot refreshes on the next
+       ;; resource setup flow because :init resets it to nil.
+       (not already-captured?)
+       (assoc-in (conj state-path :initial-guardrails) (vec (guardrails-list db)))))))
 
 (rf/reg-event-db
  :guardrails-suggestions/mark-pending

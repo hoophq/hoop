@@ -13,7 +13,8 @@
                           :existing {}
                           :open-items #{}
                           :original-ids {}
-                          :new-selected {}})))
+                          :new-selected {}
+                          :initial-guardrails nil})))
 
 (rf/reg-sub
  :guardrails-suggestions/open-items
@@ -22,13 +23,15 @@
    (vec (:open-items state #{}))))
 
 ;; Suggestions for the current subtype, filtered to exclude any that
-;; the org already has as a guardrail (matches go to "Your Guardrails").
+;; the org already had as a guardrail at the start of this resource
+;; flow. Driven by the snapshot in :initial-guardrails so a freshly
+;; created suggestion stays put instead of jumping to "Your Guardrails".
 (rf/reg-sub
  :guardrails-suggestions/list-for-subtype
  :<- [:resource-setup/resource-subtype]
- :<- [:guardrails->list]
- (fn [[subtype guardrails-list] _]
-   (let [existing-names (->> (:data guardrails-list)
+ :<- [:guardrails-suggestions/state]
+ (fn [[subtype state] _]
+   (let [existing-names (->> (:initial-guardrails state)
                              (map :name)
                              set)]
      (->> (constants/for-subtype subtype)
@@ -63,15 +66,16 @@
          pick (first (filter seq [fetched from-roles from-resource-connections from-resource-roles]))]
      (mapv #(select-keys % [:id :name]) (or pick [])))))
 
-;; Top 3 existing guardrails by connection_ids count (most "used" first).
-;; Includes guardrails whose name matches a suggestion for the current
-;; subtype - those are excluded from suggestions and surfaced here so the
-;; user can apply the new resource's roles to them additively.
+;; Top 3 guardrails by connection_ids count from the initial snapshot
+;; captured when this resource flow started. Reading from the snapshot
+;; (not the live :guardrails->list) keeps the section stable while the
+;; user creates/edits guardrails in this same flow; the next resource
+;; setup re-snapshots and the list reflects the new state.
 (rf/reg-sub
  :guardrails-suggestions/your-guardrails
- :<- [:guardrails->list]
- (fn [guardrails-list _]
-   (->> (:data guardrails-list)
+ :<- [:guardrails-suggestions/state]
+ (fn [state _]
+   (->> (:initial-guardrails state)
         (sort-by (fn [g] (- (count (:connection_ids g)))))
         (take 3)
         vec)))
