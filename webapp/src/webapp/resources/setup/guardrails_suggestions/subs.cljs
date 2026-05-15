@@ -11,7 +11,9 @@
    (get-in db state-path {:selected-toggles {}
                           :pending #{}
                           :existing {}
-                          :open-items #{}})))
+                          :open-items #{}
+                          :original-ids {}
+                          :new-selected {}})))
 
 (rf/reg-sub
  :guardrails-suggestions/open-items
@@ -19,11 +21,19 @@
  (fn [state _]
    (vec (:open-items state #{}))))
 
+;; Suggestions for the current subtype, filtered to exclude any that
+;; the org already has as a guardrail (matches go to "Your Guardrails").
 (rf/reg-sub
  :guardrails-suggestions/list-for-subtype
  :<- [:resource-setup/resource-subtype]
- (fn [subtype _]
-   (constants/for-subtype subtype)))
+ :<- [:guardrails->list]
+ (fn [[subtype guardrails-list] _]
+   (let [existing-names (->> (:data guardrails-list)
+                             (map :name)
+                             set)]
+     (->> (constants/for-subtype subtype)
+          (remove #(existing-names (:name %)))
+          vec))))
 
 (rf/reg-sub
  :guardrails-suggestions/suggestion-state
@@ -59,20 +69,30 @@
  (fn [roles _]
    (mapv :id roles)))
 
-;; Top 3 existing guardrails NOT already shown in the suggestions section,
-;; ordered by number of connection_ids (most "used" first).
+;; Top 3 existing guardrails by connection_ids count (most "used" first).
+;; Includes guardrails whose name matches a suggestion for the current
+;; subtype - those are excluded from suggestions and surfaced here so the
+;; user can apply the new resource's roles to them additively.
 (rf/reg-sub
- :guardrails-suggestions/top-3-other
+ :guardrails-suggestions/your-guardrails
  :<- [:guardrails->list]
- :<- [:guardrails-suggestions/list-for-subtype]
- (fn [[guardrails-list suggestions] _]
-   (let [data (or (:data guardrails-list) [])
-         suggested-names (set (map :name suggestions))]
-     (->> data
-          (remove #(suggested-names (:name %)))
-          (sort-by (fn [g] (- (count (:connection_ids g)))))
-          (take 3)
-          vec))))
+ (fn [guardrails-list _]
+   (->> (:data guardrails-list)
+        (sort-by (fn [g] (- (count (:connection_ids g)))))
+        (take 3)
+        vec)))
+
+;; Per-card state for the "Your Guardrails" section. Drives the checkbox
+;; (any new role marked = checked), the per-role Switch states, and the
+;; pending flag while a PUT is in flight.
+(rf/reg-sub
+ :guardrails-suggestions/your-state
+ :<- [:guardrails-suggestions/state]
+ (fn [{:keys [new-selected pending]} [_ guardrail-id]]
+   (let [selected (get new-selected guardrail-id #{})]
+     {:selected-roles selected
+      :checked? (boolean (seq selected))
+      :pending? (contains? pending guardrail-id)})))
 
 (rf/reg-sub
  :guardrails-suggestions/free-license?

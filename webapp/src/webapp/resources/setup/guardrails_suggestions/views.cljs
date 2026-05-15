@@ -3,7 +3,7 @@
    ["@radix-ui/react-accordion" :as Accordion]
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Checkbox Flex
                                Heading Switch Text]]
-   ["lucide-react" :refer [Cable Check ChevronRight]]
+   ["lucide-react" :refer [Cable Check]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.accordion :as accordion]
@@ -105,39 +105,80 @@
       :content [suggestion-content suggestion roles selected-roles
                 checked? pending? disabled-by-plan?]}]))
 
-(defn- your-guardrail-card
-  "Read-only card for an existing guardrail."
-  [guardrail free?]
-  [:> Card {:size "2"
-            :variant "surface"
-            :class (str "cursor-pointer hover:bg-gray-3 transition-colors "
-                        (when free? "opacity-90"))
-            :on-click (when-not free?
-                        (fn []
-                          (rf/dispatch [:navigate :edit-guardrail {}
-                                        :guardrail-id (:id guardrail)])))}
-   [:> Flex {:gap "3" :align "center"}
-    [:> Checkbox {:checked true :disabled true}]
-    [:> Box {:class "flex-1"}
-     [:> Text {:as "div" :size "3" :weight "bold" :class "text-[--gray-12]"}
-      (:name guardrail)]
-     (when (seq (:description guardrail))
-       [:> Text {:as "div" :size "2" :class "text-[--gray-11]"}
-        (:description guardrail)])]
-    (if free?
-      [upgrade-button]
-      [:> ChevronRight {:size 18 :class "text-[--gray-9]"}])]])
+(defn- your-guardrail-content [guardrail roles selected-roles pending?]
+  [:> Flex {:justify "between" :align "start" :gap "6"}
+   [:> Box {:class "flex-1"}
+    [:> Text {:as "div" :size "3" :weight "bold" :class "text-[--gray-12]"}
+     "Add roles to this guardrail"]
+    [:> Text {:as "div" :size "2" :class "text-[--gray-11]"}
+     "Existing connections stay protected. Toggling adds the new resource roles."]]
+   [:> Flex {:direction "column" :gap "3" :class "shrink-0"}
+    (for [role roles
+          :let [conn-id (:id role)
+                on? (contains? selected-roles conn-id)]]
+      ^{:key conn-id}
+      [:> Flex {:align "center" :gap "3"}
+       [:> Switch
+        {:checked on?
+         :size "2"
+         :disabled pending?
+         :onCheckedChange
+         (fn [next-on?]
+           (rf/dispatch [:guardrails-suggestions/toggle-existing-role
+                         guardrail conn-id next-on?]))}]
+       [:> Badge {:size "2" :variant "soft" :color "indigo" :class "gap-1"}
+        [:> Cable {:size 12}]
+        (:name role)]])]])
+
+(defn your-guardrail-card
+  "Renders an existing guardrail with additive role logic. Checking adds
+  the new resource's role connection_ids to the guardrail; unchecking
+  reverts to the original snapshot. The guardrail is never deleted."
+  [guardrail roles]
+  (let [id (:id guardrail)
+        {:keys [checked? selected-roles pending?]}
+        @(rf/subscribe [:guardrails-suggestions/your-state id])
+        all-new-conn-ids (mapv :id roles)
+        left [stop-propagation
+              [:> Checkbox
+               {:checked checked?
+                :disabled pending?
+                :onCheckedChange
+                (fn [_]
+                  (rf/dispatch [:guardrails-suggestions/toggle-existing-checkbox
+                                guardrail all-new-conn-ids]))}]]
+        right (when checked?
+                [:div {:className "flex space-x-3 items-center"}
+                 [check-pill]
+                 [accordion/chevron-icon]])]
+    [accordion/accordion-item
+     {:value id
+      :title (:name guardrail)
+      :subtitle (:description guardrail)
+      :title-size "3"
+      :subtitle-size "2"
+      :title-weight "bold"
+      :trigger-padding "px-5 py-4"
+      :item-class (str "border-b last:border-b-0 border-[--gray-a4] "
+                       "data-[state=open]:bg-[--accent-2]")
+      :content-class "bg-white border-t border-[--gray-a4] px-7 py-7"
+      :left-slot left
+      :right-slot right
+      :content [your-guardrail-content guardrail roles selected-roles pending?]}]))
 
 (defn main []
   (rf/dispatch [:guardrails-suggestions/init])
   (fn []
     (let [suggestions @(rf/subscribe [:guardrails-suggestions/list-for-subtype])
           roles @(rf/subscribe [:guardrails-suggestions/roles-with-ids])
-          top-3 @(rf/subscribe [:guardrails-suggestions/top-3-other])
+          your-guardrails @(rf/subscribe [:guardrails-suggestions/your-guardrails])
+          open-items @(rf/subscribe [:guardrails-suggestions/open-items])
           free? @(rf/subscribe [:guardrails-suggestions/free-license?])
           limit-reached? @(rf/subscribe [:guardrails-suggestions/limit-reached?])
-          disabled-by-plan? (and free? limit-reached?)]
-      (when (or (seq suggestions) (seq top-3))
+          disabled-by-plan? (and free? limit-reached?)
+          on-value-change #(rf/dispatch [:guardrails-suggestions/set-open-items
+                                         (js->clj %)])]
+      (when (or (seq suggestions) (seq your-guardrails))
         [:> Box {:class "space-y-6 mb-8"}
          (when (seq suggestions)
            [:> Box
@@ -148,18 +189,22 @@
              [:> (.-Root Accordion)
               {:type "multiple"
                :className "w-full"
-               :value (clj->js @(rf/subscribe [:guardrails-suggestions/open-items]))
-               :onValueChange #(rf/dispatch [:guardrails-suggestions/set-open-items
-                                             (js->clj %)])}
+               :value (clj->js open-items)
+               :onValueChange on-value-change}
               (for [s suggestions]
                 ^{:key (:name s)}
                 [suggestion-card s roles disabled-by-plan?])]]])
-         (when (seq top-3)
+         (when (seq your-guardrails)
            [:> Box
             [:> Heading {:as "h3" :size "3" :weight "bold"
                          :class "text-[--gray-12] mb-3"}
              "Your Guardrails"]
-            [:> Box {:class "space-y-2"}
-             (for [g top-3]
-               ^{:key (:id g)}
-               [your-guardrail-card g free?])]])]))))
+            [:> Card {:size "1" :class "p-0 overflow-hidden"}
+             [:> (.-Root Accordion)
+              {:type "multiple"
+               :className "w-full"
+               :value (clj->js open-items)
+               :onValueChange on-value-change}
+              (for [g your-guardrails]
+                ^{:key (:id g)}
+                [your-guardrail-card g roles])]]])]))))

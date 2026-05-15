@@ -32,6 +32,23 @@
   (->> (guardrails-list db)
        (reduce (fn [acc g] (assoc acc (:name g) (set (:connection_ids g)))) {})))
 
+(defn- original-ids-from-list [db]
+  (->> (guardrails-list db)
+       (reduce (fn [acc g] (assoc acc (:id g) (set (:connection_ids g)))) {})))
+
+(rf/reg-event-fx
+ :guardrails-suggestions/refetch
+ (fn [_ _]
+   {:fx [[:dispatch
+          [:fetch
+           {:method "GET"
+            :uri "/guardrails"
+            :on-success (fn [list]
+                          (rf/dispatch [:guardrails->set-all list])
+                          (rf/dispatch [:guardrails-suggestions/hydrate]))
+            :on-failure (fn [error]
+                          (rf/dispatch [:guardrails->set-all nil error]))}]]]}))
+
 (rf/reg-event-fx
  :guardrails-suggestions/init
  (fn [{:keys [db]} _]
@@ -45,16 +62,10 @@
                                    :pending #{}
                                    :existing {}
                                    :roles []
-                                   :open-items #{}})
-      :fx (cond-> [[:dispatch
-                    [:fetch
-                     {:method "GET"
-                      :uri "/guardrails"
-                      :on-success (fn [list]
-                                    (rf/dispatch [:guardrails->set-all list])
-                                    (rf/dispatch [:guardrails-suggestions/hydrate]))
-                      :on-failure (fn [error]
-                                    (rf/dispatch [:guardrails->set-all nil error]))}]]]
+                                   :open-items #{}
+                                   :original-ids {}
+                                   :new-selected {}})
+      :fx (cond-> [[:dispatch [:guardrails-suggestions/refetch]]]
             (seq role-names)
             (conj [:dispatch [:guardrails-suggestions/fetch-roles role-names]]))})))
 
@@ -91,7 +102,13 @@
    (-> db
        (assoc-in (conj state-path :existing) (existing-map db))
        (update-in (conj state-path :selected-toggles)
-                  #(merge (selected-toggles-from-list db) %)))))
+                  #(merge (selected-toggles-from-list db) %))
+       ;; Snapshot connection_ids per guardrail. Existing entries are kept
+       ;; as first-load values; only new guardrails (e.g. ones just created
+       ;; via a suggestion checkbox) get a fresh snapshot. This prevents a
+       ;; later PUT from clobbering connection_ids the user just added.
+       (update-in (conj state-path :original-ids)
+                  #(merge (original-ids-from-list db) %)))))
 
 (rf/reg-event-db
  :guardrails-suggestions/set-toggle
@@ -131,7 +148,7 @@
               :on-success (fn [response]
                             (rf/dispatch [:guardrails-suggestions/mark-pending sname false])
                             (rf/dispatch [:guardrails-suggestions/store-existing sname (:id response)])
-                            (rf/dispatch [:guardrails->get-all]))
+                            (rf/dispatch [:guardrails-suggestions/refetch]))
               :on-failure (fn [error]
                             (rf/dispatch [:guardrails-suggestions/mark-pending sname false])
                             (rf/dispatch [:show-snackbar
@@ -156,7 +173,7 @@
                   :body body
                   :on-success (fn [_]
                                 (rf/dispatch [:guardrails-suggestions/mark-pending suggestion-name false])
-                                (rf/dispatch [:guardrails->get-all]))
+                                (rf/dispatch [:guardrails-suggestions/refetch]))
                   :on-failure (fn [error]
                                 (rf/dispatch [:guardrails-suggestions/mark-pending suggestion-name false])
                                 (rf/dispatch [:show-snackbar
@@ -178,7 +195,7 @@
                               (rf/dispatch [:guardrails-suggestions/mark-pending suggestion-name false])
                               (rf/dispatch [:guardrails-suggestions/store-existing suggestion-name nil])
                               (rf/dispatch [:guardrails-suggestions/clear-toggles suggestion-name])
-                              (rf/dispatch [:guardrails->get-all]))
+                              (rf/dispatch [:guardrails-suggestions/refetch]))
                 :on-failure (fn [error]
                               (rf/dispatch [:guardrails-suggestions/mark-pending suggestion-name false])
                               (rf/dispatch [:show-snackbar
@@ -228,6 +245,64 @@
 
             :else
             [])})))
+
+;; ---------------------------------------------------------------------------
+;; "Your Guardrails" — additive role logic. Never deletes nor removes
+;; original connection_ids. Each toggle/checkbox PUTs with conn_ids =
+;; (original ∪ user-selected new role ids).
+;; ---------------------------------------------------------------------------
+
+(rf/reg-event-fx
+ :guardrails-suggestions/put-existing
+ (fn [{:keys [db]} [_ guardrail conn-ids]]
+   (let [id (:id guardrail)
+         body (-> guardrail
+                  (assoc :connection_ids (vec conn-ids))
+                  sanitize)]
+     {:fx [[:dispatch [:guardrails-suggestions/mark-pending id true]]
+           [:dispatch
+            [:fetch
+             {:method "PUT"
+              :uri (str "/guardrails/" id)
+              :body body
+              :on-success (fn [_]
+                            (rf/dispatch [:guardrails-suggestions/mark-pending id false])
+                            (rf/dispatch [:guardrails-suggestions/refetch]))
+              :on-failure (fn [error]
+                            (rf/dispatch [:guardrails-suggestions/mark-pending id false])
+                            (rf/dispatch [:show-snackbar
+                                          {:level :error
+                                           :text (or (:message error) (str error))}]))}]]]})))
+
+(defn- merged-conn-ids [db guardrail-id new-selected-set]
+  (let [originals (get-in db (conj state-path :original-ids guardrail-id) #{})]
+    (vec (into originals new-selected-set))))
+
+(rf/reg-event-fx
+ :guardrails-suggestions/toggle-existing-role
+ (fn [{:keys [db]} [_ guardrail conn-id on?]]
+   (let [id (:id guardrail)
+         current (get-in db (conj state-path :new-selected id) #{})
+         next-set (if on? (conj current conn-id) (disj current conn-id))
+         next-db (assoc-in db (conj state-path :new-selected id) next-set)]
+     {:db next-db
+      :fx [[:dispatch [:guardrails-suggestions/put-existing
+                       guardrail
+                       (merged-conn-ids next-db id next-set)]]]})))
+
+(rf/reg-event-fx
+ :guardrails-suggestions/toggle-existing-checkbox
+ (fn [{:keys [db]} [_ guardrail all-new-conn-ids]]
+   (let [id (:id guardrail)
+         currently-checked? (seq (get-in db (conj state-path :new-selected id) #{}))
+         next-set (if currently-checked? #{} (set all-new-conn-ids))
+         next-db (assoc-in db (conj state-path :new-selected id) next-set)]
+     {:db next-db
+      :fx (cond-> [[:dispatch [:guardrails-suggestions/put-existing
+                               guardrail
+                               (merged-conn-ids next-db id next-set)]]]
+            (and (not currently-checked?) (seq next-set))
+            (conj [:dispatch [:guardrails-suggestions/open-item id]]))})))
 
 ;; Click on the suggestion's main checkbox.
 ;; - if already exists -> DELETE
