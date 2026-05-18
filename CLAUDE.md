@@ -275,7 +275,7 @@ together (recommended). Individual targets:
 | Service | Port | Command |
 |---------|------|---------|
 | Vite (React shell) | 5173 | `cd webapp_v2 && npm run dev` |
-| shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev:hoop-ui` |
+| shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev` |
 | Gateway (backend) | 8009 | see `Makefile` |
 
 Hot reload: Vite HMRs React sources instantly. shadow-cljs rebuilds

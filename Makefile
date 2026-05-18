@@ -137,7 +137,7 @@ build-webapp:
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
 	cat ./webapp/src/webapp/version.js | awk -F"'" '{printf "%s", $$2}' > ./webapp/resources/version.txt
 	# Build React shell (webapp_v2)
-	cd ./webapp_v2 && npm ci && npm run build && cd ../
+	cd ./webapp_v2 && npm install && npm ci && npm run build && cd ../
 	# Merge: CLJS resources first, React shell on top (React's index.html wins)
 	mkdir -p ${DIST_FOLDER}/_ui_merge
 	cp -a ./webapp/resources/. ${DIST_FOLDER}/_ui_merge/

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:cljs": "npm --prefix ../webapp run dev:hoop-ui",
+    "dev:cljs": "npm --prefix ../webapp run dev",
     "dev:full": "run-p -l --race dev dev:cljs",
     "build": "vite build",
     "lint": "eslint .",
