@@ -22,6 +22,9 @@ import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
+import EventRouting from '@/pages/EventRouting'
+import EventRoutingCreate from '@/pages/EventRouting/Form'
+import EventRoutingDetail from '@/pages/EventRouting/Detail'
 
 /**
  * Routing strategy:
@@ -228,6 +231,44 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsExperimental />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Event Routing (gated by experimental.event_routing flag inside the page) */}
+      <Route
+        path="/features/event-routing"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRouting />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/event-routing/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRoutingCreate />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/event-routing/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRoutingDetail />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

@@ -1,7 +1,8 @@
 /* global __BUILD_ID__ */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Alert, Center, Stack, Text, Code } from '@mantine/core'
+import { Alert, Center, Stack, Text } from '@mantine/core'
+import Code from '@/components/Code'
 import PageLoader from '@/components/PageLoader'
 
 // Cache buster defined by Vite at build time (see vite.config.js). A new value

@@ -9,9 +9,10 @@ export function getUserInitials(user) {
     .join('');
 }
 
-export function shouldHide(item, isAdmin, isSelfHosted = false) {
+export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEnabled = null) {
   if (item.adminOnly && !isAdmin) return true;
   if (item.selfhostedOnly && !isSelfHosted) return true;
+  if (item.featureFlag && isFeatureFlagEnabled && !isFeatureFlagEnabled(item.featureFlag)) return true;
   return false;
 }
 

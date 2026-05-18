@@ -69,7 +69,12 @@
               [:ul {:role "list"
                     :aria-labelledby "sidebar-discover-heading"
                     :class "space-y-1 mt-2"}
-               (for [route sidebar-constants/discover-routes]
+               (for [route sidebar-constants/discover-routes
+                     :let [flag (:feature-flag route)
+                           flags (get-in (:data @gateway-info) [:feature_flags])]
+                     :when (or (nil? flag)
+                               (get flags (keyword flag))
+                               (get flags flag))]
                  ^{:key (:name route)}
                  [nav-link {:uri (:uri route)
                             :icon (:icon route)

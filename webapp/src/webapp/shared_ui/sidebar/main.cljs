@@ -79,11 +79,13 @@
 
 (defn desktop-sidebar [_ _]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])
-        current-route (rf/subscribe [:routes->route])]
+        current-route (rf/subscribe [:routes->route])
+        gateway-info (rf/subscribe [:gateway->info])]
     (fn [user my-plugins]
       (let [user-data (:data user)
             admin? (:admin? user-data)
             free-license? (:free-license? user-data)
+            feature-flags (get-in (:data @gateway-info) [:feature_flags])
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
                             true
                             false)
@@ -169,7 +171,11 @@
                        :aria-label "Discover"
                        :class "flex flex-col items-center space-y-1"}
                   (for [route constants/discover-routes
-                        :when (not (and (:admin-only? route) (not admin?)))]
+                        :let [flag (:feature-flag route)]
+                        :when (and (not (and (:admin-only? route) (not admin?)))
+                                   (or (nil? flag)
+                                       (get feature-flags (keyword flag))
+                                       (get feature-flags flag)))]
                     ^{:key (:name route)}
                     [:li
                      [:a {:href (if (and free-license? (not (:free-feature? route)))

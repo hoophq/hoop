@@ -130,12 +130,13 @@ export const theme = createTheme({
   },
 
   // 4pt base scale with exponential steps.
-  // xs=4  sm=8  md=16  lg=24  xl=32  xxl=48  xxxl=64
+  // xxs=8  xs=10  sm=8  md=16  lg=24  xl=32  xxl=48  xxxl=64
   spacing: {
-    xs: rem(4),
-    sm: rem(8),
+    xxs: rem(8),
+    xs: rem(10),
+    sm: rem(12),
     md: rem(16),
-    lg: rem(24),
+    lg: rem(20),
     xl: rem(32),
     xxl: rem(48),
     xxxl: rem(64)

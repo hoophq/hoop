@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useUIStore } from '@/stores/useUIStore';
+import { useUserStore } from '@/stores/useUserStore';
 import { ItemBadge } from './ItemBadge';
 import { SidebarNavLink } from './SidebarNavLink';
 import { shouldHide, isBlocked, isActive } from './helpers';
@@ -33,8 +34,9 @@ export function NavItem({ item, isAdmin, isFreeLicense, isSelfHosted }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore();
+  const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled);
 
-  if (shouldHide(item, isAdmin, isSelfHosted)) return null;
+  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled)) return null;
 
   const blocked = isBlocked(item, isFreeLicense);
   const active = item.path ? isActive(item.path, location.pathname) : false;
