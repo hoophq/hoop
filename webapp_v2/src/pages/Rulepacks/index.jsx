@@ -46,7 +46,7 @@ function RulepackRow({ rulepack, isLast, onConfigure }) {
       }
     >
       <Flex align="center" gap="md">
-        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+        <Stack gap={4} flex={1} miw={0}>
           <Text size="lg" fw={700} lineClamp={1}>
             {rulepack.display_name}
           </Text>
@@ -68,6 +68,7 @@ function RulepackRow({ rulepack, isLast, onConfigure }) {
         <Group gap="xs" wrap="nowrap">
           <Button onClick={() => onConfigure(rulepack.id)}>
             Configure
+            <ArrowRight size={16} style={{ marginLeft: 4 }} />
           </Button>
         </Group>
       </Flex>
