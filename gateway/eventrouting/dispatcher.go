@@ -7,7 +7,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
 	commonRunbooks "github.com/hoophq/hoop/common/runbooks"
+	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
@@ -15,9 +17,9 @@ import (
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 )
 
-const dispatchTimeout = 60 * time.Second
+const dispatchExecTimeout = 60 * time.Second
 
-func processDispatch(_ context.Context, d *models.EventDispatch) error {
+func processDispatch(pCtx context.Context, d *models.EventDispatch) error {
 	sub, event, err := models.GetDispatchContext(models.DB, d.ID)
 	if err != nil {
 		return fmt.Errorf("failed loading dispatch context: %w", err)
@@ -70,25 +72,57 @@ func processDispatch(_ context.Context, d *models.EventDispatch) error {
 		return fmt.Errorf("runbook file %q not found in repository %q", sub.RunbookFile, repoKey)
 	}
 
-	hookID := uuid.NewString()
-	req := &pbsystem.RunbookHookRequest{
-		ID:        hookID,
-		SID:       hookID,
-		Command:   conn.Command,
-		InputFile: string(file.InputFile),
+	sessionID := uuid.NewString()
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:                  sub.OrgID,
+		SessionID:              sessionID,
+		ConnectionName:         conn.Name,
+		UserAgent:              "eventrouting.dispatcher",
+		Origin:                 pb.ConnectionOriginClientAPI,
+		Verb:                   pb.ClientVerbExec,
+		ImpersonateUserSubject: sub.CreatedByUserID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed creating exec client: %w", err)
 	}
+	defer client.Close()
 
+	hookID := uuid.NewString()
 	_ = models.SetDispatchSessionID(models.DB, d.ID, hookID)
 
-	log.With("dispatch_id", d.ID, "connection", conn.Name, "runbook", sub.RunbookFile).
-		Infof("event-routing: executing runbook via agent %s", conn.AgentID.String)
+	log.With(
+		"dispatch_id", d.ID,
+		"sid", sessionID,
+		"connection", conn.Name,
+		"runbook", sub.RunbookFile,
+		"agent_id", conn.AgentID.String,
+		"impersonate", sub.CreatedByUserID,
+	).Infof("event-routing: executing runbook via connection %q", conn.Name)
 
-	resp := transportsystem.RunRunbookHookWithTimeout(conn.AgentID.String, req, dispatchTimeout)
-	if resp.ExitCode != 0 {
-		return fmt.Errorf("runbook exited with code %d: %s", resp.ExitCode, truncate(resp.Output, 500))
+	respCh := make(chan *clientexec.Response, 1)
+	go func() {
+		respCh <- client.Run(file.InputFile, nil)
+	}()
+
+	timeoutCtx, cancel := context.WithTimeout(pCtx, dispatchExecTimeout)
+	defer cancel()
+
+	select {
+	case resp := <-respCh:
+		if resp.HasReview {
+			return fmt.Errorf("dispatch blocked by review (review_uri=%s)", resp.Output)
+		}
+		if resp.ExitCode != 0 {
+			return fmt.Errorf("runbook exited with code %d: %s", resp.ExitCode, truncate(resp.Output, 500))
+		}
+		log.With("dispatch_id", d.ID, "sid", sessionID).
+			Infof("event-routing: runbook finished, exit=%d, truncated=%v, duration_ms=%d",
+				resp.ExitCode, resp.Truncated, resp.ExecutionTimeMili)
+		return nil
+	case <-timeoutCtx.Done():
+		client.Close()
+		return fmt.Errorf("dispatch exec timed out after %s", dispatchExecTimeout)
 	}
-
-	return nil
 }
 
 func truncate(s string, n int) string {
