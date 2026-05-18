@@ -65,7 +65,7 @@ func buildRulepackResponse(rp *models.Rulepack) (openapi.Rulepack, error) {
 	}
 	resp.DataMaskingRules = make([]openapi.DataMaskingRule, 0, len(dmRules))
 	for i := range dmRules {
-		resp.DataMaskingRules = append(resp.DataMaskingRules, dataMaskingRuleToOpenAPI(&dmRules[i]))
+		resp.DataMaskingRules = append(resp.DataMaskingRules, dataMaskingRuleToOpenAPI(&dmRules[i], rulepackID))
 	}
 
 	grRules, err := models.ListGuardRailRules(rp.OrgID.String(), models.GuardRailListOption{
@@ -76,7 +76,7 @@ func buildRulepackResponse(rp *models.Rulepack) (openapi.Rulepack, error) {
 	}
 	resp.GuardRailRules = make([]openapi.GuardRailRuleResponse, 0, len(grRules))
 	for _, gr := range grRules {
-		resp.GuardRailRules = append(resp.GuardRailRules, guardRailRuleToOpenAPI(gr))
+		resp.GuardRailRules = append(resp.GuardRailRules, guardRailRuleToOpenAPI(gr, rulepackID))
 	}
 
 	var connectionNames []string
@@ -96,7 +96,7 @@ func buildRulepackResponse(rp *models.Rulepack) (openapi.Rulepack, error) {
 	return resp, nil
 }
 
-func dataMaskingRuleToOpenAPI(r *models.DataMaskingRule) openapi.DataMaskingRule {
+func dataMaskingRuleToOpenAPI(r *models.DataMaskingRule, rulepackID uuid.UUID) openapi.DataMaskingRule {
 	supported := make([]openapi.SupportedEntityTypesEntry, len(r.SupportedEntityTypes))
 	for i, e := range r.SupportedEntityTypes {
 		supported[i] = openapi.SupportedEntityTypesEntry{Name: e.Name, EntityTypes: e.EntityTypes}
@@ -117,7 +117,7 @@ func dataMaskingRuleToOpenAPI(r *models.DataMaskingRule) openapi.DataMaskingRule
 	return openapi.DataMaskingRule{
 		ID: r.ID,
 		DataMaskingRuleRequest: openapi.DataMaskingRuleRequest{
-			Name:                    r.Name,
+			Name:                    services.StripRulepackRuleName(rulepackID, r.Name),
 			Description:             r.Description,
 			Attributes:              attrs,
 			SupportedEntityTypes:    supported,
@@ -128,14 +128,14 @@ func dataMaskingRuleToOpenAPI(r *models.DataMaskingRule) openapi.DataMaskingRule
 	}
 }
 
-func guardRailRuleToOpenAPI(r *models.GuardRailRules) openapi.GuardRailRuleResponse {
+func guardRailRuleToOpenAPI(r *models.GuardRailRules, rulepackID uuid.UUID) openapi.GuardRailRuleResponse {
 	attrs := r.Attributes
 	if attrs == nil {
 		attrs = []string{}
 	}
 	return openapi.GuardRailRuleResponse{
 		ID:          r.ID,
-		Name:        r.Name,
+		Name:        services.StripRulepackRuleName(rulepackID, r.Name),
 		Description: r.Description,
 		Input:       r.Input,
 		Output:      r.Output,

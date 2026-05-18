@@ -17,6 +17,47 @@ import (
 
 const RulepackAttributeNamePrefix = "rulepack_"
 
+const (
+	rulepackRuleNamePrefixWord = "rp_"
+	rulepackRuleNameSeparator  = "__"
+	rulepackRuleIDPrefixLen    = 8
+)
+
+// RulepackRuleNamePrefix returns the deterministic prefix that namespaces every
+// data masking and guardrail rule created via a rulepack. The prefix uses the
+// first 8 hex characters of the rulepack UUID so that two rulepacks in the same
+// organization can carry rules with identical user-typed names without
+// colliding on the (org_id, name) unique constraint of the rule tables.
+//
+// Format: "rp_<uuid8>__"  e.g. "rp_15b5a2fd__"
+//
+// The full stored name is `<prefix><user-typed-name>`, which fits the rule
+// column's VARCHAR(128) as long as the user name is <= 116 chars.
+func RulepackRuleNamePrefix(rulepackID uuid.UUID) string {
+	short := rulepackID.String()
+	if len(short) > rulepackRuleIDPrefixLen {
+		short = short[:rulepackRuleIDPrefixLen]
+	}
+	return rulepackRuleNamePrefixWord + short + rulepackRuleNameSeparator
+}
+
+// BuildRulepackRuleName prepends the rulepack prefix to a user-typed rule name.
+func BuildRulepackRuleName(rulepackID uuid.UUID, userName string) string {
+	return RulepackRuleNamePrefix(rulepackID) + userName
+}
+
+// StripRulepackRuleName removes the prefix from a stored rule name belonging to
+// the given rulepack and returns the original user-typed name. If the stored
+// name does not carry the expected prefix (e.g. the rule was created outside
+// the rulepack flow), it is returned unchanged.
+func StripRulepackRuleName(rulepackID uuid.UUID, stored string) string {
+	prefix := RulepackRuleNamePrefix(rulepackID)
+	if strings.HasPrefix(stored, prefix) {
+		return stored[len(prefix):]
+	}
+	return stored
+}
+
 func RulepackIDToNullString(s *string) sql.NullString {
 	if s == nil {
 		return sql.NullString{}
@@ -288,10 +329,11 @@ func insertRulepackRulesTx(
 	rulepackUUIDStr := sql.NullString{String: rulepackUUID.String(), Valid: true}
 
 	for _, req := range rules.DataMaskingRules {
+		storedName := BuildRulepackRuleName(rulepackUUID, req.Name)
 		dmRule := &models.DataMaskingRule{
 			ID:                   uuid.NewString(),
 			OrgID:                rp.OrgID.String(),
-			Name:                 req.Name,
+			Name:                 storedName,
 			Description:          req.Description,
 			SupportedEntityTypes: toModelSupportedEntityTypes(req.SupportedEntityTypes),
 			CustomEntityTypes:    toModelCustomEntityTypes(req.CustomEntityTypesEntrys),
@@ -307,17 +349,18 @@ func insertRulepackRulesTx(
 			Create(&models.DatamaskingRuleAttribute{
 				OrgID:               rp.OrgID,
 				AttributeName:       attrName,
-				DatamaskingRuleName: req.Name,
+				DatamaskingRuleName: storedName,
 			}).Error; err != nil {
 			return err
 		}
 	}
 
 	for _, req := range rules.GuardRailRules {
+		storedName := BuildRulepackRuleName(rulepackUUID, req.Name)
 		grRule := &models.GuardRailRules{
 			ID:          uuid.NewString(),
 			OrgID:       rp.OrgID.String(),
-			Name:        req.Name,
+			Name:        storedName,
 			Description: req.Description,
 			Input:       req.Input,
 			Output:      req.Output,
@@ -332,7 +375,7 @@ func insertRulepackRulesTx(
 			Create(&models.GuardrailRuleAttribute{
 				OrgID:             rp.OrgID,
 				AttributeName:     attrName,
-				GuardrailRuleName: req.Name,
+				GuardrailRuleName: storedName,
 			}).Error; err != nil {
 			return err
 		}
