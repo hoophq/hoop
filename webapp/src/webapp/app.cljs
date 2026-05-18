@@ -33,6 +33,7 @@
    [webapp.connections.views.setup.events.subs]
    [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
+   [webapp.provisioning.main :as provisioning]
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
@@ -341,6 +342,11 @@
 (defmethod routes/panels :resource-catalog-panel []
   [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 h-full space-y-radix-7"}
                              [resource-catalog/main]]])
+
+(defmethod routes/panels :provisioning-panel []
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [provisioning/panel]]])
 
 (defmethod routes/panels :resource-setup-new-panel []
   ;; Initialize if not coming from catalog

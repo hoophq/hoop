@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
@@ -47,6 +48,11 @@ var resourcesRolesCreateFlags struct {
 	agentID     string
 	command     []string
 	secrets     []string
+	jsonOutput  bool
+	quietOutput bool
+}
+
+var resourcesHealthFlags struct {
 	jsonOutput  bool
 	quietOutput bool
 }
@@ -128,6 +134,18 @@ var resourcesRolesCreateCmd = &cobra.Command{
 	},
 }
 
+var resourcesHealthCmd = &cobra.Command{
+	Use:   "health <name>",
+	Short: "Check the health of a resource",
+	Long:  "Run a connectivity test against a resource and report the status.",
+	Args:  cobra.ExactArgs(1),
+	Example: `  hoop resources health my-db
+  hoop resources health my-db --json`,
+	Run: func(cmd *cobra.Command, args []string) {
+		runResourcesHealth(args[0])
+	},
+}
+
 func init() {
 	// resources list
 	fl := resourcesListCmd.Flags()
@@ -159,18 +177,24 @@ func init() {
 	frc.StringVar(&resourcesRolesCreateFlags.subtype, "subtype", "", "Role subtype (e.g. postgres, mysql, tcp)")
 	frc.StringVar(&resourcesRolesCreateFlags.agentID, "agent-id", "", "Agent UUID (required)")
 	frc.StringArrayVar(&resourcesRolesCreateFlags.command, "command", nil, "Command argument (repeatable, e.g. --command /bin/bash)")
-	frc.StringArrayVar(&resourcesRolesCreateFlags.secrets, "secret", nil, `Secret as KEY=VALUE (repeatable, e.g. --secret "envvar:HOST=base64val")`)
+	frc.StringArrayVar(&resourcesRolesCreateFlags.secrets, "secret", nil, `Secret as KEY=VALUE (repeatable, e.g. --secret "HOST=val")`)
 	frc.BoolVar(&resourcesRolesCreateFlags.jsonOutput, "json", false, "Output created role as formatted JSON")
 	frc.BoolVar(&resourcesRolesCreateFlags.quietOutput, "quiet", false, "Output created role as compact JSON")
 	_ = resourcesRolesCreateCmd.MarkFlagRequired("resource")
 	_ = resourcesRolesCreateCmd.MarkFlagRequired("type")
 	_ = resourcesRolesCreateCmd.MarkFlagRequired("agent-id")
 
+	// resources health
+	fh := resourcesHealthCmd.Flags()
+	fh.BoolVar(&resourcesHealthFlags.jsonOutput, "json", false, "Output as formatted JSON")
+	fh.BoolVar(&resourcesHealthFlags.quietOutput, "quiet", false, "Output as compact JSON (for scripting)")
+
 	resourcesRolesCmd.AddCommand(resourcesRolesListCmd)
 	resourcesRolesCmd.AddCommand(resourcesRolesCreateCmd)
 	resourcesCmd.AddCommand(resourcesListCmd)
 	resourcesCmd.AddCommand(resourcesCreateCmd)
 	resourcesCmd.AddCommand(resourcesRolesCmd)
+	resourcesCmd.AddCommand(resourcesHealthCmd)
 	rootCmd.AddCommand(resourcesCmd)
 }
 
@@ -258,9 +282,10 @@ func displayResourcesList(resources []map[string]any) {
 
 func runResourcesCreate(name string) {
 	config := clientconfig.GetClientConfigOrDie()
-
-	envVars := parseKeyValuePairs(resourcesCreateFlags.envVars)
-
+	envVars, err := cmdutils.ParseEnvPerType(resourcesCreateFlags.envVars)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed parsing env vars: %v", err)
+	}
 	payload := map[string]any{
 		"name":     name,
 		"type":     resourcesCreateFlags.resType,
@@ -389,7 +414,10 @@ func displayRolesList(roles []map[string]any) {
 func runResourcesRolesCreate(name string) {
 	config := clientconfig.GetClientConfigOrDie()
 
-	secrets := parseKeyValuePairsAny(resourcesRolesCreateFlags.secrets)
+	secrets, err := cmdutils.ParseEnvPerType(resourcesRolesCreateFlags.secrets)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed parsing env var: %v", err)
+	}
 
 	payload := map[string]any{
 		"name":          name,
@@ -447,19 +475,68 @@ func runResourcesRolesCreate(name string) {
 	fmt.Println(string(out))
 }
 
+// ---- resources health ----
+
+func runResourcesHealth(name string) {
+	config := clientconfig.GetClientConfigOrDie()
+
+	req, err := http.NewRequest("GET", config.ApiURL+"/api/resources/"+name+"/health", nil)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed to create request: %v", err)
+	}
+	setSessionAuthHeaders(req, config)
+
+	httpResp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed to check resource health: %v", err)
+	}
+	defer httpResp.Body.Close()
+
+	log.Debugf("resources health http response %v", httpResp.StatusCode)
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		styles.PrintErrorAndExit("Failed to read response: %v", err)
+	}
+
+	if httpResp.StatusCode != 200 {
+		styles.PrintErrorAndExit("Failed to check resource health, status=%v, body=%v", httpResp.StatusCode, string(body))
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		styles.PrintErrorAndExit("Failed to decode response: %v", err)
+	}
+
+	if resourcesHealthFlags.quietOutput {
+		fmt.Println(string(body))
+		return
+	}
+	if resourcesHealthFlags.jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Printf("status: %v\n", toStr(result["status"]))
+	if output := toStr(result["output"]); output != "-" {
+		fmt.Printf("output:\n%v\n", output)
+	}
+}
+
 // ---- helpers ----
 
 // parseKeyValuePairs splits "KEY=VALUE" strings into a map[string]string.
-func parseKeyValuePairs(pairs []string) map[string]string {
-	m := make(map[string]string, len(pairs))
-	for _, p := range pairs {
-		k, v, _ := strings.Cut(p, "=")
-		if k != "" {
-			m[k] = v
-		}
-	}
-	return m
-}
+// func parseKeyValuePairs(pairs []string) map[string]string {
+// 	m := make(map[string]string, len(pairs))
+// 	for _, p := range pairs {
+// 		k, v, _ := strings.Cut(p, "=")
+// 		if k != "" {
+// 			m[k] = v
+// 		}
+// 	}
+// 	return m
+// }
 
 // parseKeyValuePairsAny splits "KEY=VALUE" strings into a map[string]any.
 func parseKeyValuePairsAny(pairs []string) map[string]any {

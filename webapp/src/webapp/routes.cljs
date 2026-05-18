@@ -23,6 +23,7 @@
      "/agents" [["" :agents]
                 ["/new" :new-agent]]
      "/auth/callback" :auth-callback-hoop
+     "/provisioning" :provisioning
      "/resource-catalog" :resource-catalog
      "/resources" [["" :resources]
                    ["/new" :resource-setup-new]

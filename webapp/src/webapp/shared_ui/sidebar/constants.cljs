@@ -1,7 +1,7 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
-   ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked Boxes BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
                            Sparkles]]
@@ -66,7 +66,9 @@
    "users" (fn [& [{:keys [size] :or {size 24}}]]
              [:> UserRoundCheck {:size size}])
    "Search" (fn [& [{:keys [size] :or {size 24}}]]
-              [:> Search {:size size}])})
+              [:> Search {:size size}])
+   "Provisioning" (fn [& [{:keys [size] :or {size 24}}]]
+                    [:> Boxes {:size size}])})
 
 ;; Menu principal
 (def main-routes
@@ -106,6 +108,13 @@
     :navigate :sessions
     :free-feature? true
     :admin-only? false}
+   {:name "Provisioning"
+    :label "Provisioning"
+    :icon (get icons-registry "Provisioning")
+    :uri (routes/url-for :provisioning)
+    :navigate :provisioning
+    :free-feature? true
+    :admin-only? true}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")

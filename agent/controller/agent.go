@@ -22,7 +22,9 @@ import (
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/awseks"
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"
+	"github.com/hoophq/hoop/agent/controller/system/bareexec"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
+	"github.com/hoophq/hoop/agent/controller/system/pgmanager"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
 	"github.com/hoophq/hoop/agent/secretsmanager"
@@ -253,6 +255,15 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 	case pbsystem.RunbookHookRequestType:
 		runbookhook.ProcessRequest(a.client, pkt)
+
+	case pbsystem.BareExecRequestType:
+		bareexec.ProcessRequest(a.client, pkt)
+
+	case pbsystem.PgManagerPlanRequestType:
+		pgmanager.ProcessPlanRequest(a.client, pkt)
+
+	case pbsystem.PgManagerApplyRequestType:
+		pgmanager.ProcessApplyPlan(a.client, pkt)
 	}
 }
 
