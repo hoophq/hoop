@@ -31,7 +31,7 @@ jobs:
           rustup target add aarch64-apple-darwin
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build Darwin Rust Binaries
         env:
@@ -63,7 +63,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -95,7 +95,7 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -138,7 +138,7 @@ jobs:
         run: make generate-wasm
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: amd64
         env:
@@ -181,7 +181,7 @@ jobs:
         run: make generate-wasm
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -224,7 +224,7 @@ jobs:
         run: make generate-wasm
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -267,7 +267,7 @@ jobs:
         run: make generate-wasm
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -310,7 +310,7 @@ jobs:
         run: make generate-wasm
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -357,7 +357,7 @@ jobs:
         run: make generate-wasm
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -429,7 +429,7 @@ jobs:
           path: dist/
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Merge Artifacts into dist/
         env:
@@ -552,7 +552,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -659,7 +659,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -689,7 +689,7 @@ jobs:
 
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
       - name: Build Gateway Bundle (amd64)
         env:
