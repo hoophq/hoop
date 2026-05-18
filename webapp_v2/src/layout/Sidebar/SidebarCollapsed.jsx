@@ -1,4 +1,4 @@
-import { Stack, Box, Text, Tooltip } from '@mantine/core';
+import { Stack, Box, Text, Tooltip, ScrollArea, Group } from '@mantine/core';
 import { ChevronsRight } from 'lucide-react';
 import { useUIStore } from '@/stores/useUIStore';
 import { useUserStore } from '@/stores/useUserStore';
@@ -30,7 +30,13 @@ export function SidebarCollapsed({ skipLink }) {
         />
       </Box>
 
-      <div className={classes.collapsedScrollArea}>
+      <ScrollArea
+        scrollbars="y"
+        type="hover"
+        data-mantine-color-scheme="dark"
+        scrollbarSize={10}
+        classNames={{ root: classes.collapsedScrollArea }}
+      >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
           {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
@@ -42,7 +48,7 @@ export function SidebarCollapsed({ skipLink }) {
         {isAdmin && (
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
-            <Stack gap={2} align="center" role="list" aria-label="Discover">
+            <Stack gap="xxxs" align="center" role="list" aria-label="Discover">
               {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
                 <Box component="li" key={item.path} className={classes.listItem}>
                   <IconBtn {...item} />
@@ -55,7 +61,7 @@ export function SidebarCollapsed({ skipLink }) {
         {isAdmin && (
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
-            <Stack gap={2} align="center" role="list" aria-label="Organization">
+            <Stack gap="xxxs" align="center" role="list" aria-label="Organization">
               {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) =>
                 item.children ? (
                   <Box component="li" key={item.label} className={classes.listItem}>
@@ -78,7 +84,7 @@ export function SidebarCollapsed({ skipLink }) {
           </Box>
         )}
 
-        <Box mt="auto" pb="sm">
+        <Group justify="center" mt="xxl" pb="sm">
           <Tooltip label={user?.name || user?.email || 'Profile'} position="right" withArrow>
             <Box
               role="button"
@@ -100,8 +106,8 @@ export function SidebarCollapsed({ skipLink }) {
               {getUserInitials(user)}
             </Box>
           </Tooltip>
-        </Box>
-      </div>
+        </Group>
+      </ScrollArea>
 
       <div className={classes.collapsedFooter}>
         <Tooltip label="Expand sidebar" position="right" withArrow>
