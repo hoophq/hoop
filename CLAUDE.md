@@ -201,6 +201,22 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Version is injected at build time via `-ldflags` into `common/version`.
 - PR preview builds are tagged `{PR_NUMBER}.0.1-{SHORT_SHA}`.
 
+### PR Labels
+Every PR **must** have exactly one release label. Choose based on the nature of the change:
+
+| Label | When to use |
+|-------|-------------|
+| `major` | Breaking changes that require a major version bump |
+| `minor` | New features or non-breaking enhancements |
+| `patch` | Bug fixes, performance improvements, or minor non-breaking changes |
+| `skip-release` | No release needed: docs, CI/CD changes, internal refactors, test-only changes |
+
+Examples:
+- New API endpoint or feature → `minor`
+- Fix a crash or incorrect behavior → `patch`
+- Remove a public API or change wire format → `major`
+- Update `CLAUDE.md`, fix a GitHub Actions workflow, rename a variable → `skip-release`
+
 ## Merge Conflict Resolution
 When merging `main` into a feature branch:
 1. Check for migration conflicts first — duplicate migration numbers cause build failures.
