@@ -34,12 +34,52 @@ jobs:
           CHANGELOG_OUTPUT: ${{ steps.changelog.outputs.changelog }}
         with:
           script: |
+            const marker = '<!-- api-changelog-comment -->';
             const output = process.env.CHANGELOG_OUTPUT;
-            if (output && output.trim().length > 0) {
-              await github.rest.issues.createComment({
+            const hasChanges = output && output.trim().length > 0;
+            const body = hasChanges ? `${marker}\n## 📋 API Changelog\n\n${output}` : null;
+
+            const existing = await github.paginate(
+              github.rest.issues.listComments,
+              {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: `## 📋 API Changelog\n\n${output}`
-              });
+                per_page: 100,
+              },
+              (response) => response.data.filter((c) => c.body && c.body.includes(marker))
+            );
+
+            if (hasChanges) {
+              if (existing.length > 0) {
+                const [keep, ...stale] = existing;
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: keep.id,
+                  body,
+                });
+                for (const c of stale) {
+                  await github.rest.issues.deleteComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: c.id,
+                  });
+                }
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body,
+                });
+              }
+            } else {
+              for (const c of existing) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
             }
