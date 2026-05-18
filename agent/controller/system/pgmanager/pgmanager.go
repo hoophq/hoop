@@ -362,11 +362,7 @@ func planExternal(c *Config, conn ConnectionParts) (*planResponse, error) {
 	return buildPlan(c, current, desired)
 }
 
-// buildPlan is the shared output tail. Both modes produce the same
-// pair of files (current.yaml, apply.sql) in the same shape, so the
-// final marshal-and-write step is factored out. Returns the exit
-// code for cmdPlan to propagate.
-//
+// buildPlan construct the plan with the SQL migration, the desired and current state
 // Order matters: the SQL plan is built first so we can set
 // current.RequiresMigration before marshaling current.yaml. That way
 // the flag in the YAML and the contents of apply.sql are guaranteed
@@ -403,15 +399,16 @@ func buildPlan(config *Config, current, desired *Snapshot) (*planResponse, error
 			Style: yaml.LiteralStyle,
 			Value: sqlPlanStr,
 		},
+		CommandOutput: "",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed marshaling response payload: %w", err)
 	}
 
 	return &planResponse{
+		RoleExists:      current.Exists,
 		StateMigration:  stateMigrationYaml,
 		SQLPlanChecksum: sqlPlanChecksum,
 		Status:          status,
-		RoleExists:      current.Exists,
 	}, nil
 }

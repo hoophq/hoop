@@ -640,7 +640,6 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 		})
 		return nil
 	}
-	fmt.Printf("CONNENVVARS --->>>: %#v\n", connParams.EnvVars)
 	envVars, err := secretsmanager.Decode(connParams.EnvVars)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed decoding environment variables %v", err)

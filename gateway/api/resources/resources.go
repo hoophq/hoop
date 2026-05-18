@@ -259,14 +259,8 @@ func ListResources(c *gin.Context) {
 	}
 	connsByResource, err := models.GetConnectionsByResourceNames(models.DB, ctx.OrgID, resourceNames)
 	if err != nil {
-		log.Errorf("list-resources: failed fetching connections for %d resources: %v", len(resourceNames), err)
-		connsByResource = map[string][]models.Connection{}
-	} else {
-		totalConns := 0
-		for _, conns := range connsByResource {
-			totalConns += len(conns)
-		}
-		log.Infof("list-resources: fetched %d connections across %d resources", totalConns, len(connsByResource))
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching resources roles: %v", err)
+		return
 	}
 
 	var resp []*openapi.ResourceResponse

@@ -64,12 +64,6 @@ func processRequest(client pb.ClientTransport, pkt *pb.Packet) {
 		_ = stderrw.Close()
 
 		outputContent := output.String()
-		// if len(outputContent) > maxOutputBytes {
-		// 	remainingBytes := len(outputContent[maxOutputBytes:])
-		// 	outputContent = outputContent[:maxOutputBytes]
-		// 	outputContent += fmt.Sprintf(" [truncated %v byte(s)]", remainingBytes)
-		// }
-
 		status := pbsystem.StatusSuccessType
 		if exitCode != 0 {
 			status = pbsystem.StatusFailedType

@@ -109,10 +109,6 @@ type rotatePasswordSpec struct {
 // createRoleSpec drives the CREATE ROLE statement when the role
 // doesn't exist yet.
 type createRoleSpec struct {
-	// Password is the literal SQL-quoted string to emit. The plan
-	// builder calls pgQuoteLiteral on the random password before
-	// stashing it here so the template doesn't need to know about
-	// SQL string escaping.
 	Password string
 	// Attributes are the attribute keywords to attach to CREATE ROLE.
 	// Only desired-true attributes appear; the others are implicit
@@ -372,10 +368,7 @@ func buildSQLPlan(rotateRequested bool, desired, current *Snapshot) (sqlPlan, er
 	return plan, nil
 }
 
-// sqlPlanTmpl renders a sqlPlan as the full apply.sql, including the
-// no-changes case, the file preamble, and the per-role section
-// divider. The template owns the apply.sql shape end-to-end; writePlan
-// just executes it and writes the result.
+// sqlPlanTmpl renders a sqlPlan to perform the migration in the database
 //
 // All conditional emission is in the template ({{ if … }}, {{ with … }},
 // {{ range … }}); the diff itself is computed by buildSQLPlan.
@@ -397,7 +390,7 @@ const sqlPlanTmpl = `{{ if .IsEmpty -}}
 
 {{ with .CreateRole -}}
 -- Role does not exist yet; create it with the desired attributes.
--- The password below is randomly generated — capture it before applying.
+-- The password below is randomly generated and replaced in runtime to avoid logging and leaking it
 CREATE ROLE {{ $.Role | quoteIdent }} WITH PASSWORD 'ROLE_PASSWORD_PLACEHOLDER'
     {{- range .Attributes }} {{ . }}{{ end }}
     {{- if .InRole }} IN ROLE

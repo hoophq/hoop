@@ -2364,23 +2364,6 @@ type ResourceResponse struct {
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
-type ResourceRoleGrantRequest struct {
-	// Name of the connection/role resource that will be created after provisioning
-	Name string `json:"name" binding:"required" example:"pgdemo-ro"`
-	// The standard role type to provision on the target system. Must be 'ro' (read-only: SELECT)
-	// or 'rw' (read-write: SELECT, INSERT, UPDATE, DELETE).
-	RoleName string `json:"role_name" binding:"required" enums:"ro,rw" example:"ro"`
-}
-
-type ResourceRoleGrantResponse struct {
-	// The session ID for tracking the async operation
-	SessionID string `json:"session_id" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
-	// Tags associated with the operation
-	Tags map[string]string `json:"tags"`
-	// Status of the async operation
-	Status string `json:"status" enums:"pending" example:"pending"`
-}
-
 type ResourcHealthCheckResponse struct {
 	// Output is the raw stdout/stderr returned by the connectivity test query
 	Output string `json:"output" example:"1\n(1 row)\n"`

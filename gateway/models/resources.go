@@ -183,17 +183,6 @@ func UpsertResource(db *gorm.DB, resource *Resources, updateDependentTables bool
 	return err
 }
 
-func GetResourceConnectionByName(db *gorm.DB, orgID, resourceName, connName string) (*Connection, error) {
-	var conn Connection
-	err := db.Table(tableConnections).
-		Where("org_id = ? AND resource_name = ? AND name = ?", orgID, resourceName, connName).
-		First(&conn).Error
-	if err != nil {
-		return nil, err
-	}
-	return &conn, nil
-}
-
 func GetResourceConnections(db *gorm.DB, orgID, resourceName string) ([]Connection, error) {
 	var connections []Connection
 	err := db.Table(tableConnections).

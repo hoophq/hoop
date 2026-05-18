@@ -236,7 +236,7 @@ type Snapshot struct {
 	// status field; it does NOT set this flag, because no migration
 	// would resolve it — operator action is required instead.
 	//
-	// Populated by writePlan after building the SQL plan, so it's
+	// Populated by buildPlan after building the SQL plan, so it's
 	// always consistent with the apply.sql produced in the same run.
 	RequiresMigration bool `yaml:"requires_migration"`
 
