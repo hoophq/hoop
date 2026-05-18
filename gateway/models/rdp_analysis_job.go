@@ -29,8 +29,11 @@ const (
 	RDPJobStatusFailed  = "failed"
 )
 
-// maxJobAttempts is the number of times a job will be retried before giving up.
-const maxJobAttempts = 3
+// MaxJobAttempts is the number of times a job will be retried before giving up.
+const MaxJobAttempts = 3
+
+// maxJobAttempts is kept for backwards compatibility within the package.
+const maxJobAttempts = MaxJobAttempts
 
 // CreateRDPAnalysisJob inserts a new pending analysis job for the given session.
 func CreateRDPAnalysisJob(orgID, sessionID string) error {
@@ -99,6 +102,23 @@ func FailRDPAnalysisJob(db *gorm.DB, jobID string, errMsg string) error {
 			"status":      RDPJobStatusFailed,
 			"last_error":  errMsg,
 			"finished_at": gorm.Expr("now()"),
+		}).Error
+}
+
+// RetryRDPAnalysisJob resets a permanently-failed job so the worker pool can
+// re-claim it: status -> pending, attempt -> 0, last_error/started_at/finished_at
+// cleared. Used by the "Retry analysis" UI action when a Presidio outage has
+// exhausted the automatic retry budget. Only updates jobs currently in the
+// "failed" state to avoid clobbering an in-flight run.
+func RetryRDPAnalysisJob(db *gorm.DB, jobID string) error {
+	return db.Table("private.rdp_analysis_jobs").
+		Where("id = ? AND status = ?", jobID, RDPJobStatusFailed).
+		Updates(map[string]any{
+			"status":      RDPJobStatusPending,
+			"attempt":     0,
+			"last_error":  nil,
+			"started_at":  nil,
+			"finished_at": nil,
 		}).Error
 }
 

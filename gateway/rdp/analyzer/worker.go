@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -153,13 +154,15 @@ func runWorker(ctx context.Context, workerID int, presidio *PresidioClient) {
 		_ = models.UpdateSessionRDPAnalysisStatus(job.OrgID, job.SessionID, "analyzing")
 
 		if err := processJob(ctx, job, presidio); err != nil {
+			// Log the raw error for ops; this includes the Presidio URL,
+			// status codes, and any wrapped diagnostics.
 			logger.With("sid", job.SessionID, "job_id", job.ID).
 				Errorf("job failed: %v", err)
-			errMsg := err.Error()
-			if len(errMsg) > 1000 {
-				errMsg = errMsg[:1000]
-			}
-			_ = models.FailRDPAnalysisJob(models.DB, job.ID, errMsg)
+			// Persist a sanitised, user-facing message so the UI doesn't
+			// leak internal infrastructure (URLs, ports, hostnames) via the
+			// rdp_analysis_jobs.last_error column. The structured logger
+			// remains the source of truth for debugging.
+			_ = models.FailRDPAnalysisJob(models.DB, job.ID, userFacingErrorMessage(err))
 			_ = models.UpdateSessionRDPAnalysisStatus(job.OrgID, job.SessionID, "failed")
 			continue
 		}
@@ -189,6 +192,46 @@ type AnalysisParams struct {
 }
 
 // DefaultAnalysisParams returns the analysis parameters from appconfig (env vars).
+// userFacingErrorMessage strips internal infrastructure details (URLs, ports,
+// raw transport errors) from a job error before it is persisted in
+// rdp_analysis_jobs.last_error and surfaced through the API to the webapp.
+// The full unredacted error is still emitted via the structured logger for
+// operators to debug.
+func userFacingErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, ErrPresidio):
+		// Common Presidio failure modes leak the analyzer URL or HTTP body
+		// in the wrapped error chain. Return a generic message so end users
+		// know the cause without exposing infra details. Operators see the
+		// full chain in the gateway logs.
+		return "PII analyzer service is unavailable. Please contact your administrator if the issue persists."
+	}
+	// For unexpected error classes, include only the top-level summary and
+	// truncate aggressively so we never accidentally leak nested details.
+	msg := err.Error()
+	if i := indexOf(msg, ':'); i > 0 && i < 80 {
+		msg = msg[:i]
+	}
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+	return msg
+}
+
+// indexOf returns the index of the first occurrence of c in s, or -1.
+// Avoids importing strings just for this single use.
+func indexOf(s string, c byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
 func DefaultAnalysisParams() AnalysisParams {
 	cfg := appconfig.Get()
 	return AnalysisParams{
@@ -493,6 +536,17 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 			job.SessionID, currentFrameIndex, timestamp, presidio, params,
 		)
 		if analyzeErr != nil {
+			// A Presidio outage is fatal for the whole job: continuing would
+			// silently mark the session as "analyzed" with zero detections
+			// even though PII may exist. Surface the failure so the job is
+			// retried (or fails hard after maxAttempts) and the UI can
+			// display the captured error.
+			if errors.Is(analyzeErr, ErrPresidio) {
+				return fmt.Errorf("rdp-analyzer: aborting job after presidio failure at t=%.1fs: %w",
+					timestamp, analyzeErr)
+			}
+			// OCR / per-snapshot data errors are not necessarily a Presidio
+			// outage; skip just this snapshot and keep going.
 			log.With("sid", job.SessionID).Debugf("snapshot analysis failed at t=%.1fs: %v", timestamp, analyzeErr)
 			continue
 		}
@@ -530,7 +584,14 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 			ctx, framebuffer, fbWidth, fbHeight,
 			job.SessionID, frameIndex-1, lastEventTimestamp, presidio, params,
 		)
-		if analyzeErr == nil && (len(detections) > 0 || len(counts) > 0) {
+		if analyzeErr != nil {
+			if errors.Is(analyzeErr, ErrPresidio) {
+				return fmt.Errorf("rdp-analyzer: aborting job after presidio failure on final snapshot: %w",
+					analyzeErr)
+			}
+			// Non-Presidio errors are silently ignored on the final snapshot,
+			// matching the per-snapshot loop above.
+		} else if len(detections) > 0 || len(counts) > 0 {
 			snapshotsRun++
 			for infoType, count := range counts {
 				aggregatedCounts[infoType] += count
