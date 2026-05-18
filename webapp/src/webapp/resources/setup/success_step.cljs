@@ -74,9 +74,8 @@
                          :description "Start using your resource immediately in your browser"
                          :recommended? true
                          :on-click (fn []
-                                     (js/localStorage.setItem "selected-connection" {:name (:name first-role)})
                                      (rf/dispatch [:database-schema->clear-schema])
-                                     (rf/dispatch [:navigate :editor-plugin-panel]))}])
+                                     (rf/dispatch [:navigate :editor-plugin {:role (:name first-role)}]))}])
 
          ;; Setup Native Access - only if native client is available
          (when can-native-client?
@@ -104,7 +103,7 @@
                        :on-click (fn []
                                    (rf/dispatch-sync [:primary-connection/clear-selected])
                                    (rf/dispatch [:database-schema->clear-schema])
-                                   (rf/dispatch [:navigate :editor-plugin-panel]))}]
+                                   (rf/dispatch [:navigate :editor-plugin]))}]
 
          [action-card {:icon ChevronRight
                        :title "Go to Resources"

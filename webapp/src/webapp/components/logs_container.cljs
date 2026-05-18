@@ -78,6 +78,8 @@
 (defn virtualized-container
   "Renders a large log string using window virtualization.
    Only visible lines are in the DOM — scroll is always fluid.
+   The container fills its parent; place inside a flex/grid cell with a
+   bounded height (e.g. `flex-1 min-h-0`).
    config keys: :status :logs :classes"
   [config]
   (let [logs (:logs config)
@@ -93,7 +95,6 @@
          [vlist/virtualized-list
           {:items lines
            :item-height 20
-           :container-height 600
            :render-item (fn [line _idx]
                           [:div {:class "whitespace-pre leading-5"} line])}])
        (case status

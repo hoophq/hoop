@@ -188,9 +188,8 @@
             (when (can-open-web-terminal? connection)
               [:> DropdownMenu.Item {:on-click
                                      (fn []
-                                       (js/localStorage.setItem "selected-connection" connection)
                                        (rf/dispatch [:database-schema->clear-schema])
-                                       (rf/dispatch [:navigate :editor-plugin-panel {:role (:name connection)}]))}
+                                       (rf/dispatch [:navigate :editor-plugin {:role (:name connection)}]))}
                "Open in Web Terminal"])
 
             (when (and (can-hoop-cli? connection)

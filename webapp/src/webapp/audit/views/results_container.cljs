@@ -21,20 +21,21 @@
   [{:keys [results-heads results-body log-view download-props]}
    {:keys [status results]}]
   [:> Flex {:direction "column" :class "h-96 min-h-96"}
-   [:> Flex {:justify "between" :align "center" :gap "4"}
+   [:> Flex {:justify "between" :align "center" :gap "4" :class "flex-shrink-0"}
     [:> Box {:class "flex-1 min-w-0"}
      [tabs/tabs {:on-change #(reset! log-view %)
                  :tabs ["Plain text" "Table"]}]]
     (when download-props
       [:> Box {:class "mb-large flex-shrink-0"}
        [download-menu/main download-props]])]
-   (case @log-view
-     "Plain text" [logs/virtualized-container {:status status :logs results}]
-     "Table" [ag-grid-table/main results-heads results-body false true
-              {:height "100%"
-               :theme "alpine"
-               :pagination? (> (count results-body) 100)
-               :auto-size-columns? true}])])
+   [:> Box {:class "flex-1 min-h-0 overflow-hidden"}
+    (case @log-view
+      "Plain text" [logs/virtualized-container {:status status :logs results}]
+      "Table" [ag-grid-table/main results-heads results-body false true
+               {:height "100%"
+                :theme "alpine"
+                :pagination? (> (count results-body) 100)
+                :auto-size-columns? true}])]])
 
 (defmulti results-view identity)
 (defmethod results-view :sql
@@ -47,12 +48,14 @@
    {:status status :results results :fixed-height? fixed-height? :classes classes}])
 
 (defmethod results-view :not-sql
-  [_ {:keys [results status classes download-props]}]
-  [:> Flex {:direction "column" :class "h-full"}
+  [_ {:keys [results status classes download-props fixed-height?]}]
+  [:> Flex {:direction "column"
+            :class (if fixed-height? "h-96 min-h-96" "h-full")}
    (when download-props
-     [:> Flex {:justify "end" :class "mb-small"}
+     [:> Flex {:justify "end" :class "mb-small flex-shrink-0"}
       [download-menu/main download-props]])
-   [logs/virtualized-container {:status status :logs results :classes classes}]])
+   [:> Box {:class "flex-1 min-h-0 overflow-hidden"}
+    [logs/virtualized-container {:status status :logs results :classes classes}]]])
 
 (defn main []
   (let [log-view (r/atom "Plain text")]
