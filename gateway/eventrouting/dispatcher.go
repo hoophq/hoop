@@ -12,9 +12,6 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
-	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
-
-	pbsystem "github.com/hoophq/hoop/common/proto/system"
 )
 
 const dispatchExecTimeout = 60 * time.Second
