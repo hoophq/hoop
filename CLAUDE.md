@@ -121,7 +121,8 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
 | Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly) |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
-| Run React dev server | `cd webapp_v2 && npm run dev` | Vite on :5173; also start CLJS on :8280 |
+| Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
+| Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
 | Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
@@ -268,8 +269,21 @@ Additionally, read these before the specific task:
 
 ### Dev servers
 
+Use `cd webapp_v2 && npm run dev:full` to launch both Vite and shadow-cljs
+together (recommended). Individual targets:
+
 | Service | Port | Command |
 |---------|------|---------|
 | Vite (React shell) | 5173 | `cd webapp_v2 && npm run dev` |
-| shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev` |
+| shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev:hoop-ui` |
 | Gateway (backend) | 8009 | see `Makefile` |
+
+Hot reload: Vite HMRs React sources instantly. shadow-cljs rebuilds
+`/js/app.js` and `/css/site.css`, which Vite **proxies** — so CLJS/Tailwind
+edits do NOT propagate as HMR into the running page. Hard-reload the tab
+(Cmd+Shift+R) after a CLJS change.
+
+A `.env` in `webapp_v2/` is optional — `vite.config.js` defaults all dev
+proxy targets. Same goes for `webapp/.env`: only override `SENTRY_DSN`,
+`SEGMENT_WRITE_KEY` or `API_URL` if you need to (closure-defines in
+`shadow-cljs.edn` already supply usable defaults).
