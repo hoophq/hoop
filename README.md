@@ -1,5 +1,5 @@
 <h4 align="center">
-<sub><b>NEW</b>  ·  Admin MCP server — AI agents can now manage hoop, audited like humans.  <a href="#whats-new"><b>Read more →</b></a></sub>
+<sub><b>NEW</b>  ·  User MCP server — How AI coding agents get production access safely.  <a href="#whats-new"><b>Read more →</b></a></sub>
 </h4>
 <h1 align="center">
 One Gateway Between Your Team and Your Infrastructure.
@@ -255,15 +255,15 @@ docker compose up
  
 ## What's New
  
-### May 14, 2026 — Admin MCP server
+### May 18, 2026 — User MCP server
  
-AI agents can now manage hoop itself. Connect Claude Code, Cursor, or any MCP-compatible client and the agent can configure connections, guardrails, data masking, and reviews — the same surface a human admin uses.
+Now, when AI coding agents connect to your databases, servers, and services, they are tagged as the human user running them, not just as a shared service account. When you connect Claude Code, Cursor, or any MCP-compatible client, the agent authenticates over OAuth 2.1 and inherits the user's permissions, group memberships, and ABAC rules.
+
+Every query flows through the same policy engine, data masking, and approval routing as a human session. When a query needs review, the agent waits. Reviewers see the user's name on the request, not an opaque agent identity. Then, the approved query is the only one that runs.
+
+Audit logs record the human user as the source. One timeline for humans and agents.
  
-Every agent action flows through the same auth, audit log, and policy enforcement as a human admin. Approvals route to Slack or Teams. Destructive operations are blocked at the protocol layer. Sessions are recorded and replayable.
- 
-hoop now governs the agents that govern hoop.
- 
-[Read the full breakdown →](https://hoop.dev/blog/ai-agents-dont-get-a-governance-exemption)
+[Read the full breakdown →](https://hoop.dev/blog/how-ai-coding-agents-get-production-access-safely)
  
 ---
  
