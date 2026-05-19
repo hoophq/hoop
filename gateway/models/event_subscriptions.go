@@ -19,7 +19,7 @@ type EventSubscription struct {
 	EventTypes        pq.StringArray    `gorm:"column:event_types;type:text[]"`
 	RunbookRepository string            `gorm:"column:runbook_repository"`
 	RunbookFile       string            `gorm:"column:runbook_file"`
-	ConnectionID      string            `gorm:"column:connection_id"`
+	ConnectionName    string            `gorm:"column:connection_name"`
 	ParameterMapping  map[string]string `gorm:"column:parameter_mapping;serializer:json"`
 	Status            string            `gorm:"column:status"`
 	CreatedByUserID   string            `gorm:"column:created_by_user_id"`
@@ -93,7 +93,7 @@ func UpdateEventSubscription(sub *EventSubscription) error {
 			"event_types":       sub.EventTypes,
 			"runbook_repository": sub.RunbookRepository,
 			"runbook_file":      sub.RunbookFile,
-			"connection_id":     sub.ConnectionID,
+			"connection_name":   sub.ConnectionName,
 			"parameter_mapping": json.RawMessage(mappingJSON),
 			"updated_at":        sub.UpdatedAt,
 		})

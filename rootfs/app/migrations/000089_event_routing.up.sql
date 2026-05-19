@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS event_subscriptions (
     event_types         TEXT[]      NOT NULL,
     runbook_repository  TEXT        NOT NULL,
     runbook_file        TEXT        NOT NULL,
-    connection_id       UUID        NOT NULL REFERENCES connections(id) ON DELETE RESTRICT,
+    connection_name     VARCHAR(128) NOT NULL,
     parameter_mapping   JSONB       NOT NULL DEFAULT '{}'::jsonb,
     status              TEXT        NOT NULL DEFAULT 'active'
         CHECK (status IN ('active', 'paused')),
@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS event_subscriptions (
     created_by_groups   TEXT[]      NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (org_id, name)
+    UNIQUE (org_id, name),
+    FOREIGN KEY (org_id, connection_name) REFERENCES connections(org_id, name)
+        ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_subscriptions_org_status ON event_subscriptions (org_id, status);

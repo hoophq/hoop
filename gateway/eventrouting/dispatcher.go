@@ -31,9 +31,9 @@ func processDispatch(pCtx context.Context, d *models.EventDispatch) error {
 		return fmt.Errorf("failed rendering parameters: %w", err)
 	}
 
-	conn, err := models.GetConnectionByNameOrID(models.NewAdminContext(sub.OrgID), sub.ConnectionID)
+	conn, err := models.GetConnectionByNameOrID(models.NewAdminContext(sub.OrgID), sub.ConnectionName)
 	if err != nil || conn == nil {
-		return fmt.Errorf("failed loading connection %q: %v", sub.ConnectionID, err)
+		return fmt.Errorf("failed loading connection %q: %v", sub.ConnectionName, err)
 	}
 
 	if !conn.AgentID.Valid || conn.AgentID.String == "" {

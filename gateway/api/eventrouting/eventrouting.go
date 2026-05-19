@@ -100,7 +100,7 @@ func CreateSubscription(c *gin.Context) {
 		EventTypes:        pq.StringArray(req.EventTypes),
 		RunbookRepository: req.RunbookRepository,
 		RunbookFile:       req.RunbookFile,
-		ConnectionID:      conn.ID,
+		ConnectionName:    conn.Name,
 		ParameterMapping:  req.ParameterMapping,
 		Status:            status,
 		CreatedByUserID:   ctx.UserID,
@@ -119,9 +119,7 @@ func CreateSubscription(c *gin.Context) {
 		return
 	}
 
-	resp := subscriptionToResponse(sub)
-	resp.ConnectionName = conn.Name
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, subscriptionToResponse(sub))
 }
 
 func GetSubscription(c *gin.Context) {
@@ -189,7 +187,7 @@ func UpdateSubscription(c *gin.Context) {
 		EventTypes:        pq.StringArray(req.EventTypes),
 		RunbookRepository: req.RunbookRepository,
 		RunbookFile:       req.RunbookFile,
-		ConnectionID:      conn.ID,
+		ConnectionName:    conn.Name,
 		ParameterMapping:  req.ParameterMapping,
 		UpdatedAt:         time.Now().UTC(),
 	}
@@ -209,9 +207,7 @@ func UpdateSubscription(c *gin.Context) {
 		return
 	}
 
-	resp := subscriptionToResponse(updated)
-	resp.ConnectionName = conn.Name
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, subscriptionToResponse(updated))
 }
 
 func DeleteSubscription(c *gin.Context) {
@@ -389,7 +385,7 @@ func subscriptionToResponse(s *models.EventSubscription) openapi.EventSubscripti
 		EventTypes:        []string(s.EventTypes),
 		RunbookRepository: s.RunbookRepository,
 		RunbookFile:       s.RunbookFile,
-		ConnectionID:      s.ConnectionID,
+		ConnectionName:    s.ConnectionName,
 		ParameterMapping:  s.ParameterMapping,
 		Status:            s.Status,
 		CreatedByEmail:    s.CreatedByEmail,

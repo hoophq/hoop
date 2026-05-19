@@ -2757,8 +2757,7 @@ type EventSubscriptionResponse struct {
 	EventTypes        []string          `json:"event_types"`
 	RunbookRepository string            `json:"runbook_repository"`
 	RunbookFile       string            `json:"runbook_file"`
-	ConnectionID      string            `json:"connection_id"`
-	ConnectionName    string            `json:"connection_name,omitempty"`
+	ConnectionName    string            `json:"connection_name"`
 	ParameterMapping  map[string]string `json:"parameter_mapping"`
 	Status            string            `json:"status"`
 	CreatedByEmail    string            `json:"created_by_email"`
