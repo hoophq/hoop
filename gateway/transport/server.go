@@ -164,7 +164,6 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		AgentID:   gwctx.Connection.AgentID,
 		AgentName: gwctx.Connection.AgentName,
 		AgentMode: gwctx.Connection.AgentMode,
-		// AgentPresidioAnalyzerURL: gwctx.Agent,
 
 		// added when initializing the streamclient proxy
 		ClientVerb:   "",
