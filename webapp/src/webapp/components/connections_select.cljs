@@ -33,7 +33,10 @@
       (reset! initialized true)
       (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}]))
 
-    (fn [{:keys [id name required? connection-filter-fn connection-ids selected-connections on-connections-change]}]
+    (fn [{:keys [id name required? connection-filter-fn connection-ids selected-connections
+                 on-connections-change label placeholder]
+          :or {label "Resource Roles"
+               placeholder "Select resource roles..."}}]
       (let [connections-data (or (:data @connections) [])
             filtered-connections (if connection-filter-fn
                                    (filter connection-filter-fn connections-data)
@@ -53,7 +56,7 @@
                                   connection-ids)]
 
         [multiselect/paginated
-         {:label "Resource Roles"
+         {:label label
           :id id
           :name name
           :required? required?
@@ -62,7 +65,7 @@
           :loading? connections-loading?
           :has-more? has-more?
           :search-value @search-term
-          :placeholder "Select resource roles..."
+          :placeholder placeholder
           :on-change (fn [selected-options]
                        (let [selected-js-options (js->clj selected-options :keywordize-keys true)]
                          (on-connections-change selected-js-options)))

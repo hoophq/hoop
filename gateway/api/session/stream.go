@@ -87,6 +87,14 @@ func StreamSession(c *gin.Context) {
 		return
 	}
 
+	// Commit response headers immediately so clients (fetch / EventSource)
+	// resolve their connect promise and transition to "live" without waiting
+	// for the first event. Without this, gin defers the header flush until
+	// the first body write, which on an idle session would only happen after
+	// the 30s keepalive tick.
+	fmt.Fprint(c.Writer, ": connected\n\n")
+	flusher.Flush()
+
 	for {
 		select {
 		case ev, ok := <-ch:

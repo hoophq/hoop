@@ -1,6 +1,6 @@
 (ns webapp.guardrails.connections-section
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Grid Flex]]
+   ["@radix-ui/themes" :refer [Box Heading Text Grid Flex]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.connections-select :as connections-select]))
@@ -40,7 +40,7 @@
         [:> Grid {:columns "7" :gap "7"}
          [:> Box {:grid-column "span 2 / span 2"}
           [:> Heading {:as "h3" :size "4" :weight "medium"} "Associate Resource Roles"]
-          [:p {:class "text-sm text-gray-500"}
+          [:> Text {:size "3" :class "text-[--gray-11]"}
            "Select the resource roles where this guardrail should be applied."]]
 
          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}

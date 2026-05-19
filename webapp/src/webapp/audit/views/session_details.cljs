@@ -12,6 +12,7 @@
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
+   [webapp.audit.views.session-live-tail :as session-live-tail]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
@@ -130,7 +131,10 @@
     clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
     executing-status (r/atom :ready)
     current-path (.-pathname (.-location js/window))
-    is-dedicated-page? (cs/starts-with? current-path "/sessions/")]
+    is-dedicated-page? (cs/starts-with? current-path "/sessions/")
+    ;; tracks the session id we have an SSE subscription open for, so we
+    ;; can subscribe exactly once per machine session and clean up on close
+    subscribed-id (r/atom nil)]
 
     (rf/dispatch [:gateway->get-info])
     (when session
@@ -157,6 +161,27 @@
                   (rf/dispatch [:connections->get-connection-details connection-name]))
               ready? (= (:status session) "ready")
               open? (= (:status session) "open")
+              machine-session? (= (:identity_type session) "machine")
+              live-machine? (and machine-session? open? (:id session))
+              ;; Use the live tail for every machine session — it gives a
+              ;; readable, terminal-style view of the SQL stream, decoded
+              ;; client-side. The same component handles both the raw wire
+              ;; frames pushed via SSE and the pre-decoded SQL the backend
+              ;; returns for finished sessions via `?event_stream=raw-queries`.
+              show-live-tail? machine-session?
+              ;; Open/close SSE subscription as the live state changes
+              _ (cond
+                  (and live-machine? (not= @subscribed-id (:id session)))
+                  (do
+                    (when @subscribed-id
+                      (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id]))
+                    (reset! subscribed-id (:id session))
+                    (rf/dispatch [:audit->session-stream-subscribe (:id session)]))
+
+                  (and (not live-machine?) @subscribed-id)
+                  (do
+                    (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id])
+                    (reset! subscribed-id nil)))
               ;; credentials_expire_at is stored in session metadata by the backend
               ;; when connection credentials are issued (see SetSessionCredentialsExpireAt)
               credentials-expire-at (get-in session [:metadata :credentials_expire_at])
@@ -313,9 +338,18 @@
                                      review-groups)
                                (= "PENDING" review-status)))
               [:section {:id "session-event-stream"}
-               (if (= (:status @session-details) :loading)
+               (cond
+                 (= (:status @session-details) :loading)
                  [loading-player]
 
+                 ;; Machine session — dedicated terminal-style view that
+                 ;; renders decoded SQL (both the live SSE wire frames and
+                 ;; the historical pre-decoded queries) instead of the
+                 ;; expand/collapse list.
+                 show-live-tail?
+                 [session-live-tail/main session]
+
+                 :else
                  [:<>
                   (if (= (:verb session) "exec")
                     ;; exec: always results-container/main (table + virtualized plain text)
@@ -514,6 +548,9 @@
 
 
         (finally
+          (when @subscribed-id
+            (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id])
+            (reset! subscribed-id nil))
           (rf/dispatch [:audit->clear-session])
           (rf/dispatch [:reports->clear-session-report-by-id]))))))
 

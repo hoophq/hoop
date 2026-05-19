@@ -10,6 +10,7 @@
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
+   :audit->session-stream {}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
    :audit-logs {:status :idle
                 :data []
@@ -93,6 +94,10 @@
                      :current-page :main
                      :context {}
                      :search-results {:status :idle :data {}}}
+   :machine-identities {:status :idle
+                        :data []
+                        :current-identity nil
+                        :credentials {:status :idle :data []}}
    :runbooks {:connection-dialog-open? false
               :selected-connection nil
               :list {:status :idle :data [] :error nil}
