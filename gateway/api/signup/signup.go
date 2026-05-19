@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -76,6 +77,10 @@ func Post(c *gin.Context) {
 		return
 	}
 	analytics.SetMode(org.ID, org.AnalyticsMode)
+
+	if err := services.SeedDefaultRulepacksForOrg(c.Request.Context(), org.ID); err != nil {
+		log.With("org_id", org.ID).Errorf("failed seeding default rulepacks, reason=%v", err)
+	}
 
 	agentcontroller.Sync()
 	profileName := ctx.UserAnonProfile

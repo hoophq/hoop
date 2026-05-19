@@ -1,6 +1,7 @@
 package loginoidcapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
@@ -298,6 +300,10 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
 		if err != nil {
 			return false, fmt.Errorf("failed creating default runbook configuration, err=%v", err)
+		}
+
+		if err := services.SeedDefaultRulepacksForOrg(context.Background(), org.ID); err != nil {
+			log.With("org_id", org.ID).Errorf("failed seeding default rulepacks, reason=%v", err)
 		}
 
 		emailVerified := false
