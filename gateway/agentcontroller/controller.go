@@ -102,7 +102,7 @@ func conciliateDeployments(gatewayGrpcURL string, items []*agentcontroller.Agent
 			continue
 		}
 		req.DSNKey = dsnKey
-		err = models.CreateAgent(req.ID, req.Name, proto.AgentModeStandardType, secretKeyHash)
+		err = models.CreateAgent(req.ID, req.Name, proto.AgentModeStandardType, secretKeyHash, nil)
 		if err == models.ErrAlreadyExists {
 			err = models.RotateAgentSecretKey(req.ID, req.Name, secretKeyHash)
 		}

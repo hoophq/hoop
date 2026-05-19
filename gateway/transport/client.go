@@ -350,8 +350,17 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			return pb.ErrAgentOffline
 		}
 
+		dlpProvider := s.AppConfig.DlpProvider()
+		analyzerURL, anonymizerURL, dlpMode, isPresidioConfigOverride := stream.AgentMSPresidioConfig()
+		if !isPresidioConfigOverride {
+			dlpProvider = "mspresidio"
+			dlpMode = s.AppConfig.DlpMode()
+			analyzerURL = s.AppConfig.MSPresidioAnalyzerURL()
+			anonymizerURL = s.AppConfig.MSPresidioAnomymizerURL()
+		}
+
 		var entityTypesJsonData json.RawMessage
-		if s.AppConfig.DlpProvider() == "mspresidio" {
+		if dlpProvider == "mspresidio" {
 			var err error
 			entityTypesJsonData, err = services.GetDataMaskingRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 			if err != nil {
@@ -407,11 +416,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			ClientArgs:                 clientArgs,
 			ClientVerb:                 pctx.ClientVerb,
 			ClientOrigin:               pctx.ClientOrigin,
-			DlpProvider:                s.AppConfig.DlpProvider(),
-			DlpMode:                    s.AppConfig.DlpMode(),
+			DlpProvider:                dlpProvider,
+			DlpMode:                    dlpMode,
 			DlpGcpRawCredentialsJSON:   s.AppConfig.GcpDLPJsonCredentials(),
-			DlpPresidioAnalyzerURL:     s.AppConfig.MSPresidioAnalyzerURL(),
-			DlpPresidioAnonymizerURL:   s.AppConfig.MSPresidioAnomymizerURL(),
+			DlpPresidioAnalyzerURL:     analyzerURL,
+			DlpPresidioAnonymizerURL:   anonymizerURL,
 			DLPInfoTypes:               infoTypes,
 			DataMaskingEntityTypesData: entityTypesJsonData,
 			GuardRailRules:             guardRailRulesJsonData,

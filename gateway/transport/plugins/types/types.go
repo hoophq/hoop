@@ -56,9 +56,12 @@ type Context struct {
 	ConnectionReviewers                 []string
 
 	// Agent attributes
-	AgentID   string
-	AgentName string
-	AgentMode string
+	AgentID                    string
+	AgentName                  string
+	AgentMode                  string
+	AgentPresidioAnalyzerURL   string
+	AgentPresidioAnonymizerURL string
+	AgentDataMaskingMode       string
 
 	// Plugin attributes
 	PluginConnectionConfig []string

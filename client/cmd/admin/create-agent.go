@@ -8,11 +8,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var createAgentModeFlag string
+var (
+	createAgentModeFlag               string
+	createAgentPresidioAnalyzerFlag   string
+	createAgentPresidioAnonymizerFlag string
+	createAgentDataMaskingModeFlag    string
+)
 
 func init() {
 	createAgentCmd.Flags().StringVar(&createAgentModeFlag, "mode", pb.AgentModeStandardType, fmt.Sprintf("The agent mode operation (%s or %s)",
 		pb.AgentModeStandardType, pb.AgentModeEmbeddedType))
+	createAgentCmd.Flags().StringVar(&createAgentPresidioAnalyzerFlag, "presidio-analyzer-url", "", "The MSPresidio custom analyzer URL to use for this agent")
+	createAgentCmd.Flags().StringVar(&createAgentPresidioAnonymizerFlag, "presidio-anonymizer-url", "", "The MSPresidio custom anonymizer URL to use for this agent")
+	createAgentCmd.Flags().StringVar(&createAgentDataMaskingModeFlag, "datamasking-mode", "best-effort", "The Data Masking mode of operation (best-effort or strict)")
 }
 
 var createAgentCmd = &cobra.Command{
@@ -30,8 +38,11 @@ var createAgentCmd = &cobra.Command{
 		apir := parseResourceOrDie(args, "POST", outputFlag)
 		apir.name = NormalizeResourceName(apir.name)
 		resp, err := httpBodyRequest(apir, "POST", map[string]any{
-			"name": apir.name,
-			"mode": createAgentModeFlag,
+			"name":                      apir.name,
+			"mode":                      createAgentModeFlag,
+			"mspresidio_analyzer_url":   createAgentPresidioAnalyzerFlag,
+			"mspresidio_anonymizer_url": createAgentPresidioAnonymizerFlag,
+			"datamasking_mode":          createAgentDataMaskingModeFlag,
 		})
 		if err != nil {
 			styles.PrintErrorAndExit("%s", err.Error())

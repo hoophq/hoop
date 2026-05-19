@@ -251,6 +251,12 @@ type AgentRequest struct {
 	// * standard - Is the default mode, which is suitable to run the agent as a standalone process
 	// * embedded - This mode is suitable when the agent needs to be run close to another process or application
 	Mode string `json:"mode" default:"standard" enums:"standard,embedded"`
+	// Override MSPresidio configuration data masking mode
+	DataMaskingMode string `json:"datamasking_mode" enum:"best-effort,strict"`
+	// Override MSPresidio configuration analyzer URL
+	MSPresidioAnalyzerURL string `json:"mspresidio_analyzer_url" example:"http://presidio-analyzer:3000"`
+	// Override MSPresidio configuration anonymizer URL
+	MSPresidioAnonymizerURL string `json:"mspresidio_anonymizer_url" example:"http://presidio-anonymizer:3000"`
 }
 
 type AgentCreateResponse struct {

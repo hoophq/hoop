@@ -9873,6 +9873,10 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "datamasking_mode": {
+                    "description": "Override MSPresidio configuration data masking mode",
+                    "type": "string"
+                },
                 "mode": {
                     "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
                     "type": "string",
@@ -9881,6 +9885,16 @@ const docTemplate = `{
                         "standard",
                         "embedded"
                     ]
+                },
+                "mspresidio_analyzer_url": {
+                    "description": "Override MSPresidio configuration analyzer URL",
+                    "type": "string",
+                    "example": "http://presidio-analyzer:3000"
+                },
+                "mspresidio_anonymizer_url": {
+                    "description": "Override MSPresidio configuration anonymizer URL",
+                    "type": "string",
+                    "example": "http://presidio-anonymizer:3000"
                 },
                 "name": {
                     "description": "Unique name of the resource",

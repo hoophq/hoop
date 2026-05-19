@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/dsnkeys"
@@ -36,15 +37,8 @@ type AgentRequest struct {
 //	@Router			/agents [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-
-	req := openapi.AgentRequest{Mode: proto.AgentModeStandardType}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Infof("failed parsing request payload, err=%v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	req := parseAgentBody(c)
+	if req == nil {
 		return
 	}
 
@@ -54,17 +48,18 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	if req.Mode != proto.AgentModeEmbeddedType && req.Mode != proto.AgentModeStandardType {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("unknown agent mode %q", req.Mode)})
-		return
-	}
 	dsn, err := dsnkeys.NewString(storagev2.ParseContext(c).GrpcURL, req.Name, secretKey, req.Mode)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating dsn")
 		return
 	}
 
-	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
+	metadata := map[string]any{
+		"mspresidio-analyzer-url":   req.MSPresidioAnalyzerURL,
+		"mspresidio-anonymizer-url": req.MSPresidioAnonymizerURL,
+		"datamasking-mode":          req.DataMaskingMode,
+	}
+	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash, metadata)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -205,4 +200,45 @@ func List(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, result)
+}
+func parseAgentBody(c *gin.Context) *openapi.AgentRequest {
+	req := openapi.AgentRequest{Mode: proto.AgentModeStandardType}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Infof("failed parsing request payload, err=%v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return nil
+	}
+	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return nil
+	}
+
+	if req.Mode != proto.AgentModeEmbeddedType && req.Mode != proto.AgentModeStandardType {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("unknown agent mode %q", req.Mode)})
+		return nil
+	}
+
+	if req.MSPresidioAnalyzerURL != "" {
+		if _, err := url.Parse(req.MSPresidioAnalyzerURL); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed parsing mspresidio_analyzer_url: %v", err)})
+			return nil
+		}
+	}
+
+	if req.MSPresidioAnonymizerURL != "" {
+		if _, err := url.Parse(req.MSPresidioAnonymizerURL); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed parsing mspresidio_anonymizer_url: %v", err)})
+			return nil
+		}
+	}
+
+	if req.DataMaskingMode != "" {
+		isValid := req.DataMaskingMode == "strict" || req.DataMaskingMode == "best-effort"
+		if !isValid {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("datamasking_mode invalid option: %q", req.DataMaskingMode)})
+			return nil
+		}
+	}
+
+	return &req
 }
