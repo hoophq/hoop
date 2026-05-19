@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -466,6 +467,11 @@ func Get(c *gin.Context) {
 func Apply(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	if flagDisabled(c, ctx) {
+		return
+	}
+
+	if ctx.GetLicenseType() == license.OSSType {
+		c.JSON(http.StatusForbidden, gin.H{"message": "operation not allowed for OSS license"})
 		return
 	}
 

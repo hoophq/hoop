@@ -73,7 +73,9 @@ func Post(c *gin.Context) {
 	}
 
 	if getLicenseType(ctx) == license.OSSType {
-		rules, err := models.ListGuardRailRules(ctx.GetOrgID())
+		rules, err := models.ListGuardRailRules(ctx.GetOrgID(), models.GuardRailListOption{
+			IncludeAllRulepackOwned: false,
+		})
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guardrail rules: %v", err)
 			return
