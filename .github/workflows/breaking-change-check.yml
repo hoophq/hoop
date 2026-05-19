@@ -70,15 +70,17 @@ jobs:
       - name: find base spec
         if: always()
         run: |
+          # Write into the workspace (not /tmp) because the oasdiff action below
+          # runs inside a Docker container that only mounts $GITHUB_WORKSPACE.
           git fetch origin ${{ github.base_ref }} --depth=1
-          git show origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json > /tmp/base-openapiv3.json
+          git show origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json > base-openapiv3.json
 
       - name: generate changelog
         if: always()
         uses: oasdiff/oasdiff-action/changelog@v0.0.39
         id: changelog
         with:
-          base: '/tmp/base-openapiv3.json'
+          base: 'base-openapiv3.json'
           revision: 'gateway/api/openapi/openapiv3.json'
           format: 'markup'
 
