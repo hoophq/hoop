@@ -83,15 +83,30 @@ func PublishJITDenied(orgID string, base SessionEventBase, reviewerEmail, review
 	}, "review.status_change", reviewID+":access.jit_denied")
 }
 
-func PublishPIIDetected(orgID string, base SessionEventBase, typesDetected []string, totalDetections int) {
-	Publish(orgID, "alert.pii_detected", map[string]any{
+// PublishSensitiveDataDetected emits alert.sensitive_data_detected. The "types" are whatever the
+// configured DLP provider reports (Presidio entity names, GCP DLP info types, etc.) — these are
+// heuristic matches, not a guarantee that the value is regulated PII. Use PublishDataMasked when
+// the question is "was anything actually redacted".
+func PublishSensitiveDataDetected(orgID string, base SessionEventBase, typesDetected []string, totalDetections int) {
+	Publish(orgID, "alert.sensitive_data_detected", map[string]any{
 		"session_id":       base.SessionID,
 		"user":             base.User,
 		"connection":       base.Connection,
 		"types_detected":   typesDetected,
 		"total_detections": totalDetections,
 		"occurred_at":      base.OccurredAt.UTC().Format(time.RFC3339),
-	}, "audit.session_close.pii", base.SessionID+":alert.pii_detected")
+	}, "audit.session_close.sensitive_data", base.SessionID+":alert.sensitive_data_detected")
+}
+
+func PublishDataMasked(orgID string, base SessionEventBase, typesMasked []string, totalRedactions int64) {
+	Publish(orgID, "alert.data_masked", map[string]any{
+		"session_id":       base.SessionID,
+		"user":             base.User,
+		"connection":       base.Connection,
+		"types_masked":     typesMasked,
+		"total_redactions": totalRedactions,
+		"occurred_at":      base.OccurredAt.UTC().Format(time.RFC3339),
+	}, "audit.session_close.masking", base.SessionID+":alert.data_masked")
 }
 
 func PublishAnomalyDetected(orgID string, base SessionEventBase, riskLevel, reason string) {

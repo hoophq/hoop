@@ -30,10 +30,11 @@ type reviewTimeWindowInput struct {
 }
 
 type reviewsUpdateInput struct {
-	ID          string                 `json:"id" jsonschema:"review ID or session ID"`
-	Status      string                 `json:"status" jsonschema:"new status: APPROVED, REJECTED, or REVOKED"`
-	TimeWindow  *reviewTimeWindowInput `json:"time_window,omitempty" jsonschema:"optional time window for approved JIT reviews"`
-	ForceReview bool                   `json:"force_review,omitempty" jsonschema:"force the review (requires force approval group membership)"`
+	ID              string                 `json:"id" jsonschema:"review ID or session ID"`
+	Status          string                 `json:"status" jsonschema:"new status: APPROVED, REJECTED, or REVOKED"`
+	TimeWindow      *reviewTimeWindowInput `json:"time_window,omitempty" jsonschema:"optional time window for approved JIT reviews"`
+	ForceReview     bool                   `json:"force_review,omitempty" jsonschema:"force the review (requires force approval group membership)"`
+	RejectionReason string                 `json:"rejection_reason,omitempty" jsonschema:"reason recorded on the review when status is REJECTED"`
 }
 
 type reviewsExecuteInput struct {
@@ -304,7 +305,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 			reviewTimeWindow = tw
 		}
 
-		rev, err := reviewapi.DoReview(sc, args.ID, status, reviewTimeWindow, args.ForceReview)
+		rev, err := reviewapi.DoReview(sc, args.ID, status, reviewTimeWindow, args.ForceReview, args.RejectionReason)
 		switch err {
 		case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState:
 			return errResult(err.Error()), nil, nil

@@ -122,6 +122,29 @@ func SetSessionMetricsEndedAt(db *gorm.DB, sessionID string) error {
 		Error
 }
 
+// GetSessionMaskedTotals returns the cumulative count_masked per info_type for a single session.
+// Rows with count_masked = 0 (i.e. detected but never redacted) are excluded so callers can use
+// a non-empty result as a "redaction actually happened" signal.
+func GetSessionMaskedTotals(db *gorm.DB, sessionID string) (map[string]int64, error) {
+	type row struct {
+		InfoType    string `gorm:"column:info_type"`
+		CountMasked int64  `gorm:"column:count_masked"`
+	}
+	var rows []row
+	err := db.Table("private.session_metrics").
+		Select("info_type, count_masked").
+		Where("session_id = ? AND count_masked > 0", sessionID).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	totals := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		totals[r.InfoType] = r.CountMasked
+	}
+	return totals, nil
+}
+
 // SessionMetricsFilter represents the filter parameters for querying session metrics
 type SessionMetricsFilter struct {
 	// Resource filters
