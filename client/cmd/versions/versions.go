@@ -34,7 +34,15 @@ func init() {
 	installCmd.Flags().BoolVar(&installUseFlag, "use", false, "Switch the active version to the newly installed one")
 	installCmd.Flags().BoolVar(&installReinstallFlag, "reinstall", false, "Force re-download even if the version is already installed")
 	removeCmd.Flags().BoolVar(&removeForceFlag, "force", false, "Remove the version even if it is currently active")
-	MainCmd.AddCommand(listCmd, useCmd, installCmd, removeCmd)
+
+	// `sync` and `upgrade` both download + activate a version, so they
+	// share the post-install PATH-hint flags.
+	for _, cmd := range []*cobra.Command{syncCmd, upgradeCmd} {
+		cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Assume yes to interactive prompts (PATH setup)")
+		cmd.Flags().BoolVar(&skipPathHint, "skip-path-hint", false, "Do not prompt to add $HOME/.hoop/bin to PATH")
+	}
+
+	MainCmd.AddCommand(listCmd, useCmd, installCmd, removeCmd, syncCmd, upgradeCmd)
 }
 
 var listCmd = &cobra.Command{
@@ -53,7 +61,7 @@ var listCmd = &cobra.Command{
 		}
 		entries := store.Sorted()
 		if len(entries) == 0 {
-			fmt.Println("No versions installed yet. Try `hoop upgrade` or `hoop versions install <version>`.")
+			fmt.Println("No versions installed yet. Try `hoop versions sync`, `hoop versions upgrade`, or `hoop versions install <version>`.")
 			return nil
 		}
 		headers := []string{" ", "VERSION", "PLATFORM", "INSTALLED AT", "PATH"}

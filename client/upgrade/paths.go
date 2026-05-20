@@ -1,5 +1,5 @@
 // Package upgrade implements the version-manager subsystem used by
-// `hoop upgrade` and `hoop versions ...`. It manages CLI binaries under
+// the `hoop versions` command group. It manages CLI binaries under
 // $HOME/.hoop/versions/<version>/hoop and keeps a single symlink at
 // $HOME/.hoop/bin/hoop pointing at the active version.
 //

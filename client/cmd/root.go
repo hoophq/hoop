@@ -8,7 +8,6 @@ import (
 	"github.com/hoophq/hoop/client/cmd/config"
 	"github.com/hoophq/hoop/client/cmd/runbooks"
 	"github.com/hoophq/hoop/client/cmd/styles"
-	"github.com/hoophq/hoop/client/cmd/upgrade"
 	"github.com/hoophq/hoop/client/cmd/versions"
 	clientupgrade "github.com/hoophq/hoop/client/upgrade"
 	"github.com/hoophq/hoop/common/grpc"
@@ -63,7 +62,6 @@ func init() {
 	rootCmd.AddCommand(runbooks.MainCmd)
 	rootCmd.AddCommand(config.MainCmd)
 	rootCmd.AddCommand(admin.MainCmd)
-	rootCmd.AddCommand(upgrade.MainCmd)
 	rootCmd.AddCommand(versions.MainCmd)
 	rootCmd.AddCommand(claudeCmd)
 }

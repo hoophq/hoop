@@ -37,8 +37,8 @@ func resetVersionWarnStateForTests() {
 
 // SuppressVersionWarning disables the warning for the rest of the
 // process. Useful in commands that already display version information
-// (e.g. `hoop upgrade`) to avoid printing the warning right before the
-// upgrade banner.
+// (e.g. `hoop versions sync`) to avoid printing the warning right
+// before the upgrade banner.
 func SuppressVersionWarning() {
 	warnMu.Lock()
 	defer warnMu.Unlock()
@@ -88,7 +88,7 @@ func warnOnceFromServerHeaderTo(w io.Writer, header string) {
 	}
 	warnOnce.Do(func() {
 		fmt.Fprintf(w,
-			"warn: hoop CLI version %s differs from gateway version %s; run `hoop upgrade` to sync (set %s=true to silence)\n",
+			"warn: hoop CLI version %s differs from gateway version %s; run `hoop versions sync` to match (set %s=true to silence)\n",
 			local, gatewayVer, DisableVersionCheckEnv,
 		)
 	})

@@ -127,7 +127,7 @@ func AppendIfMissing(rcFile, line string) (bool, error) {
 	}
 	defer f.Close()
 
-	block := "\n# Added by `hoop upgrade` to expose the active hoop CLI version\n" + line + "\n"
+	block := "\n# Added by `hoop versions` to expose the active hoop CLI version\n" + line + "\n"
 	if _, err := f.WriteString(block); err != nil {
 		return false, fmt.Errorf("failed writing to %s: %w", rcFile, err)
 	}

@@ -48,8 +48,8 @@ func TestWarnOnVersionMismatch(t *testing.T) {
 	if !strings.Contains(out, "1.72.0") || !strings.Contains(out, "1.73.0") {
 		t.Fatalf("expected warning to mention both versions, got %q", out)
 	}
-	if !strings.Contains(out, "hoop upgrade") {
-		t.Fatalf("expected warning to suggest `hoop upgrade`, got %q", out)
+	if !strings.Contains(out, "hoop versions sync") {
+		t.Fatalf("expected warning to suggest `hoop versions sync`, got %q", out)
 	}
 }
 

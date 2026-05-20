@@ -9,16 +9,17 @@ import (
 
 // MinInstallableMinor is the lowest MAJOR.MINOR a hoop release must
 // carry for the version manager to manage it. Versions below this floor
-// don't ship the `hoop upgrade` / `hoop versions` commands, so installing
-// them would orphan the user on a CLI that can't manage itself.
+// don't ship the `hoop versions` command group, so installing them
+// would orphan the user on a CLI that can't manage itself.
 //
 // The prefix "v" matches what golang.org/x/mod/semver expects. Update
 // this constant if the version manager is back-ported to an older minor.
 const MinInstallableMinor = "v1.74"
 
-// Sentinel errors returned by ValidateInstallableVersion. Callers (the
-// `hoop upgrade` command in particular) use errors.Is to detect the
-// specific case and render a tailored message.
+// Sentinel errors returned by ValidateInstallableVersion. Callers
+// (`hoop versions sync` and `hoop versions upgrade` in particular)
+// use errors.Is to detect the specific case and render a tailored
+// message.
 var (
 	// ErrUnknownGatewayVersion means the version string is empty or the
 	// literal "unknown" — the marker [common/version.Get] emits for a
