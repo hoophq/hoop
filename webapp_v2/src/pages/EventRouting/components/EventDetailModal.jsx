@@ -20,7 +20,7 @@ export default function EventDetailModal() {
   })()
 
   return (
-    <Modal opened={!!evt} onClose={onClose} title={<Code>{evt.name}</Code>} size="lg">
+    <Modal opened={!!evt} onClose={onClose} title={<Code bg="indigo.1" c="indigo.9">{evt.name}</Code>} size="lg">
       <Stack gap="md">
         <Group justify="space-between" align="flex-start">
           <Text size="sm" c="dimmed" style={{ flex: 1 }}>{evt.description}</Text>

@@ -1,6 +1,7 @@
-import { Button, Card, Group, Stack, Text } from '@mantine/core'
+import { Card, Group, Stack, Text } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { Send } from 'lucide-react'
+import Button from '@/components/Button'
 import Code from '@/components/Code'
 import Modal from '@/components/Modal'
 import { useEventRoutingStore } from '../store'
@@ -35,7 +36,7 @@ export default function ReplayDispatchModal({ subId }) {
           <Card padding="sm" withBorder>
             <Stack gap={4}>
               <Group gap="sm" align="center">
-                <Code>{replayTarget.eventType}</Code>
+                <Code bg="indigo.1" c="indigo.9">{replayTarget.eventType}</Code>
                 <DispatchBadge status={replayTarget.status} />
               </Group>
               <Text size="xs" c="dimmed" ff="monospace">

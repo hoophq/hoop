@@ -1,15 +1,15 @@
-import { Stack, Box, Text, Tooltip, ScrollArea, Group } from '@mantine/core';
-import { ChevronsRight } from 'lucide-react';
-import { useUIStore } from '@/stores/useUIStore';
-import { useUserStore } from '@/stores/useUserStore';
-import { IconBtn } from './IconBtn';
-import { getUserInitials, shouldHide } from './helpers';
-import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants';
-import classes from './Sidebar.module.css';
+import { Stack, Box, Text, Tooltip, ScrollArea, Group } from '@mantine/core'
+import { ChevronsRight } from 'lucide-react'
+import { useUIStore } from '@/stores/useUIStore'
+import { useUserStore } from '@/stores/useUserStore'
+import { IconBtn } from './IconBtn'
+import { getUserInitials, shouldHide } from './helpers'
+import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
+import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed({ skipLink }) {
-  const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore();
-  const { user, isAdmin, isSelfHosted } = useUserStore();
+  const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
+  const { user, isAdmin, isSelfHosted } = useUserStore()
 
   return (
     <Stack
@@ -69,8 +69,8 @@ export function SidebarCollapsed({ skipLink }) {
                       icon={item.icon}
                       label={item.label}
                       onClick={() => {
-                        setPendingOpenSection(item.label);
-                        toggleSidebarCollapsed();
+                        setPendingOpenSection(item.label)
+                        toggleSidebarCollapsed()
                       }}
                     />
                   </Box>
@@ -92,14 +92,14 @@ export function SidebarCollapsed({ skipLink }) {
               aria-label="Open user menu"
               className={`${classes.avatar} ${classes.avatarClickable}`}
               onClick={() => {
-                setPendingOpenSection('__profile__');
-                toggleSidebarCollapsed();
+                setPendingOpenSection('__profile__')
+                toggleSidebarCollapsed()
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setPendingOpenSection('__profile__');
-                  toggleSidebarCollapsed();
+                  e.preventDefault()
+                  setPendingOpenSection('__profile__')
+                  toggleSidebarCollapsed()
                 }
               }}
             >
@@ -122,5 +122,5 @@ export function SidebarCollapsed({ skipLink }) {
         </Tooltip>
       </div>
     </Stack>
-  );
+  )
 }

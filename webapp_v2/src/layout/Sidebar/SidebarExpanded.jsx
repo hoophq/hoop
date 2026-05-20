@@ -1,34 +1,34 @@
-import { Stack, Box, Text, ScrollArea } from '@mantine/core';
-import { ChevronsLeft } from 'lucide-react';
-import { useUIStore } from '@/stores/useUIStore';
-import { useUserStore } from '@/stores/useUserStore';
-import { useAuthStore } from '@/stores/useAuthStore';
-import { useNavigate } from 'react-router-dom';
-import { NavItem } from './NavItem';
-import { ProfileDisclosure } from './ProfileDisclosure';
-import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants';
-import classes from './Sidebar.module.css';
+import { Stack, Box, Text, ScrollArea } from '@mantine/core'
+import { ChevronsLeft } from 'lucide-react'
+import { useUIStore } from '@/stores/useUIStore'
+import { useUserStore } from '@/stores/useUserStore'
+import { useAuthStore } from '@/stores/useAuthStore'
+import { useNavigate } from 'react-router-dom'
+import { NavItem } from './NavItem'
+import { ProfileDisclosure } from './ProfileDisclosure'
+import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
+import classes from './Sidebar.module.css'
 
 function SectionLabel({ label, id }) {
   return (
     <Text id={id} size="xs" fw={600} c="white" mb="sm">
       {label}
     </Text>
-  );
+  )
 }
 
 export function SidebarExpanded({ skipLink, navKey }) {
-  const navigate = useNavigate();
-  const { toggleSidebarCollapsed } = useUIStore();
-  const { user, isAdmin, isSelfHosted, isFreeLicense, gatewayVersion } = useUserStore();
-  const { logout } = useAuthStore();
+  const navigate = useNavigate()
+  const { toggleSidebarCollapsed } = useUIStore()
+  const { user, isAdmin, isSelfHosted, isFreeLicense, gatewayVersion } = useUserStore()
+  const { logout } = useAuthStore()
 
-  const navItemProps = { isAdmin, isFreeLicense, isSelfHosted };
+  const navItemProps = { isAdmin, isFreeLicense, isSelfHosted }
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+    logout()
+    navigate('/login')
+  }
 
   return (
     <Stack
@@ -109,5 +109,5 @@ export function SidebarExpanded({ skipLink, navKey }) {
         <ChevronsLeft size={24} aria-hidden="true" />
       </button>
     </Stack>
-  );
+  )
 }

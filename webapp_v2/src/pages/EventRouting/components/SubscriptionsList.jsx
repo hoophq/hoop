@@ -1,5 +1,7 @@
-import { Card, Flex, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Card, Flex, Stack, Text } from '@mantine/core'
 import { Search } from 'lucide-react'
+import Select from '@/components/Select'
+import TextInput from '@/components/TextInput'
 import { useEventRoutingStore, filterSubscriptions } from '../store'
 import SubscriptionCard from './SubscriptionCard'
 

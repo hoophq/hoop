@@ -1,6 +1,9 @@
-import { Box, Button, Card, Flex, Group, Select, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Box, Card, Flex, Group, Stack, Text, Title } from '@mantine/core'
 import { ChevronRight, Filter, Search } from 'lucide-react'
+import Button from '@/components/Button'
 import Code from '@/components/Code'
+import Select from '@/components/Select'
+import TextInput from '@/components/TextInput'
 import { useEventRoutingStore, filterCatalog } from '../store'
 import CategoryBadge from './CategoryBadge'
 
@@ -64,7 +67,7 @@ export default function EventCatalogTab() {
                 style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
               >
                 <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                  <Code>{e.name}</Code>
+                  <Code bg="indigo.1" c="indigo.9">{e.name}</Code>
                   <Text size="xs" c="dimmed">{e.description}</Text>
                 </Stack>
                 <Box w={120}>

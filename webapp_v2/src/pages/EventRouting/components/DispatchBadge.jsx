@@ -1,4 +1,4 @@
-import { Badge } from '@mantine/core'
+import Badge from '@/components/Badge'
 import { CheckCircle2, Clock, XCircle } from 'lucide-react'
 
 export default function DispatchBadge({ status }) {

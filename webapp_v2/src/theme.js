@@ -1,6 +1,6 @@
-import { createTheme, rem } from '@mantine/core';
-import { SpotlightTheme } from '@/components/Spotlight/theme';
-import { AppShellTheme } from '@/components/AppShell/theme';
+import { createTheme, rem } from '@mantine/core'
+import { SpotlightTheme } from '@/components/Spotlight/theme'
+import { AppShellTheme } from '@/components/AppShell/theme'
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -28,7 +28,7 @@ export function cssVariablesResolver() {
     },
     light: {},
     dark: {}
-  };
+  }
 }
 
 export const theme = createTheme({
@@ -186,4 +186,4 @@ export const theme = createTheme({
     Spotlight: SpotlightTheme,
     AppShell: AppShellTheme
   }
-});
+})

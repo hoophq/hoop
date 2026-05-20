@@ -1,4 +1,4 @@
-import { Badge } from '@mantine/core'
+import Badge from '@/components/Badge'
 
 const CONFIG = {
   ai: { color: 'indigo', label: 'AI' },

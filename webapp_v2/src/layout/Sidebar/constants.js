@@ -17,8 +17,8 @@ import {
   Search,
   Layers,
   Webhook
-} from 'lucide-react';
-import { openCommandPalette } from '@/features/CommandPalette/spotlight';
+} from 'lucide-react'
+import { openCommandPalette } from '@/features/CommandPalette/spotlight'
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ export const MAIN_ITEMS = [
     badge: { text: 'NEW', color: 'green' },
     shortcut: '⌘K'
   }
-];
+]
 
 export const DISCOVER_ITEMS = [
   {
@@ -97,7 +97,7 @@ export const DISCOVER_ITEMS = [
     badge: { text: 'BETA', color: 'indigo' },
     upgradeRoute: '/upgrade-plan'
   }
-];
+]
 
 export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, freeFeature: true, adminOnly: true },
@@ -158,4 +158,4 @@ export const ORGANIZATION_ITEMS = [
       { label: 'Users', path: '/organization/users', freeFeature: true, adminOnly: true }
     ]
   }
-];
+]
