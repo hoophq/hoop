@@ -129,15 +129,13 @@ export const theme = createTheme({
     ]
   },
   spacing: {
-    xxxs: rem(4),
-    xxs: rem(8),
-    xs: rem(10),
-    sm: rem(12),
-    md: rem(16),
-    lg: rem(20),
-    xl: rem(32),
-    xxl: rem(48),
-    xxxl: rem(64)
+    xsAlt: rem(4),
+    smAlt: rem(8),
+    mdAlt: rem(16),
+    lgAlt: rem(24),
+    xlAlt: rem(32),
+    xxlAlt: rem(48),
+    xxxlAlt: rem(64)
   },
 
   // Radix radius="large" (radius-factor: 1.5 × base values).

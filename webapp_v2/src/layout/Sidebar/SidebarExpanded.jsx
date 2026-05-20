@@ -59,7 +59,7 @@ export function SidebarExpanded({ skipLink, navKey }) {
       >
         <Box px="md">
           <Box component="ul" role="list" aria-labelledby="sidebar-main-heading" className={classes.navList}>
-            <Stack gap="xxxs" mb="sm">
+            <Stack gap="xsAlt" mb="sm">
               {MAIN_ITEMS.map(item =>
                 <Box component="li" key={item.path || item.label} className={classes.listItem}>
                   <NavItem item={item} {...navItemProps} />
@@ -71,7 +71,7 @@ export function SidebarExpanded({ skipLink, navKey }) {
           {isAdmin && (
             <Box component="ul" role="list" aria-labelledby="sidebar-discover-heading" mt="xl" className={classes.navList}>
               <SectionLabel label="Discover" id="sidebar-discover-heading" />
-              <Stack gap="xxxs" mb="sm">
+              <Stack gap="xsAlt" mb="sm">
                 {DISCOVER_ITEMS.map(item =>
                   <Box component="li" key={item.path} className={classes.listItem}>
                     <NavItem item={item} {...navItemProps} />
@@ -90,7 +90,7 @@ export function SidebarExpanded({ skipLink, navKey }) {
               className={classes.navList}
             >
               <SectionLabel label="Organization" id="sidebar-organization-heading" />
-              <Stack gap="xxxs" mb="sm">
+              <Stack gap="xsAlt" mb="sm">
                 {ORGANIZATION_ITEMS.map(item =>
                   <Box component="li" key={item.path || item.label} className={classes.listItem}>
                     <NavItem item={item} {...navItemProps} />

@@ -316,7 +316,7 @@
 .navLinkChildren {
   display: flex;
   flex-direction: column;
-  gap: var(--mantine-spacing-xxxs);
+  gap: var(--mantine-spacing-xsAlt);
   padding-top: var(--mantine-spacing-xs);
 }
 
