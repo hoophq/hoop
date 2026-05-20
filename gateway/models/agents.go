@@ -3,7 +3,6 @@ package models
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -96,10 +95,7 @@ func CreateAgentOrgKey(orgID, name, mode, key, secretKeyHash string) error {
 	return err
 }
 
-func CreateAgent(orgID, name, mode, secretKeyHash string, metadata map[string]any) error {
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
+func CreateAgent(orgID, name, mode, secretKeyHash string) error {
 	identifier := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{"agent", orgID, name}, "/"))).String()
 	err := DB.Table("private.agents").
 		Model(Agent{}).
@@ -110,7 +106,7 @@ func CreateAgent(orgID, name, mode, secretKeyHash string, metadata map[string]an
 			"mode":     mode,
 			"key_hash": secretKeyHash,
 			"status":   AgentStatusDisconnected,
-			"metadata": metadata,
+			"metadata": map[string]any{},
 		}).Error
 	if err == gorm.ErrDuplicatedKey {
 		return ErrAlreadyExists
@@ -126,18 +122,8 @@ func UpdateAgentStatus(orgID, agentID string, status AgentStatusType, metadata m
 			"updated_at": time.Now().UTC(),
 		}
 		if len(metadata) > 0 {
-			existentAgent, err := GetAgentByNameOrID(orgID, agentID)
-			if err != nil {
-				return err
-			}
-			newMetadata := existentAgent.Metadata
-			if len(newMetadata) == 0 {
-				newMetadata = map[string]string{}
-			}
-			maps.Copy(newMetadata, metadata)
-			updateData["metadata"] = newMetadata
+			updateData["metadata"] = metadata
 		}
-
 		res := tx.Table("private.agents").
 			Where("org_id = ? AND id = ?", orgID, agentID).
 			Updates(updateData)

@@ -164,20 +164,6 @@ func (s *ProxyStream) SendToAgent(pkt *pb.Packet) error {
 }
 
 func (s *ProxyStream) IsAgentOnline() bool { return IsAgentOnline(s.StreamAgentID()) }
-func (s *ProxyStream) AgentMSPresidioConfig() (analyzerURL, anonymizerURL, datamaskingMode string, allSet bool) {
-	st := GetAgentStream(s.StreamAgentID())
-	if st == nil {
-		return
-	}
-	analyzerURL = st.agent.GetMeta("mspresidio-analyzer-url")
-	anonymizerURL = st.agent.GetMeta("mspresidio-anonymizer-url")
-	datamaskingMode = st.agent.GetMeta("datamasking-mode")
-	if datamaskingMode == "" {
-		datamaskingMode = "best-effort"
-	}
-	allSet = analyzerURL != "" && anonymizerURL != ""
-	return
-}
 
 // If the agent is a multi connection type, it returns a deterministic uuid
 // based on the agent id and the id of the connection, otherwise it returns the
