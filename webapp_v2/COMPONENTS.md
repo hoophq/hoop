@@ -105,6 +105,22 @@ import MethodCard from '@/components/MethodCard'
 />
 ```
 
+### `SelectionCard`
+Selectable card for picking a single option from a group (lucide icon + title + description). Use for mutually exclusive choices like the analytics privacy mode in Settings → Infrastructure.
+```jsx
+import SelectionCard from '@/components/SelectionCard'
+import { BarChart3 } from 'lucide-react'
+
+<SelectionCard
+  icon={BarChart3}
+  title="Identified"
+  description="Share usage data including identified events."
+  selected={mode === 'identified'}
+  onClick={() => setMode('identified')}
+/>
+```
+Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`.
+
 ### `StepAccordion`
 Multi-step accordion that mirrors the CLJS wizard pattern.
 ```jsx
