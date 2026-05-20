@@ -97,9 +97,14 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID).
 		Infof("jit review not found")
 
+	durationStr := []byte("30m") // default used on cli
+	if d, ok := pkt.Spec[pb.SpecJitTimeout]; ok {
+		durationStr = d
+	}
+
 	var accessDuration time.Duration
+	isJitReview := pctx.ClientVerb == pb.ClientVerbConnect
 	reviewType := models.ReviewTypeOneTime
-	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
 	if isJitReview {
 		reviewType = models.ReviewTypeJit
 		accessDuration, err = time.ParseDuration(string(durationStr))
