@@ -16,9 +16,9 @@ import (
 const execTimeout = 50 * time.Second
 
 type execInput struct {
-	ConnectionName string   `json:"connection_name" jsonschema:"name of the Hoop connection to execute against"`
-	Input          string   `json:"input" jsonschema:"the query or command to run (e.g. a SQL statement for a database connection)"`
-	Args           []string `json:"args,omitempty" jsonschema:"optional client arguments forwarded to the connection (e.g. CLI flags)"`
+	ConnectionName string            `json:"connection_name" jsonschema:"name of the Hoop connection to execute against"`
+	Input          string            `json:"input" jsonschema:"the query or command to run (e.g. a SQL statement for a database connection)"`
+	Args           []string          `json:"args,omitempty" jsonschema:"optional client arguments forwarded to the connection (e.g. CLI flags)"`
 	EnvVars        map[string]string `json:"env_vars,omitempty" jsonschema:"optional environment variables forwarded to the connection"`
 }
 
@@ -108,11 +108,12 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 
 func execResponseToEnvelope(resp *clientexec.Response, sessionID string) (*mcp.CallToolResult, any, error) {
 	if resp.HasReview {
+		reviewID := string(resp.Output[len(resp.Output)-36:])
 		// Output is the review URI; the review_id is the session id.
 		return jsonResult(map[string]any{
 			"status":     "pending_approval",
 			"session_id": sessionID,
-			"review_id":  sessionID,
+			"review_id":  reviewID,
 			"review_url": resp.Output,
 			"message":    "Approval required before this execution can run",
 			"next_step":  "call reviews_wait with review_id (long-polls until status changes); once status=APPROVED call reviews_execute",
