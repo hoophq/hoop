@@ -6,6 +6,7 @@ import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import { useEventRoutingStore, filterCatalog } from '../store'
 import CategoryBadge from './CategoryBadge'
+import EventDescription from './EventDescription'
 
 export default function EventCatalogTab() {
   const {
@@ -68,7 +69,7 @@ export default function EventCatalogTab() {
               >
                 <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
                   <Code bg="indigo.1" c="indigo.9">{e.name}</Code>
-                  <Text size="xs" c="dimmed">{e.description}</Text>
+                  <EventDescription text={e.description} size="xs" c="dimmed" />
                 </Stack>
                 <Box w={120}>
                   <CategoryBadge category={e.category} />

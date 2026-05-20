@@ -20,14 +20,9 @@ var Catalog = map[string]EventType{
 	"alert.sensitive_data_detected": {
 		Name:     "alert.sensitive_data_detected",
 		Category: "Alert",
-		Description: "Fires at session close when the DLP analyzer has flagged one or more " +
-			"sensitive data entities in session output (e.g. EMAIL_ADDRESS, PERSON, PHONE_NUMBER, " +
-			"LOCATION, US_BANK_NUMBER). Detection is heuristic, based on confidence scores from the " +
-			"configured DLP provider (Presidio or GCP DLP). A match does not guarantee the value is " +
-			"regulated PII. The event fires whether or not the entity was subsequently masked; see " +
-			"alert.data_masked for an event that signals an actual redaction was applied. It does " +
-			"not fire when the analyzer reported zero entities, or when DLP analysis was disabled " +
-			"for the connection.",
+		Description: "Fires at session close when the DLP analyzer flagged one or more sensitive " +
+			"entities in session output. Detection is heuristic and does not guarantee a redaction " +
+			"was applied — see `alert.data_masked` for that.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -48,13 +43,8 @@ var Catalog = map[string]EventType{
 	"alert.data_masked": {
 		Name:     "alert.data_masked",
 		Category: "Alert",
-		Description: "Fires at session close when the redactor actually replaced one or more " +
-			"sensitive values in session output. Distinct from alert.sensitive_data_detected: this " +
-			"event only fires when at least one redaction was applied (DLP masking mode is enabled " +
-			"and at least one entity met the redaction threshold), whereas sensitive_data_detected " +
-			"fires whenever the analyzer flagged any entity regardless of whether it was masked. " +
-			"Counts come from the per-info-type totals recorded in private.session_metrics by the " +
-			"redactor pipeline.",
+		Description: "Fires at session close when the redactor replaced one or more sensitive " +
+			"values in session output. Only emitted when at least one redaction was actually applied.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -75,12 +65,8 @@ var Catalog = map[string]EventType{
 	"access.jit_approved": {
 		Name:     "access.jit_approved",
 		Category: "Access",
-		Description: "Fires when a review transitions to status APPROVED via any supported path: " +
-			"the HTTP API (PUT /api/reviews/:id), a Slack interactive approval, or the MCP " +
-			"`reviews_update` tool. `reviewer` is the email recorded on the approving review group; " +
-			"when several groups approve, the first one encountered is reported. `session_id` is " +
-			"the session that originated the review request. Does not fire for revoke or " +
-			"force-approval flows that bypass review transitions.",
+		Description: "Fires when a review is approved via the API, Slack, or MCP. `reviewer` is " +
+			"the email of the approving group; if several groups approve, the first one is reported.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -101,12 +87,9 @@ var Catalog = map[string]EventType{
 	"access.jit_denied": {
 		Name:     "access.jit_denied",
 		Category: "Access",
-		Description: "Fires when a review transitions to status REJECTED via the HTTP API, " +
-			"Slack interactive rejection, or the MCP `reviews_update` tool. `reason` is the " +
-			"free-form rejection reason supplied at decision time (empty when the caller did not " +
-			"provide one). `reviewer` is the email recorded on the rejecting review group. Does " +
-			"not fire on auto-expiration, revoke, or admin force-rejection that bypasses a " +
-			"review group transition.",
+		Description: "Fires when a review is rejected via the API, Slack, or MCP. `reason` is the " +
+			"free-form text supplied at decision time (empty when none was given). Does not fire " +
+			"on auto-expiration or force-rejection.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -129,14 +112,9 @@ var Catalog = map[string]EventType{
 	"session.guardrail_violation": {
 		Name:     "session.guardrail_violation",
 		Category: "Session",
-		Description: "Fires at session close, once per guardrail rule recorded on the session. A " +
-			"single session that trips multiple rules produces multiple events (each with the same " +
-			"`session_id` but a different `rule`). This is a post-mortem signal. It is not emitted " +
-			"at the moment the gateway blocks the input or output stream, only after the session " +
-			"row is finalized. `query_excerpt` is a comma-joined preview of the matched words, " +
-			"truncated at 256 characters; it is best-effort context, not a verbatim slice of the " +
-			"original query, and may be empty for regex pattern-match rules where no matched words " +
-			"were captured.",
+		Description: "Fires at session close, once per guardrail rule the session tripped. A " +
+			"session that trips multiple rules emits multiple events. `query_excerpt` is a " +
+			"best-effort preview of the matched words and may be empty for regex rules.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -157,12 +135,9 @@ var Catalog = map[string]EventType{
 	"session.pci_scope_entered": {
 		Name:     "session.pci_scope_entered",
 		Category: "Session",
-		Description: "Fires at session open when the target connection carries a tag equal to " +
-			"`pci` or `pci-scope` (case-insensitive). The `tags` field contains the full tag list " +
-			"of the connection so subscribers can apply additional classification. This event is " +
-			"tag-driven, not content-driven: it does not fire if a non-PCI-tagged connection " +
-			"happens to return cardholder data. For that scenario, subscribe to " +
-			"alert.sensitive_data_detected and filter for a `CREDIT_CARD` entity.",
+		Description: "Fires at session open when the target connection is tagged `pci` or " +
+			"`pci-scope` (case-insensitive). Tag-driven, not content-driven — for content matches " +
+			"on cardholder data, use `alert.sensitive_data_detected` with a `CREDIT_CARD` filter.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -182,11 +157,8 @@ var Catalog = map[string]EventType{
 		Name:     "session.anomaly_detected",
 		Category: "Session",
 		Description: "Fires at session close when the post-session AI analyzer rates the session " +
-			"risk as `high` (case-insensitive). `risk_level` and `reason` are passed through " +
-			"verbatim from the analyzer output (session.ai_analysis.risk_level and .explanation). " +
-			"This is offline scoring of a completed session, not real-time anomaly detection. " +
-			"The event does not fire when AI analysis is disabled, when the analyzer call failed, " +
-			"or when the result was rated `low` or `medium`.",
+			"risk as `high`. Offline scoring, not real-time detection — does not fire when AI " +
+			"analysis is disabled or the result was `low`/`medium`.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -207,12 +179,9 @@ var Catalog = map[string]EventType{
 	"session.started": {
 		Name:     "session.started",
 		Category: "Session",
-		Description: "Fires once per session immediately after the audit plugin persists the " +
-			"SessionOpen row, before any user input or output has flowed. Emitted for every " +
-			"session verb (`exec`, `connect`, `run`); use the `verb` field to discriminate. " +
-			"Being opened does not imply the session was successful, or that the user was " +
-			"authorized to read or write data. Pair with session.closed (and the access.jit_* " +
-			"events when reviews are involved) for a complete picture.",
+		Description: "Fires once per session at open, before any input or output has flowed. " +
+			"Emitted for every session verb (`exec`, `connect`, `run`); use `verb` to discriminate. " +
+			"Open does not imply success or authorization — pair with `session.closed` for outcome.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},
@@ -231,12 +200,9 @@ var Catalog = map[string]EventType{
 	"session.closed": {
 		Name:     "session.closed",
 		Category: "Session",
-		Description: "Fires once per session after the audit plugin runs SessionClose and " +
-			"finalizes the session row. `exit_code` is the agent-reported process exit code " +
-			"serialized as a string and may be empty when the session ended without one " +
-			"(e.g. early disconnect or stream abort). `duration_ms` is computed as " +
-			"`end_session - created_at` in milliseconds and will be 0 if the gateway never " +
-			"recorded a session end timestamp.",
+		Description: "Fires once per session after the audit plugin finalizes the session row. " +
+			"`exit_code` is empty for sessions that ended without one (early disconnect, stream " +
+			"abort). `duration_ms` is 0 if no end timestamp was recorded.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
 			{Name: "user", Type: "string(email)", Required: true},

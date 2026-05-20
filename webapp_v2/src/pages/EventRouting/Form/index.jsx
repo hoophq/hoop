@@ -12,6 +12,7 @@ import TextInput from "@/components/TextInput"
 import Textarea from "@/components/Textarea"
 import { useUserStore } from "@/stores/useUserStore"
 import { useEventRoutingStore } from "../store"
+import EventDescription from "../components/EventDescription"
 
 const FEATURE_FLAG = "experimental.event_routing"
 
@@ -490,9 +491,7 @@ export default function EventRoutingForm() {
                         <Radio value={e.name} mt={4} />
                         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
                           <Code bg="indigo.1" c="indigo.9">{e.name}</Code>
-                          <Text size="xs" c="dimmed">
-                            {e.description}
-                          </Text>
+                          <EventDescription text={e.description} size="xs" c="dimmed" />
                         </Stack>
                       </Group>
                     ))}

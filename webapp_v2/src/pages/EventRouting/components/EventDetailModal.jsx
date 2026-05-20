@@ -3,6 +3,7 @@ import Code from '@/components/Code'
 import Modal from '@/components/Modal'
 import { useEventRoutingStore } from '../store'
 import CategoryBadge from './CategoryBadge'
+import EventDescription from './EventDescription'
 
 export default function EventDetailModal() {
   const evt = useEventRoutingStore((s) => s.eventDetailTarget)
@@ -23,7 +24,7 @@ export default function EventDetailModal() {
     <Modal opened={!!evt} onClose={onClose} title={<Code bg="indigo.1" c="indigo.9">{evt.name}</Code>} size="lg">
       <Stack gap="md">
         <Group justify="space-between" align="flex-start">
-          <Text size="sm" c="dimmed" style={{ flex: 1 }}>{evt.description}</Text>
+          <EventDescription text={evt.description} size="sm" c="dimmed" style={{ flex: 1 }} />
           <CategoryBadge category={evt.category} />
         </Group>
 

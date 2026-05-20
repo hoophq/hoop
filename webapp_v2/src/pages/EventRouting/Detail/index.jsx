@@ -437,8 +437,7 @@ export default function EventRoutingDetail() {
 
       {sub.status === "paused" && (
         <Alert color="yellow" icon={<Pause size={16} />} mb="xl">
-          This subscription is paused. Matching events are recorded but not
-          dispatched.
+          This subscription is paused. Incoming events will not be dispatched.
         </Alert>
       )}
 
