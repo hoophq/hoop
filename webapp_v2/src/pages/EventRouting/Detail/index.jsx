@@ -295,8 +295,8 @@ export default function EventRoutingDetail() {
   }, [flagEnabled, subscriptions.status, fetchAll])
 
   useEffect(() => {
-    if (id && !dispatches[id]) fetchDispatches(id)
-  }, [id, dispatches, fetchDispatches])
+    if (id) fetchDispatches(id)
+  }, [id, fetchDispatches])
 
   const [deleteOpened, deleteControls] = useDisclosure(false)
   const [deleting, setDeleting] = useState(false)
