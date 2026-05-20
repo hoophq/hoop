@@ -57,11 +57,9 @@ export default function EventRouting() {
               audited automation surface.
             </Text>
           </Stack>
-          {activeTab === "subscriptions" && (
-            <Button leftSection={<Plus size={16} />} onClick={goToCreate}>
-              Create subscription
-            </Button>
-          )}
+          <Button leftSection={<Plus size={16} />} onClick={goToCreate}>
+            Create subscription
+          </Button>
         </Group>
 
         {loading ? (
