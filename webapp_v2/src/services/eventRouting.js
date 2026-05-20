@@ -14,7 +14,6 @@ function normalizeSubscription(raw) {
     eventTypes: raw.event_types || [],
     runbookRepository: raw.runbook_repository || '',
     runbookFile: raw.runbook_file || '',
-    connectionId: raw.connection_id,
     connectionName: raw.connection_name,
     parameterMapping: raw.parameter_mapping || {},
     createdByEmail: raw.created_by_email,

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import {
   Anchor,
   Box,
@@ -16,6 +16,7 @@ import {
 import { notifications } from '@mantine/notifications'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import Code from '@/components/Code'
+import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import Textarea from '@/components/Textarea'
 import { useUserStore } from '@/stores/useUserStore'
@@ -23,15 +24,12 @@ import { useEventRoutingStore } from '../store'
 
 const FEATURE_FLAG = 'experimental.event_routing'
 
-// ── helpers ────────────────────────────────────────────────────────────
-
 function extractRepoName(repository) {
   if (!repository) return ''
   const tail = repository.split('/').filter(Boolean).pop() || repository
   return tail.replace(/\.git$/, '')
 }
 
-// Sort runbook params by `order` if defined, else by name.
 function sortRunbookParams(metadata) {
   return Object.entries(metadata || {})
     .map(([name, info]) => [name, info || {}])
@@ -57,24 +55,29 @@ function SectionRow({ title, description, children }) {
   )
 }
 
-// ── page ───────────────────────────────────────────────────────────────
-
-export default function EventRoutingCreate() {
+export default function EventRoutingForm() {
   const navigate = useNavigate()
+  const { id } = useParams()
+  const isEdit = Boolean(id)
+
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const flagEnabled = isFeatureFlagEnabled(FEATURE_FLAG)
 
+  const subscriptions = useEventRoutingStore((s) => s.subscriptions)
   const catalog = useEventRoutingStore((s) => s.catalog.data)
   const connections = useEventRoutingStore((s) => s.connections.data)
   const runbooksByConnection = useEventRoutingStore((s) => s.runbooksByConnection)
   const fetchAll = useEventRoutingStore((s) => s.fetchAll)
   const fetchRunbooksForConnection = useEventRoutingStore((s) => s.fetchRunbooksForConnection)
   const createSubscription = useEventRoutingStore((s) => s.createSubscription)
+  const updateSubscription = useEventRoutingStore((s) => s.updateSubscription)
   const submitting = useEventRoutingStore((s) => s.submitting)
 
   useEffect(() => {
     if (flagEnabled) fetchAll()
   }, [flagEnabled, fetchAll])
+
+  const sub = isEdit ? (subscriptions.data.find((s) => s.id === id) || null) : null
 
   const [form, setForm] = useState({
     name: '',
@@ -83,17 +86,35 @@ export default function EventRoutingCreate() {
     runbookValue: '',
     selectedEvent: '',
   })
-
-  // mapping: { runbookParam: eventFieldName }. Persisted as JSONPath at submit.
   const [mapping, setMapping] = useState({})
 
+  // Track whether edit pre-fill has been applied so the auto-seed effect doesn't overwrite it.
+  const editPrefillDone = useRef(false)
+  // Track whether runbook value has been reverse-looked up for edit mode.
+  const runbookPrefillDone = useRef(false)
+
+  // Pre-fill basic fields from existing sub (edit mode only, once).
   useEffect(() => {
-    if (form.connectionName) {
-      fetchRunbooksForConnection(form.connectionName)
-    }
+    if (!isEdit || !sub || editPrefillDone.current) return
+    const existingMapping = Object.fromEntries(
+      Object.entries(sub.parameterMapping || {}).map(([k, v]) => [k, v.startsWith('$.') ? v.slice(2) : v])
+    )
+    setForm((f) => ({
+      ...f,
+      name: sub.name || '',
+      description: sub.description || '',
+      connectionName: sub.connectionName || '',
+      selectedEvent: (sub.eventTypes || [])[0] || '',
+    }))
+    setMapping(existingMapping)
+    editPrefillDone.current = true
+  }, [isEdit, sub])
+
+  // Fetch runbooks whenever connectionName is set.
+  useEffect(() => {
+    if (form.connectionName) fetchRunbooksForConnection(form.connectionName)
   }, [form.connectionName, fetchRunbooksForConnection])
 
-  // ── runbook list + per-item metadata lookup ────────────────────────
   const { runbookOptions, runbookLookup } = useMemo(() => {
     const opts = []
     const lookup = {}
@@ -103,21 +124,29 @@ export default function EventRoutingCreate() {
       ;(repo.items || []).forEach((item, ii) => {
         const value = `${ri}|${ii}`
         opts.push({ value, label: `@${repoName}/${item.name}` })
-        lookup[value] = {
-          repository: repo.repository,
-          file: item.name,
-          metadata: item.metadata || {},
-        }
+        lookup[value] = { repository: repo.repository, file: item.name, metadata: item.metadata || {} }
       })
     })
     return { runbookOptions: opts, runbookLookup: lookup }
   }, [form.connectionName, runbooksByConnection])
 
+  // Reverse-lookup runbookValue from sub in edit mode once runbooks are loaded.
+  useEffect(() => {
+    if (!isEdit || !sub || runbookPrefillDone.current) return
+    const runbooksStatus = runbooksByConnection[form.connectionName]?.status
+    if (runbooksStatus !== 'ready') return
+    const entries = Object.entries(runbookLookup)
+    const match = entries.find(
+      ([, v]) => v.repository === sub.runbookRepository && v.file === sub.runbookFile
+    )
+    if (match) {
+      setForm((f) => ({ ...f, runbookValue: match[0] }))
+    }
+    runbookPrefillDone.current = true
+  }, [isEdit, sub, runbookLookup, runbooksByConnection, form.connectionName])
+
   const selectedRunbook = runbookLookup[form.runbookValue] || null
-  const runbookParams = useMemo(
-    () => sortRunbookParams(selectedRunbook?.metadata),
-    [selectedRunbook],
-  )
+  const runbookParams = useMemo(() => sortRunbookParams(selectedRunbook?.metadata), [selectedRunbook])
 
   const selectedEventEntry = useMemo(
     () => catalog.find((e) => e.name === form.selectedEvent) || null,
@@ -126,31 +155,28 @@ export default function EventRoutingCreate() {
 
   const eventFieldOptions = useMemo(() => {
     const schema = selectedEventEntry?.schema || []
-    return schema.map((f) => ({
-      value: f.name,
-      label: f.type ? `${f.name}  ·  ${f.type}` : f.name,
-    }))
+    return schema.map((f) => ({ value: f.name, label: f.type ? `${f.name}  ·  ${f.type}` : f.name }))
   }, [selectedEventEntry])
 
-  // Reset mapping whenever runbook or event changes; auto-suggest matches
-  // when a runbook param name exactly matches an event field name.
+  // Auto-seed mapping from name matches — only after edit pre-fill is done.
   useEffect(() => {
+    if (isEdit && !editPrefillDone.current) return
     if (!selectedRunbook || !selectedEventEntry) {
-      setMapping({})
+      if (!isEdit) setMapping({})
       return
     }
+    // In edit mode, don't overwrite once runbook prefill is done.
+    if (isEdit && runbookPrefillDone.current) return
     const eventFieldSet = new Set((selectedEventEntry.schema || []).map((f) => f.name))
     const seed = {}
     for (const [paramName] of runbookParams) {
       if (eventFieldSet.has(paramName)) seed[paramName] = paramName
     }
     setMapping(seed)
-  }, [form.runbookValue, form.selectedEvent, selectedRunbook, selectedEventEntry, runbookParams])
+  }, [form.runbookValue, form.selectedEvent, selectedRunbook, selectedEventEntry, runbookParams, isEdit])
 
-  // ── event radio grouping ───────────────────────────────────────────
   const runbooksStatus = runbooksByConnection[form.connectionName]?.status || 'idle'
-  const noRunbooks =
-    form.connectionName && runbooksStatus === 'ready' && runbookOptions.length === 0
+  const noRunbooks = form.connectionName && runbooksStatus === 'ready' && runbookOptions.length === 0
 
   const grouped = useMemo(() => {
     const m = {}
@@ -161,10 +187,7 @@ export default function EventRoutingCreate() {
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b))
   }, [catalog])
 
-  // ── validation + submit ───────────────────────────────────────────
-  const missingRequiredMapping = runbookParams.some(
-    ([name, info]) => info.required && !mapping[name],
-  )
+  const missingRequiredMapping = runbookParams.some(([name, info]) => info.required && !mapping[name])
 
   const canSubmit =
     form.name.trim().length > 0 &&
@@ -190,36 +213,44 @@ export default function EventRoutingCreate() {
       notifications.show({ message: 'Pick a runbook before saving.', color: 'red' })
       return
     }
-    // Serialize the mapping to JSONPath strings the backend understands.
     const parameterMapping = Object.fromEntries(
       Object.entries(mapping).map(([param, field]) => [param, `$.${field}`]),
     )
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim(),
+      runbookRepository: selectedRunbook.repository,
+      runbookFile: selectedRunbook.file,
+      connectionName: form.connectionName.trim(),
+      eventTypes: [form.selectedEvent],
+      parameterMapping,
+    }
     try {
-      await createSubscription({
-        name: form.name.trim(),
-        description: form.description.trim(),
-        runbookRepository: selectedRunbook.repository,
-        runbookFile: selectedRunbook.file,
-        connectionName: form.connectionName.trim(),
-        eventTypes: [form.selectedEvent],
-        parameterMapping,
-      })
-      notifications.show({ message: 'Subscription created.', color: 'green' })
-      navigate('/features/event-routing')
+      if (isEdit) {
+        await updateSubscription(id, payload)
+        notifications.show({ message: 'Subscription updated.', color: 'green' })
+        navigate(`/features/event-routing/${id}`)
+      } else {
+        await createSubscription(payload)
+        notifications.show({ message: 'Subscription created.', color: 'green' })
+        navigate('/features/event-routing')
+      }
     } catch (e) {
       notifications.show({
-        message: e?.response?.data?.message || 'Failed to create subscription.',
+        message: e?.response?.data?.message || (isEdit ? 'Failed to update subscription.' : 'Failed to create subscription.'),
         color: 'red',
       })
     }
   }
 
-  const connectionOptions = (connections || []).map((c) => ({
-    value: c.name || c,
-    label: c.name || c,
-  }))
+  const connectionOptions = (connections || []).map((c) => ({ value: c.name || c, label: c.name || c }))
 
-  // ── render ────────────────────────────────────────────────────────
+  if (!flagEnabled) return <Navigate to="/" replace />
+
+  if (isEdit && (subscriptions.status === 'loading' || subscriptions.status === 'idle')) {
+    return <PageLoader h={400} />
+  }
+
   return (
     <Stack gap={0}>
       <Box>
@@ -227,7 +258,7 @@ export default function EventRoutingCreate() {
           variant="transparent"
           color="gray"
           leftSection={<ArrowLeft size={16} />}
-          onClick={() => navigate('/features/event-routing')}
+          onClick={() => navigate(isEdit ? `/features/event-routing/${id}` : '/features/event-routing')}
           px={0}
           w="fit-content"
           mb="xl"
@@ -237,13 +268,17 @@ export default function EventRoutingCreate() {
       </Box>
 
       <Group justify="space-between" align="center" mb="xxxl">
-        <Title order={1}>Create subscription</Title>
+        <Title order={1}>{isEdit ? 'Edit subscription' : 'Create subscription'}</Title>
         <Group gap="sm">
-          <Button variant="subtle" color="gray" onClick={() => navigate('/features/event-routing')}>
+          <Button
+            variant="subtle"
+            color="gray"
+            onClick={() => navigate(isEdit ? `/features/event-routing/${id}` : '/features/event-routing')}
+          >
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!canSubmit} loading={submitting}>
-            Save
+            {isEdit ? 'Save changes' : 'Save'}
           </Button>
         </Group>
       </Group>
@@ -258,10 +293,7 @@ export default function EventRoutingCreate() {
               label="Name"
               placeholder="e.g. Auto-revoke AI access on PII"
               value={form.name}
-              onChange={(e) => {
-                const value = e.currentTarget.value
-                setForm((f) => ({ ...f, name: value }))
-              }}
+              onChange={(e) => { const value = e.currentTarget.value; setForm((f) => ({ ...f, name: value })) }}
               required
               autoFocus
             />
@@ -269,10 +301,7 @@ export default function EventRoutingCreate() {
               label="Description (Optional)"
               placeholder="What this subscription is for and when it should fire"
               value={form.description}
-              onChange={(e) => {
-                const value = e.currentTarget.value
-                setForm((f) => ({ ...f, description: value }))
-              }}
+              onChange={(e) => { const value = e.currentTarget.value; setForm((f) => ({ ...f, description: value })) }}
             />
           </Stack>
         </SectionRow>
@@ -288,9 +317,7 @@ export default function EventRoutingCreate() {
               placeholder="Select a resource role"
               data={connectionOptions}
               value={form.connectionName || null}
-              onChange={(v) =>
-                setForm((f) => ({ ...f, connectionName: v || '', runbookValue: '' }))
-              }
+              onChange={(v) => setForm((f) => ({ ...f, connectionName: v || '', runbookValue: '' }))}
               searchable
               nothingFoundMessage="No resource roles"
             />
@@ -298,13 +325,10 @@ export default function EventRoutingCreate() {
               label="Runbook"
               withAsterisk
               placeholder={
-                !form.connectionName
-                  ? 'Select a resource role first'
-                  : runbooksStatus === 'loading'
-                    ? 'Loading runbooks…'
-                    : noRunbooks
-                      ? 'No runbooks for this resource role'
-                      : 'Select a runbook'
+                !form.connectionName ? 'Select a resource role first'
+                  : runbooksStatus === 'loading' ? 'Loading runbooks…'
+                  : noRunbooks ? 'No runbooks for this resource role'
+                  : 'Select a runbook'
               }
               data={runbookOptions}
               value={form.runbookValue || null}
@@ -316,16 +340,13 @@ export default function EventRoutingCreate() {
             {noRunbooks && (
               <Text size="xs" c="dimmed">
                 {'No runbooks are configured for this resource role. '}
-                <Anchor href="/features/runbooks/setup" size="xs">
-                  Set up runbooks
-                </Anchor>
+                <Anchor href="/features/runbooks/setup" size="xs">Set up runbooks</Anchor>
                 {' to make them available here.'}
               </Text>
             )}
             {runbooksStatus === 'error' && (
               <Text size="xs" c="red">
-                {runbooksByConnection[form.connectionName]?.error ||
-                  'Failed to load runbooks for this resource role.'}
+                {runbooksByConnection[form.connectionName]?.error || 'Failed to load runbooks for this resource role.'}
               </Text>
             )}
           </Stack>
@@ -391,21 +412,14 @@ export default function EventRoutingCreate() {
           description="For each parameter the runbook declares, pick the field from the event payload to pass in. Fields with the same name are pre-matched."
         >
           {!selectedRunbook || !selectedEventEntry ? (
-            <Text size="xs" c="dimmed">
-              Pick a runbook and event above to configure the mapping.
-            </Text>
+            <Text size="xs" c="dimmed">Pick a runbook and event above to configure the mapping.</Text>
           ) : runbookParams.length === 0 ? (
-            <Text size="xs" c="dimmed">
-              This runbook declares no parameters. The dispatch will run without an input mapping.
-            </Text>
+            <Text size="xs" c="dimmed">This runbook declares no parameters. The dispatch will run without an input mapping.</Text>
           ) : eventFieldOptions.length === 0 ? (
-            <Text size="xs" c="red">
-              The selected event has no schema fields available to map.
-            </Text>
+            <Text size="xs" c="red">The selected event has no schema fields available to map.</Text>
           ) : (
             <Card padding={0} withBorder>
               <Stack gap={0}>
-                {/* Column header */}
                 <Group
                   px="md"
                   py="sm"
@@ -414,15 +428,10 @@ export default function EventRoutingCreate() {
                   bg="gray.0"
                   style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
                 >
-                  <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ flex: 1, minWidth: 0 }}>
-                    Runbook parameter
-                  </Text>
+                  <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ flex: 1, minWidth: 0 }}>Runbook parameter</Text>
                   <Box w={16} />
-                  <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ flex: 1.2, minWidth: 0 }}>
-                    Event payload field
-                  </Text>
+                  <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ flex: 1.2, minWidth: 0 }}>Event payload field</Text>
                 </Group>
-
                 {runbookParams.map(([paramName, paramInfo]) => {
                   const required = !!paramInfo.required
                   const value = mapping[paramName] || null
@@ -436,27 +445,15 @@ export default function EventRoutingCreate() {
                       gap="md"
                       style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
                     >
-                      {/* Runbook param column */}
                       <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
                         <Group gap="xs" align="center">
                           <Code>{paramName}</Code>
                           {required && <Text size="xs" c="red">*</Text>}
-                          {paramInfo.type && (
-                            <Text size="xs" c="dimmed">{paramInfo.type}</Text>
-                          )}
+                          {paramInfo.type && <Text size="xs" c="dimmed">{paramInfo.type}</Text>}
                         </Group>
-                        {description && (
-                          <Text size="xs" c="dimmed">{description}</Text>
-                        )}
+                        {description && <Text size="xs" c="dimmed">{description}</Text>}
                       </Stack>
-
-                      <ArrowRight
-                        size={16}
-                        color="var(--mantine-color-gray-6)"
-                        style={{ marginTop: 6 }}
-                      />
-
-                      {/* Event field column */}
+                      <ArrowRight size={16} color="var(--mantine-color-gray-6)" style={{ marginTop: 6 }} />
                       <Box style={{ flex: 1.2, minWidth: 0 }}>
                         <Select
                           placeholder={required ? 'Pick an event field' : 'Optional'}

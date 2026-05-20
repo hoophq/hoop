@@ -7,7 +7,6 @@ import {
   Box,
   Button,
   Card,
-  Divider,
   Group,
   Stack,
   Text,
@@ -18,30 +17,26 @@ import { notifications } from '@mantine/notifications'
 import {
   ArrowLeft,
   ArrowRight,
-  ExternalLink,
   History,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
-  Settings2,
+  BookUp2,
+  Trash2,
   TriangleAlert,
 } from 'lucide-react'
 import Code from '@/components/Code'
 import PageLoader from '@/components/PageLoader'
 import Tooltip from '@/components/Tooltip'
-import ActionMenu from '@/components/ActionMenu'
 import Modal from '@/components/Modal'
 import { useUserStore } from '@/stores/useUserStore'
 import { useEventRoutingStore } from '../store'
 import StatusBadge from '../components/StatusBadge'
 import DispatchBadge from '../components/DispatchBadge'
 import ReplayDispatchModal from '../components/ReplayDispatchModal'
-import EditSubscriptionInfoModal from '../components/EditSubscriptionInfoModal'
-import EditMappingModal from '../components/EditMappingModal'
 
 const FEATURE_FLAG = 'experimental.event_routing'
-
-// ── Sub-views ─────────────────────────────────────────────────────────
 
 function SectionHeader({ title, subtitle }) {
   return (
@@ -60,10 +55,10 @@ function TargetRunbookCard({ sub }) {
           <Box
             w={36}
             h={36}
-            bg="indigo.0"
-            style={{ borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            bg="gray.2"
+            style={{ borderRadius: 'var(--mantine-radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <Settings2 size={16} color="var(--mantine-color-indigo-7)" />
+            <BookUp2 size={16} color="var(--mantine-color-gray-9)" />
           </Box>
           <Stack gap={2}>
             <Text size="sm" fw={500}>{sub.runbookFile || '—'}</Text>
@@ -74,7 +69,7 @@ function TargetRunbookCard({ sub }) {
             <Group gap="xs">
               <Text size="xs" c="dimmed">Resource role</Text>
               <Badge color="gray" variant="light">
-                {sub.connectionName || sub.connectionId || '—'}
+                {sub.connectionName || '—'}
               </Badge>
             </Group>
           </Stack>
@@ -85,21 +80,7 @@ function TargetRunbookCard({ sub }) {
 }
 
 function EventChip({ name }) {
-  return (
-    <Group
-      gap={4}
-      px="sm"
-      py={4}
-      align="center"
-      style={{
-        background: 'var(--mantine-color-indigo-0)',
-        border: '1px solid var(--mantine-color-indigo-3)',
-        borderRadius: 'var(--mantine-radius-sm)',
-      }}
-    >
-      <Code style={{ background: 'transparent' }}>{name}</Code>
-    </Group>
-  )
+  return <Code px="sm" py={5} bg="gray.2" c="gray.9">{name}</Code>
 }
 
 function MappingTable({ mapping }) {
@@ -200,13 +181,6 @@ function DispatchHistory({ subId }) {
             {d.durationMs ? `${d.durationMs} ms` : '—'}
           </Text>
           <Group w={140} justify="flex-end" gap="xs" wrap="nowrap">
-            {d.sessionId && (
-              <Tooltip label="Open session">
-                <ActionIcon variant="subtle" color="gray" size="sm">
-                  <ExternalLink size={14} />
-                </ActionIcon>
-              </Tooltip>
-            )}
             <Button
               variant="subtle"
               color="gray"
@@ -224,8 +198,6 @@ function DispatchHistory({ subId }) {
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────
-
 export default function EventRoutingDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -241,7 +213,6 @@ export default function EventRoutingDetail() {
 
   const sub = subscriptions.data.find((s) => s.id === id) || null
 
-  // Load list + dispatches if the user landed directly on this URL.
   useEffect(() => {
     if (flagEnabled && subscriptions.status === 'idle') {
       fetchAll()
@@ -252,8 +223,6 @@ export default function EventRoutingDetail() {
     if (id && !dispatches[id]) fetchDispatches(id)
   }, [id, dispatches, fetchDispatches])
 
-  const [editInfoOpened, editInfoControls] = useDisclosure(false)
-  const [editMappingOpened, editMappingControls] = useDisclosure(false)
   const [deleteOpened, deleteControls] = useDisclosure(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -335,7 +304,7 @@ export default function EventRoutingDetail() {
         </Button>
       </Box>
 
-      <Group justify="space-between" align="flex-start" mb="xxxl" gap="md" wrap="nowrap">
+      <Group justify="space-between" align="flex-start" mb="xl" gap="md" wrap="nowrap">
         <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
           <Group gap="sm" align="center">
             <Title order={1}>{sub.name}</Title>
@@ -344,17 +313,10 @@ export default function EventRoutingDetail() {
           {sub.description && (
             <Text size="sm" c="dimmed">{sub.description}</Text>
           )}
-          <Group gap="sm" align="center">
-            <Text size="xs" c="dimmed">ID</Text>
-            <Code>{sub.id}</Code>
-            <Divider orientation="vertical" />
-            <Text size="xs" c="dimmed">
-              {`Updated ${(sub.updatedAt || '').slice(0, 10)}${sub.createdByEmail ? ' by ' + sub.createdByEmail : ''}`}
-            </Text>
-          </Group>
         </Stack>
         <Group gap="sm" wrap="nowrap">
           <Button
+            size="sm"
             variant="light"
             color={sub.status === 'active' ? 'gray' : 'green'}
             leftSection={sub.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
@@ -362,12 +324,19 @@ export default function EventRoutingDetail() {
           >
             {sub.status === 'active' ? 'Pause' : 'Resume'}
           </Button>
-          <ActionMenu>
-            <ActionMenu.Item onClick={editInfoControls.open}>Edit</ActionMenu.Item>
-            <ActionMenu.Item onClick={editMappingControls.open}>Edit mapping</ActionMenu.Item>
-            <ActionMenu.Divider />
-            <ActionMenu.Item danger onClick={deleteControls.open}>Delete</ActionMenu.Item>
-          </ActionMenu>
+          <Button
+            size="sm"
+            variant="solid"
+            leftSection={<Pencil size={14} />}
+            onClick={() => navigate(`/features/event-routing/${sub.id}/edit`)}
+          >
+            Edit
+          </Button>
+          <Tooltip label="Delete subscription">
+            <ActionIcon variant="light" color="red" size={36} onClick={deleteControls.open}>
+              <Trash2 size={16} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
       </Group>
 
@@ -426,17 +395,6 @@ export default function EventRoutingDetail() {
         )}
       </Stack>
 
-      {/* Modals */}
-      <EditSubscriptionInfoModal
-        sub={sub}
-        opened={editInfoOpened}
-        onClose={editInfoControls.close}
-      />
-      <EditMappingModal
-        sub={sub}
-        opened={editMappingOpened}
-        onClose={editMappingControls.close}
-      />
       <ReplayDispatchModal subId={sub.id} />
       <Modal
         opened={deleteOpened}

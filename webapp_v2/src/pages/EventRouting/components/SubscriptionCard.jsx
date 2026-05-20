@@ -76,7 +76,7 @@ export default function SubscriptionCard({ sub }) {
             {eventName ? <Code>{eventName}</Code> : <Text size="xs" c="dimmed">—</Text>}
           </Meta>
           <Meta label="Role">
-            <Text size="xs">{sub.connectionName || sub.connectionId || '—'}</Text>
+            <Text size="xs">{sub.connectionName || '—'}</Text>
           </Meta>
           <Meta label="Runbook">
             <Text size="xs" ff="monospace" truncate>{sub.runbookFile || '—'}</Text>

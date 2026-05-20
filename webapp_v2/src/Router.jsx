@@ -23,7 +23,7 @@ import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import EventRouting from '@/pages/EventRouting'
-import EventRoutingCreate from '@/pages/EventRouting/Form'
+import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 
 /**
@@ -256,7 +256,19 @@ function Router() {
           <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
-                <EventRoutingCreate />
+                <EventRoutingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/event-routing/:id/edit"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRoutingForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

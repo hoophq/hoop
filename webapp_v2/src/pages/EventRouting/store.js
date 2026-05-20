@@ -182,8 +182,6 @@ export const useEventRoutingStore = create((set, get) => ({
   reset: () => set(initialState),
 }))
 
-// ── Pure selectors (called inside components) ────────────────────────────
-
 export function filterSubscriptions(list, q, statusFilter) {
   const ql = (q || '').toLowerCase()
   return (list || []).filter((s) => {
