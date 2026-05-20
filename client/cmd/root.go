@@ -8,7 +8,11 @@ import (
 	"github.com/hoophq/hoop/client/cmd/config"
 	"github.com/hoophq/hoop/client/cmd/runbooks"
 	"github.com/hoophq/hoop/client/cmd/styles"
+	"github.com/hoophq/hoop/client/cmd/upgrade"
+	"github.com/hoophq/hoop/client/cmd/versions"
+	clientupgrade "github.com/hoophq/hoop/client/upgrade"
 	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/spf13/cobra"
 )
@@ -48,6 +52,10 @@ func Execute() {
 }
 
 func init() {
+	// Warn (once) when the gateway and local CLI versions disagree.
+	// Registered before any HTTP client is built so every call hits it.
+	httpclient.VersionCheckCallback = clientupgrade.WarnOnceFromServerHeader
+
 	rootCmd.PersistentFlags().BoolVar(&debugGrpcFlag, "debug-grpc", grpc.ShouldDebugGrpc(), "Turn on debugging of gRPC (http2) if applicable")
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Turn on debugging")
 	rootCmd.PersistentFlags().BoolVar(&skipTLSVerifyFlag, "skip-tls-verify", false, "Skip TLS verification when connecting to Hoop components")
@@ -55,6 +63,8 @@ func init() {
 	rootCmd.AddCommand(runbooks.MainCmd)
 	rootCmd.AddCommand(config.MainCmd)
 	rootCmd.AddCommand(admin.MainCmd)
+	rootCmd.AddCommand(upgrade.MainCmd)
+	rootCmd.AddCommand(versions.MainCmd)
 	rootCmd.AddCommand(claudeCmd)
 }
 
