@@ -128,9 +128,6 @@ export const theme = createTheme({
       '#74daf8' // shade 10
     ]
   },
-
-  // 4pt base scale with exponential steps.
-  // xxs=8  xs=10  sm=8  md=16  lg=24  xl=32  xxl=48  xxxl=64
   spacing: {
     xxxs: rem(4),
     xxs: rem(8),
