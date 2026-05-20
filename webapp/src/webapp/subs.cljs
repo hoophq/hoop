@@ -123,6 +123,11 @@
    (:audit->session-stream-result db)))
 
 (re-frame/reg-sub
+ :audit->session-stream-state
+ (fn [db [_ session-id]]
+   (get-in db [:audit->session-stream session-id :state])))
+
+(re-frame/reg-sub
  :connections->test-connection
  (fn [db _]
    (:connections->test-connection db)))

@@ -1,25 +1,82 @@
-name: API Changelog
+name: OpenAPI Docs
 
 on:
   pull_request:
     paths:
+      - 'gateway/**/*.go'
+      - 'gateway/api/openapi/docs/**'
       - 'gateway/api/openapi/openapiv3.json'
     types: [opened, synchronize, reopened, ready_for_review]
 
+permissions:
+  contents: write
+  pull-requests: write
+
+# Cancel superseded runs on the same PR so two near-simultaneous pushes
+# don't race on `git push` and leave a misleading stale-docs comment.
+concurrency:
+  group: openapi-docs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  generate:
+  regen-and-diff:
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
+      - name: checkout PR head
         uses: actions/checkout@v6
         with:
+          # PAT so the regen commit pushed later fires downstream workflows
+          # (pullrequest.yml, pullrequest-release.yml). Same precedent as
+          # auto-release.yml — pushes made with GITHUB_TOKEN do not trigger
+          # other workflows.
+          token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
-      - name: find base spec
+      - name: setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+          cache-dependency-path: '**/go.sum'
+
+      - name: regenerate OpenAPI docs
+        run: make generate-openapi-docs
+
+      - name: detect diff
+        id: diff
         run: |
+          set -euo pipefail
+          if git diff --quiet -- gateway/api/openapi/autogen gateway/api/openapi/openapiv3.json; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "Stale files:"
+            git diff --name-only -- gateway/api/openapi/autogen gateway/api/openapi/openapiv3.json
+          fi
+
+      - name: commit and push regenerated docs
+        if: steps.diff.outputs.stale == 'true' && github.event.pull_request.head.repo.fork == false
+        id: push
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add gateway/api/openapi/autogen gateway/api/openapi/openapiv3.json
+          git commit -m 'chore: regenerate OpenAPI docs'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: find base spec
+        if: always()
+        run: |
+          # Write into the workspace (not /tmp) because the oasdiff action below
+          # runs inside a Docker container that only mounts $GITHUB_WORKSPACE.
+          git fetch origin ${{ github.base_ref }} --depth=1
           git show origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json > base-openapiv3.json
 
       - name: generate changelog
+        if: always()
         uses: oasdiff/oasdiff-action/changelog@v0.0.39
         id: changelog
         with:
@@ -27,19 +84,77 @@ jobs:
           revision: 'gateway/api/openapi/openapiv3.json'
           format: 'markup'
 
-      - name: post changelog as PR comment
+      - name: update PR comments
         if: always()
         uses: actions/github-script@v8
         env:
           CHANGELOG_OUTPUT: ${{ steps.changelog.outputs.changelog }}
+          STALE: ${{ steps.diff.outputs.stale }}
+          PUSHED: ${{ steps.push.outcome == 'success' }}
         with:
           script: |
-            const output = process.env.CHANGELOG_OUTPUT;
-            if (output && output.trim().length > 0) {
-              await github.rest.issues.createComment({
+            const changelogMarker = '<!-- api-changelog-comment -->';
+            const staleMarker = '<!-- api-docs-stale-comment -->';
+
+            const findMarked = async (marker) => github.paginate(
+              github.rest.issues.listComments,
+              {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: `## 📋 API Changelog\n\n${output}`
-              });
-            }
+                per_page: 100,
+              },
+              (response) => response.data.filter((c) => c.body && c.body.includes(marker))
+            );
+
+            const upsertOrDelete = async (marker, body) => {
+              const existing = await findMarked(marker);
+              if (body) {
+                if (existing.length > 0) {
+                  const [keep, ...stale] = existing;
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: keep.id,
+                    body,
+                  });
+                  for (const c of stale) {
+                    await github.rest.issues.deleteComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      comment_id: c.id,
+                    });
+                  }
+                } else {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    body,
+                  });
+                }
+              } else {
+                for (const c of existing) {
+                  await github.rest.issues.deleteComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: c.id,
+                  });
+                }
+              }
+            };
+
+            const changelogOutput = process.env.CHANGELOG_OUTPUT;
+            const hasChangelog = changelogOutput && changelogOutput.trim().length > 0;
+            const changelogBody = hasChangelog
+              ? `${changelogMarker}\n## 📋 API Changelog\n\n${changelogOutput}`
+              : null;
+            await upsertOrDelete(changelogMarker, changelogBody);
+
+            const stale = process.env.STALE === 'true';
+            const pushed = process.env.PUSHED === 'true';
+            const needsStaleNotice = stale && !pushed;
+            const staleBody = needsStaleNotice
+              ? `${staleMarker}\n## ⚠️ OpenAPI docs are out of date\n\nThe generated spec in this PR doesn't match what \`make generate-openapi-docs\` produces from the current Go sources. Please run:\n\n\`\`\`sh\nmake generate-openapi-docs\n\`\`\`\n\nand commit the updated \`gateway/api/openapi/autogen/\` and \`gateway/api/openapi/openapiv3.json\` files.`
+              : null;
+            await upsertOrDelete(staleMarker, staleBody);

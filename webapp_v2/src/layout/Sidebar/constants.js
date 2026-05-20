@@ -4,6 +4,7 @@ import {
   SquareCode,
   BookUp2,
   GalleryVerticalEnd,
+  Boxes,
   CircleCheckBig,
   BookMarked,
   ShieldCheck,
@@ -35,6 +36,7 @@ export const MAIN_ITEMS = [
   { label: 'Terminal', path: '/client', icon: SquareCode, freeFeature: true, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, freeFeature: true, adminOnly: false },
   { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, freeFeature: true, adminOnly: false },
+  { label: 'Provisioning', path: '/provisioning', icon: Boxes, freeFeature: true, adminOnly: true },
   {
     label: 'Search',
     icon: Search,

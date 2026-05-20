@@ -16,6 +16,9 @@ config: {}
   # LOG_LEVEL: 'debug|info|warn|error'
   # LOG_GRPC: '0|1|2'
   # HOOP_GATEWAY_URL: 'https://gateway.example.com'
+  # MSPRESIDIO_ANALYZER_URL: ''
+  # MSPRESIDIO_ANONYMIZER_URL: ''
+  # DLP_MODE: 'strict|best-effort'
 
 # -- Authenticate the agent to the gateway via SPIFFE JWT-SVID instead of HOOP_KEY.
 # When enabled:

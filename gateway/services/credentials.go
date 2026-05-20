@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
@@ -266,6 +267,30 @@ func ProvisionCredentialForConnection(mi *models.MachineIdentity, connName strin
 		return nil, "", nil, fmt.Errorf("failed generating secret key for connection %s: %w", connName, err)
 	}
 
+	sid := uuid.NewString()
+	miID := mi.ID
+	newSession := models.Session{
+		ID:                sid,
+		OrgID:             mi.OrgID,
+		UserEmail:         "",
+		UserID:            mi.ID,
+		UserName:          mi.Name,
+		Connection:        conn.Name,
+		ConnectionType:    conn.Type,
+		ConnectionSubtype: conn.SubType.String,
+		ConnectionTags:    conn.ConnectionTags,
+		Verb:              proto.ClientVerbConnect,
+		Status:            string(openapi.SessionStatusDone),
+		CreatedAt:         time.Now().UTC(),
+		IdentityType:      "machine",
+		MachineIdentityID: &miID,
+	}
+	// Persist session
+	if err := models.UpsertSession(newSession); err != nil {
+		log.Errorf("failed creating session, err=%v", err)
+		return nil, "", nil, fmt.Errorf("failed creating session for connection %s: %w", connName, err)
+	}
+
 	noExpiry, _ := time.Parse(time.RFC3339, noExpirySentinel)
 	cred := &models.ConnectionCredentials{
 		ID:             uuid.NewString(),
@@ -275,6 +300,7 @@ func ProvisionCredentialForConnection(mi *models.MachineIdentity, connName strin
 		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
 		SecretKeyHash:  secretKeyHash,
 		SecretKey:      &secretKey,
+		SessionID:      sid,
 		CreatedAt:      time.Now().UTC(),
 		ExpireAt:       noExpiry,
 	}

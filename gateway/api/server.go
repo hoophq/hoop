@@ -655,6 +655,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.GetRDPDetections)
 
+	r.POST("/sessions/:session_id/rdp-detections/retry",
+		r.AuthMiddleware,
+		sessionapi.RetryRDPDetections)
+
 	r.GET("/sessions/:session_id/result/stream",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -1122,6 +1126,34 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
+	r.GET("/resources/:name/health",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ResourceHealthCheck)
+	r.POST("/resources/health",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ResourceHealthCheckBatch)
+	r.POST("/resources/:name/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourcePlan)
+	r.POST("/resources/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourcePlanBatch)
+	r.POST("/resources/:name/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourceApply)
+	r.POST("/resources/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourceApplyBatch)
 
 	r.GET("/audit/logs",
 		apiroutes.AdminAndAuditorAccessRole,
