@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Navigate, useNavigate, useParams } from "react-router-dom"
 import { Anchor, Box, Card, Grid, Group, Stack, Text, Title } from "@mantine/core"
+import { useInViewport } from "@mantine/hooks"
 import { notifications } from "@mantine/notifications"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import Button from "@/components/Button"
@@ -55,6 +56,8 @@ export default function EventRoutingForm() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = Boolean(id)
+
+  const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
 
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const flagEnabled = isFeatureFlagEnabled(FEATURE_FLAG)
@@ -316,7 +319,22 @@ export default function EventRoutingForm() {
         </Button>
       </Box>
 
-      <Group justify="space-between" align="center" mb="xxxl">
+      <div ref={sentinelRef} aria-hidden="true" />
+      <Group
+        justify="space-between"
+        align="center"
+        pos="sticky"
+        top={0}
+        bg="var(--mantine-color-body)"
+        py="md"
+        mb="xxl"
+        style={{
+          zIndex: 10,
+          borderBottom: headerInView
+            ? "1px solid transparent"
+            : "1px solid var(--mantine-color-default-border)",
+        }}
+      >
         <Title order={1}>
           {isEdit ? "Edit subscription" : "Create subscription"}
         </Title>
