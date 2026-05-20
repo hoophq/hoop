@@ -28,6 +28,7 @@ import (
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -212,6 +213,12 @@ func Post(c *gin.Context) {
 		}
 
 		if shouldBlock {
+			// AI-blocked sessions never reach the create path below, so we publish the full
+			// session lifecycle (started + closed) here to keep downstream event consumers
+			// consistent.
+			events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
+			events.DeriveFromSessionEnd(ctx.OrgID, &newSession)
+
 			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
 
 			c.JSON(http.StatusOK, clientexec.Response{
@@ -258,7 +265,7 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	if err := services.ValidateAndUpsertSession(c, newSession, conn); err != nil {
+	if err := services.CreateSession(c, newSession, conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {
@@ -1185,7 +1192,7 @@ func Provision(c *gin.Context) {
 		}
 	}
 
-	if err := services.ValidateAndUpsertSession(c, newSession, conn); err != nil {
+	if err := services.CreateSession(c, newSession, conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {

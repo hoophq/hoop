@@ -611,7 +611,7 @@ func RunbookExec(c *gin.Context) {
 		}
 	}
 
-	if err := services.ValidateAndUpsertSession(c, newSession, connection); err != nil {
+	if err := services.CreateSession(c, newSession, connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {

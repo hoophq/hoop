@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/broker"
+	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
@@ -119,6 +120,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		c.AbortWithStatusJSON(500, gin.H{"message": "failed creating session"})
 		return
 	}
+	events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
 
 	// If review/JIT is required, create review record and return 202
 	if requiresReview {
