@@ -119,7 +119,7 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
 | Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
 | Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
-| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly) |
+| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/dev/hoop` (plaintext-friendly; the `bin/` sibling is reserved for `hoop versions`' active symlink) |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |

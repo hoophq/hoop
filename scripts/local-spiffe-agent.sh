@@ -25,7 +25,7 @@ AUDIENCE="${AUDIENCE:-http://localhost:8009}"
 AGENT_IMAGE_TAG="${AGENT_IMAGE_TAG:-1403.0.0-5a9bd6f}"
 
 # Path to the hoop CLI; HOOP_BIN can be overridden if installed elsewhere.
-HOOP_BIN="${HOOP_BIN:-$HOME/.hoop/bin/hoop}"
+HOOP_BIN="${HOOP_BIN:-$HOME/.hoop/dev/hoop}"
 command -v "$HOOP_BIN" >/dev/null 2>&1 || [ -x "$HOOP_BIN" ] \
   || { echo "hoop CLI not found at $HOOP_BIN — set HOOP_BIN or 'make build-dev-client'"; exit 1; }
 

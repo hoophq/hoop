@@ -9,11 +9,12 @@ import (
 	"strings"
 )
 
-// ErrBinLinkConflict is returned when $HOME/.hoop/bin/hoop already exists
-// but is a regular file or a symlink pointing outside of
-// $HOME/.hoop/versions. We refuse to overwrite it because it may belong to
-// the user.
-var ErrBinLinkConflict = errors.New("hoop bin symlink is owned by something else; refusing to overwrite")
+// ErrBinLinkConflict is returned when $HOME/.hoop/bin/hoop already
+// exists but is a regular file or a symlink pointing outside of
+// $HOME/.hoop/versions. We refuse to overwrite it because it may
+// belong to the user — most often a stale `make build-dev-client`
+// output from before the dev binary moved to $HOME/.hoop/dev/hoop.
+var ErrBinLinkConflict = errors.New("hoop bin path is owned by something else; refusing to overwrite")
 
 // SetActive atomically updates the active symlink at $HOME/.hoop/bin/hoop
 // to point at the installed version's binary and updates the store's
@@ -82,7 +83,20 @@ func assertOwnedSymlink(l Layout, binLink string) error {
 		return fmt.Errorf("failed stat %s: %w", binLink, err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("%w: %s exists and is not a symlink", ErrBinLinkConflict, binLink)
+		return fmt.Errorf(`%w:
+
+%s exists as a regular file, not the symlink the version manager creates.
+
+The most common cause is an older `+"`make build-dev-client`"+` run that
+wrote the dev binary at this exact path. The dev binary now lives at
+$HOME/.hoop/dev/hoop, and $HOME/.hoop/bin/hoop is reserved as the
+symlink updated by `+"`hoop versions sync` / `hoop versions upgrade`"+`.
+
+To recover, do one of the following and re-run the same hoop versions
+command:
+  - keep the dev build: mv "%s" "$HOME/.hoop/dev/hoop"
+  - discard it:         rm "%s"`,
+			ErrBinLinkConflict, binLink, binLink, binLink)
 	}
 	cur, err := os.Readlink(binLink)
 	if err != nil {
