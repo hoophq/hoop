@@ -6,7 +6,7 @@
 #   1. `make run-dev-spiffe-prep` has been run at least once to mint
 #      the JWT and update .env.
 #   2. `make run-dev` is running in another terminal and healthy.
-#   3. `make build-dev-client` has produced $HOME/.hoop/bin/hoop.
+#   3. `make build-dev-client` has produced $HOME/.hoop/dev/hoop.
 #
 # On each invocation this script idempotently seeds the dev DB with a
 # `spiffe-agent` row and a matching `agent_spiffe_mappings` row, then
@@ -21,7 +21,7 @@ AGENT_NAME="${HOOP_SPIFFE_AGENT_NAME:-spiffe-agent}"
 AGENT_ID="${HOOP_SPIFFE_AGENT_ID:-11111111-2222-3333-4444-555555555555}"
 APP_CONTAINER="${HOOPDEV_APP_CONTAINER:-hoopdev}"
 DB_CONTAINER="${HOOPDEV_DB_CONTAINER:-hoopdevpg}"
-HOOP_BIN="${HOOP_BIN:-$HOME/.hoop/bin/hoop}"
+HOOP_BIN="${HOOP_BIN:-$HOME/.hoop/dev/hoop}"
 
 if [[ ! -f "$SPIFFE_DIR/agent.jwt" || ! -f "$SPIFFE_DIR/bundle.jwks" ]]; then
   echo "missing SPIFFE artifacts in $SPIFFE_DIR — run 'make run-dev-spiffe-prep' first"
