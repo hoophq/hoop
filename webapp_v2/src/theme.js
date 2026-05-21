@@ -1,6 +1,6 @@
-import { createTheme, rem } from '@mantine/core';
-import { SpotlightTheme } from '@/components/Spotlight/theme';
-import { AppShellTheme } from '@/components/AppShell/theme';
+import { createTheme, rem } from '@mantine/core'
+import { SpotlightTheme } from '@/components/Spotlight/theme'
+import { AppShellTheme } from '@/components/AppShell/theme'
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -28,7 +28,7 @@ export function cssVariablesResolver() {
     },
     light: {},
     dark: {}
-  };
+  }
 }
 
 export const theme = createTheme({
@@ -128,17 +128,14 @@ export const theme = createTheme({
       '#74daf8' // shade 10
     ]
   },
-
-  // 4pt base scale with exponential steps.
-  // xs=4  sm=8  md=16  lg=24  xl=32  xxl=48  xxxl=64
   spacing: {
-    xs: rem(4),
-    sm: rem(8),
-    md: rem(16),
-    lg: rem(24),
-    xl: rem(32),
-    xxl: rem(48),
-    xxxl: rem(64)
+    xsAlt: rem(4),
+    smAlt: rem(8),
+    mdAlt: rem(16),
+    lgAlt: rem(24),
+    xlAlt: rem(32),
+    xxlAlt: rem(48),
+    xxxlAlt: rem(64)
   },
 
   // Radix radius="large" (radius-factor: 1.5 × base values).
@@ -184,4 +181,4 @@ export const theme = createTheme({
     Spotlight: SpotlightTheme,
     AppShell: AppShellTheme
   }
-});
+})

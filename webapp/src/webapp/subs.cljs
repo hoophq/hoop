@@ -205,6 +205,14 @@
    (:gateway->info db)))
 
 (re-frame/reg-sub
+ :feature-flag/enabled?
+ (fn [db [_ flag-name]]
+   (let [flags (get-in db [:gateway->info :data :feature_flags])
+         k (keyword flag-name)]
+     (boolean (or (get flags k)
+                  (get flags flag-name))))))
+
+(re-frame/reg-sub
  :gateway->public-info
  (fn [db _]
    (:gateway->public-info db)))

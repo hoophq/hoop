@@ -1,15 +1,15 @@
-import { Stack, Box, Text, Tooltip } from '@mantine/core';
-import { ChevronsRight } from 'lucide-react';
-import { useUIStore } from '@/stores/useUIStore';
-import { useUserStore } from '@/stores/useUserStore';
-import { IconBtn } from './IconBtn';
-import { getUserInitials, shouldHide } from './helpers';
-import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants';
-import classes from './Sidebar.module.css';
+import { Stack, Box, Text, Tooltip, ScrollArea, Group } from '@mantine/core'
+import { ChevronsRight } from 'lucide-react'
+import { useUIStore } from '@/stores/useUIStore'
+import { useUserStore } from '@/stores/useUserStore'
+import { IconBtn } from './IconBtn'
+import { getUserInitials, shouldHide } from './helpers'
+import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
+import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed({ skipLink }) {
-  const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore();
-  const { user, isAdmin, isSelfHosted } = useUserStore();
+  const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
+  const { user, isAdmin, isSelfHosted } = useUserStore()
 
   return (
     <Stack
@@ -30,7 +30,13 @@ export function SidebarCollapsed({ skipLink }) {
         />
       </Box>
 
-      <div className={classes.collapsedScrollArea}>
+      <ScrollArea
+        scrollbars="y"
+        type="hover"
+        data-mantine-color-scheme="dark"
+        scrollbarSize={10}
+        classNames={{ root: classes.collapsedScrollArea }}
+      >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
           {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
@@ -42,7 +48,7 @@ export function SidebarCollapsed({ skipLink }) {
         {isAdmin && (
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
-            <Stack gap={2} align="center" role="list" aria-label="Discover">
+            <Stack gap="xsAlt" align="center" role="list" aria-label="Discover">
               {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
                 <Box component="li" key={item.path} className={classes.listItem}>
                   <IconBtn {...item} />
@@ -55,7 +61,7 @@ export function SidebarCollapsed({ skipLink }) {
         {isAdmin && (
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
-            <Stack gap={2} align="center" role="list" aria-label="Organization">
+            <Stack gap="xsAlt" align="center" role="list" aria-label="Organization">
               {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) =>
                 item.children ? (
                   <Box component="li" key={item.label} className={classes.listItem}>
@@ -63,8 +69,8 @@ export function SidebarCollapsed({ skipLink }) {
                       icon={item.icon}
                       label={item.label}
                       onClick={() => {
-                        setPendingOpenSection(item.label);
-                        toggleSidebarCollapsed();
+                        setPendingOpenSection(item.label)
+                        toggleSidebarCollapsed()
                       }}
                     />
                   </Box>
@@ -78,7 +84,7 @@ export function SidebarCollapsed({ skipLink }) {
           </Box>
         )}
 
-        <Box mt="auto" pb="sm">
+        <Group justify="center" mt="xl" pb="sm">
           <Tooltip label={user?.name || user?.email || 'Profile'} position="right" withArrow>
             <Box
               role="button"
@@ -86,22 +92,22 @@ export function SidebarCollapsed({ skipLink }) {
               aria-label="Open user menu"
               className={`${classes.avatar} ${classes.avatarClickable}`}
               onClick={() => {
-                setPendingOpenSection('__profile__');
-                toggleSidebarCollapsed();
+                setPendingOpenSection('__profile__')
+                toggleSidebarCollapsed()
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setPendingOpenSection('__profile__');
-                  toggleSidebarCollapsed();
+                  e.preventDefault()
+                  setPendingOpenSection('__profile__')
+                  toggleSidebarCollapsed()
                 }
               }}
             >
               {getUserInitials(user)}
             </Box>
           </Tooltip>
-        </Box>
-      </div>
+        </Group>
+      </ScrollArea>
 
       <div className={classes.collapsedFooter}>
         <Tooltip label="Expand sidebar" position="right" withArrow>
@@ -116,5 +122,5 @@ export function SidebarCollapsed({ skipLink }) {
         </Tooltip>
       </div>
     </Stack>
-  );
+  )
 }

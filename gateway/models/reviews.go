@@ -142,7 +142,7 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at
+	created_at, revoked_at, rejection_reason
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`, orgID, id, id).
 		First(&review).
@@ -177,7 +177,7 @@ func ListReviews(orgID string) (*[]Review, error) {
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at
+	created_at, revoked_at, rejection_reason
 	FROM private.reviews rv
 	WHERE org_id = ?`, orgID).
 		Find(&reviews).

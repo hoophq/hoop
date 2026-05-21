@@ -17,7 +17,8 @@ import {
   Settings,
   Search,
   Layers,
-  KeyRound
+  KeyRound,
+  Webhook
 } from 'lucide-react';
 import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
@@ -46,7 +47,7 @@ export const MAIN_ITEMS = [
     badge: { text: 'NEW', color: 'green' },
     shortcut: '⌘K'
   }
-];
+]
 
 export const DISCOVER_ITEMS = [
   {
@@ -57,6 +58,15 @@ export const DISCOVER_ITEMS = [
     adminOnly: true
   },
   { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, freeFeature: true, adminOnly: true },
+  {
+    label: 'Event Routing',
+    path: '/features/event-routing',
+    icon: Webhook,
+    freeFeature: true,
+    adminOnly: true,
+    featureFlag: 'experimental.event_routing',
+    badge: { text: 'BETA', color: 'indigo' },
+  },
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, freeFeature: true, adminOnly: true },
   {
     label: 'Jira Templates',
@@ -97,7 +107,7 @@ export const DISCOVER_ITEMS = [
     freeFeature: true,
     adminOnly: true
   }
-];
+]
 
 export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, freeFeature: true, adminOnly: true },
@@ -158,4 +168,4 @@ export const ORGANIZATION_ITEMS = [
       { label: 'Users', path: '/organization/users', freeFeature: true, adminOnly: true }
     ]
   }
-];
+]

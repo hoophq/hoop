@@ -712,17 +712,6 @@ func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
 	return res.Error
 }
 
-// SetReviewRejectionReason stores the rejection reason on the review record for the given session.
-func SetReviewRejectionReason(orgID, sessionID, reason string) error {
-	res := DB.Table("private.reviews").
-		Where("org_id = ? AND session_id = ?", orgID, sessionID).
-		Update("rejection_reason", reason)
-	if res.Error == nil && res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return res.Error
-}
-
 func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any) error {
 	res := DB.Table("private.sessions").
 		Where("org_id = ? AND id = ? AND user_email = ?", orgID, sid, userEmail).
