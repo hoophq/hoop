@@ -168,6 +168,11 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 				if err != nil {
 					return nil, plugintypes.InternalErr("failed getting session by ID", err)
 				}
+				blobInput, err := session.GetBlobInput()
+				if err != nil {
+					return nil, plugintypes.InternalErr("failed to getting session input", err)
+				}
+				session.BlobInput = blobInput
 
 				session.AIAnalysis = analyzeRes
 
