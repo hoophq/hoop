@@ -83,11 +83,24 @@
              [pages/main-page @search-results user-data])]}]))))
 
 (defn keyboard-listener
-  "Component to capture CMD+K / Ctrl+K keyboard shortcuts"
+  "Component to capture CMD+K / Ctrl+K keyboard shortcuts.
+
+   When the page is wrapped by the React shell (webapp_v2), this Reagent
+   component stays mounted even while its DOM is parked, so the listener
+   keeps firing on React-only routes. Without the visibility guard,
+   :command-palette->toggle would open the CLJS Radix dialog as a second
+   body-level portal alongside the Mantine Spotlight and steal focus.
+
+   The two window globals are set by webapp_v2:
+     __hoopReactShellPresent      — true when the React shell is the host
+     __hoopReactShellCljsVisible  — true while ClojureApp is mounted
+   Legacy CLJS-only mode leaves both undefined, so the handler runs as before."
   []
   (r/with-let [handle-keydown (fn [e]
                                 (when (and (or (.-metaKey e) (.-ctrlKey e))
-                                           (= (.-key e) "k"))
+                                           (= (.-key e) "k")
+                                           (or (not (.-__hoopReactShellPresent js/window))
+                                               (.-__hoopReactShellCljsVisible js/window)))
                                   (.preventDefault e)
                                   (rf/dispatch [:command-palette->toggle])))
                _ (js/document.addEventListener "keydown" handle-keydown)]

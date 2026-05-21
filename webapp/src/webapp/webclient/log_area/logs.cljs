@@ -1,38 +1,9 @@
 (ns webapp.webclient.log-area.logs
-  (:require ["@radix-ui/themes" :refer [Box Button Spinner Flex Text DropdownMenu]]
-            ["lucide-react" :refer [SquareArrowOutUpRight EllipsisVertical Copy Clock]]
-            [clojure.string :as cs]
+  (:require ["@radix-ui/themes" :refer [Box Button Spinner Flex Text]]
+            ["lucide-react" :refer [Clock]]
             [re-frame.core :as rf]
             [webapp.audit.views.session-details :as session-details]
             [webapp.formatters :as formatters]))
-
-(defn action-buttons-container [session-id logs-content]
-  (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
-    [:div {:class "sticky top-1 right-0 h-0 w-full z-30"
-           :style {:pointer-events "none"}}
-     [:div {:class "absolute -top-10 -right-2"
-            :style {:pointer-events "auto"}}
-      [:> DropdownMenu.Root
-       [:> DropdownMenu.Trigger {:class (str "cursor-pointer p-1.5 rounded-full "
-                                             "bg-gray-3 hover:bg-gray-5 shadow-sm "
-                                             "opacity-100 transition border border-gray-5")
-                                 :aria-label "Output actions menu"}
-        [:> Box
-         [:> EllipsisVertical {:size 18 :class "text-gray-12" :aria-hidden "true"}]]]
-       [:> DropdownMenu.Content
-        [:> DropdownMenu.Item {:on-select #(rf/dispatch
-                                            [:modal->open
-                                             {:id "session-details"
-                                              :maxWidth "95vw"
-                                              :content [session-details/main {:id session-id :verb "exec"}]}])}
-         [:> Flex {:align "center" :gap "2"}
-          [:> SquareArrowOutUpRight {:size 16}]
-          [:> Text {:size "2"} "View session details"]]]
-        (when-not @clipboard-disabled?
-          [:> DropdownMenu.Item {:on-select #(js/navigator.clipboard.writeText logs-content)}
-           [:> Flex {:align "center" :gap "2"}
-            [:> Copy {:size 16}]
-            [:> Text {:size "2"} "Copy logs content"]]])]]]]))
 
 (defn- logs-area-list
   [status {:keys [logs logs-status execution-time has-review? session-id]}]
@@ -124,26 +95,4 @@
           :script (:script config)
           :execution-time (:execution-time config)
           :has-review? (:has-review config)
-          :session-id (:response-id config)}])]
-
-     (case (:status config)
-       :success
-       (if (:has-review config)
-         [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
-          [:div {:class "pointer-events-auto"}
-           [action-buttons-container (:response-id config) "This task needs to be reviewed. Please click here to see the details."]]]
-
-         [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
-          [:div {:class "pointer-events-auto"}
-           [action-buttons-container (:response-id config) (:response config)]]])
-       :running
-       (when (:response-id config)
-         [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
-          [:div {:class "pointer-events-auto"}
-           [action-buttons-container (:response-id config) ""]]])
-       :failure
-       [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
-        [:div {:class "pointer-events-auto"}
-         [action-buttons-container (:response-id config) "There was an error to get the logs for this task"]]]
-
-       nil)]))
+          :session-id (:response-id config)}])]]))

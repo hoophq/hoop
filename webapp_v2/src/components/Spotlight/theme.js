@@ -6,5 +6,6 @@ export const SpotlightTheme = Spotlight.extend({
     actionsGroup: classes.actionsGroup,
     actionLabel: classes.actionLabel,
     actionsList: classes.actionsList,
+    action: classes.action,
   },
 })
