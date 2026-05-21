@@ -17,9 +17,10 @@ import {
   Settings,
   Search,
   Layers,
+  KeyRound,
   Webhook
-} from 'lucide-react'
-import { openCommandPalette } from '@/features/CommandPalette/spotlight'
+} from 'lucide-react';
+import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
@@ -98,6 +99,13 @@ export const DISCOVER_ITEMS = [
     adminOnly: true,
     badge: { text: 'BETA', color: 'indigo' },
     upgradeRoute: '/upgrade-plan'
+  },
+  {
+    label: 'Machine Identities',
+    path: '/features/machine-identities',
+    icon: KeyRound,
+    freeFeature: true,
+    adminOnly: true
   }
 ]
 

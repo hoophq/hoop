@@ -14,3 +14,33 @@
 .actionsList.actionsList {
   padding: 0 var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-md);
 }
+
+/* Action items — mirror the CLJS cmdk palette so mouse hover and keyboard
+   selection are both visible and distinct, instead of Mantine's defaults
+   (near-invisible gray-0 hover + saturated primary fill on data-selected).
+   Mapping follows the Radix→Mantine offset documented in CLAUDE.md:
+   Radix gray-2/3/4 → Mantine gray.1/.2/.3; Radix gray-11 → --mantine-color-dimmed. */
+.action.action {
+  color: var(--mantine-color-dimmed);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+@media (hover: hover) {
+  .action.action:not([data-selected]):hover {
+    background-color: var(--mantine-color-gray-1);
+    color: var(--mantine-color-text);
+  }
+}
+
+.action.action[data-selected] {
+  background-color: var(--mantine-color-gray-2);
+  color: var(--mantine-color-text);
+  --action-description-color: var(--mantine-color-dimmed);
+  --action-description-opacity: 1;
+}
+
+@media (hover: hover) {
+  .action.action[data-selected]:hover {
+    background-color: var(--mantine-color-gray-3);
+  }
+}
