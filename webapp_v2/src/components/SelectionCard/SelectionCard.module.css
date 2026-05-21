@@ -1,0 +1,29 @@
+.card {
+  width: 100%;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-lg);
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.card:hover {
+  background-color: var(--mantine-color-gray-1);
+}
+
+.card[data-selected] {
+  background-color: var(--sidebar-bg);
+  border-color: var(--sidebar-bg);
+}
+
+.card[data-selected]:hover {
+  background-color: var(--sidebar-bg);
+}
+
+/* Dark-on-dark exception (mirrors Sidebar.module.css): Mantine's gray palette is
+   calibrated for light backgrounds, so we paint icon contrast with rgba white. */
+.card[data-selected] .icon {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: transparent;
+}
