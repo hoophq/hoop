@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/spf13/cobra"
@@ -128,7 +129,7 @@ func parsePluginConfig() (map[string]any, error) {
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
-		val, err := getEnvValue(val)
+		val, err := cmdutils.GetEnvValue(val)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get value: %v", err)
 		}

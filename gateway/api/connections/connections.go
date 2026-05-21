@@ -113,7 +113,7 @@ func Post(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusCreated, toOpenApi(resp))
+	c.JSON(http.StatusCreated, ToOpenApi(resp))
 }
 
 // Put Connection
@@ -214,7 +214,7 @@ func Put(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusOK, toOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp))
 }
 
 // Patch Connection
@@ -340,7 +340,7 @@ func Patch(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, toOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp))
 }
 
 // DeleteConnection
@@ -440,7 +440,7 @@ func List(c *gin.Context) {
 			// it should return empty to avoid leaking sensitive content
 			// in the future we plan to know which entry is sensitive or not
 			conn.Envs = map[string]string{}
-			responseConnList[i] = toOpenApi(&conn)
+			responseConnList[i] = ToOpenApi(&conn)
 		}
 
 		response := openapi.PaginatedResponse[openapi.Connection]{
@@ -467,7 +467,7 @@ func List(c *gin.Context) {
 		// it should return empty to avoid leaking sensitive content
 		// in the future we plan to know which entry is sensitive or not
 		conn.Envs = map[string]string{}
-		responseConnList = append(responseConnList, toOpenApi(&conn))
+		responseConnList = append(responseConnList, ToOpenApi(&conn))
 
 	}
 	c.JSON(http.StatusOK, responseConnList)
@@ -495,7 +495,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	apiConn := toOpenApi(conn)
+	apiConn := ToOpenApi(conn)
 	if orgID, err := uuid.Parse(ctx.OrgID); err == nil {
 		if rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit"); err == nil && rule != nil {
 			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
@@ -504,7 +504,7 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, apiConn)
 }
 
-func toOpenApi(conn *models.Connection) openapi.Connection {
+func ToOpenApi(conn *models.Connection) openapi.Connection {
 	var managedBy *string
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String

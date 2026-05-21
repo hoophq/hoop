@@ -48,7 +48,11 @@ func CreateMachineIdentity(ctx context.Context, mi *models.MachineIdentity, attr
 
 	uc := models.NewAdminContext(mi.OrgID)
 	serverConf, err := models.GetServerMiscConfig()
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil {
+		if err == models.ErrNotFound {
+			return nil, fmt.Errorf("server misc configuration not found")
+		}
+
 		return nil, fmt.Errorf("failed retrieving server config: %w", err)
 	}
 
@@ -168,7 +172,11 @@ func UpdateMachineIdentity(ctx context.Context, orgID, currentName string, newNa
 
 	uc := models.NewAdminContext(orgID)
 	serverConf, err := models.GetServerMiscConfig()
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil {
+		if err == models.ErrNotFound {
+			return nil, fmt.Errorf("server misc configuration not found")
+		}
+
 		return nil, fmt.Errorf("failed retrieving server config: %w", err)
 	}
 
@@ -315,7 +323,11 @@ func RotateMachineIdentityCredential(ctx context.Context, orgID, identityName, c
 	}
 
 	serverConf, err := models.GetServerMiscConfig()
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil {
+		if err == models.ErrNotFound {
+			return nil, fmt.Errorf("server misc configuration not found")
+		}
+
 		return nil, fmt.Errorf("failed retrieving server config: %w", err)
 	}
 
@@ -352,7 +364,11 @@ func GetMachineIdentityCredentialInfo(ctx context.Context, orgID, identityName, 
 	}
 
 	serverConf, err := models.GetServerMiscConfig()
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil {
+		if err == models.ErrNotFound {
+			return nil, fmt.Errorf("server misc configuration not found")
+		}
+
 		return nil, fmt.Errorf("failed retrieving server config: %w", err)
 	}
 

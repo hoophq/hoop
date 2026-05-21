@@ -1159,10 +1159,10 @@ const (
 )
 
 // AnalyticsModeType represents the per-organization analytics privacy mode.
-// * identified - PII (email, name) is sent to third-party destinations so
-//   the org's users are addressable for support and lifecycle outreach.
-// * anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
-// * disabled   - No analytics events are emitted for the org.
+//   - identified - PII (email, name) is sent to third-party destinations so
+//     the org's users are addressable for support and lifecycle outreach.
+//   - anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
+//   - disabled   - No analytics events are emitted for the org.
 type AnalyticsModeType string
 
 const (
@@ -2356,10 +2356,172 @@ type ResourceResponse struct {
 	EnvVars map[string]string `json:"env_vars"`
 	// The agent associated with this resource
 	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Connections (roles) associated with this resource
+	Roles []Connection `json:"roles,omitempty"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type ResourcHealthCheckResponse struct {
+	// Output is the raw stdout/stderr returned by the connectivity test query
+	Output string `json:"output" example:"1\n(1 row)\n"`
+	// Status reports the outcome of the connectivity test
+	Status string `json:"status" enums:"failed,success" example:"success"`
+}
+
+type ResourceHealthCheckResult struct {
+	// ResourceName is the name of the resource that was tested
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// Output is the raw stdout/stderr returned by the connectivity test query
+	Output string `json:"output" example:"1\n(1 row)\n"`
+	// Status reports the outcome of the connectivity test
+	Status string `json:"status" enums:"failed,success" example:"success"`
+}
+
+type ResourceHealthCheckBatchRequest struct {
+	// Names is the list of resource names to test
+	Names []string `json:"names" binding:"required,min=1" example:"my-postgres,analytics-db"`
+}
+
+type ResourceHealthCheckBatchResponse struct {
+	// Results contains one entry per requested resource, in the same order as the input names
+	Results []ResourceHealthCheckResult `json:"results"`
+}
+
+type ResourcePlanItem struct {
+	// The resource name to plan provisioning for. Required for batch requests.
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// Role management mode. "managed" creates and fully owns the postgres role (password managed by hoop).
+	// "external" attaches the role as a member of an existing parent role specified by source_role.
+	Type string `json:"type" enums:"managed,external" binding:"required" example:"managed"`
+	// A short label used to derive the generated postgres role name (e.g. "ro", "rw", "analyst").
+	// The actual role created in postgres is a deterministic slug of the form hoopdev_<resource>_<role>_<hash>.
+	Role string `json:"role" binding:"required" example:"ro"`
+	// An existing postgres role whose privileges the new role will inherit via membership.
+	// Only relevant when type is "external"; ignored for "managed".
+	SourceRole string `json:"source_role" example:"pg_read_all_data"`
+	// The list of databases and schemas to apply privileges to, formatted as "database" or "database.schema".
+	// If the schema is omitted, privileges are applied to the public schema of that database.
+	Scopes []string `json:"scopes" binding:"required" example:"mydb,otherdb.public"`
+	// The list of privileges to grant on all tables in each scope.
+	// Supported values: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, EXECUTE.
+	Privileges []string `json:"privileges" binding:"required" example:"SELECT,INSERT"`
+	// When true, rotates the role's password on this plan run. Only takes effect if the role already exists;
+	// new roles always receive a freshly generated password regardless of this flag.
+	RotatePassword bool `json:"rotate_password" example:"false"`
+}
+
+type ResourcePlanRequest struct {
+	// The list of plan items to process
+	Items []ResourcePlanItem `json:"items" binding:"required,min=1"`
+}
+
+type ResourcePlanResult struct {
+	// The session ID for tracking and auditing this plan execution
+	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name this plan result is for
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// The generated postgres role name derived from the resource name and role label
+	// (format: hoopdev_<resource-slug>_<role-label>_<8-char-hash>).
+	Role string `json:"role" example:"hoopdev_my_postgres_ro_ab3c1f7e"`
+	// Status of the plan execution
+	Status string `json:"status" enums:"success,failed" example:"success"`
+	// Error message populated when status is "failed"; empty on success
+	Message string `json:"message" example:"failed retrieving resource: connection refused"`
+}
+
+type ResourcePlanResponse struct {
+	// The list of plan results
+	Results []ResourcePlanResult `json:"results"`
+}
+
+type ResourceApplyRequest struct {
+	// The Session ID of the plan to apply
+	SID string `json:"sid" binding:"required" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name to apply to. Required for batch requests.
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+}
+
+type ResourceApplyResult struct {
+	// The session ID for tracking and auditing this apply execution
+	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name this apply result is for
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// Status of the apply execution
+	Status string `json:"status" enums:"success,failed" example:"success"`
+	// Error message populated when status is "failed"; empty on success
+	Message string `json:"message" example:"failed obtaining blob stream: empty blob stream"`
+}
+
+type ResourceApplyBatchRequest struct {
+	// The list of apply items to process
+	Items []ResourceApplyRequest `json:"items" binding:"required,min=1"`
+}
+
+type ResourceApplyBatchResponse struct {
+	// The list of apply results
+	Results []ResourceApplyResult `json:"results"`
+}
+
+type BatchPlanItem struct {
+	// The resource name
+	ResourceName string `json:"resource_name" binding:"required" example:"analytics-db-011"`
+	// The role name to plan
+	Role string `json:"role" binding:"required" example:"analytics-db-read"`
+	// The database (schema) target
+	Database string `json:"database" binding:"required" example:"dbprod.public"`
+	// The SQL permissions to grant
+	Permissions []string `json:"permissions" binding:"required" example:"SELECT,INSERT"`
+}
+
+type BatchPlanRequest struct {
+	// The items to plan
+	Items []BatchPlanItem `json:"items" binding:"required,dive"`
+}
+
+type BatchPlanResultItem struct {
+	// The resource name
+	ResourceName string `json:"resource_name" example:"analytics-db-011"`
+	// The role name
+	Role string `json:"role" example:"analytics-db-read"`
+	// The plan ID
+	PlanID string `json:"plan_id" example:"plan-1717171717-1234"`
+	// The plan status: Create, Update, or Failed
+	Status string `json:"status" enums:"Create,Update,Failed" example:"Create"`
+	// The session ID for reviewing the plan output
+	SessionID string `json:"session_id" example:"sess-plan-1717171717-1234"`
+	// Error message if the plan failed
+	Error string `json:"error,omitempty" example:"resource not found"`
+}
+
+type BatchPlanResponse struct {
+	// The results for each item
+	Results []BatchPlanResultItem `json:"results"`
+}
+
+type BatchApplyRequest struct {
+	// The plan IDs to apply
+	PlanIDs []string `json:"plan_ids" binding:"required" example:"plan-1717171717-1234"`
+}
+
+type BatchApplyResultItem struct {
+	// The plan ID that was applied
+	PlanID string `json:"plan_id" example:"plan-1717171717-1234"`
+	// The apply status: Applied or ApplyFailed
+	Status string `json:"status" enums:"Applied,ApplyFailed" example:"Applied"`
+	// The session ID for reviewing the apply output
+	SessionID string `json:"session_id" example:"sess-apply-1717171717-1234"`
+	// The role (connection) name that was created or updated
+	RoleName string `json:"role_name,omitempty" example:"analytics-db-read"`
+	// Error message if the apply failed
+	Error string `json:"error,omitempty"`
+}
+
+type BatchApplyResponse struct {
+	// The results for each plan
+	Results []BatchApplyResultItem `json:"results"`
 }
 
 type RunbookConfigurationRequest struct {

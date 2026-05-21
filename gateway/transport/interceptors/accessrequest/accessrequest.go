@@ -180,7 +180,14 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 	}
 
 	// 3. if no existing review, create a new review
-	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
+	// this is the minimum duration to not conflict with the access rule max duration attribute
+	// so it won't have cli issues when the user doesn't provide any jit duration
+	durationStr := []byte("15m")
+	if d, ok := pkt.Spec[pb.SpecJitTimeout]; ok {
+		durationStr = d
+	}
+
+	isJitReview := pctx.ClientVerb == pb.ClientVerbConnect
 	accessType := "command"
 	if isJitReview {
 		accessType = "jit"

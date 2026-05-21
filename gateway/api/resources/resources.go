@@ -253,9 +253,27 @@ func ListResources(c *gin.Context) {
 		return
 	}
 
+	resourceNames := make([]string, len(resources))
+	for i, r := range resources {
+		resourceNames[i] = r.Name
+	}
+	connsByResource, err := models.GetConnectionsByResourceNames(models.DB, ctx.OrgID, resourceNames)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching resources roles: %v", err)
+		return
+	}
+
 	var resp []*openapi.ResourceResponse
 	for _, r := range resources {
-		resp = append(resp, toOpenApi(&r))
+		item := toOpenApi(&r)
+		if conns, ok := connsByResource[r.Name]; ok {
+			roles := make([]openapi.Connection, len(conns))
+			for j, conn := range conns {
+				roles[j] = apiconnections.ToOpenApi(&conn)
+			}
+			item.Roles = roles
+		}
+		resp = append(resp, item)
 	}
 
 	// Backwards compatibility: return a bare array when no pagination params are

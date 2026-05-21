@@ -4,6 +4,7 @@ import {
   SquareCode,
   BookUp2,
   GalleryVerticalEnd,
+  Boxes,
   CircleCheckBig,
   BookMarked,
   ShieldCheck,
@@ -15,7 +16,8 @@ import {
   Puzzle,
   Settings,
   Search,
-  Layers
+  Layers,
+  KeyRound
 } from 'lucide-react';
 import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
@@ -34,6 +36,7 @@ export const MAIN_ITEMS = [
   { label: 'Terminal', path: '/client', icon: SquareCode, freeFeature: true, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, freeFeature: true, adminOnly: false },
   { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, freeFeature: true, adminOnly: false },
+  { label: 'Provisioning', path: '/provisioning', icon: Boxes, freeFeature: true, adminOnly: true },
   {
     label: 'Search',
     icon: Search,
@@ -86,6 +89,13 @@ export const DISCOVER_ITEMS = [
     adminOnly: true,
     badge: { text: 'BETA', color: 'indigo' },
     upgradeRoute: '/upgrade-plan'
+  },
+  {
+    label: 'Machine Identities',
+    path: '/features/machine-identities',
+    icon: KeyRound,
+    freeFeature: true,
+    adminOnly: true
   }
 ];
 

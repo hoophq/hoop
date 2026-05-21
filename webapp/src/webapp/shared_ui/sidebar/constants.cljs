@@ -1,10 +1,10 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
-   ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked Boxes BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
-                           Sparkles]]
+                           Sparkles KeyRound]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -42,6 +42,8 @@
                      [:> UserRoundCheck {:size size}])
    "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> CircleCheckBig {:size size}])
+   "MachineIdentities" (fn [& [{:keys [size] :or {size 24}}]]
+                         [:> KeyRound {:size size}])
    "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> PackageSearch {:size size}])
    "Agents" (fn [& [{:keys [size] :or {size 24}}]]
@@ -66,7 +68,9 @@
    "users" (fn [& [{:keys [size] :or {size 24}}]]
              [:> UserRoundCheck {:size size}])
    "Search" (fn [& [{:keys [size] :or {size 24}}]]
-              [:> Search {:size size}])})
+              [:> Search {:size size}])
+   "Provisioning" (fn [& [{:keys [size] :or {size 24}}]]
+                    [:> Boxes {:size size}])})
 
 ;; Menu principal
 (def main-routes
@@ -106,6 +110,13 @@
     :navigate :sessions
     :free-feature? true
     :admin-only? false}
+   {:name "Provisioning"
+    :label "Provisioning"
+    :icon (get icons-registry "Provisioning")
+    :uri (routes/url-for :provisioning)
+    :navigate :provisioning
+    :free-feature? true
+    :admin-only? true}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")
@@ -187,7 +198,14 @@
     :free-feature? false
     :upgrade-plan-route :upgrade-plan
     :admin-only? true
-    :badge "BETA"}])
+    :badge "BETA"}
+   {:name "MachineIdentities"
+    :label "Machine Identities"
+    :icon (get icons-registry "MachineIdentities")
+    :uri (routes/url-for :machine-identities)
+    :navigate :machine-identities
+    :free-feature? true
+    :admin-only? true}])
 
 ;; Seção Settings
 (def organization-routes

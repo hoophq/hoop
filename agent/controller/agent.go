@@ -22,7 +22,9 @@ import (
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/awseks"
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"
+	"github.com/hoophq/hoop/agent/controller/system/bareexec"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
+	"github.com/hoophq/hoop/agent/controller/system/pgmanager"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
 	"github.com/hoophq/hoop/agent/secretsmanager"
@@ -253,6 +255,15 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 	case pbsystem.RunbookHookRequestType:
 		runbookhook.ProcessRequest(a.client, pkt)
+
+	case pbsystem.BareExecRequestType:
+		bareexec.ProcessRequest(a.client, pkt)
+
+	case pbsystem.PgManagerPlanRequestType:
+		pgmanager.ProcessPlanRequest(a.client, pkt)
+
+	case pbsystem.PgManagerApplyRequestType:
+		pgmanager.ProcessApplyPlan(a.client, pkt)
 	}
 }
 
@@ -510,6 +521,14 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 
 	for key, val := range a.runtimeEnvs {
 		connParams.EnvVars[key] = val
+	}
+
+	// Override MSPresidio configuration
+	if analyzerURL, anonymizerURL, dlpMode, isSet := parseMSPresidioOverrideConfig(); isSet {
+		log.Infof("overriding MS Presidio configuration, dlp-mode=%v", dlpMode)
+		connParams.DlpPresidioAnalyzerURL = analyzerURL
+		connParams.DlpPresidioAnonymizerURL = anonymizerURL
+		connParams.DlpMode = dlpMode
 	}
 
 	// expose agent envs to session
@@ -855,5 +874,24 @@ func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSes
 	if cluster == "" || awsRegion == "" {
 		return "", "", "", "", fmt.Errorf("missing required envs [EKS_CLUSTER EKS_AWS_REGION]")
 	}
+	return
+}
+
+func parseMSPresidioOverrideConfig() (analyzerURL, anonymizerURL, dlpMode string, isSet bool) {
+	analyzerURL = os.Getenv("MSPRESIDIO_ANALYZER_URL")
+	anonymizerURL = os.Getenv("MSPRESIDIO_ANONYMIZER_URL")
+	dlpMode = os.Getenv("DLP_MODE")
+	if _, err := url.Parse(analyzerURL); err != nil {
+		log.Warnf("MSPRESIDIO_ANALYZER_URL failed loading override configuration, invalid url: %v", err)
+		return
+	}
+	if _, err := url.Parse(anonymizerURL); err != nil {
+		log.Warnf("MSPRESIDIO_ANONYMIZER_URL failed loading override configuration, invalid url: %v", err)
+		return
+	}
+	if dlpMode != "strict" && dlpMode != "best-effort" {
+		log.Warnf("DLP_MODE unknown value (%q), fallback to best-effort", dlpMode)
+	}
+	isSet = analyzerURL != "" && anonymizerURL != ""
 	return
 }

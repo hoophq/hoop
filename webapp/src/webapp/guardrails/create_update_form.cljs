@@ -73,7 +73,7 @@
               [:> Heading {:as "h3" :size "4" :weight "medium"} "Configure rules"]
               [:> Badge {:variant "solid" :color "green" :size "1"}
                "Beta"]]
-             [:p.text-sm.text-gray-500.mb-4
+             [:> Text {:size "3" :class "text-[--gray-11]"}
               "Setup rules with Presets or Custom regular expression scripts."]]
 
             [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}

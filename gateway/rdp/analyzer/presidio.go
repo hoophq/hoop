@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,13 @@ import (
 
 // presidioTimeout is the HTTP timeout for Presidio API calls.
 const presidioTimeout = 30 * time.Second
+
+// ErrPresidio is the sentinel returned when the Presidio analyzer service is
+// unreachable, returns a non-2xx status, or otherwise indicates a service-side
+// failure. The worker treats this class of error as fatal for the whole job
+// (so the job is retried with exponential backoff and surfaced to the UI as
+// "Analysis failed") rather than as a per-snapshot data error.
+var ErrPresidio = errors.New("presidio analyzer error")
 
 // PresidioClient is a lightweight HTTP client for the Presidio Analyzer API.
 // It only supports the /analyze endpoint (no anonymization needed).
@@ -76,28 +84,30 @@ func (c *PresidioClient) Analyze(ctx context.Context, text string, scoreThreshol
 	apiURL := c.analyzerURL + "/analyze"
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(jsonData))
 	if err != nil {
+		// Request construction failures are not service-side outages; keep
+		// them as a normal error so the worker doesn't fail the whole job.
 		return nil, fmt.Errorf("presidio: failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("presidio: request failed: %w", err)
+		return nil, fmt.Errorf("%w: request failed: %v", ErrPresidio, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("presidio: failed to read response (status=%d): %w", resp.StatusCode, err)
+		return nil, fmt.Errorf("%w: failed to read response (status=%d): %v", ErrPresidio, resp.StatusCode, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("presidio: analyzer returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: analyzer returned status %d: %s", ErrPresidio, resp.StatusCode, string(body))
 	}
 
 	var results []AnalyzerResult
 	if err := json.Unmarshal(body, &results); err != nil {
-		return nil, fmt.Errorf("presidio: failed to decode response: %w", err)
+		return nil, fmt.Errorf("%w: failed to decode response: %v", ErrPresidio, err)
 	}
 
 	return results, nil
