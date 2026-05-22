@@ -28,23 +28,28 @@ import (
 // collisions become statistically interesting — i.e. never, in practice.
 const PrefixLength = 48
 
-// GatewayIP is the address of the netstack gateway inside every session's
-// prefix. The DNS resolver binds here. The relative position of the address
-// inside the /48 is fixed (`::1`) so the resolver is reachable from a
-// well-known address derived purely from the prefix.
-//
-// Concretely, given a prefix `fd<48 bits of seed>::/48`, the gateway is
-// `fd<48 bits of seed>:0:0:0:1`.
+// gatewaySuffix is the fixed suffix for the netstack gateway address (::1).
+// gVisor owns this address; it is NOT assigned to the host TUN interface.
+// The DNS resolver binds here inside gVisor. Given prefix `fd<X>::/48`,
+// the gateway is `fd<X>::1`.
 var gatewaySuffix = [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+
+// hostSuffix is the fixed suffix for the host-side TUN interface address (::2).
+// Linux owns this address; it is assigned to tun0 so the kernel has a valid
+// source address when sending packets into the /48. It must differ from
+// gatewaySuffix so traffic to the gateway goes through the TUN fd to gVisor
+// rather than being consumed locally by the kernel.
+var hostSuffix = [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}
 
 // Allocator owns the per-session prefix and the bidirectional name<->IP map.
 type Allocator struct {
 	prefix netip.Prefix // /48
 
-	mu       sync.RWMutex
-	byName   map[string]netip.Addr
-	byAddr   map[netip.Addr]string
-	gateway  netip.Addr
+	mu      sync.RWMutex
+	byName  map[string]netip.Addr
+	byAddr  map[netip.Addr]string
+	gateway netip.Addr // ::1 inside prefix — owned by gVisor
+	host    netip.Addr // ::2 inside prefix — assigned to host TUN interface
 }
 
 // New returns an Allocator whose /48 prefix is deterministically derived from
@@ -65,11 +70,12 @@ func New(seed string) *Allocator {
 	prefix := netip.PrefixFrom(addr, PrefixLength).Masked()
 
 	a := &Allocator{
-		prefix: prefix,
-		byName: make(map[string]netip.Addr),
-		byAddr: make(map[netip.Addr]string),
+		prefix:   prefix,
+		byName:   make(map[string]netip.Addr),
+		byAddr:   make(map[netip.Addr]string),
 	}
 	a.gateway = a.addrFromSuffix(gatewaySuffix)
+	a.host = a.addrFromSuffix(hostSuffix)
 	return a
 }
 
@@ -77,8 +83,15 @@ func New(seed string) *Allocator {
 func (a *Allocator) Prefix() netip.Prefix { return a.prefix }
 
 // Gateway returns the address the netstack uses as its default gateway and as
-// the DNS resolver bind address.
+// the DNS resolver bind address. This address is owned by gVisor — it is NOT
+// assigned to the host TUN interface.
 func (a *Allocator) Gateway() netip.Addr { return a.gateway }
+
+// HostAddr returns the address that should be assigned to the host-side TUN
+// interface. It differs from Gateway so that traffic to the gateway address
+// is written into the TUN fd (and delivered to gVisor) rather than consumed
+// locally by the kernel.
+func (a *Allocator) HostAddr() netip.Addr { return a.host }
 
 // AddName ensures name has an address allocated and returns it. Repeated
 // calls with the same name return the same address. The first ever caller
@@ -108,10 +121,10 @@ func (a *Allocator) AddName(name string) (netip.Addr, error) {
 
 	suffix := suffixFromName(name)
 	for attempt := 0; attempt < 16; attempt++ {
-		// Reserved suffixes the netstack itself uses; never hand them to a
-		// connection name.
+		// Reserved addresses: gateway (gVisor) and host (TUN interface).
+		// Never hand these to a connection name.
 		addr := a.addrFromSuffix(suffix)
-		if addr == a.gateway {
+		if addr == a.gateway || addr == a.host {
 			incrementSuffix(&suffix)
 			continue
 		}

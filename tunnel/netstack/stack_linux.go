@@ -128,21 +128,28 @@ func setIFUp(name string) error {
 	return nil
 }
 
-// ConfigureRoutes wires the per-session /48 to the TUN device and points the
-// resolver address at port 53. It must be called by the binary after New
-// because it needs CAP_NET_ADMIN — same privilege the TUN open already
-// required — and it touches the host's routing table which the netstack
-// package does not own.
+// ConfigureRoutes wires the per-session /48 to the TUN device. It must be
+// called by the binary after New because it needs CAP_NET_ADMIN — same
+// privilege the TUN open already required — and it touches the host's routing
+// table which the netstack package does not own.
+//
+// hostAddr is the address assigned to the host side of the TUN interface
+// (typically <prefix>::2). It must differ from the gVisor gateway address
+// (<prefix>::1): if the gateway IP were assigned to tun0, the kernel would
+// consume traffic for it locally and never write those packets into the TUN
+// fd, making the gVisor DNS listener unreachable.
 //
 // We shell out to `ip` here. Doing the equivalent via rtnetlink is doable
 // but adds a chunky helper for no spike-time benefit; we'll revisit when we
 // drop the sudo requirement.
-func ConfigureRoutes(deviceName string, prefix string, gateway string) error {
+func ConfigureRoutes(deviceName string, prefix string, hostAddr string) error {
 	if !commandExists("ip") {
 		return fmt.Errorf("netstack: `ip` not found in PATH; install iproute2")
 	}
-	// Add the gateway address to the link so the kernel knows the local IP.
-	if err := runIP("addr", "add", gateway+"/128", "dev", deviceName); err != nil {
+	// Assign the host address to the TUN interface so the kernel has a valid
+	// source address when sending packets into the /48. The gVisor gateway
+	// address is intentionally NOT added here — it lives only inside gVisor.
+	if err := runIP("addr", "add", hostAddr+"/128", "dev", deviceName); err != nil {
 		// "RTNETLINK answers: File exists" on re-runs is fine.
 		if !strings.Contains(err.Error(), "File exists") {
 			return err
@@ -155,9 +162,9 @@ func ConfigureRoutes(deviceName string, prefix string, gateway string) error {
 }
 
 // UnconfigureRoutes is the inverse of ConfigureRoutes. Best-effort.
-func UnconfigureRoutes(deviceName string, prefix string, gateway string) {
+func UnconfigureRoutes(deviceName string, prefix string, hostAddr string) {
 	_ = runIP("-6", "route", "del", prefix, "dev", deviceName)
-	_ = runIP("addr", "del", gateway+"/128", "dev", deviceName)
+	_ = runIP("addr", "del", hostAddr+"/128", "dev", deviceName)
 }
 
 func runIP(args ...string) error {

@@ -44,6 +44,17 @@ const NICID tcpip.NICID = 1
 // these to look up the connection name and open a tunnel stream.
 type Handler func(conn *gonet.TCPConn, localAddr netip.Addr, localPort uint16)
 
+// AcceptFunc decides whether a TCP SYN should be answered (true) or
+// rejected with a RST (false). It is consulted *before* gVisor completes
+// the 3-way handshake, so rejected flows surface to the client as a
+// clean ECONNREFUSED rather than an immediately-closed connection.
+//
+// Returning false also prevents Handler from being invoked. The function
+// must be cheap: it runs on gVisor's TCP segment-dispatch path.
+//
+// AcceptFunc may be nil; in that case every SYN is accepted.
+type AcceptFunc func(localAddr netip.Addr, localPort uint16) bool
+
 // DNSHandler receives raw UDP datagrams arriving at the resolver's address
 // (the netstack gateway IP, port 53). It returns the response bytes.
 type DNSHandler func(query []byte, src netip.AddrPort) ([]byte, error)
@@ -65,6 +76,11 @@ type Options struct {
 
 	// TCPHandler is invoked for every accepted TCP connection. Required.
 	TCPHandler Handler
+
+	// TCPAccept, if non-nil, is invoked for every inbound SYN before the
+	// 3-way handshake. Returning false rejects the connection with a RST
+	// and the SYN is never promoted to an endpoint. nil means accept all.
+	TCPAccept AcceptFunc
 
 	// DNSHandler answers UDP packets sent to Gateway:53. Required.
 	DNSHandler DNSHandler
@@ -204,11 +220,32 @@ func (s *Stack) Close() error {
 	return s.closeErr
 }
 
-// onTCP handles a single inbound TCP SYN.
+// onTCP handles a single inbound TCP SYN. The flow is:
+//
+//  1. Decode the destination address (rejecting unparseable IPs with RST).
+//  2. Consult TCPAccept (if set). If it returns false, send a RST so the
+//     client sees an immediate ECONNREFUSED instead of a connection that
+//     opens and instantly closes.
+//  3. Otherwise CreateEndpoint completes the 3-way handshake and hands
+//     the conn off to TCPHandler.
+//
+// We always call Complete exactly once on every path; failing to do so
+// would leak the request entry in the forwarder's inFlight map.
 func (s *Stack) onTCP(req *tcp.ForwarderRequest) {
-	// Always reply (RST or accept) so the peer doesn't hang. CompleteWithError
-	// avoids the silent-drop trap.
 	id := req.ID()
+
+	localBytes := id.LocalAddress.AsSlice()
+	localAddr, ok := netip.AddrFromSlice(localBytes)
+	if !ok {
+		req.Complete(true /* send RST */)
+		return
+	}
+
+	if s.opts.TCPAccept != nil && !s.opts.TCPAccept(localAddr, id.LocalPort) {
+		req.Complete(true /* send RST -> ECONNREFUSED on the client */)
+		return
+	}
+
 	var wq waiter.Queue
 	ep, ipErr := req.CreateEndpoint(&wq)
 	if ipErr != nil {
@@ -217,12 +254,6 @@ func (s *Stack) onTCP(req *tcp.ForwarderRequest) {
 	}
 	req.Complete(false)
 
-	localBytes := id.LocalAddress.AsSlice()
-	localAddr, ok := netip.AddrFromSlice(localBytes)
-	if !ok {
-		ep.Close()
-		return
-	}
 	conn := gonet.NewTCPConn(&wq, ep)
 	go s.opts.TCPHandler(conn, localAddr, id.LocalPort)
 }
