@@ -442,6 +442,272 @@ const docTemplate = `{
                 }
             }
         },
+        "/ai-agents": {
+            "get": {
+                "description": "List all AI Agents for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "List AI Agents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.AIAgentResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Generate a new AI Agent. The raw key is returned only once in the response and cannot be retrieved after creation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Create AI Agent",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai-agents/{nameOrID}": {
+            "get": {
+                "description": "Get an AI Agent by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Get AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an AI Agent's name and/or groups. Works for both active and revoked agents.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Update AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Revoke an AI Agent (soft delete). The agent status is set to revoked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Revoke AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai-agents/{nameOrID}/reactivate": {
+            "post": {
+                "description": "Reactivate a revoked AI Agent. Sets status back to active and clears deactivation metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Reactivate AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/ai/session-analyzer/providers": {
             "get": {
                 "description": "Get the AI provider configured for the session analyzer feature in the organization",
@@ -9359,6 +9625,204 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "openapi.AIAgentCreateRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "groups": {
+                    "description": "Groups to assign to this AI Agent",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "name": {
+                    "description": "Human-readable name for the AI Agent",
+                    "type": "string",
+                    "example": "claude-ops"
+                }
+            }
+        },
+        "openapi.AIAgentCreateResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this agent",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this agent",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this AI Agent",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "key": {
+                    "description": "The generated AI Agent key. This is the only time the full key is shown.",
+                    "type": "string",
+                    "example": "hpk_Ab3fX9kL..."
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the AI Agent key for identification",
+                    "type": "string",
+                    "example": "hpk_1nzb***************************************"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "ai-agent"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the AI Agent",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AIAgentStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.AIAgentResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this agent",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this agent",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this AI Agent",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the AI Agent key for identification",
+                    "type": "string",
+                    "example": "hpk_1nzb***************************************"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "ai-agent"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the AI Agent",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AIAgentStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.AIAgentStatusType": {
+            "type": "string",
+            "enum": [
+                "active",
+                "revoked"
+            ],
+            "x-enum-varnames": [
+                "AIAgentStatusActive",
+                "AIAgentStatusRevoked"
+            ]
+        },
+        "openapi.AIAgentUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "description": "Updated group list (replaces existing groups)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "platform"
+                    ]
+                },
+                "name": {
+                    "description": "Updated display name",
+                    "type": "string",
+                    "example": "claude-prod"
+                }
+            }
+        },
         "openapi.AIProviderRequest": {
             "type": "object",
             "required": [
