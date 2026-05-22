@@ -3,7 +3,7 @@
 set -eo pipefail
 
 : "${GOOGLE_APPLICATION_CREDENTIALS:? Required environment variable not set}"
-export CLOUDSDK_PYTHON=${CLOUDSDK_PYTHON:-"/usr/bin/python3.9"}
+export CLOUDSDK_PYTHON=${CLOUDSDK_PYTHON:-"/usr/bin/python3.12"}
 
 gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS 2> /dev/null
 touch $HOME/.bigqueryrc
