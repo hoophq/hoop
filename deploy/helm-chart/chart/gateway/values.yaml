@@ -206,6 +206,100 @@ ingressGrpc:
   #   - grpc01.domain.tld
   #   - grpc02.domain.tld
 
+# -- Gateway API resources (gateway.networking.k8s.io/v1)
+# Requires the Gateway API CRDs to be installed in your cluster.
+# For Istio: install with `istioctl install` or the Istio Helm chart.
+# For other implementations: https://gateway-api.sigs.k8s.io/guides/
+gatewayApi:
+  # -- Enable Gateway API resources (HTTPRoute + optional Gateway)
+  enabled: false
+
+  # -- Create a Gateway resource.
+  # Set to false to attach the HTTPRoute to a pre-existing Gateway.
+  createGateway: true
+
+  # -- Gateway resource configuration
+  gateway:
+    # -- Gateway resource name (also used as the default parentRef for the HTTPRoute)
+    name: hoopgateway
+    # -- Annotations to add to the Gateway
+    annotations: {}
+    # -- GatewayClass name (e.g. istio, nginx, cilium)
+    gatewayClassName: istio
+    # -- Listeners define the addresses and ports for incoming traffic.
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.Listener
+    listeners:
+    - name: http
+      # -- Restrict the listener to a specific hostname; leave commented to accept all hosts
+      # hostname: hoop.yourdomain.org
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    # -- Requested addresses for the Gateway (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayAddress
+    # addresses:
+    # - type: IPAddress
+    #   value: 1.2.3.4
+    # - type: Hostname
+    #   value: hoop.yourdomain.org
+
+    # -- Infrastructure-level parameters passed to the underlying Gateway implementation (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayInfrastructure
+    # infrastructure:
+    #   labels:
+    #     environment: production
+    #   annotations:
+    #     networking.example.com/service-type: Internal
+    #   parametersRef:
+    #     group: example.com
+    #     kind: Config
+    #     name: my-config
+
+    # -- Backend TLS configuration applied to all backends via this Gateway (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayBackendTLS
+    # backendTLS:
+    #   clientCertificateRef:
+    #     name: my-client-cert
+
+  # -- HTTPRoute resource configuration
+  httpRoute:
+    # -- HTTPRoute resource name
+    name: hoopgateway-route
+    # -- Annotations to add to the HTTPRoute
+    annotations: {}
+    # -- Hostnames the route applies to; should match listener hostname(s) above
+    # hostnames:
+    # - hoop.yourdomain.org
+
+    # -- HTTPRoute rules. Specify the full list of match/backendRef/filter rules.
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.HTTPRouteRule
+    # rules:
+    # - matches:
+    #   - path:
+    #       type: PathPrefix
+    #       value: /protobuf.Transport
+    #   backendRefs:
+    #   - name: hoopgateway
+    #     port: 8010
+    # - matches:
+    #   - path:
+    #       type: PathPrefix
+    #       value: /
+    #   backendRefs:
+    #   - name: hoopgateway
+    #     port: 8009
+
+    # -- Parent references for this HTTPRoute (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.ParentReference
+    # parentRefs:
+    # - name: hoopgateway
+    # - name: hoopgateway
+    #   namespace: infra
+    #   sectionName: http
+
 # --- Expose proxy protocols direct access
 proxyService:
   enabled: false
