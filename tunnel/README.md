@@ -1,9 +1,15 @@
-# tunnel/ — Hoop Tunnel client (RD-176)
+# tunnel/ — Hoop Tunnel daemon (`hsh-tunneld`)
 
-A client-side tunnel that lets a developer reach every hoop connection by
-its name (e.g. `psql -h pg-prod.hoop`) as if those services lived on the
-local network. All the "magic" is local: there is **no new gateway
-protocol or endpoint**.
+A client-side tunnel daemon that lets a developer reach every hoop
+connection by its name (e.g. `psql -h pg-prod.hoop`) as if those services
+lived on the local network. All the "magic" is local: there is **no new
+gateway protocol or endpoint**.
+
+The daemon is shipped together with the unprivileged `hsh` CLI from the
+[hoophq/hsh](https://github.com/hoophq/hsh) repo. Day-to-day, users
+install both via `brew install hsh` (or the platform tarball) and never
+invoke `hsh-tunneld` directly. The instructions below cover building
+and running it standalone for development and integration testing.
 
 For each TCP flow accepted inside the userspace netstack, the tunnel
 opens a fresh gRPC bidirectional stream to the existing hoop gateway —
@@ -15,7 +21,7 @@ free.
 Architecture in one picture:
 
 ```
-  user app                  hsh-tunnel (this binary)              hoop gateway
+  user app                  hsh-tunneld (this binary)             hoop gateway
   ─────────                 ──────────────────────────────       ────────────
   psql -h pg-prod.hoop ─┐
                         │  TUN ↔ gVisor netstack ↔ DNS
@@ -41,11 +47,11 @@ under Phase 2.
 | `netstack/`           | gVisor stack + TUN device wiring (Linux only).                |
 | `client/pipe.go`      | Per-flow gRPC pipe; sends SessionOpen + TCPConnectionWrite.   |
 | `client/connections.go` | Lists tunnelable connections via `GET /api/connections`.    |
-| `cmd/hsh-tunnel/`     | Spike client binary (will be folded into `hsh` later).        |
+| `cmd/hsh-tunneld/`    | Daemon binary entry point.                                    |
 
-## Running the spike
+## Running standalone (dev / integration)
 
-You need one terminal and Linux. The client needs `CAP_NET_ADMIN` to open
+You need one terminal and Linux. The daemon needs `CAP_NET_ADMIN` to open
 the TUN device — either run with `sudo` or `setcap cap_net_admin+ep` the
 binary once. The same gateway you already run locally (the OSS dev
 gateway via `make run-dev`) is used as-is.
@@ -53,7 +59,9 @@ gateway via `make run-dev`) is used as-is.
 ### 1. Build
 
 ```bash
-go build -o /tmp/hsh-tunnel ./tunnel/cmd/hsh-tunnel
+make build-hsh-tunneld           # builds for the host platform into dist/
+# or, for ad-hoc development:
+go build -o /tmp/hsh-tunneld ./tunnel/cmd/hsh-tunneld
 ```
 
 ### 2. Configure
@@ -61,36 +69,38 @@ go build -o /tmp/hsh-tunnel ./tunnel/cmd/hsh-tunnel
 Set the same env vars the `hoop` CLI honors:
 
 ```bash
-export HOOP_GRPCURL=http://127.0.0.1:8010   # or grpcs://... in prod
 export HOOP_APIURL=http://127.0.0.1:8009
 export HOOP_TOKEN=<your bearer token>
+# HOOP_GRPCURL is optional; if unset the daemon discovers it from
+# GET /api/serverinfo, same as `hoop login`.
 ```
 
 `hoop login` writes these to `~/.hoop/config.toml`; you can `eval` them
 out of there or source them yourself.
 
-### 3. Start the tunnel client
+### 3. Start the daemon
 
 ```bash
-sudo -E /tmp/hsh-tunnel
+sudo -E /tmp/hsh-tunneld
 ```
 
 Expected output (truncated):
 
 ```
-hsh-tunnel gateway gRPC 127.0.0.1:8010 api http://127.0.0.1:8009
-hsh-tunnel session prefix fd5a:1b2c:3d4e::/48 gateway fd5a:1b2c:3d4e::1
-hsh-tunnel loaded 2 tunnelable connection(s):
-hsh-tunnel   pg-prod.hoop (postgres) -> fd5a:1b2c:3d4e::a1b2:c3d4
-hsh-tunnel   mysql-stg.hoop (mysql)  -> fd5a:1b2c:3d4e::e5f6:0708
-hsh-tunnel tunnel is up.
-hsh-tunnel   resolver:  fd5a:1b2c:3d4e::1:53
-hsh-tunnel   try:       dig @fd5a:1b2c:3d4e::1 pg-prod.hoop AAAA
+hsh-tunneld gateway gRPC 127.0.0.1:8010 (insecure=true) api http://127.0.0.1:8009
+hsh-tunneld session prefix fd5a:1b2c:3d4e::/48 gateway fd5a:1b2c:3d4e::1
+hsh-tunneld loaded 2 tunnelable connection(s):
+hsh-tunneld   pg-prod.hoop (postgres, port 5432) -> fd5a:1b2c:3d4e::a1b2:c3d4
+hsh-tunneld   mysql-stg.hoop (mysql, port 3306)  -> fd5a:1b2c:3d4e::e5f6:0708
+hsh-tunneld tunnel is up.
+hsh-tunneld   host addr: fd5a:1b2c:3d4e::2 (tun0)
+hsh-tunneld   resolver:  fd5a:1b2c:3d4e::1:53 (gVisor)
+hsh-tunneld   try:       dig @fd5a:1b2c:3d4e::1 pg-prod.hoop AAAA
 
-hsh-tunnel To route *.hoop through this resolver host-wide (systemd-resolved):
-hsh-tunnel   sudo resolvectl dns tun0 fd5a:1b2c:3d4e::1
-hsh-tunnel   sudo resolvectl domain tun0 '~hoop'
-hsh-tunnel After that:  psql -h pg-prod.hoop ...   (or any *.hoop host)
+hsh-tunneld To route *.hoop through this resolver host-wide (systemd-resolved):
+hsh-tunneld   sudo resolvectl dns tun0 fd5a:1b2c:3d4e::1
+hsh-tunneld   sudo resolvectl domain tun0 '~hoop'
+hsh-tunneld After that:  psql -h pg-prod.hoop ...   (or any *.hoop host)
 ```
 
 ### 4. Verify (without changing host DNS)
@@ -131,14 +141,16 @@ for those.
 | `-dev`      | _kernel-picked_  | Requested TUN device name.                             |
 | `-session`  | `spike-session`  | Session seed (drives the `/48` and the deterministic IPs). |
 
-## Limitations (spike only)
+## Limitations (v1)
 
 - **No reconnect.** Each TCP flow's gRPC stream is independent; a flow
-  whose stream dies must be re-initiated by the application. The tunnel
-  process itself does not need reconnect logic.
+  whose stream dies must be re-initiated by the application. The daemon
+  process itself does not need reconnect logic (see RD-209).
 - **No UDP.** TCP only.
-- **Linux only.** macOS/Windows TUN setup not implemented.
-- **Permissions.** The client needs `CAP_NET_ADMIN` to open `/dev/net/tun`.
+- **Linux only.** macOS/Windows TUN setup not implemented yet.
+- **Permissions.** The daemon needs `CAP_NET_ADMIN` to open `/dev/net/tun`.
+  When installed via `hsh install`, this is handled by the system service
+  unit (LaunchDaemon / systemd / Windows Service).
 - **Host DNS routing is manual.** RD-208 ships an automatic per-platform
   flow.
 - **JIT review per flow.** Connections requiring access review will fail
@@ -159,5 +171,6 @@ manual run above is the integration test for now.
 ## See also
 
 - [`docs/adr/0001-tunnel-addressing.md`](../docs/adr/0001-tunnel-addressing.md) — locked-in design decisions.
-- RD-176 — the spike ticket.
-- RD-204 — the addressing ADR ticket.
+- [hoophq/hsh](https://github.com/hoophq/hsh) — the unprivileged user-facing CLI / tray that drives this daemon.
+- RD-214 — daemon rename and release-train integration.
+- RD-215 / RD-216 — local IPC control plane and OAuth flow (in flight).

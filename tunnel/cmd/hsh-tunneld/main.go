@@ -1,18 +1,23 @@
-// Command hsh-tunnel is the RD-176 spike binary. It brings up a userspace
+// Command hsh-tunneld is the Hoop Tunnel daemon. It brings up a userspace
 // netstack + TUN device on the host, then routes every TCP connection to
 // a *.hoop address through the existing hoop gateway as if it were a
 // normal `hoop connect <name>` session.
 //
-// Unlike previous spikes, this binary uses NO custom gateway protocol:
-// each accepted TCP flow opens its own gRPC bidirectional stream to the
-// gateway (the same one the `hoop` CLI uses). The gateway sees these as
-// regular client sessions; auth, review, audit, DLP, access control,
-// webhooks, and slack integrations all apply automatically.
+// hsh-tunneld uses NO custom gateway protocol: each accepted TCP flow
+// opens its own gRPC bidirectional stream to the gateway (the same one
+// the `hoop` CLI uses). The gateway sees these as regular client
+// sessions; auth, review, audit, DLP, access control, webhooks, and
+// slack integrations all apply automatically.
 //
-// Linux usage:
+// The daemon is meant to run as a system service (LaunchDaemon / systemd /
+// Windows Service) and be driven by the unprivileged `hsh` CLI (from the
+// hoophq/hsh repo) via local IPC. For development / manual testing it can
+// also be run directly with environment variables.
+//
+// Linux usage (manual / dev):
 //
 //	# Build
-//	go build ./tunnel/cmd/hsh-tunnel
+//	go build ./tunnel/cmd/hsh-tunneld
 //
 //	# Configure (same envs as `hoop` CLI)
 //	export HOOP_APIURL=http://127.0.0.1:8009
@@ -20,12 +25,12 @@
 //	# HOOP_GRPCURL is optional: when omitted the gRPC address is fetched
 //	# from GET /api/serverinfo automatically (same mechanism as hoop login).
 //
-//	# Run (requires CAP_NET_ADMIN; sudo is easiest for the spike)
-//	sudo -E ./hsh-tunnel
+//	# Run (requires CAP_NET_ADMIN; sudo is easiest for dev)
+//	sudo -E ./hsh-tunneld
 //
 //	# Or grant the capability once and run unprivileged:
-//	sudo setcap cap_net_admin+ep ./hsh-tunnel
-//	./hsh-tunnel
+//	sudo setcap cap_net_admin+ep ./hsh-tunneld
+//	./hsh-tunneld
 package main
 
 import (
@@ -41,6 +46,7 @@ import (
 	"syscall"
 
 	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/version"
 
 	"github.com/hoophq/hoop/tunnel/addressing"
 	"github.com/hoophq/hoop/tunnel/client"
@@ -50,6 +56,17 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 )
+
+// userAgent returns the User-Agent value the daemon presents on its
+// outbound gRPC dials. It includes the build version so gateway-side
+// audit logs can tell apart different daemon revisions.
+func userAgent() string {
+	v := version.Get().Version
+	if v == "" {
+		v = "unknown"
+	}
+	return fmt.Sprintf("hsh-tunneld/%s", v)
+}
 
 func main() {
 	tld := flag.String("tld", resolver.DefaultTLD, "TLD owned by the tunnel (HSH_TUNNEL_DOMAIN overrides)")
@@ -61,7 +78,7 @@ func main() {
 		*tld = env
 	}
 
-	logger := log.New(os.Stderr, "hsh-tunnel ", log.LstdFlags|log.Lmicroseconds)
+	logger := log.New(os.Stderr, "hsh-tunneld ", log.LstdFlags|log.Lmicroseconds)
 
 	if err := run(logger, *tld, *devName, *sessionSeed); err != nil {
 		logger.Fatal(err)
@@ -219,7 +236,7 @@ func makeTCPHandler(
 		err := client.DialAndPipe(context.Background(), conn, client.PipeOptions{
 			GatewayConfig:  gatewayCfg,
 			ConnectionName: name,
-			UserAgent:      "hsh-tunnel/spike",
+			UserAgent:      userAgent(),
 		})
 		if err != nil {
 			logger.Printf("pipe %s closed: %v", name, err)

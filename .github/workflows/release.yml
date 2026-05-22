@@ -176,6 +176,11 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=amd64 make build-go
 
+      - name: Build hsh-tunneld (darwin/amd64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=amd64 make build-hsh-tunneld
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
@@ -220,6 +225,11 @@ jobs:
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=arm64 make build-go
+
+      - name: Build hsh-tunneld (darwin/arm64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=arm64 make build-hsh-tunneld
 
       - uses: actions/upload-artifact@v4
         with:
@@ -266,6 +276,11 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=amd64 make build-go
 
+      - name: Build hsh-tunneld (windows/amd64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=windows GOARCH=amd64 make build-hsh-tunneld
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
@@ -310,6 +325,11 @@ jobs:
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=arm64 make build-go
+
+      - name: Build hsh-tunneld (windows/arm64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=windows GOARCH=arm64 make build-hsh-tunneld
 
       - uses: actions/upload-artifact@v4
         with:
@@ -360,6 +380,15 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=amd64 make build-go
 
+      - name: Build hsh-tunneld (linux/amd64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
+        run: GOOS=linux GOARCH=amd64 make build-hsh-tunneld
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
@@ -408,6 +437,15 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=arm64 make build-go
+
+      - name: Build hsh-tunneld (linux/arm64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
+        run: GOOS=linux GOARCH=arm64 make build-hsh-tunneld
 
       - uses: actions/upload-artifact@v4
         with:
@@ -735,6 +773,12 @@ jobs:
     needs:
       - docker-publish-hoopgateway-multiarch
       - docker-publish-hoopagent-multiarch
+    permissions:
+      # gh release create / upload needs write access. The job already
+      # uses secrets.GH_TOKEN (a PAT) for cross-repo work; this permission
+      # block belt-and-suspenders the default GITHUB_TOKEN for any step
+      # that prefers it.
+      contents: write
 
     steps:
       - name: Checkout Hoop
@@ -783,6 +827,38 @@ jobs:
           make release-s3
           make release-s3-latest
           make release-s3-cf-templates-latest
+
+      # Create a GitHub Release with the hsh-tunneld binaries for all 6 targets.
+      #
+      # The release is consumed by the hoophq/hsh repo's build pipeline, which
+      # downloads the matching hsh-tunneld binary per target and bundles it
+      # alongside the bun-compiled `hsh` CLI. SHA256SUMS lets the hsh build
+      # verify integrity.
+      #
+      # Idempotency: if a release already exists for this tag (e.g. workflow
+      # re-run), upload the assets to it instead of failing the run.
+      - name: Publish GitHub Release (hsh-tunneld)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |-
+          make build-release-checksums
+          # Sanity-check: 6 binaries + SHA256SUMS == 7 files.
+          ls -lh dist/release-binaries/
+          if gh release view "$GIT_TAG" >/dev/null 2>&1; then
+            echo "Release $GIT_TAG already exists; uploading assets with --clobber."
+            gh release upload "$GIT_TAG" dist/release-binaries/* --clobber
+          else
+            # `--generate-notes` populates the release body from PRs merged
+            # since the previous tag. `--latest=false` keeps Brew / S3 in
+            # charge of marking the canonical latest; we just need the assets
+            # available at a predictable URL.
+            gh release create "$GIT_TAG" \
+              --title "$GIT_TAG" \
+              --generate-notes \
+              --latest=false \
+              dist/release-binaries/*
+          fi
 
       - name: Publish Brew Recipe
         run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
