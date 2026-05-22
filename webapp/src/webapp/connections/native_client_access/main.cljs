@@ -1,6 +1,6 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Spinner Tabs Text]]
    ["lucide-react" :refer [Info ShieldCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -389,19 +389,22 @@
          [:> Heading {:size "6" :as "h2" :class "text-[--gray-12]"}
           (str "Connect to " (:connection_name native-client-access-data))]
 
-         [:> Flex {:align "center" :gap "2"}
-          [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-           "Connection established, time left: "]
-          [timer/inline-timer
-           {:expire-at (:expire_at native-client-access-data)
-            :text-component (fn [timer-text]
-                              [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
-                               timer-text])
-            :on-complete (fn []
-                           (rf/dispatch [:native-client-access->clear-session connection-name])
-                           (rf/dispatch [:modal->close])
-                           (rf/dispatch [:show-snackbar {:level :info
-                                                         :text "Native client access session has expired."}]))}]]]
+         (if-let [expire-at (:expire_at native-client-access-data)]
+           [:> Flex {:align "center" :gap "2"}
+            [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+             "Connection established, time left: "]
+            [timer/inline-timer
+             {:expire-at expire-at
+              :text-component (fn [timer-text]
+                                [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
+                                 timer-text])
+              :on-complete (fn []
+                             (rf/dispatch [:native-client-access->clear-session connection-name])
+                             (rf/dispatch [:modal->close])
+                             (rf/dispatch [:show-snackbar {:level :info
+                                                           :text "Native client access session has expired."}]))}]]
+           [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+            "Connection established"])]
 
         (cond
           (= subtype "postgres")
@@ -486,6 +489,17 @@
      :on-click #(rf/dispatch [:modal->close])}
     "Close"]])
 
+(defn- requesting-credentials-view
+  "Loading state shown while the persistent credential is being issued for a
+   non-review connection."
+  [connection-name]
+  [:> Flex {:direction "column" :align "center" :justify "center" :gap "4" :class "h-full py-16"}
+   [:> Spinner {:size "3"}]
+   [:> Heading {:size "5" :as "h2" :class "text-[--gray-12]"}
+    (str "Connecting to " connection-name)]
+   [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+    "Generating native client credentials..."]])
+
 (defn minimize-modal-content [connection-name native-client-access-data]
   [:> Box {:class "min-w-32"}
    [:> Box {:class "space-y-2"}
@@ -507,18 +521,19 @@
         "httpproxy" "HTTP Proxy"
         (formatters/title-case
          (:connection_subtype native-client-access-data)))]]
-    [:> Box
-     [:> Text {:size "2" :class "text-[--gray-12]"}
-      "Time left: "]
-     [timer/inline-timer
-      {:expire-at (:expire_at native-client-access-data)
-       :text-component (fn [timer-text]
-                         [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-                          timer-text])
-       :on-complete (fn []
-                      (rf/dispatch [:native-client-access->clear-session connection-name])
-                      (rf/dispatch [:show-snackbar {:level :info
-                                                    :text "Native client access session has expired."}]))}]]]
+    (when-let [expire-at (:expire_at native-client-access-data)]
+      [:> Box
+       [:> Text {:size "2" :class "text-[--gray-12]"}
+        "Time left: "]
+       [timer/inline-timer
+        {:expire-at expire-at
+         :text-component (fn [timer-text]
+                           [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+                            timer-text])
+         :on-complete (fn []
+                        (rf/dispatch [:native-client-access->clear-session connection-name])
+                        (rf/dispatch [:show-snackbar {:level :info
+                                                      :text "Native client access session has expired."}]))}]])]
 
    [:> Box {:class "mt-4"}
     [:> Button
@@ -549,6 +564,9 @@
                           (:name connection-name-or-map))
         jit-duration-sec (when (map? connection-name-or-map)
                            (:jit_access_duration_sec connection-name-or-map))
+        reviewers (when (map? connection-name-or-map)
+                    (:reviewers connection-name-or-map))
+        requires-review? (or jit-duration-sec (seq reviewers))
         selected-duration (r/atom 30)
         requesting? (rf/subscribe [:native-client-access->requesting? connection-name])
         native-client-access-data (rf/subscribe [:native-client-access->current-session connection-name])
@@ -564,7 +582,14 @@
          #(minimize-modal connection-name)
          #(disconnect-session connection-name (:id @native-client-access-data))]
 
-        ;; Step 1: Configure session duration (no session)
+        ;; Non-review flow with no session yet: a persistent credential request
+        ;; is in flight (dispatched by :native-client-access->agent-status-check-success).
+        ;; Show a loading view until the credential arrives — the configure-session
+        ;; step is skipped entirely for these connections.
+        (and (not @native-client-access-data) (not requires-review?))
+        [requesting-credentials-view connection-name]
+
+        ;; Step 1: Configure session duration (review-required connections)
         (not @native-client-access-data)
         [configure-session-view connection-name selected-duration requesting? jit-duration-sec]
 

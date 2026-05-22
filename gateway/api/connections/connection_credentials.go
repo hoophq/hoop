@@ -30,6 +30,21 @@ import (
 
 var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code"}
 
+// noExpirySentinel is the expire_at value stored for credentials that should
+// not expire — the human "Open in Native Client" flow issues these when the
+// caller omits access_duration_seconds, matching the machine-identity flow in
+// gateway/services/credentials.go.
+const noExpirySentinel = "9999-12-31T00:00:00Z"
+
+func noExpiryTime() time.Time {
+	t, _ := time.Parse(time.RFC3339, noExpirySentinel)
+	return t
+}
+
+func isPersistentExpireAt(t time.Time) bool {
+	return t.Equal(noExpiryTime())
+}
+
 // CreateConnectionCredentials
 //
 //	@Summary		Create Connection Credentials
@@ -122,8 +137,14 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 	events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
 
-	// If review/JIT is required, create review record and return 202
+	// If review/JIT is required, create review record and return 202.
+	// Review-required connections always need a bounded access window — the
+	// configure-session step in the UI is responsible for supplying it.
 	if requiresReview {
+		if req.AccessDurationSec <= 0 {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
+			return
+		}
 		reviewID, err := createConnectionCredentialsReview(ctx, conn, accessRule, sid, req.AccessDurationSec)
 		if err != nil {
 			log.Errorf("failed creating review, err=%v", err)
@@ -132,6 +153,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		}
 
 		// Return 202 with session_id and review_id, NO credentials
+		reviewExpireAt := time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
 		c.JSON(202, &openapi.ConnectionCredentialsResponse{
 			ConnectionName:    conn.Name,
 			ConnectionType:    conn.Type,
@@ -140,15 +162,22 @@ func CreateConnectionCredentials(c *gin.Context) {
 			HasReview:         true,
 			ReviewID:          reviewID,
 			CreatedAt:         time.Now().UTC(),
-			ExpireAt:          time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second),
+			ExpireAt:          &reviewExpireAt,
 		})
 		return
 	}
 
-	expireAt := time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
-	if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
-		c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
-		return
+	// Non-review connections: if no duration is provided, issue a persistent
+	// credential (no expiration) — mirrors the machine-identity flow.
+	var expireAt time.Time
+	if req.AccessDurationSec > 0 {
+		expireAt = time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
+		if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
+			return
+		}
+	} else {
+		expireAt = noExpiryTime()
 	}
 
 	connType := proto.ConnectionType(conn.SubType.String)
@@ -732,6 +761,11 @@ func buildConnectionCredentialsResponse(
 	reviewID string) *openapi.ConnectionCredentialsResponse {
 	const dummyString = "hoop"
 
+	var expireAt *time.Time
+	if !isPersistentExpireAt(cred.ExpireAt) {
+		t := cred.ExpireAt
+		expireAt = &t
+	}
 	base := openapi.ConnectionCredentialsResponse{
 		ID:                cred.ID,
 		ConnectionType:    conn.Type,
@@ -741,7 +775,7 @@ func buildConnectionCredentialsResponse(
 		HasReview:         hasReview,
 		ReviewID:          reviewID,
 		CreatedAt:         cred.CreatedAt,
-		ExpireAt:          cred.ExpireAt,
+		ExpireAt:          expireAt,
 	}
 
 	connectionType := toConnectionType(cred.ConnectionType, conn.SubType.String)

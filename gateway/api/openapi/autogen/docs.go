@@ -10555,7 +10555,7 @@ const docTemplate = `{
                     "example": "2025-08-25T12:00:00Z"
                 },
                 "expire_at": {
-                    "description": "When the database access connection expires",
+                    "description": "When the database access connection expires. Null when the credential\nhas no expiration (persistent native-client credentials issued without\naccess_duration_seconds).",
                     "type": "string",
                     "example": "2025-08-25T13:00:00Z"
                 },
