@@ -1,0 +1,280 @@
+# Cross-language source of truth for the hsh-tunneld control plane.
+#
+# This file documents the local HTTP/JSON contract spoken by the
+# privileged hsh-tunneld daemon (in this repo) and consumed by the
+# unprivileged `hsh` CLI / tray (in hoophq/hsh).
+#
+# The Go implementation lives in spec.go, server.go, and client.go;
+# both must stay in lockstep with this document. If you change one,
+# change the other in the same PR.
+
+openapi: 3.1.0
+
+info:
+  title: hsh-tunneld control plane
+  version: 1.0.0
+  description: |
+    Local-only HTTP/JSON API the hsh-tunneld daemon exposes for
+    unprivileged UIs (CLI, tray, embedded web dashboard).
+
+    Transport is a Unix domain socket on Linux/macOS
+    (`/var/run/hsh.sock`) or a named pipe on Windows
+    (`\\.\pipe\hsh`). The listener never binds to a TCP port.
+
+    Authentication is a rotating bearer token. The daemon writes it to
+    `/var/run/hsh/control-token` (mode 0640, group `hsh`) at startup;
+    clients must read the token and present it on every request via
+    `Authorization: Bearer <token>`.
+
+servers:
+  - url: http://hsh-tunneld
+    description: |
+      Logical base URL. The host part is irrelevant because the
+      transport is local-only; clients dial the Unix socket / named
+      pipe directly.
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: control-token
+
+  schemas:
+    StatusResponse:
+      type: object
+      required: [running, logged_in, daemon_version]
+      properties:
+        running:
+          type: boolean
+          description: True when the daemon's tunnel loop is accepting flows.
+        logged_in:
+          type: boolean
+          description: True when a usable hoop access token is persisted.
+        since:
+          type: string
+          format: date-time
+          description: When the daemon entered its current Running state.
+        last_error:
+          type: string
+          description: Most recent non-fatal error, empty when clean.
+        daemon_version:
+          type: string
+          description: Build version of hsh-tunneld (common/version.Version).
+
+    Connection:
+      type: object
+      required: [name, subtype, virtual_ip, expected_port]
+      properties:
+        name:
+          type: string
+          description: Hoop connection name (no domain suffix).
+        subtype:
+          type: string
+          enum: [postgres, mysql, mssql, mongodb, oracledb, tcp]
+        virtual_ip:
+          type: string
+          description: ULA IPv6 address inside the tunnel /48.
+        expected_port:
+          type: integer
+          format: uint16
+          description: Canonical TCP port for the protocol; 0 for `tcp` subtype.
+
+    ConnectionsResponse:
+      type: object
+      required: [connections]
+      properties:
+        connections:
+          type: array
+          items: { $ref: "#/components/schemas/Connection" }
+
+    LoginStartResponse:
+      type: object
+      required: [browser_url, state]
+      properties:
+        browser_url:
+          type: string
+          format: uri
+          description: Gateway OIDC URL the user must open in a browser.
+        state:
+          type: string
+          description: Opaque token to pass back to /v1/login/poll.
+
+    LoginPollResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending, done, error]
+        error:
+          type: string
+          description: Set only when status == "error".
+
+    ConfigResponse:
+      type: object
+      required: [api_url, log_level]
+      properties:
+        api_url: { type: string, format: uri }
+        grpc_url: { type: string, format: uri }
+        log_level:
+          type: string
+          enum: [debug, info, warn, error]
+
+    ConfigUpdateRequest:
+      type: object
+      description: All fields optional; omitted ones are left untouched.
+      properties:
+        api_url: { type: string, format: uri }
+        grpc_url: { type: string, format: uri }
+        log_level: { type: string, enum: [debug, info, warn, error] }
+
+    ReconnectResponse:
+      type: object
+      required: [accepted]
+      properties:
+        accepted: { type: boolean }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable explanation.
+        code:
+          type: string
+          description: |
+            Machine-readable identifier. Known values:
+            - unauthorized
+            - bad_request
+            - not_found
+            - not_implemented
+            - internal
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotImplemented:
+      description: Endpoint advertised but not yet implemented in this daemon build.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    InternalError:
+      description: Unexpected daemon-side failure.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+paths:
+  /v1/status:
+    get:
+      summary: Snapshot of the daemon's current state.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/connections:
+    get:
+      summary: List of tunnelable connections exposed as *.hoop.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/login/start:
+    post:
+      summary: Start an OIDC login flow.
+      responses:
+        "200":
+          description: Started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginStartResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /v1/login/poll:
+    get:
+      summary: Poll the lifecycle of a login attempt.
+      parameters:
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginPollResponse" }
+        "400":
+          description: Missing or unknown state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /v1/logout:
+    post:
+      summary: Clear the persisted access token and drop active streams.
+      responses:
+        "204": { description: Logged out. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /v1/config:
+    get:
+      summary: Read the daemon-managed configuration (no token).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Partial config update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfigUpdateRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigResponse" }
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/reconnect:
+    post:
+      summary: Asynchronously tear down and re-establish gateway pipes.
+      responses:
+        "202":
+          description: Accepted; check /v1/status for the state transition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconnectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }

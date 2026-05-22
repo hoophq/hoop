@@ -42,14 +42,17 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/version"
 
 	"github.com/hoophq/hoop/tunnel/addressing"
 	"github.com/hoophq/hoop/tunnel/client"
+	"github.com/hoophq/hoop/tunnel/ipc"
 	"github.com/hoophq/hoop/tunnel/netstack"
 	"github.com/hoophq/hoop/tunnel/portmap"
 	"github.com/hoophq/hoop/tunnel/resolver"
@@ -72,6 +75,13 @@ func main() {
 	tld := flag.String("tld", resolver.DefaultTLD, "TLD owned by the tunnel (HSH_TUNNEL_DOMAIN overrides)")
 	devName := flag.String("dev", "", "TUN device name (kernel picks if empty)")
 	sessionSeed := flag.String("session", "spike-session", "session seed (controls the /48 prefix)")
+	// ipcSocket and ipcTokenFile control the local control plane (RD-215).
+	// Empty `--ipc-socket` skips the IPC layer entirely, which keeps the
+	// daemon usable for standalone dev / integration tests where the
+	// operator does not want to touch /var/run.
+	ipcSocket := flag.String("ipc-socket", "", "path of the IPC unix socket (empty disables IPC; default in production: "+ipc.DefaultSocketPathUnix+")")
+	ipcTokenFile := flag.String("ipc-token-file", "", "path of the control-token file (defaults to <dir-of-ipc-socket>/hsh/control-token)")
+	ipcGroup := flag.String("ipc-group", "", "OS group that owns the IPC socket (members can connect; empty leaves it owned by the daemon's primary group)")
 	flag.Parse()
 
 	if env := os.Getenv("HSH_TUNNEL_DOMAIN"); env != "" {
@@ -80,12 +90,34 @@ func main() {
 
 	logger := log.New(os.Stderr, "hsh-tunneld ", log.LstdFlags|log.Lmicroseconds)
 
-	if err := run(logger, *tld, *devName, *sessionSeed); err != nil {
+	cfg := runOptions{
+		tld:          *tld,
+		devName:      *devName,
+		sessionSeed:  *sessionSeed,
+		ipcSocket:    *ipcSocket,
+		ipcTokenFile: *ipcTokenFile,
+		ipcGroup:     *ipcGroup,
+	}
+	if err := run(logger, cfg); err != nil {
 		logger.Fatal(err)
 	}
 }
 
-func run(logger *log.Logger, tld, devName, sessionSeed string) error {
+// runOptions groups every configurable knob `run` cares about. Using a
+// struct here keeps the function signature stable as we add more
+// switches (login flags in RD-216, service-mode flags in RD-217).
+type runOptions struct {
+	tld         string
+	devName     string
+	sessionSeed string
+
+	// IPC control-plane knobs. Empty ipcSocket disables IPC entirely.
+	ipcSocket    string
+	ipcTokenFile string
+	ipcGroup     string
+}
+
+func run(logger *log.Logger, opts runOptions) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -96,7 +128,7 @@ func run(logger *log.Logger, tld, devName, sessionSeed string) error {
 	logger.Printf("gateway gRPC %s (insecure=%v, tls_skip_verify=%v) api %s",
 		gatewayCfg.ServerAddress, gatewayCfg.Insecure, gatewayCfg.TLSSkipVerify, apiBase)
 
-	alloc := addressing.New(sessionSeed)
+	alloc := addressing.New(opts.sessionSeed)
 	logger.Printf("session prefix %s gateway %s", alloc.Prefix(), alloc.Gateway())
 
 	// Fetch the connection list from the gateway's existing /api/connections
@@ -133,15 +165,29 @@ func run(logger *log.Logger, tld, devName, sessionSeed string) error {
 		if hasCanonical {
 			portDesc = fmt.Sprintf("port %d", port)
 		}
-		logger.Printf("  %s.%s (%s, %s) -> %s", c.Name, tld, c.SubType, portDesc, ip)
+		logger.Printf("  %s.%s (%s, %s) -> %s", c.Name, opts.tld, c.SubType, portDesc, ip)
 	}
 
+	// Build the daemon-side IPC service implementation BEFORE starting
+	// the netstack so the control plane can serve /v1/status (with
+	// Running=false) during initialisation. We flip the running flag
+	// after the netstack is fully wired.
+	svc := newDaemonService(alloc, subTypeByName, apiBase, os.Getenv("HOOP_GRPCURL"), gatewayCfg.Token != "")
+
+	// Start the IPC control plane in a goroutine if configured. Failure
+	// to start the IPC is logged but does not stop the daemon: the
+	// tunnel itself remains the primary product, and a missing control
+	// surface is recoverable by the operator. shutdownIPC is a no-op if
+	// IPC was disabled.
+	shutdownIPC := startIPCServer(ctx, logger, opts, svc)
+	defer shutdownIPC()
+
 	// Bring up the netstack + TUN device.
-	rsvr := resolver.New(alloc, tld)
+	rsvr := resolver.New(alloc, opts.tld)
 	ns, err := netstack.New(ctx, netstack.Options{
 		Prefix:     alloc.Prefix(),
 		Gateway:    alloc.Gateway(),
-		DeviceName: devName,
+		DeviceName: opts.devName,
 		TCPAccept:  makeAcceptFunc(logger, alloc, subTypeByName),
 		TCPHandler: makeTCPHandler(logger, alloc, subTypeByName, gatewayCfg),
 		DNSHandler: rsvr.HandleUDP,
@@ -157,19 +203,99 @@ func run(logger *log.Logger, tld, devName, sessionSeed string) error {
 	}
 	defer netstack.UnconfigureRoutes(actualDev, alloc.Prefix().String(), alloc.HostAddr().String())
 
+	// Netstack is up and accepting flows — surface that to the UI.
+	svc.MarkRunning()
+
 	logger.Printf("tunnel is up.")
 	logger.Printf("  host addr: %s (tun0)", alloc.HostAddr())
 	logger.Printf("  resolver:  %s:53 (gVisor)", alloc.Gateway())
-	logger.Printf("  try:       dig @%s %s.%s AAAA", alloc.Gateway(), conns[0].Name, tld)
+	logger.Printf("  try:       dig @%s %s.%s AAAA", alloc.Gateway(), conns[0].Name, opts.tld)
 	logger.Printf("")
-	logger.Printf("To route *.%s through this resolver host-wide (systemd-resolved):", tld)
+	logger.Printf("To route *.%s through this resolver host-wide (systemd-resolved):", opts.tld)
 	logger.Printf("  sudo resolvectl dns %s %s", actualDev, alloc.Gateway())
-	logger.Printf("  sudo resolvectl domain %s '~%s'", actualDev, tld)
-	logger.Printf("After that:  psql -h %s.%s ...   (or any *.%s host)", conns[0].Name, tld, tld)
+	logger.Printf("  sudo resolvectl domain %s '~%s'", actualDev, opts.tld)
+	logger.Printf("After that:  psql -h %s.%s ...   (or any *.%s host)", conns[0].Name, opts.tld, opts.tld)
 
 	<-ctx.Done()
 	logger.Printf("shutting down")
 	return nil
+}
+
+// startIPCServer brings up the local control plane if opts.ipcSocket
+// is set, otherwise returns a no-op shutdown closer. It returns
+// immediately after the listener is in place; serving runs in a
+// background goroutine.
+//
+// Errors from the IPC layer are non-fatal: the daemon's primary job is
+// the tunnel, and a degraded control plane is a configuration / perms
+// issue we want the operator to see in the logs without losing data
+// plane.
+func startIPCServer(ctx context.Context, logger *log.Logger, opts runOptions, svc *daemonService) func() {
+	if opts.ipcSocket == "" {
+		logger.Printf("IPC control plane disabled (no --ipc-socket)")
+		return func() {}
+	}
+
+	tokenPath := opts.ipcTokenFile
+	if tokenPath == "" {
+		// Default: /var/run/hsh/control-token (next to the socket).
+		tokenPath = filepath.Join(filepath.Dir(opts.ipcSocket), "hsh", "control-token")
+	}
+
+	store, err := ipc.NewFileTokenStore(tokenPath, ipc.FileTokenOptions{})
+	if err != nil {
+		logger.Printf("IPC disabled: %v", err)
+		return func() {}
+	}
+	if _, err := store.Rotate(); err != nil {
+		logger.Printf("IPC disabled: rotate token: %v", err)
+		return func() {}
+	}
+
+	srv, err := ipc.NewServer(ipc.ServerOptions{
+		Service:    svc,
+		TokenStore: store,
+		Logger:     logger,
+	})
+	if err != nil {
+		logger.Printf("IPC disabled: %v", err)
+		return func() {}
+	}
+
+	ln, err := ipc.Listen(ipc.ListenerOptions{
+		Path:      opts.ipcSocket,
+		GroupName: opts.ipcGroup,
+	})
+	if err != nil {
+		logger.Printf("IPC disabled: %v", err)
+		return func() {}
+	}
+	logger.Printf("IPC control plane listening at %s (token %s)", opts.ipcSocket, tokenPath)
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.Serve(ln)
+	}()
+
+	// Return a closer that performs an orderly shutdown. We give the
+	// server 5 seconds to drain in-flight requests; longer than that
+	// likely means a wedged client, which we'd rather drop than block
+	// the daemon's exit.
+	return func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Printf("IPC shutdown: %v", err)
+		}
+		// Best-effort remove of the socket file so a restart doesn't
+		// hit the stale-socket cleanup path.
+		_ = os.Remove(opts.ipcSocket)
+		// Drain the serve error so the goroutine can exit.
+		select {
+		case <-serveErr:
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // makeAcceptFunc returns the netstack accept-policy callback. It is
