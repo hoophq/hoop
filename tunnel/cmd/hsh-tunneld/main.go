@@ -52,6 +52,7 @@ import (
 
 	"github.com/hoophq/hoop/tunnel/addressing"
 	"github.com/hoophq/hoop/tunnel/client"
+	"github.com/hoophq/hoop/tunnel/daemonconfig"
 	"github.com/hoophq/hoop/tunnel/ipc"
 	"github.com/hoophq/hoop/tunnel/netstack"
 	"github.com/hoophq/hoop/tunnel/portmap"
@@ -82,10 +83,19 @@ func main() {
 	ipcSocket := flag.String("ipc-socket", "", "path of the IPC unix socket (empty disables IPC; default in production: "+ipc.DefaultSocketPathUnix+")")
 	ipcTokenFile := flag.String("ipc-token-file", "", "path of the control-token file (defaults to <dir-of-ipc-socket>/hsh/control-token)")
 	ipcGroup := flag.String("ipc-group", "", "OS group that owns the IPC socket (members can connect; empty leaves it owned by the daemon's primary group)")
+	// configFile is the daemon-managed TOML config: api_url, grpc_url,
+	// token, log_level (RD-216). HSH_TUNNELD_CONFIG env var overrides.
+	configFile := flag.String("config-file", "", "path of the daemon's TOML config (HSH_TUNNELD_CONFIG overrides; default: "+daemonconfig.DefaultConfigPathPlatform()+")")
 	flag.Parse()
 
 	if env := os.Getenv("HSH_TUNNEL_DOMAIN"); env != "" {
 		*tld = env
+	}
+	if env := os.Getenv("HSH_TUNNELD_CONFIG"); env != "" && *configFile == "" {
+		*configFile = env
+	}
+	if *configFile == "" {
+		*configFile = daemonconfig.DefaultConfigPathPlatform()
 	}
 
 	logger := log.New(os.Stderr, "hsh-tunneld ", log.LstdFlags|log.Lmicroseconds)
@@ -97,6 +107,7 @@ func main() {
 		ipcSocket:    *ipcSocket,
 		ipcTokenFile: *ipcTokenFile,
 		ipcGroup:     *ipcGroup,
+		configFile:   *configFile,
 	}
 	if err := run(logger, cfg); err != nil {
 		logger.Fatal(err)
@@ -115,13 +126,67 @@ type runOptions struct {
 	ipcSocket    string
 	ipcTokenFile string
 	ipcGroup     string
+
+	// configFile is the path of the daemon-managed TOML config file.
+	configFile string
 }
 
 func run(logger *log.Logger, opts runOptions) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	gatewayCfg, apiBase, err := loadConfig(ctx)
+	// Load the daemon-managed TOML config first. A missing file is the
+	// "fresh install" case — Load returns the zero Config and we
+	// proceed without a token. Env vars overlay any explicit values so
+	// dev/integration runs can still drive everything via HOOP_*.
+	fileCfg, err := daemonconfig.Load(opts.configFile)
+	if err != nil {
+		return fmt.Errorf("load config %q: %w", opts.configFile, err)
+	}
+	cfg := mergeConfigWithEnv(fileCfg)
+	logger.Printf("config: file=%s api_url=%q logged_in=%v", opts.configFile, cfg.APIURL, cfg.LoggedIn())
+
+	// Build the IPC-only service surface first; it serves /v1/status,
+	// /v1/login/start, etc. regardless of whether the netstack ever
+	// comes up. Login + config writes mutate this service's state and
+	// persist back to opts.configFile.
+	svc, err := newDaemonService(daemonServiceOptions{
+		ConfigPath:    opts.configFile,
+		InitialConfig: cfg,
+		OnLoginSuccess: func() {
+			logger.Printf("login successful — token persisted to %s", opts.configFile)
+			logger.Printf("  restart the daemon to apply the new token to the tunnel")
+		},
+		OnLogout: func() {
+			logger.Printf("logout — token cleared from %s", opts.configFile)
+			logger.Printf("  restart the daemon to take the tunnel down")
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("init service: %w", err)
+	}
+
+	// Start the IPC control plane. Returns a no-op shutdown closer
+	// when --ipc-socket is empty (dev / integration) so the rest of
+	// the function does not need to branch on that.
+	shutdownIPC := startIPCServer(ctx, logger, opts, svc)
+	defer shutdownIPC()
+
+	// Without a token, the daemon cannot dial the gateway. Stay alive
+	// so the operator can run `hsh login` against the IPC, but skip
+	// the netstack entirely. A future RD-209 will hot-start the
+	// netstack the moment a token arrives; until then "restart the
+	// daemon" is the documented next step.
+	if !cfg.LoggedIn() {
+		logger.Printf("not logged in — netstack will not start.")
+		logger.Printf("  run `hsh tunnel login` (or hsh login --tunnel) and then restart the daemon.")
+		<-ctx.Done()
+		logger.Printf("shutting down")
+		return nil
+	}
+
+	// We have a token: proceed with the full tunnel bring-up.
+	gatewayCfg, apiBase, err := buildGatewayConfig(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -168,19 +233,9 @@ func run(logger *log.Logger, opts runOptions) error {
 		logger.Printf("  %s.%s (%s, %s) -> %s", c.Name, opts.tld, c.SubType, portDesc, ip)
 	}
 
-	// Build the daemon-side IPC service implementation BEFORE starting
-	// the netstack so the control plane can serve /v1/status (with
-	// Running=false) during initialisation. We flip the running flag
-	// after the netstack is fully wired.
-	svc := newDaemonService(alloc, subTypeByName, apiBase, os.Getenv("HOOP_GRPCURL"), gatewayCfg.Token != "")
-
-	// Start the IPC control plane in a goroutine if configured. Failure
-	// to start the IPC is logged but does not stop the daemon: the
-	// tunnel itself remains the primary product, and a missing control
-	// surface is recoverable by the operator. shutdownIPC is a no-op if
-	// IPC was disabled.
-	shutdownIPC := startIPCServer(ctx, logger, opts, svc)
-	defer shutdownIPC()
+	// Wire the allocator + subtype map into the service so /v1/connections
+	// returns the live list.
+	svc.AttachTunnel(alloc, subTypeByName)
 
 	// Bring up the netstack + TUN device.
 	rsvr := resolver.New(alloc, opts.tld)
@@ -219,6 +274,59 @@ func run(logger *log.Logger, opts runOptions) error {
 	<-ctx.Done()
 	logger.Printf("shutting down")
 	return nil
+}
+
+// mergeConfigWithEnv overlays HOOP_* env vars on top of the file-loaded
+// config. Env wins so dev/integration runs can drive the daemon without
+// touching the persisted config. We do NOT write the env-supplied
+// values back to disk — the operator who set HOOP_TOKEN= in their
+// shell did so deliberately; persisting would be a surprise.
+func mergeConfigWithEnv(file daemonconfig.Config) daemonconfig.Config {
+	out := file
+	if v := os.Getenv("HOOP_APIURL"); v != "" {
+		out.APIURL = strings.TrimRight(v, "/")
+	}
+	if v := os.Getenv("HOOP_TOKEN"); v != "" {
+		out.Token = v
+	}
+	if v := os.Getenv("HOOP_GRPCURL"); v != "" {
+		out.GrpcURL = v
+	}
+	return out
+}
+
+// buildGatewayConfig converts the merged daemonconfig.Config into the
+// transport-level grpc.ClientConfig the netstack pipes use. The gRPC
+// URL may be auto-discovered from /api/serverinfo when not pinned.
+func buildGatewayConfig(ctx context.Context, cfg daemonconfig.Config) (grpc.ClientConfig, string, error) {
+	if cfg.APIURL == "" || cfg.Token == "" {
+		return grpc.ClientConfig{}, "", errors.New("api_url and token are required")
+	}
+	apiBase := strings.TrimRight(cfg.APIURL, "/")
+
+	grpcURL := cfg.GrpcURL
+	if grpcURL == "" {
+		si, err := client.FetchServerInfo(ctx, client.FetchServerInfoOptions{
+			APIBaseURL: apiBase,
+			Token:      cfg.Token,
+		})
+		if err != nil {
+			return grpc.ClientConfig{}, "", fmt.Errorf("fetch serverinfo: %w", err)
+		}
+		grpcURL = si.GrpcURL
+	}
+
+	srvAddr, err := grpc.ParseServerAddress(grpcURL)
+	if err != nil {
+		return grpc.ClientConfig{}, "", fmt.Errorf("parse gRPC URL %q: %w", grpcURL, err)
+	}
+	return grpc.ClientConfig{
+		ServerAddress: srvAddr,
+		Token:         cfg.Token,
+		Insecure:      isInsecureScheme(grpcURL),
+		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
+		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
+	}, apiBase, nil
 }
 
 // startIPCServer brings up the local control plane if opts.ipcSocket
@@ -370,44 +478,6 @@ func makeTCPHandler(
 		}
 		logger.Printf("pipe %s closed cleanly", name)
 	}
-}
-
-// loadConfig builds a gRPC client config using the same environment variables
-// the `hoop` CLI honors. HOOP_APIURL and HOOP_TOKEN are required. HOOP_GRPCURL
-// is optional: when absent the gRPC address is fetched from GET /api/serverinfo
-// automatically, which is the same mechanism the hoop CLI uses after login.
-func loadConfig(ctx context.Context) (grpc.ClientConfig, string, error) {
-	apiURL := os.Getenv("HOOP_APIURL")
-	token := os.Getenv("HOOP_TOKEN")
-	if apiURL == "" || token == "" {
-		return grpc.ClientConfig{}, "", errors.New("HOOP_APIURL and HOOP_TOKEN are required")
-	}
-	apiBase := strings.TrimRight(apiURL, "/")
-
-	grpcURL := os.Getenv("HOOP_GRPCURL")
-	if grpcURL == "" {
-		si, err := client.FetchServerInfo(ctx, client.FetchServerInfoOptions{
-			APIBaseURL: apiBase,
-			Token:      token,
-		})
-		if err != nil {
-			return grpc.ClientConfig{}, "", fmt.Errorf("fetch serverinfo: %w", err)
-		}
-		grpcURL = si.GrpcURL
-	}
-
-	srvAddr, err := grpc.ParseServerAddress(grpcURL)
-	if err != nil {
-		return grpc.ClientConfig{}, "", fmt.Errorf("parse gRPC URL %q: %w", grpcURL, err)
-	}
-	cfg := grpc.ClientConfig{
-		ServerAddress: srvAddr,
-		Token:         token,
-		Insecure:      isInsecureScheme(grpcURL),
-		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
-		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
-	}
-	return cfg, apiBase, nil
 }
 
 // isInsecureScheme returns true for schemes that use plain-text gRPC:

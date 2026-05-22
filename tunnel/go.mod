@@ -3,6 +3,7 @@ module github.com/hoophq/hoop/tunnel
 go 1.26.2
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/miekg/dns v1.1.72
 	golang.org/x/sys v0.44.0
