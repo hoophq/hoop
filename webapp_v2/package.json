@@ -17,6 +17,7 @@
     "@mantine/hooks": "^8.3.18",
     "@mantine/notifications": "^8.3.18",
     "@mantine/spotlight": "^8.3.18",
+    "@segment/analytics-next": "^1.64.0",
     "axios": "^1.13.5",
     "dayjs": "^1.11.20",
     "lucide-react": "^0.577.0",

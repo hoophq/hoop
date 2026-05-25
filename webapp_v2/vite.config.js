@@ -4,7 +4,8 @@ import path from 'path';
 
 export default defineConfig({
   define: {
-    __BUILD_ID__: JSON.stringify(Date.now().toString())
+    __BUILD_ID__: JSON.stringify(Date.now().toString()),
+    __SEGMENT_WRITE_KEY__: JSON.stringify(process.env.SEGMENT_WRITE_KEY || '043Lv52mAcoGOHWVq7n3bxZAVvocyqx0')
   },
   plugins: [react()],
   resolve: {

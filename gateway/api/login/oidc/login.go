@@ -502,7 +502,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	trackClient := analytics.New()
 	defer trackClient.Close()
 	if !isNewUser {
-		trackClient.Track(ctx.UserID, analytics.EventLogin, map[string]any{
+		trackClient.Track(ctx.UserSubject, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
@@ -513,14 +513,14 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	trackClient.Identify(&types.APIContext{
 		OrgID:          ctx.OrgID,
 		OrgLicenseData: &ctx.OrgLicenseData,
-		UserID:         ctx.UserID,
+		UserID:         ctx.UserSubject,
 		UserEmail:      ctx.UserEmail,
 		UserName:       ctx.UserName,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		trackClient.Track(ctx.UserID, analytics.EventSignup, map[string]any{
+		trackClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,

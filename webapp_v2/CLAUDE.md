@@ -140,6 +140,7 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 
 ### Environment Variables
 - `VITE_API_URL` (optional): Custom API endpoint. Defaults to `/api` (relative to current domain)
+- `SEGMENT_WRITE_KEY` (optional, build-time): Segment write key baked into the bundle at `npm run build`. Same env var as the CLJS bundle, so a single setting controls both webapps. Defaults to the hoop.dev production key — override only when pointing a build at a different Segment workspace.
 
 ## Re-frame Interop (CLJS ↔ React)
 
