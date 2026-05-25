@@ -27,7 +27,7 @@ type SessionAnalysisResult struct {
 	Explanation string
 }
 
-const sessionAnalyzerSystemPrompt = `You are a security-focused execution risk classifier for commands, scripts, and database queries.
+const SessionAnalyzerSystemPrompt = `You are a security-focused execution risk classifier for commands, scripts, and database queries.
 
 Goal: choose exactly ONE tool to call:
 - LowRiskAISessionAnalyzer
@@ -101,9 +101,9 @@ func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string, custom
 		return nil, fmt.Errorf("session analyzer: failed to create ai client: %w", err)
 	}
 
-	systemPrompt := sessionAnalyzerSystemPrompt
+	systemPrompt := SessionAnalyzerSystemPrompt
 	if customPrompt != nil && strings.TrimSpace(*customPrompt) != "" {
-		systemPrompt = sessionAnalyzerSystemPrompt + "\n\nAdditional instructions:\n" + strings.TrimSpace(*customPrompt)
+		systemPrompt = strings.TrimSpace(*customPrompt) + "\n\n" + SessionAnalyzerSystemPrompt
 	}
 
 	resp, err := client.Chat(ctx, aiclients.ChatRequest{

@@ -924,6 +924,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiai.DeleteSessionAnalyzerRule)
+	r.GET("/ai/session-analyzer/system-prompt",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerSystemPrompt)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,

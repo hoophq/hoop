@@ -53,3 +53,8 @@
  :ai-session-analyzer/active-rule
  (fn [db]
    (get-in db [:ai-session-analyzer :active-rule])))
+
+(rf/reg-sub
+ :ai-session-analyzer/system-prompt
+ (fn [db]
+   (get-in db [:ai-session-analyzer :system-prompt])))

@@ -2821,6 +2821,11 @@ type AISessionAnalyzerRiskTier struct {
 	AccessRequestRuleName *string `json:"access_request_rule_name,omitempty" example:"prod-approvals"`
 }
 
+type AISessionAnalyzerSystemPrompt struct {
+	// The read-only system prompt the gateway prepends before any custom_prompt configured on a rule
+	Prompt string `json:"prompt"`
+}
+
 type AISessionAnalyzerRiskEvaluation struct {
 	// Deprecated: use low_risk
 	LowRiskAction string `json:"low_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`

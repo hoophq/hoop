@@ -775,6 +775,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/ai/session-analyzer/system-prompt": {
+            "get": {
+                "description": "Returns the read-only system prompt that the gateway prepends before any custom_prompt configured on a rule",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Get AI Session Analyzer System Prompt",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerSystemPrompt"
+                        }
+                    }
+                }
+            }
+        },
         "/api-keys": {
             "get": {
                 "description": "List all API keys for the organization",
@@ -9424,6 +9444,15 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerSystemPrompt": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "description": "The read-only system prompt the gateway prepends before any custom_prompt configured on a rule",
+                    "type": "string"
                 }
             }
         },

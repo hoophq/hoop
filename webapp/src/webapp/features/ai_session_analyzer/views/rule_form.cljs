@@ -1,7 +1,7 @@
 (ns webapp.features.ai-session-analyzer.views.rule-form
   (:require
-   ["@radix-ui/themes" :refer [Avatar Badge Box Button Callout Card Flex Grid Heading Text]]
-   ["lucide-react" :refer [ArrowLeft Check Info ShieldCheck X]]
+   ["@radix-ui/themes" :refer [Avatar Badge Box Button Callout Card Flex Grid Heading IconButton Text Tooltip]]
+   ["lucide-react" :refer [ArrowLeft Check ChevronDown ChevronUp Copy Info ShieldCheck Sparkles X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -138,6 +138,63 @@
       (assoc tier :access_request_rule_name rule-name)
       tier)))
 
+(defn- system-prompt-preview []
+  (let [expanded? (r/atom false)
+        prompt-sub (rf/subscribe [:ai-session-analyzer/system-prompt])]
+    (rf/dispatch [:ai-session-analyzer/get-system-prompt])
+    (fn []
+      (let [{:keys [status data]} @prompt-sub
+            prompt-text (or data "")
+            loading? (= status :loading)
+            errored? (= status :error)]
+        [:> Box {:class "border border-[--gray-a6] rounded-3 bg-gray-2 overflow-hidden"}
+         [:button {:type "button"
+                   :on-click #(swap! expanded? not)
+                   :aria-expanded @expanded?
+                   :class "w-full flex items-center justify-between bg-transparent border-none px-4 py-3 cursor-pointer"}
+          [:> Flex {:align "center" :gap "2"}
+           [:> Sparkles {:size 14 :class "text-[--indigo-9]"}]
+           [:> Text {:size "2" :weight "medium" :class "text-[--gray-12]"}
+            "Hoop's appended system prompt"]
+           [:> Badge {:variant "soft" :color "gray" :radius "full" :size "1"}
+            "Read-only"]]
+          (if @expanded?
+            [:> ChevronUp {:size 14 :class "text-[--gray-11]"}]
+            [:> ChevronDown {:size 14 :class "text-[--gray-11]"}])]
+         (when @expanded?
+           [:> Box {:class "border-t border-[--gray-a6] bg-[--gray-12] text-[--gray-2] relative"
+                    :style {:padding "16px 18px"}}
+            (cond
+              loading?
+              [:> Text {:size "2" :class "text-[--gray-3]"} "Loading prompt..."]
+
+              errored?
+              [:> Text {:size "2" :class "text-[--red-9]"}
+               "Failed to load the system prompt. Refresh and try again."]
+
+              :else
+              [:<>
+               [:> Box {:class "absolute right-3 top-3"}
+                [:> Tooltip {:content "Copy to clipboard"}
+                 [:> IconButton {:size "1"
+                                 :variant "soft"
+                                 :color "gray"
+                                 :type "button"
+                                 :on-click (fn [e]
+                                             (.stopPropagation e)
+                                             (-> js/navigator
+                                                 .-clipboard
+                                                 (.writeText prompt-text))
+                                             (rf/dispatch [:show-snackbar
+                                                           {:level :success
+                                                            :text "System prompt copied to clipboard"}]))}
+                  [:> Copy {:size 12}]]]]
+               [:pre {:class "m-0 whitespace-pre-wrap text-[--gray-3]"
+                      :style {:font-family "var(--font-mono)"
+                              :font-size "12px"
+                              :line-height "1.6"}}
+                prompt-text]])])]))))
+
 (defn rule-form [form-type rule-data scroll-pos]
   (let [state (create-form-state rule-data)
         rule-loading? (rf/subscribe [:ai-session-analyzer/rule-loading?])
@@ -259,6 +316,26 @@
                                               selected-names (mapv #(:label %) selected-js-options)]
                                           (reset! (:connection-names state) selected-names)))}]]]
 
+          [:> Grid {:columns "7" :gap "7"}
+            [:> Box {:grid-column "span 2 / span 2"}
+             [:> Heading {:as "h3" :size "4"} "Custom analysis prompt"]
+             [:> Text {:size "3" :class "text-[--gray-11]"}
+              "Tell the model what to look for. Hoop appends a system prompt so the model always returns a low/medium/high grade."]]
+            [:> Box {:grid-column "span 5 / span 5" :class "space-y-radix-3"}
+             [forms/textarea
+              {:label "Your prompt (Optional)"
+               :placeholder "e.g. Treat any query that touches the payments schema as high risk."
+               :rows 6
+               :not-margin-bottom? true
+               :value @(:custom-prompt state)
+               :on-change #(reset! (:custom-prompt state) (-> % .-target .-value))}]
+             [:> Callout.Root {:size "1" :color "blue" :variant "soft"}
+              [:> Callout.Icon
+               [:> Info {:size 16}]]
+              [:> Callout.Text
+               "Hoop prepends a fixed system prompt before your instructions so the analyzer always returns a structured low/medium/high grade. This is what keeps the actions above reliable."]]
+             [system-prompt-preview]]]
+
            [:> Box {:class "space-y-radix-7"}
             [:> Grid {:columns "7" :gap "7"}
              [:> Box {:grid-column "span 7 / span 7"}
@@ -283,20 +360,7 @@
                                   :low (:low-risk-rule state)
                                   :medium (:medium-risk-rule state)
                                   :high (:high-risk-rule state))
-                :access-request-rules access-rules}])]
-
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4"} "Custom analysis prompt"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Tell the model what to look for. Hoop appends a system prompt so the model always returns a low/medium/high grade."]]
-            [:> Box {:grid-column "span 5 / span 5"}
-             [forms/textarea
-              {:label "Your prompt (Optional)"
-               :placeholder "e.g. Treat any query that touches the payments schema as high risk."
-               :rows 6
-               :value @(:custom-prompt state)
-               :on-change #(reset! (:custom-prompt state) (-> % .-target .-value))}]]]]]]))))
+                :access-request-rules access-rules}])]]]]))))
 
 (defn loading-view []
   [:> Flex {:justify "center" :align "center" :class "rounded-lg border bg-white h-full"}

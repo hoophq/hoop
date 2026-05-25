@@ -30,8 +30,6 @@ func validateProviderRequest(p openapi.AIProviderRequest) error {
 	}
 }
 
-const maxCustomPromptLength = 8192
-
 func validateRiskTier(orgID uuid.UUID, level string, tier openapi.AISessionAnalyzerRiskTier) error {
 	action := models.RiskEvaluationAction(tier.Action)
 	if !action.IsValid() {
@@ -85,10 +83,6 @@ func validateAnalyzerRuleRequest(orgID uuid.UUID, req openapi.AISessionAnalyzerR
 		return
 	}
 	if err = validateRiskTier(orgID, "high", high); err != nil {
-		return
-	}
-	if req.CustomPrompt != nil && len(*req.CustomPrompt) > maxCustomPromptLength {
-		err = fmt.Errorf("custom_prompt exceeds maximum length of %d characters", maxCustomPromptLength)
 		return
 	}
 	return
@@ -551,4 +545,18 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 	}
+}
+
+// GetSessionAnalyzerSystemPrompt
+//
+//	@Summary		Get AI Session Analyzer System Prompt
+//	@Description	Returns the read-only system prompt that the gateway prepends before any custom_prompt configured on a rule
+//	@Tags			AI
+//	@Produce		json
+//	@Success		200	{object}	openapi.AISessionAnalyzerSystemPrompt
+//	@Router			/ai/session-analyzer/system-prompt [get]
+func GetSessionAnalyzerSystemPrompt(c *gin.Context) {
+	c.JSON(http.StatusOK, openapi.AISessionAnalyzerSystemPrompt{
+		Prompt: SessionAnalyzerSystemPrompt,
+	})
 }
