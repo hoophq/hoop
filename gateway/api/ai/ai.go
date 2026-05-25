@@ -30,6 +30,87 @@ func validateProviderRequest(p openapi.AIProviderRequest) error {
 	}
 }
 
+const maxCustomPromptLength = 8192
+
+func validateRiskTier(orgID uuid.UUID, level string, tier openapi.AISessionAnalyzerRiskTier) error {
+	action := models.RiskEvaluationAction(tier.Action)
+	if !action.IsValid() {
+		return fmt.Errorf("%s_risk: invalid action %q", level, tier.Action)
+	}
+	if action == models.RequireAccessRequest {
+		if tier.AccessRequestRuleName == nil || *tier.AccessRequestRuleName == "" {
+			return fmt.Errorf("%s_risk: access_request_rule_name is required when action is require_access_request", level)
+		}
+		if _, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, orgID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("%s_risk: access request rule %q not found", level, *tier.AccessRequestRuleName)
+			}
+			return fmt.Errorf("%s_risk: failed validating access request rule: %w", level, err)
+		}
+		return nil
+	}
+	if tier.AccessRequestRuleName != nil && *tier.AccessRequestRuleName != "" {
+		return fmt.Errorf("%s_risk: access_request_rule_name is only allowed when action is require_access_request", level)
+	}
+	return nil
+}
+
+func resolveTier(level string, structured *openapi.AISessionAnalyzerRiskTier, legacy string) (openapi.AISessionAnalyzerRiskTier, error) {
+	if structured != nil && structured.Action != "" {
+		return *structured, nil
+	}
+	if legacy == "" {
+		return openapi.AISessionAnalyzerRiskTier{}, fmt.Errorf("%s_risk: action is required (set either %s_risk.action or the legacy %s_risk_action field)", level, level, level)
+	}
+	return openapi.AISessionAnalyzerRiskTier{Action: legacy}, nil
+}
+
+func validateAnalyzerRuleRequest(orgID uuid.UUID, req openapi.AISessionAnalyzerRuleRequest) (low, medium, high openapi.AISessionAnalyzerRiskTier, err error) {
+	low, err = resolveTier("low", req.RiskEvaluation.LowRisk, req.RiskEvaluation.LowRiskAction)
+	if err != nil {
+		return
+	}
+	medium, err = resolveTier("medium", req.RiskEvaluation.MediumRisk, req.RiskEvaluation.MediumRiskAction)
+	if err != nil {
+		return
+	}
+	high, err = resolveTier("high", req.RiskEvaluation.HighRisk, req.RiskEvaluation.HighRiskAction)
+	if err != nil {
+		return
+	}
+	if err = validateRiskTier(orgID, "low", low); err != nil {
+		return
+	}
+	if err = validateRiskTier(orgID, "medium", medium); err != nil {
+		return
+	}
+	if err = validateRiskTier(orgID, "high", high); err != nil {
+		return
+	}
+	if req.CustomPrompt != nil && len(*req.CustomPrompt) > maxCustomPromptLength {
+		err = fmt.Errorf("custom_prompt exceeds maximum length of %d characters", maxCustomPromptLength)
+		return
+	}
+	return
+}
+
+func toModelRiskTier(tier openapi.AISessionAnalyzerRiskTier) *models.AISessionAnalyzerRiskTier {
+	return &models.AISessionAnalyzerRiskTier{
+		Action:                models.RiskEvaluationAction(tier.Action),
+		AccessRequestRuleName: tier.AccessRequestRuleName,
+	}
+}
+
+func toOpenapiRiskTier(tier *models.AISessionAnalyzerRiskTier) *openapi.AISessionAnalyzerRiskTier {
+	if tier == nil {
+		return nil
+	}
+	return &openapi.AISessionAnalyzerRiskTier{
+		Action:                string(tier.Action),
+		AccessRequestRuleName: tier.AccessRequestRuleName,
+	}
+}
+
 // GetSessionAnalyzerProvider
 //
 //	@Summary		Get AI Session Analyzer Provider
@@ -251,6 +332,12 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
+	lowTier, mediumTier, highTier, err := validateAnalyzerRuleRequest(orgID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	foundRule, err := models.GetAIAnalyzerRulesByConnections(models.DB, orgID, req.ConnectionNames)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI analyzer rules by connections")
@@ -267,10 +354,11 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		Name:            req.Name,
 		Description:     req.Description,
 		ConnectionNames: req.ConnectionNames,
+		CustomPrompt:    req.CustomPrompt,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
-			LowRiskAction:    models.RiskEvaluationAction(req.RiskEvaluation.LowRiskAction),
-			MediumRiskAction: models.RiskEvaluationAction(req.RiskEvaluation.MediumRiskAction),
-			HighRiskAction:   models.RiskEvaluationAction(req.RiskEvaluation.HighRiskAction),
+			LowRisk:    toModelRiskTier(lowTier),
+			MediumRisk: toModelRiskTier(mediumTier),
+			HighRisk:   toModelRiskTier(highTier),
 		},
 	}
 
@@ -281,9 +369,9 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 	case nil:
 		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleCreated, map[string]interface{}{
 			"org-id":             rule.OrgID,
-			"low-risk-action":    rule.RiskEvaluation.LowRiskAction,
-			"medium-risk-action": rule.RiskEvaluation.MediumRiskAction,
-			"high-risk-action":   rule.RiskEvaluation.HighRiskAction,
+			"low-risk-action":    rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action,
+			"medium-risk-action": rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action,
+			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
 		c.JSON(http.StatusCreated, toSessionAnalyzerRuleResponse(rule))
 	default:
@@ -322,6 +410,12 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
+	lowTier, mediumTier, highTier, err := validateAnalyzerRuleRequest(orgID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	foundRule, err := models.GetAIAnalyzerRulesByConnections(models.DB, orgID, req.ConnectionNames)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI analyzer rules by connections: %v", err)
@@ -338,10 +432,11 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		Name:            c.Param("name"),
 		Description:     req.Description,
 		ConnectionNames: req.ConnectionNames,
+		CustomPrompt:    req.CustomPrompt,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
-			LowRiskAction:    models.RiskEvaluationAction(req.RiskEvaluation.LowRiskAction),
-			MediumRiskAction: models.RiskEvaluationAction(req.RiskEvaluation.MediumRiskAction),
-			HighRiskAction:   models.RiskEvaluationAction(req.RiskEvaluation.HighRiskAction),
+			LowRisk:    toModelRiskTier(lowTier),
+			MediumRisk: toModelRiskTier(mediumTier),
+			HighRisk:   toModelRiskTier(highTier),
 		},
 	}
 
@@ -352,9 +447,9 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 	case nil:
 		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleUpdated, map[string]interface{}{
 			"org-id":             rule.OrgID,
-			"low-risk-action":    rule.RiskEvaluation.LowRiskAction,
-			"medium-risk-action": rule.RiskEvaluation.MediumRiskAction,
-			"high-risk-action":   rule.RiskEvaluation.HighRiskAction,
+			"low-risk-action":    rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action,
+			"medium-risk-action": rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action,
+			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
 
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
@@ -436,15 +531,22 @@ func GetConnectionAnalyzerRule(c *gin.Context) {
 }
 
 func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AISessionAnalyzerRule {
+	lowTier := r.RiskEvaluation.Tier(models.RiskLevelKeyLow)
+	mediumTier := r.RiskEvaluation.Tier(models.RiskLevelKeyMedium)
+	highTier := r.RiskEvaluation.Tier(models.RiskLevelKeyHigh)
 	return openapi.AISessionAnalyzerRule{
 		ID:              r.ID.String(),
 		Name:            r.Name,
 		Description:     r.Description,
 		ConnectionNames: r.ConnectionNames,
+		CustomPrompt:    r.CustomPrompt,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
-			LowRiskAction:    string(r.RiskEvaluation.LowRiskAction),
-			MediumRiskAction: string(r.RiskEvaluation.MediumRiskAction),
-			HighRiskAction:   string(r.RiskEvaluation.HighRiskAction),
+			LowRiskAction:    string(lowTier.Action),
+			MediumRiskAction: string(mediumTier.Action),
+			HighRiskAction:   string(highTier.Action),
+			LowRisk:          toOpenapiRiskTier(&lowTier),
+			MediumRisk:       toOpenapiRiskTier(&mediumTier),
+			HighRisk:         toOpenapiRiskTier(&highTier),
 		},
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,

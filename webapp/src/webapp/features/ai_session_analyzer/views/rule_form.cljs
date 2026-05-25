@@ -1,7 +1,7 @@
 (ns webapp.features.ai-session-analyzer.views.rule-form
   (:require
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Callout Card Flex Grid Heading Text]]
-   ["lucide-react" :refer [ArrowLeft Check Info X]]
+   ["lucide-react" :refer [ArrowLeft Check Info ShieldCheck X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -16,7 +16,7 @@
    {:key :medium
     :label "Medium risk"
     :description "Activities that may modify data, configuration, or runtime behavior in a scoped or limited way."
-    :recommended "allow_execution"}
+    :recommended "require_access_request"}
    {:key :high
     :label "High risk"
     :description "Activities that suggest potentially destructive, irreversible, privilege-altering, or security-sensitive behavior."
@@ -47,44 +47,103 @@
        "Recommended"])]])
 
 (defn- risk-level-section
-  [{:keys [risk-level action-atom]}]
-  [:> Grid {:columns "7" :gap "7"}
-   [:> Box {:grid-column "span 2 / span 2"}
-    [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-     (:label risk-level)]
-    [:> Text {:size "3" :class "text-[--gray-11]"}
-     (:description risk-level)]]
+  [{:keys [risk-level action-atom rule-name-atom access-request-rules]}]
+  (let [action @action-atom
+        rule-options (mapv (fn [r] {:value (:name r) :text (:name r)})
+                           (or access-request-rules []))]
+    [:> Grid {:columns "7" :gap "7"}
+     [:> Box {:grid-column "span 2 / span 2"}
+      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+       (:label risk-level)]
+      [:> Text {:size "3" :class "text-[--gray-11]"}
+       (:description risk-level)]]
 
-   [:> Box {:grid-column "span 5 / span 5" :class "space-y-radix-3"}
-    [risk-selection-card
-     {:icon (r/as-element [:> Check {:size 16}])
-      :title "Allow execution"
-      :description "User activity will proceed normally."
-      :selected? (= @action-atom "allow_execution")
-      :recommended? (= (:recommended risk-level) "allow_execution")
-      :on-click #(reset! action-atom "allow_execution")}]
-    [risk-selection-card
-     {:icon (r/as-element [:> X {:size 16}])
-      :title "Block execution"
-      :description "User activity will be blocked."
-      :selected? (= @action-atom "block_execution")
-      :recommended? (= (:recommended risk-level) "block_execution")
-      :on-click #(reset! action-atom "block_execution")}]]])
+     [:> Box {:grid-column "span 5 / span 5" :class "space-y-radix-3"}
+      [risk-selection-card
+       {:icon (r/as-element [:> Check {:size 16}])
+        :title "Allow execution"
+        :description "User activity will proceed normally."
+        :selected? (= action "allow_execution")
+        :recommended? (= (:recommended risk-level) "allow_execution")
+        :on-click (fn []
+                    (reset! action-atom "allow_execution")
+                    (reset! rule-name-atom nil))}]
+      [risk-selection-card
+       {:icon (r/as-element [:> X {:size 16}])
+        :title "Block execution"
+        :description "User activity will be blocked."
+        :selected? (= action "block_execution")
+        :recommended? (= (:recommended risk-level) "block_execution")
+        :on-click (fn []
+                    (reset! action-atom "block_execution")
+                    (reset! rule-name-atom nil))}]
+      [risk-selection-card
+       {:icon (r/as-element [:> ShieldCheck {:size 16}])
+        :title "Require access request"
+        :description "User activity will wait for an access request approval before running."
+        :selected? (= action "require_access_request")
+        :recommended? (= (:recommended risk-level) "require_access_request")
+        :on-click #(reset! action-atom "require_access_request")}]
+      (when (= action "require_access_request")
+        [:> Box {:class "pl-4"}
+         (if (empty? rule-options)
+           [:> Callout.Root {:size "1" :color "amber"}
+            [:> Callout.Icon
+             [:> Info {:size 16}]]
+            [:> Callout.Text
+             "No access request rules are configured. Create one in Access Control before selecting this action."]]
+           [forms/select
+            {:label "Access request rule"
+             :required true
+             :full-width? true
+             :not-margin-bottom? true
+             :placeholder "Select an access request rule"
+             :options rule-options
+             :selected (or @rule-name-atom "")
+             :on-change #(reset! rule-name-atom %)}])])]]))
+
+(defn- tier-from-risk [risk level-key legacy-key default-action]
+  (let [tier (get risk level-key)
+        action (or (:action tier)
+                   (get risk legacy-key)
+                   default-action)
+        rule-name (:access_request_rule_name tier)]
+    [action rule-name]))
+
+(def ^:private recommended-by-key
+  (into {} (map (juxt :key :recommended)) risk-levels))
 
 (defn- create-form-state [initial-data]
   (let [rule (or initial-data {})
-        risk (or (:risk_evaluation rule) {})]
+        risk (or (:risk_evaluation rule) {})
+        [low-action low-rule] (tier-from-risk risk :low_risk :low_risk_action (recommended-by-key :low))
+        [medium-action medium-rule] (tier-from-risk risk :medium_risk :medium_risk_action (recommended-by-key :medium))
+        [high-action high-rule] (tier-from-risk risk :high_risk :high_risk_action (recommended-by-key :high))]
     {:name (r/atom (or (:name rule) ""))
      :description (r/atom (or (:description rule) ""))
      :connection-names (r/atom (or (:connection_names rule) []))
-     :low-risk-action (r/atom (or (:low_risk_action risk) "allow_execution"))
-     :medium-risk-action (r/atom (or (:medium_risk_action risk) "allow_execution"))
-     :high-risk-action (r/atom (or (:high_risk_action risk) "block_execution"))}))
+     :custom-prompt (r/atom (or (:custom_prompt rule) ""))
+     :low-risk-action (r/atom low-action)
+     :low-risk-rule (r/atom low-rule)
+     :medium-risk-action (r/atom medium-action)
+     :medium-risk-rule (r/atom medium-rule)
+     :high-risk-action (r/atom high-action)
+     :high-risk-rule (r/atom high-rule)}))
+
+(defn- build-tier [action-atom rule-name-atom]
+  (let [action @action-atom
+        rule-name @rule-name-atom
+        tier {:action action}]
+    (if (and (= action "require_access_request") (seq rule-name))
+      (assoc tier :access_request_rule_name rule-name)
+      tier)))
 
 (defn rule-form [form-type rule-data scroll-pos]
   (let [state (create-form-state rule-data)
         rule-loading? (rf/subscribe [:ai-session-analyzer/rule-loading?])
-        connections (rf/subscribe [:connections->pagination])]
+        connections (rf/subscribe [:connections->pagination])
+        access-rules-sub (rf/subscribe [:access-request/rules])]
+    (rf/dispatch [:access-request/list-rules])
     (fn []
       (let [selected-connection-names @(:connection-names state)
             conns (or (:data @connections) [])
@@ -96,21 +155,33 @@
                                             selected-connection-names)
             connection-ids (mapv (fn [name]
                                    (or (:id (get conn-by-name name)) name))
-                                 selected-connection-names)]
+                                 selected-connection-names)
+            access-rules (or @access-rules-sub [])
+            low-tier (build-tier (:low-risk-action state) (:low-risk-rule state))
+            medium-tier (build-tier (:medium-risk-action state) (:medium-risk-rule state))
+            high-tier (build-tier (:high-risk-action state) (:high-risk-rule state))
+            require-rule-missing? (some (fn [tier]
+                                          (and (= (:action tier) "require_access_request")
+                                               (not (seq (:access_request_rule_name tier)))))
+                                        [low-tier medium-tier high-tier])]
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:id "ai-session-analyzer-rule-form"
                  :on-submit (fn [e]
                               (.preventDefault e)
-                              (let [payload {:name @(:name state)
-                                             :description (when (seq @(:description state))
-                                                            @(:description state))
-                                             :connection_names @(:connection-names state)
-                                             :risk_evaluation {:low_risk_action @(:low-risk-action state)
-                                                               :medium_risk_action @(:medium-risk-action state)
-                                                               :high_risk_action @(:high-risk-action state)}}]
-                                (if (= :edit form-type)
-                                  (rf/dispatch [:ai-session-analyzer/update-rule @(:name state) payload])
-                                  (rf/dispatch [:ai-session-analyzer/create-rule payload]))))}
+                              (when-not require-rule-missing?
+                                (let [trimmed-prompt (when (seq @(:custom-prompt state))
+                                                       (.trim @(:custom-prompt state)))
+                                      payload {:name @(:name state)
+                                               :description (when (seq @(:description state))
+                                                              @(:description state))
+                                               :connection_names @(:connection-names state)
+                                               :risk_evaluation {:low_risk low-tier
+                                                                 :medium_risk medium-tier
+                                                                 :high_risk high-tier}
+                                               :custom_prompt (when (seq trimmed-prompt) trimmed-prompt)}]
+                                  (if (= :edit form-type)
+                                    (rf/dispatch [:ai-session-analyzer/update-rule @(:name state) payload])
+                                    (rf/dispatch [:ai-session-analyzer/create-rule payload])))))}
 
           [:<>
            [:> Flex {:p "5" :gap "2"}
@@ -149,7 +220,7 @@
                  "Delete"])
               [:> Button {:size "3"
                           :loading @rule-loading?
-                          :disabled @rule-loading?
+                          :disabled (or @rule-loading? require-rule-missing?)
                           :type "submit"}
                "Save"]]]]]
 
@@ -207,7 +278,25 @@
                 :action-atom (case (:key level)
                                :low (:low-risk-action state)
                                :medium (:medium-risk-action state)
-                               :high (:high-risk-action state))}])]]]]))))
+                               :high (:high-risk-action state))
+                :rule-name-atom (case (:key level)
+                                  :low (:low-risk-rule state)
+                                  :medium (:medium-risk-rule state)
+                                  :high (:high-risk-rule state))
+                :access-request-rules access-rules}])]
+
+           [:> Grid {:columns "7" :gap "7"}
+            [:> Box {:grid-column "span 2 / span 2"}
+             [:> Heading {:as "h3" :size "4"} "Custom analysis prompt"]
+             [:> Text {:size "3" :class "text-[--gray-11]"}
+              "Tell the model what to look for. Hoop appends a system prompt so the model always returns a low/medium/high grade."]]
+            [:> Box {:grid-column "span 5 / span 5"}
+             [forms/textarea
+              {:label "Your prompt (Optional)"
+               :placeholder "e.g. Treat any query that touches the payments schema as high risk."
+               :rows 6
+               :value @(:custom-prompt state)
+               :on-change #(reset! (:custom-prompt state) (-> % .-target .-value))}]]]]]]))))
 
 (defn loading-view []
   [:> Flex {:justify "center" :align "center" :class "rounded-lg border bg-white h-full"}

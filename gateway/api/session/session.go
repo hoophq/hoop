@@ -59,37 +59,50 @@ type SessionPostBody struct {
 	CorrelationID  *string                   `json:"correlation_id"`
 }
 
-func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*models.SessionAIAnalysis, error) {
+func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*models.SessionAIAnalysis, *models.AccessRequestRule, error) {
 	aiAnalyzerRule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, connName)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
+		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
+	}
+	if aiAnalyzerRule == nil {
+		return nil, nil, nil
 	}
 
-	if aiAnalyzerRule != nil {
-		analyzerRes, err := apiai.AnalyzeSession(ctx, orgID, script)
-		if err != nil {
-			return nil, fmt.Errorf("failed analyzing session, reason: %w", err)
-		}
-
-		var action models.RiskEvaluationAction
-		switch analyzerRes.RiskLevel {
-		case apiai.RiskLevelHigh:
-			action = aiAnalyzerRule.RiskEvaluation.HighRiskAction
-		case apiai.RiskLevelMedium:
-			action = aiAnalyzerRule.RiskEvaluation.MediumRiskAction
-		case apiai.RiskLevelLow:
-			action = aiAnalyzerRule.RiskEvaluation.LowRiskAction
-		}
-
-		return &models.SessionAIAnalysis{
-			RiskLevel:   string(analyzerRes.RiskLevel),
-			Title:       analyzerRes.Title,
-			Explanation: analyzerRes.Explanation,
-			Action:      string(action),
-		}, nil
+	analyzerRes, err := apiai.AnalyzeSession(ctx, orgID, script, aiAnalyzerRule.CustomPrompt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
 
-	return nil, nil
+	var levelKey models.RiskLevelKey
+	switch analyzerRes.RiskLevel {
+	case apiai.RiskLevelHigh:
+		levelKey = models.RiskLevelKeyHigh
+	case apiai.RiskLevelMedium:
+		levelKey = models.RiskLevelKeyMedium
+	case apiai.RiskLevelLow:
+		levelKey = models.RiskLevelKeyLow
+	}
+	tier := aiAnalyzerRule.RiskEvaluation.Tier(levelKey)
+
+	analysis := &models.SessionAIAnalysis{
+		RiskLevel:   string(analyzerRes.RiskLevel),
+		Title:       analyzerRes.Title,
+		Explanation: analyzerRes.Explanation,
+		Action:      string(tier.Action),
+	}
+
+	if tier.Action != models.RequireAccessRequest {
+		return analysis, nil, nil
+	}
+
+	if tier.AccessRequestRuleName == nil || *tier.AccessRequestRuleName == "" {
+		return analysis, nil, fmt.Errorf("ai analyzer rule %q has require_access_request action without access_request_rule_name for risk %q", aiAnalyzerRule.Name, analyzerRes.RiskLevel)
+	}
+	accessRule, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, orgID)
+	if err != nil {
+		return analysis, nil, fmt.Errorf("ai analyzer rule %q references access request rule %q that could not be loaded: %w", aiAnalyzerRule.Name, *tier.AccessRequestRuleName, err)
+	}
+	return analysis, accessRule, nil
 }
 
 func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
@@ -189,8 +202,40 @@ func Post(c *gin.Context) {
 		EndSession:           nil,
 	}
 
+	if conn.JiraIssueTemplateID.String != "" {
+		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira issue template for %v: %v", conn.Name, err)
+			return
+		}
+		if jiraConfig != nil && jiraConfig.IsActive() {
+			if req.JiraFields == nil {
+				req.JiraFields = map[string]string{}
+			}
+			jiraFields, err := jira.ParseIssueFields(issueTemplate, req.JiraFields, newSession)
+			switch err.(type) {
+			case *jira.ErrInvalidIssueFields:
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			case nil:
+			default:
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields: %v", err)
+				return
+			}
+			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
+			if err != nil {
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request: %v", err)
+				return
+			}
+			newSession.IntegrationsMetadata = map[string]any{
+				"jira_issue_key": resp.IssueKey,
+				"jira_issue_url": resp.Links.Agent,
+			}
+		}
+	}
+
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	analyzeRes, err := AIAnalyze(c, orgID, conn.Name, req.Script)
+	analyzeRes, aiAccessRule, err := AIAnalyze(c, orgID, conn.Name, req.Script)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
 		return
@@ -200,6 +245,7 @@ func Post(c *gin.Context) {
 		newSession.AIAnalysis = analyzeRes
 
 		shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+		requireReview := analyzeRes.Action == string(models.RequireAccessRequest)
 		if shouldBlock {
 			newSession.Status = string(openapi.SessionStatusDone)
 			newSession.ExitCode = &internalExitCode
@@ -231,37 +277,35 @@ func Post(c *gin.Context) {
 			})
 			return
 		}
-	}
 
-	if conn.JiraIssueTemplateID.String != "" {
-		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira issue template for %v: %v", conn.Name, err)
-			return
-		}
-		if jiraConfig != nil && jiraConfig.IsActive() {
-			if req.JiraFields == nil {
-				req.JiraFields = map[string]string{}
-			}
-			jiraFields, err := jira.ParseIssueFields(issueTemplate, req.JiraFields, newSession)
-			switch err.(type) {
-			case *jira.ErrInvalidIssueFields:
-				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-				return
-			case nil:
-			default:
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields: %v", err)
+		if requireReview {
+			if aiAccessRule == nil {
+				httputils.AbortWithErr(c, http.StatusInternalServerError,
+					fmt.Errorf("ai analyzer requested review without resolving access request rule"),
+					"failed creating ai-driven review")
 				return
 			}
-			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
+			review, err := CreateReviewFromAIAnalysis(orgID, sid, conn.Name,
+				AIReviewRequester{
+					UserID:       ctx.UserID,
+					UserEmail:    ctx.UserEmail,
+					UserName:     ctx.UserName,
+					UserSlackID:  ctx.SlackID,
+					ConnectionID: conn.ID,
+				},
+				aiAccessRule, req.Script, req.EnvVars, req.ClientArgs)
 			if err != nil {
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request: %v", err)
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating ai-driven review")
 				return
 			}
-			newSession.IntegrationsMetadata = map[string]any{
-				"jira_issue_key": resp.IssueKey,
-				"jira_issue_url": resp.Links.Agent,
-			}
+			events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
+			c.JSON(http.StatusAccepted, clientexec.Response{
+				HasReview:  true,
+				Output:     fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
+				SessionID:  sid,
+				AIAnalysis: toOpenApiSessionAIAnalysis(analyzeRes),
+			})
+			return
 		}
 	}
 

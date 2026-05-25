@@ -9246,32 +9246,82 @@ const docTemplate = `{
         "openapi.AISessionAnalyzerRiskEvaluation": {
             "type": "object",
             "properties": {
+                "high_risk": {
+                    "description": "Tier configuration for high-risk sessions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskTier"
+                        }
+                    ]
+                },
                 "high_risk_action": {
-                    "description": "Action for high-risk sessions",
+                    "description": "Deprecated: use high_risk",
                     "type": "string",
                     "enum": [
                         "allow_execution",
-                        "block_execution"
+                        "block_execution",
+                        "require_access_request"
                     ],
                     "example": "block_execution"
                 },
+                "low_risk": {
+                    "description": "Tier configuration for low-risk sessions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskTier"
+                        }
+                    ]
+                },
                 "low_risk_action": {
-                    "description": "Action for low-risk sessions",
+                    "description": "Deprecated: use low_risk",
                     "type": "string",
                     "enum": [
                         "allow_execution",
-                        "block_execution"
+                        "block_execution",
+                        "require_access_request"
                     ],
                     "example": "allow_execution"
                 },
+                "medium_risk": {
+                    "description": "Tier configuration for medium-risk sessions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskTier"
+                        }
+                    ]
+                },
                 "medium_risk_action": {
-                    "description": "Action for medium-risk sessions",
+                    "description": "Deprecated: use medium_risk",
                     "type": "string",
                     "enum": [
                         "allow_execution",
-                        "block_execution"
+                        "block_execution",
+                        "require_access_request"
                     ],
                     "example": "allow_execution"
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerRiskTier": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "access_request_rule_name": {
+                    "description": "Name of the access request rule that supplies approver groups when action is require_access_request",
+                    "type": "string",
+                    "example": "prod-approvals"
+                },
+                "action": {
+                    "description": "Action to take when the AI classifies a session at this risk level",
+                    "type": "string",
+                    "enum": [
+                        "allow_execution",
+                        "block_execution",
+                        "require_access_request"
+                    ],
+                    "example": "require_access_request"
                 }
             }
         },
@@ -9294,6 +9344,11 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "custom_prompt": {
+                    "description": "Optional extra instructions appended to the default system prompt",
+                    "type": "string",
+                    "example": "Treat any query that touches the payments schema as high risk."
                 },
                 "description": {
                     "description": "Optional description",
@@ -9346,6 +9401,11 @@ const docTemplate = `{
                         "pgdemo",
                         "mysql-prod"
                     ]
+                },
+                "custom_prompt": {
+                    "description": "Optional extra instructions appended to the default system prompt",
+                    "type": "string",
+                    "example": "Treat any query that touches the payments schema as high risk."
                 },
                 "description": {
                     "description": "Optional description",
