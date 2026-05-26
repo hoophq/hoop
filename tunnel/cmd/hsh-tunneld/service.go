@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/hoophq/hoop/common/version"
 
-	"github.com/hoophq/hoop/tunnel/addressing"
 	"github.com/hoophq/hoop/tunnel/daemonconfig"
 	"github.com/hoophq/hoop/tunnel/ipc"
 	"github.com/hoophq/hoop/tunnel/loginflow"
 	"github.com/hoophq/hoop/tunnel/portmap"
+	"github.com/hoophq/hoop/tunnel/tunnelmgr"
 )
 
 // daemonService implements ipc.Service against the running daemon's
@@ -24,28 +23,28 @@ import (
 //
 // State ownership:
 //
-//   - alloc + subTypeByName are immutable for the daemon's lifetime
-//     after MarkRunning fires. They may be nil if the daemon started
-//     without a token (fresh install): in that case Connections
-//     returns an empty list rather than failing, so the UI can still
-//     render a clean "no connections yet, please log in".
+//   - Manager owns the tunnel lifecycle (gateway dial, allocator,
+//     netstack, routes). The service reads from it via Snapshot()
+//     and asks it to BringUp / TearDown after login / logout.
 //
 //   - cfg, configPath, and loggedIn are mutable and protected by mu.
 //     The login / logout endpoints rewrite them and persist the
 //     config file atomically before flipping loggedIn.
 //
-//   - Reconnect is still 501 — bringing the netstack up after a fresh
-//     login requires the lazy-startup work in RD-209. For now, the
-//     operator restarts the daemon after `hsh tunnel login`.
+//   - lastError is set by login/bring-up failure paths and surfaced
+//     via /v1/status so the UI can render "tunnel won't come up
+//     because gateway is unreachable" without grep-ing daemon logs.
 type daemonService struct {
-	// Set once when the netstack is brought up. nil before login.
-	alloc         *addressing.Allocator
-	subTypeByName map[string]string
+	mgr *tunnelmgr.Manager
 
-	// Login flow. Non-nil for the daemon's full lifetime; opts.APIURL
-	// is updated when UpdateConfig sets a new api_url. (For now we
-	// rebuild the flow on apiURL changes — cheap, no listener bind
-	// happens until Start.)
+	// parentCtx is the daemon's root context; passed through to
+	// Manager.BringUp so any cancel from main propagates to the
+	// per-tunnel goroutines.
+	parentCtx context.Context
+
+	// Login flow. Non-nil whenever cfg.APIURL is set; rebuilt by
+	// UpdateConfig when api_url changes. Concurrency: loginMu
+	// serialises the (read flow → call Start) pattern.
 	loginMu sync.Mutex
 	login   *loginflow.Flow
 
@@ -53,26 +52,25 @@ type daemonService struct {
 	configPath string
 
 	mu        sync.RWMutex
-	since     time.Time
-	running   bool
 	lastError string
+	loggedIn  bool
+	cfg       daemonconfig.Config
 
-	// loggedIn mirrors `len(cfg.Token) > 0`. We keep a separate field
-	// rather than recomputing on every Status() call because Config
-	// also needs to render with cfg's APIURL+GrpcURL, and we want a
-	// single point of mutation under mu.
-	loggedIn bool
-	cfg      daemonconfig.Config
-
-	// hooks lets main.go observe transitions (e.g. "token changed,
-	// next user action should mention 'restart daemon'"). Optional;
-	// nil hooks are skipped.
-	onLoginSuccess func()
-	onLogout       func()
+	// hooks lets main.go observe transitions (e.g. "tunnel is up at
+	// IP X, here's the resolvectl hint"). Optional.
+	onTunnelUp   func(snap tunnelmgr.Snapshot)
+	onTunnelDown func()
 }
 
 // daemonServiceOptions configures newDaemonService.
 type daemonServiceOptions struct {
+	// Manager owns the tunnel lifecycle. Required.
+	Manager *tunnelmgr.Manager
+
+	// ParentContext is the daemon's root context, propagated into
+	// Manager.BringUp so cancellation works end-to-end.
+	ParentContext context.Context
+
 	// ConfigPath is where the daemon persists its TOML config. Empty
 	// means "do not persist" — only useful for in-process tests.
 	ConfigPath string
@@ -82,22 +80,31 @@ type daemonServiceOptions struct {
 	// boot in the "logged in" state.
 	InitialConfig daemonconfig.Config
 
-	// OnLoginSuccess fires after a token has been persisted. Used by
-	// main.go to log "restart the daemon to bring up the netstack"
-	// when the daemon was already running without a token.
-	OnLoginSuccess func()
+	// OnTunnelUp fires after Manager.BringUp succeeds — either at
+	// startup or right after a login completes. main.go uses it to
+	// print the resolvectl hint.
+	OnTunnelUp func(tunnelmgr.Snapshot)
 
-	// OnLogout fires after a token has been cleared.
-	OnLogout func()
+	// OnTunnelDown fires after Manager.TearDown completes — used
+	// today only for the logout path.
+	OnTunnelDown func()
 }
 
 func newDaemonService(opts daemonServiceOptions) (*daemonService, error) {
+	if opts.Manager == nil {
+		return nil, errors.New("daemonService: Manager is required")
+	}
+	if opts.ParentContext == nil {
+		return nil, errors.New("daemonService: ParentContext is required")
+	}
 	s := &daemonService{
-		configPath:     opts.ConfigPath,
-		cfg:            opts.InitialConfig,
-		loggedIn:       opts.InitialConfig.LoggedIn(),
-		onLoginSuccess: opts.OnLoginSuccess,
-		onLogout:       opts.OnLogout,
+		mgr:          opts.Manager,
+		parentCtx:    opts.ParentContext,
+		configPath:   opts.ConfigPath,
+		cfg:          opts.InitialConfig,
+		loggedIn:     opts.InitialConfig.LoggedIn(),
+		onTunnelUp:   opts.OnTunnelUp,
+		onTunnelDown: opts.OnTunnelDown,
 	}
 	if opts.InitialConfig.APIURL != "" {
 		flow, err := loginflow.New(loginflow.Options{
@@ -112,28 +119,6 @@ func newDaemonService(opts daemonServiceOptions) (*daemonService, error) {
 	return s, nil
 }
 
-// AttachTunnel wires the allocator + subtype map into the service after
-// the netstack is brought up. Called from run() once the tunnel is
-// fully operational, alongside MarkRunning.
-func (s *daemonService) AttachTunnel(alloc *addressing.Allocator, subTypeByName map[string]string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.alloc = alloc
-	s.subTypeByName = subTypeByName
-}
-
-// MarkRunning is called by the daemon once the netstack is up and the
-// TUN device is accepting flows. Idempotent.
-func (s *daemonService) MarkRunning() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.running {
-		return
-	}
-	s.running = true
-	s.since = time.Now()
-}
-
 // SetLastError lets the daemon's hot paths report transient errors
 // (e.g. gRPC dial failure on a single TCP flow) for the UI to surface.
 // Pass "" to clear after a successful recovery.
@@ -143,14 +128,43 @@ func (s *daemonService) SetLastError(msg string) {
 	s.lastError = msg
 }
 
+// BringUpFromConfig is invoked by main.go at startup when the config
+// has a token. It is a thin wrapper around Manager.BringUp that also
+// updates the service's lastError on failure.
+func (s *daemonService) BringUpFromConfig() error {
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+	if !cfg.LoggedIn() {
+		return errors.New("daemonService: BringUpFromConfig: not logged in")
+	}
+	if err := s.mgr.BringUp(s.parentCtx, cfg); err != nil {
+		s.SetLastError(err.Error())
+		return err
+	}
+	s.SetLastError("")
+	if s.onTunnelUp != nil {
+		s.onTunnelUp(s.mgr.Snapshot())
+	}
+	return nil
+}
+
 // persistTokenFromLogin is the OnSuccess callback handed to the login
-// flow. It writes the new token to the daemon's TOML config under mu
-// so a racing Config() / Status() never observes a half-applied state.
+// flow. It writes the new token to the daemon's TOML config and then
+// (RD-216 hot-reload) brings up the tunnel in-process — no daemon
+// restart needed.
+//
+// Failure modes:
+//   - Disk write failure → returned to the loginflow, surfaced in the
+//     browser tab as "daemon failed to persist", flow ends in Error.
+//   - Tunnel bring-up failure → token IS persisted (so next daemon
+//     restart will retry) but lastError is set and the function
+//     returns an error so the browser tab learns about it. This is
+//     the right trade-off: a successful gateway login proves the
+//     token works; an immediate bring-up failure is more likely a
+//     transient network or permission issue than bad credentials.
 func (s *daemonService) persistTokenFromLogin(token string) error {
 	s.mu.Lock()
-	// Construct the new config first; only swap it in after the disk
-	// write succeeds so a write failure leaves the in-memory state
-	// untouched.
 	next := s.cfg
 	next.Token = token
 	s.mu.Unlock()
@@ -166,8 +180,18 @@ func (s *daemonService) persistTokenFromLogin(token string) error {
 	s.loggedIn = true
 	s.mu.Unlock()
 
-	if s.onLoginSuccess != nil {
-		s.onLoginSuccess()
+	// Hot-reload: try to bring the tunnel up with the new token.
+	// If the tunnel was already up (rare — login flow refuses
+	// concurrent attempts) we silently skip.
+	if s.mgr.State() == tunnelmgr.StateIdle {
+		if err := s.mgr.BringUp(s.parentCtx, next); err != nil {
+			s.SetLastError("bring up after login: " + err.Error())
+			return fmt.Errorf("bring up tunnel: %w", err)
+		}
+		s.SetLastError("")
+		if s.onTunnelUp != nil {
+			s.onTunnelUp(s.mgr.Snapshot())
+		}
 	}
 	return nil
 }
@@ -176,39 +200,35 @@ func (s *daemonService) persistTokenFromLogin(token string) error {
 
 func (s *daemonService) Status(context.Context) (ipc.StatusResponse, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	loggedIn := s.loggedIn
+	lastErr := s.lastError
+	s.mu.RUnlock()
+
+	snap := s.mgr.Snapshot()
 	return ipc.StatusResponse{
-		Running:       s.running,
-		LoggedIn:      s.loggedIn,
-		Since:         s.since,
-		LastError:     s.lastError,
+		Running:       snap.State == tunnelmgr.StateUp,
+		LoggedIn:      loggedIn,
+		Since:         snap.Since,
+		LastError:     lastErr,
 		DaemonVersion: version.Get().Version,
 	}, nil
 }
 
 func (s *daemonService) Connections(context.Context) ([]ipc.Connection, error) {
-	s.mu.RLock()
-	alloc := s.alloc
-	subTypeByName := s.subTypeByName
-	s.mu.RUnlock()
-
-	if alloc == nil {
-		// Fresh install (no token yet, or token loaded but the netstack
-		// hasn't come up yet). Empty list is the right answer; the UI
-		// distinguishes "no connections" from "not logged in" via
-		// /v1/status's logged_in field.
+	snap := s.mgr.Snapshot()
+	if snap.Allocator == nil {
 		return []ipc.Connection{}, nil
 	}
 
-	names := alloc.Names()
+	names := snap.Allocator.Names()
 	sort.Strings(names)
 	out := make([]ipc.Connection, 0, len(names))
 	for _, name := range names {
-		ip, ok := alloc.LookupName(name)
+		ip, ok := snap.Allocator.LookupName(name)
 		if !ok {
 			continue
 		}
-		subType := subTypeByName[name]
+		subType := snap.SubTypeByName[name]
 		port, _ := portmap.CanonicalPort(subType)
 		out = append(out, ipc.Connection{
 			Name:         name,
@@ -276,8 +296,6 @@ func (s *daemonService) LoginPoll(_ context.Context, state string) (ipc.LoginPol
 	}
 	result, ok := flow.Poll(state)
 	if !ok {
-		// Unknown state — either a typo or the daemon restarted
-		// between Start and Poll. The UI should re-Start.
 		return ipc.LoginPollResponse{Status: ipc.LoginPollStatus("error"), Error: "unknown state; restart login"}, nil
 	}
 	return ipc.LoginPollResponse{
@@ -303,8 +321,18 @@ func (s *daemonService) Logout(context.Context) error {
 	s.loggedIn = false
 	s.mu.Unlock()
 
-	if s.onLogout != nil {
-		s.onLogout()
+	// Hot tear-down: drop the live tunnel so the connection list
+	// vanishes immediately and any in-flight gRPC pipes terminate.
+	// We log and ignore TearDown errors — there is no useful recovery
+	// path and we already cleared the token, so the user's intent
+	// (be logged out) is preserved.
+	if err := s.mgr.TearDown(); err != nil {
+		s.SetLastError("tear down after logout: " + err.Error())
+	} else {
+		s.SetLastError("")
+	}
+	if s.onTunnelDown != nil {
+		s.onTunnelDown()
 	}
 	return nil
 }
@@ -343,10 +371,6 @@ func (s *daemonService) UpdateConfig(_ context.Context, req ipc.ConfigUpdateRequ
 		}
 	}
 
-	// Rebuild the login flow if the api_url changed (or first set).
-	// We intentionally do this even if a previous flow is mid-attempt
-	// — Start will refuse to launch a new one until the old one
-	// resolves, which is the right user-visible behaviour.
 	if req.APIURL != nil && next.APIURL != "" {
 		newFlow, err := loginflow.New(loginflow.Options{
 			APIURL:    next.APIURL,
@@ -376,9 +400,12 @@ func (s *daemonService) UpdateConfig(_ context.Context, req ipc.ConfigUpdateRequ
 }
 
 func (s *daemonService) Reconnect(context.Context) error {
-	// Full reconnect involves tearing down all active gRPC streams and
-	// re-fetching the connection list. That logic ships with RD-209.
-	// For now the endpoint is advertised but returns 501 so the UI can
-	// surface "restart the daemon to apply changes" instead of crashing.
+	// True reconnect (drop in-flight streams, refetch connections,
+	// rebind TUN) needs the lifecycle plumbing that lands with RD-209.
+	// In the current build we have hot login + logout via TearDown /
+	// BringUp; a forced reconnect would just be TearDown+BringUp here,
+	// but exposing that on a fully-up tunnel is a different question
+	// (active flows would be dropped) so we hold off until that ticket.
 	return ipc.ErrNotImplemented
 }
+

@@ -35,11 +35,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
-	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -47,18 +45,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/version"
 
-	"github.com/hoophq/hoop/tunnel/addressing"
-	"github.com/hoophq/hoop/tunnel/client"
 	"github.com/hoophq/hoop/tunnel/daemonconfig"
 	"github.com/hoophq/hoop/tunnel/ipc"
-	"github.com/hoophq/hoop/tunnel/netstack"
-	"github.com/hoophq/hoop/tunnel/portmap"
 	"github.com/hoophq/hoop/tunnel/resolver"
-
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"github.com/hoophq/hoop/tunnel/tunnelmgr"
 )
 
 // userAgent returns the User-Agent value the daemon presents on its
@@ -146,20 +138,37 @@ func run(logger *log.Logger, opts runOptions) error {
 	cfg := mergeConfigWithEnv(fileCfg)
 	logger.Printf("config: file=%s api_url=%q logged_in=%v", opts.configFile, cfg.APIURL, cfg.LoggedIn())
 
-	// Build the IPC-only service surface first; it serves /v1/status,
-	// /v1/login/start, etc. regardless of whether the netstack ever
-	// comes up. Login + config writes mutate this service's state and
-	// persist back to opts.configFile.
+	// Build the lifecycle owner. The Manager handles every operation
+	// that touches the netstack / gateway / route table; main.go only
+	// triggers it via the daemonService.
+	mgr, err := tunnelmgr.New(tunnelmgr.Options{
+		Logger:        logger,
+		SessionSeed:   opts.sessionSeed,
+		TLD:           opts.tld,
+		DeviceName:    opts.devName,
+		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
+		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
+		UserAgent:     userAgent(),
+	})
+	if err != nil {
+		return fmt.Errorf("init tunnelmgr: %w", err)
+	}
+
+	// Build the IPC-only service surface. /v1/status, /v1/login/start
+	// etc. serve regardless of whether the netstack ever comes up;
+	// login + config writes mutate this service's state and persist
+	// back to opts.configFile. The service also drives Manager.BringUp
+	// after a successful login (no daemon restart required).
 	svc, err := newDaemonService(daemonServiceOptions{
+		Manager:       mgr,
+		ParentContext: ctx,
 		ConfigPath:    opts.configFile,
 		InitialConfig: cfg,
-		OnLoginSuccess: func() {
-			logger.Printf("login successful — token persisted to %s", opts.configFile)
-			logger.Printf("  restart the daemon to apply the new token to the tunnel")
+		OnTunnelUp: func(snap tunnelmgr.Snapshot) {
+			printTunnelUpBanner(logger, snap, opts.tld)
 		},
-		OnLogout: func() {
-			logger.Printf("logout — token cleared from %s", opts.configFile)
-			logger.Printf("  restart the daemon to take the tunnel down")
+		OnTunnelDown: func() {
+			logger.Printf("tunnel torn down — netstack and routes released")
 		},
 	})
 	if err != nil {
@@ -172,107 +181,31 @@ func run(logger *log.Logger, opts runOptions) error {
 	shutdownIPC := startIPCServer(ctx, logger, opts, svc)
 	defer shutdownIPC()
 
-	// Without a token, the daemon cannot dial the gateway. Stay alive
-	// so the operator can run `hsh login` against the IPC, but skip
-	// the netstack entirely. A future RD-209 will hot-start the
-	// netstack the moment a token arrives; until then "restart the
-	// daemon" is the documented next step.
-	if !cfg.LoggedIn() {
+	// If we already have a token, bring the tunnel up immediately at
+	// startup. A failure here is logged + recorded as lastError on
+	// the service so /v1/status surfaces it; we DO NOT exit — the
+	// operator may want to use `hsh tunnel logout` + `hsh tunnel
+	// login` to recover without a restart.
+	if cfg.LoggedIn() {
+		if err := svc.BringUpFromConfig(); err != nil {
+			logger.Printf("startup bring-up failed: %v", err)
+			logger.Printf("  the IPC plane stays up; use `hsh tunnel logout` + `hsh tunnel login` to recover")
+		}
+	} else {
 		logger.Printf("not logged in — netstack will not start.")
-		logger.Printf("  run `hsh tunnel login` (or hsh login --tunnel) and then restart the daemon.")
-		<-ctx.Done()
-		logger.Printf("shutting down")
-		return nil
+		logger.Printf("  run `hsh tunnel login` (the tunnel will come up automatically when you finish).")
 	}
 
-	// We have a token: proceed with the full tunnel bring-up.
-	gatewayCfg, apiBase, err := buildGatewayConfig(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	logger.Printf("gateway gRPC %s (insecure=%v, tls_skip_verify=%v) api %s",
-		gatewayCfg.ServerAddress, gatewayCfg.Insecure, gatewayCfg.TLSSkipVerify, apiBase)
-
-	alloc := addressing.New(opts.sessionSeed)
-	logger.Printf("session prefix %s gateway %s", alloc.Prefix(), alloc.Gateway())
-
-	// Fetch the connection list from the gateway's existing /api/connections
-	// endpoint. We allocate IPs for every tunnelable name up-front so the
-	// resolver can answer without any per-query gateway round-trip.
-	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
-		APIBaseURL: apiBase,
-		Token:      gatewayCfg.Token,
-	})
-	if err != nil {
-		return fmt.Errorf("fetch connections: %w", err)
-	}
-	if len(conns) == 0 {
-		return errors.New("no tunnelable connections found for this user")
-	}
-	// subTypeByName lets the TCP handler look up the connection subtype
-	// (postgres, mysql, ...) from the name resolved out of the destination
-	// IP. We keep this map alongside the allocator rather than embedding
-	// the subtype inside it: the allocator's responsibility is name <-> IP,
-	// and conflating concerns would bleed protocol semantics into a pure
-	// addressing component.
-	subTypeByName := make(map[string]string, len(conns))
-	for _, c := range conns {
-		if _, err := alloc.AddName(c.Name); err != nil {
-			return fmt.Errorf("allocate %s: %w", c.Name, err)
-		}
-		subTypeByName[c.Name] = c.SubType
-	}
-	logger.Printf("loaded %d tunnelable connection(s):", len(conns))
-	for _, c := range conns {
-		ip, _ := alloc.LookupName(c.Name)
-		port, hasCanonical := portmap.CanonicalPort(c.SubType)
-		portDesc := "any port"
-		if hasCanonical {
-			portDesc = fmt.Sprintf("port %d", port)
-		}
-		logger.Printf("  %s.%s (%s, %s) -> %s", c.Name, opts.tld, c.SubType, portDesc, ip)
-	}
-
-	// Wire the allocator + subtype map into the service so /v1/connections
-	// returns the live list.
-	svc.AttachTunnel(alloc, subTypeByName)
-
-	// Bring up the netstack + TUN device.
-	rsvr := resolver.New(alloc, opts.tld)
-	ns, err := netstack.New(ctx, netstack.Options{
-		Prefix:     alloc.Prefix(),
-		Gateway:    alloc.Gateway(),
-		DeviceName: opts.devName,
-		TCPAccept:  makeAcceptFunc(logger, alloc, subTypeByName),
-		TCPHandler: makeTCPHandler(logger, alloc, subTypeByName, gatewayCfg),
-		DNSHandler: rsvr.HandleUDP,
-	})
-	if err != nil {
-		return fmt.Errorf("netstack: %w", err)
-	}
-	defer ns.Close()
-
-	actualDev := ns.DeviceName()
-	if err := netstack.ConfigureRoutes(actualDev, alloc.Prefix().String(), alloc.HostAddr().String()); err != nil {
-		return fmt.Errorf("configure routes: %w", err)
-	}
-	defer netstack.UnconfigureRoutes(actualDev, alloc.Prefix().String(), alloc.HostAddr().String())
-
-	// Netstack is up and accepting flows — surface that to the UI.
-	svc.MarkRunning()
-
-	logger.Printf("tunnel is up.")
-	logger.Printf("  host addr: %s (tun0)", alloc.HostAddr())
-	logger.Printf("  resolver:  %s:53 (gVisor)", alloc.Gateway())
-	logger.Printf("  try:       dig @%s %s.%s AAAA", alloc.Gateway(), conns[0].Name, opts.tld)
-	logger.Printf("")
-	logger.Printf("To route *.%s through this resolver host-wide (systemd-resolved):", opts.tld)
-	logger.Printf("  sudo resolvectl dns %s %s", actualDev, alloc.Gateway())
-	logger.Printf("  sudo resolvectl domain %s '~%s'", actualDev, opts.tld)
-	logger.Printf("After that:  psql -h %s.%s ...   (or any *.%s host)", conns[0].Name, opts.tld, opts.tld)
-
+	// Block on signal. TearDown on shutdown is best-effort: the
+	// per-tunnel ctx is parented to ctx, so closing it cancels the
+	// gVisor goroutines anyway. We still call TearDown explicitly so
+	// the routes get unconfigured (otherwise tun0 is left behind with
+	// its /128 host address until the kernel reaps it).
 	<-ctx.Done()
 	logger.Printf("shutting down")
+	if err := mgr.TearDown(); err != nil {
+		logger.Printf("teardown: %v", err)
+	}
 	return nil
 }
 
@@ -295,38 +228,35 @@ func mergeConfigWithEnv(file daemonconfig.Config) daemonconfig.Config {
 	return out
 }
 
-// buildGatewayConfig converts the merged daemonconfig.Config into the
-// transport-level grpc.ClientConfig the netstack pipes use. The gRPC
-// URL may be auto-discovered from /api/serverinfo when not pinned.
-func buildGatewayConfig(ctx context.Context, cfg daemonconfig.Config) (grpc.ClientConfig, string, error) {
-	if cfg.APIURL == "" || cfg.Token == "" {
-		return grpc.ClientConfig{}, "", errors.New("api_url and token are required")
-	}
-	apiBase := strings.TrimRight(cfg.APIURL, "/")
-
-	grpcURL := cfg.GrpcURL
-	if grpcURL == "" {
-		si, err := client.FetchServerInfo(ctx, client.FetchServerInfoOptions{
-			APIBaseURL: apiBase,
-			Token:      cfg.Token,
-		})
-		if err != nil {
-			return grpc.ClientConfig{}, "", fmt.Errorf("fetch serverinfo: %w", err)
+// printTunnelUpBanner emits the multi-line "tunnel is up" log block
+// the operator sees after either a startup bring-up or a successful
+// hot-login. Kept separate from the lifecycle code so the banner can
+// evolve without churning tunnelmgr.
+func printTunnelUpBanner(logger *log.Logger, snap tunnelmgr.Snapshot, tld string) {
+	logger.Printf("tunnel is up.")
+	logger.Printf("  host addr: %s (%s)", snap.HostAddr, snap.DeviceName)
+	logger.Printf("  resolver:  %s:53 (gVisor)", snap.Gateway)
+	logger.Printf("")
+	// Pick the first known connection name (sorted for stability) to
+	// suggest a concrete `dig` invocation. Empty allocator → skip the
+	// hint rather than print "@... .<tld>" with a blank name.
+	if snap.Allocator != nil {
+		names := snap.Allocator.Names()
+		if len(names) > 0 {
+			first := names[0]
+			for _, n := range names[1:] {
+				if n < first {
+					first = n
+				}
+			}
+			logger.Printf("  try:       dig @%s %s.%s AAAA", snap.Gateway, first, tld)
+			logger.Printf("")
+			logger.Printf("To route *.%s through this resolver host-wide (systemd-resolved):", tld)
+			logger.Printf("  sudo resolvectl dns %s %s", snap.DeviceName, snap.Gateway)
+			logger.Printf("  sudo resolvectl domain %s '~%s'", snap.DeviceName, tld)
+			logger.Printf("After that:  psql -h %s.%s ...   (or any *.%s host)", first, tld, tld)
 		}
-		grpcURL = si.GrpcURL
 	}
-
-	srvAddr, err := grpc.ParseServerAddress(grpcURL)
-	if err != nil {
-		return grpc.ClientConfig{}, "", fmt.Errorf("parse gRPC URL %q: %w", grpcURL, err)
-	}
-	return grpc.ClientConfig{
-		ServerAddress: srvAddr,
-		Token:         cfg.Token,
-		Insecure:      isInsecureScheme(grpcURL),
-		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
-		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
-	}, apiBase, nil
 }
 
 // startIPCServer brings up the local control plane if opts.ipcSocket
@@ -406,84 +336,4 @@ func startIPCServer(ctx context.Context, logger *log.Logger, opts runOptions, sv
 	}
 }
 
-// makeAcceptFunc returns the netstack accept-policy callback. It is
-// consulted at SYN time, *before* the 3-way handshake completes:
-// returning false makes gVisor send a RST so the client sees a clean
-// ECONNREFUSED at the TCP layer.
-//
-// The policy is: drop SYNs to unallocated addresses, and drop SYNs that
-// target a port that doesn't match the connection subtype's canonical
-// port (e.g. `psql -h mysql-prod.hoop` lands on TCP/5432 against a MySQL
-// connection; we reject before opening the upstream).
-func makeAcceptFunc(
-	logger *log.Logger,
-	alloc *addressing.Allocator,
-	subTypeByName map[string]string,
-) netstack.AcceptFunc {
-	return func(localAddr netip.Addr, localPort uint16) bool {
-		name, ok := alloc.LookupAddr(localAddr)
-		if !ok {
-			logger.Printf("reject SYN %s:%d: unmapped address", localAddr, localPort)
-			return false
-		}
-		subType, ok := subTypeByName[name]
-		if !ok {
-			// Should never happen: every allocated name was inserted
-			// into subTypeByName at startup. Fail closed.
-			logger.Printf("reject SYN %s:%d -> %s: no subtype recorded", localAddr, localPort, name)
-			return false
-		}
-		if !portmap.IsAcceptedPort(subType, localPort) {
-			if expected, hasCanonical := portmap.CanonicalPort(subType); hasCanonical {
-				logger.Printf("reject SYN %s:%d -> %s (%s): wrong port, expected %d",
-					localAddr, localPort, name, subType, expected)
-			} else {
-				logger.Printf("reject SYN %s:%d -> %s (%s): port not allowed",
-					localAddr, localPort, name, subType)
-			}
-			return false
-		}
-		return true
-	}
-}
 
-// makeTCPHandler returns the netstack TCP forwarder callback. By the
-// time this runs, makeAcceptFunc has already validated the (addr, port)
-// pair, so all we need to do is resolve the name and open the per-flow
-// gRPC pipe.
-func makeTCPHandler(
-	logger *log.Logger,
-	alloc *addressing.Allocator,
-	subTypeByName map[string]string,
-	gatewayCfg grpc.ClientConfig,
-) netstack.Handler {
-	return func(conn *gonet.TCPConn, localAddr netip.Addr, localPort uint16) {
-		defer conn.Close()
-		name, ok := alloc.LookupAddr(localAddr)
-		if !ok {
-			// Defensive: makeAcceptFunc should have rejected this SYN.
-			logger.Printf("inbound TCP to unmapped address %s — dropping", localAddr)
-			return
-		}
-		subType := subTypeByName[name]
-		logger.Printf("accept %s:%d -> %s (%s)", localAddr, localPort, name, subType)
-		err := client.DialAndPipe(context.Background(), conn, client.PipeOptions{
-			GatewayConfig:  gatewayCfg,
-			ConnectionName: name,
-			UserAgent:      userAgent(),
-		})
-		if err != nil {
-			logger.Printf("pipe %s closed: %v", name, err)
-			return
-		}
-		logger.Printf("pipe %s closed cleanly", name)
-	}
-}
-
-// isInsecureScheme returns true for schemes that use plain-text gRPC:
-// "http://" or "grpc://". Everything else (bare HOST:PORT, "https://",
-// "grpcs://") implies TLS, matching the hoop CLI's hasInsecureScheme.
-func isInsecureScheme(grpcURL string) bool {
-	low := strings.ToLower(grpcURL)
-	return strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "grpc://")
-}
