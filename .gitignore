@@ -30,6 +30,13 @@ common/.idea/*
 # vendor/
 
 dist/
+# Release artifacts for the tunnel daemon live under tunnel/dist/; the
+# `scripts/` subtree is part of the published tarball (RD-226) and
+# must be tracked. Built tarballs / signed archives still stay
+# ignored via the broader `dist/` rule above.
+!tunnel/dist/
+!tunnel/dist/scripts/
+!tunnel/dist/scripts/**
 rootfs/app/ui
 build
 go.work.sum
