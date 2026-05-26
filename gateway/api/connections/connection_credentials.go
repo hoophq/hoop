@@ -108,6 +108,23 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	// Check if connection requires review/JIT approval
+	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
+
+	// Determine the audit status of the credential-issuance session.
+	// Persistent credentials (no review, no access_duration_seconds) mint a
+	// Done bookkeeping row immediately: this session is not bound to any TCP
+	// connection and would otherwise stay Open forever — per-connection audit
+	// rows are created by the proxy stack on each actual TCP connect. Bounded
+	// and review-required flows keep Open because they have a defined event
+	// that closes them (CloseExpiredCredentialSessions for bounded credentials,
+	// the review/connect flow for review-required ones). Mirrors the
+	// machine-identity pattern in gateway/services/credentials.go.
+	sessionStatus := openapi.SessionStatusOpen
+	if !requiresReview && req.AccessDurationSec <= 0 {
+		sessionStatus = openapi.SessionStatusDone
+	}
+
 	// Create session for audit trail
 	sid := uuid.NewString()
 	newSession := models.Session{
@@ -121,12 +138,9 @@ func CreateConnectionCredentials(c *gin.Context) {
 		ConnectionSubtype: conn.SubType.String,
 		ConnectionTags:    conn.ConnectionTags,
 		Verb:              proto.ClientVerbConnect,
-		Status:            string(openapi.SessionStatusOpen),
+		Status:            string(sessionStatus),
 		CreatedAt:         time.Now().UTC(),
 	}
-
-	// Check if connection requires review/JIT approval
-	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
 
 	// Persist session
 	if err := models.UpsertSession(newSession); err != nil {
