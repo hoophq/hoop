@@ -7,6 +7,7 @@ import ClojureApp from '@/components/ClojureApp'
 // React pages (migrated from ClojureScript)
 import Login from '@/pages/Auth/Login'
 import Signup from '@/pages/Auth/Signup'
+import Setup from '@/pages/Auth/Setup'
 import Register from '@/pages/Auth/Register'
 import AuthCallback from '@/pages/Auth/Callback'
 import SignupCallback from '@/pages/Auth/SignupCallback'
@@ -50,6 +51,7 @@ function Router() {
       {/* Public Auth Routes — no Layout, no auth required */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/setup" element={<Setup />} />
       <Route path="/register" element={<Register />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />

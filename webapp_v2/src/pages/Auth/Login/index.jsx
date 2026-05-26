@@ -86,6 +86,12 @@ function Login() {
       try {
         const serverInfo = await authService.getPublicServerInfo()
         const method = serverInfo.auth_method || 'local'
+
+        if (serverInfo.setup_required && method !== 'oidc') {
+          navigate('/setup', { replace: true })
+          return
+        }
+
         setAuthMethod(method)
 
         if (method !== 'local') {
