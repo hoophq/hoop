@@ -408,7 +408,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.Get)
-	r.DELETE("/connections/:name",
+	r.DELETE("/connections/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
@@ -430,6 +430,26 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
+
+	// IAM Federation: per-connection config (admin-only). The credentials
+	// payload contains an encrypted SA blob, so even read access is
+	// restricted to admins.
+	r.GET("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetConnectionFederationConfig)
+	r.PUT("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.PutConnectionFederationConfig)
+	r.DELETE("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.DeleteConnectionFederationConfig)
+	r.POST("/connections/:nameOrID/federation/test",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.TestConnectionFederationConfig)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,

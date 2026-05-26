@@ -557,6 +557,53 @@ func SetSessionCredentialsRevokedAt(orgID, sessionID string, revokedAt time.Time
 		}).Error
 }
 
+// SessionFederationMetadata captures the audit fields IAM Federation writes
+// to the session row at SessionOpen time. The shape is intentionally flat
+// since downstream consumers (the v1.1 Sessions UI, SIEM exports) want to
+// project individual fields without parsing nested JSON.
+type SessionFederationMetadata struct {
+	// Provider is the federation provider that resolved the session (e.g.
+	// gcp_iam).
+	Provider string `json:"provider"`
+	// HookSource mirrors ConnectionFederationConfig.HookSource. Today only
+	// "builtin" is supported; the field is preserved so audit consumers can
+	// distinguish hook sources if new ones are added in future releases.
+	HookSource string `json:"hook_source"`
+	// ResolvedPrincipal is the cloud-side identity the session ran under.
+	// For GCP this is the user@org.com address GCP audit logs will attribute
+	// the query to.
+	ResolvedPrincipal string `json:"resolved_principal"`
+	// AdminPrincipal is the impersonator identity (admin SA's client_email
+	// for gcp_iam).
+	AdminPrincipal string `json:"admin_principal,omitempty"`
+	// TokenExpiresAt is the expiration of the credential the agent runs
+	// under. Sessions can outlive this; the credential's own expiry is the
+	// source of truth for the downstream API.
+	TokenExpiresAt time.Time `json:"token_expires_at"`
+	// FallbackApplied is true when the primary resolution failed and the
+	// session ran under the configured readonly_principal instead.
+	FallbackApplied bool `json:"fallback_applied,omitempty"`
+}
+
+// SetSessionFederationMetadata stores the federation audit data under the
+// "federation" key inside the session's metadata JSONB. Idempotent: re-running
+// with the same fields overwrites them in place via jsonb concatenation.
+//
+// Errors here are non-fatal for the SessionOpen flow — the caller logs and
+// continues. A missing federation entry just means the v1.1 UI won't have
+// audit data for that session; the session still opens successfully.
+func SetSessionFederationMetadata(orgID, sessionID string, m SessionFederationMetadata) error {
+	inner, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("failed encoding federation metadata: %v", err)
+	}
+	wrapped := fmt.Sprintf(`{"federation":%s}`, string(inner))
+	return DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", wrapped)).
+		Error
+}
+
 // SessionStreamBlobID returns the deterministic blob id for a session's stream.
 func SessionStreamBlobID(sessionID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobstream:%s", sessionID)).String()

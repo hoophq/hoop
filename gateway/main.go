@@ -18,6 +18,8 @@ import (
 	"github.com/hoophq/hoop/gateway/api"
 	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+
+	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"

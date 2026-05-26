@@ -349,13 +349,13 @@ func Patch(c *gin.Context) {
 //	@Description	Delete a connection resource.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			name	path	string	true	"The name of the resource"
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
 //	@Success		204
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/connections/{name} [delete]
+//	@Router			/connections/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	connName := c.Param("name")
+	connName := c.Param("nameOrID")
 	if connName == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return

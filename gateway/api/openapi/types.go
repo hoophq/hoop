@@ -1985,6 +1985,85 @@ type DataMaskingRuleConnection struct {
 	Status string `json:"status" enums:"active,inactive" example:"active"`
 }
 
+// ConnectionFederationConfig is the API representation of an IAM Federation
+// configuration attached to a single connection. The admin_credentials_json
+// field is write-only: it is base64-decoded then AES-256-GCM encrypted at
+// rest, and never returned on GET responses (only a metadata summary is).
+type ConnectionFederationConfig struct {
+	// ID is the federation row's UUID. Empty on POST requests; populated on
+	// GET/PUT responses.
+	ID string `json:"id,omitempty" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// ConnectionID is the connection this federation config applies to.
+	// Populated by the server from the URL path on writes.
+	ConnectionID string `json:"connection_id,omitempty" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// HookSource selects which resolver category the gateway runs. Only the
+	// built-in resolver category ships today; the field is preserved so new
+	// sources can be added without breaking existing configurations.
+	HookSource string `json:"hook_source" enums:"builtin" example:"builtin" binding:"required"`
+	// BuiltinProvider is required when HookSource=builtin. Only "gcp_iam"
+	// ships today.
+	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam" example:"gcp_iam"`
+	// AdminCredentialsJSON is the plaintext admin credential blob (for
+	// builtin/gcp_iam: the admin service account JSON). Write-only — never
+	// returned on GET. Required on the initial POST when HookSource=builtin;
+	// optional on PUT (omitting it leaves the stored value unchanged).
+	AdminCredentialsJSON string `json:"admin_credentials_json,omitempty"`
+	// HasAdminCredentials is server-set on GET responses to let the UI know
+	// whether a credential is stored without exposing its value.
+	HasAdminCredentials bool `json:"has_admin_credentials,omitempty" example:"true"`
+	// IdentitySourceAttribute is a JSONPath-like accessor into the Hoop user
+	// (defaults to $.user.email).
+	IdentitySourceAttribute string `json:"identity_source_attribute" example:"$.user.email"`
+	// IdentityTargetTemplate is the principal template the source attribute
+	// substitutes into (defaults to "{user.email}").
+	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
+	// FallbackPolicy controls behavior when resolution fails.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
+	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
+	// the impersonation target on the fallback path.
+	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// TokenTTLSeconds caps the lifetime of generated credentials (default
+	// 3600, max 43200). Built-in providers may clamp lower based on cloud
+	// API limits.
+	TokenTTLSeconds int `json:"token_ttl_seconds" example:"3600"`
+	// ExtraConfig is provider-specific freeform JSON (e.g. {"project_id":
+	// "my-gcp-proj"}). The gateway does not interpret unknown keys.
+	ExtraConfig map[string]any `json:"extra_config,omitempty"`
+	// CreatedAt / UpdatedAt are server-set audit timestamps.
+	CreatedAt string `json:"created_at,omitempty" example:"2025-05-25T17:00:00Z"`
+	UpdatedAt string `json:"updated_at,omitempty" example:"2025-05-25T17:00:00Z"`
+}
+
+// FederationTestRequest drives the /federation/test endpoint, which dry-runs
+// the configured resolver under a synthetic user without opening a session
+// or touching session metadata. Used by the admin UI to validate config.
+type FederationTestRequest struct {
+	// UserEmail is the synthetic user to resolve. Required.
+	UserEmail string `json:"user_email" example:"alice@example.com" binding:"required"`
+	// UserID is the synthetic user ID. Optional; defaults to a deterministic
+	// UUID derived from UserEmail.
+	UserID string `json:"user_id,omitempty" example:"00000000-0000-0000-0000-000000000001"`
+}
+
+// FederationTestResponse reports the outcome of a dry-run. EnvVarKeys is
+// emitted instead of EnvVars so we never leak resolved credentials back over
+// HTTP — operators can verify the *shape* without exposing the secrets.
+type FederationTestResponse struct {
+	// Success is true when the dry-run resolution returned without error.
+	Success bool `json:"success" example:"true"`
+	// ResolvedPrincipal is the principal the resolver impersonated.
+	ResolvedPrincipal string `json:"resolved_principal,omitempty" example:"alice@example.com"`
+	// AdminPrincipal is the impersonator identity (e.g. admin SA email).
+	AdminPrincipal string `json:"admin_principal,omitempty" example:"hoop-admin@proj.iam.gserviceaccount.com"`
+	// EnvVarKeys lists the env vars the resolver would inject. Values are
+	// never returned.
+	EnvVarKeys []string `json:"env_var_keys,omitempty" example:"HOOP_GCP_ACCESS_TOKEN,HOOP_GCP_TOKEN_EXPIRES_AT"`
+	// TokenExpiresAt is the would-be credential expiry.
+	TokenExpiresAt string `json:"token_expires_at,omitempty" example:"2025-05-25T18:00:00Z"`
+	// Error is the human-readable failure reason when Success=false.
+	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`

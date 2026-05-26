@@ -2326,6 +2326,196 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/federation": {
+            "get": {
+                "description": "Returns the IAM federation configuration for a connection. The admin credentials are never returned in plaintext; only a presence indicator is included.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Get Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Creates or updates the IAM federation configuration for a connection. AdminCredentialsJSON is write-only; omit on update to preserve the stored value.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Upsert Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the IAM federation configuration for a connection. Subsequent sessions on this connection revert to the static connection envs.",
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Delete Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrID}/federation/test": {
+            "post": {
+                "description": "Executes the configured federation resolver against a synthetic user without opening a session. Returns the resolved principal and the env-var keys that would be injected; secret values are never returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Dry-Run a Federation Resolution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -10685,6 +10875,92 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionFederationConfig": {
+            "type": "object",
+            "required": [
+                "hook_source"
+            ],
+            "properties": {
+                "admin_credentials_json": {
+                    "description": "AdminCredentialsJSON is the plaintext admin credential blob (for\nbuiltin/gcp_iam: the admin service account JSON). Write-only — never\nreturned on GET. Required on the initial POST when HookSource=builtin;\noptional on PUT (omitting it leaves the stored value unchanged).",
+                    "type": "string"
+                },
+                "builtin_provider": {
+                    "description": "BuiltinProvider is required when HookSource=builtin. Only \"gcp_iam\"\nships today.",
+                    "type": "string",
+                    "enum": [
+                        "gcp_iam"
+                    ],
+                    "example": "gcp_iam"
+                },
+                "connection_id": {
+                    "description": "ConnectionID is the connection this federation config applies to.\nPopulated by the server from the URL path on writes.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "created_at": {
+                    "description": "CreatedAt / UpdatedAt are server-set audit timestamps.",
+                    "type": "string",
+                    "example": "2025-05-25T17:00:00Z"
+                },
+                "extra_config": {
+                    "description": "ExtraConfig is provider-specific freeform JSON (e.g. {\"project_id\":\n\"my-gcp-proj\"}). The gateway does not interpret unknown keys.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "fallback_policy": {
+                    "description": "FallbackPolicy controls behavior when resolution fails.",
+                    "type": "string",
+                    "enum": [
+                        "deny",
+                        "readonly"
+                    ],
+                    "example": "deny"
+                },
+                "has_admin_credentials": {
+                    "description": "HasAdminCredentials is server-set on GET responses to let the UI know\nwhether a credential is stored without exposing its value.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "hook_source": {
+                    "description": "HookSource selects which resolver category the gateway runs. Only the\nbuilt-in resolver category ships today; the field is preserved so new\nsources can be added without breaking existing configurations.",
+                    "type": "string",
+                    "enum": [
+                        "builtin"
+                    ],
+                    "example": "builtin"
+                },
+                "id": {
+                    "description": "ID is the federation row's UUID. Empty on POST requests; populated on\nGET/PUT responses.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "identity_source_attribute": {
+                    "description": "IdentitySourceAttribute is a JSONPath-like accessor into the Hoop user\n(defaults to $.user.email).",
+                    "type": "string",
+                    "example": "$.user.email"
+                },
+                "identity_target_template": {
+                    "description": "IdentityTargetTemplate is the principal template the source attribute\nsubstitutes into (defaults to \"{user.email}\").",
+                    "type": "string",
+                    "example": "{user.email}"
+                },
+                "readonly_principal": {
+                    "description": "ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as\nthe impersonation target on the fallback path.",
+                    "type": "string",
+                    "example": "hoop-readonly@example.com"
+                },
+                "token_ttl_seconds": {
+                    "description": "TokenTTLSeconds caps the lifetime of generated credentials (default\n3600, max 43200). Built-in providers may clamp lower based on cloud\nAPI limits.",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2025-05-25T17:00:00Z"
+                }
+            }
+        },
         "openapi.ConnectionPatch": {
             "type": "object",
             "properties": {
@@ -11707,6 +11983,65 @@ const docTemplate = `{
                 "FeatureStatusEnabled",
                 "FeatureStatusDisabled"
             ]
+        },
+        "openapi.FederationTestRequest": {
+            "type": "object",
+            "required": [
+                "user_email"
+            ],
+            "properties": {
+                "user_email": {
+                    "description": "UserEmail is the synthetic user to resolve. Required.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "user_id": {
+                    "description": "UserID is the synthetic user ID. Optional; defaults to a deterministic\nUUID derived from UserEmail.",
+                    "type": "string",
+                    "example": "00000000-0000-0000-0000-000000000001"
+                }
+            }
+        },
+        "openapi.FederationTestResponse": {
+            "type": "object",
+            "properties": {
+                "admin_principal": {
+                    "description": "AdminPrincipal is the impersonator identity (e.g. admin SA email).",
+                    "type": "string",
+                    "example": "hoop-admin@proj.iam.gserviceaccount.com"
+                },
+                "env_var_keys": {
+                    "description": "EnvVarKeys lists the env vars the resolver would inject. Values are\nnever returned.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "HOOP_GCP_ACCESS_TOKEN",
+                        "HOOP_GCP_TOKEN_EXPIRES_AT"
+                    ]
+                },
+                "error": {
+                    "description": "Error is the human-readable failure reason when Success=false.",
+                    "type": "string",
+                    "example": "failed minting access token: permission denied"
+                },
+                "resolved_principal": {
+                    "description": "ResolvedPrincipal is the principal the resolver impersonated.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "success": {
+                    "description": "Success is true when the dry-run resolution returned without error.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "token_expires_at": {
+                    "description": "TokenExpiresAt is the would-be credential expiry.",
+                    "type": "string",
+                    "example": "2025-05-25T18:00:00Z"
+                }
+            }
         },
         "openapi.GenerateApiKeyResponse": {
             "type": "object",

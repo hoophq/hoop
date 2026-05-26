@@ -1,0 +1,204 @@
+package gcpiam
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/hoophq/hoop/gateway/federation"
+	"github.com/hoophq/hoop/gateway/models"
+)
+
+// fakeIssuer is a deterministic stand-in for iamcredentials.GenerateAccessToken.
+// Tests configure it with a canned response or error so the gcpiam Resolver
+// behavior can be exercised without making a real GCP API call.
+type fakeIssuer struct {
+	calledPrincipal string
+	calledScopes    []string
+	calledLifetime  time.Duration
+	token           string
+	expiresAt       time.Time
+	err             error
+}
+
+func (f *fakeIssuer) GenerateAccessToken(_ context.Context, principal string, scopes []string, lifetime time.Duration) (string, time.Time, error) {
+	f.calledPrincipal = principal
+	f.calledScopes = scopes
+	f.calledLifetime = lifetime
+	if f.err != nil {
+		return "", time.Time{}, f.err
+	}
+	return f.token, f.expiresAt, nil
+}
+
+// fakeAdminSAJSON returns a syntactically valid service-account JSON blob the
+// resolver can parse for client_email. The actual key material is not used
+// because the issuer is mocked.
+func fakeAdminSAJSON() []byte {
+	return []byte(`{"type":"service_account","client_email":"hoop-admin@proj.iam.gserviceaccount.com"}`)
+}
+
+func newResolverWithIssuer(issuer *fakeIssuer) *Resolver {
+	return &Resolver{
+		newIssuer: func(_ context.Context, _ []byte) (tokenIssuer, error) {
+			return issuer, nil
+		},
+	}
+}
+
+func newCfg(projectID string, ttlSec int) *models.ConnectionFederationConfig {
+	raw, _ := json.Marshal(map[string]any{"project_id": projectID})
+	return &models.ConnectionFederationConfig{
+		HookSource:      models.FederationHookSourceBuiltin,
+		TokenTTLSeconds: ttlSec,
+		ExtraConfig:     raw,
+	}
+}
+
+func TestResolve_HappyPath(t *testing.T) {
+	expectedExpiry := time.Date(2026, 5, 25, 18, 0, 0, 0, time.UTC)
+	issuer := &fakeIssuer{token: "ya29.deadbeef", expiresAt: expectedExpiry}
+	r := newResolverWithIssuer(issuer)
+
+	res, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 1800),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if issuer.calledPrincipal != "alice@acme.com" {
+		t.Errorf("issuer received principal %q, want alice@acme.com", issuer.calledPrincipal)
+	}
+	if issuer.calledLifetime != 30*time.Minute {
+		t.Errorf("issuer received lifetime %v, want 30m", issuer.calledLifetime)
+	}
+	if got := res.EnvVars["HOOP_GCP_ACCESS_TOKEN"]; got != "ya29.deadbeef" {
+		t.Errorf("HOOP_GCP_ACCESS_TOKEN=%q, want ya29.deadbeef", got)
+	}
+	if got := res.EnvVars["CLOUDSDK_CORE_PROJECT"]; got != "my-proj" {
+		t.Errorf("CLOUDSDK_CORE_PROJECT=%q, want my-proj", got)
+	}
+	if got := res.EnvVars["HOOP_FEDERATED_PRINCIPAL"]; got != "alice@acme.com" {
+		t.Errorf("HOOP_FEDERATED_PRINCIPAL=%q, want alice@acme.com", got)
+	}
+	if !res.TokenExpiresAt.Equal(expectedExpiry) {
+		t.Errorf("TokenExpiresAt=%v, want %v", res.TokenExpiresAt, expectedExpiry)
+	}
+	if res.AdminPrincipal != "hoop-admin@proj.iam.gserviceaccount.com" {
+		t.Errorf("AdminPrincipal=%q, want hoop-admin@proj.iam.gserviceaccount.com", res.AdminPrincipal)
+	}
+}
+
+func TestResolve_DefaultLifetimeWhenZero(t *testing.T) {
+	issuer := &fakeIssuer{token: "x", expiresAt: time.Now().Add(time.Hour)}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 0), // zero TTL → fall back to 1 h.
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if issuer.calledLifetime != time.Hour {
+		t.Errorf("got lifetime %v, want 1h", issuer.calledLifetime)
+	}
+}
+
+func TestResolve_PropagatesIssuerError(t *testing.T) {
+	issuer := &fakeIssuer{err: errors.New("permission denied: missing iam.serviceAccountTokenCreator")}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "impersonation of \"alice@acme.com\" failed") {
+		t.Errorf("error %q should mention the principal", err.Error())
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("error %q should preserve the underlying issuer error", err.Error())
+	}
+}
+
+func TestResolve_RejectsMissingProjectID(t *testing.T) {
+	r := newResolverWithIssuer(&fakeIssuer{})
+	cfg := newCfg("", 3600)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                cfg,
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "extra_config.project_id is required") {
+		t.Errorf("error %q should call out missing project_id", err.Error())
+	}
+}
+
+func TestResolve_RejectsMissingCredentials(t *testing.T) {
+	r := newResolverWithIssuer(&fakeIssuer{})
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: nil,
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing admin service-account credentials") {
+		t.Errorf("error %q should say credentials are missing", err.Error())
+	}
+}
+
+func TestResolve_RejectsEmptyPrincipal(t *testing.T) {
+	r := newResolverWithIssuer(&fakeIssuer{})
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "",
+	})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "resolved principal is empty") {
+		t.Errorf("error %q should describe the missing principal", err.Error())
+	}
+}
+
+func TestResolve_RejectsMalformedAdminJSON(t *testing.T) {
+	r := newResolverWithIssuer(&fakeIssuer{})
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: []byte("not json"),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid admin service-account JSON") {
+		t.Errorf("error %q should call out malformed JSON", err.Error())
+	}
+}
+
+func TestProvider_ReturnsRegisteredName(t *testing.T) {
+	if New().Provider() != "gcp_iam" {
+		t.Errorf("provider name drifted; expected gcp_iam")
+	}
+}
