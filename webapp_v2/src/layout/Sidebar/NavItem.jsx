@@ -1,15 +1,15 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { ItemBadge } from './ItemBadge'
 import { SidebarNavLink } from './SidebarNavLink'
-import { shouldHide, isBlocked, isActive } from './helpers'
+import { shouldHide, isActive } from './helpers'
 
 // ─── Collapsible nav item (Integrations / Settings) ───────────────────────
 // Separate component so useEffect can run on mount to clear pendingOpenSection.
 
-export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, isSelfHosted, defaultOpened, onMount }) {
+export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, defaultOpened, onMount }) {
   useEffect(() => {
     onMount?.()
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -22,7 +22,7 @@ export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, isSelfHosted,
       defaultOpened={defaultOpened}
     >
       {item.children.map((child) => (
-        <NavItem key={child.path} item={child} isAdmin={isAdmin} isFreeLicense={isFreeLicense} isSelfHosted={isSelfHosted} />
+        <NavItem key={child.path} item={child} isAdmin={isAdmin} isSelfHosted={isSelfHosted} />
       ))}
     </SidebarNavLink>
   )
@@ -30,15 +30,13 @@ export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, isSelfHosted,
 
 // ─── Single expanded nav item ──────────────────────────────────────────────
 
-export function NavItem({ item, isAdmin, isFreeLicense, isSelfHosted }) {
+export function NavItem({ item, isAdmin, isSelfHosted }) {
   const location = useLocation()
-  const navigate = useNavigate()
   const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
 
   if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled)) return null
 
-  const blocked = isBlocked(item, isFreeLicense)
   const active = item.path ? isActive(item.path, location.pathname) : false
   const closeMobile = () => setSidebarOpen(false)
 
@@ -48,7 +46,6 @@ export function NavItem({ item, isAdmin, isFreeLicense, isSelfHosted }) {
       <CollapsibleNavItem
         item={item}
         isAdmin={isAdmin}
-        isFreeLicense={isFreeLicense}
         isSelfHosted={isSelfHosted}
         defaultOpened={shouldOpen}
         onMount={shouldOpen ? clearPendingOpenSection : undefined}
@@ -62,21 +59,8 @@ export function NavItem({ item, isAdmin, isFreeLicense, isSelfHosted }) {
         label={item.label}
         aria-label={item.label}
         leftSection={item.icon ? <item.icon size={24} aria-hidden="true" /> : undefined}
-        rightSection={<ItemBadge badge={item.badge} blocked={blocked} shortcut={item.shortcut} />}
+        rightSection={<ItemBadge badge={item.badge} shortcut={item.shortcut} />}
         onClick={() => { item.action(); closeMobile(); }}
-      />
-    )
-  }
-
-  if (blocked) {
-    return (
-      <SidebarNavLink
-        blocked
-        label={item.label}
-        aria-label={item.label}
-        leftSection={item.icon ? <item.icon size={24} aria-hidden="true" /> : undefined}
-        rightSection={<ItemBadge badge={item.badge} blocked={true} />}
-        onClick={() => { navigate(item.upgradeRoute || '/upgrade-plan'); closeMobile(); }}
       />
     )
   }

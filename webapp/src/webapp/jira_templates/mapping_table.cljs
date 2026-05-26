@@ -72,11 +72,14 @@
                     on-toggle-mapping-select
                     on-toggle-all-mapping
                     on-mapping-delete
-                    on-mapping-add]}]
+                    on-mapping-add
+                    free-license?]}]
   (let [toggle-all-non-tag-rules (fn []
                                    (on-toggle-all-mapping state is-not-connection-tag?))
         delete-non-tag-rules (fn []
-                               (on-mapping-delete state is-not-connection-tag?))]
+                               (on-mapping-delete state is-not-connection-tag?))
+        disable-new? (and free-license?
+                          (>= (count (filter is-not-connection-tag? @state)) 1))]
     [:> Box {:class "space-y-radix-5"}
      [:> Box
       [:> Table.Root {:size "2" :variant "surface"}
@@ -139,4 +142,5 @@
        :select-state select-state
        :selected? (every? :selected (filter is-not-connection-tag? @state))
        :on-toggle-all toggle-all-non-tag-rules
-       :on-rules-delete delete-non-tag-rules}]]))
+       :on-rules-delete delete-non-tag-rules
+       :disable-new? disable-new?}]]))

@@ -21,7 +21,8 @@
                     on-toggle-prompt-select
                     on-toggle-all-prompts
                     on-prompt-delete
-                    on-prompt-add]}]
+                    on-prompt-add
+                    free-license?]}]
   [:> Box {:class "space-y-radix-5"}
    [:> Table.Root {:size "2" :variant "surface"}
     [:> Table.Header
@@ -111,4 +112,5 @@
      :select-state select-state
      :selected? (every? :selected @state)
      :on-toggle-all #(on-toggle-all-prompts state)
-     :on-rules-delete #(on-prompt-delete state)}]])
+     :on-rules-delete #(on-prompt-delete state)
+     :disable-new? (and free-license? (>= (count @state) 1))}]])

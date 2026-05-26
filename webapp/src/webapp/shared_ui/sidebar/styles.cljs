@@ -32,9 +32,6 @@
   {:standard "h-6 w-6 shrink-0 text-white"
    :disabled "h-6 w-6 shrink-0 text-white opacity-30"})
 
-;; Badges e indicadores
-(def badge-upgrade "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md")
-
 ;; Transições
 (def transitions
   {:mobile-enter "transition-opacity ease-linear duration-500"
