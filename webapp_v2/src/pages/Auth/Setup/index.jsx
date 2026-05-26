@@ -14,7 +14,6 @@ import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import Button from '@/components/Button'
 import { useAuthStore } from '@/stores/useAuthStore'
-import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import classes from './Setup.module.css'
 
@@ -112,7 +111,6 @@ function LeftPanel() {
 function Setup() {
   const navigate = useNavigate()
   const { setToken } = useAuthStore()
-  const { setUser } = useUserStore()
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -134,10 +132,9 @@ function Setup() {
     setError(null)
     setLoading(true)
     try {
-      const { token, user } = await authService.registerLocal(email, password, fullName)
+      const { token } = await authService.registerLocal(email, password, fullName)
       setToken(token)
-      setUser(user)
-      navigate('/', { replace: true })
+      navigate('/onboarding/setup', { replace: true })
     } catch (err) {
       setError(
         err.response?.data?.message || 'Something went wrong. Please try again.'

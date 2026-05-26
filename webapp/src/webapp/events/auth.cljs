@@ -44,7 +44,7 @@
                                     {:org_name org-name})
                              :on-success (fn [_]
                                            (rf/dispatch [:organization->create-api-key])
-                                           (rf/dispatch [:navigate :home]))
+                                           (rf/dispatch [:navigate :onboarding-setup]))
                              :on-failure (fn [error]
                                            (println error))}]]]}))
 

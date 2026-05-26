@@ -14,7 +14,6 @@ import {
   Box,
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
-import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
 
@@ -51,7 +50,6 @@ function AuthCard({ children }) {
 function Login() {
   const navigate = useNavigate()
   const { setToken, getAndClearRedirectUrl, isAuthenticated } = useAuthStore()
-  const { setUser } = useUserStore()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -126,9 +124,8 @@ function Login() {
     setLoading(true)
 
     try {
-      const { token, user } = await authService.loginLocal(email, password)
+      const { token } = await authService.loginLocal(email, password)
       setToken(token)
-      setUser(user)
 
       const redirectUrl = getAndClearRedirectUrl()
       if (redirectUrl) {

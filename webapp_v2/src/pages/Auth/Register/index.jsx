@@ -14,14 +14,12 @@ import {
   Box,
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
-import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
 
 function Register() {
   const navigate = useNavigate()
   const { setToken, isAuthenticated } = useAuthStore()
-  const { setUser } = useUserStore()
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -71,9 +69,8 @@ function Register() {
     setLoading(true)
 
     try {
-      const { token, user } = await authService.registerLocal(email, password, fullName)
+      const { token } = await authService.registerLocal(email, password, fullName)
       setToken(token)
-      setUser(user)
       navigate('/')
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed. Please try again.')
