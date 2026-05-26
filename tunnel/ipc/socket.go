@@ -10,10 +10,20 @@ import (
 // ListenerOptions.Path.
 const (
 	// DefaultSocketPathUnix is the production Unix-socket path for
-	// hsh-tunneld. /var/run is the canonical home for daemon sockets on
-	// Linux and macOS; the installer creates the directory at service
-	// install time so it persists across reboots.
-	DefaultSocketPathUnix = "/var/run/hsh.sock"
+	// hsh-tunneld. /var/run/hsh/ is the canonical home for the daemon's
+	// runtime artifacts; systemd's `RuntimeDirectory=hsh` clause in the
+	// service unit creates it at activation time with the right
+	// ownership and persists nothing across reboots (which is exactly
+	// what we want for a transient socket + token).
+	//
+	// On macOS, /var/run is created by launchd at boot and is writable
+	// by root; the LaunchDaemon installer makes /var/run/hsh/ itself.
+	//
+	// We keep the socket inside that same directory (not at /var/run/hsh.sock
+	// at the parent) so a single chown of /var/run/hsh/ is enough to
+	// authorise the hsh group on both the socket and the control-token
+	// file that lives next to it.
+	DefaultSocketPathUnix = "/var/run/hsh/hsh.sock"
 
 	// DefaultSocketPathWindows is the production named-pipe path for
 	// hsh-tunneld. \\.\pipe\ is the only legal namespace for named

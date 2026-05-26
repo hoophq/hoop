@@ -18,7 +18,7 @@ info:
     unprivileged UIs (CLI, tray, embedded web dashboard).
 
     Transport is a Unix domain socket on Linux/macOS
-    (`/var/run/hsh.sock`) or a named pipe on Windows
+    (`/var/run/hsh/hsh.sock`) or a named pipe on Windows
     (`\\.\pipe\hsh`). The listener never binds to a TCP port.
 
     Authentication is a rotating bearer token. The daemon writes it to

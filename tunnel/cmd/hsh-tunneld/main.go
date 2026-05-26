@@ -65,6 +65,64 @@ func userAgent() string {
 }
 
 func main() {
+	logger := log.New(os.Stderr, "hsh-tunneld ", log.LstdFlags|log.Lmicroseconds)
+
+	// Verb dispatch. We do not pull cobra in for this because the verb
+	// set is small and stable, and the daemon path needs to stay
+	// flag.Parse-driven for backwards compatibility with the systemd
+	// ExecStart and dev `sudo -E ./hsh-tunneld` invocations.
+	//
+	// Convention: a non-flag argv[1] (i.e. one not starting with '-')
+	// is interpreted as a verb. Anything that starts with '-' falls
+	// through to the daemon's flag.Parse so existing `--tld foo` style
+	// invocations keep working exactly as they did.
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		verb := os.Args[1]
+		rest := os.Args[2:]
+		if err := dispatchVerb(verb, rest, logger); err != nil {
+			logger.Fatal(err)
+		}
+		return
+	}
+
+	if err := runDaemon(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+// dispatchVerb routes a non-flag first argument to one of the
+// management verbs. Unknown verbs print the top-level usage block to
+// stderr and exit non-zero so a typo isn't silently treated as "start
+// the daemon with weird argv".
+func dispatchVerb(verb string, args []string, logger *log.Logger) error {
+	switch verb {
+	case "install":
+		return runInstall(args)
+	case "uninstall":
+		return runUninstall(args)
+	case "validate-config":
+		return runValidateConfig(args)
+	case "status":
+		return runServiceStatus(args)
+	case "start":
+		return runServiceStart(args)
+	case "stop":
+		return runServiceStop(args)
+	case "version":
+		return runVersion(args, logger)
+	case "help", "-h", "--help":
+		usage(os.Stdout)
+		return nil
+	default:
+		usage(os.Stderr)
+		return fmt.Errorf("unknown command %q", verb)
+	}
+}
+
+// runDaemon is the legacy main path: parse the daemon flags, bring up
+// the netstack + IPC, wait for SIGTERM. Extracted from the old main()
+// so the verb dispatcher can sit alongside without ballooning main.
+func runDaemon(logger *log.Logger) error {
 	tld := flag.String("tld", resolver.DefaultTLD, "TLD owned by the tunnel (HSH_TUNNEL_DOMAIN overrides)")
 	devName := flag.String("dev", "", "TUN device name (kernel picks if empty)")
 	sessionSeed := flag.String("session", "spike-session", "session seed (controls the /48 prefix)")
@@ -73,7 +131,7 @@ func main() {
 	// daemon usable for standalone dev / integration tests where the
 	// operator does not want to touch /var/run.
 	ipcSocket := flag.String("ipc-socket", "", "path of the IPC unix socket (empty disables IPC; default in production: "+ipc.DefaultSocketPathUnix+")")
-	ipcTokenFile := flag.String("ipc-token-file", "", "path of the control-token file (defaults to <dir-of-ipc-socket>/hsh/control-token)")
+	ipcTokenFile := flag.String("ipc-token-file", "", "path of the control-token file (defaults to <dir-of-ipc-socket>/control-token)")
 	ipcGroup := flag.String("ipc-group", "", "OS group that owns the IPC socket (members can connect; empty leaves it owned by the daemon's primary group)")
 	// configFile is the daemon-managed TOML config: api_url, grpc_url,
 	// token, log_level (RD-216). HSH_TUNNELD_CONFIG env var overrides.
@@ -90,8 +148,6 @@ func main() {
 		*configFile = daemonconfig.DefaultConfigPathPlatform()
 	}
 
-	logger := log.New(os.Stderr, "hsh-tunneld ", log.LstdFlags|log.Lmicroseconds)
-
 	cfg := runOptions{
 		tld:          *tld,
 		devName:      *devName,
@@ -101,9 +157,7 @@ func main() {
 		ipcGroup:     *ipcGroup,
 		configFile:   *configFile,
 	}
-	if err := run(logger, cfg); err != nil {
-		logger.Fatal(err)
-	}
+	return run(logger, cfg)
 }
 
 // runOptions groups every configurable knob `run` cares about. Using a
@@ -276,8 +330,13 @@ func startIPCServer(ctx context.Context, logger *log.Logger, opts runOptions, sv
 
 	tokenPath := opts.ipcTokenFile
 	if tokenPath == "" {
-		// Default: /var/run/hsh/control-token (next to the socket).
-		tokenPath = filepath.Join(filepath.Dir(opts.ipcSocket), "hsh", "control-token")
+		// Default: a `control-token` file next to the socket. Production
+		// installs colocate both inside /var/run/hsh/ so a single chown
+		// of the runtime dir grants the `hsh` group read access to
+		// both. Dev runs that pass --ipc-socket=/tmp/foo/hsh.sock get
+		// /tmp/foo/control-token, which keeps everything under the
+		// caller's tmpdir.
+		tokenPath = filepath.Join(filepath.Dir(opts.ipcSocket), "control-token")
 	}
 
 	store, err := ipc.NewFileTokenStore(tokenPath, ipc.FileTokenOptions{})
