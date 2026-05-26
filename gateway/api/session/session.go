@@ -43,7 +43,7 @@ import (
 var (
 	downloadTokenStore         = memory.New()
 	defaultDownloadExpireTime  = time.Minute * 5
-	internalExitCode           = 254
+	InternalExitCode           = 254
 	defaultMaxSessionListLimit = 100
 )
 
@@ -202,6 +202,51 @@ func Post(c *gin.Context) {
 		EndSession:           nil,
 	}
 
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	needsAiReview := false
+	analyzeRes, aiAccessRule, err := AIAnalyze(c, orgID, conn.Name, req.Script)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
+		return
+	}
+	if analyzeRes != nil {
+		newSession.AIAnalysis = analyzeRes
+
+		shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+		needsAiReview = analyzeRes.Action == string(models.RequireAccessRequest)
+		if shouldBlock {
+			newSession.Status = string(openapi.SessionStatusDone)
+			newSession.ExitCode = &InternalExitCode
+			endTime := time.Now().UTC()
+			newSession.EndSession = &endTime
+		}
+
+		if err := models.UpsertSession(newSession); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
+			return
+		}
+
+		if shouldBlock {
+			// AI-blocked sessions never reach the create path below, so we publish the full
+			// session lifecycle (started + closed) here to keep downstream event consumers
+			// consistent.
+			events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
+			events.DeriveFromSessionEnd(ctx.OrgID, &newSession)
+
+			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
+
+			c.JSON(http.StatusOK, clientexec.Response{
+				SessionID:         sid,
+				Output:            "Session blocked by AI risk analyzer",
+				OutputStatus:      "blocked",
+				ExitCode:          InternalExitCode,
+				ExecutionTimeMili: 0,
+				AIAnalysis:        ToOpenApiSessionAIAnalysis(analyzeRes),
+			})
+			return
+		}
+	}
+
 	if conn.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
 		if err != nil {
@@ -234,79 +279,34 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	orgID := uuid.MustParse(ctx.GetOrgID())
-	analyzeRes, aiAccessRule, err := AIAnalyze(c, orgID, conn.Name, req.Script)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
+	if needsAiReview {
+		if aiAccessRule == nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError,
+				fmt.Errorf("ai analyzer requested review without resolving access request rule"),
+				"failed creating ai-driven review")
+			return
+		}
+		review, err := CreateReviewFromAIAnalysis(orgID, sid, conn.Name,
+			AIReviewRequester{
+				UserID:       ctx.UserID,
+				UserEmail:    ctx.UserEmail,
+				UserName:     ctx.UserName,
+				UserSlackID:  ctx.SlackID,
+				ConnectionID: conn.ID,
+			},
+			aiAccessRule, req.Script, req.EnvVars, req.ClientArgs)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating ai-driven review")
+			return
+		}
+		events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
+		c.JSON(http.StatusAccepted, clientexec.Response{
+			HasReview:  true,
+			Output:     fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
+			SessionID:  sid,
+			AIAnalysis: ToOpenApiSessionAIAnalysis(analyzeRes),
+		})
 		return
-	}
-
-	if analyzeRes != nil {
-		newSession.AIAnalysis = analyzeRes
-
-		shouldBlock := analyzeRes.Action == string(models.BlockExecution)
-		requireReview := analyzeRes.Action == string(models.RequireAccessRequest)
-		if shouldBlock {
-			newSession.Status = string(openapi.SessionStatusDone)
-			newSession.ExitCode = &internalExitCode
-			endTime := time.Now().UTC()
-			newSession.EndSession = &endTime
-		}
-
-		if err := models.UpsertSession(newSession); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
-			return
-		}
-
-		if shouldBlock {
-			// AI-blocked sessions never reach the create path below, so we publish the full
-			// session lifecycle (started + closed) here to keep downstream event consumers
-			// consistent.
-			events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
-			events.DeriveFromSessionEnd(ctx.OrgID, &newSession)
-
-			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
-
-			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sid,
-				Output:            "Session blocked by AI risk analyzer",
-				OutputStatus:      "blocked",
-				ExitCode:          internalExitCode,
-				ExecutionTimeMili: 0,
-				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
-			})
-			return
-		}
-
-		if requireReview {
-			if aiAccessRule == nil {
-				httputils.AbortWithErr(c, http.StatusInternalServerError,
-					fmt.Errorf("ai analyzer requested review without resolving access request rule"),
-					"failed creating ai-driven review")
-				return
-			}
-			review, err := CreateReviewFromAIAnalysis(orgID, sid, conn.Name,
-				AIReviewRequester{
-					UserID:       ctx.UserID,
-					UserEmail:    ctx.UserEmail,
-					UserName:     ctx.UserName,
-					UserSlackID:  ctx.SlackID,
-					ConnectionID: conn.ID,
-				},
-				aiAccessRule, req.Script, req.EnvVars, req.ClientArgs)
-			if err != nil {
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating ai-driven review")
-				return
-			}
-			events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
-			c.JSON(http.StatusAccepted, clientexec.Response{
-				HasReview:  true,
-				Output:     fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
-				SessionID:  sid,
-				AIAnalysis: toOpenApiSessionAIAnalysis(analyzeRes),
-			})
-			return
-		}
 	}
 
 	if err := services.CreateSession(c, newSession, conn); err != nil {
@@ -349,7 +349,7 @@ func Post(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		log.Infof("runexec response, %v", outcome)
-		outcome.AIAnalysis = toOpenApiSessionAIAnalysis(analyzeRes)
+		outcome.AIAnalysis = ToOpenApiSessionAIAnalysis(analyzeRes)
 		c.JSON(http.StatusOK, outcome)
 	case <-timeoutCtx.Done():
 		client.Close()
