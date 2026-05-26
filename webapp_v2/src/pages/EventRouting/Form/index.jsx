@@ -327,7 +327,7 @@ export default function EventRoutingForm() {
         top={0}
         bg="var(--mantine-color-body)"
         py="md"
-        mb="xxl"
+        mb="xxlAlt"
         style={{
           zIndex: 10,
           borderBottom: headerInView
@@ -362,7 +362,7 @@ export default function EventRoutingForm() {
         </Group>
       </Group>
 
-      <Stack gap="xxl">
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Subscription information"
           description="Identify this subscription so reviewers know what it is and when it fires."

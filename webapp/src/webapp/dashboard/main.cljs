@@ -5,7 +5,8 @@
             [webapp.dashboard.coming-soon :as coming-soon]
             [webapp.dashboard.connection-chart :as connection-chart]
             [webapp.dashboard.redacted-data-chart :as redacted-data-chart]
-            [webapp.dashboard.review-chart :as review-chart]))
+            [webapp.dashboard.review-chart :as review-chart]
+            [webapp.shared-ui.free-license-banner :as free-license-banner]))
 
 (defn main []
   (let [reports->today-redacted-data (rf/subscribe [:reports->today-redacted-data])
@@ -13,7 +14,8 @@
         reports->today-session-data (rf/subscribe [:reports->today-session-data])
         redacted-data (rf/subscribe [:reports->redacted-data-by-date])
         reviews (rf/subscribe [:reports->review-data-by-date])
-        connections (rf/subscribe [:connections])]
+        connections (rf/subscribe [:connections])
+        user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:reports->get-today-redacted-data])
     (rf/dispatch [:reports->get-today-review-data])
@@ -21,7 +23,13 @@
     (rf/dispatch [:reports->get-redacted-data-by-date 7])
     (rf/dispatch [:reports->get-review-data-by-date 7])
     (fn []
+     (let [free-license? (-> @user :data :free-license?)]
       [:<>
+       (when free-license?
+         [:> Box {:class "pt-radix-5"}
+          [free-license-banner/main
+           {:message (str "Organizations with Free plan have limited reporting. "
+                          "Upgrade to Enterprise to have unlimited access to the Dashboard.")}]])
        [:> Section {:size "1"}
         [:> Box {:p "5" :class "bg-white rounded-t-md border border-gray-100"}
          [:> Heading {:as "h2" :size "3"}
@@ -63,9 +71,9 @@
 
           [coming-soon/main]]]
 
-        [review-chart/main reviews]]
+        [review-chart/main reviews free-license?]]
 
-       [redacted-data-chart/main redacted-data]
+       [redacted-data-chart/main redacted-data free-license?]
 
        [:> Grid {:gap "5" :columns "2"}
         [:> Section {:size "1" :p "5" :class "bg-white rounded-md"}
@@ -76,4 +84,4 @@
 
           [coming-soon/main]]]
 
-        [connection-chart/main connections]]])))
+        [connection-chart/main connections]]]))))

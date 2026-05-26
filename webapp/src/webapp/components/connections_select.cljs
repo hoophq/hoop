@@ -67,6 +67,7 @@
           :search-value @search-term
           :placeholder placeholder
           :on-change (fn [selected-options]
+                       (reset! search-term "")
                        (let [selected-js-options (js->clj selected-options :keywordize-keys true)]
                          (on-connections-change selected-js-options)))
           :on-input-change (fn [input-value]

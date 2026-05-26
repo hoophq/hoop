@@ -17,24 +17,26 @@
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
         handlers (helpers/create-form-handlers state)
-        submitting? (rf/subscribe [:jira-templates->submitting?])]
+        submitting? (rf/subscribe [:jira-templates->submitting?])
+        user (rf/subscribe [:users->current-user])]
     (fn []
-      [:> Box {:class "min-h-screen bg-gray-1"}
-       [:form {:id "jira-form"
-               :on-submit (fn [e]
-                            (.preventDefault e)
-                            (let [data (helpers/prepare-payload state)]
-                              (if (= :edit form-type)
-                                (rf/dispatch [:jira-templates->update-by-id data])
-                                (rf/dispatch [:jira-templates->create data]))))}
+      (let [free-license? (-> @user :data :free-license?)]
+       [:> Box {:class "min-h-screen bg-gray-1"}
+        [:form {:id "jira-form"
+                :on-submit (fn [e]
+                             (.preventDefault e)
+                             (let [data (helpers/prepare-payload state)]
+                               (if (= :edit form-type)
+                                 (rf/dispatch [:jira-templates->update-by-id data])
+                                 (rf/dispatch [:jira-templates->create data]))))}
 
-        [form-header/main
-         {:form-type form-type
-          :id @(:id state)
-          :scroll-pos scroll-pos
-          :loading? @submitting?}]
+         [form-header/main
+          {:form-type form-type
+           :id @(:id state)
+           :scroll-pos scroll-pos
+           :loading? @submitting?}]
 
-        [:> Box {:p "7" :class "space-y-radix-9"}
+         [:> Box {:p "7" :class "space-y-radix-9"}
          [basic-info/main
           {:name (:name state)
            :description (:description state)
@@ -66,7 +68,8 @@
            [preset-mapping-table/main
             (merge
              {:state (:mapping state)
-              :select-state (:mapping-select-state state)}
+              :select-state (:mapping-select-state state)
+              :free-license? free-license?}
              (select-keys handlers
                           [:on-mapping-field-change
                            :on-mapping-select
@@ -87,7 +90,8 @@
            [mapping-table/main
             (merge
              {:state (:mapping state)
-              :select-state (:mapping-select-state state)}
+              :select-state (:mapping-select-state state)
+              :free-license? free-license?}
              (select-keys handlers
                           [:on-mapping-field-change
                            :on-mapping-select
@@ -108,7 +112,8 @@
            [prompts-table/main
             (merge
              {:state (:prompts state)
-              :select-state (:prompts-select-state state)}
+              :select-state (:prompts-select-state state)
+              :free-license? free-license?}
              (select-keys handlers
                           [:on-prompt-field-change
                            :on-prompt-select
@@ -128,14 +133,15 @@
            [cmdb-table/main
             (merge
              {:state (:cmdb state)
-              :select-state (:cmdb-select-state state)}
+              :select-state (:cmdb-select-state state)
+              :free-license? free-license?}
              (select-keys handlers
                           [:on-cmdb-field-change
                            :on-cmdb-select
                            :on-toggle-cmdb-select
                            :on-toggle-all-cmdb
                            :on-cmdb-delete
-                           :on-cmdb-add]))]]]]]])))
+                           :on-cmdb-add]))]]]]]]))))
 
 (defn- loading []
   [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}

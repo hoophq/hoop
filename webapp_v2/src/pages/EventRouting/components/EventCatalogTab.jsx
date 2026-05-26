@@ -46,7 +46,7 @@ export default function EventCatalogTab() {
       </Flex>
 
       {filtered.length === 0 ? (
-        <Stack align="center" gap="sm" py="xxl">
+        <Stack align="center" gap="sm" py="xxlAlt">
           <Filter size={32} strokeWidth={1.5} color="var(--mantine-color-gray-6)" />
           <Title order={4}>No events match</Title>
           <Text size="sm" c="dimmed">Try a different search term or change the category filter.</Text>

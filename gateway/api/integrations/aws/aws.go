@@ -20,8 +20,10 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -293,6 +295,26 @@ func CreateDBRoleJob(c *gin.Context) {
 	if req.AWS == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "missing request attribute 'aws'"})
 		return
+	}
+
+	if usrctx.GetLicenseType() == license.OSSType {
+		jobs, err := models.ListDBRoleJobs(usrctx.OrgID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing db role jobs: %v", err)
+			return
+		}
+		var nonFailed int
+		for _, j := range jobs {
+			if j.Status != nil && j.Status.Phase != pbsystem.StatusFailedType {
+				nonFailed++
+			}
+		}
+		if nonFailed >= 1 {
+			c.JSON(http.StatusForbidden, gin.H{
+				"message": "Resource Discovery is limited to 1 imported resource in the Free plan",
+			})
+			return
+		}
 	}
 	dbArn := req.AWS.InstanceArn
 	_, err := models.GetAgentByNameOrID(usrctx.OrgID, req.AgentID)

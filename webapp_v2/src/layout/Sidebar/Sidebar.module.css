@@ -61,11 +61,6 @@
   outline-offset: 1px;
 }
 
-/* Blocked paid feature — dimmed, still clickable (redirects to upgrade) */
-.navLinkBlocked {
-  opacity: 0.45;
-}
-
 /* ── Collapsed icon button ─────────────────────────────────── */
 
 .iconBtn {
@@ -297,14 +292,6 @@
 }
 
 /* ── Badge / shortcut in nav item right section ───────────── */
-
-.badgeUpgrade {
-  color: rgba(255, 255, 255, 0.5);
-  border-color: rgba(255, 255, 255, 0.25);
-  border-width: 1px;
-  border-style: solid;
-  flex-shrink: 0;
-}
 
 .badgeFilled {
   border-width: 1px;

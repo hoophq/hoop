@@ -77,7 +77,9 @@
      {:db (-> db
               (assoc-in [:aws-connect :status] :validating)
               (assoc-in [:aws-connect :loading :active?] true)
-              (assoc-in [:aws-connect :loading :message] "Saving AWS credentials..."))
+              (assoc-in [:aws-connect :loading :message] "Saving AWS credentials...")
+              (assoc-in [:aws-connect :error] nil)
+              (assoc-in [:aws-connect :accounts :api-error] nil))
       :dispatch [:aws-connect/save-credentials aws-credentials]})))
 
 (rf/reg-event-fx
@@ -117,7 +119,9 @@
    (let [selected-accounts (get-in db [:aws-connect :accounts :selected])]
      {:db (-> db
               (assoc-in [:aws-connect :loading :active?] true)
-              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment..."))
+              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment...")
+              (assoc-in [:aws-connect :error] nil)
+              (assoc-in [:aws-connect :resources :api-error] nil))
       :dispatch [:fetch
                  {:method "POST"
                   :uri "/integrations/aws/rds/describe-db-instances"

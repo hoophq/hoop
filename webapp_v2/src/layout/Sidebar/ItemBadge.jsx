@@ -1,20 +1,7 @@
 import { Badge, Group, Text } from '@mantine/core';
 import classes from './Sidebar.module.css';
 
-export function ItemBadge({ badge, blocked, shortcut }) {
-  if (blocked) {
-    return (
-      <Badge
-        size="xs"
-        variant="outline"
-        color="gray"
-        className={classes.badgeUpgrade}
-      >
-        Upgrade
-      </Badge>
-    );
-  }
-
+export function ItemBadge({ badge, shortcut }) {
   const hasBadge = !!badge;
   const hasShortcut = !!shortcut;
   if (!hasBadge && !hasShortcut) return null;

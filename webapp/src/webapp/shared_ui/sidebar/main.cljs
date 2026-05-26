@@ -84,7 +84,6 @@
     (fn [user my-plugins]
       (let [user-data (:data user)
             admin? (:admin? user-data)
-            free-license? (:free-license? user-data)
             feature-flags (get-in (:data @gateway-info) [:feature_flags])
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
                             true
@@ -144,24 +143,16 @@
                     ^{:key (:name route)}
                     [:li {:class (str (when
                                        (and (:admin-only? route) (not admin?)) "hidden"))}
-                     [:a {:href (if (and free-license? (not (:free-feature? route)))
-                                  "#"
-                                  (:uri route))
+                     [:a {:href (:uri route)
                           :on-click (fn []
-                                      (when (and free-license? (not (:free-feature? route)))
-                                        (rf/dispatch [:navigate :upgrade-plan]))
                                       (when (:action route)
                                         ((:action route))))
                           :class (str (styles/hover-side-menu-link (:uri route) current-route)
                                       "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold "
-                                      (when (and free-license? (not (:free-feature? route)))
-                                        " text-opacity-30")
                                       (when (some? (:action route)) " cursor-pointer"))
                           :aria-current (when (= (:uri route) current-route) "page")
                           :aria-label (:name route)}
-                      [(:icon route) {:class (str (:standard styles/icon-styles)
-                                                  (when (and free-license? (not (:free-feature? route)))
-                                                    " opacity-30"))
+                      [(:icon route) {:class (:standard styles/icon-styles)
                                       :aria-hidden "true"}]
                       [:span {:class "sr-only"}
                        (:name route)]]])]]
@@ -178,21 +169,12 @@
                                        (get feature-flags flag)))]
                     ^{:key (:name route)}
                     [:li
-                     [:a {:href (if (and free-license? (not (:free-feature? route)))
-                                  "#"
-                                  (:uri route))
-                          :on-click (fn []
-                                      (when (and free-license? (not (:free-feature? route)))
-                                        (rf/dispatch [:navigate :upgrade-plan])))
+                     [:a {:href (:uri route)
                           :class (str (styles/hover-side-menu-link (:uri route) current-route)
-                                      "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold "
-                                      (when (and free-license? (not (:free-feature? route)))
-                                        " text-opacity-30"))
+                                      "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold ")
                           :aria-current (when (= (:uri route) current-route) "page")
                           :aria-label (:label route)}
-                      [(:icon route) {:class (str (:standard styles/icon-styles)
-                                                  (when (and free-license? (not (:free-feature? route)))
-                                                    " opacity-30"))
+                      [(:icon route) {:class (:standard styles/icon-styles)
                                       :aria-hidden "true"}]
                       [:span {:class "sr-only"}
                        (:label route)]]])]]
@@ -205,21 +187,12 @@
                         :when (not (and (:admin-only? route) (not admin?)))]
                     ^{:key (:name route)}
                     [:li
-                     [:a {:href (if (and free-license? (not (:free-feature? route)))
-                                  "#"
-                                  (:uri route))
-                          :on-click (fn []
-                                      (when (and free-license? (not (:free-feature? route)))
-                                        (rf/dispatch [:navigate :upgrade-plan])))
+                     [:a {:href (:uri route)
                           :class (str (styles/hover-side-menu-link (:uri route) current-route)
-                                      "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold "
-                                      (when (and free-license? (not (:free-feature? route)))
-                                        " text-opacity-30"))
+                                      "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold ")
                           :aria-current (when (= (:uri route) current-route) "page")
                           :aria-label (:label route)}
-                      [(:icon route) {:class (str (:standard styles/icon-styles)
-                                                  (when (and free-license? (not (:free-feature? route)))
-                                                    " opacity-30"))
+                      [(:icon route) {:class (:standard styles/icon-styles)
                                       :aria-hidden "true"}]
                       [:span {:class "sr-only"}
                        (:label route)]]])
