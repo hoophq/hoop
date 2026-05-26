@@ -48,6 +48,15 @@ type Service interface {
 	// identified by state. Returns ErrNotImplemented in the stub.
 	LoginPoll(ctx context.Context, state string) (LoginPollResponse, error)
 
+	// LoginLocal performs a synchronous email+password authentication
+	// against the gateway's /api/localauth/login endpoint and persists
+	// the returned token. It is the non-OIDC sibling of LoginStart,
+	// used by self-hosted gateways whose `auth_method` is "local".
+	//
+	// Returns ErrNotImplemented if the daemon was built without
+	// local-auth support (it isn't, today — both paths ship together).
+	LoginLocal(ctx context.Context, req LoginLocalRequest) error
+
 	// Logout clears the persisted access token and tears down any
 	// active gateway gRPC streams. Returns ErrNotImplemented in the
 	// stub.
@@ -196,6 +205,7 @@ func (s *Server) buildHandler() http.Handler {
 	mux.HandleFunc("GET /v1/connections", s.handleConnections)
 	mux.HandleFunc("POST /v1/login/start", s.handleLoginStart)
 	mux.HandleFunc("GET /v1/login/poll", s.handleLoginPoll)
+	mux.HandleFunc("POST /v1/login/local", s.handleLoginLocal)
 	mux.HandleFunc("POST /v1/logout", s.handleLogout)
 	mux.HandleFunc("GET /v1/config", s.handleConfigGet)
 	mux.HandleFunc("PUT /v1/config", s.handleConfigPut)
@@ -288,6 +298,23 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleLoginLocal(w http.ResponseWriter, r *http.Request) {
+	var req LoginLocalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON body: %v", err), "bad_request")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required", "bad_request")
+		return
+	}
+	if err := s.opts.Service.LoginLocal(r.Context(), req); err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

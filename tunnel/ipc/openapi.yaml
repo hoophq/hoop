@@ -103,6 +103,18 @@ components:
           type: string
           description: Opaque token to pass back to /v1/login/poll.
 
+    LoginLocalRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          description: Local-auth user identifier.
+        password:
+          type: string
+          format: password
+          description: Cleartext password. Sent over local IPC only.
+
     LoginPollResponse:
       type: object
       required: [status]
@@ -229,6 +241,28 @@ paths:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /v1/login/local:
+    post:
+      summary: "Sync email+password login against `auth_method: local` gateways."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginLocalRequest" }
+      responses:
+        "204": { description: Authenticated and token persisted. }
+        "400":
+          description: Missing or malformed credentials.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: Gateway rejected the credentials or persistence failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /v1/logout:
     post:

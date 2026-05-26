@@ -128,6 +128,12 @@ func (c *Client) LoginPoll(ctx context.Context, state string) (LoginPollResponse
 	return out, err
 }
 
+// LoginLocal corresponds to POST /v1/login/local. Returns nil on
+// success (204 No Content); errors are typed APIError as usual.
+func (c *Client) LoginLocal(ctx context.Context, req LoginLocalRequest) error {
+	return c.do(ctx, http.MethodPost, "/v1/login/local", req, nil)
+}
+
 // Logout corresponds to POST /v1/logout.
 func (c *Client) Logout(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/v1/logout", nil, nil)

@@ -244,6 +244,28 @@ func (s *daemonService) LoginStart(ctx context.Context) (ipc.LoginStartResponse,
 	}, nil
 }
 
+func (s *daemonService) LoginLocal(ctx context.Context, req ipc.LoginLocalRequest) error {
+	s.mu.RLock()
+	apiURL := s.cfg.APIURL
+	s.mu.RUnlock()
+	if apiURL == "" {
+		return errors.New("local-auth login requires api_url; set it first via PUT /v1/config")
+	}
+
+	token, err := loginflow.LocalAuth(ctx, nil /* default http.Client */, apiURL, req.Email, req.Password)
+	if err != nil {
+		if errors.Is(err, loginflow.ErrInvalidLocalCredentials) {
+			return errors.New("invalid email or password")
+		}
+		return err
+	}
+
+	if err := s.persistTokenFromLogin(token); err != nil {
+		return fmt.Errorf("persist token: %w", err)
+	}
+	return nil
+}
+
 func (s *daemonService) LoginPoll(_ context.Context, state string) (ipc.LoginPollResponse, error) {
 	s.loginMu.Lock()
 	flow := s.login

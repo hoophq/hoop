@@ -118,6 +118,29 @@ type LoginStartResponse struct {
 	State string `json:"state"`
 }
 
+// LoginLocalRequest is the body for POST /v1/login/local — the
+// daemon's non-OIDC login path. Used against self-hosted gateways
+// whose `auth_method` is "local" (email/password).
+//
+// We send the credentials to the daemon (over the local-only
+// authenticated IPC socket) rather than from the UI to the gateway
+// directly so the daemon stays the sole owner of the persisted
+// token; the UI never has to write to /etc/hsh/config.toml.
+//
+// On success the response is the same StatusResponse the UI would
+// get from polling /v1/login/poll — Status="done" once the token is
+// persisted. The endpoint is synchronous: there is no callback
+// server in this path, so there's nothing to poll.
+type LoginLocalRequest struct {
+	// Email is the local-auth user identifier. Required.
+	Email string `json:"email"`
+
+	// Password is the cleartext password. Sent over the local IPC
+	// socket only — never logged, never persisted (the gateway returns
+	// a token; the daemon discards the password after the POST).
+	Password string `json:"password"`
+}
+
 // LoginPollStatus is the lifecycle of a login attempt.
 type LoginPollStatus string
 

@@ -26,6 +26,8 @@ type fakeService struct {
 	loginStartErr error
 	loginPoll     LoginPollResponse
 	loginPollErr  error
+	loginLocalGot LoginLocalRequest
+	loginLocalErr error
 	logoutErr     error
 	configResp    ConfigResponse
 	configErr     error
@@ -64,6 +66,13 @@ func (f *fakeService) Logout(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.logoutErr
+}
+
+func (f *fakeService) LoginLocal(_ context.Context, req LoginLocalRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loginLocalGot = req
+	return f.loginLocalErr
 }
 
 func (f *fakeService) Config(context.Context) (ConfigResponse, error) {
@@ -261,6 +270,36 @@ func TestServer_LoginPollPassesStateThrough(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &got)
 	if got.Status != LoginStatusPending {
 		t.Errorf("status = %q, want pending", got.Status)
+	}
+}
+
+func TestServer_LoginLocalHappyPath(t *testing.T) {
+	svc := &fakeService{}
+	srv, tok := newTestServer(t, svc)
+
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/login/local", LoginLocalRequest{
+		Email:    "alice@example.com",
+		Password: "hunter2",
+	})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%q", rec.Code, rec.Body.String())
+	}
+	if svc.loginLocalGot.Email != "alice@example.com" {
+		t.Errorf("Email passed = %q", svc.loginLocalGot.Email)
+	}
+	if svc.loginLocalGot.Password != "hunter2" {
+		t.Errorf("Password not propagated")
+	}
+}
+
+func TestServer_LoginLocalValidatesFields(t *testing.T) {
+	srv, tok := newTestServer(t, &fakeService{})
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/login/local", LoginLocalRequest{
+		Email:    "",
+		Password: "x",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("missing email: status = %d, want 400", rec.Code)
 	}
 }
 
