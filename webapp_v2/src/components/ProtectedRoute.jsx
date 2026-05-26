@@ -9,7 +9,7 @@ import PageLoader from '@/components/PageLoader'
 function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, isAdmin, setUser, setLoading, setServerInfo, initIntercom } = useUserStore()
+  const { user, isAdmin, setUser, setLoading, setServerInfo, initIntercom, initAnalytics } = useUserStore()
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
@@ -52,6 +52,7 @@ function ProtectedRoute({ children, adminOnly = false }) {
           if (serverInfo) {
             setServerInfo(serverInfo)
             initIntercom(userData)
+            initAnalytics(userData)
           }
           currentUser = userData
         }

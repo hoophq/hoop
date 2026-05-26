@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { identify as analyticsIdentify } from '@/services/analytics'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
 
@@ -21,6 +22,7 @@ export const useUserStore = create((set, get) => ({
   isSelfHosted: false,
   isFreeLicense: true,
   analyticsTracking: false,
+  analyticsMode: 'anonymous',
   disableClipboard: false,
   gatewayVersion: null,
   featureFlags: {},
@@ -31,15 +33,16 @@ export const useUserStore = create((set, get) => ({
     const license = serverInfo?.license_info
     const isFreeLicense = !(license?.is_valid && license?.type === 'enterprise')
     const analyticsTracking = serverInfo?.analytics_tracking === 'enabled'
+    const analyticsMode = serverInfo?.analytics_mode || 'anonymous'
     const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
     const featureFlags = serverInfo?.feature_flags || {}
-    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, disableClipboard, featureFlags })
+    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, featureFlags })
   },
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, disableClipboard: false, gatewayVersion: null, featureFlags: {} })
+    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, analyticsMode: 'anonymous', disableClipboard: false, gatewayVersion: null, featureFlags: {} })
   },
 
   initIntercom: (user) => {
@@ -64,5 +67,13 @@ export const useUserStore = create((set, get) => ({
 
     // Script creates a stub immediately — safe to call boot right away
     window.Intercom('boot', config)
+  },
+
+  initAnalytics: (user) => {
+    const { analyticsTracking, analyticsMode } = get()
+    if (!analyticsTracking) return
+    analyticsIdentify(user, analyticsMode).catch((err) => {
+      console.warn('[analytics] identify failed:', err)
+    })
   },
 }))
