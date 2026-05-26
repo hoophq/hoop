@@ -102,14 +102,14 @@ export default function ApiKeysForm() {
         </Button>
       </Box>
 
-      <Group justify="space-between" align="center" mb="xxxl">
+      <Group justify="space-between" align="center" mb="xxxlAlt">
         <Title order={1}>{isEdit ? 'Configure API Key' : 'Create new API Key'}</Title>
         <Button onClick={handleSubmit} loading={saving}>
           Save
         </Button>
       </Group>
 
-      <Stack gap="xxl">
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Basic info"
           description="Give this API key a name so you can identify it later."
