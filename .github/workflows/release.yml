@@ -843,7 +843,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: |-
           make build-release-checksums
-          # Sanity-check: 6 binaries + SHA256SUMS == 7 files.
+          # Sanity-check: 6 binaries + 2 scripts + SHA256SUMS == 9 files.
           ls -lh dist/release-binaries/
           if gh release view "$GIT_TAG" >/dev/null 2>&1; then
             echo "Release $GIT_TAG already exists; uploading assets with --clobber."

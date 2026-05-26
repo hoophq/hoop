@@ -162,11 +162,33 @@ build-hsh-tunneld-all:
 	GOOS=windows GOARCH=amd64 $(MAKE) build-hsh-tunneld
 	GOOS=windows GOARCH=arm64 $(MAKE) build-hsh-tunneld
 
-# SHA256SUMS over the release binaries, ready to attach to a GitHub Release.
-# Generated in `dist/release-binaries/SHA256SUMS` so consumers can verify with
+# Stage the user-facing install/uninstall scripts (RD-226) into the
+# release-binaries directory so they get uploaded as Release assets
+# alongside the daemon binaries. Each per-platform archive consumer
+# (RD-227's hsh bundle, the brew formula, the linux tarball builder)
+# pulls them from there.
+#
+# Lives in this Makefile target (rather than the workflow file
+# itself) so a local `make build-release-checksums` produces the same
+# `dist/release-binaries/` tree that the workflow uploads.
+stage-release-scripts:
+	mkdir -p ${DIST_FOLDER}/release-binaries
+	cp tunnel/dist/scripts/install.sh   ${DIST_FOLDER}/release-binaries/install.sh
+	cp tunnel/dist/scripts/uninstall.sh ${DIST_FOLDER}/release-binaries/uninstall.sh
+	chmod 0755 ${DIST_FOLDER}/release-binaries/install.sh
+	chmod 0755 ${DIST_FOLDER}/release-binaries/uninstall.sh
+
+# SHA256SUMS over the release binaries + install scripts, ready to
+# attach to a GitHub Release. Generated in
+# `dist/release-binaries/SHA256SUMS` so consumers can verify with
 # `sha256sum -c SHA256SUMS` after downloading.
-build-release-checksums:
-	cd ${DIST_FOLDER}/release-binaries && sha256sum hsh-tunneld-* > SHA256SUMS
+#
+# We include the scripts in the checksum file because RD-227's
+# build-time download pipeline verifies *every* file it pulls from
+# the hoop release against this SHA256SUMS — leaving scripts out
+# would create a hole in the trust chain.
+build-release-checksums: stage-release-scripts
+	cd ${DIST_FOLDER}/release-binaries && sha256sum hsh-tunneld-* install.sh uninstall.sh > SHA256SUMS
 
 build-webapp:
 	mkdir -p ${DIST_FOLDER}
@@ -240,4 +262,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
