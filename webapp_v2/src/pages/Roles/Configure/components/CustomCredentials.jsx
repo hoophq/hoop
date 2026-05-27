@@ -5,19 +5,50 @@ import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
-import { decodeSecretValue, encodeSecretValue, PLACEHOLDER_KEY_RE } from '../utils/secretsCodec'
+import SourcedInput from '@/components/SourcedInput'
+import {
+  decodeSecretValue,
+  encodeSecretForSource,
+  sourceFromEncodedValue,
+  PLACEHOLDER_KEY_RE,
+  SOURCES,
+} from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
+import { sourceOptionsFor } from './SecretField/util'
 import ConfigurationFilesSection from './ConfigurationFilesSection'
 import CommandArgsInput from './CommandArgsInput'
 import AgentSelector from './AgentSelector'
+
+// Provider prefixes we strip from a free-form value before rendering it
+// in the input — the source selector to the left already conveys which
+// provider applies, so the input itself should show the bare reference
+// id (matches CLJS configuration_inputs.cljs's source-selector pattern).
+const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 
 // Free-form credentials editor for custom connections. Values round-
 // trip plaintext from the backend; rename commits on blur and is
 // translated into delete-old + replace-new at save time so the row's
 // rendered position stays put. The list never shrinks past one empty
 // row — auto-adds a placeholder if everything was removed.
+//
+// When the parent (CredentialsTab) is in Secrets Manager mode it passes
+// `availableSources` — that triggers a per-row source picker on the
+// value input, so each env var can independently come from manual entry
+// or a secrets-manager reference. The selected source decides whether
+// the value is encoded bare (manual) or with a `_vaultkv1:` / `_aws:` /
+// `_vaultkv2:` prefix.
 
-function EnvvarRow({ rowKey, displayName, value, onCommitKey, onValueChange, onRemove }) {
+function EnvvarRow({
+  rowKey,
+  displayName,
+  value,
+  source,
+  availableSources,
+  onCommitKey,
+  onValueChange,
+  onSourceChange,
+  onRemove,
+}) {
   const [draftName, setDraftName] = useState(displayName)
 
   // Keep the local draft in sync when the displayed name changes from
@@ -25,6 +56,8 @@ function EnvvarRow({ rowKey, displayName, value, onCommitKey, onValueChange, onR
   useEffect(() => {
     setDraftName(displayName)
   }, [displayName])
+
+  const showSourceSelect = Boolean(availableSources)
 
   return (
     <Grid gutter="md" align="flex-end" key={rowKey}>
@@ -42,12 +75,25 @@ function EnvvarRow({ rowKey, displayName, value, onCommitKey, onValueChange, onR
         />
       </Grid.Col>
       <Grid.Col span={6}>
-        <PasswordInput
-          label="Value"
-          value={value}
-          onChange={(e) => onValueChange(e.currentTarget.value)}
-          placeholder="Enter value"
-        />
+        {showSourceSelect ? (
+          <SourcedInput
+            label="Value"
+            type="password"
+            placeholder="Enter value"
+            value={value}
+            onChange={onValueChange}
+            source={source}
+            sources={sourceOptionsFor(availableSources)}
+            onSourceChange={onSourceChange}
+          />
+        ) : (
+          <PasswordInput
+            label="Value"
+            value={value}
+            onChange={(e) => onValueChange(e.currentTarget.value)}
+            placeholder="Enter value"
+          />
+        )}
       </Grid.Col>
       <Grid.Col span={1}>
         <ActionIcon
@@ -64,13 +110,20 @@ function EnvvarRow({ rowKey, displayName, value, onCommitKey, onValueChange, onR
   )
 }
 
-export default function CustomCredentials({ connection }) {
+export default function CustomCredentials({ connection, availableSources }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
+  const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
   const renames = useConfigureRoleStore((s) => s.renames)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
   const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
+  const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
+
+  // When the parent runs in Secrets Manager mode it passes
+  // [provider, manual-input] as availableSources. The provider is the
+  // first item so it doubles as the default for fresh rows.
+  const defaultSource = availableSources?.[0] || SOURCES.MANUAL
 
   const currentSecrets = connection.secret || {}
   const stagedDeletedKeys = new Set(
@@ -135,17 +188,38 @@ export default function CustomCredentials({ connection }) {
           // explicitly cleared the input" and we don't want to fall back
           // to the persisted value (would resurrect stale data when the
           // auto-placeholder kicks in after a delete).
-          const value = staged
+          //
+          // We also strip any leading provider prefix (`_vaultkv1:` etc)
+          // so the input shows the bare reference id; the source picker
+          // to the left conveys which provider applies. In Manual mode
+          // (no availableSources) the strip is a no-op for ordinary
+          // values and only affects rows that happened to be saved as
+          // references — those round-trip back through the picker once
+          // the user re-enters Secrets Manager mode.
+          const rawValue = staged
             ? decodeSecretValue(staged.value || '')
             : currentSecrets[envKey]
               ? decodeSecretValue(currentSecrets[envKey])
               : ''
+          const value = rawValue.replace(PROVIDER_PREFIX_RE, '')
+          // Source priority: explicit per-field pick (fieldSources) →
+          // detection from the encoded value → defaultSource (provider
+          // when in Secrets Manager mode, manual otherwise).
+          const encodedForDetection = staged
+            ? staged.value
+            : currentSecrets[envKey] || ''
+          const source =
+            fieldSources[envKey] ||
+            (encodedForDetection ? sourceFromEncodedValue(encodedForDetection) : null) ||
+            defaultSource
           return (
             <EnvvarRow
               key={envKey}
               rowKey={envKey}
               displayName={displayName}
               value={value}
+              source={source}
+              availableSources={availableSources}
               onCommitKey={(newName) => {
                 const nextKey = newName.startsWith('envvar:')
                   ? newName
@@ -153,8 +227,20 @@ export default function CustomCredentials({ connection }) {
                 renameSecret(envKey, nextKey)
               }}
               onValueChange={(plain) =>
-                replaceSecret(envKey, encodeSecretValue(plain))
+                replaceSecret(envKey, encodeSecretForSource(plain, source))
               }
+              onSourceChange={(nextSource) => {
+                // Stage the value under the new source before bumping
+                // fieldSources so save() always sends the right prefix —
+                // even when the user just toggles the picker without
+                // typing. setFieldSource handles re-encoding for staged
+                // rows; for not-yet-staged rows we stage their current
+                // (already-stripped) value here.
+                if (!staged) {
+                  replaceSecret(envKey, encodeSecretForSource(value, nextSource))
+                }
+                setFieldSource(envKey, nextSource)
+              }}
               onRemove={() => {
                 if (isExisting) deleteSecret(envKey)
                 else cancelSecretChange(envKey)

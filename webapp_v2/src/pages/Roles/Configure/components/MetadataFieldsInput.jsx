@@ -1,4 +1,4 @@
-import { Stack, Group } from '@mantine/core'
+import { Stack, Grid, Group } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
@@ -22,26 +22,31 @@ export default function MetadataFieldsInput() {
   return (
     <Stack gap="sm">
       {rows.map((value, i) => (
-        <Group key={i} gap="sm" wrap="nowrap" align="flex-end">
-          <TextInput
-            label={i === 0 ? 'Field Name' : undefined}
-            placeholder="e.g. Ticket Number"
-            value={value}
-            onChange={(e) => setField(i, e.currentTarget.value)}
-            flex={1}
-          />
-          {i > 0 && (
-            <ActionIcon
-              variant="subtle"
-              color="red"
-              size="lg"
-              onClick={() => removeField(i)}
-              aria-label="Remove field"
-            >
-              <Trash2 size={16} />
-            </ActionIcon>
-          )}
-        </Group>
+        <Grid key={i} gutter="sm" align="flex-end">
+          <Grid.Col span={11}>
+            <TextInput
+              label={i === 0 ? 'Field Name' : undefined}
+              placeholder="e.g. Ticket Number"
+              value={value}
+              onChange={(e) => setField(i, e.currentTarget.value)}
+            />
+          </Grid.Col>
+          <Grid.Col span={1}>
+            {i > 0 && (
+              <Group justify="center">
+                <ActionIcon
+                  variant="subtle"
+                  color="red"
+                  size="lg"
+                  onClick={() => removeField(i)}
+                  aria-label="Remove field"
+                >
+                  <Trash2 size={16} />
+                </ActionIcon>
+              </Group>
+            )}
+          </Grid.Col>
+        </Grid>
       ))}
       <Button
         variant="light"

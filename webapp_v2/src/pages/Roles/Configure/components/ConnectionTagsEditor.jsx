@@ -96,7 +96,7 @@ export default function ConnectionTagsEditor() {
   return (
     <Stack gap="md">
       {entries.length > 0 && (
-        <Grid gutter="md">
+        <Grid gutter="md" align="flex-end">
           {entries.map(([key, value]) => (
             <RowFragment
               key={key}
