@@ -1,5 +1,6 @@
-import { Stack, Title, Text, Group, Alert } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, Info } from 'lucide-react'
+import { useState } from 'react'
+import { Stack, Title, Text, Alert } from '@mantine/core'
+import { FileText, Cloud, ShieldCheck, Info, TriangleAlert } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
 import SecretField from './SecretField'
 import {
@@ -51,26 +52,51 @@ function WriteOnlyNotice() {
   )
 }
 
-function ConnectionMethodSection({ activeMethod }) {
+// Whether the AWS IAM Role card should be offered. CLJS limits it to
+// MySQL and Postgres because those are the only RDS auth backends the
+// gateway/agent currently support.
+function supportsAwsIam(subtype) {
+  return subtype === 'postgres' || subtype === 'mysql'
+}
+
+function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) {
+  const visibleMethods = METHOD_DEFINITIONS.filter(
+    (m) => m.id !== CONNECTION_METHODS.AWS_IAM || awsIamAvailable,
+  )
   return (
     <Stack gap="md">
       <Title order={4}>Connection method</Title>
       <Stack gap="sm">
-        {METHOD_DEFINITIONS.map(({ id, title, description, icon }) => (
+        {visibleMethods.map(({ id, title, description, icon }) => (
           <SelectionCard
             key={id}
             icon={icon}
             title={title}
             description={description}
-            selected={activeMethod === id}
-            onClick={() => {
-              // Switching methods is a destructive bulk operation we don't
-              // ship in this iteration. Selection is informational only.
-            }}
+            selected={selectedMethod === id}
+            onClick={() => onSelect(id)}
           />
         ))}
       </Stack>
     </Stack>
+  )
+}
+
+function MethodSwitchNotice({ derivedMethod, selectedMethod }) {
+  const labelOf = (id) =>
+    METHOD_DEFINITIONS.find((m) => m.id === id)?.title || id
+  return (
+    <Alert variant="light" color="yellow" icon={<TriangleAlert size={16} />}>
+      <Stack gap={4}>
+        <Text size="sm" fw={600}>
+          {'Switching from ' + labelOf(derivedMethod) + ' to ' + labelOf(selectedMethod) + ' requires re-entering all credentials.'}
+        </Text>
+        <Text size="sm">
+          This is not yet supported by the new editor. Save the current
+          connection unchanged, or use the legacy editor to switch methods.
+        </Text>
+      </Stack>
+    </Alert>
   )
 }
 
@@ -147,14 +173,29 @@ function UnsupportedCredentialsPlaceholder({ connection }) {
 }
 
 export default function CredentialsTab({ connection, isAdmin }) {
-  const activeMethod = deriveConnectionMethod(connection.secret)
+  const derivedMethod = deriveConnectionMethod(connection.secret)
+  const [selectedMethod, setSelectedMethod] = useState(derivedMethod)
   const showMethodCards = supportsConnectionMethods(connection)
+  const awsIamAvailable = supportsAwsIam(connection.subtype)
   const supported = isCatalogSubtype(connection.subtype) && connection.type === 'database'
+  const methodMismatch = selectedMethod !== derivedMethod
 
   return (
     <Stack gap="xxl" maw={720}>
       <WriteOnlyNotice />
-      {showMethodCards && <ConnectionMethodSection activeMethod={activeMethod} />}
+      {showMethodCards && (
+        <ConnectionMethodSection
+          selectedMethod={selectedMethod}
+          onSelect={setSelectedMethod}
+          awsIamAvailable={awsIamAvailable}
+        />
+      )}
+      {methodMismatch && (
+        <MethodSwitchNotice
+          derivedMethod={derivedMethod}
+          selectedMethod={selectedMethod}
+        />
+      )}
       {supported ? (
         <CatalogCredentials connection={connection} isAdmin={isAdmin} />
       ) : (

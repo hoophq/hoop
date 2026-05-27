@@ -1,0 +1,15 @@
+/* Sticky form footer.
+ *
+ * position: sticky + bottom: 0 anchors the footer to the viewport's
+ * bottom as the user scrolls past it. The opaque background and top
+ * border keep page content from showing through.
+ */
+.root {
+  position: sticky;
+  bottom: 0;
+  background: var(--mantine-color-white);
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: var(--mantine-spacing-md);
+  padding-bottom: var(--mantine-spacing-md);
+  z-index: 10;
+}

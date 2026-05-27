@@ -22,6 +22,7 @@ const initialState = {
   deleting: false,
   testing: false,
   testResult: null,
+  testModalOpen: false,
   stagedSecrets: {},
 }
 
@@ -121,15 +122,28 @@ export const useConfigureRoleStore = create((set, get) => ({
   runTestConnection: async () => {
     const { connection } = get()
     if (!connection) return
-    set({ testing: true, testResult: null })
+    const startedAt = Date.now()
+    set({ testing: true, testResult: null, testModalOpen: true })
     try {
       const result = await connectionsService.testConnection(connection.name)
-      set({ testing: false, testResult: { success: true, ...result } })
+      set({
+        testing: false,
+        testResult: {
+          success: true,
+          durationMs: Date.now() - startedAt,
+          ...result,
+        },
+      })
     } catch (err) {
       const message = err?.response?.data?.message || 'Connection test failed.'
-      set({ testing: false, testResult: { success: false, message } })
+      set({
+        testing: false,
+        testResult: { success: false, message, durationMs: Date.now() - startedAt },
+      })
     }
   },
+
+  closeTestModal: () => set({ testModalOpen: false, testResult: null }),
 
   clearTestResult: () => set({ testResult: null }),
 
