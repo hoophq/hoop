@@ -146,8 +146,19 @@ function buildDraftsPatch(drafts, baseline) {
   if (drafts.jira_issue_template_id !== baseline.jira_issue_template_id) {
     patch.jira_issue_template_id = drafts.jira_issue_template_id
   }
-  if (!arraysEqual(drafts.mandatory_metadata_fields, baseline.mandatory_metadata_fields)) {
-    patch.mandatory_metadata_fields = drafts.mandatory_metadata_fields
+  // Drop blank rows so the payload doesn't carry junk like `[""]` —
+  // the placeholder UX keeps an empty input visible at the bottom and
+  // the user can also clear the first row, both of which leave a
+  // whitespace-only entry in the draft. Mirrors CLJS process_form's
+  // (filterv #(not (str/blank? %))) on mandatory-metadata-fields.
+  const cleanedMandatory = drafts.mandatory_metadata_fields.filter(
+    (s) => typeof s === 'string' && s.trim() !== '',
+  )
+  const cleanedBaselineMandatory = baseline.mandatory_metadata_fields.filter(
+    (s) => typeof s === 'string' && s.trim() !== '',
+  )
+  if (!arraysEqual(cleanedMandatory, cleanedBaselineMandatory)) {
+    patch.mandatory_metadata_fields = cleanedMandatory
   }
   // redact_enabled is read-only on the API (derived from redact_types).
   // We translate by setting redact_types to [] when the user disables masking.
@@ -423,8 +434,14 @@ export const useConfigureRoleStore = create((set, get) => ({
   // Wipes every staged secret in one go. Used when the user switches
   // the Credentials tab's connection method — switching is a fresh
   // start in write-only land, so any half-typed staged values for the
-  // previous method don't bleed into the new one.
-  clearStagedSecrets: () => set({ stagedSecrets: {}, renames: {} }),
+  // previous method don't bleed into the new one. Also resets the
+  // per-field source map so each field falls back to whichever
+  // provider the new method advertises as default (otherwise existing
+  // rows would stay tagged with whatever source the loaded values
+  // happened to imply — typically `manual` — and the source selector
+  // would not reflect the just-picked Secrets Manager provider).
+  clearStagedSecrets: () =>
+    set({ stagedSecrets: {}, renames: {}, fieldSources: {} }),
 
   hasPendingChanges: () => {
     const state = get()
