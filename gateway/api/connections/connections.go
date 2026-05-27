@@ -545,13 +545,16 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		defaultDB = []byte(``)
 	}
 
-	// Write-only secrets: strip inline values for predefined credential
-	// schemas (catalog databases, SSH, HTTP proxy, kubernetes-token,
-	// etc.) so admins can never read them back. Free-form custom envvars
-	// are user data, not credentials — round-trip them plaintext so the
-	// edit UI can show the live value.
+	// Write-only secrets: strip inline values for connection shapes
+	// where the renderer doesn't need to read them back (catalog
+	// databases). Predefined renderers in the v2 form
+	// (custom/kubernetes-token, httpproxy/claude-code, application/ssh,
+	// …) and every free-form custom round-trip values so their edit
+	// UIs can populate URL/header/host fields. See secrets.go's
+	// shouldRoundTripSecrets for the full policy and the security
+	// trade-off rationale.
 	publicEnvs := conn.Envs
-	if !isFreeFormCustom(conn) {
+	if !shouldRoundTripSecrets(conn) {
 		publicEnvs = stripInlineSecrets(conn.Envs)
 	}
 

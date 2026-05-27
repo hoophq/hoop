@@ -141,6 +141,65 @@ func TestIsFreeFormCustom(t *testing.T) {
 	}
 }
 
+func TestShouldRoundTripSecrets(t *testing.T) {
+	mk := func(typ, sub string) *models.Connection {
+		c := &models.Connection{Type: typ}
+		if sub != "" {
+			c.SubType = sql.NullString{String: sub, Valid: true}
+		}
+		return c
+	}
+	cases := []struct {
+		name     string
+		conn     *models.Connection
+		expected bool
+	}{
+		{"nil", nil, false},
+
+		// Catalog databases stay write-only — the renderer there leans
+		// on the Set / Replace pattern and the host/user/password
+		// fields are pure credentials.
+		{"database/postgres stays write-only", mk("database", "postgres"), false},
+		{"database/mysql stays write-only", mk("database", "mysql"), false},
+		{"database/mssql stays write-only", mk("database", "mssql"), false},
+		{"database/oracledb stays write-only", mk("database", "oracledb"), false},
+		{"database/mongodb stays write-only", mk("database", "mongodb"), false},
+
+		// Application SSH-family renderers need host/user/auth visible.
+		{"application/ssh round-trips", mk("application", "ssh"), true},
+		{"application/git round-trips", mk("application", "git"), true},
+		{"application/github round-trips", mk("application", "github"), true},
+		{"unknown application subtype stays write-only", mk("application", "saas"), false},
+
+		// httpproxy: claude-code + generic both surface URL/headers.
+		{"httpproxy/claude-code round-trips", mk("httpproxy", "claude-code"), true},
+		{"httpproxy generic round-trips", mk("httpproxy", "web-application"), true},
+		{"httpproxy with no subtype round-trips", mk("httpproxy", ""), true},
+
+		// Custom: every subtype round-trips — free-form OR catalog-
+		// driven (kubernetes-token, dynamodb, cloudwatch, …).
+		{"custom free-form", mk("custom", ""), true},
+		{"custom/tcp", mk("custom", "tcp"), true},
+		{"custom/linux-vm", mk("custom", "linux-vm"), true},
+		{"custom/claude-code", mk("custom", "claude-code"), true},
+		{"custom/kubernetes-token", mk("custom", "kubernetes-token"), true},
+		{"custom/dynamodb", mk("custom", "dynamodb"), true},
+		{"custom/aws-cloudwatch", mk("custom", "aws-cloudwatch"), true},
+		{"custom/cloudwatch (legacy)", mk("custom", "cloudwatch"), true},
+
+		// Unknown top-level type stays safe (write-only).
+		{"unknown type stays write-only", mk("foo", "bar"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldRoundTripSecrets(tc.conn)
+			if got != tc.expected {
+				t.Fatalf("shouldRoundTripSecrets(%+v) = %v, want %v", tc.conn, got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestEnvsEqual(t *testing.T) {
 	cases := []struct {
 		name     string
