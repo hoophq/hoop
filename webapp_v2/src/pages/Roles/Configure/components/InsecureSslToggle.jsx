@@ -8,7 +8,7 @@ import ToggleSection from './ToggleSection'
 // (see gateway/api/connections/secrets.go::isBooleanValue), so we can
 // read the actual current state instead of starting blind. Toggling
 // stages a replace whose value is base64-encoded "true" or "false".
-export default function InsecureSslToggle({ connection, isAdmin }) {
+export default function InsecureSslToggle({ connection }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
 
@@ -28,7 +28,6 @@ export default function InsecureSslToggle({ connection, isAdmin }) {
       title="Allow insecure SSL"
       description="Skip SSL certificate verification for HTTPS connections."
       checked={checked}
-      disabled={!isAdmin}
       onChange={(next) =>
         replaceSecret(envKey, encodeSecretValue(next ? 'true' : 'false'))
       }

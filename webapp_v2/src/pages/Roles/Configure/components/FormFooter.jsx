@@ -18,7 +18,6 @@ const SIDEBAR_COLLAPSED_WIDTH = 72
 // primary CTA. Dirty state is surfaced as a subtle "Unsaved changes" hint
 // when there are staged edits, so users always know whether Save is needed.
 export default function FormFooter({
-  isAdmin,
   saving,
   deleting,
   dirty,
@@ -54,16 +53,14 @@ export default function FormFooter({
         {dirty && (
           <Text size="sm" c="dimmed">Unsaved changes</Text>
         )}
-        {isAdmin && (
-          <Button
-            variant="transparent"
-            color="red"
-            loading={deleting}
-            onClick={onDelete}
-          >
-            Delete
-          </Button>
-        )}
+        <Button
+          variant="transparent"
+          color="red"
+          loading={deleting}
+          onClick={onDelete}
+        >
+          Delete
+        </Button>
         <Button loading={saving} onClick={onSave}>
           Save
         </Button>

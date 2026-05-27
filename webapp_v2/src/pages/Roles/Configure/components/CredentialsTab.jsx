@@ -87,7 +87,7 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
   )
 }
 
-function CredentialsBody({ connection, isAdmin, availableSources, forceNewState }) {
+function CredentialsBody({ connection, availableSources, forceNewState }) {
   const { type, subtype } = connection
 
   // Mirrors the dispatch in CLJS credentials_tab.cljs verbatim.
@@ -98,7 +98,6 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
         <PredefinedFieldsCredentials
           connection={connection}
           fields={CATALOG_FIELDS[subtype]}
-          isAdmin={isAdmin}
           availableSources={availableSources}
           forceNewState={forceNewState}
         />
@@ -107,7 +106,7 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
   }
 
   if (type === 'application' && (subtype === 'ssh' || subtype === 'git' || subtype === 'github')) {
-    return <SSHCredentials connection={connection} isAdmin={isAdmin} availableSources={availableSources} forceNewState={forceNewState} />
+    return <SSHCredentials connection={connection} availableSources={availableSources} forceNewState={forceNewState} />
   }
 
   if (type === 'httpproxy' && subtype === 'claude-code') {
@@ -118,12 +117,11 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
           <PredefinedFieldsCredentials
             connection={connection}
             fields={CATALOG_FIELDS['claude-code']}
-            isAdmin={isAdmin}
             availableSources={availableSources}
             forceNewState={forceNewState}
           />
         </Stack>
-        <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
+        <InsecureSslToggle connection={connection} />
       </Stack>
     )
   }
@@ -136,12 +134,11 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
           <PredefinedFieldsCredentials
             connection={connection}
             fields={CATALOG_FIELDS.httpproxy}
-            isAdmin={isAdmin}
             availableSources={availableSources}
             forceNewState={forceNewState}
           />
         </Stack>
-        <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
+        <InsecureSslToggle connection={connection} />
       </Stack>
     )
   }
@@ -154,12 +151,11 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
           <PredefinedFieldsCredentials
             connection={connection}
             fields={CATALOG_FIELDS['kubernetes-token']}
-            isAdmin={isAdmin}
             availableSources={availableSources}
             forceNewState={forceNewState}
           />
         </Stack>
-        <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
+        <InsecureSslToggle connection={connection} />
       </Stack>
     )
   }
@@ -171,7 +167,6 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
         <PredefinedFieldsCredentials
           connection={connection}
           fields={CATALOG_FIELDS[subtype]}
-          isAdmin={isAdmin}
           availableSources={availableSources}
           forceNewState={forceNewState}
         />
@@ -180,7 +175,7 @@ function CredentialsBody({ connection, isAdmin, availableSources, forceNewState 
   }
 
   if (type === 'custom') {
-    return <CustomCredentials connection={connection} isAdmin={isAdmin} availableSources={availableSources} />
+    return <CustomCredentials connection={connection} availableSources={availableSources} />
   }
 
   return (
@@ -225,7 +220,7 @@ function SecretsManagerProviderSection({ provider, onProviderChange }) {
   )
 }
 
-export default function CredentialsTab({ connection, isAdmin }) {
+export default function CredentialsTab({ connection }) {
   const derivedMethod = deriveConnectionMethod(connection.secret)
   const [selectedMethod, setSelectedMethodState] = useState(derivedMethod)
   const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
@@ -277,7 +272,6 @@ export default function CredentialsTab({ connection, isAdmin }) {
       )}
       <CredentialsBody
         connection={connection}
-        isAdmin={isAdmin}
         availableSources={availableSources}
         forceNewState={forceNewState}
       />

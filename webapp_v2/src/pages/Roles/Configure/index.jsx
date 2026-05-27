@@ -5,7 +5,6 @@ import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import Tabs from '@/components/Tabs'
 import PageLoader from '@/components/PageLoader'
-import { useUserStore } from '@/stores/useUserStore'
 import { useConfigureRoleStore } from './store'
 import ConfigureHeader from './components/ConfigureHeader'
 import FormFooter from './components/FormFooter'
@@ -43,8 +42,6 @@ function DeleteConfirmationModal({ opened, onClose, onConfirm, connectionName, d
 export default function ConfigureRolePage() {
   const navigate = useNavigate()
   const { connectionName } = useParams()
-  const { user } = useUserStore()
-  const isAdmin = !!user?.is_admin
 
   const {
     connection,
@@ -171,7 +168,7 @@ export default function ConfigureRolePage() {
             </Tabs.Panel>
 
             <Tabs.Panel value="credentials" keepMounted pt="lg">
-              <CredentialsTab connection={connection} isAdmin={isAdmin} />
+              <CredentialsTab connection={connection} />
             </Tabs.Panel>
 
             <Tabs.Panel value="terminal" keepMounted pt="lg">
@@ -184,7 +181,6 @@ export default function ConfigureRolePage() {
           </Tabs>
 
           <FormFooter
-            isAdmin={isAdmin}
             saving={saving}
             deleting={deleting}
             dirty={dirty}

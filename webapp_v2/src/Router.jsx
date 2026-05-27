@@ -94,7 +94,7 @@ function Router() {
       <Route
         path="/roles/:connectionName/configure"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <Layout>
               <PageLayout>
                 <ConfigureRolePage />

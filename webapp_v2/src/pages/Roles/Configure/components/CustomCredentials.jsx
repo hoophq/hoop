@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Stack, Title, Text, Button, Grid, ActionIcon } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import TextInput from '@/components/TextInput'
@@ -9,37 +10,31 @@ import CommandArgsInput from './CommandArgsInput'
 import AgentSelector from './AgentSelector'
 import ResourceSubtypeOverride from './ResourceSubtypeOverride'
 
-// Free-form credentials editor for custom connections. Matches the
-// CLJS create UI: each envvar is a key + value pair. Backend round-
-// trips values plaintext for free-form custom (see secrets.go::
-// isFreeFormCustom), so the value field shows the actual current
-// value behind PasswordInput's reveal toggle — same UX a password
-// manager offers.
+// Free-form credentials editor for custom connections. Backend round-
+// trips values plaintext for free-form custom, so the value field
+// shows the actual current value behind PasswordInput's reveal toggle.
+// Renames commit on blur — the row stages a delete on the old key
+// plus a replace on the new one so mergeSecrets persists both halves
+// in a single PATCH.
 
-function envvarRow({
-  envKey,
-  encodedValue,
-  staged,
-  onKeyChange,
-  onValueChange,
-  onRemove,
-}) {
-  const displayName = envKey.startsWith('envvar:')
+function EnvvarRow({ envKey, value, onCommitKey, onValueChange, onRemove }) {
+  const initialName = envKey.startsWith('envvar:')
     ? envKey.slice('envvar:'.length)
     : envKey
-  // Free-form values come back plaintext, but the user may also have
-  // staged a fresh value during this session — staged wins so what
-  // you type is what you see.
-  const stagedPlain = staged?.value ? decodeSecretValue(staged.value) : null
-  const persistedPlain = encodedValue ? decodeSecretValue(encodedValue) : ''
-  const value = stagedPlain != null ? stagedPlain : persistedPlain
+  const [draftName, setDraftName] = useState(initialName)
+
   return (
-    <Grid key={envKey} gutter="md" align="flex-end">
+    <Grid gutter="md" align="flex-end">
       <Grid.Col span={5}>
         <TextInput
           label="Key"
-          value={displayName}
-          onChange={(e) => onKeyChange(e.currentTarget.value)}
+          value={draftName}
+          onChange={(e) => setDraftName(e.currentTarget.value)}
+          onBlur={() => {
+            const trimmed = draftName.trim()
+            if (!trimmed || trimmed === initialName) return
+            onCommitKey(trimmed)
+          }}
           placeholder="e.g. API_KEY"
         />
       </Grid.Col>
@@ -57,7 +52,7 @@ function envvarRow({
           color="red"
           size="lg"
           onClick={onRemove}
-          aria-label={'Remove ' + displayName}
+          aria-label={'Remove ' + initialName}
         >
           <Trash2 size={16} />
         </ActionIcon>
@@ -66,16 +61,21 @@ function envvarRow({
   )
 }
 
-export default function CustomCredentials({ connection, isAdmin }) {
+export default function CustomCredentials({ connection }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
 
   const currentSecrets = connection.secret || {}
-  const existingKeys = Object.keys(currentSecrets).filter((k) =>
-    k.startsWith('envvar:'),
+  const stagedDeletedKeys = new Set(
+    Object.entries(stagedSecrets)
+      .filter(([, change]) => change.action === 'delete')
+      .map(([k]) => k),
   )
+  const existingKeys = Object.keys(currentSecrets)
+    .filter((k) => k.startsWith('envvar:'))
+    .filter((k) => !stagedDeletedKeys.has(k))
   const stagedNewKeys = Object.entries(stagedSecrets)
     .filter(
       ([k, change]) =>
@@ -89,8 +89,17 @@ export default function CustomCredentials({ connection, isAdmin }) {
   const addEmptyRow = () => {
     let i = 1
     while (allKeys.includes(`envvar:NEW_KEY_${i}`)) i += 1
-    const key = `envvar:NEW_KEY_${i}`
-    replaceSecret(key, '')
+    replaceSecret(`envvar:NEW_KEY_${i}`, '')
+  }
+
+  const renameKey = (envKey, newName, currentValue) => {
+    const nextKey = newName.startsWith('envvar:')
+      ? newName
+      : 'envvar:' + newName.toUpperCase()
+    if (nextKey === envKey) return
+    if (envKey in currentSecrets) deleteSecret(envKey)
+    else cancelSecretChange(envKey)
+    replaceSecret(nextKey, encodeSecretValue(currentValue))
   }
 
   return (
@@ -106,46 +115,40 @@ export default function CustomCredentials({ connection, isAdmin }) {
         {allKeys.map((envKey) => {
           const staged = stagedSecrets[envKey]
           const isExisting = envKey in currentSecrets
-          return envvarRow({
-            envKey,
-            encodedValue: currentSecrets[envKey],
-            staged,
-            isAdmin,
-            isExisting,
-            onKeyChange: (newName) => {
-              // Only new envvars can be renamed; existing keys are
-              // disabled. Stage a replace on the new key + cancel the
-              // old placeholder so save sends the right thing.
-              const nextKey = newName.startsWith('envvar:')
-                ? newName
-                : 'envvar:' + newName.toUpperCase()
-              if (nextKey === envKey) return
-              cancelSecretChange(envKey)
-              replaceSecret(nextKey, staged?.value || '')
-            },
-            onValueChange: (plain) => {
-              if (!isAdmin) return
-              replaceSecret(envKey, encodeSecretValue(plain))
-            },
-            onRemove: () => {
-              if (!isAdmin) return
-              if (isExisting) deleteSecret(envKey)
-              else cancelSecretChange(envKey)
-            },
-          })
+          const stagedPlain = staged?.value
+            ? decodeSecretValue(staged.value)
+            : null
+          const persistedPlain = currentSecrets[envKey]
+            ? decodeSecretValue(currentSecrets[envKey])
+            : ''
+          const value = stagedPlain != null ? stagedPlain : persistedPlain
+          return (
+            <EnvvarRow
+              key={envKey}
+              envKey={envKey}
+              value={value}
+              onCommitKey={(newName) => renameKey(envKey, newName, value)}
+              onValueChange={(plain) =>
+                replaceSecret(envKey, encodeSecretValue(plain))
+              }
+              onRemove={() => {
+                if (isExisting) deleteSecret(envKey)
+                else cancelSecretChange(envKey)
+              }}
+            />
+          )
         })}
         <Button
           variant="light"
           leftSection={<Plus size={14} />}
           w="fit-content"
           onClick={addEmptyRow}
-          disabled={!isAdmin}
         >
           Add key/value
         </Button>
       </Stack>
 
-      <ConfigurationFilesSection connection={connection} isAdmin={isAdmin} />
+      <ConfigurationFilesSection connection={connection} />
       <CommandArgsInput />
       <ResourceSubtypeOverride />
       <AgentSelector />

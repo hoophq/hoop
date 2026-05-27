@@ -22,7 +22,6 @@ import { useConfigureRoleStore } from '../store'
 export default function PredefinedFieldsCredentials({
   connection,
   fields,
-  isAdmin,
   availableSources,
   // When true, every field renders as if it had no existing value —
   // the caller (CredentialsTab) sets this after the user switched the
@@ -76,10 +75,10 @@ export default function PredefinedFieldsCredentials({
             availableSources={availableSources}
             onSourceChange={(s) => setFieldSource(envKey, s)}
             onReplace={(plain) =>
-              isAdmin && replaceSecret(envKey, encodeSecretForSource(plain, source))
+              replaceSecret(envKey, encodeSecretForSource(plain, source))
             }
             onChangeStaged={(plain) =>
-              isAdmin && replaceSecret(envKey, encodeSecretForSource(plain, source))
+              replaceSecret(envKey, encodeSecretForSource(plain, source))
             }
             onCancel={() => cancelSecretChange(envKey)}
           />
