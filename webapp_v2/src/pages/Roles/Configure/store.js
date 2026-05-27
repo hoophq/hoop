@@ -400,30 +400,28 @@ export const useConfigureRoleStore = create((set, get) => ({
     set((state) => {
       const next = { ...state.stagedSecrets }
       delete next[key]
-      return { stagedSecrets: next }
+      // Drop any pending rename for the same key so cancelling a fresh
+      // row doesn't leave a phantom rename around.
+      const nextRenames = { ...state.renames }
+      delete nextRenames[key]
+      return { stagedSecrets: next, renames: nextRenames }
     })
   },
 
-  // Rename the Key of a row without moving its position in the rendered
-  // list. For 'new' staged entries we substitute the key in place
-  // (rebuilding the object preserves insertion order — `delete + add`
-  // would push it to the end and cause a visible row jump). For keys
-  // that exist on the connection we record the rename separately so
-  // save() can translate it into delete-old + replace-new.
+  // Rename the Key of a row. We always record the rename in the
+  // `renames` map and leave the `stagedSecrets` entry under its
+  // original key. That keeps the React `key={envKey}` on the rendered
+  // row stable across renames so the row never unmounts mid-typing —
+  // moving the entry between keys would lose focus on the next input
+  // (Tab from Name to Value) and silently drop the user's typed value.
+  // buildSecretsPatch translates the rename into delete-old +
+  // replace-new on the wire for both 'new' and persisted entries.
   renameSecret: (originalKey, newKey) => {
     set((state) => {
       if (newKey === originalKey) {
         const renames = { ...state.renames }
         delete renames[originalKey]
         return { renames }
-      }
-      const stagedForOriginal = state.stagedSecrets[originalKey]
-      if (stagedForOriginal?.action === 'new') {
-        const stagedSecrets = {}
-        for (const [k, v] of Object.entries(state.stagedSecrets)) {
-          stagedSecrets[k === originalKey ? newKey : k] = v
-        }
-        return { stagedSecrets }
       }
       return { renames: { ...state.renames, [originalKey]: newKey } }
     })
@@ -470,15 +468,21 @@ export const useConfigureRoleStore = create((set, get) => ({
   },
 
   save: async () => {
-    const { connection, stagedSecrets, drafts, baseline } = get()
+    const { connection, stagedSecrets, renames, drafts, baseline } = get()
     if (!connection) return
     // Reject when a placeholder row has content the user hasn't named.
     // The sentinel key (`envvar:NEW_KEY_N` / `filesystem:NEW_FILE_N`)
     // is a UI affordance for the empty state; saving it as-is would
-    // persist a junk record like `filesystem:NEW_FILE_1`. We surface a
-    // specific error so the user knows they need to set the Name/Key.
+    // persist a junk record like `filesystem:NEW_FILE_1`. Renamed
+    // entries — even when stagedSecrets keeps the sentinel key — count
+    // as named (the new name lives in the `renames` map and
+    // buildSecretsPatch translates it onto the wire).
     const unnamed = Object.entries(stagedSecrets).find(
-      ([k, ch]) => ch.action === 'new' && ch.value && PLACEHOLDER_KEY_RE.test(k),
+      ([k, ch]) =>
+        ch.action === 'new' &&
+        ch.value &&
+        PLACEHOLDER_KEY_RE.test(k) &&
+        !renames[k],
     )
     if (unnamed) {
       const [k] = unnamed
