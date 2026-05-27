@@ -9,6 +9,7 @@ import { formatTimestamp } from './util'
 // reference text verbatim, since it's safe and useful to display.
 export default function ReadOnlyStatus({
   label,
+  description,
   required,
   secretsUpdatedAt,
   isReference,
@@ -29,6 +30,11 @@ export default function ReadOnlyStatus({
           </Button>
         </Group>
       </Group>
+      {description && (
+        <Text size="xs" c="dimmed">
+          {description}
+        </Text>
+      )}
       <Paper p="sm" radius="sm" bg="gray.0" withBorder>
         {isReference ? (
           <Group gap="xs" wrap="nowrap">

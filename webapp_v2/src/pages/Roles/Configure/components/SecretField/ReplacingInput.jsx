@@ -10,6 +10,7 @@ import { sourceOptionsFor } from './util'
 // the user the new value will only persist on Save. Cancel unstages.
 export default function ReplacingInput({
   label,
+  description,
   required,
   placeholder,
   type,
@@ -36,6 +37,11 @@ export default function ReplacingInput({
           </ActionIcon>
         </Group>
       </Group>
+      {description && (
+        <Text size="xs" c="dimmed">
+          {description}
+        </Text>
+      )}
       <SourcedInput
         type={type}
         autoFocus

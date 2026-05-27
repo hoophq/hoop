@@ -25,6 +25,7 @@ export function jsonCredentialToField(entry) {
     label: name.split('_').join(' '),
     required: Boolean(required),
     placeholder: placeholder || description || undefined,
+    description: description || undefined,
     type: type === 'filesystem' ? 'textarea' : undefined,
   }
 }

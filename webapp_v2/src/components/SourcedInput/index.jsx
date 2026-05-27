@@ -16,8 +16,14 @@ const INPUT_BY_TYPE = {
 // entry vs Vault vs AWS Secrets Manager) and the user needs to switch
 // per-field. When `sources` is empty or has a single option, only the
 // input renders.
+//
+// `description` renders as helper text between the label and the input
+// row. The label sits outside the wrapped input so the source picker
+// can be a sibling — that's why we paint the description manually here
+// instead of letting the underlying Mantine input do it.
 export default function SourcedInput({
   label,
+  description,
   required = false,
   placeholder,
   type = 'text',
@@ -39,6 +45,11 @@ export default function SourcedInput({
           <Text size="sm" fw={500}>{label}</Text>
           {required && <Text size="sm" c="red">*</Text>}
         </Group>
+      )}
+      {description && (
+        <Text size="xs" c="dimmed">
+          {description}
+        </Text>
       )}
       <Group gap="xs" wrap="nowrap" align="stretch">
         {showSourceSelect && (

@@ -10,6 +10,7 @@ import { sourceOptionsFor } from './util'
 // don't.
 export default function NewInput({
   label,
+  description,
   required,
   placeholder,
   type,
@@ -33,6 +34,11 @@ export default function NewInput({
           </ActionIcon>
         )}
       </Group>
+      {description && (
+        <Text size="xs" c="dimmed">
+          {description}
+        </Text>
+      )}
       <SourcedInput
         type={type}
         required={required}

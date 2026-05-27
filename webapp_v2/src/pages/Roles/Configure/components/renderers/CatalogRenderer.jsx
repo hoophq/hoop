@@ -13,6 +13,7 @@ export default function CatalogRenderer({
   fields,
   availableSources,
   forceNewState,
+  connectionMethod,
 }) {
   return (
     <Stack gap="xl">
@@ -23,6 +24,7 @@ export default function CatalogRenderer({
           fields={fields}
           availableSources={availableSources}
           forceNewState={forceNewState}
+          connectionMethod={connectionMethod}
         />
       </Stack>
       <AgentSelectorSection />

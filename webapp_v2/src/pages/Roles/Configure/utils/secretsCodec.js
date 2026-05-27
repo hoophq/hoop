@@ -26,11 +26,17 @@ const REFERENCE_PREFIXES = [
 // from" selector that appears when the user is in Secrets Manager mode.
 // Mirrors CLJS connection_method.cljs::source-text — keep these strings
 // identical to the CLJS values so future cross-app debugging maps 1:1.
+//
+// `AWS_IAM_ROLE` is connection-method-driven (the picker doesn't expose
+// it as a per-field source). Listed here so detection round-trips
+// existing values that carry the `_aws_iam_rds:` prefix and saves
+// re-encode under the same source identifier.
 export const SOURCES = {
   MANUAL: 'manual-input',
   VAULT_KV1: 'vault-kv1',
   VAULT_KV2: 'vault-kv2',
   AWS_SECRETS_MANAGER: 'aws-secrets-manager',
+  AWS_IAM_ROLE: 'aws-iam-role',
 }
 
 export const SOURCE_LABELS = {
@@ -38,18 +44,21 @@ export const SOURCE_LABELS = {
   [SOURCES.VAULT_KV1]: 'Vault KV v1',
   [SOURCES.VAULT_KV2]: 'Vault KV v2',
   [SOURCES.AWS_SECRETS_MANAGER]: 'AWS Secrets Manager',
+  [SOURCES.AWS_IAM_ROLE]: 'AWS IAM Role',
 }
 
 const PREFIX_BY_SOURCE = {
   [SOURCES.VAULT_KV1]: '_vaultkv1:',
   [SOURCES.VAULT_KV2]: '_vaultkv2:',
   [SOURCES.AWS_SECRETS_MANAGER]: '_aws:',
+  [SOURCES.AWS_IAM_ROLE]: '_aws_iam_rds:',
 }
 
 const SOURCE_BY_PREFIX = {
   '_vaultkv1:': SOURCES.VAULT_KV1,
   '_vaultkv2:': SOURCES.VAULT_KV2,
   '_aws:': SOURCES.AWS_SECRETS_MANAGER,
+  '_aws_iam_rds:': SOURCES.AWS_IAM_ROLE,
 }
 
 // Returns the source identifier implied by an encoded value's prefix.
