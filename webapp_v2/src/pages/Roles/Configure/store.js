@@ -35,9 +35,6 @@ const emptyDrafts = {
   // Connection-level fields editable from the credentials tab.
   agent_id: '',
   command: [],
-  // Mirrors the connection's subtype. Edited via the Resource Subtype
-  // Override section on custom connections (DynamoDB / CloudWatch).
-  subtype: '',
 }
 
 function draftsFromConnection(conn) {
@@ -60,7 +57,6 @@ function draftsFromConnection(conn) {
     access_max_duration: conn.access_max_duration ?? null,
     agent_id: conn.agent_id || '',
     command: conn.command || [],
-    subtype: conn.subtype || '',
   }
 }
 
@@ -177,9 +173,6 @@ function buildDraftsPatch(drafts, baseline) {
   }
   if (!arraysEqual(drafts.command, baseline.command)) {
     patch.command = drafts.command
-  }
-  if (drafts.subtype !== baseline.subtype) {
-    patch.subtype = drafts.subtype
   }
   return patch
 }

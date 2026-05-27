@@ -10,7 +10,6 @@ import { useConfigureRoleStore } from '../store'
 import ConfigurationFilesSection from './ConfigurationFilesSection'
 import CommandArgsInput from './CommandArgsInput'
 import AgentSelector from './AgentSelector'
-import ResourceSubtypeOverride from './ResourceSubtypeOverride'
 
 // Free-form credentials editor for custom connections. Values round-
 // trip plaintext from the backend; rename commits on blur and is
@@ -175,7 +174,6 @@ export default function CustomCredentials({ connection }) {
 
       <ConfigurationFilesSection connection={connection} />
       <CommandArgsInput />
-      <ResourceSubtypeOverride />
       <AgentSelector />
     </Stack>
   )
