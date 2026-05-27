@@ -12,6 +12,29 @@ import {
   ActionIcon,
 } from '@mantine/core'
 import { Check, RotateCcw, Trash2, X } from 'lucide-react'
+import Select from '@/components/Select'
+import { SOURCE_LABELS } from '../utils/secretsCodec'
+
+// Renders a compact source picker as a `leftSection` adornment inside
+// the credential input. Used when the form is in Secrets Manager mode;
+// `availableSources` is the subset offered to the user (always includes
+// the current secrets-manager provider + 'manual').
+function SourceSelectorAdornment({ source, availableSources, onSourceChange }) {
+  if (!availableSources || availableSources.length < 2) return null
+  return (
+    <Select
+      data={availableSources.map((s) => ({ value: s, label: SOURCE_LABELS[s] || s }))}
+      value={source}
+      onChange={(v) => v && onSourceChange(v)}
+      size="xs"
+      variant="unstyled"
+      allowDeselect={false}
+      withCheckIcon={false}
+      comboboxProps={{ width: 200 }}
+      w={140}
+    />
+  )
+}
 
 // SecretField — write-only credential editor.
 //
@@ -95,10 +118,28 @@ function ReadOnlyStatus({ label, required, secretsUpdatedAt, isReference, refere
   )
 }
 
-function ReplacingInput({ label, required, placeholder, type, value, onChange, onCancel }) {
+function ReplacingInput({
+  label,
+  required,
+  placeholder,
+  type,
+  value,
+  onChange,
+  onCancel,
+  source,
+  availableSources,
+  onSourceChange,
+}) {
   const isTextarea = type === 'textarea'
   const InputComponent = isTextarea ? Textarea : TextInput
   const textareaProps = isTextarea ? { autosize: true, minRows: 4 } : {}
+  const adornment = !isTextarea ? (
+    <SourceSelectorAdornment
+      source={source}
+      availableSources={availableSources}
+      onSourceChange={onSourceChange}
+    />
+  ) : null
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -121,6 +162,8 @@ function ReplacingInput({ label, required, placeholder, type, value, onChange, o
         placeholder={placeholder || 'Enter new value'}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
+        leftSection={adornment}
+        leftSectionWidth={adornment ? 160 : undefined}
         {...textareaProps}
       />
     </Stack>
@@ -150,10 +193,28 @@ function StagedDeleted({ label, onUndo }) {
   )
 }
 
-function NewInput({ label, required, placeholder, type, value, onChange, onRemove }) {
+function NewInput({
+  label,
+  required,
+  placeholder,
+  type,
+  value,
+  onChange,
+  onRemove,
+  source,
+  availableSources,
+  onSourceChange,
+}) {
   const isTextarea = type === 'textarea'
   const InputComponent = isTextarea ? Textarea : TextInput
   const textareaProps = isTextarea ? { autosize: true, minRows: 4 } : {}
+  const adornment = !isTextarea ? (
+    <SourceSelectorAdornment
+      source={source}
+      availableSources={availableSources}
+      onSourceChange={onSourceChange}
+    />
+  ) : null
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -172,6 +233,8 @@ function NewInput({ label, required, placeholder, type, value, onChange, onRemov
         placeholder={placeholder || 'Enter value'}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
+        leftSection={adornment}
+        leftSectionWidth={adornment ? 160 : undefined}
         {...textareaProps}
       />
     </Stack>
@@ -190,6 +253,9 @@ export default function SecretField({
   stagedAction,
   stagedValue = '',
   secretsUpdatedAt,
+  source,
+  availableSources,
+  onSourceChange,
   onReplace,
   onChangeStaged,
   onCancel,
@@ -229,6 +295,9 @@ export default function SecretField({
           setEditing(false)
           onCancel()
         }}
+        source={source}
+        availableSources={availableSources}
+        onSourceChange={onSourceChange}
       />
     )
   }
@@ -243,6 +312,9 @@ export default function SecretField({
         value={stagedValue}
         onChange={(plain) => onReplace(plain)}
         onRemove={onRemove}
+        source={source}
+        availableSources={availableSources}
+        onSourceChange={onSourceChange}
       />
     )
   }

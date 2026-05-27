@@ -3,6 +3,7 @@ import { connectionsService } from '@/services/connections'
 import { guardrailsService } from '@/services/guardrails'
 import { jiraTemplatesService } from '@/services/jiraTemplates'
 import { attributesService } from '@/services/attributes'
+import { sourceFromEncodedValue } from './utils/secretsCodec'
 
 // Local store for the Configure Role page.
 //
@@ -137,6 +138,9 @@ const initialState = {
   testStartedAt: null,
   testDurationMs: null,
   stagedSecrets: {},
+  // Per-field source identifier (mirrors :connection-setup/field-source
+  // in CLJS). Empty by default; seeded from the connection on load.
+  fieldSources: {},
   drafts: { ...emptyDrafts },
   baseline: { ...emptyDrafts }, // snapshot of drafts as loaded; used for diffing
   guardrailsList: [],
@@ -149,11 +153,27 @@ export const useConfigureRoleStore = create((set, get) => ({
   ...initialState,
 
   loadConnection: async (nameOrId) => {
-    set({ loading: true, error: null, connection: null, stagedSecrets: {} })
+    set({
+      loading: true,
+      error: null,
+      connection: null,
+      stagedSecrets: {},
+      fieldSources: {},
+    })
     try {
       const data = await connectionsService.getConnection(nameOrId)
       const drafts = draftsFromConnection(data)
-      set({ connection: data, drafts, baseline: drafts, loading: false })
+      const fieldSources = {}
+      for (const [k, v] of Object.entries(data.secret || {})) {
+        fieldSources[k] = sourceFromEncodedValue(v)
+      }
+      set({
+        connection: data,
+        drafts,
+        baseline: drafts,
+        fieldSources,
+        loading: false,
+      })
     } catch (err) {
       const message = err?.response?.data?.message || 'Failed to load connection.'
       set({ error: message, loading: false })
@@ -241,6 +261,51 @@ export const useConfigureRoleStore = create((set, get) => ({
           },
         },
       }
+    })
+  },
+
+  // Per-field source (manual / vault-kv1 / vault-kv2 / aws-secrets-manager).
+  // Drives the source-selector adornment when the connection method is
+  // Secrets Manager. Changing the source for a field already-staged with
+  // a new value re-encodes it so the prefix matches.
+  setFieldSource: (key, source) => {
+    set((state) => {
+      const staged = state.stagedSecrets[key]
+      const nextSources = { ...state.fieldSources, [key]: source }
+      // If the user already typed a new value, re-encode under the new
+      // prefix so save() sends the right thing.
+      let nextStaged = state.stagedSecrets
+      if (staged && staged.value) {
+        // staged.value is base64-encoded; decode then re-encode for the
+        // new source. Empty staged values stay empty.
+        const plain = (() => {
+          try {
+            const decoded = atob(staged.value)
+            // strip any existing provider prefix so we don't double-up
+            for (const prefix of ['_aws:', '_envjson:', '_vaultkv1:', '_vaultkv2:', '_aws_iam_rds:']) {
+              if (decoded.startsWith(prefix)) return decoded.slice(prefix.length)
+            }
+            return decoded
+          } catch {
+            return ''
+          }
+        })()
+        const reencoded =
+          source === 'manual'
+            ? btoa(plain)
+            : btoa(
+                ({
+                  'vault-kv1': '_vaultkv1:',
+                  'vault-kv2': '_vaultkv2:',
+                  'aws-secrets-manager': '_aws:',
+                }[source] || '') + plain,
+              )
+        nextStaged = {
+          ...state.stagedSecrets,
+          [key]: { ...staged, value: reencoded },
+        }
+      }
+      return { fieldSources: nextSources, stagedSecrets: nextStaged }
     })
   },
 
