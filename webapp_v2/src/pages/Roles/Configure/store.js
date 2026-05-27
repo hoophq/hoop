@@ -3,6 +3,7 @@ import { connectionsService } from '@/services/connections'
 import { guardrailsService } from '@/services/guardrails'
 import { jiraTemplatesService } from '@/services/jiraTemplates'
 import { attributesService } from '@/services/attributes'
+import { connectionTagsService } from '@/services/connectionTags'
 import { sourceFromEncodedValue } from './utils/secretsCodec'
 
 // Local store for the Configure Role page.
@@ -146,6 +147,10 @@ const initialState = {
   guardrailsList: [],
   jiraTemplatesList: [],
   attributesList: [],
+  // Pool of every tag (key+value pair) that has been used at least once
+  // anywhere in the org. The Tags input derives autocompleted keys and
+  // per-key value suggestions from this list.
+  connectionTagsPool: [],
   auxLoading: false,
 }
 
@@ -183,19 +188,25 @@ export const useConfigureRoleStore = create((set, get) => ({
   loadAuxiliaryData: async () => {
     set({ auxLoading: true })
     try {
-      const [guardrails, jiraTemplates, attributesRes] = await Promise.allSettled([
+      const [guardrails, jiraTemplates, attributesRes, connectionTags] = await Promise.allSettled([
         guardrailsService.list(),
         jiraTemplatesService.list(),
         attributesService.list(),
+        connectionTagsService.list(),
       ])
       // /guardrails and /integrations/jira/issuetemplates return bare arrays
       // (the service unwraps res.data for us). /attributes returns a
       // paginated envelope { data: [...], pages: {...} } and the
       // existing attributesService leaves the axios response untouched,
-      // so the array sits at value.data.data.
+      // so the array sits at value.data.data. /connection-tags returns
+      // { items: [{ id, key, value, ... }] }.
       const attributesList =
         attributesRes.status === 'fulfilled'
           ? attributesRes.value?.data?.data || []
+          : []
+      const connectionTagsPool =
+        connectionTags.status === 'fulfilled'
+          ? connectionTags.value?.items || []
           : []
       set({
         guardrailsList:
@@ -203,6 +214,7 @@ export const useConfigureRoleStore = create((set, get) => ({
         jiraTemplatesList:
           jiraTemplates.status === 'fulfilled' ? jiraTemplates.value || [] : [],
         attributesList,
+        connectionTagsPool,
         auxLoading: false,
       })
     } catch {
