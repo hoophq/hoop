@@ -90,9 +90,10 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	// The stream will be closed when receiving a SessionClose packet
 	// from the agent or when the stream process manager closes it.
 	if clientOrigin == pb.ConnectionOriginClient {
-		// Machine-identity sessions reach this path with the same client origin
+		// Machine-identity and API-key sessions reach this path with the same client origin
 		// but have no IDP-issued user token to poll — skip polling for them.
-		if pctx.IdentityType != plugintypes.IdentityTypeMachine {
+		if pctx.IdentityType != plugintypes.IdentityTypeMachine &&
+			pctx.IdentityType != plugintypes.IdentityTypeAPIKey {
 			usertoken.PollingUserToken(pctx.Context, func(cause error) {
 				_ = stream.Close(cause)
 			}, tokenVerifier, pctx.UserID)

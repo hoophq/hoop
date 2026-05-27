@@ -162,7 +162,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			go models.UpdateAPIKeyLastUsed(ctx.UserID)
 			ctx.UserID = ctx.UserSubject
 			gwctx := &GatewayContext{
-				UserContext: *ctx,
+				UserContext:  *ctx,
+				IdentityType: plugintypes.IdentityTypeAPIKey,
 			}
 			connectionName := commongrpc.MetaGet(md, "connection-name")
 			conn, err := i.getConnection(connectionName, ctx)
@@ -203,7 +204,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				UserGroups:     []string{types.GroupAdmin},
 			}
 			gwctx := &GatewayContext{
-				UserContext: *ctx,
+				UserContext:  *ctx,
+				IdentityType: plugintypes.IdentityTypeAPIKey,
 			}
 			connectionName := commongrpc.MetaGet(md, "connection-name")
 			conn, err := i.getConnection(connectionName, ctx)
