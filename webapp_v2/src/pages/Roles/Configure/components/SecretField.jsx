@@ -7,33 +7,14 @@ import {
   Paper,
   ThemeIcon,
   Badge,
-  TextInput,
-  Textarea,
   ActionIcon,
 } from '@mantine/core'
 import { Check, RotateCcw, Trash2, X } from 'lucide-react'
-import Select from '@/components/Select'
+import SourcedInput from '@/components/SourcedInput'
 import { SOURCE_LABELS } from '../utils/secretsCodec'
 
-// Renders a compact source picker as the input's leftSection adornment.
-// Used when the form is in Secrets Manager mode; `availableSources` is
-// the subset offered to the user (current provider + manual-input).
-// Auto-sized so the trigger label drives width; the popover stays wider
-// for legible options.
-function SourceSelectorAdornment({ source, availableSources, onSourceChange }) {
-  if (!availableSources || availableSources.length < 2) return null
-  return (
-    <Select
-      data={availableSources.map((s) => ({ value: s, label: SOURCE_LABELS[s] || s }))}
-      value={source}
-      onChange={(v) => v && onSourceChange(v)}
-      size="xs"
-      variant="unstyled"
-      allowDeselect={false}
-      withCheckIcon={false}
-      comboboxProps={{ width: 220 }}
-    />
-  )
+function sourceOptionsFor(availableSources) {
+  return (availableSources || []).map((s) => ({ value: s, label: SOURCE_LABELS[s] || s }))
 }
 
 // SecretField — write-only credential editor.
@@ -130,16 +111,6 @@ function ReplacingInput({
   availableSources,
   onSourceChange,
 }) {
-  const isTextarea = type === 'textarea'
-  const InputComponent = isTextarea ? Textarea : TextInput
-  const textareaProps = isTextarea ? { autosize: true, minRows: 4 } : {}
-  const adornment = !isTextarea ? (
-    <SourceSelectorAdornment
-      source={source}
-      availableSources={availableSources}
-      onSourceChange={onSourceChange}
-    />
-  ) : null
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -156,15 +127,16 @@ function ReplacingInput({
           </ActionIcon>
         </Group>
       </Group>
-      <InputComponent
+      <SourcedInput
+        type={type}
         autoFocus
         required={required}
         placeholder={placeholder || 'Enter new value'}
         value={value}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        leftSection={adornment}
-        leftSectionWidth={adornment ? 'auto' : undefined}
-        {...textareaProps}
+        onChange={onChange}
+        source={source}
+        sources={sourceOptionsFor(availableSources)}
+        onSourceChange={onSourceChange}
       />
     </Stack>
   )
@@ -205,16 +177,6 @@ function NewInput({
   availableSources,
   onSourceChange,
 }) {
-  const isTextarea = type === 'textarea'
-  const InputComponent = isTextarea ? Textarea : TextInput
-  const textareaProps = isTextarea ? { autosize: true, minRows: 4 } : {}
-  const adornment = !isTextarea ? (
-    <SourceSelectorAdornment
-      source={source}
-      availableSources={availableSources}
-      onSourceChange={onSourceChange}
-    />
-  ) : null
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -228,14 +190,15 @@ function NewInput({
           </ActionIcon>
         )}
       </Group>
-      <InputComponent
+      <SourcedInput
+        type={type}
         required={required}
         placeholder={placeholder || 'Enter value'}
         value={value}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        leftSection={adornment}
-        leftSectionWidth={adornment ? 'auto' : undefined}
-        {...textareaProps}
+        onChange={onChange}
+        source={source}
+        sources={sourceOptionsFor(availableSources)}
+        onSourceChange={onSourceChange}
       />
     </Stack>
   )
