@@ -6,86 +6,88 @@ import HttpProxyRenderer from './HttpProxyRenderer'
 import KubernetesTokenRenderer from './KubernetesTokenRenderer'
 import FreeFormCustomRenderer from './FreeFormCustomRenderer'
 
-// Dispatch table — order matters: the first matching entry wins.
+// Dispatch table — order matters: the first matching rule wins. Each
+// rule declares whether its renderer depends on connections-metadata.json
+// (drives the loader gate in CredentialsTab) and how it renders.
 //
-// Mirrors the CLJS dispatch in credentials_tab.cljs (each branch maps
-// to its own form id there) and the backend's `shouldRoundTripSecrets`
-// rule. Add a new bespoke connection shape by creating a renderer file
-// alongside the existing five and appending an entry here.
+// Adding a new bespoke connection shape: create a renderer file
+// alongside the existing five, append an entry here, mark
+// `requiresCatalog: false`. Removing one: delete both. This is the
+// only place routing is encoded — `pickRendererRule` is the single
+// source of truth.
 //
-// `getSchema(subtype)` looks up the catalog credential schema from the
-// metadata store. `CatalogRenderer` depends on it; the other renderers
-// own their schemas inline because the catalog either omits them
-// (claude-code, linux-vm, kubernetes-token) or doesn't capture the full
-// shape they need (ssh's auth-method toggle, httpproxy's HTTP headers).
-export function buildRenderers(getSchema) {
-  return [
-    // 1. application/ssh → bespoke (auth-method radio drives field set).
-    {
-      name: 'application-ssh',
-      match: (c) => c.type === 'application' && c.subtype === 'ssh',
-      render: (props) => <SshRenderer {...props} />,
+// The catalog rule splits matching from rendering: `matches` is
+// type-only so the loader gate can fire before the JSON arrives;
+// `render` does the schema lookup and falls back to free-form when
+// the subtype isn't in the catalog (legacy custom/cloudwatch case).
+const RENDERER_RULES = [
+  {
+    name: 'application-ssh',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'application' && c.subtype === 'ssh',
+    render: (props) => <SshRenderer {...props} />,
+  },
+  {
+    name: 'httpproxy-claude-code',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
+    render: (props) => <ClaudeCodeRenderer {...props} />,
+  },
+  {
+    name: 'httpproxy-generic',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'httpproxy',
+    render: (props) => <HttpProxyRenderer {...props} />,
+  },
+  {
+    name: 'custom-kubernetes-token',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'custom' && c.subtype === 'kubernetes-token',
+    render: (props) => <KubernetesTokenRenderer {...props} />,
+  },
+  {
+    name: 'custom-linux-vm',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'custom' && c.subtype === 'linux-vm',
+    render: (props) => <FreeFormCustomRenderer {...props} />,
+  },
+  // Catalog: matches any non-bespoke shape that could carry a schema.
+  // Schema lookup happens in render(); a missing schema for
+  // type=custom falls through to free-form so the user can still see
+  // and edit their envvars (legacy `custom/cloudwatch`).
+  {
+    name: 'catalog',
+    requiresCatalog: true,
+    matches: (c) => {
+      if (c.type === 'database') return true
+      if (c.type === 'application' && c.subtype && c.subtype !== 'ssh') return true
+      if (
+        c.type === 'custom' &&
+        c.subtype &&
+        !isFreeFormCustomSubtype(c.subtype)
+      ) return true
+      return false
     },
+    render: (props, { getSchema }) => {
+      const fields = getSchema(props.connection.subtype)
+      if (fields) return <CatalogRenderer {...props} fields={fields} />
+      if (props.connection.type === 'custom') {
+        return <FreeFormCustomRenderer {...props} />
+      }
+      return null
+    },
+  },
+  // Custom catch-all: empty subtype + the legacy free-form exclusion
+  // list (custom/tcp, custom/ssh, custom/httpproxy, custom/claude-code).
+  {
+    name: 'custom-freeform',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'custom',
+    render: (props) => <FreeFormCustomRenderer {...props} />,
+  },
+]
 
-    // 2. httpproxy/claude-code → bespoke (Anthropic URL + API Key + HTTP headers).
-    {
-      name: 'httpproxy-claude-code',
-      match: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
-      render: (props) => <ClaudeCodeRenderer {...props} />,
-    },
-
-    // 3. httpproxy/* → bespoke (REMOTE_URL + HTTP headers + insecure SSL).
-    {
-      name: 'httpproxy-generic',
-      match: (c) => c.type === 'httpproxy',
-      render: (props) => <HttpProxyRenderer {...props} />,
-    },
-
-    // 4. custom/kubernetes-token → bespoke (Bearer prefix + cluster URL).
-    {
-      name: 'custom-kubernetes-token',
-      match: (c) => c.type === 'custom' && c.subtype === 'kubernetes-token',
-      render: (props) => <KubernetesTokenRenderer {...props} />,
-    },
-
-    // 5. custom/linux-vm → free-form (env vars + config files + command).
-    {
-      name: 'custom-linux-vm',
-      match: (c) => c.type === 'custom' && c.subtype === 'linux-vm',
-      render: (props) => <FreeFormCustomRenderer {...props} />,
-    },
-
-    // 6. Catalog-driven write-only — any connection whose subtype has
-    // a credentials schema in connections-metadata.json. The CLJS
-    // legacy exclusion list (`isFreeFormCustomSubtype`) only takes
-    // effect for type=custom — application/tcp etc. still render via
-    // the catalog.
-    {
-      name: 'catalog',
-      match: (c) => {
-        if (!getSchema(c.subtype)) return false
-        if (c.type === 'custom' && isFreeFormCustomSubtype(c.subtype)) return false
-        return true
-      },
-      render: (props) => (
-        <CatalogRenderer
-          {...props}
-          fields={getSchema(props.connection.subtype)}
-        />
-      ),
-    },
-
-    // 7. Custom fallback: catches custom/(empty subtype), the legacy
-    // free-form exclusion subtypes (custom/tcp etc.), and custom
-    // subtypes the catalog doesn't know about (legacy cloudwatch).
-    // Diverges from CLJS, which would render nil on the catalog branch
-    // when schema is absent; the free-form editor at least lets the
-    // user inspect the existing envvars instead of staring at a blank
-    // form.
-    {
-      name: 'custom-freeform',
-      match: (c) => c.type === 'custom',
-      render: (props) => <FreeFormCustomRenderer {...props} />,
-    },
-  ]
+export function pickRendererRule(connection) {
+  if (!connection) return null
+  return RENDERER_RULES.find((r) => r.matches(connection)) || null
 }

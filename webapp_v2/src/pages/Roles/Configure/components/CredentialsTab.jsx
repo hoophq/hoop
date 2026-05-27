@@ -8,13 +8,12 @@ import Select from '@/components/Select'
 import {
   CONNECTION_METHODS,
   supportsAwsIam,
-  isFreeFormCustomSubtype,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
 import { SOURCES, SOURCE_LABELS } from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
-import { buildRenderers } from './renderers'
+import { pickRendererRule } from './renderers'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
@@ -101,28 +100,6 @@ function MetadataError({ message }) {
   )
 }
 
-// True for connections whose final renderer can only be decided after
-// the metadata catalog has loaded. While the catalog is still loading
-// the body shows a loader for those; everything else (the five bespoke
-// shapes and free-form custom fallbacks) renders immediately because
-// its fields don't depend on the JSON.
-function dependsOnCatalog(connection) {
-  if (!connection) return false
-  if (connection.type === 'database') return true
-  if (connection.type === 'application') {
-    return connection.subtype !== 'ssh'
-  }
-  if (connection.type === 'custom') {
-    return (
-      Boolean(connection.subtype) &&
-      connection.subtype !== 'kubernetes-token' &&
-      connection.subtype !== 'linux-vm' &&
-      !isFreeFormCustomSubtype(connection.subtype)
-    )
-  }
-  return false
-}
-
 function CredentialsBody({ connection, availableSources, forceNewState, connectionMethod }) {
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
   const loading = useConnectionsMetadataStore((s) => s.loading)
@@ -131,15 +108,20 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
     (s) => s.getCredentialSchema,
   )
 
-  if (dependsOnCatalog(connection)) {
+  const rule = pickRendererRule(connection)
+  if (!rule) return <UnsupportedFallback connection={connection} />
+
+  if (rule.requiresCatalog) {
     if (loading && !metadata) return <PageLoader />
     if (error && !metadata) return <MetadataError message={error} />
   }
 
-  const renderers = buildRenderers(getCredentialSchema)
-  const entry = renderers.find((r) => r.match(connection))
-  if (!entry) return <UnsupportedFallback connection={connection} />
-  return entry.render({ connection, availableSources, forceNewState, connectionMethod })
+  const node = rule.render(
+    { connection, availableSources, forceNewState, connectionMethod },
+    { getSchema: getCredentialSchema },
+  )
+  if (!node) return <UnsupportedFallback connection={connection} />
+  return node
 }
 
 function SecretsManagerProviderSection({ provider, onProviderChange }) {
