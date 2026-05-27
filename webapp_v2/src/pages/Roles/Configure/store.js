@@ -456,6 +456,11 @@ export const useConfigureRoleStore = create((set, get) => ({
   // row position for the user while doing the right thing on the wire.
   // Placeholder rows (auto-added when the list would otherwise be
   // empty) get dropped so they don't pollute the payload.
+  //
+  // Special-case: `filesystem:SSH_PRIVATE_KEY` requires a trailing
+  // newline for the agent's key parser to accept it. The CLJS form
+  // adds it in helpers.cljs's config->json (L46-48); we mirror that
+  // here so the React save path doesn't ship keys without the newline.
   buildSecretsPatch: () => {
     const { stagedSecrets, renames, connection } = get()
     const out = {}
@@ -473,6 +478,17 @@ export const useConfigureRoleStore = create((set, get) => ({
       const persisted = connection?.secret?.[origKey] || ''
       out[origKey] = ''
       out[newKey] = stagedValue || persisted
+    }
+    const sshKey = out['filesystem:SSH_PRIVATE_KEY']
+    if (sshKey) {
+      try {
+        const decoded = atob(sshKey)
+        if (decoded && !decoded.endsWith('\n')) {
+          out['filesystem:SSH_PRIVATE_KEY'] = btoa(decoded + '\n')
+        }
+      } catch {
+        // Malformed base64 — leave as-is; the backend will reject it.
+      }
     }
     return out
   },
