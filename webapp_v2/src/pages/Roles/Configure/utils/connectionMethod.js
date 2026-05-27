@@ -1,5 +1,5 @@
 import { isSecretReference, decodeSecretValue, parseReference } from './secretsCodec'
-import { CONNECTION_METHODS } from './credentialsSchema'
+import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 
 // Derive the active connection method from the current envvar values.
 //

@@ -2,8 +2,27 @@ import { useMemo, useState } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Radio from '@/components/Radio'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
-import { CATALOG_FIELDS } from '../utils/credentialsSchema'
 import { useConfigureRoleStore } from '../store'
+
+// React-specific field schema. SSH's auth-method radio drives which
+// field is rendered and which is required — neither is encodable in
+// the JSON catalog (the gateway's metadata marks PASS and
+// AUTHORIZED_SERVER_KEYS as optional individually because the user
+// must supply exactly one), so the shape lives here next to the
+// renderer that owns the rule.
+const SSH_FIELDS = [
+  { key: 'host', label: 'Host', required: true },
+  { key: 'port', label: 'Port', required: false },
+  { key: 'user', label: 'User', required: true },
+  { key: 'pass', label: 'Pass', required: true },
+  {
+    key: 'authorized_server_keys',
+    label: 'Private Key',
+    required: true,
+    placeholder: 'Enter your private key',
+    type: 'textarea',
+  },
+]
 
 // SSH credentials editor used by application/ssh, application/git and
 // application/github connections.
@@ -26,8 +45,7 @@ export default function SSHCredentials({ connection, availableSources, forceNewS
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
 
-  const allFields = CATALOG_FIELDS.ssh || []
-  const fields = allFields.filter((f) => {
+  const fields = SSH_FIELDS.filter((f) => {
     if (authMethod === 'password') return f.key !== 'authorized_server_keys'
     return f.key !== 'pass'
   })

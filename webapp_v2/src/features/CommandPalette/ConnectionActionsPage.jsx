@@ -1,5 +1,6 @@
 import { SpotlightAction, SpotlightActionsGroup } from '@mantine/spotlight'
 import { SquareCode, FlaskConical, Settings } from 'lucide-react'
+import { canAccessNativeClient } from '@/utils/connectionPolicy'
 
 const ACTION_TYPES = {
   WEB_TERMINAL: 'web-terminal',
@@ -7,22 +8,6 @@ const ACTION_TYPES = {
   NATIVE_CLIENT: 'native-client',
   TEST: 'test',
   CONFIGURE: 'configure',
-}
-
-const DIRECT_NATIVE_SUBTYPES = new Set(['postgres', 'ssh', 'ssh-local', 'github', 'git'])
-const HTTP_PROXY_SUBTYPES = new Set(['httpproxy', 'kibana', 'grafana', 'claude-code'])
-const CUSTOM_NATIVE_SUBTYPES = new Set(['rdp', 'aws-ssm'])
-const KUBERNETES_SUBTYPES = new Set(['kubernetes-token', 'kubernetes', 'kubernetes-eks'])
-
-function canAccessNativeClient(connection) {
-  if (!connection || connection.access_mode_connect !== 'enabled') return false
-  const { subtype, type } = connection
-  return (
-    DIRECT_NATIVE_SUBTYPES.has(subtype) ||
-    HTTP_PROXY_SUBTYPES.has(subtype) ||
-    KUBERNETES_SUBTYPES.has(subtype) ||
-    (type === 'custom' && CUSTOM_NATIVE_SUBTYPES.has(subtype))
-  )
 }
 
 export default function ConnectionActionsPage({ connection, resource, isAdmin, onAction }) {
