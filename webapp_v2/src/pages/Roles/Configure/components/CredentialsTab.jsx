@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Stack, Title, Text, Alert, Anchor } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, Info, TriangleAlert, ExternalLink } from 'lucide-react'
+import { FileText, Cloud, ShieldCheck, Info, ExternalLink } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
@@ -83,24 +83,6 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
         ))}
       </Stack>
     </Stack>
-  )
-}
-
-function MethodSwitchNotice({ derivedMethod, selectedMethod }) {
-  const labelOf = (id) =>
-    METHOD_DEFINITIONS.find((m) => m.id === id)?.title || id
-  return (
-    <Alert variant="light" color="yellow" icon={<TriangleAlert size={16} />}>
-      <Stack gap={4}>
-        <Text size="sm" fw={600}>
-          {'Switching from ' + labelOf(derivedMethod) + ' to ' + labelOf(selectedMethod) + ' requires re-entering all credentials.'}
-        </Text>
-        <Text size="sm">
-          This is not yet supported by the new editor. Save the current
-          connection unchanged, or use the legacy editor to switch methods.
-        </Text>
-      </Stack>
-    </Alert>
   )
 }
 
@@ -243,12 +225,13 @@ export default function CredentialsTab({ connection, isAdmin }) {
   const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
   const showMethodCards = supportsConnectionMethods(connection)
   const awsIamAvailable = supportsAwsIam(connection.subtype)
-  const methodMismatch = selectedMethod !== derivedMethod
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
 
   // When in Secrets Manager mode, every field gets a source selector
   // offering "Manual" or the currently picked provider — same as the
-  // CLJS source-selector available-sources list.
+  // CLJS source-selector available-sources list. Method switching is
+  // non-destructive: existing values stay until the user changes a
+  // field's source individually.
   const availableSources = isSecretsManager
     ? [secretsProvider, SOURCES.MANUAL]
     : null
@@ -267,12 +250,6 @@ export default function CredentialsTab({ connection, isAdmin }) {
         <SecretsManagerProviderSection
           provider={secretsProvider}
           onProviderChange={setSecretsProvider}
-        />
-      )}
-      {methodMismatch && (
-        <MethodSwitchNotice
-          derivedMethod={derivedMethod}
-          selectedMethod={selectedMethod}
         />
       )}
       <CredentialsBody

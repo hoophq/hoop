@@ -4,6 +4,15 @@ import MultiSelect from '@/components/MultiSelect'
 import { useConfigureRoleStore } from '../store'
 import TagsInput from './TagsInput'
 
+// Display labels for attribute names strip the `hoop.dev/<category>.`
+// namespace prefix the way CLJS tags_utils/extract-label does, so the
+// user sees the meaningful tail (e.g. `hoop.dev/infrastructure.cloud`
+// renders as `cloud`). Names without the prefix pass through unchanged.
+function labelForAttribute(name) {
+  const m = name && name.match(/^hoop\.dev\/[^.]+\.([^.]+)$/)
+  return m ? m[1] : name
+}
+
 // Details tab: connection name (immutable), attributes (associate from
 // the org's attribute catalog), and connection tags (free-form key/value
 // labels for filtering and grouping).
@@ -14,7 +23,7 @@ export default function DetailsTab({ connection }) {
 
   const attributeOptions = attributesList.map((a) => ({
     value: a.name,
-    label: a.name,
+    label: labelForAttribute(a.name),
   }))
 
   return (
