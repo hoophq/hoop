@@ -6,6 +6,7 @@ import Select from '@/components/Select'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
 import SSHCredentials from './SSHCredentials'
 import CustomCredentials from './CustomCredentials'
+import InsecureSslToggle from './InsecureSslToggle'
 import {
   CATALOG_FIELDS,
   CONNECTION_METHODS,
@@ -127,42 +128,51 @@ function CredentialsBody({ connection, isAdmin, availableSources }) {
 
   if (type === 'httpproxy' && subtype === 'claude-code') {
     return (
-      <Stack gap="md">
-        <Title order={4}>Basic info</Title>
-        <PredefinedFieldsCredentials
-          connection={connection}
-          fields={CATALOG_FIELDS['claude-code']}
-          isAdmin={isAdmin}
-          availableSources={availableSources}
-        />
+      <Stack gap="xl">
+        <Stack gap="md">
+          <Title order={4}>Basic info</Title>
+          <PredefinedFieldsCredentials
+            connection={connection}
+            fields={CATALOG_FIELDS['claude-code']}
+            isAdmin={isAdmin}
+            availableSources={availableSources}
+          />
+        </Stack>
+        <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
       </Stack>
     )
   }
 
   if (type === 'httpproxy') {
     return (
-      <Stack gap="md">
-        <Title order={4}>Environment credentials</Title>
-        <PredefinedFieldsCredentials
-          connection={connection}
-          fields={CATALOG_FIELDS.httpproxy}
-          isAdmin={isAdmin}
-          availableSources={availableSources}
-        />
+      <Stack gap="xl">
+        <Stack gap="md">
+          <Title order={4}>Environment credentials</Title>
+          <PredefinedFieldsCredentials
+            connection={connection}
+            fields={CATALOG_FIELDS.httpproxy}
+            isAdmin={isAdmin}
+            availableSources={availableSources}
+          />
+        </Stack>
+        <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
       </Stack>
     )
   }
 
   if (type === 'custom' && subtype === 'kubernetes-token') {
     return (
-      <Stack gap="md">
-        <Title order={4}>Kubernetes token</Title>
-        <PredefinedFieldsCredentials
-          connection={connection}
-          fields={CATALOG_FIELDS['kubernetes-token']}
-          isAdmin={isAdmin}
-          availableSources={availableSources}
-        />
+      <Stack gap="xl">
+        <Stack gap="md">
+          <Title order={4}>Kubernetes token</Title>
+          <PredefinedFieldsCredentials
+            connection={connection}
+            fields={CATALOG_FIELDS['kubernetes-token']}
+            isAdmin={isAdmin}
+            availableSources={availableSources}
+          />
+        </Stack>
+        <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
       </Stack>
     )
   }

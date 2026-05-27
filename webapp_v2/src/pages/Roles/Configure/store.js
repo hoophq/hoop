@@ -4,6 +4,7 @@ import { guardrailsService } from '@/services/guardrails'
 import { jiraTemplatesService } from '@/services/jiraTemplates'
 import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
+import { userGroupsService } from '@/services/userGroups'
 import { sourceFromEncodedValue } from './utils/secretsCodec'
 
 // Local store for the Configure Role page.
@@ -35,6 +36,15 @@ const emptyDrafts = {
   mandatory_metadata_fields: [],
   redact_enabled: false,
   redact_types: [],
+  // Review backward-compat (renders only when the connection already
+  // has any of these set on load).
+  reviewers: [],
+  min_review_approvals: null,
+  force_approve_groups: [],
+  access_max_duration: null,
+  // Connection-level fields editable from the credentials tab.
+  agent_id: '',
+  command: [],
 }
 
 function draftsFromConnection(conn) {
@@ -51,6 +61,12 @@ function draftsFromConnection(conn) {
     mandatory_metadata_fields: conn.mandatory_metadata_fields || [],
     redact_enabled: !!conn.redact_enabled,
     redact_types: conn.redact_types || [],
+    reviewers: conn.reviewers || [],
+    min_review_approvals: conn.min_review_approvals ?? null,
+    force_approve_groups: conn.force_approve_groups || [],
+    access_max_duration: conn.access_max_duration ?? null,
+    agent_id: conn.agent_id || '',
+    command: conn.command || [],
   }
 }
 
@@ -122,6 +138,24 @@ function buildDraftsPatch(drafts, baseline) {
   if (!arraysEqual(desiredRedactTypes, baselineRedactTypes)) {
     patch.redact_types = desiredRedactTypes
   }
+  if (!arraysEqual(drafts.reviewers, baseline.reviewers)) {
+    patch.reviewers = drafts.reviewers
+  }
+  if (drafts.min_review_approvals !== baseline.min_review_approvals) {
+    patch.min_review_approvals = drafts.min_review_approvals
+  }
+  if (!arraysEqual(drafts.force_approve_groups, baseline.force_approve_groups)) {
+    patch.force_approve_groups = drafts.force_approve_groups
+  }
+  if (drafts.access_max_duration !== baseline.access_max_duration) {
+    patch.access_max_duration = drafts.access_max_duration
+  }
+  if (drafts.agent_id !== baseline.agent_id) {
+    patch.agent_id = drafts.agent_id
+  }
+  if (!arraysEqual(drafts.command, baseline.command)) {
+    patch.command = drafts.command
+  }
   return patch
 }
 
@@ -151,6 +185,7 @@ const initialState = {
   // anywhere in the org. The Tags input derives autocompleted keys and
   // per-key value suggestions from this list.
   connectionTagsPool: [],
+  userGroupsList: [],
   auxLoading: false,
 }
 
@@ -188,11 +223,12 @@ export const useConfigureRoleStore = create((set, get) => ({
   loadAuxiliaryData: async () => {
     set({ auxLoading: true })
     try {
-      const [guardrails, jiraTemplates, attributesRes, connectionTags] = await Promise.allSettled([
+      const [guardrails, jiraTemplates, attributesRes, connectionTags, userGroups] = await Promise.allSettled([
         guardrailsService.list(),
         jiraTemplatesService.list(),
         attributesService.list(),
         connectionTagsService.list(),
+        userGroupsService.list(),
       ])
       // /guardrails and /integrations/jira/issuetemplates return bare arrays
       // (the service unwraps res.data for us). /attributes returns a
@@ -208,6 +244,8 @@ export const useConfigureRoleStore = create((set, get) => ({
         connectionTags.status === 'fulfilled'
           ? connectionTags.value?.items || []
           : []
+      const userGroupsList =
+        userGroups.status === 'fulfilled' ? userGroups.value || [] : []
       set({
         guardrailsList:
           guardrails.status === 'fulfilled' ? guardrails.value || [] : [],
@@ -215,6 +253,7 @@ export const useConfigureRoleStore = create((set, get) => ({
           jiraTemplates.status === 'fulfilled' ? jiraTemplates.value || [] : [],
         attributesList,
         connectionTagsPool,
+        userGroupsList,
         auxLoading: false,
       })
     } catch {

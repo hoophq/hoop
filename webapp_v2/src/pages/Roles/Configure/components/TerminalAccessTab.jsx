@@ -6,6 +6,8 @@ import { useConfigureRoleStore } from '../store'
 import ToggleSection from './ToggleSection'
 import AIDataMaskingSection from './AIDataMaskingSection'
 import MetadataFieldsInput from './MetadataFieldsInput'
+import ReviewSection from './ReviewSection'
+import { hasReviewConfig } from '../utils/reviewConfig'
 
 // Terminal Access tab: every per-connection setting that affects how
 // commands run from the web terminal or hoop CLI's exec/connect flows.
@@ -29,6 +31,7 @@ export default function TerminalAccessTab({ connection }) {
   }))
 
   const isDatabase = connection.type === 'database'
+  const showReview = hasReviewConfig(connection)
 
   return (
     <Stack gap="xl" maw={720}>
@@ -40,6 +43,8 @@ export default function TerminalAccessTab({ connection }) {
           setDraft({ access_mode_exec: checked ? 'enabled' : 'disabled' })
         }
       />
+
+      {showReview && <ReviewSection kind="command" />}
 
       <AIDataMaskingSection />
 
