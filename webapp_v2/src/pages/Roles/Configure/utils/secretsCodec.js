@@ -1,8 +1,10 @@
-// Placeholder rows for the empty-state row in envvars / config files.
-// Their keys never reach the backend (the store's buildSecretsPatch
-// filters them), so the UI should render the Key input empty too —
-// otherwise the user sees `NEW_KEY_1` as if it were their data.
-export const PLACEHOLDER_KEY_RE = /^(envvar:NEW_KEY_|filesystem:NEW_FILE_)\d+$/
+// Placeholder rows for the empty-state row in envvars / HTTP headers /
+// config files. Their keys never reach the backend (the store's
+// buildSecretsPatch filters them), so the UI should render the Key
+// input empty too — otherwise the user sees `NEW_KEY_1` as if it were
+// their data.
+export const PLACEHOLDER_KEY_RE =
+  /^(envvar:NEW_KEY_|envvar:HEADER_NEW_HEADER_|filesystem:NEW_FILE_)\d+$/
 
 // Helpers to translate between the form's plaintext view of a secret value
 // and the base64-encoded JSONB representation that the gateway stores.

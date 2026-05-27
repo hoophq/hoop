@@ -33,26 +33,6 @@ export function isFreeFormCustomSubtype(subtype) {
   return Boolean(subtype) && FREE_FORM_CUSTOM_SUBTYPES.has(subtype)
 }
 
-// Which connection shapes the gateway round-trips secret values for
-// (vs stripping them under the write-only model). Mirrors
-// gateway/api/connections/secrets.go's `shouldRoundTripSecrets` — keep
-// both lists in sync. Used here to decide whether to show the
-// "Secret values are write-only" notice on the Credentials tab: showing
-// it for round-trip connections is misleading because the form
-// actually displays the existing values.
-export function connectionRoundTripsSecrets({ type, subtype } = {}) {
-  switch (type) {
-    case 'httpproxy':
-      return true
-    case 'application':
-      return subtype === 'ssh'
-    case 'custom':
-      return !subtype || subtype === 'linux-vm' || subtype === 'kubernetes-token'
-    default:
-      return false
-  }
-}
-
 // Which subtypes can authenticate via AWS IAM Role. CLJS limits this to
 // MySQL and Postgres because those are the only RDS auth backends the
 // gateway/agent currently support

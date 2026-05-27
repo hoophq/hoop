@@ -1,5 +1,6 @@
 import { Stack, Title } from '@mantine/core'
 import PredefinedFields from './shared/PredefinedFields'
+import HttpHeadersSection from './shared/HttpHeadersSection'
 import AllowInsecureSslSection from './shared/AllowInsecureSslSection'
 import AgentSelectorSection from './shared/AgentSelectorSection'
 
@@ -32,6 +33,10 @@ export default function HttpProxyRenderer({
           forceNewState={forceNewState}
         />
       </Stack>
+      <HttpHeadersSection
+        connection={connection}
+        availableSources={availableSources}
+      />
       <AllowInsecureSslSection connection={connection} />
       <AgentSelectorSection />
     </Stack>
