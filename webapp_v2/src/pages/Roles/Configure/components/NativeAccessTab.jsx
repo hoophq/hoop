@@ -17,7 +17,7 @@ export default function NativeAccessTab() {
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
 
   return (
-    <Stack gap="xxl" maw={720}>
+    <Stack gap="xl" maw={720}>
       <ToggleSection
         title="Native access availability"
         description="Access from your client of preference using hoop.dev to channel resource roles using our Desktop App or our Command Line Interface."

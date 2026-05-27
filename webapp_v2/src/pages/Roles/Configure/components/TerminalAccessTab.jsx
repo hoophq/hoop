@@ -31,7 +31,7 @@ export default function TerminalAccessTab({ connection }) {
   const isDatabase = connection.type === 'database'
 
   return (
-    <Stack gap="xxl" maw={720}>
+    <Stack gap="xl" maw={720}>
       <ToggleSection
         title="Terminal access availability"
         description="Use hoop.dev's Web Terminal or our CLI's One-Offs commands directly in your terminal."
@@ -66,15 +66,18 @@ export default function TerminalAccessTab({ connection }) {
         }
       />
 
-      <Stack gap="sm">
-        <Title order={4}>Guardrails</Title>
-        <Text size="sm" c="dimmed">
-          Create custom rules to guide and protect usage within your
-          resource roles.
-        </Text>
+      <Stack gap="md">
+        <Stack gap="xs">
+          <Title order={4}>Guardrails</Title>
+          <Text size="sm" c="dimmed">
+            Create custom rules to guide and protect usage within your
+            resource roles.
+          </Text>
+        </Stack>
         <MultiSelect
           placeholder="Select..."
           searchable
+          nothingFoundMessage="No guardrails created yet. Go to Guardrails to add one."
           data={guardrailOptions}
           value={drafts.guardrail_rules}
           onChange={(value) => setDraft({ guardrail_rules: value })}
@@ -91,14 +94,17 @@ export default function TerminalAccessTab({ connection }) {
         </Button>
       </Stack>
 
-      <Stack gap="sm">
-        <Title order={4}>Jira Templates</Title>
-        <Text size="sm" c="dimmed">
-          Optimize and automate workflows with Jira Integration.
-        </Text>
+      <Stack gap="md">
+        <Stack gap="xs">
+          <Title order={4}>Jira Templates</Title>
+          <Text size="sm" c="dimmed">
+            Optimize and automate workflows with Jira Integration.
+          </Text>
+        </Stack>
         <Select
           placeholder="Select..."
           clearable
+          nothingFoundMessage="No Jira templates configured. Go to JIRA Integration to add one."
           data={jiraOptions}
           value={drafts.jira_issue_template_id || null}
           onChange={(value) => setDraft({ jira_issue_template_id: value || '' })}
@@ -115,12 +121,14 @@ export default function TerminalAccessTab({ connection }) {
         </Button>
       </Stack>
 
-      <Stack gap="sm">
-        <Title order={4}>Require specific metadata</Title>
-        <Text size="sm" c="dimmed">
-          Include mandatory metadata to be filled before executing
-          commands on this resource role.
-        </Text>
+      <Stack gap="md">
+        <Stack gap="xs">
+          <Title order={4}>Require specific metadata</Title>
+          <Text size="sm" c="dimmed">
+            Include mandatory metadata to be filled before executing
+            commands on this resource role.
+          </Text>
+        </Stack>
         <MetadataFieldsInput />
       </Stack>
 
