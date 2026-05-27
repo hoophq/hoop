@@ -2,12 +2,14 @@ import { useEffect } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Select from '@/components/Select'
 import { useAgentStore } from '@/stores/useAgentStore'
-import { useConfigureRoleStore } from '../store'
+import { useConfigureRoleStore } from '../../../store'
 
 // Lets the admin re-assign which agent runs this connection. The agent
 // list is shared with /agents and lives in useAgentStore so we just
-// trigger a fetch on mount and read the cached state.
-export default function AgentSelector() {
+// trigger a fetch on mount and read the cached state. Every bespoke
+// renderer ends with this section — keeps the agent picker in a
+// consistent position across the credentials tab.
+export default function AgentSelectorSection() {
   const agents = useAgentStore((s) => s.agents)
   const fetchAgents = useAgentStore((s) => s.fetchAgents)
   const agentId = useConfigureRoleStore((s) => s.drafts.agent_id)

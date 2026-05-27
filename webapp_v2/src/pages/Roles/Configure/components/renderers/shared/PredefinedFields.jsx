@@ -1,15 +1,15 @@
 import { Stack } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
-import SecretField from './SecretField'
-import { sourceOptionsFor } from './SecretField/util'
+import SecretField from '../../SecretField'
+import { sourceOptionsFor } from '../../SecretField/util'
 import {
   decodeSecretValue,
   encodeSecretForSource,
   isSecretReference,
   sourceFromEncodedValue,
   SOURCES,
-} from '../utils/secretsCodec'
-import { useConfigureRoleStore } from '../store'
+} from '../../../utils/secretsCodec'
+import { useConfigureRoleStore } from '../../../store'
 
 // Provider prefixes stripped from the displayed value — the source
 // picker conveys which provider applies, so the input itself should
@@ -18,31 +18,32 @@ const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds
 
 // Renders a list of credential fields driven by a static field schema
 // (key, label, required, placeholder, type). Used by every fixed-
-// schema connection type — catalog databases, SSH, HTTP proxy, Claude
-// Code, Kubernetes token. The caller is responsible for filtering /
-// ordering fields appropriately (e.g. SSH's auth-method gating).
+// schema renderer — CatalogRenderer (catalog schema), SshRenderer (SSH
+// auth fields), and the legacy inline forms that haven't moved yet.
+// The caller is responsible for filtering / ordering fields
+// appropriately (e.g. SSH's auth-method gating).
 //
 // Each row picks ONE of two layouts based on what the backend returned
 // for the field:
 //
 //   * **Round-tripped plaintext** — backend returned the actual value.
-//     This is the case for every connection shape covered by
+//     This is the case for the bespoke renderers covered by
 //     gateway/api/connections/secrets.go's `shouldRoundTripSecrets`
-//     (custom/*, httpproxy/*, application/{ssh,git,github}). Renders
-//     a plain SourcedInput pre-filled with the decoded value; saves
-//     re-encode under the picked source. Matches CLJS, which never
-//     stripped these.
+//     (application/ssh, httpproxy/*, custom/(empty|linux-vm|kubernetes-token)).
+//     Renders a plain SourcedInput pre-filled with the decoded value;
+//     saves re-encode under the picked source. Matches CLJS, which
+//     never stripped these.
 //
 //   * **Write-only ("Set" badge)** — backend returned an empty inline
 //     value or a `_aws:` / `_vaultkv1:` reference. This is the case
-//     for catalog databases where host/user/password stay write-only.
+//     for catalog applications, databases, and catalog custom subtypes.
 //     Renders the existing `SecretField` flow (Set badge → Replace).
 //
 // When `availableSources` is supplied (Secrets Manager mode), each row
 // also gets a leading source picker. The picked source decides how the
 // typed value is encoded on save (manual → bare base64, vault-kv1/2 or
 // aws-secrets-manager → prefixed reference).
-export default function PredefinedFieldsCredentials({
+export default function PredefinedFields({
   connection,
   fields,
   availableSources,

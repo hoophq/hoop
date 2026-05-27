@@ -10,9 +10,9 @@
 //
 // Notes on field naming:
 // - `key` is the lower-cased name. React state keys for predefined
-//   credentials live as lowercase (e.g. drafts.host); the existing
-//   PredefinedFieldsCredentials helper uppercases back to envvar form
-//   when persisting.
+//   credentials live as lowercase (e.g. drafts.host); the
+//   PredefinedFields helper uppercases back to envvar form when
+//   persisting.
 // - `label` mirrors the CLJS render: split on `_`, rejoin with a space,
 //   case preserved. So "HOST" stays "HOST"; "AWS_ACCESS_KEY_ID" stays
 //   "AWS ACCESS KEY ID". This keeps the UI honest about which env-var
