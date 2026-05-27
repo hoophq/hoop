@@ -10,7 +10,9 @@ import { useConfigureRoleStore } from './store'
 import ConfigureHeader from './components/ConfigureHeader'
 import FormFooter from './components/FormFooter'
 import CredentialsTab from './components/CredentialsTab'
-import PlaceholderTab from './components/PlaceholderTab'
+import DetailsTab from './components/DetailsTab'
+import TerminalAccessTab from './components/TerminalAccessTab'
+import NativeAccessTab from './components/NativeAccessTab'
 import TestConnectionModal from './components/TestConnectionModal'
 
 function DeleteConfirmationModal({ opened, onClose, onConfirm, connectionName, deleting }) {
@@ -54,7 +56,10 @@ export default function ConfigureRolePage() {
     testResult,
     testModalOpen,
     stagedSecrets,
+    drafts,
+    baseline,
     loadConnection,
+    loadAuxiliaryData,
     save,
     deleteConnection,
     runTestConnection,
@@ -68,8 +73,9 @@ export default function ConfigureRolePage() {
 
   useEffect(() => {
     loadConnection(connectionName)
+    loadAuxiliaryData()
     return () => reset()
-  }, [connectionName, loadConnection, reset])
+  }, [connectionName, loadConnection, loadAuxiliaryData, reset])
 
   const handleSave = async () => {
     if (formRef.current && !formRef.current.checkValidity()) {
@@ -110,7 +116,9 @@ export default function ConfigureRolePage() {
     return null
   }
 
-  const dirty = Object.keys(stagedSecrets).length > 0
+  const dirty =
+    Object.keys(stagedSecrets).length > 0 ||
+    JSON.stringify(drafts) !== JSON.stringify(baseline)
 
   return (
     <>
@@ -153,7 +161,7 @@ export default function ConfigureRolePage() {
             </Tabs.List>
 
             <Tabs.Panel value="details" keepMounted>
-              <PlaceholderTab tabName="Details" connectionName={connection.name} />
+              <DetailsTab connection={connection} />
             </Tabs.Panel>
 
             <Tabs.Panel value="credentials" keepMounted>
@@ -161,11 +169,11 @@ export default function ConfigureRolePage() {
             </Tabs.Panel>
 
             <Tabs.Panel value="terminal" keepMounted>
-              <PlaceholderTab tabName="Terminal Access" connectionName={connection.name} />
+              <TerminalAccessTab connection={connection} />
             </Tabs.Panel>
 
             <Tabs.Panel value="native" keepMounted>
-              <PlaceholderTab tabName="Native Access" connectionName={connection.name} />
+              <NativeAccessTab />
             </Tabs.Panel>
           </Tabs>
 
