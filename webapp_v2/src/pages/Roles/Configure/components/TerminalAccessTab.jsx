@@ -19,11 +19,11 @@ export default function TerminalAccessTab({ connection }) {
   const guardrailsList = useConfigureRoleStore((s) => s.guardrailsList)
   const jiraTemplatesList = useConfigureRoleStore((s) => s.jiraTemplatesList)
 
-  const guardrailOptions = (guardrailsList || []).map((g) => ({
+  const guardrailOptions = guardrailsList.map((g) => ({
     value: g.id,
     label: g.name,
   }))
-  const jiraOptions = (jiraTemplatesList?.data || jiraTemplatesList || []).map((t) => ({
+  const jiraOptions = jiraTemplatesList.map((t) => ({
     value: t.id,
     label: t.name,
   }))

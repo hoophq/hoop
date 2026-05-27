@@ -154,11 +154,21 @@ export const useConfigureRoleStore = create((set, get) => ({
         jiraTemplatesService.list(),
         attributesService.list(),
       ])
+      // /guardrails and /integrations/jira/issuetemplates return bare arrays
+      // (the service unwraps res.data for us). /attributes returns a
+      // paginated envelope { data: [...], pages: {...} } and the
+      // existing attributesService leaves the axios response untouched,
+      // so the array sits at value.data.data.
+      const attributesList =
+        attributesRes.status === 'fulfilled'
+          ? attributesRes.value?.data?.data || []
+          : []
       set({
-        guardrailsList: guardrails.status === 'fulfilled' ? guardrails.value || [] : [],
-        jiraTemplatesList: jiraTemplates.status === 'fulfilled' ? jiraTemplates.value || [] : [],
-        attributesList:
-          attributesRes.status === 'fulfilled' ? attributesRes.value?.data || [] : [],
+        guardrailsList:
+          guardrails.status === 'fulfilled' ? guardrails.value || [] : [],
+        jiraTemplatesList:
+          jiraTemplates.status === 'fulfilled' ? jiraTemplates.value || [] : [],
+        attributesList,
         auxLoading: false,
       })
     } catch {
