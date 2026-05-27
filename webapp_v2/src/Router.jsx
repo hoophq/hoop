@@ -13,6 +13,7 @@ import AuthCallback from '@/pages/Auth/Callback'
 import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
+import ConfigureRolePage from '@/pages/Roles/Configure'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -83,6 +84,20 @@ function Router() {
             <Layout>
               <PageLayout>
                 <AgentsCreate />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Configure connection role */}
+      <Route
+        path="/roles/:connectionName/configure"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <ConfigureRolePage />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
