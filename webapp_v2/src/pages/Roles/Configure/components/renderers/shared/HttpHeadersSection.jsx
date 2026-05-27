@@ -137,6 +137,15 @@ export default function HttpHeadersSection({
     .map(([k]) => k)
   const allKeys = [...existingKeys, ...stagedNewKeys]
 
+  // Keep at least one row available so the section never collapses.
+  // Matches CLJS behaviour and EnvironmentVariablesSection — the list
+  // always shows a blank input even when no headers exist yet.
+  useEffect(() => {
+    if (allKeys.length === 0) {
+      replaceSecret(`${HEADER_PREFIX}NEW_HEADER_1`, '')
+    }
+  }, [allKeys.length, replaceSecret])
+
   const addEmptyRow = () => {
     let i = 1
     while (allKeys.includes(`${HEADER_PREFIX}NEW_HEADER_${i}`)) i += 1
