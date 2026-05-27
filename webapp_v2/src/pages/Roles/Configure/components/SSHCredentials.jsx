@@ -19,7 +19,7 @@ function deriveAuthMethod(connection) {
   return 'password'
 }
 
-export default function SSHCredentials({ connection, isAdmin, availableSources, forceNewState }) {
+export default function SSHCredentials({ connection, availableSources, forceNewState }) {
   const initialMethod = useMemo(() => deriveAuthMethod(connection), [connection])
   const [authMethod, setAuthMethod] = useState(initialMethod)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
@@ -75,7 +75,6 @@ export default function SSHCredentials({ connection, isAdmin, availableSources, 
       <PredefinedFieldsCredentials
         connection={connection}
         fields={fields}
-        isAdmin={isAdmin}
         availableSources={availableSources}
         forceNewState={forceNewState}
       />
