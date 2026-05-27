@@ -52,11 +52,18 @@ export default function ConfigurationFilesSection({ connection, isAdmin }) {
           const staged = stagedSecrets[fsKey]
           const isExisting = fsKey in currentSecrets
           const filename = fsKey.slice('filesystem:'.length)
-          const stagedContent = staged?.value ? decodeSecretValue(staged.value) : ''
-          const contentPlaceholder =
-            isExisting && !staged
-              ? 'Existing content is hidden. Paste new content to replace.'
-              : 'Paste your file content here'
+          // ConfigurationFiles only renders inside CustomCredentials, and
+          // free-form custom rounds-trip plaintext from the backend, so
+          // the persisted file body is readable here. Staged edits win
+          // so what the user just typed is what they see.
+          const persistedContent = currentSecrets[fsKey]
+            ? decodeSecretValue(currentSecrets[fsKey])
+            : ''
+          const stagedContent = staged?.value
+            ? decodeSecretValue(staged.value)
+            : null
+          const content = stagedContent != null ? stagedContent : persistedContent
+          const contentPlaceholder = 'Paste your file content here'
           return (
             <Grid key={fsKey} gutter="md" align="flex-start">
               <Grid.Col span={11}>
@@ -81,7 +88,7 @@ export default function ConfigurationFilesSection({ connection, isAdmin }) {
                       autosize
                       minRows={4}
                       placeholder={contentPlaceholder}
-                      value={stagedContent}
+                      value={content}
                       onChange={(e) => {
                         if (!isAdmin) return
                         replaceSecret(fsKey, encodeSecretValue(e.currentTarget.value))

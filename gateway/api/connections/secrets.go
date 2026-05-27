@@ -3,6 +3,8 @@ package apiconnections
 import (
 	"encoding/base64"
 	"strings"
+
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 // secretReferencePrefixes lists the value prefixes that indicate an envvar
@@ -63,6 +65,33 @@ func isBooleanValue(encodedValue string) bool {
 		return true
 	}
 	return false
+}
+
+// freeFormCustomSubtypes lists the `custom` subtypes whose envvars are
+// user data rather than predefined credentials. Mirrors the dispatch in
+// CLJS webapp/.../configure_role/credentials_tab.cljs:14-20 — the same
+// subtypes that fall through to server/credentials-step (free-form)
+// instead of metadata-driven (catalog). Empty subtype also counts.
+var freeFormCustomSubtypes = map[string]bool{
+	"tcp":         true,
+	"httpproxy":   true,
+	"ssh":         true,
+	"linux-vm":    true,
+	"claude-code": true,
+}
+
+// isFreeFormCustom reports whether a connection's envvars should be
+// treated as free-form user data (visible round-trip) rather than
+// predefined credentials (write-only).
+func isFreeFormCustom(conn *models.Connection) bool {
+	if conn == nil || conn.Type != "custom" {
+		return false
+	}
+	sub := conn.SubType.String
+	if sub == "" {
+		return true
+	}
+	return freeFormCustomSubtypes[sub]
 }
 
 // stripInlineSecrets returns a copy of envs where inline secret values are

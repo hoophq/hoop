@@ -45,6 +45,9 @@ const emptyDrafts = {
   // Connection-level fields editable from the credentials tab.
   agent_id: '',
   command: [],
+  // Mirrors the connection's subtype. Edited via the Resource Subtype
+  // Override section on custom connections (DynamoDB / CloudWatch).
+  subtype: '',
 }
 
 function draftsFromConnection(conn) {
@@ -67,6 +70,7 @@ function draftsFromConnection(conn) {
     access_max_duration: conn.access_max_duration ?? null,
     agent_id: conn.agent_id || '',
     command: conn.command || [],
+    subtype: conn.subtype || '',
   }
 }
 
@@ -155,6 +159,9 @@ function buildDraftsPatch(drafts, baseline) {
   }
   if (!arraysEqual(drafts.command, baseline.command)) {
     patch.command = drafts.command
+  }
+  if (drafts.subtype !== baseline.subtype) {
+    patch.subtype = drafts.subtype
   }
   return patch
 }
@@ -342,7 +349,7 @@ export const useConfigureRoleStore = create((set, get) => ({
           }
         })()
         const reencoded =
-          source === 'manual'
+          source === 'manual-input'
             ? btoa(plain)
             : btoa(
                 ({
@@ -373,6 +380,12 @@ export const useConfigureRoleStore = create((set, get) => ({
       return { stagedSecrets: next }
     })
   },
+
+  // Wipes every staged secret in one go. Used when the user switches
+  // the Credentials tab's connection method — switching is a fresh
+  // start in write-only land, so any half-typed staged values for the
+  // previous method don't bleed into the new one.
+  clearStagedSecrets: () => set({ stagedSecrets: {} }),
 
   hasPendingChanges: () => {
     const state = get()

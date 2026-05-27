@@ -545,9 +545,15 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		defaultDB = []byte(``)
 	}
 
-	// Write-only secrets: strip inline values before returning. References
-	// to external secret providers stay intact so admins can audit them.
-	publicEnvs := stripInlineSecrets(conn.Envs)
+	// Write-only secrets: strip inline values for predefined credential
+	// schemas (catalog databases, SSH, HTTP proxy, kubernetes-token,
+	// etc.) so admins can never read them back. Free-form custom envvars
+	// are user data, not credentials — round-trip them plaintext so the
+	// edit UI can show the live value.
+	publicEnvs := conn.Envs
+	if !isFreeFormCustom(conn) {
+		publicEnvs = stripInlineSecrets(conn.Envs)
+	}
 
 	return openapi.Connection{
 		ID:                      conn.ID,

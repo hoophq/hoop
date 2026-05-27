@@ -14,6 +14,7 @@ import {
 } from '../utils/credentialsSchema'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
 import { SOURCES, SOURCE_LABELS } from '../utils/secretsCodec'
+import { useConfigureRoleStore } from '../store'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
@@ -86,7 +87,7 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
   )
 }
 
-function CredentialsBody({ connection, isAdmin, availableSources }) {
+function CredentialsBody({ connection, isAdmin, availableSources, forceNewState }) {
   const { type, subtype } = connection
 
   // Mirrors the dispatch in CLJS credentials_tab.cljs verbatim.
@@ -99,13 +100,14 @@ function CredentialsBody({ connection, isAdmin, availableSources }) {
           fields={CATALOG_FIELDS[subtype]}
           isAdmin={isAdmin}
           availableSources={availableSources}
+          forceNewState={forceNewState}
         />
       </Stack>
     )
   }
 
   if (type === 'application' && (subtype === 'ssh' || subtype === 'git' || subtype === 'github')) {
-    return <SSHCredentials connection={connection} isAdmin={isAdmin} availableSources={availableSources} />
+    return <SSHCredentials connection={connection} isAdmin={isAdmin} availableSources={availableSources} forceNewState={forceNewState} />
   }
 
   if (type === 'httpproxy' && subtype === 'claude-code') {
@@ -118,6 +120,7 @@ function CredentialsBody({ connection, isAdmin, availableSources }) {
             fields={CATALOG_FIELDS['claude-code']}
             isAdmin={isAdmin}
             availableSources={availableSources}
+            forceNewState={forceNewState}
           />
         </Stack>
         <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
@@ -135,6 +138,7 @@ function CredentialsBody({ connection, isAdmin, availableSources }) {
             fields={CATALOG_FIELDS.httpproxy}
             isAdmin={isAdmin}
             availableSources={availableSources}
+            forceNewState={forceNewState}
           />
         </Stack>
         <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
@@ -152,6 +156,7 @@ function CredentialsBody({ connection, isAdmin, availableSources }) {
             fields={CATALOG_FIELDS['kubernetes-token']}
             isAdmin={isAdmin}
             availableSources={availableSources}
+            forceNewState={forceNewState}
           />
         </Stack>
         <InsecureSslToggle connection={connection} isAdmin={isAdmin} />
@@ -168,6 +173,7 @@ function CredentialsBody({ connection, isAdmin, availableSources }) {
           fields={CATALOG_FIELDS[subtype]}
           isAdmin={isAdmin}
           availableSources={availableSources}
+          forceNewState={forceNewState}
         />
       </Stack>
     )
@@ -221,20 +227,37 @@ function SecretsManagerProviderSection({ provider, onProviderChange }) {
 
 export default function CredentialsTab({ connection, isAdmin }) {
   const derivedMethod = deriveConnectionMethod(connection.secret)
-  const [selectedMethod, setSelectedMethod] = useState(derivedMethod)
+  const [selectedMethod, setSelectedMethodState] = useState(derivedMethod)
   const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
+  const clearStagedSecrets = useConfigureRoleStore((s) => s.clearStagedSecrets)
   const showMethodCards = supportsConnectionMethods(connection)
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
+  const isDerivedMethod = selectedMethod === derivedMethod
 
-  // When in Secrets Manager mode, every field gets a source selector
-  // offering "Manual" or the currently picked provider — same as the
-  // CLJS source-selector available-sources list. Method switching is
-  // non-destructive: existing values stay until the user changes a
-  // field's source individually.
+  // Switching method is a fresh start in write-only land: existing
+  // "Set" cards become meaningless (the user can't peek at the value
+  // they would re-encode), so we clear all fields and let the user
+  // re-enter. Returning to the derived method drops the staged work,
+  // which surfaces the original Set state from the loaded connection.
+  const setSelectedMethod = (next) => {
+    if (next === selectedMethod) return
+    clearStagedSecrets()
+    setSelectedMethodState(next)
+  }
+
+  // availableSources drives the per-field source-selector adornment.
+  // In Secrets Manager mode the provider is the default; manual-input
+  // is offered as the secondary option. AWS IAM mode renders no
+  // adornment — the source is implicit.
   const availableSources = isSecretsManager
     ? [secretsProvider, SOURCES.MANUAL]
     : null
+
+  // forceNewState tells field renderers to ignore the connection's
+  // existing values (treat every field as empty). Active whenever the
+  // user has switched away from the derived method.
+  const forceNewState = !isDerivedMethod
 
   return (
     <Stack gap="xl" maw={720}>
@@ -256,6 +279,7 @@ export default function CredentialsTab({ connection, isAdmin }) {
         connection={connection}
         isAdmin={isAdmin}
         availableSources={availableSources}
+        forceNewState={forceNewState}
       />
     </Stack>
   )
