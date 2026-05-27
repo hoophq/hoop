@@ -179,7 +179,7 @@ export default function ConfigureRolePage() {
             </Tabs.Panel>
 
             <Tabs.Panel value="native" keepMounted>
-              <NativeAccessTab />
+              <NativeAccessTab connection={connection} />
             </Tabs.Panel>
           </Tabs>
 

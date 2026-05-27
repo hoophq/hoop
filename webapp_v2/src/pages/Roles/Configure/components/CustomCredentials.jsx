@@ -3,8 +3,17 @@ import { Stack, Title, Text, Button, Group, Alert } from '@mantine/core'
 import { Plus, Info } from 'lucide-react'
 import TextInput from '@/components/TextInput'
 import SecretField from './SecretField'
-import { decodeSecretValue, encodeSecretValue, isSecretReference } from '../utils/secretsCodec'
+import {
+  decodeSecretValue,
+  encodeSecretForSource,
+  encodeSecretValue,
+  isSecretReference,
+  SOURCES,
+} from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
+import ConfigurationFilesSection from './ConfigurationFilesSection'
+import CommandArgsInput from './CommandArgsInput'
+import AgentSelector from './AgentSelector'
 
 // Free-form credentials editor for custom connections without a known
 // subtype. Each row is one envvar; the user can add new pairs and
@@ -14,11 +23,13 @@ import { useConfigureRoleStore } from '../store'
 // only — values are stripped server-side). New rows live in local
 // state until the user types both a key and a value, at which point we
 // commit them to the store's stagedSecrets map under "new" action.
-export default function CustomCredentials({ connection, isAdmin }) {
+export default function CustomCredentials({ connection, isAdmin, availableSources }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
+  const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
 
   const [draftKey, setDraftKey] = useState('')
   const [draftValue, setDraftValue] = useState('')
@@ -72,6 +83,7 @@ export default function CustomCredentials({ connection, isAdmin }) {
           const displayLabel = envKey.startsWith('envvar:')
             ? envKey.slice('envvar:'.length)
             : envKey
+          const source = fieldSources[envKey] || SOURCES.MANUAL
           return (
             <SecretField
               key={envKey}
@@ -81,13 +93,19 @@ export default function CustomCredentials({ connection, isAdmin }) {
               referenceText={referenceText}
               allowDelete
               stagedAction={staged?.action}
-              stagedValue={staged?.value ? decodeSecretValue(staged.value) : ''}
+              stagedValue={staged?.value ? decodeSecretValue(staged.value).replace(
+                /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/,
+                '',
+              ) : ''}
               secretsUpdatedAt={connection.secrets_updated_at}
+              source={source}
+              availableSources={availableSources}
+              onSourceChange={(s) => setFieldSource(envKey, s)}
               onReplace={(plain) =>
-                isAdmin && replaceSecret(envKey, encodeSecretValue(plain))
+                isAdmin && replaceSecret(envKey, encodeSecretForSource(plain, source))
               }
               onChangeStaged={(plain) =>
-                isAdmin && replaceSecret(envKey, encodeSecretValue(plain))
+                isAdmin && replaceSecret(envKey, encodeSecretForSource(plain, source))
               }
               onCancel={() => cancelSecretChange(envKey)}
               onDelete={() => isAdmin && deleteSecret(envKey)}
@@ -125,6 +143,10 @@ export default function CustomCredentials({ connection, isAdmin }) {
           </Button>
         </Group>
       </Stack>
+
+      <ConfigurationFilesSection connection={connection} isAdmin={isAdmin} />
+      <CommandArgsInput />
+      <AgentSelector />
     </Stack>
   )
 }
