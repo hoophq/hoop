@@ -86,9 +86,21 @@ export default function ConfigureRolePage() {
     }
     try {
       await save()
-      notifications.show({ message: 'Connection saved.', color: 'green' })
+      // Match the CLJS resources/events.cljs success flow: success
+      // snackbar (10s, top-right) and redirect to the resources list
+      // on the Roles tab.
+      notifications.show({
+        message: 'Role ' + connection.name + ' updated!',
+        color: 'green',
+        autoClose: 10000,
+      })
+      navigate('/resources?tab=roles')
     } catch {
-      notifications.show({ message: 'Failed to save connection.', color: 'red' })
+      notifications.show({
+        message: 'Failed to save connection.',
+        color: 'red',
+        autoClose: 10000,
+      })
     }
   }
 
@@ -99,10 +111,15 @@ export default function ConfigureRolePage() {
       notifications.show({
         message: 'Connection deleted.',
         color: 'green',
+        autoClose: 10000,
       })
-      navigate('/resources')
+      navigate('/resources?tab=roles')
     } catch {
-      notifications.show({ message: 'Failed to delete connection.', color: 'red' })
+      notifications.show({
+        message: 'Failed to delete connection.',
+        color: 'red',
+        autoClose: 10000,
+      })
     }
   }
 

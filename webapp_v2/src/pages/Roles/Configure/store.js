@@ -74,6 +74,15 @@ function draftsFromConnection(conn) {
   }
 }
 
+// Placeholder rows (the auto-added empty row that keeps Environment
+// variables / Configuration files from looking empty) live in
+// stagedSecrets as 'new' entries with empty value and a generated key
+// pattern. They never get sent to the backend or count toward dirty.
+const PLACEHOLDER_KEY_RE = /^(envvar:NEW_KEY_|filesystem:NEW_FILE_)\d+$/
+function isPlaceholderEntry(key, change) {
+  return change?.action === 'new' && !change.value && PLACEHOLDER_KEY_RE.test(key)
+}
+
 // If both probe results are in, return a patch that closes out the
 // test duration. Otherwise return an empty patch so set(...) is a no-op
 // for the duration field.
@@ -183,6 +192,10 @@ const initialState = {
   // Per-field source identifier (mirrors :connection-setup/field-source
   // in CLJS). Empty by default; seeded from the connection on load.
   fieldSources: {},
+  // { originalKey: newKey } for rows whose Key field was renamed but
+  // whose React row position should stay put. Translated into
+  // delete+replace pairs by buildSecretsPatch on save.
+  renames: {},
   drafts: { ...emptyDrafts },
   baseline: { ...emptyDrafts }, // snapshot of drafts as loaded; used for diffing
   guardrailsList: [],
@@ -206,6 +219,7 @@ export const useConfigureRoleStore = create((set, get) => ({
       connection: null,
       stagedSecrets: {},
       fieldSources: {},
+      renames: {},
     })
     try {
       const data = await connectionsService.getConnection(nameOrId)
@@ -381,29 +395,64 @@ export const useConfigureRoleStore = create((set, get) => ({
     })
   },
 
+  // Rename the Key of a row without moving its position in the rendered
+  // list. For 'new' staged entries we swap the stagedSecrets entry in
+  // place; for keys that exist on the connection we record the rename
+  // separately so save() can translate it into delete-old + replace-new.
+  renameSecret: (originalKey, newKey) => {
+    set((state) => {
+      if (newKey === originalKey) {
+        const renames = { ...state.renames }
+        delete renames[originalKey]
+        return { renames }
+      }
+      const stagedForOriginal = state.stagedSecrets[originalKey]
+      if (stagedForOriginal?.action === 'new') {
+        const stagedSecrets = { ...state.stagedSecrets }
+        delete stagedSecrets[originalKey]
+        stagedSecrets[newKey] = stagedForOriginal
+        return { stagedSecrets }
+      }
+      return { renames: { ...state.renames, [originalKey]: newKey } }
+    })
+  },
+
   // Wipes every staged secret in one go. Used when the user switches
   // the Credentials tab's connection method — switching is a fresh
   // start in write-only land, so any half-typed staged values for the
   // previous method don't bleed into the new one.
-  clearStagedSecrets: () => set({ stagedSecrets: {} }),
+  clearStagedSecrets: () => set({ stagedSecrets: {}, renames: {} }),
 
   hasPendingChanges: () => {
     const state = get()
-    if (Object.keys(state.stagedSecrets).length > 0) return true
+    if (Object.entries(state.stagedSecrets).some(([k, ch]) => !isPlaceholderEntry(k, ch))) return true
+    if (Object.keys(state.renames).length > 0) return true
     return Object.keys(buildDraftsPatch(state.drafts, state.baseline)).length > 0
   },
 
   // Builds the secrets sub-payload for the PATCH request.
   // Empty value = delete (per backend mergeSecrets semantics).
+  // Renames translate into delete-old + replace-new so save preserves
+  // row position for the user while doing the right thing on the wire.
+  // Placeholder rows (auto-added when the list would otherwise be
+  // empty) get dropped so they don't pollute the payload.
   buildSecretsPatch: () => {
-    const staged = get().stagedSecrets
+    const { stagedSecrets, renames, connection } = get()
     const out = {}
-    for (const [key, change] of Object.entries(staged)) {
+    for (const [key, change] of Object.entries(stagedSecrets)) {
+      if (isPlaceholderEntry(key, change)) continue
       if (change.action === 'delete') {
         out[key] = ''
       } else {
         out[key] = change.value
       }
+    }
+    for (const [origKey, newKey] of Object.entries(renames)) {
+      if (origKey === newKey) continue
+      const stagedValue = stagedSecrets[origKey]?.value
+      const persisted = connection?.secret?.[origKey] || ''
+      out[origKey] = ''
+      out[newKey] = stagedValue || persisted
     }
     return out
   },
