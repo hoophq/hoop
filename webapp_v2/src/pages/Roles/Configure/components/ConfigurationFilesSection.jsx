@@ -119,8 +119,12 @@ export default function ConfigurationFilesSection({ connection }) {
           const renamedTo = renames[fsKey]
           const effectiveKey = renamedTo || fsKey
           // Hide the auto-generated `NEW_FILE_N` sentinel from the user
-          // so the empty-state row shows a truly blank Name input.
-          const isPlaceholder = PLACEHOLDER_KEY_RE.test(effectiveKey)
+          // ONLY when it's an actual UI placeholder (not persisted on
+          // the connection). Legacy junk records with the same name
+          // shape — created by an older version that didn't reject
+          // unnamed placeholders on save — must still display so the
+          // user can see and clean them up.
+          const isPlaceholder = !isExisting && PLACEHOLDER_KEY_RE.test(effectiveKey)
           const displayName = isPlaceholder ? '' : effectiveKey.slice('filesystem:'.length)
           // If anything is staged for this row we honour it verbatim,
           // even when the value is an empty string — that's "user
