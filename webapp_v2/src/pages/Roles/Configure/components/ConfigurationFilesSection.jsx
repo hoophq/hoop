@@ -1,23 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Stack, Title, Text, Button, Grid, ActionIcon, Textarea } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import TextInput from '@/components/TextInput'
 import { decodeSecretValue, encodeSecretValue } from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
 
-// Configuration files for a custom connection. Matches the CLJS create
-// UI: each file is a Name input + a Content textarea + a Remove icon,
-// with an Add button below. The underlying storage key is
-// `filesystem:<NAME>` so renaming a file is just delete-old + insert-new
-// — the same staged-secret primitives that envvar rows use. Names are
-// edited under local state and committed on blur to keep focus stable.
+// Configuration files for a custom connection. Same pattern as
+// CustomCredentials: rename commits on blur via the store's renames
+// map so position stays put; an empty placeholder row is kept around
+// so the section never collapses.
 
-function FileRow({ fsKey, content, onCommitName, onContentChange, onRemove }) {
-  const initialName = fsKey.slice('filesystem:'.length)
-  const [draftName, setDraftName] = useState(initialName)
+function FileRow({ rowKey, displayName, content, onCommitName, onContentChange, onRemove }) {
+  const [draftName, setDraftName] = useState(displayName)
+
+  useEffect(() => {
+    setDraftName(displayName)
+  }, [displayName])
 
   return (
-    <Grid gutter="md" align="flex-start">
+    <Grid gutter="md" align="flex-start" key={rowKey}>
       <Grid.Col span={11}>
         <Stack gap="md">
           <TextInput
@@ -27,7 +28,7 @@ function FileRow({ fsKey, content, onCommitName, onContentChange, onRemove }) {
             onChange={(e) => setDraftName(e.currentTarget.value)}
             onBlur={() => {
               const trimmed = draftName.trim()
-              if (!trimmed || trimmed === initialName) return
+              if (!trimmed) return
               onCommitName(trimmed)
             }}
           />
@@ -50,7 +51,7 @@ function FileRow({ fsKey, content, onCommitName, onContentChange, onRemove }) {
           size="lg"
           mt="xl"
           onClick={onRemove}
-          aria-label={'Remove configuration file ' + initialName}
+          aria-label={'Remove configuration file ' + displayName}
         >
           <Trash2 size={16} />
         </ActionIcon>
@@ -61,9 +62,11 @@ function FileRow({ fsKey, content, onCommitName, onContentChange, onRemove }) {
 
 export default function ConfigurationFilesSection({ connection }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
+  const renames = useConfigureRoleStore((s) => s.renames)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
 
   const currentSecrets = connection.secret || {}
   const stagedDeletedKeys = new Set(
@@ -84,19 +87,16 @@ export default function ConfigurationFilesSection({ connection }) {
     .map(([k]) => k)
   const allKeys = [...existingKeys, ...stagedNewKeys]
 
+  useEffect(() => {
+    if (allKeys.length === 0) {
+      replaceSecret('filesystem:NEW_FILE_1', '')
+    }
+  }, [allKeys.length, replaceSecret])
+
   const addEmptyRow = () => {
     let i = 1
     while (allKeys.includes(`filesystem:NEW_FILE_${i}`)) i += 1
     replaceSecret(`filesystem:NEW_FILE_${i}`, '')
-  }
-
-  const renameKey = (fsKey, newName, currentContent) => {
-    const nextKey = `filesystem:${newName}`
-    if (nextKey === fsKey) return
-    const isExisting = fsKey in currentSecrets
-    if (isExisting) deleteSecret(fsKey)
-    else cancelSecretChange(fsKey)
-    replaceSecret(nextKey, encodeSecretValue(currentContent))
   }
 
   return (
@@ -113,6 +113,9 @@ export default function ConfigurationFilesSection({ connection }) {
         {allKeys.map((fsKey) => {
           const staged = stagedSecrets[fsKey]
           const isExisting = fsKey in currentSecrets
+          const renamedTo = renames[fsKey]
+          const effectiveKey = renamedTo || fsKey
+          const displayName = effectiveKey.slice('filesystem:'.length)
           const stagedContent = staged?.value
             ? decodeSecretValue(staged.value)
             : null
@@ -123,9 +126,12 @@ export default function ConfigurationFilesSection({ connection }) {
           return (
             <FileRow
               key={fsKey}
-              fsKey={fsKey}
+              rowKey={fsKey}
+              displayName={displayName}
               content={content}
-              onCommitName={(newName) => renameKey(fsKey, newName, content)}
+              onCommitName={(newName) => {
+                renameSecret(fsKey, `filesystem:${newName}`)
+              }}
               onContentChange={(plain) =>
                 replaceSecret(fsKey, encodeSecretValue(plain))
               }

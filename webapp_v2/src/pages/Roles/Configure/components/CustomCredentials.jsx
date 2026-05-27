@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Stack, Title, Text, Button, Grid, ActionIcon } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import TextInput from '@/components/TextInput'
@@ -10,21 +10,23 @@ import CommandArgsInput from './CommandArgsInput'
 import AgentSelector from './AgentSelector'
 import ResourceSubtypeOverride from './ResourceSubtypeOverride'
 
-// Free-form credentials editor for custom connections. Backend round-
-// trips values plaintext for free-form custom, so the value field
-// shows the actual current value behind PasswordInput's reveal toggle.
-// Renames commit on blur — the row stages a delete on the old key
-// plus a replace on the new one so mergeSecrets persists both halves
-// in a single PATCH.
+// Free-form credentials editor for custom connections. Values round-
+// trip plaintext from the backend; rename commits on blur and is
+// translated into delete-old + replace-new at save time so the row's
+// rendered position stays put. The list never shrinks past one empty
+// row — auto-adds a placeholder if everything was removed.
 
-function EnvvarRow({ envKey, value, onCommitKey, onValueChange, onRemove }) {
-  const initialName = envKey.startsWith('envvar:')
-    ? envKey.slice('envvar:'.length)
-    : envKey
-  const [draftName, setDraftName] = useState(initialName)
+function EnvvarRow({ rowKey, displayName, value, onCommitKey, onValueChange, onRemove }) {
+  const [draftName, setDraftName] = useState(displayName)
+
+  // Keep the local draft in sync when the displayed name changes from
+  // outside (e.g. another component triggered a rename for this key).
+  useEffect(() => {
+    setDraftName(displayName)
+  }, [displayName])
 
   return (
-    <Grid gutter="md" align="flex-end">
+    <Grid gutter="md" align="flex-end" key={rowKey}>
       <Grid.Col span={5}>
         <TextInput
           label="Key"
@@ -32,7 +34,7 @@ function EnvvarRow({ envKey, value, onCommitKey, onValueChange, onRemove }) {
           onChange={(e) => setDraftName(e.currentTarget.value)}
           onBlur={() => {
             const trimmed = draftName.trim()
-            if (!trimmed || trimmed === initialName) return
+            if (!trimmed) return
             onCommitKey(trimmed)
           }}
           placeholder="e.g. API_KEY"
@@ -52,7 +54,7 @@ function EnvvarRow({ envKey, value, onCommitKey, onValueChange, onRemove }) {
           color="red"
           size="lg"
           onClick={onRemove}
-          aria-label={'Remove ' + initialName}
+          aria-label={'Remove ' + displayName}
         >
           <Trash2 size={16} />
         </ActionIcon>
@@ -63,9 +65,11 @@ function EnvvarRow({ envKey, value, onCommitKey, onValueChange, onRemove }) {
 
 export default function CustomCredentials({ connection }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
+  const renames = useConfigureRoleStore((s) => s.renames)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
 
   const currentSecrets = connection.secret || {}
   const stagedDeletedKeys = new Set(
@@ -86,20 +90,20 @@ export default function CustomCredentials({ connection }) {
     .map(([k]) => k)
   const allKeys = [...existingKeys, ...stagedNewKeys]
 
+  // Keep at least one row available so the section never collapses.
+  // Matches CLJS behaviour (the legacy form always shows a blank input).
+  useEffect(() => {
+    if (allKeys.length === 0) {
+      let i = 1
+      const sentinel = `envvar:NEW_KEY_${i}`
+      replaceSecret(sentinel, '')
+    }
+  }, [allKeys.length, replaceSecret])
+
   const addEmptyRow = () => {
     let i = 1
     while (allKeys.includes(`envvar:NEW_KEY_${i}`)) i += 1
     replaceSecret(`envvar:NEW_KEY_${i}`, '')
-  }
-
-  const renameKey = (envKey, newName, currentValue) => {
-    const nextKey = newName.startsWith('envvar:')
-      ? newName
-      : 'envvar:' + newName.toUpperCase()
-    if (nextKey === envKey) return
-    if (envKey in currentSecrets) deleteSecret(envKey)
-    else cancelSecretChange(envKey)
-    replaceSecret(nextKey, encodeSecretValue(currentValue))
   }
 
   return (
@@ -115,6 +119,9 @@ export default function CustomCredentials({ connection }) {
         {allKeys.map((envKey) => {
           const staged = stagedSecrets[envKey]
           const isExisting = envKey in currentSecrets
+          const renamedTo = renames[envKey]
+          const effectiveKey = renamedTo || envKey
+          const displayName = effectiveKey.slice('envvar:'.length)
           const stagedPlain = staged?.value
             ? decodeSecretValue(staged.value)
             : null
@@ -125,9 +132,15 @@ export default function CustomCredentials({ connection }) {
           return (
             <EnvvarRow
               key={envKey}
-              envKey={envKey}
+              rowKey={envKey}
+              displayName={displayName}
               value={value}
-              onCommitKey={(newName) => renameKey(envKey, newName, value)}
+              onCommitKey={(newName) => {
+                const nextKey = newName.startsWith('envvar:')
+                  ? newName
+                  : 'envvar:' + newName.toUpperCase()
+                renameSecret(envKey, nextKey)
+              }}
               onValueChange={(plain) =>
                 replaceSecret(envKey, encodeSecretValue(plain))
               }
