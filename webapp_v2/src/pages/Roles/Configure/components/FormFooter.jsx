@@ -1,5 +1,6 @@
 import { Group, Button, Text } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
+import classes from './FormFooter.module.css'
 
 // Sticky-feel footer for the Configure Role form. Currently rendered
 // inline at the bottom of the page (the CLJS version is also non-sticky).
@@ -18,7 +19,7 @@ export default function FormFooter({
   onSave,
 }) {
   return (
-    <Group justify="space-between" align="center" mt="xxl">
+    <Group justify="space-between" align="center" mt="xxl" className={classes.root}>
       <Button
         variant="default"
         leftSection={<ArrowLeft size={16} />}

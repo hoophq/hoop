@@ -11,6 +11,7 @@ import ConfigureHeader from './components/ConfigureHeader'
 import FormFooter from './components/FormFooter'
 import CredentialsTab from './components/CredentialsTab'
 import PlaceholderTab from './components/PlaceholderTab'
+import TestConnectionModal from './components/TestConnectionModal'
 
 function DeleteConfirmationModal({ opened, onClose, onConfirm, connectionName, deleting }) {
   return (
@@ -51,12 +52,13 @@ export default function ConfigureRolePage() {
     deleting,
     testing,
     testResult,
+    testModalOpen,
     stagedSecrets,
     loadConnection,
     save,
     deleteConnection,
     runTestConnection,
-    clearTestResult,
+    closeTestModal,
     reset,
   } = useConfigureRoleStore()
 
@@ -68,17 +70,6 @@ export default function ConfigureRolePage() {
     loadConnection(connectionName)
     return () => reset()
   }, [connectionName, loadConnection, reset])
-
-  useEffect(() => {
-    if (!testResult) return
-    notifications.show({
-      message: testResult.success
-        ? 'Connection test succeeded.'
-        : testResult.message || 'Connection test failed.',
-      color: testResult.success ? 'green' : 'red',
-    })
-    clearTestResult()
-  }, [testResult, clearTestResult])
 
   const handleSave = async () => {
     if (formRef.current && !formRef.current.checkValidity()) {
@@ -129,6 +120,14 @@ export default function ConfigureRolePage() {
         onConfirm={handleDelete}
         connectionName={connection.name}
         deleting={deleting}
+      />
+
+      <TestConnectionModal
+        opened={testModalOpen}
+        testing={testing}
+        result={testResult}
+        connectionName={connection.name}
+        onClose={closeTestModal}
       />
 
       <form
