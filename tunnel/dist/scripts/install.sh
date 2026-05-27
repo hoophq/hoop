@@ -79,8 +79,9 @@ UNAME=$(uname -s)
 case "$UNAME" in
     Linux) ;;
     Darwin)
-        red "error: macOS install is not supported yet."
-        red "       Use the Homebrew formula instead (coming soon)."
+        red "error: macOS install is not supported in this build."
+        red "       LaunchDaemon support is tracked as a follow-up to RD-217."
+        red "       Track progress at https://linear.app/hoophq/issue/RD-217"
         exit 1
         ;;
     *)

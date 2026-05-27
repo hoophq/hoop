@@ -7,9 +7,12 @@ gateway protocol or endpoint**.
 
 The daemon is shipped together with the unprivileged `hsh` CLI from the
 [hoophq/hsh](https://github.com/hoophq/hsh) repo. Day-to-day, users
-install both via `brew install hsh` (or the platform tarball) and never
-invoke `hsh-tunneld` directly. The instructions below cover building
-and running it standalone for development and integration testing.
+install both via the platform-specific tarball from the hsh GitHub
+Releases page (see RD-227); a Homebrew formula will follow once the
+macOS LaunchDaemon backend lands (RD-220, depends on RD-217 macOS
+support). Users never invoke `hsh-tunneld` directly except for
+`hsh-tunneld install` at install time and any troubleshooting steps
+that need root.
 
 For each TCP flow accepted inside the userspace netstack, the tunnel
 opens a fresh gRPC bidirectional stream to the existing hoop gateway —
