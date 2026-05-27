@@ -14,50 +14,76 @@ import { sourceFromEncodedValue, PLACEHOLDER_KEY_RE } from './utils/secretsCodec
 //   - 'delete'  removes an existing key (custom connection type only).
 //   - 'new'     adds a brand-new custom-type secret (key + value).
 
-const emptyDrafts = {
-  attributes: [],
-  connection_tags: {},
-  access_mode_exec: 'enabled',
-  access_mode_runbooks: 'enabled',
-  access_mode_connect: 'enabled',
-  access_schema: 'enabled',
-  guardrail_rules: [],
-  jira_issue_template_id: '',
-  mandatory_metadata_fields: [],
-  redact_enabled: false,
-  redact_types: [],
-  // Review backward-compat (renders only when the connection already
-  // has any of these set on load).
-  reviewers: [],
-  min_review_approvals: null,
-  force_approve_groups: [],
-  access_max_duration: null,
-  // Connection-level fields editable from the credentials tab.
-  agent_id: '',
-  command: [],
+// Schema for the draft fields the form edits. One entry per field that
+// round-trips between `connection` (server) and `drafts` (form state).
+// Adding a new connection-level field: append one entry here — no
+// changes needed in draftsFromConnection / buildDraftsPatch.
+//
+// Field options:
+//   default     fallback used when the connection has no value
+//   compare     equality predicate for the dirty check (default: ===)
+//   transform   pre-process before compare/patch (e.g. prune blanks)
+//   nullable    true → use `??` coalescing (preserves 0/false);
+//               false → `||` (replaces falsy with default)
+//
+// `redact_enabled` is a UI-only flag; the wire toggles via
+// `redact_types: []` for "off". Handled as a compound special-case
+// below the per-field loop in buildDraftsPatch.
+const DRAFT_FIELDS = {
+  attributes: { default: [], compare: arraysEqual },
+  connection_tags: { default: {}, compare: objectsEqual, transform: pruneEmptyTags },
+  access_mode_exec: { default: 'enabled' },
+  access_mode_runbooks: { default: 'enabled' },
+  access_mode_connect: { default: 'enabled' },
+  access_schema: { default: 'enabled' },
+  guardrail_rules: { default: [], compare: arraysEqual },
+  jira_issue_template_id: { default: '' },
+  // Drop blank rows so the payload doesn't carry junk like `[""]` —
+  // the placeholder UX keeps an empty input visible at the bottom and
+  // the user can also clear the first row, both of which leave a
+  // whitespace-only entry in the draft. Mirrors CLJS process_form's
+  // (filterv #(not (str/blank? %))) on mandatory-metadata-fields.
+  mandatory_metadata_fields: {
+    default: [],
+    compare: arraysEqual,
+    transform: (xs) =>
+      (xs || []).filter((s) => typeof s === 'string' && s.trim() !== ''),
+  },
+  reviewers: { default: [], compare: arraysEqual },
+  min_review_approvals: { default: null, nullable: true },
+  force_approve_groups: { default: [], compare: arraysEqual },
+  access_max_duration: { default: null, nullable: true },
+  agent_id: { default: '' },
+  command: { default: [], compare: arraysEqual },
+}
+
+function freshDrafts() {
+  const out = {}
+  for (const [key, spec] of Object.entries(DRAFT_FIELDS)) {
+    // Fresh copies for mutable defaults so callers can't share state.
+    out[key] = Array.isArray(spec.default)
+      ? []
+      : spec.default !== null && typeof spec.default === 'object'
+        ? {}
+        : spec.default
+  }
+  out.redact_enabled = false
+  out.redact_types = []
+  return out
 }
 
 function draftsFromConnection(conn) {
-  if (!conn) return { ...emptyDrafts }
-  return {
-    attributes: conn.attributes || [],
-    connection_tags: conn.connection_tags || {},
-    access_mode_exec: conn.access_mode_exec || 'enabled',
-    access_mode_runbooks: conn.access_mode_runbooks || 'enabled',
-    access_mode_connect: conn.access_mode_connect || 'enabled',
-    access_schema: conn.access_schema || 'enabled',
-    guardrail_rules: conn.guardrail_rules || [],
-    jira_issue_template_id: conn.jira_issue_template_id || '',
-    mandatory_metadata_fields: conn.mandatory_metadata_fields || [],
-    redact_enabled: !!conn.redact_enabled,
-    redact_types: conn.redact_types || [],
-    reviewers: conn.reviewers || [],
-    min_review_approvals: conn.min_review_approvals ?? null,
-    force_approve_groups: conn.force_approve_groups || [],
-    access_max_duration: conn.access_max_duration ?? null,
-    agent_id: conn.agent_id || '',
-    command: conn.command || [],
+  if (!conn) return freshDrafts()
+  const drafts = {}
+  for (const [key, spec] of Object.entries(DRAFT_FIELDS)) {
+    const value = conn[key]
+    drafts[key] = spec.nullable
+      ? (value ?? spec.default)
+      : (value || spec.default)
   }
+  drafts.redact_enabled = !!conn.redact_enabled
+  drafts.redact_types = conn.redact_types || []
+  return drafts
 }
 
 // Empty placeholder rows (the auto-added blank row that keeps
@@ -118,72 +144,27 @@ function pruneEmptyTags(tags) {
 
 // Returns only the keys of `drafts` that differ from the connection's
 // current value, formatted in the shape PATCH /connections expects.
+// Per-field comparison + transform comes from DRAFT_FIELDS.
 function buildDraftsPatch(drafts, baseline) {
   const patch = {}
-  if (!arraysEqual(drafts.attributes, baseline.attributes)) {
-    patch.attributes = drafts.attributes
+  for (const [key, spec] of Object.entries(DRAFT_FIELDS)) {
+    const compare = spec.compare || ((a, b) => a === b)
+    let draftValue = drafts[key]
+    let baselineValue = baseline[key]
+    if (spec.transform) {
+      draftValue = spec.transform(draftValue)
+      baselineValue = spec.transform(baselineValue)
+    }
+    if (!compare(draftValue, baselineValue)) {
+      patch[key] = draftValue
+    }
   }
-  const prunedTags = pruneEmptyTags(drafts.connection_tags)
-  const prunedBaselineTags = pruneEmptyTags(baseline.connection_tags)
-  if (!objectsEqual(prunedTags, prunedBaselineTags)) {
-    patch.connection_tags = prunedTags
-  }
-  if (drafts.access_mode_exec !== baseline.access_mode_exec) {
-    patch.access_mode_exec = drafts.access_mode_exec
-  }
-  if (drafts.access_mode_runbooks !== baseline.access_mode_runbooks) {
-    patch.access_mode_runbooks = drafts.access_mode_runbooks
-  }
-  if (drafts.access_mode_connect !== baseline.access_mode_connect) {
-    patch.access_mode_connect = drafts.access_mode_connect
-  }
-  if (drafts.access_schema !== baseline.access_schema) {
-    patch.access_schema = drafts.access_schema
-  }
-  if (!arraysEqual(drafts.guardrail_rules, baseline.guardrail_rules)) {
-    patch.guardrail_rules = drafts.guardrail_rules
-  }
-  if (drafts.jira_issue_template_id !== baseline.jira_issue_template_id) {
-    patch.jira_issue_template_id = drafts.jira_issue_template_id
-  }
-  // Drop blank rows so the payload doesn't carry junk like `[""]` —
-  // the placeholder UX keeps an empty input visible at the bottom and
-  // the user can also clear the first row, both of which leave a
-  // whitespace-only entry in the draft. Mirrors CLJS process_form's
-  // (filterv #(not (str/blank? %))) on mandatory-metadata-fields.
-  const cleanedMandatory = drafts.mandatory_metadata_fields.filter(
-    (s) => typeof s === 'string' && s.trim() !== '',
-  )
-  const cleanedBaselineMandatory = baseline.mandatory_metadata_fields.filter(
-    (s) => typeof s === 'string' && s.trim() !== '',
-  )
-  if (!arraysEqual(cleanedMandatory, cleanedBaselineMandatory)) {
-    patch.mandatory_metadata_fields = cleanedMandatory
-  }
-  // redact_enabled is read-only on the API (derived from redact_types).
-  // We translate by setting redact_types to [] when the user disables masking.
-  const desiredRedactTypes = drafts.redact_enabled ? drafts.redact_types : []
-  const baselineRedactTypes = baseline.redact_enabled ? baseline.redact_types : []
-  if (!arraysEqual(desiredRedactTypes, baselineRedactTypes)) {
-    patch.redact_types = desiredRedactTypes
-  }
-  if (!arraysEqual(drafts.reviewers, baseline.reviewers)) {
-    patch.reviewers = drafts.reviewers
-  }
-  if (drafts.min_review_approvals !== baseline.min_review_approvals) {
-    patch.min_review_approvals = drafts.min_review_approvals
-  }
-  if (!arraysEqual(drafts.force_approve_groups, baseline.force_approve_groups)) {
-    patch.force_approve_groups = drafts.force_approve_groups
-  }
-  if (drafts.access_max_duration !== baseline.access_max_duration) {
-    patch.access_max_duration = drafts.access_max_duration
-  }
-  if (drafts.agent_id !== baseline.agent_id) {
-    patch.agent_id = drafts.agent_id
-  }
-  if (!arraysEqual(drafts.command, baseline.command)) {
-    patch.command = drafts.command
+  // redact_enabled is UI-only — the wire toggles masking via
+  // `redact_types: []` for off. Translate at save time.
+  const desiredRedact = drafts.redact_enabled ? drafts.redact_types : []
+  const baselineRedact = baseline.redact_enabled ? baseline.redact_types : []
+  if (!arraysEqual(desiredRedact, baselineRedact)) {
+    patch.redact_types = desiredRedact
   }
   return patch
 }
@@ -209,8 +190,8 @@ const initialState = {
   // whose React row position should stay put. Translated into
   // delete+replace pairs by buildSecretsPatch on save.
   renames: {},
-  drafts: { ...emptyDrafts },
-  baseline: { ...emptyDrafts }, // snapshot of drafts as loaded; used for diffing
+  drafts: freshDrafts(),
+  baseline: freshDrafts(), // snapshot of drafts as loaded; used for diffing
   guardrailsList: [],
   jiraTemplatesList: [],
   attributesList: [],
