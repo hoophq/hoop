@@ -15,16 +15,28 @@ export const CONNECTION_METHODS = {
   AWS_IAM: 'aws_iam',
 }
 
-// Whether the type/subtype offers the connection-method selector.
-// Currently only database connections expose the choice (Manual /
-// Secrets Manager / AWS IAM Role).
-export function supportsConnectionMethods({ type } = {}) {
-  return type === 'database'
+// Subtypes that route to the free-form custom editor regardless of
+// whether the JSON catalog has a credentials entry for them. Mirrors
+// the CLJS exclusion set at
+// webapp/src/webapp/resources/configure_role/credentials_tab.cljs:17.
+// "tcp" / "ssh" sit in the metadata catalog with HOST/PORT credentials,
+// but the CLJS chose free-form for the custom + tcp/ssh combination
+// because those are generic shell-style wrappers; honour that decision.
+const FREE_FORM_CUSTOM_SUBTYPES = new Set([
+  'tcp',
+  'httpproxy',
+  'ssh',
+  'linux-vm',
+  'claude-code',
+])
+export function isFreeFormCustomSubtype(subtype) {
+  return Boolean(subtype) && FREE_FORM_CUSTOM_SUBTYPES.has(subtype)
 }
 
 // Which subtypes can authenticate via AWS IAM Role. CLJS limits this to
 // MySQL and Postgres because those are the only RDS auth backends the
-// gateway/agent currently support.
+// gateway/agent currently support
+// (webapp/.../setup/connection_method.cljs:92).
 const AWS_IAM_ROLE_SUBTYPES = new Set(['postgres', 'mysql'])
 export function supportsAwsIam(subtype) {
   return AWS_IAM_ROLE_SUBTYPES.has(subtype)
