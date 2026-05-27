@@ -13,41 +13,36 @@ import (
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
-	"github.com/spf13/cobra"
 )
 
-// connectNativeOutput holds the --output flag value for hoop connect-native.
-var connectNativeOutput string
-
-var connectNativeExampleDesc = `hoop connect-native postgres-demo
-hoop connect-native ssh-prod-bastion
-hoop connect-native prod-cluster --output json
-`
-
-var connectNativeCmd = &cobra.Command{
-	Use:   "connect-native CONNECTION",
-	Short: "Print credentials to access a resource from a native client (psql, ssh, kubectl, ...)",
-	Long: `Print credentials and connection instructions for a native-client connection.
-
-Unlike 'hoop connect' (which opens a live tunneled session bound to the CLI process),
-this command returns persistent credentials that you paste into your native tool —
-psql, DBeaver, ssh, kubectl, and so on. The credentials are stable across calls and
-remain usable as long as you stay authenticated with Hoop.
-
-Supported subtypes: postgres, ssh, kubernetes.
-For other native-client subtypes (rdp, aws-ssm, claude-code, ...) use the Hoop webapp.`,
-	Example:      connectNativeExampleDesc,
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	Run: func(cmd *cobra.Command, args []string) {
-		runConnectNative(args[0])
-	},
+// persistentCredentialTypes lists the connection types that the
+// --persistent-credential flow currently supports. The corresponding gateway
+// proxies (postgres, ssh, http-based kubernetes) accept credentials minted
+// via POST /api/connections/{name}/credentials. Extend this set as backend
+// support for additional subtypes lands.
+var persistentCredentialTypes = map[pb.ConnectionType]bool{
+	pb.ConnectionTypePostgres:   true,
+	pb.ConnectionTypeSSH:        true,
+	pb.ConnectionTypeKubernetes: true,
 }
 
-func init() {
-	connectNativeCmd.Flags().StringVarP(&connectNativeOutput, "output", "o", "", "Output format. One of: (json)")
-	rootCmd.AddCommand(connectNativeCmd)
+// supportsPersistentCredential reports whether the given connection type can
+// be served by the persistent-credential flow.
+func supportsPersistentCredential(t pb.ConnectionType) bool {
+	return persistentCredentialTypes[t]
+}
+
+// printPersistentCredentialTip writes a single-line hint to stderr suggesting
+// the --persistent-credential flag. Stderr keeps the tip out of stdout
+// pipelines that parse the credentials block.
+func printPersistentCredentialTip(connectionName string) {
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, styles.Fainted(
+		"Tip: use persistent credentials without keeping this CLI running:\n"+
+			"     hoop connect %s --persistent-credential",
+		connectionName))
 }
 
 // credentialsResponse mirrors openapi.ConnectionCredentialsResponse with only
@@ -84,7 +79,7 @@ type httpProxyCreds struct {
 	Port       string `json:"port"`
 	ProxyToken string `json:"proxy_token"`
 	// Command is a JSON-stringified blob with "curl", "browser", and "subdomain"
-	// example URLs. We parse it to recover the scheme (http vs https) that the
+	// example URLs. We parse it to recover the scheme (http vs https) the
 	// gateway chose for this resource — derived server-side from the gateway's
 	// TLS configuration.
 	Command string `json:"command"`
@@ -94,11 +89,18 @@ type httpProxyCommands struct {
 	Browser string `json:"browser"`
 }
 
-func runConnectNative(connectionName string) {
-	jsonMode := connectNativeOutput == "json"
+// runPersistentCredentialFlow handles the --persistent-credential branch of
+// `hoop connect`: it POSTs to /api/connections/{name}/credentials, prints the
+// credentials (or a review-required notice), and exits. No local tunnel is
+// opened — the credentials are meant to be pasted into a native client
+// (DBeaver, psql, kubectl, ...) that can reach the gateway directly.
+//
+// accessDurationSec=0 issues a persistent (no-expiration) credential;
+// passing a positive value (via -d/--duration) mints a bounded credential.
+func runPersistentCredentialFlow(connectionName string, accessDurationSec int, jsonMode bool) {
 	config := clientconfig.GetClientConfigOrDie()
 
-	rawBody, status, err := requestNativeCredentials(config, connectionName)
+	rawBody, status, err := requestPersistentCredential(config, connectionName, accessDurationSec)
 	if err != nil {
 		fatalErr(jsonMode, "%s", err.Error())
 	}
@@ -126,26 +128,32 @@ func runConnectNative(connectionName string) {
 	switch resp.ConnectionSubType {
 	case "postgres":
 		renderPostgres(&resp)
-	case "ssh", "git", "github":
+	case "ssh":
 		renderSSH(&resp)
-	case "kubernetes", "kubernetes-eks":
+	case "kubernetes":
 		renderKubernetes(&resp)
 	default:
 		fatalErr(false,
-			"subtype %q is not yet supported by 'hoop connect-native'.\nUse the Hoop webapp to access this resource for now.",
+			"subtype %q is not supported by --persistent-credential.\n"+
+				"Re-run without the flag to use the legacy tunnel, or use the Hoop webapp.",
 			resp.ConnectionSubType)
 	}
 }
 
-// requestNativeCredentials POSTs /connections/{name}/credentials with an empty
-// body. The endpoint mints a persistent credential when none exists and
-// returns the existing one otherwise — both paths return the same JSON shape.
-// Returns the raw response body and HTTP status so callers can both echo it
+// requestPersistentCredential POSTs /connections/{name}/credentials. The
+// endpoint mints a persistent credential when none exists and returns the
+// existing one otherwise — both paths return the same JSON shape. Returns
+// the raw response body and HTTP status so callers can both echo it
 // verbatim (--output json) and parse it (human rendering).
-func requestNativeCredentials(config *clientconfig.Config, connectionName string) ([]byte, int, error) {
-	url := fmt.Sprintf("%s/api/connections/%s/credentials", config.ApiURL, connectionName)
+func requestPersistentCredential(config *clientconfig.Config, connectionName string, accessDurationSec int) ([]byte, int, error) {
+	endpoint := fmt.Sprintf("%s/api/connections/%s/credentials", config.ApiURL, connectionName)
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString("{}"))
+	body := []byte("{}")
+	if accessDurationSec > 0 {
+		body = fmt.Appendf(nil, `{"access_duration_seconds":%d}`, accessDurationSec)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -162,20 +170,20 @@ func requestNativeCredentials(config *clientconfig.Config, connectionName string
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
-		return body, resp.StatusCode, nil
+		return respBody, resp.StatusCode, nil
 	}
 
 	// Try to surface the backend's error message.
 	var errBody struct {
 		Message string `json:"message"`
 	}
-	if jsonErr := json.Unmarshal(body, &errBody); jsonErr == nil && errBody.Message != "" {
+	if jsonErr := json.Unmarshal(respBody, &errBody); jsonErr == nil && errBody.Message != "" {
 		return nil, resp.StatusCode, fmt.Errorf("%s", errBody.Message)
 	}
-	return nil, resp.StatusCode, fmt.Errorf("request failed (status=%d): %s", resp.StatusCode, string(body))
+	return nil, resp.StatusCode, fmt.Errorf("request failed (status=%d): %s", resp.StatusCode, string(respBody))
 }
 
 func renderReviewRequired(config *clientconfig.Config, resp *credentialsResponse) {
@@ -195,12 +203,12 @@ func renderPostgres(resp *credentialsResponse) {
 		fatalErr(false, "failed decoding postgres credentials: %v", err)
 	}
 
-	printHeader(resp.ConnectionName, resp.ConnectionSubType)
-	printField("host", creds.Hostname)
-	printField("port", creds.Port)
-	printField("user", creds.Username)
-	printField("password", creds.Password)
-	printField("database", creds.DatabaseName)
+	printCredentialsHeader(resp.ConnectionName, resp.ConnectionSubType)
+	printCredentialField("host", creds.Hostname)
+	printCredentialField("port", creds.Port)
+	printCredentialField("user", creds.Username)
+	printCredentialField("password", creds.Password)
+	printCredentialField("database", creds.DatabaseName)
 	fmt.Println()
 	fmt.Println(styles.Fainted("  Connect:"))
 	fmt.Printf("    psql %q\n", creds.ConnectionString)
@@ -213,11 +221,11 @@ func renderSSH(resp *credentialsResponse) {
 		fatalErr(false, "failed decoding ssh credentials: %v", err)
 	}
 
-	printHeader(resp.ConnectionName, resp.ConnectionSubType)
-	printField("host", creds.Hostname)
-	printField("port", creds.Port)
-	printField("user", creds.Username)
-	printField("password", creds.Password)
+	printCredentialsHeader(resp.ConnectionName, resp.ConnectionSubType)
+	printCredentialField("host", creds.Hostname)
+	printCredentialField("port", creds.Port)
+	printCredentialField("user", creds.Username)
+	printCredentialField("password", creds.Password)
 	fmt.Println()
 	fmt.Println(styles.Fainted("  Connect (sshpass):"))
 	fmt.Printf("    sshpass -p '%s' ssh %s@%s -p %s\n", creds.Password, creds.Username, creds.Hostname, creds.Port)
@@ -255,9 +263,9 @@ users:
     token: %s
 `, server, clusterName, clusterName, clusterName, clusterName, creds.ProxyToken)
 
-	printHeader(resp.ConnectionName, resp.ConnectionSubType)
-	printField("server", server)
-	printField("token", creds.ProxyToken)
+	printCredentialsHeader(resp.ConnectionName, resp.ConnectionSubType)
+	printCredentialField("server", server)
+	printCredentialField("token", creds.ProxyToken)
 	fmt.Println()
 	fmt.Println(styles.Fainted("  Save the following as ~/.kube/%s.yaml, then:", clusterName))
 	fmt.Printf("    export KUBECONFIG=~/.kube/%s.yaml\n", clusterName)
@@ -268,20 +276,21 @@ users:
 	fmt.Println()
 }
 
-func printHeader(name, subtype string) {
+func printCredentialsHeader(name, subtype string) {
 	fmt.Println()
 	fmt.Printf("  %s %s\n", styles.Keyword(fmt.Sprintf(" %s ", name)), styles.Fainted("(%s)", subtype))
 	fmt.Println()
 }
 
-func printField(label, value string) {
+func printCredentialField(label, value string) {
 	fmt.Printf("  %-10s %s\n", label, value)
 }
 
-// schemeFromCommandBlob extracts the URL scheme the gateway uses (http or https)
-// from the JSON-stringified "command" field returned for httpproxy/kubernetes
-// connections. Falls back to "https" if the blob is missing or unparseable —
-// production gateways serve native-client traffic over TLS.
+// schemeFromCommandBlob extracts the URL scheme the gateway uses (http or
+// https) from the JSON-stringified "command" field returned for
+// httpproxy/kubernetes connections. Falls back to "https" if the blob is
+// missing or unparseable — production gateways serve native-client traffic
+// over TLS.
 func schemeFromCommandBlob(blob string) string {
 	const fallback = "https"
 	if blob == "" {

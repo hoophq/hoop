@@ -35,8 +35,9 @@ import (
 )
 
 type ConnectFlags struct {
-	proxyPort string
-	duration  string
+	proxyPort            string
+	duration             string
+	persistentCredential bool
 }
 
 var connectFlags = ConnectFlags{}
@@ -46,12 +47,30 @@ var connectExampleDesc = `hoop connect bash
 hoop connect bash -e MYENV=value -- --posix
 hoop connect postgres-srv --port 5432
 hoop connect postgres-srv -d 5m
+hoop connect postgres-srv --persistent-credential
+hoop connect postgres-srv --persistent-credential -d 30m
 `
+
+var connectLongDesc = `Connect to a remote resource.
+
+Two modes are available:
+
+  default                  Open a local TCP tunnel; keep the CLI running while
+                           you use it. Works for every connection type.
+
+  --persistent-credential  Issue persistent credentials and print them, then
+                           exit. Paste the credentials into your native client
+                           (psql, DBeaver, kubectl, ...). Currently supported
+                           for postgres, ssh, and kubernetes.
+
+Use -d / --duration with --persistent-credential to issue a bounded credential
+instead of a persistent one (e.g. -d 30m).`
 
 var (
 	connectCmd = &cobra.Command{
 		Use:     "connect CONNECTION",
 		Short:   "Connect to a remote resource",
+		Long:    connectLongDesc,
 		Example: connectExampleDesc,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
@@ -84,6 +103,8 @@ func init() {
 	connectCmd.Flags().StringVarP(&connectFlags.duration, "duration", "d", "30m", "The amount of time that the session will last. Valid time units are 's', 'm', 'h'")
 	connectCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
 	connectCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
+	connectCmd.Flags().BoolVar(&connectFlags.persistentCredential, "persistent-credential", false,
+		"Print persistent credentials for the resource and exit, instead of opening a local tunnel. Supported subtypes: postgres, ssh, kubernetes.")
 	rootCmd.AddCommand(connectCmd)
 }
 
@@ -99,6 +120,22 @@ type connect struct {
 
 func runConnect(args []string, clientEnvVars map[string]string, durationFlagChanged bool) {
 	jsonMode := outputFlag == "json"
+
+	// --persistent-credential branches off before any gRPC tunnel work: hit
+	// /api/connections/{name}/credentials, print the credentials, exit. The
+	// user pastes them into a native client that talks to the gateway proxy
+	// directly. -d/--duration, when set, opts into a bounded credential.
+	if connectFlags.persistentCredential {
+		var accessDurationSec int
+		if durationFlagChanged {
+			if dur, err := time.ParseDuration(connectFlags.duration); err == nil {
+				accessDurationSec = int(dur.Seconds())
+			}
+		}
+		runPersistentCredentialFlow(args[0], accessDurationSec, jsonMode)
+		return
+	}
+
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
@@ -351,6 +388,14 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 			default:
 				errMsg := fmt.Errorf(`connection type %q not implemented`, connectionType.String())
 				c.processGracefulExit(errMsg)
+			}
+
+			// Show the persistent-credential tip once per tunnel for supported
+			// connection types. Stderr keeps it out of stdout pipelines that
+			// parse the credentials block above. Suppressed in silent and JSON
+			// modes — both have their own UX contracts to respect.
+			if !silentMode && !jsonMode && supportsPersistentCredential(connectionType) {
+				printPersistentCredentialTip(c.connectionName)
 			}
 		case pbclient.SessionOpenApproveOK:
 			if jsonMode {
