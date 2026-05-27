@@ -7,20 +7,15 @@ import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import SourcedInput from '@/components/SourcedInput'
 import {
-  decodeSecretValue,
+  decodeForDisplay,
   encodeSecretForSource,
+  isValidPosixKey,
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
   SOURCES,
 } from '../../../utils/secretsCodec'
 import { useConfigureRoleStore } from '../../../store'
 import { sourceOptionsFor } from '../../SecretField/util'
-
-// Provider prefixes we strip from a free-form value before rendering it
-// in the input — the source selector to the left already conveys which
-// provider applies, so the input itself should show the bare reference
-// id (matches CLJS configuration_inputs.cljs's source-selector pattern).
-const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 
 // Free-form env-var editor. Values round-trip plaintext from the
 // backend; rename commits on blur and is translated into delete-old +
@@ -60,7 +55,13 @@ function EnvvarRow({
         <TextInput
           label="Key"
           value={draftName}
-          onChange={(e) => setDraftName(e.currentTarget.value)}
+          onChange={(e) => {
+            const next = e.currentTarget.value
+            // Live POSIX validation — invalid characters are silently
+            // rejected so the user can't end up with `12_BAD` (which
+            // the agent rejects at connect time anyway).
+            if (isValidPosixKey(next)) setDraftName(next)
+          }}
           onBlur={() => {
             const trimmed = draftName.trim()
             if (!trimmed) return
@@ -190,12 +191,9 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
           // values and only affects rows that happened to be saved as
           // references — those round-trip back through the picker once
           // the user re-enters Secrets Manager mode.
-          const rawValue = staged
-            ? decodeSecretValue(staged.value || '')
-            : currentSecrets[envKey]
-              ? decodeSecretValue(currentSecrets[envKey])
-              : ''
-          const value = rawValue.replace(PROVIDER_PREFIX_RE, '')
+          const value = staged
+            ? decodeForDisplay(staged.value || '')
+            : decodeForDisplay(currentSecrets[envKey])
           // Source priority: explicit per-field pick (fieldSources) →
           // detection from the encoded value → defaultSource (provider
           // when in Secrets Manager mode, manual otherwise).

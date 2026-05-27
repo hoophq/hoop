@@ -4,6 +4,7 @@ import SourcedInput from '@/components/SourcedInput'
 import SecretField from '../../SecretField'
 import { sourceOptionsFor } from '../../SecretField/util'
 import {
+  decodeForDisplay,
   decodeSecretValue,
   encodeSecretForSource,
   isSecretReference,
@@ -12,11 +13,6 @@ import {
 } from '../../../utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 import { useConfigureRoleStore } from '../../../store'
-
-// Provider prefixes stripped from the displayed value — the source
-// picker conveys which provider applies, so the input itself should
-// show the bare reference id (matches CLJS connection_method.cljs).
-const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 
 const AWS_IAM_PASS_VALUE = 'authtoken'
 const AWS_IAM_PASS_ENCODED = encodeSecretForSource(
@@ -134,10 +130,7 @@ export default function PredefinedFields({
         const isRoundTrippedPlain =
           !forceNewState && encodedValue && !isReference && !staged
         if (isRoundTrippedPlain) {
-          const decodedValue = decodeSecretValue(encodedValue).replace(
-            PROVIDER_PREFIX_RE,
-            '',
-          )
+          const decodedValue = decodeForDisplay(encodedValue)
           return (
             <SourcedInput
               key={envKey}
@@ -180,10 +173,7 @@ export default function PredefinedFields({
             referenceText={referenceText}
             allowDelete={false}
             stagedAction={staged?.action}
-            stagedValue={staged?.value ? decodeSecretValue(staged.value).replace(
-              PROVIDER_PREFIX_RE,
-              '',
-            ) : ''}
+            stagedValue={decodeForDisplay(staged?.value)}
             secretsUpdatedAt={connection.secrets_updated_at}
             source={source}
             availableSources={availableSources}

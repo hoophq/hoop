@@ -7,8 +7,9 @@ import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import SourcedInput from '@/components/SourcedInput'
 import {
-  decodeSecretValue,
+  decodeForDisplay,
   encodeSecretForSource,
+  isValidHeaderKey,
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
   SOURCES,
@@ -17,7 +18,6 @@ import { useConfigureRoleStore } from '../../../store'
 import { sourceOptionsFor } from '../../SecretField/util'
 
 const HEADER_PREFIX = 'envvar:HEADER_'
-const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 
 // HTTP headers editor for httpproxy connections. Same row shape as
 // EnvironmentVariablesSection but keyed under `envvar:HEADER_*`. CLJS
@@ -51,7 +51,12 @@ function HeaderRow({
         <TextInput
           label="Key"
           value={draftName}
-          onChange={(e) => setDraftName(e.currentTarget.value)}
+          onChange={(e) => {
+            const next = e.currentTarget.value
+            // Headers allow any non-whitespace string (case-sensitive)
+            // — mirrors CLJS configuration_inputs.cljs:16-17,81-97.
+            if (isValidHeaderKey(next)) setDraftName(next)
+          }}
           onBlur={() => {
             const trimmed = draftName.trim()
             if (!trimmed) return
@@ -172,12 +177,9 @@ export default function HttpHeadersSection({
           const displayName = isPlaceholder
             ? ''
             : effectiveKey.slice(HEADER_PREFIX.length)
-          const rawValue = staged
-            ? decodeSecretValue(staged.value || '')
-            : currentSecrets[envKey]
-              ? decodeSecretValue(currentSecrets[envKey])
-              : ''
-          const value = rawValue.replace(PROVIDER_PREFIX_RE, '')
+          const value = staged
+            ? decodeForDisplay(staged.value || '')
+            : decodeForDisplay(currentSecrets[envKey])
           const encodedForDetection = staged
             ? staged.value
             : currentSecrets[envKey] || ''
