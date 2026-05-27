@@ -225,14 +225,87 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	}
 }
 
-func sessionUsageProperties(
-	s *models.Session,
-	c *models.Connection,
-	agent *models.Agent,
-	guardrails *models.ConnectionGuardRailRules,
-	dataMasking json.RawMessage,
-	accessRequestList []*models.AccessRequestRule,
-) map[string]any {
+type sessionUsageData struct {
+	session              *models.Session
+	connection           *models.Connection
+	agent                *models.Agent
+	guardrails           *models.ConnectionGuardRailRules
+	dataMasking          json.RawMessage
+	jitAccessRequest     *models.AccessRequestRule
+	commandAccessRequest *models.AccessRequestRule
+}
+
+func loadSessionUsageData(orgID, sessionID string) (*sessionUsageData, error) {
+	session, err := models.GetSessionByID(orgID, sessionID)
+	if err != nil {
+		log.Warnf("failed getting session by ID, reason=%v", err)
+		return nil, err
+	}
+
+	connection, err := models.GetConnectionByName(models.DB, session.Connection)
+	if err != nil {
+		log.Warnf("failed getting connection features by name, reason=%v", err)
+		return nil, err
+	}
+
+	data := &sessionUsageData{session: session, connection: connection}
+	orgUUID := uuid.MustParse(orgID)
+
+	group, _ := errgroup.WithContext(context.Background())
+	group.Go(func() error {
+		agent, err := models.GetAgentByNameOrID(orgID, connection.AgentID.String)
+		if err != nil {
+			log.Warnf("failed getting agent by name, reason=%v", err)
+			return err
+		}
+		data.agent = agent
+		return nil
+	})
+	group.Go(func() error {
+		guardrails, err := services.GetGuardRailRulesForConnection(orgID, session.Connection)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting guardrails for connection, reason=%v", err)
+			return err
+		}
+		data.guardrails = guardrails
+		return nil
+	})
+	group.Go(func() error {
+		dataMasking, err := services.GetDataMaskingRulesForConnection(orgID, session.Connection)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting data masking rules for connection, reason=%v", err)
+			return err
+		}
+		data.dataMasking = dataMasking
+		return nil
+	})
+	group.Go(func() error {
+		rule, err := services.GetRuleForConnection(orgUUID, session.Connection, "jit")
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting jit rule for connection, reason=%v", err)
+			return err
+		}
+		data.jitAccessRequest = rule
+		return nil
+	})
+	group.Go(func() error {
+		rule, err := services.GetRuleForConnection(orgUUID, session.Connection, "command")
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting command rule for connection, reason=%v", err)
+			return err
+		}
+		data.commandAccessRequest = rule
+		return nil
+	})
+
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func sessionUsageProperties(d *sessionUsageData) map[string]any {
+	s, c := d.session, d.connection
 
 	props := map[string]any{
 		"org-id":                           s.OrgID,
@@ -242,14 +315,14 @@ func sessionUsageProperties(
 		"status":                           s.Status,
 		"created-at":                       s.CreatedAt.String(),
 		"ai-session-analyzer-activated":    false,
-		"agent-version":                    agent.GetMeta("version"),
-		"agent-platform":                   agent.GetMeta("platform"),
-		"mandatory-metadata-activated":     c.MandatoryMetadataFields != nil && len(c.MandatoryMetadataFields) > 0,
+		"agent-version":                    d.agent.GetMeta("version"),
+		"agent-platform":                   d.agent.GetMeta("platform"),
+		"mandatory-metadata-activated":     len(c.MandatoryMetadataFields) > 0,
 		"jira-template-activated":          c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
 		"jit-access-request-activated":     false,
 		"command-access-request-activated": false,
-		"guardrails-activated":             guardrails != nil && !guardrails.HasEmptyRules(),
-		"data-masking-activated":           string(dataMasking) != "[]",
+		"guardrails-activated":             d.guardrails != nil && !d.guardrails.HasEmptyRules(),
+		"data-masking-activated":           string(d.dataMasking) != "[]",
 	}
 
 	if s.EndSession != nil {
@@ -262,15 +335,15 @@ func sessionUsageProperties(
 		props["ai-session-analyzer-action"] = s.AIAnalysis.Action
 	}
 
-	for _, rule := range accessRequestList {
-		if rule != nil {
-			props[fmt.Sprintf("%s-access-request-activated", rule.AccessType)] = true
-			props[fmt.Sprintf("%s-access-request-force-approval", rule.AccessType)] = len(rule.ForceApprovalGroups) > 0
-			props[fmt.Sprintf("%s-access-request-all-groups-must-approve", rule.AccessType)] = rule.AllGroupsMustApprove
-
-			if rule.MinApprovals != nil {
-				props[fmt.Sprintf("%s-access-request-minimum-approval", rule.AccessType)] = *rule.MinApprovals
-			}
+	for _, rule := range []*models.AccessRequestRule{d.jitAccessRequest, d.commandAccessRequest} {
+		if rule == nil {
+			continue
+		}
+		props[fmt.Sprintf("%s-access-request-activated", rule.AccessType)] = true
+		props[fmt.Sprintf("%s-access-request-force-approval", rule.AccessType)] = len(rule.ForceApprovalGroups) > 0
+		props[fmt.Sprintf("%s-access-request-all-groups-must-approve", rule.AccessType)] = rule.AllGroupsMustApprove
+		if rule.MinApprovals != nil {
+			props[fmt.Sprintf("%s-access-request-minimum-approval", rule.AccessType)] = *rule.MinApprovals
 		}
 	}
 
@@ -278,80 +351,12 @@ func sessionUsageProperties(
 }
 
 func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID string, sessionID string) {
-	var (
-		err                  error
-		session              *models.Session
-		connection           *models.Connection
-		agent                *models.Agent
-		guardrails           *models.ConnectionGuardRailRules
-		jitAccessRequest     *models.AccessRequestRule
-		commandAccessRequest *models.AccessRequestRule
-		dataMasking          json.RawMessage
-	)
-
-	if session, err = models.GetSessionByID(orgID, sessionID); err != nil {
-		log.Warnf("failed getting session by ID, reason=%v", err)
+	data, err := loadSessionUsageData(orgID, sessionID)
+	if err != nil {
 		return
 	}
-
-	if connection, err = models.GetConnectionByName(models.DB, session.Connection); err != nil {
-		log.Warnf("failed getting connection features by name, reason=%v", err)
-		return
-	}
-
-	group, _ := errgroup.WithContext(context.Background())
-	group.Go(func() error {
-		if agent, err = models.GetAgentByNameOrID(orgID, connection.AgentID.String); err != nil {
-			log.Warnf("failed getting agent by name, reason=%v", err)
-			return err
-		}
-		return nil
-	})
-
-	group.Go(func() error {
-		if guardrails, err = services.GetGuardRailRulesForConnection(orgID, session.Connection); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warnf("failed getting guardrails for connection, reason=%v", err)
-			return err
-		}
-
-		return nil
-	})
-
-	group.Go(func() error {
-		if dataMasking, err = services.GetDataMaskingRulesForConnection(orgID, session.Connection); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warnf("failed getting data masking rules for connection, reason=%v", err)
-			return err
-		}
-
-		return nil
-	})
-
-	group.Go(func() error {
-		if jitAccessRequest, err = services.GetRuleForConnection(uuid.MustParse(orgID), session.Connection, "jit"); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warnf("failed getting jit rule for connection, reason=%v", err)
-			return err
-		}
-
-		return nil
-	})
-
-	group.Go(func() error {
-		if commandAccessRequest, err = services.GetRuleForConnection(uuid.MustParse(orgID), session.Connection, "command"); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warnf("failed getting command rule for connection, reason=%v", err)
-			return err
-		}
-
-		return nil
-	})
-
-	if err := group.Wait(); err != nil {
-		return
-	}
-
-	props := sessionUsageProperties(session, connection, agent, guardrails, dataMasking, []*models.AccessRequestRule{jitAccessRequest, commandAccessRequest})
 	log.With("sid", sessionID).Infof("tracking session usage data, event=%s", eventName)
-
-	s.Track(userID, eventName, props)
+	s.Track(userID, eventName, sessionUsageProperties(data))
 }
 
 // CreateConnectionEvent is the canonical input for the hoop-create-connection
