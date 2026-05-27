@@ -16,4 +16,5 @@
   padding-bottom: var(--mantine-spacing-md);
   padding-left: var(--mantine-spacing-xl);
   padding-right: var(--mantine-spacing-xl);
+  z-index: 1;
 }

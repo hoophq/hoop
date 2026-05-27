@@ -20,8 +20,6 @@ function envvarRow({
   envKey,
   encodedValue,
   staged,
-  isAdmin,
-  isExisting,
   onKeyChange,
   onValueChange,
   onRemove,
@@ -42,7 +40,6 @@ function envvarRow({
           label="Key"
           value={displayName}
           onChange={(e) => onKeyChange(e.currentTarget.value)}
-          disabled={isExisting || !isAdmin}
           placeholder="e.g. API_KEY"
         />
       </Grid.Col>
@@ -52,7 +49,6 @@ function envvarRow({
           value={value}
           onChange={(e) => onValueChange(e.currentTarget.value)}
           placeholder="Enter value"
-          disabled={!isAdmin}
         />
       </Grid.Col>
       <Grid.Col span={1}>
@@ -62,7 +58,6 @@ function envvarRow({
           size="lg"
           onClick={onRemove}
           aria-label={'Remove ' + displayName}
-          disabled={!isAdmin}
         >
           <Trash2 size={16} />
         </ActionIcon>
