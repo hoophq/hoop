@@ -436,6 +436,12 @@ type Connection struct {
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
 	// Attributes associated with this connection
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
+	// secret value for this connection. Null when no inline secret has been
+	// modified since the write-only secrets feature was introduced. References
+	// to external providers (AWS Secrets Manager, Vault, IAM RDS) do not
+	// affect this field.
+	SecretsUpdatedAt *time.Time `json:"secrets_updated_at,omitempty" readonly:"true" example:"2025-01-15T10:30:00Z"`
 }
 
 type ConnectionPatch struct {

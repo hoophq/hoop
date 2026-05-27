@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -69,6 +70,13 @@ func Post(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
+	envs := CoerceToMapString(req.Secrets)
+	var secretsUpdatedAt *time.Time
+	if len(envs) > 0 {
+		now := time.Now().UTC()
+		secretsUpdatedAt = &now
+	}
+
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                      req.ID,
 		OrgID:                   ctx.OrgID,
@@ -78,7 +86,7 @@ func Post(c *gin.Context) {
 		Command:                 req.Command,
 		Type:                    req.Type,
 		SubType:                 sql.NullString{String: req.SubType, Valid: true},
-		Envs:                    CoerceToMapString(req.Secrets),
+		Envs:                    envs,
 		Status:                  req.Status,
 		ManagedBy:               sql.NullString{},
 		Tags:                    req.Tags,
@@ -95,6 +103,7 @@ func Post(c *gin.Context) {
 		AccessMaxDuration:       req.AccessMaxDuration,
 		MinReviewApprovals:      req.MinReviewApprovals,
 		MandatoryMetadataFields: req.MandatoryMetadataFields,
+		SecretsUpdatedAt:        secretsUpdatedAt,
 	})
 
 	if err != nil {
@@ -165,6 +174,15 @@ func Put(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
+	// PUT keeps replace-the-whole-map semantics for legacy clients. Track the
+	// timestamp only when the resulting envs actually differ from what we had.
+	newEnvs := CoerceToMapString(req.Secrets)
+	secretsUpdatedAt := conn.SecretsUpdatedAt
+	if !envsEqual(conn.Envs, newEnvs) {
+		now := time.Now().UTC()
+		secretsUpdatedAt = &now
+	}
+
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                      conn.ID,
 		OrgID:                   conn.OrgID,
@@ -174,7 +192,7 @@ func Put(c *gin.Context) {
 		Command:                 req.Command,
 		Type:                    req.Type,
 		SubType:                 sql.NullString{String: req.SubType, Valid: true},
-		Envs:                    CoerceToMapString(req.Secrets),
+		Envs:                    newEnvs,
 		Status:                  req.Status,
 		ManagedBy:               sql.NullString{},
 		Tags:                    req.Tags,
@@ -191,6 +209,7 @@ func Put(c *gin.Context) {
 		AccessMaxDuration:       req.AccessMaxDuration,
 		MinReviewApprovals:      req.MinReviewApprovals,
 		MandatoryMetadataFields: req.MandatoryMetadataFields,
+		SecretsUpdatedAt:        secretsUpdatedAt,
 	})
 
 	if err != nil {
@@ -270,7 +289,19 @@ func Patch(c *gin.Context) {
 		conn.SubType = sql.NullString{String: *req.SubType, Valid: *req.SubType != ""}
 	}
 	if req.Secrets != nil {
-		conn.Envs = CoerceToMapString(*req.Secrets)
+		// PATCH on secrets uses merge semantics: keys in the request override
+		// (non-empty) or delete (empty value) the corresponding entry; keys
+		// absent from the request are preserved untouched. This is what lets
+		// the write-only UI submit only the secrets the user actually
+		// replaced or deleted, without ever needing to round-trip the
+		// existing values.
+		patch := CoerceToMapString(*req.Secrets)
+		merged, changed := mergeSecrets(conn.Envs, patch)
+		conn.Envs = merged
+		if changed {
+			now := time.Now().UTC()
+			conn.SecretsUpdatedAt = &now
+		}
 	}
 	if req.AgentId != nil {
 		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
@@ -514,6 +545,10 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		defaultDB = []byte(``)
 	}
 
+	// Write-only secrets: strip inline values before returning. References
+	// to external secret providers stay intact so admins can audit them.
+	publicEnvs := stripInlineSecrets(conn.Envs)
+
 	return openapi.Connection{
 		ID:                      conn.ID,
 		Name:                    conn.Name,
@@ -521,7 +556,7 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		Command:                 conn.Command,
 		Type:                    conn.Type,
 		SubType:                 conn.SubType.String,
-		Secrets:                 coerceToAnyMap(conn.Envs),
+		Secrets:                 coerceToAnyMap(publicEnvs),
 		DefaultDatabase:         string(defaultDB),
 		AgentId:                 conn.AgentID.String,
 		Status:                  conn.Status,
@@ -542,6 +577,7 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		MinReviewApprovals:      conn.MinReviewApprovals,
 		MandatoryMetadataFields: conn.MandatoryMetadataFields,
 		Attributes:              conn.Attributes,
+		SecretsUpdatedAt:        conn.SecretsUpdatedAt,
 	}
 }
 

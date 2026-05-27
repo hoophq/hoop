@@ -11680,6 +11680,12 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "secrets_updated_at": {
+                    "description": "SecretsUpdatedAt is the timestamp of the last replacement of any inline\nsecret value for this connection. Null when no inline secret has been\nmodified since the write-only secrets feature was introduced. References\nto external providers (AWS Secrets Manager, Vault, IAM RDS) do not\naffect this field.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2025-01-15T10:30:00Z"
+                },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
                     "type": "string",
