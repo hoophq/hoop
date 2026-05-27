@@ -1,84 +1,167 @@
-import { useState } from 'react'
-import { Stack, Group, Button, ActionIcon } from '@mantine/core'
+import { useMemo, useState } from 'react'
+import { Stack, Group, Button, ActionIcon, Text, Grid, Autocomplete } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
-import TextInput from '@/components/TextInput'
 import { useConfigureRoleStore } from '../store'
 
-// Key/value editor for connection_tags. Each row is one tag; the trailing
-// row is a draft pair the user fills in and commits via the Add button.
+// Key/value editor for connection_tags. Mirrors the CLJS pattern in
+// webapp/.../setup/tags_inputs.cljs: each pair (existing or pending)
+// is two creatable single-selects — Key autocompletes from every tag
+// key the org has ever used, Value autocompletes from values seen
+// under the picked key. Users can also type a brand-new key/value and
+// commit it with the Add button.
 //
-// Tags are stored as a flat { key: value } map on the connection, so
-// updating any field that exists immediately reflects in the store —
-// only the "draft pair" (the empty row at the bottom) needs to be
-// committed explicitly to prevent accidental empty-key entries.
+// Mantine's <Autocomplete> is the closest stock match for CLJS's
+// single-creatable-grouped — it shows suggestions but allows free
+// typing, so "creating" a new option is just typing it and hitting
+// Save (the value is the input).
+
+const KEY_PATTERN = /^[a-zA-Z0-9-]+$/
+
 export default function TagsInput() {
   const tags = useConfigureRoleStore((s) => s.drafts.connection_tags)
   const setTag = useConfigureRoleStore((s) => s.setTag)
   const removeTag = useConfigureRoleStore((s) => s.removeTag)
+  const pool = useConfigureRoleStore((s) => s.connectionTagsPool)
 
   const [draftKey, setDraftKey] = useState('')
   const [draftValue, setDraftValue] = useState('')
+  const [keyError, setKeyError] = useState(null)
+
+  const keyOptions = useMemo(() => {
+    const set = new Set(pool.map((t) => t.key).filter(Boolean))
+    return Array.from(set).sort()
+  }, [pool])
+
+  const valuesForKey = useMemo(() => {
+    const map = new Map()
+    for (const t of pool) {
+      if (!t.key) continue
+      const list = map.get(t.key) || []
+      if (t.value && !list.includes(t.value)) list.push(t.value)
+      map.set(t.key, list)
+    }
+    return map
+  }, [pool])
 
   const entries = Object.entries(tags || {})
 
   const commitDraft = () => {
     const k = draftKey.trim()
     if (!k) return
+    if (!KEY_PATTERN.test(k)) {
+      setKeyError('Only letters, numbers and hyphens are allowed')
+      setTimeout(() => setKeyError(null), 3000)
+      return
+    }
     setTag(k, draftValue)
     setDraftKey('')
     setDraftValue('')
   }
 
-  // Editing an existing key isn't supported through the inline inputs —
-  // the user removes and re-adds. Editing the value in place works
-  // because we set the same key.
   return (
-    <Stack gap="sm">
-      {entries.map(([key, value]) => (
-        <Group key={key} gap="sm" align="flex-end" wrap="nowrap">
-          <TextInput label="Key" value={key} disabled flex={1} />
-          <TextInput
-            label="Value"
-            value={value}
-            onChange={(e) => setTag(key, e.currentTarget.value)}
-            flex={1}
+    <Stack gap="md">
+      {entries.length > 0 && (
+        <Grid gutter="md">
+          {entries.map(([key, value]) => (
+            <RowFragment
+              key={key}
+              tagKey={key}
+              tagValue={value}
+              keyOptions={keyOptions}
+              valueOptions={valuesForKey.get(key) || []}
+              onKeyChange={(newKey) => {
+                if (newKey === key) return
+                if (!KEY_PATTERN.test(newKey)) return
+                removeTag(key)
+                setTag(newKey, value)
+              }}
+              onValueChange={(newValue) => setTag(key, newValue)}
+              onRemove={() => removeTag(key)}
+            />
+          ))}
+        </Grid>
+      )}
+
+      <Grid gutter="md" align="flex-end">
+        <Grid.Col span={5}>
+          <Autocomplete
+            label="Key"
+            placeholder="Select or create a key..."
+            data={keyOptions}
+            value={draftKey}
+            onChange={(value) => {
+              setDraftKey(value)
+              if (keyError) setKeyError(null)
+            }}
+            error={keyError}
           />
+        </Grid.Col>
+        <Grid.Col span={5}>
+          <Autocomplete
+            label="Value"
+            placeholder={draftKey ? 'Select or create a value...' : 'First select a key...'}
+            data={draftKey ? valuesForKey.get(draftKey) || [] : []}
+            value={draftValue}
+            onChange={setDraftValue}
+            disabled={!draftKey.trim()}
+          />
+        </Grid.Col>
+        <Grid.Col span={2}>
+          <Button
+            variant="light"
+            leftSection={<Plus size={14} />}
+            onClick={commitDraft}
+            disabled={!draftKey.trim()}
+            fullWidth
+          >
+            Add
+          </Button>
+        </Grid.Col>
+      </Grid>
+    </Stack>
+  )
+}
+
+function RowFragment({
+  tagKey,
+  tagValue,
+  keyOptions,
+  valueOptions,
+  onKeyChange,
+  onValueChange,
+  onRemove,
+}) {
+  return (
+    <>
+      <Grid.Col span={5}>
+        <Autocomplete
+          label="Key"
+          data={keyOptions}
+          value={tagKey}
+          onChange={onKeyChange}
+        />
+      </Grid.Col>
+      <Grid.Col span={5}>
+        <Autocomplete
+          label="Value"
+          data={valueOptions}
+          value={tagValue}
+          onChange={onValueChange}
+        />
+      </Grid.Col>
+      <Grid.Col span={2}>
+        <Group justify="center">
           <ActionIcon
             variant="subtle"
             color="red"
             size="lg"
-            onClick={() => removeTag(key)}
-            aria-label={'Remove tag ' + key}
+            onClick={onRemove}
+            aria-label={'Remove tag ' + tagKey}
           >
             <Trash2 size={16} />
           </ActionIcon>
         </Group>
-      ))}
-      <Group gap="sm" align="flex-end" wrap="nowrap">
-        <TextInput
-          label="Key"
-          placeholder="Select or create a key..."
-          value={draftKey}
-          onChange={(e) => setDraftKey(e.currentTarget.value)}
-          flex={1}
-        />
-        <TextInput
-          label="Value"
-          placeholder="First select a key..."
-          value={draftValue}
-          onChange={(e) => setDraftValue(e.currentTarget.value)}
-          disabled={!draftKey.trim()}
-          flex={1}
-        />
-        <Button
-          variant="light"
-          leftSection={<Plus size={14} />}
-          onClick={commitDraft}
-          disabled={!draftKey.trim()}
-        >
-          Add
-        </Button>
-      </Group>
-    </Stack>
+      </Grid.Col>
+    </>
   )
 }
