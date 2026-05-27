@@ -15,6 +15,12 @@ import (
 // of redefining the literal string.
 const IdentityTypeMachine = "machine"
 
+// IdentityTypeAPIKey marks gRPC sessions authenticated via an hpk_ API key.
+// API keys are issued by the gateway itself — there is no IDP-backed user token
+// to poll, so the auth interceptor uses this type to opt out of user-token
+// verification (mirroring IdentityTypeMachine).
+const IdentityTypeAPIKey = "api_key"
+
 type GenericMap map[string]any
 
 type PacketErr struct {
