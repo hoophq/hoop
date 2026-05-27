@@ -22,4 +22,14 @@ export const connectionsService = {
     if (connectionIds?.length) params.set('connection_ids', connectionIds.join(','))
     return api.get(`/connections?${params.toString()}`).then((res) => res.data)
   },
+  getConnection: (nameOrId) =>
+    api.get(`/connections/${encodeURIComponent(nameOrId)}`).then((res) => res.data),
+  patchConnection: (name, payload) =>
+    api
+      .patch(`/connections/${encodeURIComponent(name)}`, payload)
+      .then((res) => res.data),
+  deleteConnection: (name) =>
+    api.delete(`/connections/${encodeURIComponent(name)}`),
+  testConnection: (name) =>
+    api.get(`/connections/${encodeURIComponent(name)}/test`).then((res) => res.data),
 }
