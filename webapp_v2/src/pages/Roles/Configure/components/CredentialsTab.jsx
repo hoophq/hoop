@@ -13,6 +13,7 @@ import {
   CONNECTION_METHODS,
   supportsAwsIam,
   isFreeFormCustomSubtype,
+  connectionRoundTripsSecrets,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
@@ -380,9 +381,15 @@ export default function CredentialsTab({ connection }) {
   // user has switched away from the derived method.
   const forceNewState = !isDerivedMethod
 
+  // Notice only makes sense when at least one field is actually
+  // write-only — i.e. when the backend strips. Round-trip connections
+  // (custom/*, httpproxy/*, application/{ssh,git,github}) show values
+  // verbatim, so the "cannot be viewed" wording would be misleading.
+  const showWriteOnlyNotice = !connectionRoundTripsSecrets(connection)
+
   return (
     <Stack gap="xl" maw={720}>
-      <WriteOnlyNotice />
+      {showWriteOnlyNotice && <WriteOnlyNotice />}
       <ConnectionMethodSection
         selectedMethod={selectedMethod}
         onSelect={setSelectedMethod}

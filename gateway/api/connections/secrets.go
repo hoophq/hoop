@@ -80,9 +80,64 @@ var freeFormCustomSubtypes = map[string]bool{
 	"claude-code": true,
 }
 
-// isFreeFormCustom reports whether a connection's envvars should be
-// treated as free-form user data (visible round-trip) rather than
-// predefined credentials (write-only).
+// shouldRoundTripSecrets reports whether a connection's envvars are
+// safe to send back to the admin UI verbatim instead of going through
+// the write-only strip.
+//
+// Two cases bypass the strip:
+//
+//  1. Free-form custom envvars (any `type=custom` connection) — user
+//     data, not credentials.
+//
+//  2. Predefined renderers that the v2 React form currently relies on
+//     to populate visible fields (Anthropic URL, Kubernetes cluster
+//     URL, SSH host, etc). Without these values round-tripping, the
+//     custom-credential renderers in
+//     webapp_v2/.../Configure/components/CredentialsTab.jsx cannot
+//     show the existing configuration on edit. CLJS already round-
+//     trips for these — keeping write-only here would silently drop
+//     features compared to the legacy form.
+//
+// Catalog **database** connections stay write-only: host/user/password
+// are pure credentials, the write-only model is correct, and the
+// React `database-catalog` renderer handles the "Set" / "Replace"
+// pattern already.
+//
+// Edge cases live in `/configure-role-gaps.md` (G1, G2, …) — keep
+// that doc in sync when this list changes.
+func shouldRoundTripSecrets(conn *models.Connection) bool {
+	if conn == nil {
+		return false
+	}
+	sub := conn.SubType.String
+	switch conn.Type {
+	case "custom":
+		// Free-form OR any predefined-custom subtype (kubernetes-token,
+		// dynamodb, aws-cloudwatch, legacy cloudwatch, …). The React
+		// dispatch in CredentialsTab.jsx picks the renderer based on
+		// subtype; whatever the renderer is, it needs the values.
+		return true
+	case "httpproxy":
+		// claude-code (predefined Anthropic form) and the generic
+		// httpproxy renderer both surface URL/header inputs.
+		return true
+	case "application":
+		// SSH / Git / GitHub renderers display host, user, and
+		// auth-method fields. The private key itself round-trips too —
+		// CLJS shows it as well, and the write-only model would mean a
+		// blank "Set" badge with no way to inspect host/user either.
+		switch sub {
+		case "ssh", "git", "github":
+			return true
+		}
+	}
+	return false
+}
+
+// isFreeFormCustom reports whether a connection is a *pure* free-form
+// custom (`type=custom` with the subtype in the free-form set or empty).
+// Used only for tests and audit purposes — the strip decision goes
+// through shouldRoundTripSecrets.
 func isFreeFormCustom(conn *models.Connection) bool {
 	if conn == nil || conn.Type != "custom" {
 		return false
