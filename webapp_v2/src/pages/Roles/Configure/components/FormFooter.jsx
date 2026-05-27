@@ -1,6 +1,7 @@
-import { Group, Button, Text } from '@mantine/core'
+import { Group, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
+import Button from '@/components/Button'
 import { useUIStore } from '@/stores/useUIStore'
 import classes from './FormFooter.module.css'
 

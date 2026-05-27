@@ -1,4 +1,5 @@
-import { Stack, Title, Text, TagsInput as MantineTagsInput } from '@mantine/core'
+import { Stack, Title, Text } from '@mantine/core'
+import TagsInput from '@/components/TagsInput'
 import { useConfigureRoleStore } from '../store'
 
 // Additional command arguments. Stored as the connection's `command`
@@ -15,7 +16,7 @@ export default function CommandArgsInput() {
         Each argument should be entered separately. Press Enter after
         each argument to add it to the list.
       </Text>
-      <MantineTagsInput
+      <TagsInput
         label="Command Arguments"
         placeholder="Select..."
         value={command}

@@ -1,6 +1,7 @@
-import { Stack, Title, Text, Button } from '@mantine/core'
+import { Stack, Title, Text } from '@mantine/core'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
+import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
 import Select from '@/components/Select'
 import { useConfigureRoleStore } from '../store'

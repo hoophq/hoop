@@ -1,7 +1,10 @@
-import { Stack, NumberInput, Anchor } from '@mantine/core'
-import { ArrowUpRight } from 'lucide-react'
+import { Stack, Anchor } from '@mantine/core'
+import { ArrowUpRight, Star } from 'lucide-react'
+import Alert from '@/components/Alert'
 import MultiSelect from '@/components/MultiSelect'
+import NumberInput from '@/components/NumberInput'
 import Select from '@/components/Select'
+import { useUserStore } from '@/stores/useUserStore'
 import { useConfigureRoleStore } from '../store'
 import ToggleSection from './ToggleSection'
 
@@ -27,6 +30,7 @@ export default function ReviewSection({ kind = 'command' }) {
   const drafts = useConfigureRoleStore((s) => s.drafts)
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
   const userGroupsList = useConfigureRoleStore((s) => s.userGroupsList)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
   const groupOptions = (userGroupsList || []).map((g) => ({ value: g, label: g }))
   const reviewEnabled = drafts.reviewers.length > 0
@@ -55,6 +59,7 @@ export default function ReviewSection({ kind = 'command' }) {
       title={title}
       description="Require approval prior to resource role execution."
       checked={reviewEnabled}
+      disabled={isFreeLicense}
       onChange={handleReviewToggle}
       complement={
         reviewEnabled && (
@@ -68,6 +73,7 @@ export default function ReviewSection({ kind = 'command' }) {
               value={drafts.reviewers}
               onChange={(value) => setDraft({ reviewers: value })}
               required
+              disabled={isFreeLicense}
             />
             <NumberInput
               label="Minimum approval amount (optional)"
@@ -79,6 +85,7 @@ export default function ReviewSection({ kind = 'command' }) {
                 })
               }
               min={1}
+              disabled={isFreeLicense}
             />
             <MultiSelect
               label="Force approval groups (optional)"
@@ -87,6 +94,7 @@ export default function ReviewSection({ kind = 'command' }) {
               data={groupOptions}
               value={drafts.force_approve_groups}
               onChange={(value) => setDraft({ force_approve_groups: value })}
+              disabled={isFreeLicense}
             />
             {kind === 'jit' && (
               <Select
@@ -107,22 +115,32 @@ export default function ReviewSection({ kind = 'command' }) {
                     access_max_duration: value ? parseInt(value, 10) : null,
                   })
                 }
+                disabled={isFreeLicense}
               />
             )}
           </Stack>
         )
       }
       learnMore={
-        <Anchor
-          size="sm"
-          href="https://hoop.dev/docs/features/jit-reviews"
-          target="_blank"
-          rel="noopener noreferrer"
-          display="inline-flex"
-        >
-          <ArrowUpRight size={14} />
-          {kind === 'jit' ? 'Learn more about Just-in-Time Reviews' : 'Learn more about Reviews'}
-        </Anchor>
+        <Stack gap="xs" align="flex-start">
+          {isFreeLicense && (
+            <Alert variant="light" color="indigo" icon={<Star size={16} />} w="100%">
+              {kind === 'jit'
+                ? 'Enable Just-in-Time Reviews by upgrading your plan.'
+                : 'Enable Review by Command by upgrading your plan.'}
+            </Alert>
+          )}
+          <Anchor
+            size="sm"
+            href="https://hoop.dev/docs/features/jit-reviews"
+            target="_blank"
+            rel="noopener noreferrer"
+            display="inline-flex"
+          >
+            <ArrowUpRight size={14} />
+            {kind === 'jit' ? 'Learn more about Just-in-Time Reviews' : 'Learn more about Reviews'}
+          </Anchor>
+        </Stack>
       }
     />
   )

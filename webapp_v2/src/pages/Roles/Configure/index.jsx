@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Stack, Text, Modal, Group, Button } from '@mantine/core'
+import { Stack, Text, Group } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
+import Modal from '@/components/Modal'
+import Button from '@/components/Button'
 import Tabs from '@/components/Tabs'
+import { useBridgeStore } from '@/stores/useBridgeStore'
 import PageLoader from '@/components/PageLoader'
 import { useConfigureRoleStore } from './store'
 import ConfigureHeader from './components/ConfigureHeader'
@@ -77,6 +79,8 @@ export default function ConfigureRolePage() {
     return () => reset()
   }, [connectionName, loadConnection, loadAuxiliaryData, reset])
 
+  const showSnackbar = useBridgeStore((s) => s.showSnackbar)
+
   const handleSave = async () => {
     if (formRef.current && !formRef.current.checkValidity()) {
       // Move focus to Credentials tab where required inputs live.
@@ -86,21 +90,13 @@ export default function ConfigureRolePage() {
     }
     try {
       await save()
-      // Match the CLJS resources/events.cljs success flow: success
-      // snackbar (10s, top-right) and redirect to the resources list
-      // on the Roles tab.
-      notifications.show({
-        message: 'Role ' + connection.name + ' updated!',
-        color: 'green',
-        autoClose: 10000,
+      showSnackbar({
+        level: 'success',
+        text: 'Role ' + connection.name + ' updated!',
       })
       navigate('/resources?tab=roles')
     } catch {
-      notifications.show({
-        message: 'Failed to save connection.',
-        color: 'red',
-        autoClose: 10000,
-      })
+      showSnackbar({ level: 'error', text: 'Failed to save connection.' })
     }
   }
 
@@ -108,18 +104,10 @@ export default function ConfigureRolePage() {
     try {
       await deleteConnection()
       close()
-      notifications.show({
-        message: 'Connection deleted.',
-        color: 'green',
-        autoClose: 10000,
-      })
+      showSnackbar({ level: 'success', text: 'Connection deleted.' })
       navigate('/resources?tab=roles')
     } catch {
-      notifications.show({
-        message: 'Failed to delete connection.',
-        color: 'red',
-        autoClose: 10000,
-      })
+      showSnackbar({ level: 'error', text: 'Failed to delete connection.' })
     }
   }
 

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Stack, Title, Text, Button, Grid, ActionIcon, Textarea } from '@mantine/core'
+import { Stack, Title, Text, Grid } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
+import Button from '@/components/Button'
+import ActionIcon from '@/components/ActionIcon'
+import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
-import { decodeSecretValue, encodeSecretValue } from '../utils/secretsCodec'
+import { decodeSecretValue, encodeSecretValue, PLACEHOLDER_KEY_RE } from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
 
 // Configuration files for a custom connection. Same pattern as
@@ -115,7 +118,10 @@ export default function ConfigurationFilesSection({ connection }) {
           const isExisting = fsKey in currentSecrets
           const renamedTo = renames[fsKey]
           const effectiveKey = renamedTo || fsKey
-          const displayName = effectiveKey.slice('filesystem:'.length)
+          // Hide the auto-generated `NEW_FILE_N` sentinel from the user
+          // so the empty-state row shows a truly blank Name input.
+          const isPlaceholder = PLACEHOLDER_KEY_RE.test(effectiveKey)
+          const displayName = isPlaceholder ? '' : effectiveKey.slice('filesystem:'.length)
           const stagedContent = staged?.value
             ? decodeSecretValue(staged.value)
             : null

@@ -1,5 +1,7 @@
-import { Stack, Group, Button, ActionIcon } from '@mantine/core'
+import { Stack, Group } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
+import Button from '@/components/Button'
+import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import { useConfigureRoleStore } from '../store'
 

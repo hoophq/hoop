@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Stack, Title, Text, Alert, Anchor } from '@mantine/core'
+import { Stack, Title, Text, Anchor } from '@mantine/core'
 import { FileText, Cloud, ShieldCheck, Info, ExternalLink } from 'lucide-react'
+import Alert from '@/components/Alert'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
@@ -87,97 +88,23 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
   )
 }
 
-function CredentialsBody({ connection, availableSources, forceNewState }) {
-  const { type, subtype } = connection
+// Small render helper for the most common shape: a titled list of
+// predefined fields drawn from CATALOG_FIELDS.
+function PredefinedSection({ title, fieldsKey, connection, availableSources, forceNewState }) {
+  return (
+    <Stack gap="md">
+      <Title order={4}>{title}</Title>
+      <PredefinedFieldsCredentials
+        connection={connection}
+        fields={CATALOG_FIELDS[fieldsKey]}
+        availableSources={availableSources}
+        forceNewState={forceNewState}
+      />
+    </Stack>
+  )
+}
 
-  // Mirrors the dispatch in CLJS credentials_tab.cljs verbatim.
-  if (type === 'database' && CATALOG_FIELDS[subtype]) {
-    return (
-      <Stack gap="md">
-        <Title order={4}>Environment credentials</Title>
-        <PredefinedFieldsCredentials
-          connection={connection}
-          fields={CATALOG_FIELDS[subtype]}
-          availableSources={availableSources}
-          forceNewState={forceNewState}
-        />
-      </Stack>
-    )
-  }
-
-  if (type === 'application' && (subtype === 'ssh' || subtype === 'git' || subtype === 'github')) {
-    return <SSHCredentials connection={connection} availableSources={availableSources} forceNewState={forceNewState} />
-  }
-
-  if (type === 'httpproxy' && subtype === 'claude-code') {
-    return (
-      <Stack gap="xl">
-        <Stack gap="md">
-          <Title order={4}>Basic info</Title>
-          <PredefinedFieldsCredentials
-            connection={connection}
-            fields={CATALOG_FIELDS['claude-code']}
-            availableSources={availableSources}
-            forceNewState={forceNewState}
-          />
-        </Stack>
-        <InsecureSslToggle connection={connection} />
-      </Stack>
-    )
-  }
-
-  if (type === 'httpproxy') {
-    return (
-      <Stack gap="xl">
-        <Stack gap="md">
-          <Title order={4}>Environment credentials</Title>
-          <PredefinedFieldsCredentials
-            connection={connection}
-            fields={CATALOG_FIELDS.httpproxy}
-            availableSources={availableSources}
-            forceNewState={forceNewState}
-          />
-        </Stack>
-        <InsecureSslToggle connection={connection} />
-      </Stack>
-    )
-  }
-
-  if (type === 'custom' && subtype === 'kubernetes-token') {
-    return (
-      <Stack gap="xl">
-        <Stack gap="md">
-          <Title order={4}>Kubernetes token</Title>
-          <PredefinedFieldsCredentials
-            connection={connection}
-            fields={CATALOG_FIELDS['kubernetes-token']}
-            availableSources={availableSources}
-            forceNewState={forceNewState}
-          />
-        </Stack>
-        <InsecureSslToggle connection={connection} />
-      </Stack>
-    )
-  }
-
-  if (type === 'custom' && CATALOG_FIELDS[subtype]) {
-    return (
-      <Stack gap="md">
-        <Title order={4}>Environment credentials</Title>
-        <PredefinedFieldsCredentials
-          connection={connection}
-          fields={CATALOG_FIELDS[subtype]}
-          availableSources={availableSources}
-          forceNewState={forceNewState}
-        />
-      </Stack>
-    )
-  }
-
-  if (type === 'custom') {
-    return <CustomCredentials connection={connection} availableSources={availableSources} />
-  }
-
+function UnsupportedFallback({ connection }) {
   return (
     <Alert variant="light" color="yellow" icon={<Info size={16} />}>
       <Stack gap={4}>
@@ -194,6 +121,75 @@ function CredentialsBody({ connection, availableSources, forceNewState }) {
       </Stack>
     </Alert>
   )
+}
+
+// Dispatch table — order matters: the first matching renderer wins.
+// Mirrors the CLJS dispatch in credentials_tab.cljs (each branch maps
+// to its own form id there). Add new connection shapes by appending an
+// entry rather than nesting more if-clauses.
+const CREDENTIAL_RENDERERS = [
+  {
+    name: 'database-catalog',
+    match: (c) => c.type === 'database' && CATALOG_FIELDS[c.subtype],
+    render: (props) => (
+      <PredefinedSection title="Environment credentials" fieldsKey={props.connection.subtype} {...props} />
+    ),
+  },
+  {
+    name: 'application-ssh',
+    match: (c) => c.type === 'application' && ['ssh', 'git', 'github'].includes(c.subtype),
+    render: (props) => <SSHCredentials {...props} />,
+  },
+  {
+    name: 'httpproxy-claude-code',
+    match: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
+    render: (props) => (
+      <Stack gap="xl">
+        <PredefinedSection title="Basic info" fieldsKey="claude-code" {...props} />
+        <InsecureSslToggle connection={props.connection} />
+      </Stack>
+    ),
+  },
+  {
+    name: 'httpproxy-generic',
+    match: (c) => c.type === 'httpproxy',
+    render: (props) => (
+      <Stack gap="xl">
+        <PredefinedSection title="Environment credentials" fieldsKey="httpproxy" {...props} />
+        <InsecureSslToggle connection={props.connection} />
+      </Stack>
+    ),
+  },
+  {
+    name: 'custom-kubernetes-token',
+    match: (c) => c.type === 'custom' && c.subtype === 'kubernetes-token',
+    render: (props) => (
+      <Stack gap="xl">
+        <PredefinedSection title="Kubernetes token" fieldsKey="kubernetes-token" {...props} />
+        <InsecureSslToggle connection={props.connection} />
+      </Stack>
+    ),
+  },
+  {
+    name: 'custom-catalog',
+    match: (c) => c.type === 'custom' && CATALOG_FIELDS[c.subtype],
+    render: (props) => (
+      <PredefinedSection title="Environment credentials" fieldsKey={props.connection.subtype} {...props} />
+    ),
+  },
+  {
+    name: 'custom-freeform',
+    match: (c) => c.type === 'custom',
+    render: (props) => (
+      <CustomCredentials connection={props.connection} availableSources={props.availableSources} />
+    ),
+  },
+]
+
+function CredentialsBody({ connection, availableSources, forceNewState }) {
+  const entry = CREDENTIAL_RENDERERS.find((r) => r.match(connection))
+  if (!entry) return <UnsupportedFallback connection={connection} />
+  return entry.render({ connection, availableSources, forceNewState })
 }
 
 function SecretsManagerProviderSection({ provider, onProviderChange }) {

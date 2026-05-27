@@ -330,6 +330,39 @@ import { Rotate3d } from 'lucide-react'
 />
 ```
 Props: `icon` (lucide component), `label` (string), `values` (string[]), `selected` (string | null), `onSelect(value)`, `onClear()`.
+### `Autocomplete`
+Single-value combobox: free-typing input with autocompleted suggestions. Differs from `Select` in that the user can type any value (not just the ones in `data`).
+```jsx
+import Autocomplete from '@/components/Autocomplete'
+
+<Autocomplete
+  label="Key"
+  data={['team', 'environment', 'region']}
+  value={value}
+  onChange={setValue}
+/>
+```
+
+### `NumberInput`
+Numeric input. Supports `min`, `max`, `step`, and clamping.
+```jsx
+import NumberInput from '@/components/NumberInput'
+
+<NumberInput label="Approvals" min={1} value={n} onChange={setN} />
+```
+
+### `TagsInput`
+Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit.
+```jsx
+import TagsInput from '@/components/TagsInput'
+
+<TagsInput
+  label="Command Arguments"
+  value={args}
+  onChange={setArgs}
+  splitChars={[',']}
+/>
+```
 
 ---
 
