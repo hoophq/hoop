@@ -45,6 +45,7 @@ import (
 	"github.com/hoophq/hoop/tunnel/client"
 	"github.com/hoophq/hoop/tunnel/daemonconfig"
 	"github.com/hoophq/hoop/tunnel/netstack"
+	"github.com/hoophq/hoop/tunnel/resolved"
 	"github.com/hoophq/hoop/tunnel/resolver"
 )
 
@@ -107,6 +108,15 @@ type Snapshot struct {
 	// DeviceName is the resolved TUN device name (e.g. "tun0").
 	// Empty when idle.
 	DeviceName string
+
+	// ResolvedConfigured is true when the daemon successfully
+	// registered the TUN interface with systemd-resolved during
+	// bring-up. False when the host doesn't run resolved (the
+	// banner falls back to the manual-hint block) or when the
+	// registration failed (logged separately). Reading this is
+	// the canonical way to ask "does the host resolve *.hoop
+	// natively right now".
+	ResolvedConfigured bool
 }
 
 // Logger is the minimal surface the manager needs from a logger.
@@ -144,6 +154,13 @@ type Options struct {
 	// UserAgent is the User-Agent string the per-flow gRPC dials
 	// present to the gateway. Required.
 	UserAgent string
+
+	// ResolvedConfigurer drives systemd-resolved registration during
+	// BringUp / TearDown. Optional: if nil, New uses
+	// resolved.New() (production behaviour — auto-detect, fall
+	// back to the manual hint on unsupported hosts). Tests inject a
+	// fake to assert call shape without spawning resolvectl.
+	ResolvedConfigurer resolved.Configurer
 }
 
 // Manager is the lifecycle owner. Construct with New; drive with
@@ -171,6 +188,20 @@ type liveTunnel struct {
 	hostAddr   netip.Addr
 	gateway    netip.Addr
 	apiBase    string
+
+	// resolvedActive is true iff the systemd-resolved registration
+	// for this tunnel succeeded. Drives both the post-bring-up
+	// banner (Snapshot.ResolvedConfigured) and the teardown order
+	// (we only call resolved.Unconfigure when we know there's
+	// per-link state to revert).
+	resolvedActive bool
+
+	// resolved is the per-tunnel handle on the systemd-resolved
+	// CLI. Held here rather than read via m.opts.ResolvedConfigurer
+	// on teardown so closeTunnel — which doesn't have the Manager
+	// — can still revert resolved without us passing the manager
+	// reference around.
+	resolved resolved.Configurer
 }
 
 // New constructs a Manager. It does not bind any network resources
@@ -188,6 +219,12 @@ func New(opts Options) (*Manager, error) {
 	if opts.UserAgent == "" {
 		return nil, errors.New("tunnelmgr.New: UserAgent is required")
 	}
+	if opts.ResolvedConfigurer == nil {
+		// Production default: auto-detect systemd-resolved. Falls
+		// back to the manual-hint banner when the host doesn't
+		// run it.
+		opts.ResolvedConfigurer = resolved.New()
+	}
 	return &Manager{opts: opts}, nil
 }
 
@@ -200,13 +237,14 @@ func (m *Manager) Snapshot() Snapshot {
 		return Snapshot{State: m.state, Since: m.since}
 	}
 	return Snapshot{
-		State:         m.state,
-		Since:         m.since,
-		Allocator:     m.current.alloc,
-		SubTypeByName: m.current.subTypeBy,
-		HostAddr:      m.current.hostAddr,
-		Gateway:       m.current.gateway,
-		DeviceName:    m.current.deviceName,
+		State:              m.state,
+		Since:              m.since,
+		Allocator:          m.current.alloc,
+		SubTypeByName:      m.current.subTypeBy,
+		HostAddr:           m.current.hostAddr,
+		Gateway:            m.current.gateway,
+		DeviceName:         m.current.deviceName,
+		ResolvedConfigured: m.current.resolvedActive,
 	}
 }
 
@@ -319,12 +357,27 @@ func closeTunnel(logger Logger, t *liveTunnel) {
 		return
 	}
 	// Order matters: cancel the per-tunnel context first so any
-	// in-flight gRPC pipes see the deadline and exit cleanly, then
-	// take the TUN device offline (netstack.UnconfigureRoutes) so the
-	// host kernel stops sending us packets, and finally Close the
-	// stack so the goroutines reading from the TUN fd drain.
+	// in-flight gRPC pipes see the deadline and exit cleanly,
+	// then revert systemd-resolved (while the interface still
+	// exists — easier for resolvectl), then take the TUN device
+	// offline (netstack.UnconfigureRoutes) so the host kernel
+	// stops sending us packets, and finally Close the stack so
+	// the goroutines reading from the TUN fd drain.
 	if t.cancel != nil {
 		t.cancel()
+	}
+	// Revert resolved BEFORE the netstack tears the link down so
+	// `resolvectl revert <iface>` is operating on a live link
+	// (cleaner journal output). resolvedActive guards us from
+	// calling revert on a link we never wired up.
+	if t.resolvedActive && t.resolved != nil && t.deviceName != "" {
+		if err := t.resolved.Unconfigure(t.deviceName); err != nil {
+			// Best-effort: log and continue. A failed revert
+			// leaves at worst a stale per-link entry that
+			// auto-clears when systemd-resolved sees the
+			// interface disappear in the next few lines.
+			logger.Printf("tunnelmgr: resolved unconfigure: %v", err)
+		}
 	}
 	// UnconfigureRoutes only runs once buildTunnel has actually
 	// installed them — the deviceName + prefix + hostAddr fields are
@@ -408,20 +461,49 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		return cleanup(fmt.Errorf("configure routes: %w", err))
 	}
 
+	// Register the tunnel's per-link DNS with systemd-resolved.
+	// Best-effort: on hosts without resolved (or on a resolvectl
+	// error) we log the outcome and let the operator fall back to
+	// the manual hint the banner already prints. Failing this
+	// step MUST NOT block the tunnel coming up — the per-flow
+	// gRPC plumbing still works the moment the user runs `dig
+	// @<gateway>` manually.
+	resolvedActive := false
+	resolvedCfg := resolved.Config{
+		Device:       deviceName,
+		DNSAddress:   alloc.Gateway().String(),
+		SearchDomain: m.opts.TLD,
+	}
+	switch err := m.opts.ResolvedConfigurer.Configure(resolvedCfg); {
+	case err == nil:
+		resolvedActive = true
+		m.opts.Logger.Printf("tunnelmgr: systemd-resolved wired up: dns=%s domain=~%s iface=%s",
+			resolvedCfg.DNSAddress, resolvedCfg.SearchDomain, resolvedCfg.Device)
+	case errors.Is(err, resolved.ErrUnsupported):
+		// Quiet info: a non-resolved host is the common case on
+		// Alpine, FreeBSD, etc. The banner block printed in
+		// main.go covers the "here's how to do it manually" case.
+		m.opts.Logger.Printf("tunnelmgr: systemd-resolved not present; printing manual DNS hint instead")
+	default:
+		m.opts.Logger.Printf("tunnelmgr: systemd-resolved registration failed: %v (falling back to manual hint)", err)
+	}
+
 	m.opts.Logger.Printf("tunnelmgr: tunnel up — device=%s gateway=%s host=%s",
 		deviceName, alloc.Gateway(), alloc.HostAddr())
 
 	return &liveTunnel{
-		ctx:        ctx,
-		cancel:     cancel,
-		alloc:      alloc,
-		subTypeBy:  subTypeByName,
-		stack:      stack,
-		deviceName: deviceName,
-		prefix:     alloc.Prefix().String(),
-		hostAddr:   alloc.HostAddr(),
-		gateway:    alloc.Gateway(),
-		apiBase:    apiBase,
+		ctx:            ctx,
+		cancel:         cancel,
+		alloc:          alloc,
+		subTypeBy:      subTypeByName,
+		stack:          stack,
+		deviceName:     deviceName,
+		prefix:         alloc.Prefix().String(),
+		hostAddr:       alloc.HostAddr(),
+		gateway:        alloc.Gateway(),
+		apiBase:        apiBase,
+		resolvedActive: resolvedActive,
+		resolved:       m.opts.ResolvedConfigurer,
 	}, nil
 }
 

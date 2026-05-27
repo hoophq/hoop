@@ -286,31 +286,60 @@ func mergeConfigWithEnv(file daemonconfig.Config) daemonconfig.Config {
 // the operator sees after either a startup bring-up or a successful
 // hot-login. Kept separate from the lifecycle code so the banner can
 // evolve without churning tunnelmgr.
+//
+// Branches on snap.ResolvedConfigured:
+//
+//   - true:  tunnelmgr already wired the TUN device into
+//            systemd-resolved at bring-up. The banner reports that
+//            *.<tld> names resolve natively now and skips the
+//            manual-hint block entirely. Users can run `psql -h
+//            foo.hoop` immediately.
+//
+//   - false: either the host doesn't run systemd-resolved (the
+//            common Alpine/FreeBSD/whatever case) or resolvectl
+//            failed. The banner prints the historical manual-hint
+//            block so the operator can wire DNS through whatever
+//            resolver they do use. tunnelmgr already logged the
+//            specific failure to the journal; we don't repeat it
+//            here.
 func printTunnelUpBanner(logger *log.Logger, snap tunnelmgr.Snapshot, tld string) {
 	logger.Printf("tunnel is up.")
 	logger.Printf("  host addr: %s (%s)", snap.HostAddr, snap.DeviceName)
 	logger.Printf("  resolver:  %s:53 (gVisor)", snap.Gateway)
 	logger.Printf("")
-	// Pick the first known connection name (sorted for stability) to
-	// suggest a concrete `dig` invocation. Empty allocator → skip the
-	// hint rather than print "@... .<tld>" with a blank name.
-	if snap.Allocator != nil {
-		names := snap.Allocator.Names()
-		if len(names) > 0 {
-			first := names[0]
-			for _, n := range names[1:] {
-				if n < first {
-					first = n
-				}
-			}
-			logger.Printf("  try:       dig @%s %s.%s AAAA", snap.Gateway, first, tld)
-			logger.Printf("")
-			logger.Printf("To route *.%s through this resolver host-wide (systemd-resolved):", tld)
-			logger.Printf("  sudo resolvectl dns %s %s", snap.DeviceName, snap.Gateway)
-			logger.Printf("  sudo resolvectl domain %s '~%s'", snap.DeviceName, tld)
-			logger.Printf("After that:  psql -h %s.%s ...   (or any *.%s host)", first, tld, tld)
+
+	// Pick the first known connection name (sorted for stability)
+	// to suggest a concrete invocation. Empty allocator → skip
+	// the hint rather than print "@... .<tld>" with a blank name.
+	if snap.Allocator == nil {
+		return
+	}
+	names := snap.Allocator.Names()
+	if len(names) == 0 {
+		return
+	}
+	first := names[0]
+	for _, n := range names[1:] {
+		if n < first {
+			first = n
 		}
 	}
+
+	if snap.ResolvedConfigured {
+		// Happy path: native resolution works right now.
+		logger.Printf("  *.%s now resolves natively (systemd-resolved registered).", tld)
+		logger.Printf("  try:       psql -h %s.%s ...   (or any *.%s host)", first, tld, tld)
+		return
+	}
+
+	// Fallback: print the manual hint so users on non-resolved
+	// hosts still know what to do.
+	logger.Printf("  try:       dig @%s %s.%s AAAA", snap.Gateway, first, tld)
+	logger.Printf("")
+	logger.Printf("To route *.%s through this resolver host-wide (systemd-resolved):", tld)
+	logger.Printf("  sudo resolvectl dns %s %s", snap.DeviceName, snap.Gateway)
+	logger.Printf("  sudo resolvectl domain %s '~%s'", snap.DeviceName, tld)
+	logger.Printf("After that:  psql -h %s.%s ...   (or any *.%s host)", first, tld, tld)
 }
 
 // startIPCServer brings up the local control plane if opts.ipcSocket
