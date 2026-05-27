@@ -63,6 +63,9 @@ type Connection struct {
 	AccessMaxDuration  *int           `gorm:"column:access_max_duration"`
 	MinReviewApprovals *int           `gorm:"column:min_review_approvals"`
 
+	// Secrets metadata
+	SecretsUpdatedAt *time.Time `gorm:"column:secrets_updated_at"`
+
 	// Read Only fields
 	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`
 	Reviewers                 pq.StringArray    `gorm:"column:reviewers;type:text[];->"`
@@ -455,6 +458,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		c.secrets_updated_at,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -567,7 +571,8 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
-		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals, 
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals,
+		c.secrets_updated_at,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
