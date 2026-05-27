@@ -1,33 +1,13 @@
 import { Group, Stack, Title, Text, Image } from '@mantine/core'
 import Button from '@/components/Button'
-import { getConnectionIcon } from '@/utils/connectionIcons'
+import { useConnectionIconGetter } from '@/utils/connectionIcons'
+import { canTestConnection } from '@/utils/connectionPolicy'
 
 // Page header. Shows "Configure" + the connection's icon and name on the
 // left, and the Test Connection action on the right.
-//
-// Test Connection is only meaningful for connection types that can run a
-// ping query (databases, AWS shell connections). For everything else the
-// button is hidden — matches the CLJS can-test-connection? predicate.
-const TESTABLE_TYPES = new Set([
-  'database',
-  'application',
-])
-const TESTABLE_SUBTYPES = new Set([
-  'postgres',
-  'mysql',
-  'mssql',
-  'oracledb',
-  'mongodb',
-  'dynamodb',
-  'cloudwatch',
-])
-
-function canTestConnection({ type, subtype }) {
-  if (TESTABLE_SUBTYPES.has(subtype)) return true
-  return TESTABLE_TYPES.has(type)
-}
 
 export default function ConfigureHeader({ connection, testing, onTest }) {
+  const getConnectionIcon = useConnectionIconGetter()
   const iconUrl = getConnectionIcon(connection)
   const canTest = canTestConnection(connection)
   return (

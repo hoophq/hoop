@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Stack, Title, Text, Anchor } from '@mantine/core'
 import { FileText, Cloud, ShieldCheck, Info, ExternalLink } from 'lucide-react'
 import Alert from '@/components/Alert'
+import PageLoader from '@/components/PageLoader'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
@@ -9,13 +10,59 @@ import SSHCredentials from './SSHCredentials'
 import CustomCredentials from './CustomCredentials'
 import InsecureSslToggle from './InsecureSslToggle'
 import {
-  CATALOG_FIELDS,
   CONNECTION_METHODS,
   supportsConnectionMethods,
-} from '../utils/credentialsSchema'
+  supportsAwsIam,
+} from '@/utils/connectionPolicy'
+import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
 import { SOURCES, SOURCE_LABELS } from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
+
+// Field schemas for connection types that don't ship credentials in
+// connections-metadata.json. Co-located with the renderers that consume
+// them so the data and the UI choice stay together. When these
+// connection types gain credential entries in the JSON catalog, drop
+// the matching constant and route through metadata like database
+// catalog connections.
+const HTTPPROXY_FIELDS = [
+  {
+    key: 'remote_url',
+    label: 'Remote URL',
+    required: true,
+    placeholder: 'e.g. https://example.com',
+  },
+]
+
+const CLAUDE_CODE_FIELDS = [
+  {
+    key: 'remote_url',
+    label: 'Anthropic API URL',
+    required: true,
+    placeholder: 'https://api.anthropic.com',
+  },
+  {
+    key: 'HEADER_X_API_KEY',
+    label: 'Anthropic API Key',
+    required: true,
+    placeholder: 'sk-ant-...',
+  },
+]
+
+const KUBERNETES_TOKEN_FIELDS = [
+  {
+    key: 'cluster_url',
+    label: 'Cluster URL',
+    required: true,
+    placeholder: 'e.g. https://kubernetes.default.svc.cluster.local:443',
+  },
+  {
+    key: 'authorization',
+    label: 'Authorization token',
+    required: true,
+    placeholder: 'e.g. jwt.token.example',
+  },
+]
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
@@ -58,13 +105,6 @@ function WriteOnlyNotice() {
   )
 }
 
-// Whether the AWS IAM Role card should be offered. CLJS limits it to
-// MySQL and Postgres because those are the only RDS auth backends the
-// gateway/agent currently support.
-function supportsAwsIam(subtype) {
-  return subtype === 'postgres' || subtype === 'mysql'
-}
-
 function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) {
   const visibleMethods = METHOD_DEFINITIONS.filter(
     (m) => m.id !== CONNECTION_METHODS.AWS_IAM || awsIamAvailable,
@@ -88,15 +128,17 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
   )
 }
 
-// Small render helper for the most common shape: a titled list of
-// predefined fields drawn from CATALOG_FIELDS.
-function PredefinedSection({ title, fieldsKey, connection, availableSources, forceNewState }) {
+// Renders a titled list of write-only credential fields. `fields` is
+// the React field schema — supplied either by an inline constant (for
+// connection types whose schema lives in this file) or by the metadata
+// store (for catalog connection types).
+function PredefinedSection({ title, fields, connection, availableSources, forceNewState }) {
   return (
     <Stack gap="md">
       <Title order={4}>{title}</Title>
       <PredefinedFieldsCredentials
         connection={connection}
-        fields={CATALOG_FIELDS[fieldsKey]}
+        fields={fields}
         availableSources={availableSources}
         forceNewState={forceNewState}
       />
@@ -123,71 +165,137 @@ function UnsupportedFallback({ connection }) {
   )
 }
 
+function MetadataError({ message }) {
+  return (
+    <Alert variant="light" color="red" icon={<Info size={16} />}>
+      <Stack gap={4}>
+        <Text size="sm" fw={600}>
+          Could not load the connection catalog.
+        </Text>
+        <Text size="sm">{message}</Text>
+      </Stack>
+    </Alert>
+  )
+}
+
 // Dispatch table — order matters: the first matching renderer wins.
 // Mirrors the CLJS dispatch in credentials_tab.cljs (each branch maps
 // to its own form id there). Add new connection shapes by appending an
 // entry rather than nesting more if-clauses.
-const CREDENTIAL_RENDERERS = [
-  {
-    name: 'database-catalog',
-    match: (c) => c.type === 'database' && CATALOG_FIELDS[c.subtype],
-    render: (props) => (
-      <PredefinedSection title="Environment credentials" fieldsKey={props.connection.subtype} {...props} />
-    ),
-  },
-  {
-    name: 'application-ssh',
-    match: (c) => c.type === 'application' && ['ssh', 'git', 'github'].includes(c.subtype),
-    render: (props) => <SSHCredentials {...props} />,
-  },
-  {
-    name: 'httpproxy-claude-code',
-    match: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
-    render: (props) => (
-      <Stack gap="xl">
-        <PredefinedSection title="Basic info" fieldsKey="claude-code" {...props} />
-        <InsecureSslToggle connection={props.connection} />
-      </Stack>
-    ),
-  },
-  {
-    name: 'httpproxy-generic',
-    match: (c) => c.type === 'httpproxy',
-    render: (props) => (
-      <Stack gap="xl">
-        <PredefinedSection title="Environment credentials" fieldsKey="httpproxy" {...props} />
-        <InsecureSslToggle connection={props.connection} />
-      </Stack>
-    ),
-  },
-  {
-    name: 'custom-kubernetes-token',
-    match: (c) => c.type === 'custom' && c.subtype === 'kubernetes-token',
-    render: (props) => (
-      <Stack gap="xl">
-        <PredefinedSection title="Kubernetes token" fieldsKey="kubernetes-token" {...props} />
-        <InsecureSslToggle connection={props.connection} />
-      </Stack>
-    ),
-  },
-  {
-    name: 'custom-catalog',
-    match: (c) => c.type === 'custom' && CATALOG_FIELDS[c.subtype],
-    render: (props) => (
-      <PredefinedSection title="Environment credentials" fieldsKey={props.connection.subtype} {...props} />
-    ),
-  },
-  {
-    name: 'custom-freeform',
-    match: (c) => c.type === 'custom',
-    render: (props) => (
-      <CustomCredentials connection={props.connection} availableSources={props.availableSources} />
-    ),
-  },
-]
+//
+// `getSchema(subtype)` looks up the catalog credential schema from the
+// metadata store. The `catalog-*` renderers depend on it; the others
+// use inline schemas defined at the top of this file.
+function buildRenderers(getSchema) {
+  return [
+    {
+      name: 'database-catalog',
+      match: (c) => c.type === 'database' && Boolean(getSchema(c.subtype)),
+      render: (props) => (
+        <PredefinedSection
+          title="Environment credentials"
+          fields={getSchema(props.connection.subtype)}
+          {...props}
+        />
+      ),
+    },
+    {
+      name: 'application-ssh',
+      match: (c) =>
+        c.type === 'application' && ['ssh', 'git', 'github'].includes(c.subtype),
+      render: (props) => <SSHCredentials {...props} />,
+    },
+    {
+      name: 'httpproxy-claude-code',
+      match: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
+      render: (props) => (
+        <Stack gap="xl">
+          <PredefinedSection title="Basic info" fields={CLAUDE_CODE_FIELDS} {...props} />
+          <InsecureSslToggle connection={props.connection} />
+        </Stack>
+      ),
+    },
+    {
+      name: 'httpproxy-generic',
+      match: (c) => c.type === 'httpproxy',
+      render: (props) => (
+        <Stack gap="xl">
+          <PredefinedSection
+            title="Environment credentials"
+            fields={HTTPPROXY_FIELDS}
+            {...props}
+          />
+          <InsecureSslToggle connection={props.connection} />
+        </Stack>
+      ),
+    },
+    {
+      name: 'custom-kubernetes-token',
+      match: (c) => c.type === 'custom' && c.subtype === 'kubernetes-token',
+      render: (props) => (
+        <Stack gap="xl">
+          <PredefinedSection
+            title="Kubernetes token"
+            fields={KUBERNETES_TOKEN_FIELDS}
+            {...props}
+          />
+          <InsecureSslToggle connection={props.connection} />
+        </Stack>
+      ),
+    },
+    {
+      name: 'custom-catalog',
+      match: (c) => c.type === 'custom' && Boolean(getSchema(c.subtype)),
+      render: (props) => (
+        <PredefinedSection
+          title="Environment credentials"
+          fields={getSchema(props.connection.subtype)}
+          {...props}
+        />
+      ),
+    },
+    {
+      name: 'custom-freeform',
+      match: (c) => c.type === 'custom',
+      render: (props) => (
+        <CustomCredentials
+          connection={props.connection}
+          availableSources={props.availableSources}
+        />
+      ),
+    },
+  ]
+}
+
+// Whether the connection's renderer depends on the metadata catalog.
+// When true and the catalog is still loading or errored, the body
+// renders a loader / error rather than the renderer fallback.
+function dependsOnCatalog(connection) {
+  if (!connection) return false
+  if (connection.type === 'database') return true
+  if (connection.type === 'custom') {
+    // Custom kubernetes-token uses inline fields; everything else
+    // routes through catalog when matched.
+    return connection.subtype !== 'kubernetes-token'
+  }
+  return false
+}
 
 function CredentialsBody({ connection, availableSources, forceNewState }) {
-  const entry = CREDENTIAL_RENDERERS.find((r) => r.match(connection))
+  const metadata = useConnectionsMetadataStore((s) => s.metadata)
+  const loading = useConnectionsMetadataStore((s) => s.loading)
+  const error = useConnectionsMetadataStore((s) => s.error)
+  const getCredentialSchema = useConnectionsMetadataStore(
+    (s) => s.getCredentialSchema,
+  )
+
+  if (dependsOnCatalog(connection)) {
+    if (loading && !metadata) return <PageLoader />
+    if (error && !metadata) return <MetadataError message={error} />
+  }
+
+  const renderers = buildRenderers(getCredentialSchema)
+  const entry = renderers.find((r) => r.match(connection))
   if (!entry) return <UnsupportedFallback connection={connection} />
   return entry.render({ connection, availableSources, forceNewState })
 }
