@@ -28,7 +28,9 @@ src/
 ├── pages/               # Route-based pages (each route = folder)
 │   ├── [Page]/
 │   │   ├── index.jsx        # Page component
-│   │   ├── components/      # Components scoped to this page
+│   │   ├── <TabName>.jsx    # Tab bodies / top-level page slices (siblings of index)
+│   │   ├── components/      # Reusable components scoped to this page (≥2 consumers)
+│   │   ├── sections/        # Page-specific decomposition (single consumer, not "components")
 │   │   ├── store.js         # Local store (only if state is page-specific)
 │   │   └── [SubPage]/
 │   │       └── index.jsx
@@ -65,8 +67,21 @@ src/
 
 **Scope:**
 - `src/components/` = Reusable across the whole app. No direct Mantine imports at call sites for any component that has a wrapper.
-- `src/pages/[Page]/components/` = Scoped to that page/domain only. May still import Mantine directly if no wrapper exists yet and it's too specific to generalise.
+- `src/pages/[Page]/components/` = Reusable **within the page** (≥2 consumers, or a clear candidate to graduate to the global `src/components/`). May still import Mantine directly if no wrapper exists yet and it's too specific to generalise.
+- `src/pages/[Page]/sections/` = **Single-consumer page decomposition.** A file that exists only to keep a tab/page body small. Not a "component" — don't put it in `components/`. Example: `pages/Roles/Configure/sections/ReviewSection.jsx` is rendered by exactly one tab; it lives in `sections/`. A `components/SecretField` rendered by multiple renderers lives in `components/`.
+- **Tabs / top-level page slices** live at the page root next to `index.jsx` (e.g. `pages/Roles/Configure/CredentialsTab.jsx`). They're not reusable and not decomposition — they're the page itself, sliced for readability.
 - **Before creating a new component**, check `COMPONENTS.md` — it catalogs every existing component, hook, store, and service with usage examples.
+
+**The reusability bar — what makes something a "component"?**
+
+| Where it lives | What it is | Examples |
+|---|---|---|
+| `pages/[Page]/<X>.jsx` | A tab body or top-level slice of the page | `CredentialsTab.jsx`, `DetailsTab.jsx`, `ConfigureHeader.jsx` |
+| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `ReviewSection.jsx`, `AIDataMaskingSection.jsx`, `MetadataFieldsInput.jsx` |
+| `pages/[Page]/components/` | Reusable within the page (≥2 consumers) | `SecretField/`, `ToggleSection.jsx`, `FormFooter/` |
+| `src/components/` | Reusable across the whole app | `Button`, `TextInput`, `Table` |
+
+When something in `pages/[Page]/components/` starts getting reused outside the page, graduate it to `src/components/` (and update `COMPONENTS.md`).
 
 ### Layout
 - `src/layout/` = Shared layout infrastructure (Sidebar, Header, EmptyState, Layout container)
@@ -236,9 +251,10 @@ When a Mantine component (NavLink, Button, Drawer, Badge…) needs styles specif
 |---|---|---|
 | Across the whole app | `src/components/` | `StatusBadge` used in Sessions, Agents, Resources |
 | Only inside one layout section | `src/layout/[Section]/` | `SidebarNavLink` only used in the Sidebar |
-| Only inside one page or feature | `src/pages/[Page]/components/` | `RunbookActionButton` only used in Runbooks |
+| Reused by ≥2 consumers inside one page | `src/pages/[Page]/components/` | `SecretField/` rendered by multiple credential renderers |
+| Only one consumer inside one page | `src/pages/[Page]/sections/` | `ReviewSection.jsx` rendered by exactly one tab |
 
-**`src/components/` is for truly reusable components.** A component whose styles are hard-coded for a specific context (dark sidebar, data table, modal shell) is NOT reusable — even if it wraps a generic Mantine component. Keep it co-located with the context it serves.
+**`src/components/` is for truly reusable components.** A component whose styles are hard-coded for a specific context (dark sidebar, data table, modal shell) is NOT reusable — even if it wraps a generic Mantine component. Keep it co-located with the context it serves. And a file that exists only to break up a long tab body isn't a component at all — put it in `sections/`.
 
 ### Rules
 

@@ -1,6 +1,6 @@
 import { decodeSecretValue, encodeSecretValue } from '../../../utils/secretsCodec'
 import { useConfigureRoleStore } from '../../../store'
-import ToggleSection from '../../ToggleSection'
+import ToggleSection from '../../../components/ToggleSection'
 
 // "Allow insecure SSL" toggle backed by envvar:INSECURE.
 //
