@@ -523,6 +523,14 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		connParams.EnvVars[key] = val
 	}
 
+	// Override MSPresidio configuration
+	if analyzerURL, anonymizerURL, dlpMode, isSet := parseMSPresidioOverrideConfig(); isSet {
+		log.Infof("overriding MS Presidio configuration, dlp-mode=%v", dlpMode)
+		connParams.DlpPresidioAnalyzerURL = analyzerURL
+		connParams.DlpPresidioAnonymizerURL = anonymizerURL
+		connParams.DlpMode = dlpMode
+	}
+
 	// expose agent envs to session
 	connType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 	for key, b64EncVal := range connParams.EnvVars {
@@ -866,5 +874,24 @@ func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSes
 	if cluster == "" || awsRegion == "" {
 		return "", "", "", "", fmt.Errorf("missing required envs [EKS_CLUSTER EKS_AWS_REGION]")
 	}
+	return
+}
+
+func parseMSPresidioOverrideConfig() (analyzerURL, anonymizerURL, dlpMode string, isSet bool) {
+	analyzerURL = os.Getenv("MSPRESIDIO_ANALYZER_URL")
+	anonymizerURL = os.Getenv("MSPRESIDIO_ANONYMIZER_URL")
+	dlpMode = os.Getenv("DLP_MODE")
+	if _, err := url.Parse(analyzerURL); err != nil {
+		log.Warnf("MSPRESIDIO_ANALYZER_URL failed loading override configuration, invalid url: %v", err)
+		return
+	}
+	if _, err := url.Parse(anonymizerURL); err != nil {
+		log.Warnf("MSPRESIDIO_ANONYMIZER_URL failed loading override configuration, invalid url: %v", err)
+		return
+	}
+	if dlpMode != "strict" && dlpMode != "best-effort" {
+		log.Warnf("DLP_MODE unknown value (%q), fallback to best-effort", dlpMode)
+	}
+	isSet = analyzerURL != "" && anonymizerURL != ""
 	return
 }

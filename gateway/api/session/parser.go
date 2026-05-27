@@ -65,7 +65,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		CorrelationID:        s.CorrelationID,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
-		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),
+		AIAnalysis:           ToOpenApiSessionAIAnalysis(s.AIAnalysis),
 		GuardRailsInfo:       toOpenApiSessionGuardRailsInfo(s.GuardRailsInfo),
 		IdentityType:         s.IdentityType,
 		MachineIdentityID:    s.MachineIdentityID,
@@ -92,7 +92,7 @@ func toOpenApiSessionGuardRailsInfo(items []models.SessionGuardRailsInfo) []open
 	return out
 }
 
-func toOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIAnalysis {
+func ToOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIAnalysis {
 	if a == nil {
 		return nil
 	}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Box, Button, Code, Group, Popover, Stack, Text, Title } from '@mantine/core'
+import { Box, Button, Group, Popover, Stack, Text, Title } from '@mantine/core'
+import Code from '@/components/Code'
 import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'

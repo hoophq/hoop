@@ -9,8 +9,7 @@
    [webapp.shared-ui.sidebar.components.nav-link :refer [nav-link]]
    [webapp.shared-ui.sidebar.components.profile :refer [profile-dropdown]]
    [webapp.shared-ui.sidebar.components.section :refer [section-title]]
-   [webapp.shared-ui.sidebar.constants :as sidebar-constants]
-   [webapp.shared-ui.sidebar.styles :as styles]))
+   [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
 (defn main [_ _]
   (let [gateway-info (rf/subscribe [:gateway->info])
@@ -22,7 +21,6 @@
             user-data (:data user)
             admin? (:admin? user-data)
             selfhosted? (= (:tenancy_type user-data) "selfhosted")
-            free-license? (:free-license? user-data)
             current-route @current-route
             is-mobile? (= :opened (:status @sidebar-mobile))]
         [:<>
@@ -55,7 +53,6 @@
                           :admin-only? (:admin-only? route)
                           :admin? admin?
                           :current-route current-route
-                          :free-license? free-license?
                           :action (when (:action route)
                                     (fn []
                                       ((:action route))
@@ -70,7 +67,12 @@
               [:ul {:role "list"
                     :aria-labelledby "sidebar-discover-heading"
                     :class "space-y-1 mt-2"}
-               (for [route sidebar-constants/discover-routes]
+               (for [route sidebar-constants/discover-routes
+                     :let [flag (:feature-flag route)
+                           flags (get-in (:data @gateway-info) [:feature_flags])]
+                     :when (or (nil? flag)
+                               (get flags (keyword flag))
+                               (get flags flag))]
                  ^{:key (:name route)}
                  [nav-link {:uri (:uri route)
                             :icon (:icon route)
@@ -80,10 +82,8 @@
                             :admin-only? (:admin-only? route)
                             :admin? admin?
                             :current-route current-route
-                            :free-license? free-license?
                             :navigate (:navigate route)
                             :badge (:badge route)
-                            :upgrade-plan-route (:upgrade-plan-route route)
                             :on-activate (when is-mobile?
                                            #(rf/dispatch [:sidebar-mobile->close]))}])]])
 
@@ -103,9 +103,7 @@
                             :admin-only? (:admin-only? route)
                             :admin? admin?
                             :current-route current-route
-                            :free-license? free-license?
                             :navigate (:navigate route)
-                            :upgrade-plan-route (:upgrade-plan-route route)
                             :on-activate (when is-mobile?
                                            #(rf/dispatch [:sidebar-mobile->close]))}])
 
@@ -133,29 +131,21 @@
                                                    :class "mt-1 px-2"}
                        (for [plugin sidebar-constants/integrations-management]
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
-                           (let [blocked? (and free-license? (not (:free-feature? plugin)))]
-                             ^{:key (:name plugin)}
-                             [:li
-                              [:a {:href (cond
-                                           blocked? "#"
-                                           (:plugin? plugin) (str "/plugins/manage/" (:name plugin))
-                                           :else (:uri plugin))
-                                   :on-click (fn [e]
-                                               (.preventDefault e)
-                                               (if blocked?
-                                                 (rf/dispatch [:navigate (:upgrade-plan-route plugin)])
-                                                 (if (:plugin? plugin)
-                                                   (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
-                                                   (rf/dispatch [:navigate (:navigate plugin)])))
-                                               (when is-mobile?
-                                                 (rf/dispatch [:sidebar-mobile->close])))
-                                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                               "block rounded-md py-2 pr-2 pl-9 text-sm leading-6 "
-                                               (when blocked? " text-opacity-30"))}
-                               (:label plugin)
-                               (when blocked?
-                                 [:div {:class styles/badge-upgrade}
-                                  "Upgrade"])]])))]]))])
+                           ^{:key (:name plugin)}
+                           [:li
+                            [:a {:href (if (:plugin? plugin)
+                                         (str "/plugins/manage/" (:name plugin))
+                                         (:uri plugin))
+                                 :on-click (fn [e]
+                                             (.preventDefault e)
+                                             (if (:plugin? plugin)
+                                               (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
+                                               (rf/dispatch [:navigate (:navigate plugin)]))
+                                             (when is-mobile?
+                                               (rf/dispatch [:sidebar-mobile->close])))
+                                 :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                             "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                             (:label plugin)]]))]]))])
 
                (when admin?
                  [:> ui/Disclosure {:as "li"
@@ -181,29 +171,22 @@
                                                    :class "mt-1 px-2"}
                        (for [route sidebar-constants/settings-management]
                          (when (or selfhosted? (not (:selfhosted-only? route)))
-                           (let [blocked? (and free-license? (not (:free-feature? route)))]
-                             ^{:key (:name route)}
-                             [:li
-                              [:button {:type "button"
-                                        :on-click (fn []
-                                                    (if blocked?
-                                                      (rf/dispatch [:navigate (:upgrade-plan-route route)])
-                                                      (rf/dispatch [:navigate (:navigate route)]))
-                                                    (when is-mobile?
-                                                      (rf/dispatch [:sidebar-mobile->close])))
-                                        :class (str "w-full flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                                    "block rounded-md py-2 pr-2 pl-9 text-sm leading-6 "
-                                                    (when blocked? " text-opacity-30"))
-                                        :aria-label (:label route)}
-                               [:span {:class "flex items-center gap-6"}
-                                (:label route)]
-                               [:> Box {:class "flex gap-2 items-center"}
-                                (when (string? (:badge route))
-                                  [:> Badge {:variant "solid" :color "green"}
-                                   (:badge route)])
-                                (when blocked?
-                                  [:div {:class styles/badge-upgrade}
-                                   "Upgrade"])]]])))]]))])]])
+                           ^{:key (:name route)}
+                           [:li
+                            [:button {:type "button"
+                                      :on-click (fn []
+                                                  (rf/dispatch [:navigate (:navigate route)])
+                                                  (when is-mobile?
+                                                    (rf/dispatch [:sidebar-mobile->close])))
+                                      :class (str "w-full flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                                  "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")
+                                      :aria-label (:label route)}
+                             [:span {:class "flex items-center gap-6"}
+                              (:label route)]
+                             [:> Box {:class "flex gap-2 items-center"}
+                              (when (string? (:badge route))
+                                [:> Badge {:variant "solid" :color "green"}
+                                 (:badge route)])]]]))]]))])]])
 
            [:li {:class "mt-auto mb-3"}
             [profile-dropdown {:user-data user-data

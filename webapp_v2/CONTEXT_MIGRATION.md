@@ -161,6 +161,9 @@ Gateway backend (port 8009)
 
 ### Env Variables
 
+All optional — `vite.config.js` provides working defaults, so a `.env` file
+is not required to run `npm run dev` or `npm run dev:full`.
+
 ```
 VITE_API_URL       Optional. Overrides the /api default base URL
 VITE_GATEWAY_URL   Dev only. Backend proxy target (default: localhost:8009)

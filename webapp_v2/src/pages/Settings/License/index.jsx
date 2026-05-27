@@ -96,7 +96,7 @@ function SettingsLicense() {
 
   return (
     <Stack gap={0}>
-      <Group justify="space-between" align="flex-start" mb="xxxl">
+      <Group justify="space-between" align="flex-start" mb="xxxlAlt">
         <Stack gap="xs">
           <Title order={1}>License</Title>
           <Text size="lg" c="dimmed">

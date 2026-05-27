@@ -270,3 +270,26 @@
                        {:level :error
                         :text "Failed to delete rule"
                         :details error-message}]]]})))
+
+(rf/reg-event-fx
+ :ai-session-analyzer/get-system-prompt
+ (fn [{:keys [db]} _]
+   (if (seq (get-in db [:ai-session-analyzer :system-prompt :data]))
+     {:db db}
+     {:db (assoc-in db [:ai-session-analyzer :system-prompt :status] :loading)
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri "/ai/session-analyzer/system-prompt"
+                               :on-success #(rf/dispatch [:ai-session-analyzer/get-system-prompt-success %])
+                               :on-failure #(rf/dispatch [:ai-session-analyzer/get-system-prompt-failure %])}]]]})))
+
+(rf/reg-event-db
+ :ai-session-analyzer/get-system-prompt-success
+ (fn [db [_ data]]
+   (assoc-in db [:ai-session-analyzer :system-prompt]
+             {:status :success :data (:prompt data) :error nil})))
+
+(rf/reg-event-fx
+ :ai-session-analyzer/get-system-prompt-failure
+ (fn [{:keys [db]} [_ error]]
+   {:db (assoc-in db [:ai-session-analyzer :system-prompt]
+                  {:status :error :data nil :error error})}))

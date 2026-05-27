@@ -24,6 +24,9 @@ import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
 import RulepackDetail from '@/pages/Rulepacks/Detail'
+import EventRouting from '@/pages/EventRouting'
+import EventRoutingForm from '@/pages/EventRouting/Form'
+import EventRoutingDetail from '@/pages/EventRouting/Detail'
 
 /**
  * Routing strategy:
@@ -256,6 +259,56 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsExperimental />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Event Routing (gated by experimental.event_routing flag inside the page) */}
+      <Route
+        path="/features/event-routing"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRouting />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/event-routing/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRoutingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/event-routing/:id/edit"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRoutingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/event-routing/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <EventRoutingDetail />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

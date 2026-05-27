@@ -221,7 +221,7 @@ func Update(c *gin.Context) {
 	trackClient.Identify(&types.APIContext{
 		OrgID:          ctx.OrgID,
 		OrgLicenseData: ctx.OrgLicenseData,
-		UserID:         existingUser.ID,
+		UserID:         existingUser.Subject,
 		UserEmail:      existingUser.Email,
 		UserName:       existingUser.Name,
 		UserStatus:     existingUser.Status,

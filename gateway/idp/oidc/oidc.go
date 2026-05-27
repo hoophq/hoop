@@ -291,12 +291,6 @@ func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo
 	log.With("issuer", idToken.Issuer, "subject", uinfo.Subject, "email", uinfo.Email, "email-verified", uinfo.EmailVerified).
 		Infof("token exchanged (oauth2) and id_token verified")
 
-	// overwrite the groups and indicate it should sync groups
-	if syncGsuiteGroups {
-		uinfo.Groups = groups
-		uinfo.MustSyncGroups = true
-		uinfo.MustSyncGsuiteGroups = true
-	}
 	return token, uinfo, err
 }
 
@@ -414,6 +408,19 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 			uinfo.Profile = name
 		}
 	}
+
+	groups, syncGsuiteGroups, err := p.fetchGsuiteGroups(accessToken, uinfo.Email)
+	if err != nil {
+		log.Errorf("unable to synchronize groups from Google: %v", err)
+	}
+
+	// overwrite the groups and indicate it should sync groups
+	if syncGsuiteGroups {
+		uinfo.Groups = groups
+		uinfo.MustSyncGroups = true
+		uinfo.MustSyncGsuiteGroups = true
+	}
+
 	return uinfo, claims, nil
 }
 

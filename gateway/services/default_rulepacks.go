@@ -18,7 +18,7 @@ const defaultRulepackVersion = "0.1.0"
 // defaultRulepackSpec describes one managed rulepack plus its guardrail rules.
 // The data here is the single source of truth used by SeedDefaultRulepacksForOrg
 // and must stay in sync with the SQL migration that backfills existing orgs
-// (rootfs/app/migrations/000091_default_rulepacks.up.sql).
+// (rootfs/app/migrations/000093_default_rulepacks.up.sql).
 type defaultRulepackSpec struct {
 	DisplayName string
 	Tags        []string

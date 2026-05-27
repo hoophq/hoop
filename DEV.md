@@ -50,11 +50,13 @@ make build-dev-webapp
 By default versioned clients are builded to strict connect via TLS. In order to build a client that permits connecting to remote hosts without TLS, execute the instruction below:
 
 ```sh
-# generate binary at $HOME/.hoop/bin/hoop
+# generate binary at $HOME/.hoop/dev/hoop
 make build-dev-client
 ```
 
-> Append `$HOME/.hoop/bin` to your `$PATH` in your profile to find commands when typing in your shell
+> Append `$HOME/.hoop/dev` to your `$PATH` in your profile to find commands when typing in your shell.
+>
+> Note: `$HOME/.hoop/bin/hoop` is reserved as the active symlink managed by `hoop versions`; the dev binary lives in `$HOME/.hoop/dev/hoop` so the two workflows don't collide. Put `$HOME/.hoop/dev` first on `PATH` if you want your dev build to take precedence; put `$HOME/.hoop/bin` first if you want whatever `hoop versions sync` / `hoop versions upgrade` last installed.
 
 ### Data Masking Setup
 
@@ -108,7 +110,7 @@ make run-dev-spiffe-agent
 
 This script:
 
-- rebuilds `$HOME/.hoop/bin/hoop` if source files under `agent/` or `common/clientconfig/` are newer than the binary
+- rebuilds `$HOME/.hoop/dev/hoop` if source files under `agent/` or `common/clientconfig/` are newer than the binary
 - reads `POSTGRES_DB_URI` from `hoopdev`'s env and seeds two rows in `hoopdevpg` (idempotent):
   - `private.agents` → a `spiffe-agent` row
   - `private.agent_spiffe_mappings` → maps `spiffe://local.test/agent/local-dev` to that agent

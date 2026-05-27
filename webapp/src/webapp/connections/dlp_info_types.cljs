@@ -171,7 +171,8 @@
    "XSRF_TOKEN"])
 
 (def presidio-options
-  ["CREDIT_CARD"
+  ["BR_CPF"
+   "CREDIT_CARD"
    "CRYPTO"
    "DATE_TIME"
    "EMAIL_ADDRESS"

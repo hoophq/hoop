@@ -4,20 +4,44 @@ import {
   Grid,
   Group,
   Stack,
-  Switch,
   Text,
   TextInput,
   Title,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
+import { BarChart3, EyeOff, ShieldOff } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
+import SelectionCard from '@/components/SelectionCard'
 import infrastructure from '@/services/infrastructure'
 import { docsUrl } from '@/utils/docsUrl'
 
+const ANALYTICS_OPTIONS = [
+  {
+    value: 'identified',
+    icon: BarChart3,
+    title: 'Identified',
+    description:
+      'Share your data with our analytics tools so we can offer onboarding, support, and product updates.',
+  },
+  {
+    value: 'anonymous',
+    icon: EyeOff,
+    title: 'Anonymous',
+    description:
+      'Send only hashed identifiers. No personally identifiable information leaves the gateway.',
+  },
+  {
+    value: 'disabled',
+    icon: ShieldOff,
+    title: 'Disabled',
+    description: 'Stop all analytics events for this organization.',
+  },
+]
+
 const EMPTY_FORM = {
-  analyticsEnabled: false,
+  analyticsMode: '',
   grpcUrl: '',
   postgresPort: '',
   sshPort: '',
@@ -31,10 +55,9 @@ function extractPort(listenAddress) {
   return parts[parts.length - 1] ?? ''
 }
 
-function buildPayload(form) {
+function buildMiscPayload(form) {
   const addr = (port) => (port ? `0.0.0.0:${port}` : '')
   return {
-    product_analytics: form.analyticsEnabled ? 'active' : 'inactive',
     grpc_server_url: form.grpcUrl,
     postgres_server_config: { listen_address: addr(form.postgresPort) },
     ssh_server_config: { listen_address: addr(form.sshPort) },
@@ -62,22 +85,24 @@ function SectionRow({ title, description, callout, children }) {
 
 function SettingsInfrastructure() {
   const [form, setForm] = useState(EMPTY_FORM)
+  const [initialAnalyticsMode, setInitialAnalyticsMode] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const showLoader = useMinDelay(loading)
 
   useEffect(() => {
-    infrastructure
-      .get()
-      .then((data) => {
+    Promise.all([infrastructure.get(), infrastructure.getAnalyticsMode()])
+      .then(([misc, analytics]) => {
+        const mode = analytics?.analytics_mode ?? ''
+        setInitialAnalyticsMode(mode)
         setForm({
-          analyticsEnabled: data.product_analytics === 'active',
-          grpcUrl: data.grpc_server_url ?? '',
-          postgresPort: extractPort(data.postgres_server_config?.listen_address),
-          sshPort: extractPort(data.ssh_server_config?.listen_address),
-          rdpPort: extractPort(data.rdp_server_config?.listen_address),
-          httpPort: extractPort(data.http_proxy_server_config?.listen_address),
+          analyticsMode: mode,
+          grpcUrl: misc.grpc_server_url ?? '',
+          postgresPort: extractPort(misc.postgres_server_config?.listen_address),
+          sshPort: extractPort(misc.ssh_server_config?.listen_address),
+          rdpPort: extractPort(misc.rdp_server_config?.listen_address),
+          httpPort: extractPort(misc.http_proxy_server_config?.listen_address),
         })
       })
       .catch(() => {
@@ -97,7 +122,12 @@ function SettingsInfrastructure() {
   async function handleSave() {
     setSaving(true)
     try {
-      await infrastructure.update(buildPayload(form))
+      const requests = [infrastructure.update(buildMiscPayload(form))]
+      if (form.analyticsMode && form.analyticsMode !== initialAnalyticsMode) {
+        requests.push(infrastructure.updateAnalyticsMode(form.analyticsMode))
+      }
+      await Promise.all(requests)
+      setInitialAnalyticsMode(form.analyticsMode)
       notifications.show({
         color: 'green',
         title: 'Saved',
@@ -118,27 +148,30 @@ function SettingsInfrastructure() {
 
   return (
     <>
-      <Group justify="space-between" align="flex-start" mb="xxxl">
+      <Group justify="space-between" align="flex-start" mb="xxxlAlt">
         <Title order={1}>Infrastructure</Title>
         <Button size="md" loading={saving} onClick={handleSave}>
           Save
         </Button>
       </Group>
 
-      <Stack gap="xxl">
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Product analytics"
           description="Help us improve Hoop by sharing usage data. Access and resources information are not collected."
         >
-          <Group gap="sm">
-            <Switch
-              checked={form.analyticsEnabled}
-              onChange={(e) => setField('analyticsEnabled')(e.currentTarget.checked)}
-            />
-            <Text size="sm" fw={500}>
-              {form.analyticsEnabled ? 'On' : 'Off'}
-            </Text>
-          </Group>
+          <Stack gap="sm">
+            {ANALYTICS_OPTIONS.map((option) => (
+              <SelectionCard
+                key={option.value}
+                icon={option.icon}
+                title={option.title}
+                description={option.description}
+                selected={form.analyticsMode === option.value}
+                onClick={() => setField('analyticsMode')(option.value)}
+              />
+            ))}
+          </Stack>
         </SectionRow>
 
         <SectionRow

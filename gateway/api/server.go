@@ -27,6 +27,7 @@ import (
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
+	apieventrouting "github.com/hoophq/hoop/gateway/api/eventrouting"
 	apifeatureflags "github.com/hoophq/hoop/gateway/api/featureflags"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
@@ -924,6 +925,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiai.DeleteSessionAnalyzerRule)
+	r.GET("/ai/session-analyzer/system-prompt",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerSystemPrompt)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
@@ -1205,6 +1210,60 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apirulepacks.Apply)
+
+	// Event Routing
+	r.GET("/event-routing/catalog",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ListCatalog)
+	r.GET("/event-routing/catalog/:event_type",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.GetCatalogEntry)
+	r.GET("/event-routing/subscriptions",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ListSubscriptions)
+	r.POST("/event-routing/subscriptions",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.CreateSubscription)
+	r.GET("/event-routing/subscriptions/:id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.GetSubscription)
+	r.PUT("/event-routing/subscriptions/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.UpdateSubscription)
+	r.DELETE("/event-routing/subscriptions/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.DeleteSubscription)
+	r.POST("/event-routing/subscriptions/:id/pause",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.PauseSubscription)
+	r.POST("/event-routing/subscriptions/:id/resume",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ResumeSubscription)
+	r.GET("/event-routing/subscriptions/:id/dispatches",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ListDispatches)
+	r.GET("/event-routing/dispatches/:id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.GetDispatch)
+	r.POST("/event-routing/dispatches/:id/replay",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.ReplayDispatch)
 
 	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
 	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)

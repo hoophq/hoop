@@ -2,24 +2,34 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	sessionapi "github.com/hoophq/hoop/gateway/api/session"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/events"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const execTimeout = 50 * time.Second
 
 type execInput struct {
-	ConnectionName string   `json:"connection_name" jsonschema:"name of the Hoop connection to execute against"`
-	Input          string   `json:"input" jsonschema:"the query or command to run (e.g. a SQL statement for a database connection)"`
-	Args           []string `json:"args,omitempty" jsonschema:"optional client arguments forwarded to the connection (e.g. CLI flags)"`
+	ConnectionName string            `json:"connection_name" jsonschema:"name of the Hoop connection to execute against"`
+	Input          string            `json:"input" jsonschema:"the query or command to run (e.g. a SQL statement for a database connection)"`
+	Args           []string          `json:"args,omitempty" jsonschema:"optional client arguments forwarded to the connection (e.g. CLI flags)"`
 	EnvVars        map[string]string `json:"env_vars,omitempty" jsonschema:"optional environment variables forwarded to the connection"`
+	Metadata       map[string]any    `json:"metadata,omitempty" jsonschema:"optional metadata fields to attach to the session (e.g. ticket number, CI job URL)"`
+	JiraFields     map[string]string `json:"jira_fields,omitempty" jsonschema:"optional Jira issue fields (e.g. summary, description) - only used if the connection has a Jira issue template configured"`
 }
 
 func registerExecTools(server *mcp.Server) {
@@ -64,18 +74,151 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 		return errResult(fmt.Sprintf("connection %q not found or not accessible", args.ConnectionName)), nil, nil
 	}
 
+	trackClient := analytics.New()
+	defer trackClient.Close()
+
 	// Origin=client (matches `hoop exec` CLI) triggers full audit persistence:
 	// the audit plugin inserts the session row on OnConnect, stores the query
 	// via UpdateSessionInput, and runs AI analysis on OnReceive. Origin=client-api
 	// is reserved for HTTP flows that pre-insert the session row themselves.
 	sessionID := uuid.NewString()
+	newSession := models.Session{
+		ID:                   sessionID,
+		OrgID:                sc.GetOrgID(),
+		Labels:               nil,
+		Metadata:             args.Metadata,
+		IntegrationsMetadata: nil,
+		Metrics:              nil,
+		BlobInput:            models.BlobInputType(args.Input),
+		UserEmail:            sc.UserEmail,
+		UserID:               sc.UserID,
+		UserName:             sc.UserName,
+		ConnectionType:       conn.Type,
+		ConnectionSubtype:    conn.SubType.String,
+		Connection:           conn.Name,
+		ConnectionTags:       conn.ConnectionTags,
+		Verb:                 pb.ClientVerbExec,
+		Status:               string(openapi.SessionStatusOpen),
+		IdentityType:         "user",
+		SessionBatchID:       nil,
+		CorrelationID:        nil,
+		CreatedAt:            time.Now().UTC(),
+		EndSession:           nil,
+	}
+
+	orgID := uuid.MustParse(sc.GetOrgID())
+	needsAiReview := false
+	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(ctx, orgID, conn.Name, args.Input)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed analyzing session: %v", err)
+	}
+	if analyzeRes != nil {
+		newSession.AIAnalysis = analyzeRes
+
+		shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+		needsAiReview = analyzeRes.Action == string(models.RequireAccessRequest)
+		if shouldBlock {
+			newSession.Status = string(openapi.SessionStatusDone)
+			newSession.ExitCode = &sessionapi.InternalExitCode
+			endTime := time.Now().UTC()
+			newSession.EndSession = &endTime
+		}
+
+		if err := models.UpsertSession(newSession); err != nil {
+			return nil, nil, fmt.Errorf("failed upserting session with AI analysis results: %v", err)
+		}
+
+		if shouldBlock {
+			// AI-blocked sessions never reach the create path below, so we publish the full
+			// session lifecycle (started + closed) here to keep downstream event consumers
+			// consistent.
+			events.DeriveFromSessionStart(sc.OrgID, &newSession, conn)
+			events.DeriveFromSessionEnd(sc.OrgID, &newSession)
+
+			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, sc.OrgID, sc.UserID, sessionID)
+
+			return execResponseToEnvelope(&clientexec.Response{
+				SessionID:         sessionID,
+				Output:            "Session blocked by AI risk analyzer",
+				OutputStatus:      "blocked",
+				ExitCode:          sessionapi.InternalExitCode,
+				ExecutionTimeMili: 0,
+				AIAnalysis:        sessionapi.ToOpenApiSessionAIAnalysis(analyzeRes),
+			}, sessionID)
+		}
+	}
+
+	if conn.JiraIssueTemplateID.String != "" {
+		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed obtaining jira issue template for %v: %v", conn.Name, err)
+		}
+		if jiraConfig != nil && jiraConfig.IsActive() {
+			if args.JiraFields == nil {
+				args.JiraFields = map[string]string{}
+			}
+			jiraFields, err := jira.ParseIssueFields(issueTemplate, args.JiraFields, newSession)
+			switch err.(type) {
+			case *jira.ErrInvalidIssueFields:
+				return nil, nil, fmt.Errorf("invalid jira issue fields: %v", err)
+			case nil:
+			default:
+				return nil, nil, fmt.Errorf("failed parsing jira issue fields: %v", err)
+			}
+			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed creating jira customer request: %v", err)
+			}
+			newSession.IntegrationsMetadata = map[string]any{
+				"jira_issue_key": resp.IssueKey,
+				"jira_issue_url": resp.Links.Agent,
+			}
+		}
+	}
+
+	if needsAiReview {
+		if aiAccessRule == nil {
+			return nil, nil, fmt.Errorf("ai analyzer requested review without resolving access request rule")
+		}
+		review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, sessionID, conn.Name,
+			sessionapi.AIReviewRequester{
+				UserID:       sc.UserID,
+				UserEmail:    sc.UserEmail,
+				UserName:     sc.UserName,
+				UserSlackID:  sc.SlackID,
+				ConnectionID: conn.ID,
+			},
+			aiAccessRule, args.Input, args.EnvVars, args.Args)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed creating ai-driven review: %v", err)
+		}
+		events.DeriveFromSessionStart(sc.OrgID, &newSession, conn)
+		return execResponseToEnvelope(&clientexec.Response{
+			HasReview:  true,
+			Output:     fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
+			SessionID:  sessionID,
+			AIAnalysis: sessionapi.ToOpenApiSessionAIAnalysis(analyzeRes),
+		}, sessionID)
+	}
+
+	if err := services.CreateSession(nil, newSession, conn); err != nil {
+		log.Errorf("failed creating session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			return nil, nil, fmt.Errorf("missing metadata: %v", err)
+		}
+
+		return nil, nil, fmt.Errorf("failed creating session: %v", err)
+	}
+	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, sc.GetOrgID(), sc.GetUserID(), sessionID)
+
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          sc.GetOrgID(),
 		SessionID:      sessionID,
 		ConnectionName: conn.Name,
 		BearerToken:    token,
 		UserAgent:      fmt.Sprintf("mcp.exec/%s", sc.UserEmail),
-		Origin:         pb.ConnectionOriginClient,
+		Origin:         pb.ConnectionOriginClientAPI,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating exec client: %w", err)

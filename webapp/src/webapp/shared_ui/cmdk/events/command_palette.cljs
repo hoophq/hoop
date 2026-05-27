@@ -140,13 +140,8 @@
            [:dispatch [:navigate (:route action)]]]}
 
     :web-terminal
-    ;; Same logic as connection-list: localStorage + navigate
-    (do
-      (js/localStorage.setItem "selected-connection"
-                               (str {:name (:connection-name action)
-                                     :id (:connection-id action)}))
-      {:fx [[:dispatch [:command-palette->close]]
-            [:dispatch [:navigate :editor-plugin-panel {:role (:connection-name action)}]]]})
+    {:fx [[:dispatch [:command-palette->close]]
+          [:dispatch [:navigate :editor-plugin {:role (:connection-name action)}]]]}
 
      :local-terminal
      ;; Same logic as connection-list: open hoop-cli modal

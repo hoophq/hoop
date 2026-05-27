@@ -2814,13 +2814,32 @@ type AIProviderResponse struct {
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
+type AISessionAnalyzerRiskTier struct {
+	// Action to take when the AI classifies a session at this risk level
+	Action string `json:"action" binding:"required" enums:"allow_execution,block_execution,require_access_request" example:"require_access_request"`
+	// Name of the access request rule that supplies approver groups when action is require_access_request
+	AccessRequestRuleName *string `json:"access_request_rule_name,omitempty" example:"prod-approvals"`
+}
+
+type AISessionAnalyzerSystemPrompt struct {
+	// The read-only system prompt the gateway prepends before any custom_prompt configured on a rule
+	Prompt string `json:"prompt"`
+}
+
 type AISessionAnalyzerRiskEvaluation struct {
-	// Action for low-risk sessions
-	LowRiskAction string `json:"low_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Action for medium-risk sessions
-	MediumRiskAction string `json:"medium_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Action for high-risk sessions
-	HighRiskAction string `json:"high_risk_action" enums:"allow_execution,block_execution" example:"block_execution"`
+	// Deprecated: use low_risk
+	LowRiskAction string `json:"low_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`
+	// Deprecated: use medium_risk
+	MediumRiskAction string `json:"medium_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`
+	// Deprecated: use high_risk
+	HighRiskAction string `json:"high_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"block_execution"`
+
+	// Tier configuration for low-risk sessions
+	LowRisk *AISessionAnalyzerRiskTier `json:"low_risk,omitempty"`
+	// Tier configuration for medium-risk sessions
+	MediumRisk *AISessionAnalyzerRiskTier `json:"medium_risk,omitempty"`
+	// Tier configuration for high-risk sessions
+	HighRisk *AISessionAnalyzerRiskTier `json:"high_risk,omitempty"`
 }
 
 type AISessionAnalyzerRuleRequest struct {
@@ -2832,6 +2851,8 @@ type AISessionAnalyzerRuleRequest struct {
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
+	// Optional extra instructions appended to the default system prompt
+	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
 }
 
 type AISessionAnalyzerRule struct {
@@ -2845,6 +2866,8 @@ type AISessionAnalyzerRule struct {
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
+	// Optional extra instructions appended to the default system prompt
+	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2935,6 +2958,80 @@ type Rulepack struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was last updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+// Event Routing types
+
+type EventSchemaFieldResponse struct {
+	Name     string `json:"name" example:"session_id"`
+	Type     string `json:"type" example:"string"`
+	Required bool   `json:"required" example:"true"`
+}
+
+type EventTypeResponse struct {
+	Name          string                     `json:"name" example:"session.guardrail_violation"`
+	Category      string                     `json:"category" example:"Session"`
+	Description   string                     `json:"description"`
+	Schema        []EventSchemaFieldResponse `json:"schema"`
+	SamplePayload map[string]any             `json:"sample_payload"`
+}
+
+type EventSubscriptionRequest struct {
+	Name              string            `json:"name" binding:"required"`
+	Description       string            `json:"description"`
+	EventTypes        []string          `json:"event_types" binding:"required,min=1"`
+	RunbookRepository string            `json:"runbook_repository" binding:"required"`
+	RunbookFile       string            `json:"runbook_file" binding:"required"`
+	ConnectionName    string            `json:"connection_name" binding:"required"`
+	ParameterMapping  map[string]string `json:"parameter_mapping" binding:"required"`
+	Status            string            `json:"status"`
+}
+
+type EventSubscriptionResponse struct {
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	EventTypes        []string          `json:"event_types"`
+	RunbookRepository string            `json:"runbook_repository"`
+	RunbookFile       string            `json:"runbook_file"`
+	ConnectionName    string            `json:"connection_name"`
+	ParameterMapping  map[string]string `json:"parameter_mapping"`
+	Status            string            `json:"status"`
+	CreatedByEmail    string            `json:"created_by_email"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	DeliveredCount7d  int64             `json:"delivered_count_7d,omitempty"`
+	FailedCount7d     int64             `json:"failed_count_7d,omitempty"`
+	LastError         string            `json:"last_error,omitempty"`
+}
+
+type EventDispatchListItemResponse struct {
+	ID           string     `json:"id"`
+	EventID      string     `json:"event_id"`
+	EventType    string     `json:"event_type"`
+	Status       string     `json:"status"`
+	Attempt      int        `json:"attempt"`
+	SessionID    *string    `json:"session_id,omitempty"`
+	LastError    *string    `json:"last_error,omitempty"`
+	ReplayedFrom *string    `json:"replayed_from,omitempty"`
+	DurationMS   *int64     `json:"duration_ms,omitempty"`
+	OccurredAt   time.Time  `json:"occurred_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	DispatchedAt *time.Time `json:"dispatched_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+type EventDispatchListResponse struct {
+	Items []EventDispatchListItemResponse `json:"items"`
+	Total int64                           `json:"total"`
+	Page  int                             `json:"page"`
+	Limit int                             `json:"limit"`
+}
+
+type EventDispatchDetailResponse struct {
+	EventDispatchListItemResponse
+	EventPayload     json.RawMessage `json:"event_payload,omitempty"`
+	SubscriptionName string          `json:"subscription_name,omitempty"`
 }
 
 type MachineIdentity struct {

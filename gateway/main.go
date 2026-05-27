@@ -29,6 +29,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
@@ -275,6 +276,7 @@ func Run() {
 	// unconditionally — per-org gating then happens on the enqueue side
 	// inside RDPSessionRecorder.
 	go analyzer.RunSupervisor(context.Background(), appconfig.Get().MSPresidioAnalyzerURL(), defaultOrgID)
+	go eventrouting.RunSupervisor(context.Background(), defaultOrgID)
 
 	bootstrap.Phase("Starting API")
 	grpcStep := bootstrap.Step("gRPC gateway")

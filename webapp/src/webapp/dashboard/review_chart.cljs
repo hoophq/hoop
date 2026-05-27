@@ -1,12 +1,15 @@
 (ns webapp.dashboard.review-chart
   (:require ["@radix-ui/themes" :refer [Box Flex Heading Section
-                                        SegmentedControl Text]]
+                                        SegmentedControl Text Tooltip]]
             ["recharts" :as recharts]
             [cljs-time.coerce :as coerce]
             [cljs-time.core :as time]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.charts :as charts]))
+
+(def free-tier-tooltip-message
+  "Available on Enterprise plan only.")
 
 (defn parse-date [date-str]
   (coerce/from-string date-str))
@@ -49,21 +52,42 @@
       convert-to-list
       sort-reviews-by-date))
 
-(defn button->filter-data-by-day [callback]
-  [:> SegmentedControl.Root {:defaultValue "7"
-                             :size "1"}
-   [:> SegmentedControl.Item {:value "1" :on-click #(callback 1)}
-    "24h"]
-   [:> SegmentedControl.Item {:value "7" :on-click #(callback 7)}
-    "7d"]
-   [:> SegmentedControl.Item {:value "14" :on-click #(callback 14)}
-    "14d"]
-   [:> SegmentedControl.Item {:value "30" :on-click #(callback 30)}
-    "30d"]
-   [:> SegmentedControl.Item {:value "90" :on-click #(callback 90)}
-    "3m"]])
+(def ^:private locked-item-class
+  "opacity-50 cursor-not-allowed pointer-events-none")
 
-(defn main [reviews]
+(defn- locked-item [value label]
+  [:> Tooltip {:content free-tier-tooltip-message}
+   [:span {:class "inline-flex items-stretch"}
+    [:> SegmentedControl.Item {:value value
+                               :class locked-item-class
+                               :aria-disabled true}
+     label]]])
+
+(defn button->filter-data-by-day [_ _]
+  (let [selected (r/atom "7")]
+    (fn [callback free-license?]
+      [:> SegmentedControl.Root
+       {:value @selected
+        :size "1"
+        :on-value-change (fn [v]
+                           (when-not (and free-license? (not= v "7"))
+                             (reset! selected v)
+                             (callback (js/parseInt v))))}
+       (if free-license?
+         [locked-item "1" "24h"]
+         [:> SegmentedControl.Item {:value "1"} "24h"])
+       [:> SegmentedControl.Item {:value "7"} "7d"]
+       (if free-license?
+         [locked-item "14" "14d"]
+         [:> SegmentedControl.Item {:value "14"} "14d"])
+       (if free-license?
+         [locked-item "30" "30d"]
+         [:> SegmentedControl.Item {:value "30"} "30d"])
+       (if free-license?
+         [locked-item "90" "3m"]
+         [:> SegmentedControl.Item {:value "90"} "3m"])])))
+
+(defn main [reviews free-license?]
   (let [reviews-items-map (convert-reviews (-> @reviews :data :results))
         reviews-config {:reviews {:label "Reviews"}
                         :approved {:label "Approved"
@@ -79,7 +103,8 @@
         [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
          (-> @reviews :data :range-date)]]
        [button->filter-data-by-day (fn [days]
-                                     (rf/dispatch [:reports->get-review-data-by-date days]))]]
+                                     (rf/dispatch [:reports->get-review-data-by-date days]))
+        free-license?]]
 
       (if (empty? reviews-items-map)
         [:> Box {:minHeight "300px" :class "content-center"}

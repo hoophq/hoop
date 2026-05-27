@@ -1,5 +1,5 @@
 -- Remove the managed default rulepacks (and everything that hangs off them)
--- seeded by 000091_default_rulepacks.up.sql, across all organizations.
+-- seeded by 000093_default_rulepacks.up.sql, across all organizations.
 --
 -- We identify the seeded rulepacks by their stable display_name + is_managed
 -- + version triple, which is what the up migration writes. Anything a user

@@ -4,7 +4,8 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.forms :as forms]
-            [webapp.components.loaders :as loaders]))
+            [webapp.components.loaders :as loaders]
+            [webapp.shared-ui.free-license-banner :as free-license-banner]))
 
 (defn convert-status-to-boolean [status]
   (if (= status "enabled") true false))
@@ -82,10 +83,16 @@
             "Confirm"]]]]]])))
 
 (defn main []
-  (let [integration-details (rf/subscribe [:jira-integration->details])]
+  (let [integration-details (rf/subscribe [:jira-integration->details])
+        user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:jira-integration->get])
     (fn []
       [:div
+       (when (-> @user :data :free-license?)
+         [:> Box {:mb "5"}
+          [free-license-banner/main
+           {:message (str "Organizations with Free plan have limited automation. "
+                          "Upgrade to Enterprise to have unlimited access to the Jira integration.")}]])
        (if (-> @integration-details :loading)
          [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100 overflow-y-auto"}
           [:> Flex {:justify "center" :align "center" :gap "3"}

@@ -67,6 +67,8 @@ type Config struct {
 	rdpPIIScoreThreshold   float64
 	rdpPIIEntityDenylist   []string
 
+	eventRoutingWorkers int
+
 	spiffeMode          string
 	spiffeBundleURL     string
 	spiffeBundleFile    string
@@ -213,6 +215,13 @@ func Load() error {
 		rdpPIIEntityDenylist = []string{"DATE_TIME", "NRP"}
 	}
 
+	eventRoutingWorkers := 3
+	if v := os.Getenv("EVENT_ROUTING_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			eventRoutingWorkers = n
+		}
+	}
+
 	spiffeMode, spiffeBundleURL, spiffeBundleFile, spiffeBundleJWKS, spiffeTrustDomain, spiffeAudience, spiffeRefreshPeriod, err := loadSPIFFEConfig()
 	if err != nil {
 		return err
@@ -257,6 +266,7 @@ func Load() error {
 		rdpPIISnapshotInterval:          rdpPIISnapshotInterval,
 		rdpPIIScoreThreshold:            rdpPIIScoreThreshold,
 		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
+		eventRoutingWorkers:             eventRoutingWorkers,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
@@ -425,6 +435,7 @@ func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWS
 func (c Config) RDPPIISnapshotInterval() float64       { return c.rdpPIISnapshotInterval }
 func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThreshold }
 func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
+func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWorkers }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)

@@ -11,8 +11,8 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
-	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	oidcprovider "github.com/hoophq/hoop/gateway/idp/oidc"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -197,7 +197,7 @@ func syncMcpUser(orgID string, uinfo idptypes.ProviderUserInfo) (*models.Context
 	if err := models.CreateUser(newUser); err != nil {
 		return nil, fmt.Errorf("failed creating mcp user: %w", err)
 	}
-	if len(uinfo.Groups) > 0 {
+	if uinfo.MustSyncGroups && len(uinfo.Groups) > 0 {
 		groupRows := make([]models.UserGroup, 0, len(uinfo.Groups))
 		for _, g := range uinfo.Groups {
 			groupRows = append(groupRows, models.UserGroup{
@@ -224,14 +224,21 @@ func refreshExistingUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) e
 		Status:   string(types.UserStatusActive),
 		SlackID:  ctx.UserSlackID,
 	}
-	groupRows := make([]models.UserGroup, 0, len(uinfo.Groups))
-	for _, g := range mergeAdmin(uinfo.Groups, ctx) {
+
+	existingGroups := ctx.UserGroups
+	if uinfo.MustSyncGroups {
+		existingGroups = mergeAdmin(uinfo.Groups, ctx)
+	}
+
+	var groupRows []models.UserGroup
+	for _, g := range existingGroups {
 		groupRows = append(groupRows, models.UserGroup{
 			OrgID:  ctx.OrgID,
 			UserID: ctx.UserID,
 			Name:   g,
 		})
 	}
+
 	if err := models.UpdateUserAndUserGroups(&updatedUser, groupRows); err != nil {
 		return fmt.Errorf("failed updating mcp user: %w", err)
 	}

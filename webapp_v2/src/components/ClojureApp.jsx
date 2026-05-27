@@ -1,7 +1,8 @@
 /* global __BUILD_ID__ */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Alert, Center, Stack, Text, Code } from '@mantine/core'
+import { Alert, Center, Stack, Text } from '@mantine/core'
+import Code from '@/components/Code'
 import PageLoader from '@/components/PageLoader'
 
 // Cache buster defined by Vite at build time (see vite.config.js). A new value
@@ -144,6 +145,11 @@ function ClojureApp() {
   // paints the empty <div ref={containerRef} /> React just rendered.
   useLayoutEffect(() => {
     localStorage.setItem('react-shell', 'true')
+    // Companion signal to localStorage.react-shell, read synchronously by the
+    // CLJS keydown handler. Window globals avoid a localStorage read on every
+    // keystroke and let the parked Reagent listener distinguish "CLJS visible"
+    // from "React route active" without changing the bridge contract.
+    window.__hoopReactShellCljsVisible = true
     enableCLJSCSS('/css/site.css')
 
     const host = getCljsHost()
@@ -203,6 +209,7 @@ function ClojureApp() {
 
     return () => {
       localStorage.removeItem('react-shell')
+      window.__hoopReactShellCljsVisible = false
       cljsReadyRef.current = false
       disableCLJSCSS()
       // Park the host. Do NOT clear innerHTML — preserving the Reagent tree

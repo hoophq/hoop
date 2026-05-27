@@ -123,7 +123,7 @@ export default function AttributesForm() {
         </Button>
       </Box>
 
-      <Group justify="space-between" align="center" mb="xxxl">
+      <Group justify="space-between" align="center" mb="xxxlAlt">
         <Title order={1}>{isEdit ? 'Configure Attribute' : 'Create Attribute'}</Title>
         <Group gap="sm">
           {isEdit && (
@@ -137,7 +137,7 @@ export default function AttributesForm() {
         </Group>
       </Group>
 
-      <Stack gap="xxl">
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Set Attribute information"
           description="Used to identify Attributes on resources."

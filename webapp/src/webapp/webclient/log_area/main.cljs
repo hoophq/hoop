@@ -4,6 +4,7 @@
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.audit.views.session-details :as session-details]
             [webapp.components.ag-grid-table :as ag-grid-table]
             [webapp.components.results-download-menu :as download-menu]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
@@ -73,14 +74,23 @@
             tabular-data? (and connection-type-database?
                                (seq results-heads)
                                (seq results-body))
-            download-props (when (and response (not (cs/blank? response))
-                                      (= tabular-status :success))
-                             {:results response
-                              :matrix results-transformed
-                              :tabular? (boolean tabular-data?)
-                              :session-id (:session_id (:data @script-response))
-                              :connection-name nil
-                              :has-large-payload? false})]
+            session-id (:session_id (:data @script-response))
+            on-view-session-details (when session-id
+                                      #(rf/dispatch
+                                        [:modal->open
+                                         {:id "session-details"
+                                          :maxWidth "95vw"
+                                          :content [session-details/main
+                                                    {:id session-id :verb "exec"}]}]))
+            menu-props (when session-id
+                         {:results response
+                          :matrix results-transformed
+                          :tabular? (boolean (and (= tabular-status :success)
+                                                  tabular-data?))
+                          :session-id session-id
+                          :connection-name nil
+                          :has-large-payload? false
+                          :on-view-session-details on-view-session-details})]
 
         (when-not (some #(= @selected-tab %) (vals available-tabs))
           (.setItem js/localStorage "webclient-selected-tab" (first (vals available-tabs)))
@@ -95,9 +105,9 @@
                                (reset! selected-tab value))
                    :tabs available-tabs
                    :selected-tab @selected-tab}]]
-           (when download-props
+           (when menu-props
              [:> Box {:class "mb-regular pt-small flex-shrink-0"}
-              [download-menu/main download-props]])]
+              [download-menu/main menu-props]])]
           [:> Box {:role "tabpanel"
                    :id (str "tabpanel-" (case @selected-tab
                                           "Tabular" :tabular
