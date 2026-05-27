@@ -123,7 +123,7 @@ function dependsOnCatalog(connection) {
   return false
 }
 
-function CredentialsBody({ connection, availableSources, forceNewState }) {
+function CredentialsBody({ connection, availableSources, forceNewState, connectionMethod }) {
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
   const loading = useConnectionsMetadataStore((s) => s.loading)
   const error = useConnectionsMetadataStore((s) => s.error)
@@ -139,7 +139,7 @@ function CredentialsBody({ connection, availableSources, forceNewState }) {
   const renderers = buildRenderers(getCredentialSchema)
   const entry = renderers.find((r) => r.match(connection))
   if (!entry) return <UnsupportedFallback connection={connection} />
-  return entry.render({ connection, availableSources, forceNewState })
+  return entry.render({ connection, availableSources, forceNewState, connectionMethod })
 }
 
 function SecretsManagerProviderSection({ provider, onProviderChange }) {
@@ -219,6 +219,7 @@ export default function CredentialsTab({ connection }) {
         connection={connection}
         availableSources={availableSources}
         forceNewState={forceNewState}
+        connectionMethod={selectedMethod}
       />
     </Stack>
   )

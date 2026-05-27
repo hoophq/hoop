@@ -19,6 +19,7 @@ import NewInput from './NewInput'
 // underlying connection state.
 export default function SecretField({
   label,
+  description,
   required = false,
   placeholder,
   type,
@@ -48,6 +49,7 @@ export default function SecretField({
     return (
       <ReplacingInput
         label={label}
+        description={description}
         required={required}
         placeholder={placeholder}
         type={type}
@@ -71,6 +73,7 @@ export default function SecretField({
     return (
       <NewInput
         label={label}
+        description={description}
         required={required}
         placeholder={placeholder}
         type={type}
@@ -87,6 +90,7 @@ export default function SecretField({
   return (
     <ReadOnlyStatus
       label={label}
+      description={description}
       required={required}
       secretsUpdatedAt={secretsUpdatedAt}
       isReference={isReference}
