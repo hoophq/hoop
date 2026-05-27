@@ -106,41 +106,6 @@ func TestStripInlineSecrets(t *testing.T) {
 	})
 }
 
-func TestIsFreeFormCustom(t *testing.T) {
-	mk := func(typ, sub string) *models.Connection {
-		c := &models.Connection{Type: typ}
-		if sub != "" {
-			c.SubType = sql.NullString{String: sub, Valid: true}
-		}
-		return c
-	}
-	cases := []struct {
-		name     string
-		conn     *models.Connection
-		expected bool
-	}{
-		{"nil", nil, false},
-		{"database/postgres is catalog", mk("database", "postgres"), false},
-		{"application/ssh is catalog", mk("application", "ssh"), false},
-		{"httpproxy/claude-code is catalog", mk("httpproxy", "claude-code"), false},
-		{"custom/kubernetes-token is predefined", mk("custom", "kubernetes-token"), false},
-		{"custom/dynamodb override is predefined", mk("custom", "dynamodb"), false},
-		{"custom/cloudwatch override is predefined", mk("custom", "cloudwatch"), false},
-		{"custom with no subtype is free-form", mk("custom", ""), true},
-		{"custom/tcp falls through to free-form", mk("custom", "tcp"), true},
-		{"custom/linux-vm is free-form", mk("custom", "linux-vm"), true},
-		{"custom/ssh is free-form (under custom only)", mk("custom", "ssh"), true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := isFreeFormCustom(tc.conn)
-			if got != tc.expected {
-				t.Fatalf("isFreeFormCustom = %v, want %v", got, tc.expected)
-			}
-		})
-	}
-}
-
 func TestShouldRoundTripSecrets(t *testing.T) {
 	mk := func(typ, sub string) *models.Connection {
 		c := &models.Connection{Type: typ}
@@ -156,36 +121,47 @@ func TestShouldRoundTripSecrets(t *testing.T) {
 	}{
 		{"nil", nil, false},
 
-		// Catalog databases stay write-only — the renderer there leans
-		// on the Set / Replace pattern and the host/user/password
-		// fields are pure credentials.
+		// Catalog databases stay write-only — bespoke catalog renderer
+		// drives the Set/Replace pattern.
 		{"database/postgres stays write-only", mk("database", "postgres"), false},
 		{"database/mysql stays write-only", mk("database", "mysql"), false},
 		{"database/mssql stays write-only", mk("database", "mssql"), false},
 		{"database/oracledb stays write-only", mk("database", "oracledb"), false},
 		{"database/mongodb stays write-only", mk("database", "mongodb"), false},
 
-		// Application SSH-family renderers need host/user/auth visible.
+		// application/ssh has a bespoke renderer (auth-method radio)
+		// that needs host/user/PASS|AUTHORIZED_SERVER_KEYS visible.
 		{"application/ssh round-trips", mk("application", "ssh"), true},
-		{"application/git round-trips", mk("application", "git"), true},
-		{"application/github round-trips", mk("application", "github"), true},
+
+		// Catalog applications (git, github, tcp) ship full schemas and
+		// render via the catalog renderer → write-only.
+		{"application/git stays write-only", mk("application", "git"), false},
+		{"application/github stays write-only", mk("application", "github"), false},
+		{"application/tcp stays write-only", mk("application", "tcp"), false},
 		{"unknown application subtype stays write-only", mk("application", "saas"), false},
 
-		// httpproxy: claude-code + generic both surface URL/headers.
+		// Every httpproxy subtype has a bespoke renderer with HTTP
+		// headers + insecure-SSL toggle on top of REMOTE_URL.
 		{"httpproxy/claude-code round-trips", mk("httpproxy", "claude-code"), true},
-		{"httpproxy generic round-trips", mk("httpproxy", "web-application"), true},
+		{"httpproxy/web-application round-trips", mk("httpproxy", "web-application"), true},
+		{"httpproxy/grafana round-trips", mk("httpproxy", "grafana"), true},
+		{"httpproxy/kibana round-trips", mk("httpproxy", "kibana"), true},
 		{"httpproxy with no subtype round-trips", mk("httpproxy", ""), true},
 
-		// Custom: every subtype round-trips — free-form OR catalog-
-		// driven (kubernetes-token, dynamodb, cloudwatch, …).
-		{"custom free-form", mk("custom", ""), true},
-		{"custom/tcp", mk("custom", "tcp"), true},
-		{"custom/linux-vm", mk("custom", "linux-vm"), true},
-		{"custom/claude-code", mk("custom", "claude-code"), true},
-		{"custom/kubernetes-token", mk("custom", "kubernetes-token"), true},
-		{"custom/dynamodb", mk("custom", "dynamodb"), true},
-		{"custom/aws-cloudwatch", mk("custom", "aws-cloudwatch"), true},
-		{"custom/cloudwatch (legacy)", mk("custom", "cloudwatch"), true},
+		// Custom: round-trip only for the two bespoke shapes + the
+		// free-form catch-all (no subtype). Catalog custom subtypes
+		// (dynamodb, aws-*, kubernetes, redis, …) stay write-only.
+		{"custom free-form round-trips", mk("custom", ""), true},
+		{"custom/linux-vm round-trips", mk("custom", "linux-vm"), true},
+		{"custom/kubernetes-token round-trips", mk("custom", "kubernetes-token"), true},
+		{"custom/dynamodb stays write-only", mk("custom", "dynamodb"), false},
+		{"custom/aws-cloudwatch stays write-only", mk("custom", "aws-cloudwatch"), false},
+		{"custom/aws-cli stays write-only", mk("custom", "aws-cli"), false},
+		{"custom/cassandra stays write-only", mk("custom", "cassandra"), false},
+		{"custom/redis stays write-only", mk("custom", "redis"), false},
+		{"custom/kubernetes stays write-only", mk("custom", "kubernetes"), false},
+		{"custom/cloudwatch (legacy, no catalog entry) stays write-only",
+			mk("custom", "cloudwatch"), false},
 
 		// Unknown top-level type stays safe (write-only).
 		{"unknown type stays write-only", mk("foo", "bar"), false},

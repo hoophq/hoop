@@ -40,15 +40,14 @@ export function isFreeFormCustomSubtype(subtype) {
 // "Secret values are write-only" notice on the Credentials tab: showing
 // it for round-trip connections is misleading because the form
 // actually displays the existing values.
-const APPLICATION_ROUND_TRIP_SUBTYPES = new Set(['ssh', 'git', 'github'])
 export function connectionRoundTripsSecrets({ type, subtype } = {}) {
   switch (type) {
-    case 'custom':
-      return true
     case 'httpproxy':
       return true
     case 'application':
-      return APPLICATION_ROUND_TRIP_SUBTYPES.has(subtype)
+      return subtype === 'ssh'
+    case 'custom':
+      return !subtype || subtype === 'linux-vm' || subtype === 'kubernetes-token'
     default:
       return false
   }

@@ -67,86 +67,52 @@ func isBooleanValue(encodedValue string) bool {
 	return false
 }
 
-// freeFormCustomSubtypes lists the `custom` subtypes whose envvars are
-// user data rather than predefined credentials. Mirrors the dispatch in
-// CLJS webapp/.../configure_role/credentials_tab.cljs:14-20 — the same
-// subtypes that fall through to server/credentials-step (free-form)
-// instead of metadata-driven (catalog). Empty subtype also counts.
-var freeFormCustomSubtypes = map[string]bool{
-	"tcp":         true,
-	"httpproxy":   true,
-	"ssh":         true,
-	"linux-vm":    true,
-	"claude-code": true,
-}
-
 // shouldRoundTripSecrets reports whether a connection's envvars are
 // safe to send back to the admin UI verbatim instead of going through
 // the write-only strip.
 //
-// Two cases bypass the strip:
+// Five connection shapes have bespoke React renderers in
+// webapp_v2/.../Configure/components/renderers/ that need to display
+// existing values to function (host/user pickers, header lists,
+// connection URLs, auth-method radios). Everything else — including
+// catalog applications like git/github, every database, and every
+// catalog custom subtype (dynamodb, aws-*, kubernetes, redis, …) —
+// goes through the catalog renderer and stays write-only:
 //
-//  1. Free-form custom envvars (any `type=custom` connection) — user
-//     data, not credentials.
+//  1. application/ssh        — SshRenderer
+//  2. httpproxy/*            — ClaudeCodeRenderer + HttpProxyRenderer
+//  3. custom/(empty subtype) — FreeFormCustomRenderer (env vars,
+//                              configuration files, command args)
+//  4. custom/linux-vm        — FreeFormCustomRenderer
+//  5. custom/kubernetes-token — KubernetesTokenRenderer
 //
-//  2. Predefined renderers that the v2 React form currently relies on
-//     to populate visible fields (Anthropic URL, Kubernetes cluster
-//     URL, SSH host, etc). Without these values round-tripping, the
-//     custom-credential renderers in
-//     webapp_v2/.../Configure/components/CredentialsTab.jsx cannot
-//     show the existing configuration on edit. CLJS already round-
-//     trips for these — keeping write-only here would silently drop
-//     features compared to the legacy form.
+// The full catalog inventory drives this rule — see
+// https://github.com/hoophq/documentation/blob/main/store/connections.json.
 //
-// Catalog **database** connections stay write-only: host/user/password
-// are pure credentials, the write-only model is correct, and the
-// React `database-catalog` renderer handles the "Set" / "Replace"
-// pattern already.
-//
-// Edge cases live in `/configure-role-gaps.md` (G1, G2, …) — keep
-// that doc in sync when this list changes.
+// Edge cases live in `/configure-role-gaps.md` — keep that doc in sync
+// when this list changes.
 func shouldRoundTripSecrets(conn *models.Connection) bool {
 	if conn == nil {
 		return false
 	}
 	sub := conn.SubType.String
 	switch conn.Type {
-	case "custom":
-		// Free-form OR any predefined-custom subtype (kubernetes-token,
-		// dynamodb, aws-cloudwatch, legacy cloudwatch, …). The React
-		// dispatch in CredentialsTab.jsx picks the renderer based on
-		// subtype; whatever the renderer is, it needs the values.
-		return true
 	case "httpproxy":
-		// claude-code (predefined Anthropic form) and the generic
-		// httpproxy renderer both surface URL/header inputs.
+		// claude-code, web-application, grafana, kibana — every one
+		// has a bespoke renderer that adds HTTP headers + insecure SSL
+		// on top of REMOTE_URL.
 		return true
 	case "application":
-		// SSH / Git / GitHub renderers display host, user, and
-		// auth-method fields. The private key itself round-trips too —
-		// CLJS shows it as well, and the write-only model would mean a
-		// blank "Set" badge with no way to inspect host/user either.
-		switch sub {
-		case "ssh", "git", "github":
-			return true
-		}
+		// Only ssh is bespoke; git/github/tcp ship full catalog schemas
+		// and render via CatalogRenderer (write-only).
+		return sub == "ssh"
+	case "custom":
+		// Free-form (no subtype) + the two custom subtypes the catalog
+		// doesn't define. Catalog custom subtypes (dynamodb, aws-*,
+		// kubernetes, redis, …) stay write-only.
+		return sub == "" || sub == "linux-vm" || sub == "kubernetes-token"
 	}
 	return false
-}
-
-// isFreeFormCustom reports whether a connection is a *pure* free-form
-// custom (`type=custom` with the subtype in the free-form set or empty).
-// Used only for tests and audit purposes — the strip decision goes
-// through shouldRoundTripSecrets.
-func isFreeFormCustom(conn *models.Connection) bool {
-	if conn == nil || conn.Type != "custom" {
-		return false
-	}
-	sub := conn.SubType.String
-	if sub == "" {
-		return true
-	}
-	return freeFormCustomSubtypes[sub]
 }
 
 // stripInlineSecrets returns a copy of envs where inline secret values are
