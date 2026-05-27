@@ -6,7 +6,7 @@ import NumberInput from '@/components/NumberInput'
 import Select from '@/components/Select'
 import { useUserStore } from '@/stores/useUserStore'
 import { useConfigureRoleStore } from '../store'
-import ToggleSection from './ToggleSection'
+import ToggleSection from '../components/ToggleSection'
 
 // Backward-compatible Review section, rendered only when the connection
 // already carries review config on load. New connections use the

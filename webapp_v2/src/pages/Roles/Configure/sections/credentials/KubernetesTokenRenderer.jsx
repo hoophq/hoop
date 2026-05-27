@@ -1,6 +1,6 @@
 import { Stack, Title } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
-import { sourceOptionsFor } from '../SecretField/util'
+import { sourceOptionsFor } from '../../components/SecretField/util'
 import {
   decodeForDisplay,
   encodeSecretForSource,

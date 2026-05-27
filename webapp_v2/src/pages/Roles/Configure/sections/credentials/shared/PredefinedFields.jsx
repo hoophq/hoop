@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { Stack } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
-import SecretField from '../../SecretField'
-import { sourceOptionsFor } from '../../SecretField/util'
+import SecretField from '../../../components/SecretField'
+import { sourceOptionsFor } from '../../../components/SecretField/util'
 import {
   decodeForDisplay,
   decodeSecretValue,

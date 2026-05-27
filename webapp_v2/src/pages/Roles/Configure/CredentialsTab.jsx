@@ -10,10 +10,10 @@ import {
   supportsAwsIam,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
-import { deriveConnectionMethod } from '../utils/connectionMethod'
-import { SOURCES, SOURCE_LABELS } from '../utils/secretsCodec'
-import { useConfigureRoleStore } from '../store'
-import { pickRendererRule } from './renderers'
+import { deriveConnectionMethod } from './utils/connectionMethod'
+import { SOURCES, SOURCE_LABELS } from './utils/secretsCodec'
+import { useConfigureRoleStore } from './store'
+import { pickRendererRule } from './sections/credentials'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,

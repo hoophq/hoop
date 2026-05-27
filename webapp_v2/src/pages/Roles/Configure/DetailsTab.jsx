@@ -2,8 +2,8 @@ import { Stack, Title, Text, Group } from '@mantine/core'
 import Badge from '@/components/Badge'
 import TextInput from '@/components/TextInput'
 import MultiSelect from '@/components/MultiSelect'
-import { useConfigureRoleStore } from '../store'
-import ConnectionTagsEditor from './ConnectionTagsEditor'
+import { useConfigureRoleStore } from './store'
+import ConnectionTagsEditor from './sections/ConnectionTagsEditor'
 
 // Display labels for attribute names strip the `hoop.dev/<category>.`
 // namespace prefix the way CLJS tags_utils/extract-label does, so the
