@@ -225,6 +225,27 @@ import TextInput from '@/components/TextInput'
 <TextInput label="Name" placeholder="e.g. my-key" value={name} onChange={(e) => setName(e.currentTarget.value)} />
 ```
 
+### `SourcedInput`
+Input paired with an optional source picker rendered to its left. Use when a credential field can be backed by different providers (manual entry, Vault, AWS Secrets Manager) and the user needs to switch per-field. When `sources` is empty/single, only the input renders.
+```jsx
+import SourcedInput from '@/components/SourcedInput'
+
+<SourcedInput
+  label="Host"
+  required
+  type="password"
+  value={value}
+  onChange={setValue}
+  source={source}
+  sources={[
+    { value: 'manual-input', label: 'Manual' },
+    { value: 'aws-secrets-manager', label: 'AWS Secrets Manager' },
+  ]}
+  onSourceChange={setSource}
+/>
+```
+Supports `type="text" | "password" | "textarea"`. Uses the wrapped `TextInput` / `PasswordInput` / `Textarea` internally.
+
 ### `PasswordInput`
 Password / secret input with visibility toggle.
 ```jsx
