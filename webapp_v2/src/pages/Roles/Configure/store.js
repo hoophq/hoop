@@ -64,11 +64,15 @@ function draftsFromConnection(conn) {
   }
 }
 
-// Placeholder rows (the auto-added empty row that keeps Environment
-// variables / Configuration files from looking empty) live in
-// stagedSecrets as 'new' entries with empty value and a generated key
-// pattern (PLACEHOLDER_KEY_RE in utils/secretsCodec.js). They never get
-// sent to the backend or count toward dirty.
+// Empty placeholder rows (the auto-added blank row that keeps
+// Environment variables / Configuration files from looking empty)
+// live in stagedSecrets as 'new' entries with no value and a
+// generated key pattern (PLACEHOLDER_KEY_RE in utils/secretsCodec.js).
+// They never reach the backend and don't count toward dirty.
+//
+// Filled-but-unnamed placeholders are handled separately at save time
+// (save() throws a validation error) so the user gets a clear message
+// instead of a silent content drop.
 function isPlaceholderEntry(key, change) {
   return change?.action === 'new' && !change.value && PLACEHOLDER_KEY_RE.test(key)
 }
@@ -468,6 +472,25 @@ export const useConfigureRoleStore = create((set, get) => ({
   save: async () => {
     const { connection, stagedSecrets, drafts, baseline } = get()
     if (!connection) return
+    // Reject when a placeholder row has content the user hasn't named.
+    // The sentinel key (`envvar:NEW_KEY_N` / `filesystem:NEW_FILE_N`)
+    // is a UI affordance for the empty state; saving it as-is would
+    // persist a junk record like `filesystem:NEW_FILE_1`. We surface a
+    // specific error so the user knows they need to set the Name/Key.
+    const unnamed = Object.entries(stagedSecrets).find(
+      ([k, ch]) => ch.action === 'new' && ch.value && PLACEHOLDER_KEY_RE.test(k),
+    )
+    if (unnamed) {
+      const [k] = unnamed
+      const kind = k.startsWith('envvar:')
+        ? 'environment variable'
+        : 'configuration file'
+      const message = `Please name the new ${kind} before saving.`
+      const err = new Error(message)
+      err.message = message
+      set({ error: message })
+      throw err
+    }
     set({ saving: true, error: null })
     try {
       const payload = buildDraftsPatch(drafts, baseline)
@@ -485,7 +508,7 @@ export const useConfigureRoleStore = create((set, get) => ({
       })
       return updated
     } catch (err) {
-      const message = err?.response?.data?.message || 'Failed to save connection.'
+      const message = err?.response?.data?.message || err?.message || 'Failed to save connection.'
       set({ error: message, saving: false })
       throw err
     }

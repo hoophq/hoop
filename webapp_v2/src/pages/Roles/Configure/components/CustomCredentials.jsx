@@ -127,13 +127,16 @@ export default function CustomCredentials({ connection }) {
           // so the empty-state row shows a truly blank Key input.
           const isPlaceholder = PLACEHOLDER_KEY_RE.test(effectiveKey)
           const displayName = isPlaceholder ? '' : effectiveKey.slice('envvar:'.length)
-          const stagedPlain = staged?.value
-            ? decodeSecretValue(staged.value)
-            : null
-          const persistedPlain = currentSecrets[envKey]
-            ? decodeSecretValue(currentSecrets[envKey])
-            : ''
-          const value = stagedPlain != null ? stagedPlain : persistedPlain
+          // If anything is staged for this row we honour it verbatim,
+          // even when the value is an empty string — that's "user
+          // explicitly cleared the input" and we don't want to fall back
+          // to the persisted value (would resurrect stale data when the
+          // auto-placeholder kicks in after a delete).
+          const value = staged
+            ? decodeSecretValue(staged.value || '')
+            : currentSecrets[envKey]
+              ? decodeSecretValue(currentSecrets[envKey])
+              : ''
           return (
             <EnvvarRow
               key={envKey}
