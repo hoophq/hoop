@@ -34,7 +34,7 @@ function AuthCallback() {
           if (redirectUrl) {
             window.location.href = redirectUrl
           } else {
-            navigate('/')
+            navigate('/client')
           }
         }, 1500)
       } catch (err) {
