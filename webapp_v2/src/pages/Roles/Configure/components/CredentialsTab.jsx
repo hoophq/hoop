@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Stack, Title, Text, Alert } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, Info, TriangleAlert } from 'lucide-react'
+import { Stack, Title, Text, Alert, Anchor } from '@mantine/core'
+import { FileText, Cloud, ShieldCheck, Info, TriangleAlert, ExternalLink } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
+import Select from '@/components/Select'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
 import SSHCredentials from './SSHCredentials'
 import CustomCredentials from './CustomCredentials'
@@ -11,6 +12,13 @@ import {
   supportsConnectionMethods,
 } from '../utils/credentialsSchema'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
+import { SOURCES, SOURCE_LABELS } from '../utils/secretsCodec'
+
+const SECRETS_PROVIDERS = [
+  SOURCES.VAULT_KV1,
+  SOURCES.VAULT_KV2,
+  SOURCES.AWS_SECRETS_MANAGER,
+]
 
 const METHOD_DEFINITIONS = [
   {
@@ -95,7 +103,7 @@ function MethodSwitchNotice({ derivedMethod, selectedMethod }) {
   )
 }
 
-function CredentialsBody({ connection, isAdmin }) {
+function CredentialsBody({ connection, isAdmin, availableSources }) {
   const { type, subtype } = connection
 
   // Mirrors the dispatch in CLJS credentials_tab.cljs verbatim.
@@ -107,13 +115,14 @@ function CredentialsBody({ connection, isAdmin }) {
           connection={connection}
           fields={CATALOG_FIELDS[subtype]}
           isAdmin={isAdmin}
+          availableSources={availableSources}
         />
       </Stack>
     )
   }
 
   if (type === 'application' && (subtype === 'ssh' || subtype === 'git' || subtype === 'github')) {
-    return <SSHCredentials connection={connection} isAdmin={isAdmin} />
+    return <SSHCredentials connection={connection} isAdmin={isAdmin} availableSources={availableSources} />
   }
 
   if (type === 'httpproxy' && subtype === 'claude-code') {
@@ -124,6 +133,7 @@ function CredentialsBody({ connection, isAdmin }) {
           connection={connection}
           fields={CATALOG_FIELDS['claude-code']}
           isAdmin={isAdmin}
+          availableSources={availableSources}
         />
       </Stack>
     )
@@ -137,6 +147,7 @@ function CredentialsBody({ connection, isAdmin }) {
           connection={connection}
           fields={CATALOG_FIELDS.httpproxy}
           isAdmin={isAdmin}
+          availableSources={availableSources}
         />
       </Stack>
     )
@@ -150,6 +161,7 @@ function CredentialsBody({ connection, isAdmin }) {
           connection={connection}
           fields={CATALOG_FIELDS['kubernetes-token']}
           isAdmin={isAdmin}
+          availableSources={availableSources}
         />
       </Stack>
     )
@@ -163,13 +175,14 @@ function CredentialsBody({ connection, isAdmin }) {
           connection={connection}
           fields={CATALOG_FIELDS[subtype]}
           isAdmin={isAdmin}
+          availableSources={availableSources}
         />
       </Stack>
     )
   }
 
   if (type === 'custom') {
-    return <CustomCredentials connection={connection} isAdmin={isAdmin} />
+    return <CustomCredentials connection={connection} isAdmin={isAdmin} availableSources={availableSources} />
   }
 
   return (
@@ -190,12 +203,45 @@ function CredentialsBody({ connection, isAdmin }) {
   )
 }
 
+function SecretsManagerProviderSection({ provider, onProviderChange }) {
+  return (
+    <Stack gap="xs">
+      <Select
+        label="Secrets manager provider"
+        data={SECRETS_PROVIDERS.map((p) => ({ value: p, label: SOURCE_LABELS[p] }))}
+        value={provider}
+        onChange={(v) => v && onProviderChange(v)}
+        allowDeselect={false}
+      />
+      <Anchor
+        size="sm"
+        href="https://hoop.dev/docs/setup/configuration/secrets-manager"
+        target="_blank"
+        rel="noopener noreferrer"
+        display="inline-flex"
+      >
+        <ExternalLink size={12} />
+        <Text component="span" ml={4}>Learn more about secrets manager setup</Text>
+      </Anchor>
+    </Stack>
+  )
+}
+
 export default function CredentialsTab({ connection, isAdmin }) {
   const derivedMethod = deriveConnectionMethod(connection.secret)
   const [selectedMethod, setSelectedMethod] = useState(derivedMethod)
+  const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
   const showMethodCards = supportsConnectionMethods(connection)
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const methodMismatch = selectedMethod !== derivedMethod
+  const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
+
+  // When in Secrets Manager mode, every field gets a source selector
+  // offering "Manual" or the currently picked provider — same as the
+  // CLJS source-selector available-sources list.
+  const availableSources = isSecretsManager
+    ? [secretsProvider, SOURCES.MANUAL]
+    : null
 
   return (
     <Stack gap="xl" maw={720}>
@@ -207,13 +253,23 @@ export default function CredentialsTab({ connection, isAdmin }) {
           awsIamAvailable={awsIamAvailable}
         />
       )}
+      {isSecretsManager && (
+        <SecretsManagerProviderSection
+          provider={secretsProvider}
+          onProviderChange={setSecretsProvider}
+        />
+      )}
       {methodMismatch && (
         <MethodSwitchNotice
           derivedMethod={derivedMethod}
           selectedMethod={selectedMethod}
         />
       )}
-      <CredentialsBody connection={connection} isAdmin={isAdmin} />
+      <CredentialsBody
+        connection={connection}
+        isAdmin={isAdmin}
+        availableSources={availableSources}
+      />
     </Stack>
   )
 }

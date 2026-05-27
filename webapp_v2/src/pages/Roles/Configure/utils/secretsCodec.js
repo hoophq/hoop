@@ -14,6 +14,57 @@ const REFERENCE_PREFIXES = [
   '_aws_iam_rds:',
 ]
 
+// Source identifiers for the per-field "where does this credential come
+// from" selector that appears when the user is in Secrets Manager mode.
+// Mirrors CLJS connection_method.cljs::source-text.
+export const SOURCES = {
+  MANUAL: 'manual',
+  VAULT_KV1: 'vault-kv1',
+  VAULT_KV2: 'vault-kv2',
+  AWS_SECRETS_MANAGER: 'aws-secrets-manager',
+}
+
+export const SOURCE_LABELS = {
+  [SOURCES.MANUAL]: 'Manual',
+  [SOURCES.VAULT_KV1]: 'Vault KV v1',
+  [SOURCES.VAULT_KV2]: 'Vault KV v2',
+  [SOURCES.AWS_SECRETS_MANAGER]: 'AWS Secrets Manager',
+}
+
+const PREFIX_BY_SOURCE = {
+  [SOURCES.VAULT_KV1]: '_vaultkv1:',
+  [SOURCES.VAULT_KV2]: '_vaultkv2:',
+  [SOURCES.AWS_SECRETS_MANAGER]: '_aws:',
+}
+
+const SOURCE_BY_PREFIX = {
+  '_vaultkv1:': SOURCES.VAULT_KV1,
+  '_vaultkv2:': SOURCES.VAULT_KV2,
+  '_aws:': SOURCES.AWS_SECRETS_MANAGER,
+}
+
+// Returns the source identifier implied by an encoded value's prefix.
+// Inline values (no provider prefix) map to 'manual'. IAM RDS and
+// envjson references don't surface as source choices today.
+export function sourceFromEncodedValue(encoded) {
+  if (!encoded) return SOURCES.MANUAL
+  const plain = safeAtob(encoded)
+  if (plain == null) return SOURCES.MANUAL
+  for (const prefix of Object.keys(SOURCE_BY_PREFIX)) {
+    if (plain.startsWith(prefix)) return SOURCE_BY_PREFIX[prefix]
+  }
+  return SOURCES.MANUAL
+}
+
+// Wraps a plaintext value in the encoded form for a given source. When
+// the source is manual, the value is stored as-is. For provider
+// sources, the prefix is prepended before base64-encoding.
+export function encodeSecretForSource(plain, source) {
+  if (plain == null) return ''
+  const prefix = PREFIX_BY_SOURCE[source]
+  return prefix ? btoa(prefix + plain) : btoa(plain)
+}
+
 function safeAtob(encoded) {
   try {
     return atob(encoded)
