@@ -6,6 +6,32 @@
 export const PLACEHOLDER_KEY_RE =
   /^(envvar:NEW_KEY_|envvar:HEADER_NEW_HEADER_|filesystem:NEW_FILE_)\d+$/
 
+// Validators for the Key input on each k/v section. Mirrors the CLJS
+// rules at configuration_inputs.cljs:10-17, applied per keystroke so
+// invalid characters don't make it into the input. Empty is always
+// accepted so the user can clear the field.
+
+// POSIX-compatible env-var name: starts with a letter, followed by
+// letters/digits/underscores. Used by environment variables and
+// configuration file names.
+export function isValidPosixKey(value) {
+  return value === '' || /^[A-Za-z][A-Za-z0-9_]*$/.test(value)
+}
+
+// HTTP header name: any non-whitespace string. Case-sensitive
+// (headers like X-Request-Id keep their casing).
+export function isValidHeaderKey(value) {
+  return value === '' || /^\S+$/.test(value)
+}
+
+// Provider prefixes recognised on the wire. References (values
+// prefixed with one of these) are not sensitive — they only name where
+// to look up the actual secret — so the UI shows them verbatim instead
+// of hiding behind a Set badge. `decodeForDisplay` strips the prefix
+// because the source picker conveys which provider applies.
+export const PROVIDER_PREFIX_RE =
+  /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
+
 // Helpers to translate between the form's plaintext view of a secret value
 // and the base64-encoded JSONB representation that the gateway stores.
 //
@@ -95,6 +121,14 @@ export function decodeSecretValue(encoded) {
   if (!encoded) return ''
   const plain = safeAtob(encoded)
   return plain == null ? '' : plain
+}
+
+// Decode + strip provider prefix for display in a credential input.
+// The source picker conveys which provider applies, so the bare
+// reference id is what the user should see and edit.
+export function decodeForDisplay(encoded) {
+  if (!encoded) return ''
+  return decodeSecretValue(encoded).replace(PROVIDER_PREFIX_RE, '')
 }
 
 export function encodeSecretValue(plain) {

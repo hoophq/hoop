@@ -2,7 +2,7 @@ import { Stack, Title } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
 import { sourceOptionsFor } from '../SecretField/util'
 import {
-  decodeSecretValue,
+  decodeForDisplay,
   encodeSecretForSource,
   sourceFromEncodedValue,
   SOURCES,
@@ -11,7 +11,6 @@ import { useConfigureRoleStore } from '../../store'
 import AllowInsecureSslSection from './shared/AllowInsecureSslSection'
 import AgentSelectorSection from './shared/AgentSelectorSection'
 
-const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 const CLUSTER_URL_KEY = 'envvar:REMOTE_URL'
 const AUTH_TOKEN_KEY = 'envvar:HEADER_AUTHORIZATION'
 const BEARER_PREFIX = 'Bearer '
@@ -59,9 +58,7 @@ export default function KubernetesTokenRenderer({
       : forceNewState
         ? undefined
         : currentSecrets[key]
-    const plain = encoded
-      ? decodeSecretValue(encoded).replace(PROVIDER_PREFIX_RE, '')
-      : ''
+    const plain = decodeForDisplay(encoded)
     return transform ? transform(plain) : plain
   }
 

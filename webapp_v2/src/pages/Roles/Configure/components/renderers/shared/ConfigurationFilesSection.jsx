@@ -8,6 +8,7 @@ import TextInput from '@/components/TextInput'
 import {
   decodeSecretValue,
   encodeSecretValue,
+  isValidPosixKey,
   PLACEHOLDER_KEY_RE,
 } from '../../../utils/secretsCodec'
 import { useConfigureRoleStore } from '../../../store'
@@ -32,7 +33,13 @@ function FileRow({ rowKey, displayName, content, onCommitName, onContentChange, 
             label="Name"
             value={draftName}
             placeholder="e.g. kubeconfig"
-            onChange={(e) => setDraftName(e.currentTarget.value)}
+            onChange={(e) => {
+              // CLJS uppercases per keystroke (configuration_inputs.cljs:39-58)
+              // and enforces POSIX. Mirror both: reject invalid input,
+              // uppercase the accepted value.
+              const next = e.currentTarget.value.toUpperCase()
+              if (isValidPosixKey(next)) setDraftName(next)
+            }}
             onBlur={() => {
               const trimmed = draftName.trim()
               if (!trimmed) return
