@@ -80,6 +80,7 @@ Gateway backend (port 8009)
 | `/features/data-masking` | React | Done |
 | `/features/data-masking/new` | React | Done |
 | `/features/data-masking/edit/:id` | React | Done |
+| `/roles/:connectionName/configure` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -221,6 +222,7 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
 - Auth pages — Login, Register (local), Signup (IDP org setup), Callback, SignupCallback
 - Agents page (list + create wizard)
+- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections.
 - Auth store, User store, UI store, Agent store
 - ClojureApp bridge component
 - Re-frame dispatch bridge — React can trigger CLJS actions via `window.hoopDispatch` (wrapped in Zustand stores)

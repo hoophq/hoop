@@ -395,6 +395,17 @@ import FullBleed from '@/layout/FullBleed'
 
 ## Page Patterns
 
+### Configure Role page (`pages/Roles/Configure/`)
+Reference implementation for a **multi-tab edit page with write-only secrets and a sticky footer**:
+- `index.jsx` orchestrates four `Tabs.Panel`s with `keepMounted` so HTML5 form validation can see required inputs even when the user is on a different tab.
+- `store.js` keeps `drafts` (editable scalars/arrays) and `stagedSecrets` (Replace/Delete/New on individual credentials) separate, plus a `baseline` snapshot for diffing. `save()` PATCHes only keys that actually diverged.
+- `FormFooter.jsx` is sticky via `position: sticky; bottom: 0` in a small CSS Module — the only sanctioned use of CSS Modules in this page because Mantine props can't express a directional border.
+- `SecretField.jsx` implements the write-only credential UX with states `set` / `editing` / `deleted` / `new`. Always uses `SecretField` instead of a raw `PasswordInput` for any credential field — the current value is never re-displayed.
+- `PredefinedFieldsCredentials.jsx` is the shared renderer driven by a static `{ key, label, required, placeholder, type }[]` schema (`utils/credentialsSchema.js`). Every fixed-schema connection type (catalog DBs, SSH, HTTP proxy, Claude Code, Kubernetes token) reuses it.
+- `CustomCredentials.jsx` handles the free-form `custom` type: list existing envvars + an "Add new variable" row that stages keys with `action: 'new'`.
+
+When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
+
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
 
@@ -466,6 +477,10 @@ useAuthStore.getState().token
 | `auth.js` | Login, register, OAuth, user info, server info |
 | `agents.js` | CRUD `/agents` and `/agents/:id` |
 | `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
+| `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
+| `guardrails.js` | GET `/guardrails` |
+| `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
+| `attributes.js` | CRUD `/attributes` |
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 | `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
