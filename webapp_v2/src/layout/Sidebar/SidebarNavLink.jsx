@@ -7,12 +7,10 @@ import classes from './Sidebar.module.css';
  *
  * Props:
  *   danger      — destructive action color (e.g. Log out)
- *   blocked     — dimmed appearance for locked paid features
  *   profileItem — square corners for items nested in the profile disclosure
  */
 export function SidebarNavLink({
   danger = false,
-  blocked = false,
   profileItem = false,
   classNames: extra,
   ...props
@@ -20,7 +18,6 @@ export function SidebarNavLink({
   const rootClass = [
     classes.navLink,
     danger      && classes.navLinkDanger,
-    blocked     && classes.navLinkBlocked,
     profileItem && classes.profileItem,
   ].filter(Boolean).join(' ');
 

@@ -15,7 +15,8 @@
                     on-toggle-cmdb-select
                     on-toggle-all-cmdb
                     on-cmdb-delete
-                    on-cmdb-add]}]
+                    on-cmdb-add
+                    free-license?]}]
   [:> Box {:class "space-y-radix-5"}
    [:> Table.Root {:size "2" :variant "surface"}
     [:> Table.Header
@@ -105,4 +106,5 @@
      :select-state select-state
      :selected? (every? :selected @state)
      :on-toggle-all #(on-toggle-all-cmdb state)
-     :on-rules-delete #(on-cmdb-delete state)}]])
+     :on-rules-delete #(on-cmdb-delete state)
+     :disable-new? (and free-license? (>= (count @state) 1))}]])

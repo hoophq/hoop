@@ -2816,13 +2816,32 @@ type AIProviderResponse struct {
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
+type AISessionAnalyzerRiskTier struct {
+	// Action to take when the AI classifies a session at this risk level
+	Action string `json:"action" binding:"required" enums:"allow_execution,block_execution,require_access_request" example:"require_access_request"`
+	// Name of the access request rule that supplies approver groups when action is require_access_request
+	AccessRequestRuleName *string `json:"access_request_rule_name,omitempty" example:"prod-approvals"`
+}
+
+type AISessionAnalyzerSystemPrompt struct {
+	// The read-only system prompt the gateway prepends before any custom_prompt configured on a rule
+	Prompt string `json:"prompt"`
+}
+
 type AISessionAnalyzerRiskEvaluation struct {
-	// Action for low-risk sessions
-	LowRiskAction string `json:"low_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Action for medium-risk sessions
-	MediumRiskAction string `json:"medium_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Action for high-risk sessions
-	HighRiskAction string `json:"high_risk_action" enums:"allow_execution,block_execution" example:"block_execution"`
+	// Deprecated: use low_risk
+	LowRiskAction string `json:"low_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`
+	// Deprecated: use medium_risk
+	MediumRiskAction string `json:"medium_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`
+	// Deprecated: use high_risk
+	HighRiskAction string `json:"high_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"block_execution"`
+
+	// Tier configuration for low-risk sessions
+	LowRisk *AISessionAnalyzerRiskTier `json:"low_risk,omitempty"`
+	// Tier configuration for medium-risk sessions
+	MediumRisk *AISessionAnalyzerRiskTier `json:"medium_risk,omitempty"`
+	// Tier configuration for high-risk sessions
+	HighRisk *AISessionAnalyzerRiskTier `json:"high_risk,omitempty"`
 }
 
 type AISessionAnalyzerRuleRequest struct {
@@ -2834,6 +2853,8 @@ type AISessionAnalyzerRuleRequest struct {
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
+	// Optional extra instructions appended to the default system prompt
+	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
 }
 
 type AISessionAnalyzerRule struct {
@@ -2847,6 +2868,8 @@ type AISessionAnalyzerRule struct {
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
+	// Optional extra instructions appended to the default system prompt
+	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated

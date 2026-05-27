@@ -9,6 +9,7 @@
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-simple :refer [data-table-simple]]
             [webapp.config :as config]
+            [webapp.shared-ui.free-license-banner :as free-license-banner]
             [reagent.core :as r]))
 
 (def steps
@@ -339,13 +340,20 @@
               :empty-state "No skipped resources found."}]])]))))
 
 (defn resources-step []
-  (let [errors @(rf/subscribe [:aws-connect/resources-errors])]
+  (let [errors @(rf/subscribe [:aws-connect/resources-errors])
+        free-license? (-> @(rf/subscribe [:users->current-user]) :data :free-license?)]
     [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
      [:> Box {:class "max-w-[600px] space-y-3"}
       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
        "AWS Resources"]
       [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
        "Select the specific AWS resources you wish to connect. You may choose multiple resources across your accounts to enable full functionality."]
+
+      (when free-license?
+        [:> Box {:mb "4"}
+         [free-license-banner/main
+          {:message (str "Organizations with Free plan can import only one resource. "
+                         "Upgrade to Enterprise to have unlimited access to Resource Discovery.")}]])
 
       [:> Callout.Root
        [:> Callout.Icon
@@ -685,6 +693,7 @@
 
 (defn main []
   (rf/dispatch [:aws-connect/fetch-agents])
+  (rf/dispatch [:jobs/fetch-aws-connect-jobs])
 
   (r/with-let [show-confirm-dialog (r/atom false)]
     (fn [form-type]
@@ -692,6 +701,10 @@
             loading @(rf/subscribe [:aws-connect/loading])
             agent-assignments @(rf/subscribe [:aws-connect/agent-assignments])
             selected-resources @(rf/subscribe [:aws-connect/selected-resources])
+            free-license? (-> @(rf/subscribe [:users->current-user]) :data :free-license?)
+            jobs @(rf/subscribe [:integrations/formatted-aws-connect-jobs])
+            limit-reached? (and free-license?
+                                (some #(not= "failed" (:status %)) jobs))
 
             validate-agents (fn []
                               (if (and (= current-step :review)
@@ -711,6 +724,9 @@
                                   :review (when (validate-agents)
                                             (reset! show-confirm-dialog true))
                                   :creation-status (rf/dispatch [:navigate :integrations-aws-connect])))]
+
+        (when limit-reached?
+          (rf/dispatch [:navigate :integrations-aws-connect]))
 
         [page-wrapper/main
          {:children

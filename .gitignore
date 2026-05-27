@@ -12,6 +12,7 @@
 *.out
 
 # IDE related
+.cursor/
 agent/.idea/*
 agentrs/.idea/*
 client/.idea/*

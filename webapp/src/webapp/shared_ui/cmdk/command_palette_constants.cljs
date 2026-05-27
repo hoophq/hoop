@@ -62,35 +62,18 @@
              :icon (fn [] [:> Settings {:size 16}])
              :action :configure}))))
 
-;; Filter and adjust items based on user permissions and license plan
 (defn filter-items-by-permissions [user-data]
   (let [admin? (:admin? user-data)
         selfhosted? (= (:tenancy_type user-data) "selfhosted")
-        free-license? (:free-license? user-data)
-        ;; Include ALL routes for permission checking
         all-routes (concat sidebar-constants/main-routes
                            sidebar-constants/discover-routes
                            sidebar-constants/organization-routes
                            sidebar-constants/integrations-management
                            sidebar-constants/settings-management)]
     (->> main-navigation-items
-         ;; Filter by basic permissions only (admin/selfhosted) and exclude "Search"
          (filter (fn [item]
                    (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
                      (and
                       (not= (:id item) "Search")
-                      ;; Check admin-only
                       (or (not (:admin-only? route)) admin?)
-                      ;; Check selfhosted-only
-                      (or (not (:selfhosted-only? route)) selfhosted?)))))
-         ;; Adjust routes for upgrade when needed (WITHOUT filtering)
-         (map (fn [item]
-                (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
-                  (if (and free-license? (not (:free-feature? route)))
-                    ;; Paid feature on free license - redirect to upgrade
-                    (assoc item
-                           :action :navigate
-                           :route (or (:upgrade-plan-route route) :upgrade-plan)
-                           :requires-upgrade? true)
-                    ;; Normal feature
-                    item)))))))
+                      (or (not (:selfhosted-only? route)) selfhosted?))))))))

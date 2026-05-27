@@ -48,7 +48,8 @@
    text])
 
 (defn main []
-  (let [container-ref (r/atom nil)]
+  (let [container-ref (r/atom nil)
+        input-value (r/atom "")]
     (fn [{:keys [default-value disabled? required? on-change options label id name]}]
       [:div {:class "mb-regular text-sm"}
        [:div {:class "flex items-center gap-2 mb-1"}
@@ -61,7 +62,12 @@
          :isMulti true
          :isDisabled disabled?
          :required required?
+         :inputValue @input-value
+         :onInputChange (fn [new-value action-meta]
+                          (when (= (.-action action-meta) "input-change")
+                            (reset! input-value new-value)))
          :onChange (fn [value]
+                     (reset! input-value "")
                      (scroll-to-bottom @container-ref)
                      (on-change value))
          :options options

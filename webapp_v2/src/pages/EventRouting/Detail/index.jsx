@@ -441,7 +441,7 @@ export default function EventRoutingDetail() {
         </Alert>
       )}
 
-      <Stack gap="xxl">
+      <Stack gap="xxlAlt">
         <Stack gap="sm">
           <SectionHeader
             title="Target runbook"

@@ -71,6 +71,7 @@
         resources-status @(rf/subscribe [:aws-connect/resources-status])
         api-error @(rf/subscribe [:aws-connect/resources-api-error])
         security-groups (rf/subscribe [:aws-connect/security-groups])
+        free-license? (-> @(rf/subscribe [:users->current-user]) :data :free-license?)
 
         selected-ids (r/atom (or rf-selected #{}))
         expanded-rows (r/atom #{})
@@ -173,39 +174,55 @@
                                         (conj % id)))
                               (swap! update-counter inc))
           :on-select-row (fn [id selected?]
-                           (if selected?
-                             (let [account (first (filter #(= id (:id %)) resources))
-                                   child-ids (when account
-                                               (map :id (:children account)))]
-                               (if (seq child-ids)
+                           (let [account (first (filter #(= id (:id %)) resources))
+                                 child-ids (when account
+                                             (map :id (:children account)))
+                                 parent-row? (seq child-ids)]
+                             (cond
+                               (and free-license? selected? (not parent-row?))
+                               (let [parent-id (some (fn [acct]
+                                                       (when (some #(= id %) (map :id (:children acct)))
+                                                         (:id acct)))
+                                                     resources)]
+                                 (reset! selected-ids (cond-> #{id}
+                                                        parent-id (conj parent-id)))
+                                 (when parent-id (swap! expanded-rows conj parent-id)))
+
+                               selected?
+                               (if parent-row?
                                  (do
                                    (swap! selected-ids #(conj % id))
                                    (swap! selected-ids #(apply conj % child-ids))
                                    (swap! expanded-rows #(conj % id)))
-                                 (swap! selected-ids conj id)))
-                             (let [account (first (filter #(= id (:id %)) resources))
-                                   child-ids (when account
-                                               (map :id (:children account)))]
-                               (if (seq child-ids)
+                                 (swap! selected-ids conj id))
+
+                               :else
+                               (if parent-row?
                                  (do
                                    (swap! selected-ids #(disj % id))
                                    (swap! selected-ids #(apply disj % child-ids)))
                                  (swap! selected-ids disj id))))
                            (swap! update-counter inc))
           :on-select-all (fn [select-all?]
-                           (if select-all?
+                           (cond
+                             (and free-license? select-all?) nil
+
+                             select-all?
                              (let [all-account-ids (map :id resources)
                                    all-resource-ids (mapcat (fn [account]
                                                               (map :id (:children account)))
                                                             resources)]
                                (reset! selected-ids (into #{} (concat all-account-ids all-resource-ids)))
                                (reset! expanded-rows (into #{} all-account-ids)))
+
+                             :else
                              (do
                                (reset! selected-ids #{})
                                (reset! expanded-rows #{})))
                            (swap! update-counter inc))
           :selectable? (fn [row]
                          (and (not (contains? rf-errors (:id row)))
-                              (not (:error row))))
+                              (not (:error row))
+                              (not (and free-license? (:account-type row)))))
           :sticky-header? true
           :empty-state "No AWS resources found"}]))))

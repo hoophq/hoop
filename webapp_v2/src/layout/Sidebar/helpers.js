@@ -16,10 +16,6 @@ export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEna
   return false
 }
 
-export function isBlocked(item, isFreeLicense) {
-  return isFreeLicense && item.freeFeature === false
-}
-
 export function isActive(path, pathname) {
   if (!path) return false
   if (path === '/dashboard') return pathname === '/dashboard' || pathname === '/'

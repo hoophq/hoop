@@ -90,7 +90,8 @@
                  on-toggle-mapping-select
                  on-toggle-all-mapping
                  on-mapping-delete
-                 on-mapping-add]}]
+                 on-mapping-add
+                 free-license?]}]
       (let [tags @(rf/subscribe [:jira-templates/tags])
             tag-options (tags-to-select-options tags)
             first-tag-value (if (seq tag-options)
@@ -104,7 +105,9 @@
             toggle-all-preset-rules (fn []
                                       (on-toggle-all-mapping state is-connection-tag?))
             delete-preset-rules (fn []
-                                  (on-mapping-delete state is-connection-tag?))]
+                                  (on-mapping-delete state is-connection-tag?))
+            disable-new? (and free-license?
+                              (>= (count (filter is-connection-tag? @state)) 1))]
         [:> Box {:class "space-y-radix-5"}
          [:> Box
           [:> Table.Root {:size "2" :variant "surface"}
@@ -143,4 +146,5 @@
            :select-state select-state
            :selected? (every? :selected (filter is-connection-tag? @state))
            :on-toggle-all toggle-all-preset-rules
-           :on-rules-delete delete-preset-rules}]]))}))
+           :on-rules-delete delete-preset-rules
+           :disable-new? disable-new?}]]))}))

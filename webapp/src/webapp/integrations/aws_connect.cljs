@@ -7,7 +7,8 @@
    [reagent.core :as r]
    [webapp.components.data-table-simple :refer [data-table-simple]]
    [webapp.events.jobs]
-   [webapp.integrations.events]))
+   [webapp.integrations.events]
+   [webapp.shared-ui.free-license-banner :as free-license-banner]))
 
 (defn transform-job-data [job]
   (let [phase (get-in job [:status :phase])
@@ -125,7 +126,7 @@
            :empty-state "No database discovery processes found. Start a new AWS connection to automatically discover and configure your database resources."
            :sticky-header? true}]]))))
 
-(defn aws-connect-button []
+(defn aws-connect-button [{:keys [limit-reached?]}]
   [:> Card {:size "2" :class "w-full mb-6"}
    [:> Flex {:direction "column" :gap "4" :align "start" :justify "center" :class "p-6"}
     [:> Flex {:align "center" :gap "2"}
@@ -137,6 +138,7 @@
           "saving you time and ensuring proper configuration.")]
     [:> Button {:size "3"
                 :class "mt-2"
+                :disabled limit-reached?
                 :on-click (fn []
                             (rf/dispatch [:navigate :integrations-aws-connect-setup]))}
      "Discover AWS Databases"]]])
@@ -153,9 +155,22 @@
 
     :reagent-render
     (fn []
-      [:> Box {:class "space-y-7"}
-       [aws-connect-button]
-       [jobs-table-component]])}))
+      (let [user @(rf/subscribe [:users->current-user])
+            free-license? (-> user :data :free-license?)
+            jobs @(rf/subscribe [:integrations/formatted-aws-connect-jobs])
+            non-failed-jobs (filter #(not= "failed" (:status %)) jobs)
+            limit-reached? (and free-license? (>= (count non-failed-jobs) 1))]
+        [:> Box {:class "space-y-7"}
+         (when free-license?
+           [free-license-banner/main
+            {:variant (if limit-reached? :limit-reached :info)
+             :message (if limit-reached?
+                        (str "Your organization has reached Resource Discovery free usage limits. "
+                             "Upgrade to Enterprise to have unlimited access to Resource Discovery.")
+                        (str "Organizations with Free plan can import only one resource. "
+                             "Upgrade to Enterprise to have unlimited access to Resource Discovery."))}])
+         [aws-connect-button {:limit-reached? limit-reached?}]
+         [jobs-table-component]]))}))
 
 (defn panel []
   [main])

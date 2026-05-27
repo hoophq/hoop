@@ -98,6 +98,17 @@
     (clj->js
      (merge envvar-result filesystem-result))))
 
+(defn find-connection-metadata
+  "Returns the resourceConfiguration metadata entry that matches the given
+  subtype, or nil if no match. `resource-metadata` is the list under
+  `[:connections :metadata :data :connections]` in app-db (loaded from
+  `/data/connections-metadata.json`)."
+  [resource-metadata subtype]
+  (when (and resource-metadata subtype)
+    (->> resource-metadata
+         (filter #(= (get-in % [:resourceConfiguration :subtype]) subtype))
+         first)))
+
 (defn process-role
   "Process a single role into the format expected by the API"
   [role agent-id & [command-role]]
@@ -180,12 +191,27 @@
         resource-subtype (get-in db [:resource-setup :subtype])
         agent-id (get-in db [:resource-setup :agent-id])
         raw-roles (get-in db [:resource-setup :roles] [])
+        ;; The connections metadata catalog (loaded from
+        ;; /data/connections-metadata.json) is the source of truth for each
+        ;; subtype's runtime command (e.g. BigQuery's
+        ;; `bq query ... --project_id=$CLOUDSDK_CORE_PROJECT`). The setup
+        ;; form only collects credentials; the command itself is never
+        ;; surfaced to the user, so we have to inject it here. Without
+        ;; this, the agent receives an empty CmdList and exec fails.
+        resource-metadata (get-in db [:connections :metadata :data :connections] [])
 
         ;; Finalize roles by adding any uncommitted current values
         roles (mapv finalize-role-current-values raw-roles)
 
-        ;; Process all roles
-        processed-roles (mapv #(process-role % agent-id) roles)]
+        ;; Process all roles, injecting the command from the metadata
+        ;; catalog for each role's subtype.
+        processed-roles (mapv (fn [role]
+                                (let [metadata (find-connection-metadata
+                                                resource-metadata
+                                                (:subtype role))
+                                      command-role (get-in metadata [:resourceConfiguration :command])]
+                                  (process-role role agent-id command-role)))
+                              roles)]
 
     {:name resource-name
      :type resource-type

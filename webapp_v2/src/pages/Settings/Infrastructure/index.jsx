@@ -148,14 +148,14 @@ function SettingsInfrastructure() {
 
   return (
     <>
-      <Group justify="space-between" align="flex-start" mb="xxxl">
+      <Group justify="space-between" align="flex-start" mb="xxxlAlt">
         <Title order={1}>Infrastructure</Title>
         <Button size="md" loading={saving} onClick={handleSave}>
           Save
         </Button>
       </Group>
 
-      <Stack gap="xxl">
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Product analytics"
           description="Help us improve Hoop by sharing usage data. Access and resources information are not collected."
