@@ -1,4 +1,5 @@
-import { Group, Stack, Title, Text, Button, Image } from '@mantine/core'
+import { Group, Stack, Title, Text, Image } from '@mantine/core'
+import Button from '@/components/Button'
 import { getConnectionIcon } from '@/utils/connectionIcons'
 
 // Page header. Shows "Configure" + the connection's icon and name on the

@@ -1,4 +1,5 @@
-import { Stack, Group, Title, Text, Badge } from '@mantine/core'
+import { Stack, Group, Title, Text } from '@mantine/core'
+import Badge from '@/components/Badge'
 import Select from '@/components/Select'
 import { useConfigureRoleStore } from '../store'
 

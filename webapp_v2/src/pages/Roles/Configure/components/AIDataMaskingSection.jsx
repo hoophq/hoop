@@ -1,5 +1,7 @@
-import { Stack, Button, Alert } from '@mantine/core';
+import { Stack } from '@mantine/core';
 import { ArrowUpRight, Star, ExternalLink } from 'lucide-react';
+import Button from '@/components/Button';
+import Alert from '@/components/Alert';
 import MultiSelect from '@/components/MultiSelect';
 import { useUserStore } from '@/stores/useUserStore';
 import { useConfigureRoleStore } from '../store';

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Stack, Radio, Title, Text } from '@mantine/core'
+import { Stack, Title, Text } from '@mantine/core'
+import Radio from '@/components/Radio'
 import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
 import { CATALOG_FIELDS } from '../utils/credentialsSchema'
 import { useConfigureRoleStore } from '../store'

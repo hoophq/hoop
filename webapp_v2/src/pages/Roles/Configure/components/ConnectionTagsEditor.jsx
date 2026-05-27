@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Stack, Group, Button, ActionIcon, Text, Grid, Autocomplete } from '@mantine/core'
+import { Stack, Group, Grid } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
+import Button from '@/components/Button'
+import ActionIcon from '@/components/ActionIcon'
+import Autocomplete from '@/components/Autocomplete'
 import { useConfigureRoleStore } from '../store'
 
 // Key/value editor for connection_tags. Mirrors the CLJS pattern in
@@ -9,15 +12,21 @@ import { useConfigureRoleStore } from '../store'
 // key the org has ever used, Value autocompletes from values seen
 // under the picked key. Users can also type a brand-new key/value and
 // commit it with the Add button.
-//
-// Mantine's <Autocomplete> is the closest stock match for CLJS's
-// single-creatable-grouped — it shows suggestions but allows free
-// typing, so "creating" a new option is just typing it and hitting
-// Save (the value is the input).
 
 const KEY_PATTERN = /^[a-zA-Z0-9-]+$/
 
-export default function TagsInput() {
+// CLJS tags_utils/extract-label: strips the `hoop.dev/<category>.`
+// system prefix from a tag key so the user sees `environment` instead
+// of `hoop.dev/infrastructure.environment`. Keys that don't match the
+// system pattern (free-form user tags) pass through untouched.
+const HOOP_LABEL_RE = /^hoop\.dev\/[^.]+\.([^.]+)$/
+function labelForTag(key) {
+  if (!key) return ''
+  const m = key.match(HOOP_LABEL_RE)
+  return m ? m[1] : key
+}
+
+export default function ConnectionTagsEditor() {
   const tags = useConfigureRoleStore((s) => s.drafts.connection_tags)
   const setTag = useConfigureRoleStore((s) => s.setTag)
   const removeTag = useConfigureRoleStore((s) => s.removeTag)
@@ -27,36 +36,62 @@ export default function TagsInput() {
   const [draftValue, setDraftValue] = useState('')
   const [keyError, setKeyError] = useState(null)
 
-  const keyOptions = useMemo(() => {
-    const set = new Set(pool.map((t) => t.key).filter(Boolean))
-    return Array.from(set).sort()
+  // label → full key map drawn from the org-wide pool. When the user
+  // picks a label from the dropdown we resolve it back to the full
+  // key (with `hoop.dev/...` prefix) before staging the change.
+  // Last-wins on label collisions, which is fine — duplicate labels
+  // across different system prefixes are practically rare.
+  const labelToFullKey = useMemo(() => {
+    const m = new Map()
+    for (const t of pool) {
+      if (!t.key) continue
+      m.set(labelForTag(t.key), t.key)
+    }
+    return m
   }, [pool])
 
-  const valuesForKey = useMemo(() => {
+  const keyOptions = useMemo(
+    () => Array.from(labelToFullKey.keys()).sort(),
+    [labelToFullKey],
+  )
+
+  const valuesForLabel = useMemo(() => {
     const map = new Map()
     for (const t of pool) {
       if (!t.key) continue
-      const list = map.get(t.key) || []
+      const lbl = labelForTag(t.key)
+      const list = map.get(lbl) || []
       if (t.value && !list.includes(t.value)) list.push(t.value)
-      map.set(t.key, list)
+      map.set(lbl, list)
     }
     return map
   }, [pool])
 
   const entries = Object.entries(tags || {})
 
+  // Resolve a user-facing label back to the org's canonical full key.
+  // If the label matches a pool entry we use that entry's full key
+  // (keeps `hoop.dev/...` prefix intact for system tags). Otherwise
+  // the typed label becomes the key as-is (free-form user tag).
+  const resolveLabelToKey = (label) => labelToFullKey.get(label) ?? label
+
   const commitDraft = () => {
     const k = draftKey.trim()
-    if (!k) return
+    const v = draftValue.trim()
+    // Both must be non-empty — matches CLJS Add-disabled rule at
+    // tags_inputs.cljs:69-73.
+    if (!k || !v) return
     if (!KEY_PATTERN.test(k)) {
       setKeyError('Only letters, numbers and hyphens are allowed')
       setTimeout(() => setKeyError(null), 3000)
       return
     }
-    setTag(k, draftValue)
+    setTag(resolveLabelToKey(k), v)
     setDraftKey('')
     setDraftValue('')
   }
+
+  const canCommit = draftKey.trim().length > 0 && draftValue.trim().length > 0
 
   return (
     <Stack gap="md">
@@ -68,10 +103,17 @@ export default function TagsInput() {
               tagKey={key}
               tagValue={value}
               keyOptions={keyOptions}
-              valueOptions={valuesForKey.get(key) || []}
-              onKeyChange={(newKey) => {
+              valueOptions={valuesForLabel.get(labelForTag(key)) || []}
+              onKeyChange={(newLabel) => {
+                const newKey = resolveLabelToKey(newLabel)
                 if (newKey === key) return
-                if (!KEY_PATTERN.test(newKey)) return
+                // KEY_PATTERN runs against the user-typed label (free-form
+                // tags), not the resolved full key — system tags like
+                // `hoop.dev/...` come from the pool and always pass.
+                if (
+                  newKey === newLabel /* free-form */ &&
+                  !KEY_PATTERN.test(newLabel)
+                ) return
                 removeTag(key)
                 setTag(newKey, value)
               }}
@@ -100,7 +142,7 @@ export default function TagsInput() {
           <Autocomplete
             label="Value"
             placeholder={draftKey ? 'Select or create a value...' : 'First select a key...'}
-            data={draftKey ? valuesForKey.get(draftKey) || [] : []}
+            data={draftKey ? valuesForLabel.get(draftKey) || [] : []}
             value={draftValue}
             onChange={setDraftValue}
             disabled={!draftKey.trim()}
@@ -111,7 +153,7 @@ export default function TagsInput() {
             variant="light"
             leftSection={<Plus size={14} />}
             onClick={commitDraft}
-            disabled={!draftKey.trim()}
+            disabled={!canCommit}
             fullWidth
           >
             Add
@@ -131,13 +173,16 @@ function RowFragment({
   onValueChange,
   onRemove,
 }) {
+  // Display the stripped label so users never see the
+  // `hoop.dev/<category>.` system prefix in the input.
+  const keyLabel = labelForTag(tagKey)
   return (
     <>
       <Grid.Col span={5}>
         <Autocomplete
           label="Key"
           data={keyOptions}
-          value={tagKey}
+          value={keyLabel}
           onChange={onKeyChange}
         />
       </Grid.Col>
@@ -156,7 +201,7 @@ function RowFragment({
             color="red"
             size="lg"
             onClick={onRemove}
-            aria-label={'Remove tag ' + tagKey}
+            aria-label={'Remove tag ' + keyLabel}
           >
             <Trash2 size={16} />
           </ActionIcon>

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Stack, Title, Text, Button, Grid, ActionIcon } from '@mantine/core'
+import { Stack, Title, Text, Grid } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
+import Button from '@/components/Button'
+import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
-import { decodeSecretValue, encodeSecretValue } from '../utils/secretsCodec'
+import { decodeSecretValue, encodeSecretValue, PLACEHOLDER_KEY_RE } from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
 import ConfigurationFilesSection from './ConfigurationFilesSection'
 import CommandArgsInput from './CommandArgsInput'
@@ -121,7 +123,10 @@ export default function CustomCredentials({ connection }) {
           const isExisting = envKey in currentSecrets
           const renamedTo = renames[envKey]
           const effectiveKey = renamedTo || envKey
-          const displayName = effectiveKey.slice('envvar:'.length)
+          // Hide the auto-generated `NEW_KEY_N` sentinel from the user
+          // so the empty-state row shows a truly blank Key input.
+          const isPlaceholder = PLACEHOLDER_KEY_RE.test(effectiveKey)
+          const displayName = isPlaceholder ? '' : effectiveKey.slice('envvar:'.length)
           const stagedPlain = staged?.value
             ? decodeSecretValue(staged.value)
             : null

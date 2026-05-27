@@ -5,20 +5,10 @@ import { jiraTemplatesService } from '@/services/jiraTemplates'
 import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
 import { userGroupsService } from '@/services/userGroups'
-import { sourceFromEncodedValue } from './utils/secretsCodec'
+import { sourceFromEncodedValue, PLACEHOLDER_KEY_RE } from './utils/secretsCodec'
 
-// Local store for the Configure Role page.
-//
-// Lives next to the page (not in /stores/) because nothing outside this
-// route consumes it. Mirrors the shape of the CLJS :connection-setup
-// re-frame slice but only models the pieces this React page touches.
-//
-// Form drafts:
-//   `drafts` mirrors every editable scalar/array field from the
-//   connection payload. We seed it on load and PATCH on save with only
-//   the keys that diverge from the loaded connection.
-//
-// Staged-secrets contract:
+// Page-local store for Configure Role. The staged-secrets contract is
+// the only non-obvious bit:
 //   stagedSecrets[key] = { action: 'replace' | 'delete' | 'new', value?: string }
 //   - 'replace' overrides an existing inline secret (value is base64-encoded).
 //   - 'delete'  removes an existing key (custom connection type only).
@@ -77,8 +67,8 @@ function draftsFromConnection(conn) {
 // Placeholder rows (the auto-added empty row that keeps Environment
 // variables / Configuration files from looking empty) live in
 // stagedSecrets as 'new' entries with empty value and a generated key
-// pattern. They never get sent to the backend or count toward dirty.
-const PLACEHOLDER_KEY_RE = /^(envvar:NEW_KEY_|filesystem:NEW_FILE_)\d+$/
+// pattern (PLACEHOLDER_KEY_RE in utils/secretsCodec.js). They never get
+// sent to the backend or count toward dirty.
 function isPlaceholderEntry(key, change) {
   return change?.action === 'new' && !change.value && PLACEHOLDER_KEY_RE.test(key)
 }
@@ -113,6 +103,19 @@ function objectsEqual(a, b) {
   return true
 }
 
+// Drops entries with empty key or empty value from a tags map. Mirrors
+// CLJS process_form.cljs's :filter-valid-tags so the wire payload stays
+// in sync with what the backend expects.
+function pruneEmptyTags(tags) {
+  const out = {}
+  for (const [k, v] of Object.entries(tags || {})) {
+    if (!k || !String(k).trim()) continue
+    if (v == null || !String(v).trim()) continue
+    out[k] = v
+  }
+  return out
+}
+
 // Returns only the keys of `drafts` that differ from the connection's
 // current value, formatted in the shape PATCH /connections expects.
 function buildDraftsPatch(drafts, baseline) {
@@ -120,8 +123,10 @@ function buildDraftsPatch(drafts, baseline) {
   if (!arraysEqual(drafts.attributes, baseline.attributes)) {
     patch.attributes = drafts.attributes
   }
-  if (!objectsEqual(drafts.connection_tags, baseline.connection_tags)) {
-    patch.connection_tags = drafts.connection_tags
+  const prunedTags = pruneEmptyTags(drafts.connection_tags)
+  const prunedBaselineTags = pruneEmptyTags(baseline.connection_tags)
+  if (!objectsEqual(prunedTags, prunedBaselineTags)) {
+    patch.connection_tags = prunedTags
   }
   if (drafts.access_mode_exec !== baseline.access_mode_exec) {
     patch.access_mode_exec = drafts.access_mode_exec
@@ -396,9 +401,11 @@ export const useConfigureRoleStore = create((set, get) => ({
   },
 
   // Rename the Key of a row without moving its position in the rendered
-  // list. For 'new' staged entries we swap the stagedSecrets entry in
-  // place; for keys that exist on the connection we record the rename
-  // separately so save() can translate it into delete-old + replace-new.
+  // list. For 'new' staged entries we substitute the key in place
+  // (rebuilding the object preserves insertion order — `delete + add`
+  // would push it to the end and cause a visible row jump). For keys
+  // that exist on the connection we record the rename separately so
+  // save() can translate it into delete-old + replace-new.
   renameSecret: (originalKey, newKey) => {
     set((state) => {
       if (newKey === originalKey) {
@@ -408,9 +415,10 @@ export const useConfigureRoleStore = create((set, get) => ({
       }
       const stagedForOriginal = state.stagedSecrets[originalKey]
       if (stagedForOriginal?.action === 'new') {
-        const stagedSecrets = { ...state.stagedSecrets }
-        delete stagedSecrets[originalKey]
-        stagedSecrets[newKey] = stagedForOriginal
+        const stagedSecrets = {}
+        for (const [k, v] of Object.entries(state.stagedSecrets)) {
+          stagedSecrets[k === originalKey ? newKey : k] = v
+        }
         return { stagedSecrets }
       }
       return { renames: { ...state.renames, [originalKey]: newKey } }

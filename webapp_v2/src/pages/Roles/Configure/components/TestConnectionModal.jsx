@@ -1,5 +1,6 @@
-import { Stack, Group, Text, Title, Button, Loader, ThemeIcon } from '@mantine/core'
+import { Stack, Group, Text, Title, Loader, ThemeIcon } from '@mantine/core'
 import { Check, X } from 'lucide-react'
+import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 
 // "Connectivity Check" modal — mirrors the CLJS test-connection-modal.
