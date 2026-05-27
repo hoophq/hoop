@@ -2,20 +2,15 @@ import { useState } from 'react'
 import { Stack, Title, Text, Alert } from '@mantine/core'
 import { FileText, Cloud, ShieldCheck, Info, TriangleAlert } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
-import SecretField from './SecretField'
+import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
+import SSHCredentials from './SSHCredentials'
+import CustomCredentials from './CustomCredentials'
 import {
   CATALOG_FIELDS,
   CONNECTION_METHODS,
-  isCatalogSubtype,
   supportsConnectionMethods,
 } from '../utils/credentialsSchema'
-import {
-  decodeSecretValue,
-  encodeSecretValue,
-  isSecretReference,
-} from '../utils/secretsCodec'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
-import { useConfigureRoleStore } from '../store'
 
 const METHOD_DEFINITIONS = [
   {
@@ -100,60 +95,83 @@ function MethodSwitchNotice({ derivedMethod, selectedMethod }) {
   )
 }
 
-function CatalogCredentials({ connection, isAdmin }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+function CredentialsBody({ connection, isAdmin }) {
+  const { type, subtype } = connection
 
-  const subtype = connection.subtype
-  const fields = CATALOG_FIELDS[subtype] || []
-  const currentSecrets = connection.secret || {}
-
-  return (
-    <Stack gap="md">
-      <Title order={4}>Environment credentials</Title>
-      <Stack gap="lg">
-        {fields.map((field) => {
-          const envKey = `envvar:${field.key.toUpperCase()}`
-          const encodedValue = currentSecrets[envKey]
-          const isExisting =
-            envKey in currentSecrets &&
-            (encodedValue !== '' || connection.secrets_updated_at != null)
-          const isReference = isSecretReference(encodedValue)
-          const referenceText = isReference ? decodeSecretValue(encodedValue) : ''
-          const staged = stagedSecrets[envKey]
-          return (
-            <SecretField
-              key={envKey}
-              label={field.label}
-              required={field.required}
-              placeholder={field.placeholder}
-              type={field.type}
-              isExisting={isExisting}
-              isReference={isReference}
-              referenceText={referenceText}
-              allowDelete={false}
-              stagedAction={staged?.action}
-              stagedValue={
-                staged?.value ? decodeSecretValue(staged.value) : ''
-              }
-              secretsUpdatedAt={connection.secrets_updated_at}
-              onReplace={(plain) =>
-                isAdmin && replaceSecret(envKey, encodeSecretValue(plain))
-              }
-              onChangeStaged={(plain) =>
-                isAdmin && replaceSecret(envKey, encodeSecretValue(plain))
-              }
-              onCancel={() => cancelSecretChange(envKey)}
-            />
-          )
-        })}
+  // Mirrors the dispatch in CLJS credentials_tab.cljs verbatim.
+  if (type === 'database' && CATALOG_FIELDS[subtype]) {
+    return (
+      <Stack gap="md">
+        <Title order={4}>Environment credentials</Title>
+        <PredefinedFieldsCredentials
+          connection={connection}
+          fields={CATALOG_FIELDS[subtype]}
+          isAdmin={isAdmin}
+        />
       </Stack>
-    </Stack>
-  )
-}
+    )
+  }
 
-function UnsupportedCredentialsPlaceholder({ connection }) {
+  if (type === 'application' && (subtype === 'ssh' || subtype === 'git' || subtype === 'github')) {
+    return <SSHCredentials connection={connection} isAdmin={isAdmin} />
+  }
+
+  if (type === 'httpproxy' && subtype === 'claude-code') {
+    return (
+      <Stack gap="md">
+        <Title order={4}>Basic info</Title>
+        <PredefinedFieldsCredentials
+          connection={connection}
+          fields={CATALOG_FIELDS['claude-code']}
+          isAdmin={isAdmin}
+        />
+      </Stack>
+    )
+  }
+
+  if (type === 'httpproxy') {
+    return (
+      <Stack gap="md">
+        <Title order={4}>Environment credentials</Title>
+        <PredefinedFieldsCredentials
+          connection={connection}
+          fields={CATALOG_FIELDS.httpproxy}
+          isAdmin={isAdmin}
+        />
+      </Stack>
+    )
+  }
+
+  if (type === 'custom' && subtype === 'kubernetes-token') {
+    return (
+      <Stack gap="md">
+        <Title order={4}>Kubernetes token</Title>
+        <PredefinedFieldsCredentials
+          connection={connection}
+          fields={CATALOG_FIELDS['kubernetes-token']}
+          isAdmin={isAdmin}
+        />
+      </Stack>
+    )
+  }
+
+  if (type === 'custom' && CATALOG_FIELDS[subtype]) {
+    return (
+      <Stack gap="md">
+        <Title order={4}>Environment credentials</Title>
+        <PredefinedFieldsCredentials
+          connection={connection}
+          fields={CATALOG_FIELDS[subtype]}
+          isAdmin={isAdmin}
+        />
+      </Stack>
+    )
+  }
+
+  if (type === 'custom') {
+    return <CustomCredentials connection={connection} isAdmin={isAdmin} />
+  }
+
   return (
     <Alert variant="light" color="yellow" icon={<Info size={16} />}>
       <Stack gap={4}>
@@ -163,9 +181,9 @@ function UnsupportedCredentialsPlaceholder({ connection }) {
             ' connections is not yet available in the new editor.'}
         </Text>
         <Text size="sm">
-          This page is mid-migration; use the legacy form to edit non-catalog
-          credentials. The write-only treatment still applies — values are
-          never returned by the API.
+          The write-only treatment still applies at the API level — values
+          are never returned. Use the legacy editor to change credentials
+          for this connection type.
         </Text>
       </Stack>
     </Alert>
@@ -177,7 +195,6 @@ export default function CredentialsTab({ connection, isAdmin }) {
   const [selectedMethod, setSelectedMethod] = useState(derivedMethod)
   const showMethodCards = supportsConnectionMethods(connection)
   const awsIamAvailable = supportsAwsIam(connection.subtype)
-  const supported = isCatalogSubtype(connection.subtype) && connection.type === 'database'
   const methodMismatch = selectedMethod !== derivedMethod
 
   return (
@@ -196,11 +213,7 @@ export default function CredentialsTab({ connection, isAdmin }) {
           selectedMethod={selectedMethod}
         />
       )}
-      {supported ? (
-        <CatalogCredentials connection={connection} isAdmin={isAdmin} />
-      ) : (
-        <UnsupportedCredentialsPlaceholder connection={connection} />
-      )}
+      <CredentialsBody connection={connection} isAdmin={isAdmin} />
     </Stack>
   )
 }

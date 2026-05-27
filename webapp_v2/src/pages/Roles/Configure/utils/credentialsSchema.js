@@ -60,6 +60,42 @@ export const CATALOG_FIELDS = {
       type: 'textarea',
     },
   ],
+  httpproxy: [
+    {
+      key: 'remote_url',
+      label: 'Remote URL',
+      required: true,
+      placeholder: 'e.g. https://example.com',
+    },
+  ],
+  'claude-code': [
+    {
+      key: 'remote_url',
+      label: 'Anthropic API URL',
+      required: true,
+      placeholder: 'https://api.anthropic.com',
+    },
+    {
+      key: 'HEADER_X_API_KEY',
+      label: 'Anthropic API Key',
+      required: true,
+      placeholder: 'sk-ant-...',
+    },
+  ],
+  'kubernetes-token': [
+    {
+      key: 'cluster_url',
+      label: 'Cluster URL',
+      required: true,
+      placeholder: 'e.g. https://kubernetes.default.svc.cluster.local:443',
+    },
+    {
+      key: 'authorization',
+      label: 'Authorization token',
+      required: true,
+      placeholder: 'e.g. jwt.token.example',
+    },
+  ],
 }
 
 // Connection method indicator. Derived from the raw secret values
