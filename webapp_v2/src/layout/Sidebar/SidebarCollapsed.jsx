@@ -38,7 +38,7 @@ export function SidebarCollapsed({ skipLink }) {
         scrollbarSize={10}
         classNames={{ root: classes.collapsedScrollArea }}
       >
-        <Stack gap="xsAlt" align="center" role="list" aria-label="Main navigation">
+        <Stack gap={2} align="center" role="list" aria-label="Main navigation">
           {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
               <IconBtn {...item} />
