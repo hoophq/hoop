@@ -45,6 +45,26 @@ func IsSecretReference(encodedValue string) bool {
 	return false
 }
 
+// isBooleanValue reports whether an encoded envvar value decodes to exactly
+// "true" or "false". Boolean configuration flags (e.g. envvar:INSECURE,
+// envvar:SSLMODE-ish toggles) aren't secrets — they're settings that
+// influence connection behaviour and the UI needs to display their current
+// state so toggles work. We exempt them from stripping.
+func isBooleanValue(encodedValue string) bool {
+	if encodedValue == "" {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encodedValue)
+	if err != nil {
+		return false
+	}
+	switch string(decoded) {
+	case "true", "false":
+		return true
+	}
+	return false
+}
+
 // stripInlineSecrets returns a copy of envs where inline secret values are
 // blanked out. References to external providers are preserved verbatim so
 // admins can still see what provider/key a connection points at.
@@ -58,7 +78,7 @@ func stripInlineSecrets(envs map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(envs))
 	for k, v := range envs {
-		if IsSecretReference(v) {
+		if IsSecretReference(v) || isBooleanValue(v) {
 			out[k] = v
 			continue
 		}

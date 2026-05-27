@@ -71,6 +71,28 @@ func TestStripInlineSecrets(t *testing.T) {
 		}
 	})
 
+	t.Run("boolean values round-trip so toggle UIs reflect actual state", func(t *testing.T) {
+		in := map[string]string{
+			"envvar:INSECURE":   b64("true"),
+			"envvar:DEBUG":      b64("false"),
+			"envvar:PASS":       b64("hunter2"),
+			"envvar:TRUE_LOOKS": b64("true123"), // not exactly "true"
+		}
+		out := stripInlineSecrets(in)
+		if out["envvar:INSECURE"] != in["envvar:INSECURE"] {
+			t.Errorf("base64(\"true\") should be preserved, got %q", out["envvar:INSECURE"])
+		}
+		if out["envvar:DEBUG"] != in["envvar:DEBUG"] {
+			t.Errorf("base64(\"false\") should be preserved, got %q", out["envvar:DEBUG"])
+		}
+		if out["envvar:PASS"] != "" {
+			t.Errorf("non-boolean inline value should still be stripped")
+		}
+		if out["envvar:TRUE_LOOKS"] != "" {
+			t.Errorf("only exact 'true'/'false' decoded values are exempt; got %q", out["envvar:TRUE_LOOKS"])
+		}
+	})
+
 	t.Run("does not mutate input", func(t *testing.T) {
 		in := map[string]string{"envvar:PASS": b64("hunter2")}
 		original := in["envvar:PASS"]
