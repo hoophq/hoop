@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Radio from '@/components/Radio'
-import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
-import { useConfigureRoleStore } from '../store'
+import PredefinedFields from './shared/PredefinedFields'
+import AgentSelectorSection from './shared/AgentSelectorSection'
+import { useConfigureRoleStore } from '../../store'
 
 // React-specific field schema. SSH's auth-method radio drives which
 // field is rendered and which is required — neither is encodable in
@@ -24,22 +25,21 @@ const SSH_FIELDS = [
   },
 ]
 
-// SSH credentials editor used by application/ssh, application/git and
-// application/github connections.
+// SSH credentials editor used by application/ssh.
 //
 // The connection accepts either password or private-key authentication.
 // We derive the active method from whichever secret key the connection
-// currently has set (envvar:PASS for password, envvar:AUTHORIZED_SERVER_KEYS
-// for key) and let the admin switch between them — switching just hides
-// the inactive field; clearing the opposite key is the save handler's
-// responsibility (see store.save).
+// currently has set (envvar:PASS for password,
+// envvar:AUTHORIZED_SERVER_KEYS for key) and let the admin switch
+// between them — switching just hides the inactive field; clearing the
+// opposite key is the save handler's responsibility (see store.save).
 function deriveAuthMethod(connection) {
   const secrets = connection?.secret || {}
   if ('envvar:AUTHORIZED_SERVER_KEYS' in secrets) return 'key'
   return 'password'
 }
 
-export default function SSHCredentials({ connection, availableSources, forceNewState }) {
+export default function SshRenderer({ connection, availableSources, forceNewState }) {
   const initialMethod = useMemo(() => deriveAuthMethod(connection), [connection])
   const [authMethod, setAuthMethod] = useState(initialMethod)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
@@ -91,12 +91,14 @@ export default function SSHCredentials({ connection, availableSources, forceNewS
         </Radio.Group>
       </Stack>
 
-      <PredefinedFieldsCredentials
+      <PredefinedFields
         connection={connection}
         fields={fields}
         availableSources={availableSources}
         forceNewState={forceNewState}
       />
+
+      <AgentSelectorSection />
     </Stack>
   )
 }

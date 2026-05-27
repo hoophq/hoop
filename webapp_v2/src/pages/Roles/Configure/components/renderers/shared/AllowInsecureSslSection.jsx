@@ -1,6 +1,6 @@
-import { decodeSecretValue, encodeSecretValue } from '../utils/secretsCodec'
-import { useConfigureRoleStore } from '../store'
-import ToggleSection from './ToggleSection'
+import { decodeSecretValue, encodeSecretValue } from '../../../utils/secretsCodec'
+import { useConfigureRoleStore } from '../../../store'
+import ToggleSection from '../../ToggleSection'
 
 // "Allow insecure SSL" toggle backed by envvar:INSECURE.
 //
@@ -8,7 +8,7 @@ import ToggleSection from './ToggleSection'
 // (see gateway/api/connections/secrets.go::isBooleanValue), so we can
 // read the actual current state instead of starting blind. Toggling
 // stages a replace whose value is base64-encoded "true" or "false".
-export default function InsecureSslToggle({ connection }) {
+export default function AllowInsecureSslSection({ connection }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
 

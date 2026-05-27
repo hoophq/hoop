@@ -5,10 +5,6 @@ import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
-import PredefinedFieldsCredentials from './PredefinedFieldsCredentials'
-import SSHCredentials from './SSHCredentials'
-import CustomCredentials from './CustomCredentials'
-import InsecureSslToggle from './InsecureSslToggle'
 import {
   CONNECTION_METHODS,
   supportsAwsIam,
@@ -19,51 +15,7 @@ import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStor
 import { deriveConnectionMethod } from '../utils/connectionMethod'
 import { SOURCES, SOURCE_LABELS } from '../utils/secretsCodec'
 import { useConfigureRoleStore } from '../store'
-
-// Field schemas for connection types that don't ship credentials in
-// connections-metadata.json. Co-located with the renderers that consume
-// them so the data and the UI choice stay together. When these
-// connection types gain credential entries in the JSON catalog, drop
-// the matching constant and route through metadata like database
-// catalog connections.
-const HTTPPROXY_FIELDS = [
-  {
-    key: 'remote_url',
-    label: 'Remote URL',
-    required: true,
-    placeholder: 'e.g. https://example.com',
-  },
-]
-
-const CLAUDE_CODE_FIELDS = [
-  {
-    key: 'remote_url',
-    label: 'Anthropic API URL',
-    required: true,
-    placeholder: 'https://api.anthropic.com',
-  },
-  {
-    key: 'HEADER_X_API_KEY',
-    label: 'Anthropic API Key',
-    required: true,
-    placeholder: 'sk-ant-...',
-  },
-]
-
-const KUBERNETES_TOKEN_FIELDS = [
-  {
-    key: 'cluster_url',
-    label: 'Cluster URL',
-    required: true,
-    placeholder: 'e.g. https://kubernetes.default.svc.cluster.local:443',
-  },
-  {
-    key: 'authorization',
-    label: 'Authorization token',
-    required: true,
-    placeholder: 'e.g. jwt.token.example',
-  },
-]
+import { buildRenderers } from './renderers'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
@@ -129,24 +81,6 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
   )
 }
 
-// Renders a titled list of write-only credential fields. `fields` is
-// the React field schema — supplied either by an inline constant (for
-// connection types whose schema lives in this file) or by the metadata
-// store (for catalog connection types).
-function PredefinedSection({ title, fields, connection, availableSources, forceNewState }) {
-  return (
-    <Stack gap="md">
-      <Title order={4}>{title}</Title>
-      <PredefinedFieldsCredentials
-        connection={connection}
-        fields={fields}
-        availableSources={availableSources}
-        forceNewState={forceNewState}
-      />
-    </Stack>
-  )
-}
-
 function UnsupportedFallback({ connection }) {
   return (
     <Alert variant="light" color="yellow" icon={<Info size={16} />}>
@@ -179,123 +113,22 @@ function MetadataError({ message }) {
   )
 }
 
-// Dispatch table — order matters: the first matching renderer wins.
-// Mirrors the CLJS dispatch in credentials_tab.cljs (each branch maps
-// to its own form id there). Add new connection shapes by appending an
-// entry rather than nesting more if-clauses.
-//
-// `getSchema(subtype)` looks up the catalog credential schema from the
-// metadata store. The `catalog-*` renderers depend on it; the others
-// use inline schemas defined at the top of this file.
-function buildRenderers(getSchema) {
-  return [
-    {
-      name: 'database-catalog',
-      match: (c) => c.type === 'database' && Boolean(getSchema(c.subtype)),
-      render: (props) => (
-        <PredefinedSection
-          title="Environment credentials"
-          fields={getSchema(props.connection.subtype)}
-          {...props}
-        />
-      ),
-    },
-    {
-      name: 'application-ssh',
-      match: (c) =>
-        c.type === 'application' && ['ssh', 'git', 'github'].includes(c.subtype),
-      render: (props) => <SSHCredentials {...props} />,
-    },
-    {
-      name: 'httpproxy-claude-code',
-      match: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
-      render: (props) => (
-        <Stack gap="xl">
-          <PredefinedSection title="Basic info" fields={CLAUDE_CODE_FIELDS} {...props} />
-          <InsecureSslToggle connection={props.connection} />
-        </Stack>
-      ),
-    },
-    {
-      name: 'httpproxy-generic',
-      match: (c) => c.type === 'httpproxy',
-      render: (props) => (
-        <Stack gap="xl">
-          <PredefinedSection
-            title="Environment credentials"
-            fields={HTTPPROXY_FIELDS}
-            {...props}
-          />
-          <InsecureSslToggle connection={props.connection} />
-        </Stack>
-      ),
-    },
-    {
-      name: 'custom-kubernetes-token',
-      match: (c) => c.type === 'custom' && c.subtype === 'kubernetes-token',
-      render: (props) => (
-        <Stack gap="xl">
-          <PredefinedSection
-            title="Kubernetes token"
-            fields={KUBERNETES_TOKEN_FIELDS}
-            {...props}
-          />
-          <InsecureSslToggle connection={props.connection} />
-        </Stack>
-      ),
-    },
-    // Custom catalog: subtype present, not in the CLJS free-form
-    // exclusion set, AND the metadata JSON has a credentials block for
-    // it. The exclusion gate mirrors credentials_tab.cljs:17 so custom
-    // + tcp/ssh/etc. stay free-form even though they have catalog
-    // entries.
-    {
-      name: 'custom-catalog',
-      match: (c) =>
-        c.type === 'custom' &&
-        Boolean(c.subtype) &&
-        !isFreeFormCustomSubtype(c.subtype) &&
-        Boolean(getSchema(c.subtype)),
-      render: (props) => (
-        <PredefinedSection
-          title="Environment credentials"
-          fields={getSchema(props.connection.subtype)}
-          {...props}
-        />
-      ),
-    },
-    // Custom free-form: catches everything that didn't match a more
-    // specific renderer — exclusion-set subtypes, missing-subtype, or
-    // a non-excluded subtype that the metadata catalog doesn't know
-    // about (e.g. legacy "cloudwatch"). Diverges from CLJS, which
-    // would render nil on the catalog branch when schema is absent;
-    // the free-form editor at least lets the user inspect the existing
-    // envvars instead of staring at a blank form.
-    {
-      name: 'custom-freeform',
-      match: (c) => c.type === 'custom',
-      render: (props) => (
-        <CustomCredentials
-          connection={props.connection}
-          availableSources={props.availableSources}
-        />
-      ),
-    },
-  ]
-}
-
 // True for connections whose final renderer can only be decided after
 // the metadata catalog has loaded. While the catalog is still loading
-// the body shows a loader for those; everything else (excluded
-// free-form custom, SSH, inline-schema renderers) renders immediately
-// because its fields don't depend on the JSON.
+// the body shows a loader for those; everything else (the five bespoke
+// shapes and free-form custom fallbacks) renders immediately because
+// its fields don't depend on the JSON.
 function dependsOnCatalog(connection) {
   if (!connection) return false
   if (connection.type === 'database') return true
+  if (connection.type === 'application') {
+    return connection.subtype !== 'ssh'
+  }
   if (connection.type === 'custom') {
     return (
       Boolean(connection.subtype) &&
       connection.subtype !== 'kubernetes-token' &&
+      connection.subtype !== 'linux-vm' &&
       !isFreeFormCustomSubtype(connection.subtype)
     )
   }
@@ -383,8 +216,8 @@ export default function CredentialsTab({ connection }) {
 
   // Notice only makes sense when at least one field is actually
   // write-only — i.e. when the backend strips. Round-trip connections
-  // (custom/*, httpproxy/*, application/{ssh,git,github}) show values
-  // verbatim, so the "cannot be viewed" wording would be misleading.
+  // (the five frontend-mounted shapes) show values verbatim, so the
+  // "cannot be viewed" wording would be misleading.
   const showWriteOnlyNotice = !connectionRoundTripsSecrets(connection)
 
   return (

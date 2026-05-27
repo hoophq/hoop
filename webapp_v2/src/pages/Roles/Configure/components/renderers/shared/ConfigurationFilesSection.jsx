@@ -5,13 +5,17 @@ import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
-import { decodeSecretValue, encodeSecretValue, PLACEHOLDER_KEY_RE } from '../utils/secretsCodec'
-import { useConfigureRoleStore } from '../store'
+import {
+  decodeSecretValue,
+  encodeSecretValue,
+  PLACEHOLDER_KEY_RE,
+} from '../../../utils/secretsCodec'
+import { useConfigureRoleStore } from '../../../store'
 
-// Configuration files for a custom connection. Same pattern as
-// CustomCredentials: rename commits on blur via the store's renames
-// map so position stays put; an empty placeholder row is kept around
-// so the section never collapses.
+// Configuration files for a custom connection. Same pattern as the
+// environment variables section: rename commits on blur via the store's
+// renames map so position stays put; an empty placeholder row is kept
+// around so the section never collapses.
 
 function FileRow({ rowKey, displayName, content, onCommitName, onContentChange, onRemove }) {
   const [draftName, setDraftName] = useState(displayName)

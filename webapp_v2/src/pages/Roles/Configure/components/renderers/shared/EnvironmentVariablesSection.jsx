@@ -12,12 +12,9 @@ import {
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
   SOURCES,
-} from '../utils/secretsCodec'
-import { useConfigureRoleStore } from '../store'
-import { sourceOptionsFor } from './SecretField/util'
-import ConfigurationFilesSection from './ConfigurationFilesSection'
-import CommandArgsInput from './CommandArgsInput'
-import AgentSelector from './AgentSelector'
+} from '../../../utils/secretsCodec'
+import { useConfigureRoleStore } from '../../../store'
+import { sourceOptionsFor } from '../../SecretField/util'
 
 // Provider prefixes we strip from a free-form value before rendering it
 // in the input — the source selector to the left already conveys which
@@ -25,17 +22,15 @@ import AgentSelector from './AgentSelector'
 // id (matches CLJS configuration_inputs.cljs's source-selector pattern).
 const PROVIDER_PREFIX_RE = /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 
-// Free-form credentials editor for custom connections. Values round-
-// trip plaintext from the backend; rename commits on blur and is
-// translated into delete-old + replace-new at save time so the row's
-// rendered position stays put. The list never shrinks past one empty
-// row — auto-adds a placeholder if everything was removed.
+// Free-form env-var editor. Values round-trip plaintext from the
+// backend; rename commits on blur and is translated into delete-old +
+// replace-new at save time so the row's rendered position stays put.
+// The list never shrinks past one empty row — auto-adds a placeholder
+// if everything was removed.
 //
-// When the parent (CredentialsTab) is in Secrets Manager mode it passes
-// `availableSources` — that triggers a per-row source picker on the
-// value input, so each env var can independently come from manual entry
-// or a secrets-manager reference. The selected source decides whether
-// the value is encoded bare (manual) or with a `_vaultkv1:` / `_aws:` /
+// When `availableSources` is supplied (Secrets Manager mode) each row
+// gets a per-row source picker. The picked source decides whether the
+// value is encoded bare (manual) or with a `_vaultkv1:` / `_aws:` /
 // `_vaultkv2:` prefix.
 
 function EnvvarRow({
@@ -110,7 +105,7 @@ function EnvvarRow({
   )
 }
 
-export default function CustomCredentials({ connection, availableSources }) {
+export default function EnvironmentVariablesSection({ connection, availableSources }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
   const renames = useConfigureRoleStore((s) => s.renames)
@@ -148,8 +143,7 @@ export default function CustomCredentials({ connection, availableSources }) {
   // Matches CLJS behaviour (the legacy form always shows a blank input).
   useEffect(() => {
     if (allKeys.length === 0) {
-      let i = 1
-      const sentinel = `envvar:NEW_KEY_${i}`
+      const sentinel = 'envvar:NEW_KEY_1'
       replaceSecret(sentinel, '')
     }
   }, [allKeys.length, replaceSecret])
@@ -257,10 +251,6 @@ export default function CustomCredentials({ connection, availableSources }) {
           Add key/value
         </Button>
       </Stack>
-
-      <ConfigurationFilesSection connection={connection} />
-      <CommandArgsInput />
-      <AgentSelector />
     </Stack>
   )
 }

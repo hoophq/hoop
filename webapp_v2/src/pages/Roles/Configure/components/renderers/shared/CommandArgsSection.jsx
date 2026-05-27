@@ -1,11 +1,11 @@
 import { Stack, Title, Text } from '@mantine/core'
 import TagsInput from '@/components/TagsInput'
-import { useConfigureRoleStore } from '../store'
+import { useConfigureRoleStore } from '../../../store'
 
 // Additional command arguments. Stored as the connection's `command`
 // array. Mirrors the CLJS server/credentials-step "Additional command"
 // section — TagsInput collects each argument as one chip.
-export default function CommandArgsInput() {
+export default function CommandArgsSection() {
   const command = useConfigureRoleStore((s) => s.drafts.command)
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
 
