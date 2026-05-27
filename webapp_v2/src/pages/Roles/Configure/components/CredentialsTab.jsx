@@ -11,8 +11,8 @@ import CustomCredentials from './CustomCredentials'
 import InsecureSslToggle from './InsecureSslToggle'
 import {
   CONNECTION_METHODS,
-  supportsConnectionMethods,
   supportsAwsIam,
+  isFreeFormCustomSubtype,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
@@ -243,9 +243,18 @@ function buildRenderers(getSchema) {
         </Stack>
       ),
     },
+    // Custom catalog: subtype present, not in the CLJS free-form
+    // exclusion set, AND the metadata JSON has a credentials block for
+    // it. The exclusion gate mirrors credentials_tab.cljs:17 so custom
+    // + tcp/ssh/etc. stay free-form even though they have catalog
+    // entries.
     {
       name: 'custom-catalog',
-      match: (c) => c.type === 'custom' && Boolean(getSchema(c.subtype)),
+      match: (c) =>
+        c.type === 'custom' &&
+        Boolean(c.subtype) &&
+        !isFreeFormCustomSubtype(c.subtype) &&
+        Boolean(getSchema(c.subtype)),
       render: (props) => (
         <PredefinedSection
           title="Environment credentials"
@@ -254,6 +263,13 @@ function buildRenderers(getSchema) {
         />
       ),
     },
+    // Custom free-form: catches everything that didn't match a more
+    // specific renderer — exclusion-set subtypes, missing-subtype, or
+    // a non-excluded subtype that the metadata catalog doesn't know
+    // about (e.g. legacy "cloudwatch"). Diverges from CLJS, which
+    // would render nil on the catalog branch when schema is absent;
+    // the free-form editor at least lets the user inspect the existing
+    // envvars instead of staring at a blank form.
     {
       name: 'custom-freeform',
       match: (c) => c.type === 'custom',
@@ -267,16 +283,20 @@ function buildRenderers(getSchema) {
   ]
 }
 
-// Whether the connection's renderer depends on the metadata catalog.
-// When true and the catalog is still loading or errored, the body
-// renders a loader / error rather than the renderer fallback.
+// True for connections whose final renderer can only be decided after
+// the metadata catalog has loaded. While the catalog is still loading
+// the body shows a loader for those; everything else (excluded
+// free-form custom, SSH, inline-schema renderers) renders immediately
+// because its fields don't depend on the JSON.
 function dependsOnCatalog(connection) {
   if (!connection) return false
   if (connection.type === 'database') return true
   if (connection.type === 'custom') {
-    // Custom kubernetes-token uses inline fields; everything else
-    // routes through catalog when matched.
-    return connection.subtype !== 'kubernetes-token'
+    return (
+      Boolean(connection.subtype) &&
+      connection.subtype !== 'kubernetes-token' &&
+      !isFreeFormCustomSubtype(connection.subtype)
+    )
   }
   return false
 }
@@ -329,7 +349,9 @@ export default function CredentialsTab({ connection }) {
   const [selectedMethod, setSelectedMethodState] = useState(derivedMethod)
   const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
   const clearStagedSecrets = useConfigureRoleStore((s) => s.clearStagedSecrets)
-  const showMethodCards = supportsConnectionMethods(connection)
+  // CLJS shows the picker on every credentials tab — see
+  // server.cljs:43, server.cljs:137, server.cljs:186, network.cljs:34/84,
+  // metadata_driven.cljs:121-139, claude_code_edit.cljs:59.
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
   const isDerivedMethod = selectedMethod === derivedMethod
@@ -361,13 +383,11 @@ export default function CredentialsTab({ connection }) {
   return (
     <Stack gap="xl" maw={720}>
       <WriteOnlyNotice />
-      {showMethodCards && (
-        <ConnectionMethodSection
-          selectedMethod={selectedMethod}
-          onSelect={setSelectedMethod}
-          awsIamAvailable={awsIamAvailable}
-        />
-      )}
+      <ConnectionMethodSection
+        selectedMethod={selectedMethod}
+        onSelect={setSelectedMethod}
+        awsIamAvailable={awsIamAvailable}
+      />
       {isSecretsManager && (
         <SecretsManagerProviderSection
           provider={secretsProvider}
