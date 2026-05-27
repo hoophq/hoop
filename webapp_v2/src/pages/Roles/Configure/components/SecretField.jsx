@@ -25,8 +25,6 @@ function sourceOptionsFor(availableSources) {
 //                    Offers Replace (and Delete if allowDelete is true).
 //   * "replacing"  — user clicked Replace; staged input awaiting Save.
 //                    Cancel removes the staged change.
-//   * "deleted"    — user clicked Delete; staged removal awaiting Save.
-//                    Undo restores the previous "set" state. Custom-type only.
 //   * "reference"  — value points at an external provider; shown verbatim
 //                    in a read-only field. Replace still works (admin can
 //                    point it at a different ARN); Delete only if allowed.
@@ -45,7 +43,7 @@ function formatTimestamp(iso) {
   }
 }
 
-function ReadOnlyStatus({ label, required, secretsUpdatedAt, isReference, referenceText, allowDelete, onReplace, onDelete }) {
+function ReadOnlyStatus({ label, required, secretsUpdatedAt, isReference, referenceText, onReplace }) {
   const updated = formatTimestamp(secretsUpdatedAt)
   return (
     <Stack gap="xs">
@@ -58,17 +56,6 @@ function ReadOnlyStatus({ label, required, secretsUpdatedAt, isReference, refere
           <Button size="xs" variant="default" onClick={onReplace}>
             Replace
           </Button>
-          {allowDelete && (
-            <Button
-              size="xs"
-              variant="subtle"
-              color="red"
-              leftSection={<Trash2 size={14} />}
-              onClick={onDelete}
-            >
-              Delete
-            </Button>
-          )}
         </Group>
       </Group>
       <Paper p="sm" radius="sm" bg="gray.0" withBorder>
@@ -142,29 +129,6 @@ function ReplacingInput({
   )
 }
 
-function StagedDeleted({ label, onUndo }) {
-  return (
-    <Stack gap="xs">
-      <Group justify="space-between" align="center">
-        <Text size="sm" fw={500} c="dimmed" td="line-through">{label}</Text>
-        <Group gap="xs">
-          <Badge size="sm" color="red" variant="light">
-            Will be deleted on Save
-          </Badge>
-          <Button
-            size="xs"
-            variant="subtle"
-            leftSection={<RotateCcw size={14} />}
-            onClick={onUndo}
-          >
-            Undo
-          </Button>
-        </Group>
-      </Group>
-    </Stack>
-  )
-}
-
 function NewInput({
   label,
   required,
@@ -212,7 +176,6 @@ export default function SecretField({
   isExisting,
   isReference,
   referenceText,
-  allowDelete,
   stagedAction,
   stagedValue = '',
   secretsUpdatedAt,
@@ -222,22 +185,16 @@ export default function SecretField({
   onReplace,
   onChangeStaged,
   onCancel,
-  onDelete,
   onRemove,
 }) {
   const [editing, setEditing] = useState(false)
 
   // Compute effective state
   const state = (() => {
-    if (stagedAction === 'delete') return 'deleted'
     if (stagedAction === 'replace' || stagedAction === 'new' || editing) return 'editing'
     if (!isExisting) return 'new'
     return 'set'
   })()
-
-  if (state === 'deleted') {
-    return <StagedDeleted label={label} onUndo={onCancel} />
-  }
 
   if (state === 'editing') {
     return (
@@ -290,13 +247,11 @@ export default function SecretField({
       secretsUpdatedAt={secretsUpdatedAt}
       isReference={isReference}
       referenceText={referenceText}
-      allowDelete={allowDelete}
       onReplace={() => {
         setEditing(true)
         // Start staged with empty input so HTML5 required validation works.
         onReplace('')
       }}
-      onDelete={onDelete}
     />
   )
 }
