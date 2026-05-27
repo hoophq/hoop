@@ -198,7 +198,7 @@ export default function CredentialsTab({ connection, isAdmin }) {
   const methodMismatch = selectedMethod !== derivedMethod
 
   return (
-    <Stack gap="xxl" maw={720}>
+    <Stack gap="xl" maw={720}>
       <WriteOnlyNotice />
       {showMethodCards && (
         <ConnectionMethodSection

@@ -1,33 +1,48 @@
-import { Stack, Group, Text, Button, Loader, ThemeIcon } from '@mantine/core'
+import { Stack, Group, Text, Title, Button, Loader, ThemeIcon } from '@mantine/core'
 import { Check, X } from 'lucide-react'
 import Modal from '@/components/Modal'
 
-// "Connectivity Check" modal — replaces the inline notification with a
-// dedicated dialog that mirrors the legacy CLJS test-connection-modal.
+// "Connectivity Check" modal — mirrors the CLJS test-connection-modal.
 //
-// The gateway's /connections/:name/test endpoint only returns a single
-// boolean (Success), so the per-status detail that the CLJS modal had
-// (Agent Status / Connection Status separately) collapses into a single
-// pass/fail row here. Duration is measured client-side from when the
-// request was issued.
+// Two parallel checks run from the store: one fetches the connection's
+// current status (agent online/offline), the other actually exercises
+// the connection via /connections/:name/test. Each row updates
+// independently so the user sees per-probe progress instead of a
+// single blocking spinner.
 
-function statusRow(label, status) {
+function statusLabel(status) {
+  if (status === 'checking') return 'Checking…'
+  if (status === 'online') return 'Online'
+  if (status === 'offline') return 'Offline'
+  if (status === 'successful') return 'Successful'
+  if (status === 'failed') return 'Failed'
+  return ''
+}
+
+function statusColor(status) {
+  if (status === 'checking') return 'gray'
+  if (status === 'online' || status === 'successful') return 'green'
+  return 'red'
+}
+
+function StatusRow({ label, status }) {
   const isLoading = status === 'checking'
-  const isSuccess = status === 'success'
-  const color = isLoading ? 'gray' : isSuccess ? 'green' : 'red'
-  const text = isLoading ? 'Checking…' : isSuccess ? 'Successful' : 'Failed'
+  const color = statusColor(status)
+  const success = status === 'online' || status === 'successful'
   return (
-    <Group justify="space-between">
+    <Group justify="space-between" align="center">
       <Text size="sm" fw={500}>{label}</Text>
-      <Group gap={6}>
+      <Group gap={6} align="center">
         {isLoading ? (
           <Loader size="xs" />
         ) : (
           <ThemeIcon size="sm" variant="light" color={color}>
-            {isSuccess ? <Check size={12} /> : <X size={12} />}
+            {success ? <Check size={12} /> : <X size={12} />}
           </ThemeIcon>
         )}
-        <Text size="sm" c={color === 'gray' ? 'dimmed' : color}>{text}</Text>
+        <Text size="sm" c={color === 'gray' ? 'dimmed' : color}>
+          {statusLabel(status)}
+        </Text>
       </Group>
     </Group>
   )
@@ -36,18 +51,25 @@ function statusRow(label, status) {
 export default function TestConnectionModal({
   opened,
   testing,
-  result,
+  agentStatus,
+  connectionStatus,
+  durationMs,
+  errorMessage,
   connectionName,
   onClose,
 }) {
-  const status = testing ? 'checking' : result?.success ? 'success' : 'failed'
-  const durationSec =
-    !testing && result?.durationMs != null ? (result.durationMs / 1000).toFixed(1) : null
-
+  const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null
   return (
-    <Modal opened={opened} onClose={onClose} title="Connectivity Check" size="md" centered>
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      withCloseButton={!testing}
+      title={<Title order={3} fw={700} c="gray.9">Connectivity Check</Title>}
+      size="md"
+      centered
+    >
       <Stack gap="lg">
-        <Stack gap={4}>
+        <Stack gap="xs">
           <Text size="sm" c="dimmed">
             {'Resource Role: ' + (connectionName || '')}
           </Text>
@@ -58,19 +80,20 @@ export default function TestConnectionModal({
           )}
         </Stack>
 
-        <Stack gap="xs">
-          <Text fw={600} size="sm">Details</Text>
-          {statusRow('Connection Status', status)}
+        <Stack gap="md">
+          <Title order={5} fw={600}>Details</Title>
+          <Stack gap="sm">
+            <StatusRow label="Agent Status" status={agentStatus} />
+            <StatusRow label="Connection Status" status={connectionStatus} />
+          </Stack>
         </Stack>
 
-        {!testing && result?.success === false && result?.message && (
-          <Text size="sm" c="red">{result.message}</Text>
+        {connectionStatus === 'failed' && errorMessage && (
+          <Text size="sm" c="red">{errorMessage}</Text>
         )}
 
         <Group justify="flex-end">
-          <Button onClick={onClose} disabled={testing}>
-            Done
-          </Button>
+          <Button onClick={onClose} disabled={testing}>Done</Button>
         </Group>
       </Stack>
     </Modal>

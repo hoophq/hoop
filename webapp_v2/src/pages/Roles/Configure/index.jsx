@@ -55,6 +55,9 @@ export default function ConfigureRolePage() {
     testing,
     testResult,
     testModalOpen,
+    testAgentStatus,
+    testConnectionStatus,
+    testDurationMs,
     stagedSecrets,
     drafts,
     baseline,
@@ -133,7 +136,10 @@ export default function ConfigureRolePage() {
       <TestConnectionModal
         opened={testModalOpen}
         testing={testing}
-        result={testResult}
+        agentStatus={testAgentStatus}
+        connectionStatus={testConnectionStatus}
+        durationMs={testDurationMs}
+        errorMessage={testResult?.message}
         connectionName={connection.name}
         onClose={closeTestModal}
       />
@@ -145,7 +151,7 @@ export default function ConfigureRolePage() {
           handleSave()
         }}
       >
-        <Stack gap="xl">
+        <Stack gap="xl" pb={120}>
           <ConfigureHeader
             connection={connection}
             testing={testing}

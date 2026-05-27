@@ -52,6 +52,16 @@ function draftsFromConnection(conn) {
   }
 }
 
+// If both probe results are in, return a patch that closes out the
+// test duration. Otherwise return an empty patch so set(...) is a no-op
+// for the duration field.
+function maybeSettleDuration({ startedAt, agentStatus, connectionStatus }) {
+  const bothDone =
+    agentStatus !== 'checking' && connectionStatus !== 'checking'
+  if (!bothDone) return {}
+  return { testDurationMs: Date.now() - startedAt }
+}
+
 // Shallow equality for arrays (order-sensitive) and plain objects (key/value).
 function arraysEqual(a, b) {
   if (a === b) return true
@@ -122,6 +132,10 @@ const initialState = {
   testing: false,
   testResult: null,
   testModalOpen: false,
+  testAgentStatus: 'checking',
+  testConnectionStatus: 'checking',
+  testStartedAt: null,
+  testDurationMs: null,
   stagedSecrets: {},
   drafts: { ...emptyDrafts },
   baseline: { ...emptyDrafts }, // snapshot of drafts as loaded; used for diffing
@@ -309,27 +323,71 @@ export const useConfigureRoleStore = create((set, get) => ({
     const { connection } = get()
     if (!connection) return
     const startedAt = Date.now()
-    set({ testing: true, testResult: null, testModalOpen: true })
-    try {
-      const result = await connectionsService.testConnection(connection.name)
-      set({
-        testing: false,
-        testResult: {
-          success: true,
-          durationMs: Date.now() - startedAt,
-          ...result,
-        },
+    set({
+      testing: true,
+      testResult: null,
+      testModalOpen: true,
+      testAgentStatus: 'checking',
+      testConnectionStatus: 'checking',
+      testStartedAt: startedAt,
+      testDurationMs: null,
+    })
+
+    // Mirrors the CLJS event handler in events/connections.cljs:244-319 —
+    // two parallel GETs that update the modal as each one resolves so
+    // the user sees each status flip independently. The duration shown
+    // at the end is the wall-clock time until both finished.
+    const settleAgent = (status) =>
+      set((state) => ({
+        testAgentStatus: status,
+        ...maybeSettleDuration({
+          startedAt,
+          agentStatus: status,
+          connectionStatus: state.testConnectionStatus,
+        }),
+      }))
+    const settleConnection = (status, message) =>
+      set((state) => ({
+        testConnectionStatus: status,
+        testResult:
+          status === 'failed'
+            ? { success: false, message }
+            : status === 'successful'
+              ? { success: true }
+              : null,
+        ...maybeSettleDuration({
+          startedAt,
+          agentStatus: state.testAgentStatus,
+          connectionStatus: status,
+        }),
+      }))
+
+    const agentReq = connectionsService
+      .getConnection(connection.name)
+      .then((data) => settleAgent(data?.status === 'online' ? 'online' : 'offline'))
+      .catch(() => settleAgent('offline'))
+
+    const connReq = connectionsService
+      .testConnection(connection.name)
+      .then(() => settleConnection('successful'))
+      .catch((err) => {
+        const message = err?.response?.data?.message || 'Connection test failed.'
+        settleConnection('failed', message)
       })
-    } catch (err) {
-      const message = err?.response?.data?.message || 'Connection test failed.'
-      set({
-        testing: false,
-        testResult: { success: false, message, durationMs: Date.now() - startedAt },
-      })
-    }
+
+    await Promise.all([agentReq, connReq])
+    set({ testing: false })
   },
 
-  closeTestModal: () => set({ testModalOpen: false, testResult: null }),
+  closeTestModal: () =>
+    set({
+      testModalOpen: false,
+      testResult: null,
+      testAgentStatus: 'checking',
+      testConnectionStatus: 'checking',
+      testStartedAt: null,
+      testDurationMs: null,
+    }),
 
   clearTestResult: () => set({ testResult: null }),
 

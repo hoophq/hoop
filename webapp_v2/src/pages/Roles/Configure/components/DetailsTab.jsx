@@ -18,34 +18,39 @@ export default function DetailsTab({ connection }) {
   }))
 
   return (
-    <Stack gap="xxl" maw={720}>
+    <Stack gap="xl" maw={720}>
       <TextInput label="Name" value={connection.name} disabled />
 
-      <Stack gap="sm">
-        <Group gap="xs" align="center">
-          <Title order={4}>Attributes</Title>
-          <Badge size="sm" color="green" variant="filled">NEW</Badge>
-        </Group>
-        <Text size="sm" c="dimmed">
-          Properties that determine how access policies, guardrails, and
-          other features apply to this resource role. Attributes are
-          evaluated by rules you configure.
-        </Text>
+      <Stack gap="md">
+        <Stack gap="xs">
+          <Group gap="xs" align="center">
+            <Title order={4}>Attributes</Title>
+            <Badge size="sm" color="green" variant="filled">NEW</Badge>
+          </Group>
+          <Text size="sm" c="dimmed">
+            Properties that determine how access policies, guardrails, and
+            other features apply to this resource role. Attributes are
+            evaluated by rules you configure.
+          </Text>
+        </Stack>
         <MultiSelect
           placeholder="Select or type to create"
           searchable
+          nothingFoundMessage="No attributes created yet. Go to Settings → Attributes to add one."
           data={attributeOptions}
           value={drafts.attributes}
           onChange={(value) => setDraft({ attributes: value })}
         />
       </Stack>
 
-      <Stack gap="sm">
-        <Title order={4}>Tags</Title>
-        <Text size="sm" c="dimmed">
-          Labels for filtering, searching, and grouping resource roles in
-          your catalog.
-        </Text>
+      <Stack gap="md">
+        <Stack gap="xs">
+          <Title order={4}>Tags</Title>
+          <Text size="sm" c="dimmed">
+            Labels for filtering, searching, and grouping resource roles in
+            your catalog.
+          </Text>
+        </Stack>
         <TagsInput />
       </Stack>
     </Stack>
