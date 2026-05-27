@@ -41,6 +41,34 @@ func TestResolveIdentity_HappyPaths(t *testing.T) {
 			ctx:      IdentityContext{UserID: "abc-123", UserEmail: "ignored@e.com"},
 			want:     "sa-abc-123@proj.iam.gserviceaccount.com",
 		},
+		{
+			name:     "user.email_local extracts the local part for SA email composition",
+			src:      "$.user.email",
+			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			ctx:      IdentityContext{UserEmail: "matheusmachadoufsc@gmail.com"},
+			want:     "matheusmachadoufsc@proj.iam.gserviceaccount.com",
+		},
+		{
+			name:     "user.email_local preserves dots and plus signs verbatim (sanitization is caller's job)",
+			src:      "$.user.email",
+			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			ctx:      IdentityContext{UserEmail: "first.last+work@example.com"},
+			want:     "first.last+work@proj.iam.gserviceaccount.com",
+		},
+		{
+			name:     "user.email_local splits on the LAST @ so emails with quoted @ collapse safely",
+			src:      "$.user.email",
+			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			ctx:      IdentityContext{UserEmail: "weird@subdomain@example.com"},
+			want:     "weird@subdomain@proj.iam.gserviceaccount.com",
+		},
+		{
+			name:     "user.email_local with no @ passes the value through unchanged",
+			src:      "$.user.email",
+			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			ctx:      IdentityContext{UserEmail: "already-a-handle"},
+			want:     "already-a-handle@proj.iam.gserviceaccount.com",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,6 +111,13 @@ func TestResolveIdentity_ErrorPaths(t *testing.T) {
 			template:    "{user.foo}",
 			ctx:         IdentityContext{UserEmail: "x@y.com"},
 			wantErrSubs: "unknown placeholder",
+		},
+		{
+			name:        "unknown placeholder error advertises user.email_local as supported",
+			src:         "$.user.email",
+			template:    "{user.handle}@proj.iam.gserviceaccount.com",
+			ctx:         IdentityContext{UserEmail: "x@y.com"},
+			wantErrSubs: "{user.email_local}",
 		},
 	}
 	for _, tc := range cases {

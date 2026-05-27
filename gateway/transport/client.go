@@ -38,7 +38,7 @@ import (
 )
 
 // federationResolveTimeout caps the SessionOpen-time blocking call to the
-// federation service. Tight by design — we'd rather fail-closed than hang
+// federation service. Tight by design: we'd rather fail-closed than hang
 // MCP clients waiting on a stuck cloud-side credential mint. The custom
 // runbook hook has its own (longer) timeout managed by transportsystem.
 const federationResolveTimeout = 30 * time.Second
@@ -474,9 +474,9 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 // the audit metadata to the session row.
 //
 // Returning a non-nil error from this function aborts the session-open
-// flow — the caller bails out before sending the AgentConnectionParams to
+// flow: the caller bails out before sending the AgentConnectionParams to
 // the agent. Use this for "deny" semantics. For "readonly" semantics this
-// function never returns an error: it retries internally and only fails if
+// function never returns an error; it retries internally and only fails if
 // the retry also fails.
 func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient.ProxyStream) error {
 	if !featureflag.IsEnabled(pctx.OrgID, "experimental.iam_federation") {
@@ -495,8 +495,6 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	in := services.FederationInput{
 		OrgID:        pctx.OrgID,
 		ConnectionID: pctx.ConnectionID,
-		AgentID:      pctx.AgentID,
-		SessionID:    pctx.SID,
 		UserID:       pctx.UserID,
 		UserEmail:    pctx.UserEmail,
 	}

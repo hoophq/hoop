@@ -2493,65 +2493,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/connections/{nameOrID}/federation/test": {
-            "post": {
-                "description": "Executes the configured federation resolver against a synthetic user without opening a session. Returns the resolved principal and the env-var keys that would be injected; secret values are never returned.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Connections"
-                ],
-                "summary": "Dry-Run a Federation Resolution",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Name or UUID of the connection",
-                        "name": "nameOrID",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "The request body resource",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.FederationTestRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.FederationTestResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -3133,6 +3074,52 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/federation/test": {
+            "post": {
+                "description": "Resolves the candidate federation configuration against a synthetic user AND dispatches a one-shot smoke probe (the caller-supplied test_script, e.g. \"SELECT 1\") to the agent identified in the request body. Persisted state is never read or written: the entire candidate connection + federation pair lives in the body. Returns the resolved principal, the env-var keys that were injected (values are never returned), and the agent-side stdout/stderr of the probe. Success requires both phases to succeed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Test a Federation Configuration End-to-End",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -11982,12 +11969,78 @@ const docTemplate = `{
                 "FeatureStatusDisabled"
             ]
         },
+        "openapi.FederationTestConnection": {
+            "type": "object",
+            "required": [
+                "agent_id",
+                "command",
+                "test_script"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "AgentID is the agent the probe will run on. Required. Must be the\nid of an agent currently connected to the gateway.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "command": {
+                    "description": "Command is the argv the agent invokes. args[0] is the binary,\nargs[1:] are flags. Required: keeping it caller-supplied avoids\nshipping connection-type-specific defaults inside the gateway that\nmay drift from real connections.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "bq",
+                        "query",
+                        "--use_legacy_sql=false"
+                    ]
+                },
+                "envs": {
+                    "description": "Envs are the candidate connection's static env vars (host, port,\nproject id, etc.). The federation-produced env vars are merged on\ntop; on conflict the federated value wins.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "subtype": {
+                    "type": "string",
+                    "example": "bigquery"
+                },
+                "test_script": {
+                    "description": "TestScript is the payload fed to the spawned process on stdin (and\nrendered through text/template by the agent). For SQL connections\nthis is the smoke query (e.g. \"SELECT 1\"). Required for the same\nreason as Command: the gateway does not infer it.",
+                    "type": "string",
+                    "example": "SELECT 1"
+                },
+                "type": {
+                    "description": "Type and SubType mirror the persisted connection's type+subtype.\nInformational only: the gateway does not derive any behaviour from\nthem today — the probe binary is taken from Command. They are\nsurfaced in the response to make audit-trail correlation easier and\nto give future versions a structured place to plug in\ntype-aware defaults without breaking the wire contract.",
+                    "type": "string",
+                    "example": "database"
+                }
+            }
+        },
         "openapi.FederationTestRequest": {
             "type": "object",
             "required": [
+                "config",
+                "connection",
                 "user_email"
             ],
             "properties": {
+                "config": {
+                    "description": "Config is the candidate federation configuration to test. Required.\nCarries the plaintext admin_credentials_json the resolver will use to\nauthenticate; the value never reaches persistence on this endpoint.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    ]
+                },
+                "connection": {
+                    "description": "Connection is the candidate connection the probe runs against.\nRequired. The endpoint does NOT look up a persisted connection by\nname/id — the caller supplies the agent, command, script and envs\ndirectly so a wizard draft can be exercised before persistence.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.FederationTestConnection"
+                        }
+                    ]
+                },
                 "user_email": {
                     "description": "UserEmail is the synthetic user to resolve. Required.",
                     "type": "string",
@@ -12009,7 +12062,7 @@ const docTemplate = `{
                     "example": "hoop-admin@proj.iam.gserviceaccount.com"
                 },
                 "env_var_keys": {
-                    "description": "EnvVarKeys lists the env vars the resolver would inject. Values are\nnever returned.",
+                    "description": "EnvVarKeys lists the env vars the resolver injected into the probe.\nValues are never returned.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -12020,9 +12073,24 @@ const docTemplate = `{
                     ]
                 },
                 "error": {
-                    "description": "Error is the human-readable failure reason when Success=false.",
+                    "description": "Error is the human-readable failure reason when Success=false.\nPopulated for federation-resolve failures; probe-side failures are\nreported via ProbeStatus + ProbeOutput.",
                     "type": "string",
                     "example": "failed minting access token: permission denied"
+                },
+                "probe_output": {
+                    "description": "ProbeOutput is the agent's merged stdout+stderr from the smoke\nprobe. Empty when ProbeStatus=\"skipped\".",
+                    "type": "string",
+                    "example": "+---+\n| f0_ |\n+---+\n| 1 |\n+---+"
+                },
+                "probe_status": {
+                    "description": "ProbeStatus reports the agent-side outcome. \"success\" when exit\ncode was 0; \"failed\" otherwise; \"skipped\" when federation resolve\nfailed and the probe was not dispatched.",
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed",
+                        "skipped"
+                    ],
+                    "example": "success"
                 },
                 "resolved_principal": {
                     "description": "ResolvedPrincipal is the principal the resolver impersonated.",
@@ -12030,7 +12098,7 @@ const docTemplate = `{
                     "example": "alice@example.com"
                 },
                 "success": {
-                    "description": "Success is true when the dry-run resolution returned without error.",
+                    "description": "Success is true only when federation resolved AND the agent probe\nreturned exit code 0.",
                     "type": "boolean",
                     "example": true
                 },

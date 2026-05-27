@@ -2034,33 +2034,99 @@ type ConnectionFederationConfig struct {
 	UpdatedAt string `json:"updated_at,omitempty" example:"2025-05-25T17:00:00Z"`
 }
 
-// FederationTestRequest drives the /federation/test endpoint, which dry-runs
-// the configured resolver under a synthetic user without opening a session
-// or touching session metadata. Used by the admin UI to validate config.
+// FederationTestRequest drives the POST /federation/test endpoint. The
+// endpoint resolves the candidate federation configuration against a
+// synthetic user AND dispatches a real one-shot smoke probe to the agent
+// supplied in Connection (e.g. `SELECT 1` against a BigQuery dataset). It
+// requires no persisted state — the admin UI provides the entire
+// candidate connection + federation pair in the body, so a wizard can
+// validate everything end-to-end before saving anything.
 type FederationTestRequest struct {
 	// UserEmail is the synthetic user to resolve. Required.
 	UserEmail string `json:"user_email" example:"alice@example.com" binding:"required"`
 	// UserID is the synthetic user ID. Optional; defaults to a deterministic
 	// UUID derived from UserEmail.
 	UserID string `json:"user_id,omitempty" example:"00000000-0000-0000-0000-000000000001"`
+	// Config is the candidate federation configuration to test. Required.
+	// Carries the plaintext admin_credentials_json the resolver will use to
+	// authenticate; the value never reaches persistence on this endpoint.
+	Config *ConnectionFederationConfig `json:"config" binding:"required"`
+	// Connection is the candidate connection the probe runs against.
+	// Required. The endpoint does NOT look up a persisted connection by
+	// name/id — the caller supplies the agent, command, script and envs
+	// directly so a wizard draft can be exercised before persistence.
+	Connection *FederationTestConnection `json:"connection" binding:"required"`
 }
 
-// FederationTestResponse reports the outcome of a dry-run. EnvVarKeys is
-// emitted instead of EnvVars so we never leak resolved credentials back over
-// HTTP — operators can verify the *shape* without exposing the secrets.
+// FederationTestConnection is the minimal connection-shaped object the
+// /federation/test probe needs to dispatch a one-shot exec to the agent.
+// It intentionally carries only the fields the probe consumes — not the
+// full openapi.Connection — so the wire contract is honest about what is
+// used. The agent identified by AgentID must be online; the endpoint
+// reports a failure if no live stream is attached.
+type FederationTestConnection struct {
+	// AgentID is the agent the probe will run on. Required. Must be the
+	// id of an agent currently connected to the gateway.
+	AgentID string `json:"agent_id" binding:"required" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Type and SubType mirror the persisted connection's type+subtype.
+	// Informational only: the gateway does not derive any behaviour from
+	// them today — the probe binary is taken from Command. They are
+	// surfaced in the response to make audit-trail correlation easier and
+	// to give future versions a structured place to plug in
+	// type-aware defaults without breaking the wire contract.
+	Type    string `json:"type,omitempty" example:"database"`
+	SubType string `json:"subtype,omitempty" example:"bigquery"`
+	// Command is the argv the agent invokes. args[0] is the binary,
+	// args[1:] are flags. Required: keeping it caller-supplied avoids
+	// shipping connection-type-specific defaults inside the gateway that
+	// may drift from real connections.
+	Command []string `json:"command" binding:"required" example:"bq,query,--use_legacy_sql=false"`
+	// TestScript is the payload fed to the spawned process on stdin (and
+	// rendered through text/template by the agent). For SQL connections
+	// this is the smoke query (e.g. "SELECT 1"). Required for the same
+	// reason as Command: the gateway does not infer it.
+	TestScript string `json:"test_script" binding:"required" example:"SELECT 1"`
+	// Envs are the candidate connection's static env vars (host, port,
+	// project id, etc.). The federation-produced env vars are merged on
+	// top; on conflict the federated value wins.
+	Envs map[string]string `json:"envs,omitempty"`
+}
+
+// FederationTestResponse reports the outcome of a /federation/test call.
+// Two phases happen on the gateway side:
+//
+//  1. Federation resolve — mint the per-user OAuth token via the admin SA.
+//  2. Probe — dispatch a BareExec to the agent with the merged env vars
+//     and the caller-supplied command + test script.
+//
+// Success is the conjunction of both phases. Phase 1 failures surface in
+// Error; phase 2 failures surface in ProbeStatus + ProbeOutput so the
+// admin can see the exact agent-side stdout/stderr (e.g. a GCP permission
+// error or a wrong project id). EnvVarKeys is emitted instead of EnvVars
+// so resolved credentials never travel back over HTTP.
 type FederationTestResponse struct {
-	// Success is true when the dry-run resolution returned without error.
+	// Success is true only when federation resolved AND the agent probe
+	// returned exit code 0.
 	Success bool `json:"success" example:"true"`
 	// ResolvedPrincipal is the principal the resolver impersonated.
 	ResolvedPrincipal string `json:"resolved_principal,omitempty" example:"alice@example.com"`
 	// AdminPrincipal is the impersonator identity (e.g. admin SA email).
 	AdminPrincipal string `json:"admin_principal,omitempty" example:"hoop-admin@proj.iam.gserviceaccount.com"`
-	// EnvVarKeys lists the env vars the resolver would inject. Values are
-	// never returned.
+	// EnvVarKeys lists the env vars the resolver injected into the probe.
+	// Values are never returned.
 	EnvVarKeys []string `json:"env_var_keys,omitempty" example:"HOOP_GCP_ACCESS_TOKEN,HOOP_GCP_TOKEN_EXPIRES_AT"`
 	// TokenExpiresAt is the would-be credential expiry.
 	TokenExpiresAt string `json:"token_expires_at,omitempty" example:"2025-05-25T18:00:00Z"`
+	// ProbeStatus reports the agent-side outcome. "success" when exit
+	// code was 0; "failed" otherwise; "skipped" when federation resolve
+	// failed and the probe was not dispatched.
+	ProbeStatus string `json:"probe_status,omitempty" enums:"success,failed,skipped" example:"success"`
+	// ProbeOutput is the agent's merged stdout+stderr from the smoke
+	// probe. Empty when ProbeStatus="skipped".
+	ProbeOutput string `json:"probe_output,omitempty" example:"+---+\n| f0_ |\n+---+\n| 1 |\n+---+"`
 	// Error is the human-readable failure reason when Success=false.
+	// Populated for federation-resolve failures; probe-side failures are
+	// reported via ProbeStatus + ProbeOutput.
 	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
 }
 
@@ -2996,11 +3062,11 @@ type EventSchemaFieldResponse struct {
 }
 
 type EventTypeResponse struct {
-	Name          string                   `json:"name" example:"session.guardrail_violation"`
-	Category      string                   `json:"category" example:"Session"`
-	Description   string                   `json:"description"`
+	Name          string                     `json:"name" example:"session.guardrail_violation"`
+	Category      string                     `json:"category" example:"Session"`
+	Description   string                     `json:"description"`
 	Schema        []EventSchemaFieldResponse `json:"schema"`
-	SamplePayload map[string]any           `json:"sample_payload"`
+	SamplePayload map[string]any             `json:"sample_payload"`
 }
 
 type EventSubscriptionRequest struct {
@@ -3040,7 +3106,7 @@ type EventDispatchListItemResponse struct {
 	Attempt      int        `json:"attempt"`
 	SessionID    *string    `json:"session_id,omitempty"`
 	LastError    *string    `json:"last_error,omitempty"`
-	ReplayedFrom *string   `json:"replayed_from,omitempty"`
+	ReplayedFrom *string    `json:"replayed_from,omitempty"`
 	DurationMS   *int64     `json:"duration_ms,omitempty"`
 	OccurredAt   time.Time  `json:"occurred_at"`
 	CreatedAt    time.Time  `json:"created_at"`

@@ -446,10 +446,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.DeleteConnectionFederationConfig)
-	r.POST("/connections/:nameOrID/federation/test",
+	// Federation dry-run endpoint is intentionally NOT connection-scoped: it
+	// runs against a candidate config supplied entirely in the request body
+	// so the admin UI can validate a draft before any connection or
+	// federation row is persisted.
+	r.POST("/federation/test",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiconnections.TestConnectionFederationConfig)
+		apiconnections.TestFederationConfig)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,

@@ -3,22 +3,22 @@
 // At session-open time the resolver impersonates the calling user's GCP
 // principal using the admin service-account configured by the customer. The
 // admin SA must hold roles/iam.serviceAccountTokenCreator on the target
-// principal — without it iamcredentials.GenerateAccessToken returns a 403 the
+// principal; without it iamcredentials.GenerateAccessToken returns a 403 the
 // resolver propagates verbatim (PRD §5.3 requires actionable failure
 // messages).
 //
 // Env-var contract emitted to the agent:
 //
-//   HOOP_GCP_ACCESS_TOKEN         The short-lived OAuth bearer token.
-//   HOOP_GCP_TOKEN_EXPIRES_AT     RFC3339 expiry of the bearer.
-//   CLOUDSDK_CORE_PROJECT         The GCP project id from extra_config.project_id.
-//   HOOP_FEDERATED_PRINCIPAL      The resolved user principal (e.g. user@org.com)
-//                                 — informational, surfaces in audit + bq logs.
+//	HOOP_GCP_ACCESS_TOKEN         The short-lived OAuth bearer token.
+//	HOOP_GCP_TOKEN_EXPIRES_AT     RFC3339 expiry of the bearer.
+//	CLOUDSDK_CORE_PROJECT         The GCP project id from extra_config.project_id.
+//	HOOP_FEDERATED_PRINCIPAL      The resolved user principal (e.g. user@org.com).
+//	                              Informational, surfaces in audit + bq logs.
 //
 // The agent's bq wrapper at rootfs/usr/local/bin/bq writes the access token to
 // a tmpfile and exports CLOUDSDK_AUTH_ACCESS_TOKEN_FILE so the bq CLI picks up
 // the impersonated identity. Customers who bring their own agent image are
-// responsible for plumbing these vars into their tooling — the env-var names
+// responsible for plumbing these vars into their tooling; the env-var names
 // are the public contract.
 package gcpiam
 
@@ -26,6 +26,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/gateway/federation"
@@ -38,6 +40,20 @@ import (
 // iamCredentialsScope is the OAuth scope required to call
 // iamcredentials.googleapis.com with the admin service account.
 const iamCredentialsScope = "https://www.googleapis.com/auth/cloud-platform"
+
+// saEmailSuffix is the fixed tail of every GCP service-account email. A
+// resolved principal that ends with this suffix MUST conform to GCP's SA
+// naming rules; otherwise iamcredentials.GenerateAccessToken returns a
+// generic "400 Invalid form of account ID" that obscures the real problem
+// (almost always a template that concatenated a full email into the local
+// part; see {user.email_local} in gateway/federation/identity.go).
+const saEmailSuffix = ".iam.gserviceaccount.com"
+
+// saLocalPartRegex enforces GCP's documented service-account ID rules:
+// lowercase letters/digits/hyphens, must start with a letter, must end with a
+// letter or digit, length 6-30. Source:
+// https://cloud.google.com/iam/docs/service-accounts-create#creating
+var saLocalPartRegex = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 
 // providerName matches models.FederationProviderGCPIAM; duplicated as a
 // package-local string so the gcpiam package compiles without importing
@@ -103,6 +119,10 @@ func (r *Resolver) Resolve(ctx context.Context, req federation.ResolveRequest) (
 		return nil, fmt.Errorf("invalid admin service-account JSON: %w", err)
 	}
 
+	if err := preflightServiceAccountPrincipal(req.ResolvedPrincipal); err != nil {
+		return nil, err
+	}
+
 	issuer, err := r.newIssuer(ctx, req.AdminCredentialsPlain)
 	if err != nil {
 		return nil, fmt.Errorf("failed building iamcredentials client: %w", err)
@@ -157,9 +177,45 @@ type adminServiceAccountJSON struct {
 	ClientEmail string `json:"client_email"`
 }
 
+// preflightServiceAccountPrincipal validates the shape of an SA principal
+// before it is sent to iamcredentials.GenerateAccessToken. Non-SA principals
+// (anything that does not end in .iam.gserviceaccount.com) pass through
+// unchanged: we only know the rules for our own domain. SA principals get a
+// regex check on the local part so the operator sees a precise, actionable
+// error instead of GCP's generic "400 Invalid form of account ID".
+//
+// The typical trigger for this path is a template like
+// "{user.email}@<project>.iam.gserviceaccount.com" applied to a user whose
+// email is "alice@acme.com", producing the obviously-broken double-"@"
+// principal "alice@acme.com@<project>.iam.gserviceaccount.com". The
+// {user.email_local} placeholder exists to avoid that mistake; this preflight
+// catches templates that still produce something illegal (e.g. emails with
+// dots or plus signs that no SA name can carry).
+func preflightServiceAccountPrincipal(principal string) error {
+	if !strings.HasSuffix(principal, saEmailSuffix) {
+		return nil
+	}
+	localPart := strings.TrimSuffix(principal, saEmailSuffix)
+	at := strings.LastIndex(localPart, "@")
+	if at >= 0 {
+		// Strip the project portion ("local@project") to isolate the SA
+		// name; GCP SA emails are "<name>@<project>.iam.gserviceaccount.com".
+		localPart = localPart[:at]
+	}
+	if !saLocalPartRegex.MatchString(localPart) {
+		return fmt.Errorf(
+			"resolved principal %q has an invalid GCP service-account name %q: "+
+				"must be 6-30 chars, start with a lowercase letter, contain only [a-z0-9-], and end with a letter or digit "+
+				"(hint: chain {user.email_local} with @<project>.iam.gserviceaccount.com and avoid dots/plus in the user's email)",
+			principal, localPart,
+		)
+	}
+	return nil
+}
+
 // parseAdminServiceAccountEmail extracts the admin SA's client_email from the
 // JSON blob. Returns a usable error if the blob is malformed or missing the
-// claim — PUT /federation runs this so save-time validation surfaces the
+// claim. PUT /federation runs this so save-time validation surfaces the
 // problem before any session uses the config.
 func parseAdminServiceAccountEmail(raw []byte) (string, error) {
 	var sa adminServiceAccountJSON

@@ -1,22 +1,33 @@
-// Federation endpoints for connection-level IAM federation. All endpoints
-// require AdminOnlyAccessRole — federation configuration is sensitive
-// (admin SA JSON ciphertext lives in the row) and end users have no business
+// Federation endpoints for IAM federation. All endpoints require
+// AdminOnlyAccessRole: federation configuration is sensitive (admin SA JSON
+// ciphertext lives in the persisted row) and end users have no business
 // reading or editing it.
 //
 // Wire shape and security choices:
 //
-//   - GET returns a redacted view: admin_credentials_json is never echoed
-//     back, only has_admin_credentials. This lets the admin UI render
-//     "credentials configured ✅" without ever holding the secret in JS.
+//   - GET /connections/{id}/federation returns a redacted view:
+//     admin_credentials_json is never echoed back, only
+//     has_admin_credentials. This lets the admin UI render "credentials
+//     configured" without ever holding the secret in JS.
 //
-//   - PUT is upsert. Omitting admin_credentials_json on an update preserves
-//     the stored ciphertext; sending a new value re-encrypts. Sending an
-//     empty string ("") clears the credential — explicit and auditable.
+//   - PUT /connections/{id}/federation is upsert. Omitting
+//     admin_credentials_json on an update preserves the stored ciphertext;
+//     sending a new value re-encrypts. Sending an empty string ("") clears
+//     the credential (explicit and auditable).
 //
-//   - POST /test runs a dry-run: it executes the resolver against a synthetic
-//     user (admin-supplied email) and returns the *shape* of what would be
-//     injected (env-var keys only, never values). Used by the admin UI to
-//     validate config without opening a real session.
+//   - DELETE /connections/{id}/federation removes the row. Subsequent
+//     sessions on this connection revert to the static connection envs.
+//
+//   - POST /federation/test is stateless and end-to-end. The body carries
+//     a full candidate federation config AND a candidate connection
+//     (agent_id, command, test_script, envs). The endpoint resolves the
+//     federation against a synthetic user, merges the federated env vars
+//     with the connection's static envs, and dispatches a one-shot
+//     BareExec smoke probe to the named agent. The agent must be online.
+//     The response carries the resolved principal, the env-var keys that
+//     were injected (values never), and the probe's stdout+stderr — so
+//     the admin UI can show a wizard user "your draft works end-to-end"
+//     before any row is persisted.
 package apiconnections
 
 import (
@@ -29,11 +40,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/federation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
 
 const federationTestTimeout = 30 * time.Second
@@ -187,19 +201,18 @@ func DeleteConnectionFederationConfig(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// TestConnectionFederationConfig
+// TestFederationConfig
 //
-//	@Summary		Dry-Run a Federation Resolution
-//	@Description	Executes the configured federation resolver against a synthetic user without opening a session. Returns the resolved principal and the env-var keys that would be injected; secret values are never returned.
-//	@Tags			Connections
+//	@Summary		Test a Federation Configuration End-to-End
+//	@Description	Resolves the candidate federation configuration against a synthetic user AND dispatches a one-shot smoke probe (the caller-supplied test_script, e.g. "SELECT 1") to the agent identified in the request body. Persisted state is never read or written: the entire candidate connection + federation pair lives in the body. Returns the resolved principal, the env-var keys that were injected (values are never returned), and the agent-side stdout/stderr of the probe. Success requires both phases to succeed.
+//	@Tags			Federation
 //	@Accept			json
 //	@Produce		json
-//	@Param			nameOrID	path		string							true	"Name or UUID of the connection"
-//	@Param			request		body		openapi.FederationTestRequest	true	"The request body resource"
-//	@Success		200			{object}	openapi.FederationTestResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/connections/{nameOrID}/federation/test [post]
-func TestConnectionFederationConfig(c *gin.Context) {
+//	@Param			request	body		openapi.FederationTestRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.FederationTestResponse
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/federation/test [post]
+func TestFederationConfig(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.FederationTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -210,26 +223,45 @@ func TestConnectionFederationConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "user_email is required"})
 		return
 	}
-
-	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
+	if req.Config == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "config is required"})
 		return
 	}
-	if conn == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	if req.Connection == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is required"})
+		return
+	}
+	if vErr := validateFederationRequest(*req.Config); vErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
+		return
+	}
+	if vErr := validateProbeConnection(*req.Connection); vErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": vErr.Error()})
 		return
 	}
 
-	cfg, err := models.GetConnectionFederationConfig(models.DB, ctx.GetOrgID(), conn.ID)
-	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "federation not configured for this connection"})
-			return
+	// ConnectionID is left empty: the resolver does not read it and the
+	// endpoint is connection-agnostic by design (no DB lookup).
+	cfg := apiToModel(*req.Config, ctx.GetOrgID(), "")
+
+	// AdminCredentialsJSON is write-only on the wire; treat it as the
+	// plaintext source for the resolver. Empty is allowed at this layer:
+	// the provider itself will reject with a clear "missing admin
+	// service-account credentials" message which we surface as
+	// Success=false rather than a 400 (resolver-time concern, not a
+	// config-shape concern).
+	var adminPlain []byte
+	if req.Config.AdminCredentialsJSON != "" {
+		adminPlain = []byte(req.Config.AdminCredentialsJSON)
+	}
+	// Best-effort zero of the plaintext on return so the buffer is not
+	// left lying around post-resolve. Go's GC may have already copied the
+	// slice, but it costs nothing to clear what we own.
+	defer func() {
+		for i := range adminPlain {
+			adminPlain[i] = 0
 		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching federation config: %v", err)
-		return
-	}
+	}()
 
 	userID := req.UserID
 	if userID == "" {
@@ -241,33 +273,82 @@ func TestConnectionFederationConfig(c *gin.Context) {
 	dryCtx, cancel := context.WithTimeout(context.Background(), federationTestTimeout)
 	defer cancel()
 
-	res, resolveErr := services.ResolveFederation(dryCtx, cfg, services.FederationInput{
-		OrgID:        ctx.GetOrgID(),
-		ConnectionID: conn.ID,
-		AgentID:      conn.AgentID.String,
-		SessionID:    "federation-dry-run-" + userID,
-		UserID:       userID,
-		UserEmail:    req.UserEmail,
+	// Phase 1 — federation resolve. On failure the probe is skipped (no
+	// federated env vars exist yet) and we return immediately with the
+	// resolver's verbatim error.
+	res, resolveErr := services.ResolveFederationDryRun(dryCtx, cfg, adminPlain, services.FederationInput{
+		OrgID:     ctx.GetOrgID(),
+		UserID:    userID,
+		UserEmail: req.UserEmail,
 	})
 	if resolveErr != nil {
 		c.JSON(http.StatusOK, openapi.FederationTestResponse{
-			Success: false,
-			Error:   resolveErr.Error(),
+			Success:     false,
+			ProbeStatus: "skipped",
+			Error:       resolveErr.Error(),
 		})
 		return
 	}
 
-	keys := make([]string, 0, len(res.EnvVars))
-	for k := range res.EnvVars {
-		keys = append(keys, k)
+	// Phase 2 — agent-side probe. Merge the connection's static envs
+	// with the resolver's output; the federated values must win on key
+	// conflicts because that is what a real session would do (the agent
+	// secretsmanager applies federated envs after static envs on the
+	// session-open path).
+	probeEnvs := make(map[string]string, len(req.Connection.Envs)+len(res.EnvVars))
+	for k, v := range req.Connection.Envs {
+		probeEnvs[k] = v
 	}
+	for k, v := range res.EnvVars {
+		probeEnvs[k] = v
+	}
+
+	// SID is synthetic and namespaces this probe in the agent's logs.
+	// The agent does not persist anything keyed by SID for BareExec, so
+	// uniqueness is the only requirement.
+	probeSID := "federation-probe-" + uuid.NewString()
+	probeReq := &pbsystem.BareExecRequest{
+		SID:     probeSID,
+		AgentID: req.Connection.AgentID,
+		Script:  req.Connection.TestScript,
+		Command: req.Connection.Command,
+		EnvVars: probeEnvs,
+	}
+	probeResp := transportsystem.BareExecWithTimeout(probeReq, federationTestTimeout)
+
+	envKeys := make([]string, 0, len(res.EnvVars))
+	for k := range res.EnvVars {
+		envKeys = append(envKeys, k)
+	}
+
+	probeOK := probeResp.Status == pbsystem.StatusSuccessType
 	c.JSON(http.StatusOK, openapi.FederationTestResponse{
-		Success:           true,
+		Success:           probeOK,
 		ResolvedPrincipal: res.ResolvedPrincipal,
 		AdminPrincipal:    res.AdminPrincipal,
-		EnvVarKeys:        keys,
+		EnvVarKeys:        envKeys,
 		TokenExpiresAt:    res.TokenExpiresAt.Format(time.RFC3339),
+		ProbeStatus:       probeResp.Status,
+		ProbeOutput:       probeResp.Output,
 	})
+}
+
+// validateProbeConnection enforces the minimum shape the BareExec dispatch
+// needs. The fields are required at the binding layer too (binding:"required"
+// on the struct tags); this function catches the empty-slice and
+// empty-string cases binding does not catch (Gin's required validator
+// rejects nil pointers but accepts empty slices and "" values).
+func validateProbeConnection(conn openapi.FederationTestConnection) error {
+	if conn.AgentID == "" {
+		return errBadRequest("connection.agent_id is required")
+	}
+	if len(conn.Command) == 0 || conn.Command[0] == "" {
+		return errBadRequest("connection.command is required (argv slice with at least the binary name)")
+	}
+	if conn.TestScript == "" {
+		return errBadRequest("connection.test_script is required")
+	}
+	return nil
 }
 
 // validateFederationRequest enforces the same shape constraints as the
@@ -300,6 +381,41 @@ func validateFederationRequest(req openapi.ConnectionFederationConfig) error {
 	}
 	if req.TokenTTLSeconds < 0 || req.TokenTTLSeconds > 43200 {
 		return errBadRequest("token_ttl_seconds must be between 1 and 43200")
+	}
+
+	// Dry-render the identity template now so typo placeholders (e.g.
+	// {user.handle} instead of {user.email_local}) surface as a 400 here
+	// rather than as a runtime federation failure on the first session.
+	// The synthetic context populates every supported source so we exercise
+	// the full substitution surface. Empty-source failures are a runtime
+	// concern (per-user), not a config-validity concern.
+	if err := dryRenderIdentityTemplate(req); err != nil {
+		return err
+	}
+	return nil
+}
+
+// dryRenderIdentityTemplate runs the configured source/template combo against
+// a stable synthetic user. It returns a 400-ready error when the template uses
+// an unsupported placeholder or renders to empty against a fully populated
+// context. Both are config-time mistakes the admin can fix in-place.
+//
+// We intentionally do not enforce provider-specific shape rules here (e.g. SA
+// local-part regex for gcp_iam): admins routinely tweak templates against
+// users whose emails would not yet exist. Provider-side validation lives in
+// the resolver (gcpiam.preflightServiceAccountPrincipal) and surfaces a clear
+// error at session open if the rendered principal is unusable for that
+// provider.
+func dryRenderIdentityTemplate(req openapi.ConnectionFederationConfig) error {
+	const (
+		probeEmail = "validation-probe@example.com"
+		probeID    = "00000000-0000-0000-0000-000000000000"
+	)
+	if _, err := federation.ResolveIdentity(req.IdentitySourceAttribute, req.IdentityTargetTemplate, federation.IdentityContext{
+		UserEmail: probeEmail,
+		UserID:    probeID,
+	}); err != nil {
+		return errBadRequest("identity template validation failed: %v", err)
 	}
 	return nil
 }

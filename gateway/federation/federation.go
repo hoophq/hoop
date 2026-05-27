@@ -55,7 +55,7 @@ type ResolveRequest struct {
 	OrgID        string
 	ConnectionID string
 
-	// UserID and UserEmail come from storagev2.Context — for MCP traffic this
+	// UserID and UserEmail come from storagev2.Context. For MCP traffic this
 	// is the Entra-verified identity, for web traffic it is the
 	// OIDC-resolved Hoop user.
 	UserID    string
@@ -81,7 +81,7 @@ type ResolveRequest struct {
 // contract is:
 //
 //   - Resolve is invoked synchronously on every SessionOpen for a federated
-//     connection — must return quickly (seconds, not minutes).
+//     connection, so it must return quickly (seconds, not minutes).
 //   - Errors propagate to the session-open path, which applies the configured
 //     fallback policy.
 //   - Resolvers must not log or persist the resolved credentials.

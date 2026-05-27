@@ -202,3 +202,98 @@ func TestProvider_ReturnsRegisteredName(t *testing.T) {
 		t.Errorf("provider name drifted; expected gcp_iam")
 	}
 }
+
+// TestResolve_PreflightRejectsBrokenSAPrincipal exercises the path that bit
+// real users: a template like "{user.email}@<project>.iam.gserviceaccount.com"
+// against a user whose email is "alice@acme.com" produces a double-"@"
+// principal that GCP rejects with an opaque 400. The preflight must turn that
+// into a clear local error before any GCP call is made.
+func TestResolve_PreflightRejectsBrokenSAPrincipal(t *testing.T) {
+	issuer := &fakeIssuer{token: "should-not-be-issued"}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com@my-proj.iam.gserviceaccount.com",
+	})
+	if err == nil {
+		t.Fatalf("expected preflight to reject double-@ principal")
+	}
+	if !strings.Contains(err.Error(), "invalid GCP service-account name") {
+		t.Errorf("error %q should call out the invalid SA name", err.Error())
+	}
+	if !strings.Contains(err.Error(), "{user.email_local}") {
+		t.Errorf("error %q should hint at the {user.email_local} placeholder", err.Error())
+	}
+	if issuer.calledPrincipal != "" {
+		t.Errorf("issuer must not be called when preflight rejects; got principal=%q", issuer.calledPrincipal)
+	}
+}
+
+// TestResolve_PreflightRejectsDottedSALocalPart guards against the silent
+// failure mode where a dotted email (e.g. first.last@example.com) is fed into
+// {user.email_local} verbatim. SA names can't carry dots; GCP would refuse and
+// the preflight should surface the rule before the API call.
+func TestResolve_PreflightRejectsDottedSALocalPart(t *testing.T) {
+	issuer := &fakeIssuer{}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "first.last@my-proj.iam.gserviceaccount.com",
+	})
+	if err == nil {
+		t.Fatalf("expected preflight to reject dotted SA local part")
+	}
+	if !strings.Contains(err.Error(), "invalid GCP service-account name") {
+		t.Errorf("error %q should call out the invalid SA name", err.Error())
+	}
+	if issuer.calledPrincipal != "" {
+		t.Errorf("issuer must not be called when preflight rejects; got principal=%q", issuer.calledPrincipal)
+	}
+}
+
+// TestResolve_PreflightAcceptsWellFormedSAPrincipal documents the happy case:
+// a template that uses {user.email_local} cleanly produces a valid SA email,
+// preflight is a no-op, and the issuer is invoked with the principal verbatim.
+func TestResolve_PreflightAcceptsWellFormedSAPrincipal(t *testing.T) {
+	issuer := &fakeIssuer{token: "ya29.ok", expiresAt: time.Now().Add(time.Hour)}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "matheusmachadoufsc@my-proj.iam.gserviceaccount.com",
+	})
+	if err != nil {
+		t.Fatalf("expected preflight to accept well-formed principal, got: %v", err)
+	}
+	if issuer.calledPrincipal != "matheusmachadoufsc@my-proj.iam.gserviceaccount.com" {
+		t.Errorf("issuer received principal %q, want matheusmachadoufsc@my-proj.iam.gserviceaccount.com", issuer.calledPrincipal)
+	}
+}
+
+// TestResolve_PreflightIgnoresNonSAPrincipal locks in the design choice that
+// only *.iam.gserviceaccount.com principals get the local-part check. Other
+// principal types (workforce subjects, user-email pass-throughs for future
+// resolvers) shouldn't be rejected by gcpiam's preflight even when reused as
+// the resolved principal during tests; the failure mode for them happens at
+// GCP itself.
+func TestResolve_PreflightIgnoresNonSAPrincipal(t *testing.T) {
+	issuer := &fakeIssuer{token: "ya29.x", expiresAt: time.Now().Add(time.Hour)}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err != nil {
+		t.Fatalf("preflight should be a no-op for non-SA principals; got: %v", err)
+	}
+	if issuer.calledPrincipal != "alice@acme.com" {
+		t.Errorf("issuer received principal %q, want alice@acme.com", issuer.calledPrincipal)
+	}
+}
