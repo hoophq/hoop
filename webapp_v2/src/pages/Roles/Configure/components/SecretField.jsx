@@ -96,7 +96,9 @@ function ReadOnlyStatus({ label, required, secretsUpdatedAt, isReference, refere
 }
 
 function ReplacingInput({ label, required, placeholder, type, value, onChange, onCancel }) {
-  const InputComponent = type === 'textarea' ? Textarea : TextInput
+  const isTextarea = type === 'textarea'
+  const InputComponent = isTextarea ? Textarea : TextInput
+  const textareaProps = isTextarea ? { autosize: true, minRows: 4 } : {}
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -119,8 +121,7 @@ function ReplacingInput({ label, required, placeholder, type, value, onChange, o
         placeholder={placeholder || 'Enter new value'}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
-        minRows={type === 'textarea' ? 4 : undefined}
-        autosize={type === 'textarea'}
+        {...textareaProps}
       />
     </Stack>
   )
@@ -150,7 +151,9 @@ function StagedDeleted({ label, onUndo }) {
 }
 
 function NewInput({ label, required, placeholder, type, value, onChange, onRemove }) {
-  const InputComponent = type === 'textarea' ? Textarea : TextInput
+  const isTextarea = type === 'textarea'
+  const InputComponent = isTextarea ? Textarea : TextInput
+  const textareaProps = isTextarea ? { autosize: true, minRows: 4 } : {}
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -169,8 +172,7 @@ function NewInput({ label, required, placeholder, type, value, onChange, onRemov
         placeholder={placeholder || 'Enter value'}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
-        minRows={type === 'textarea' ? 4 : undefined}
-        autosize={type === 'textarea'}
+        {...textareaProps}
       />
     </Stack>
   )
