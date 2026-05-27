@@ -15,10 +15,11 @@ import { Check, RotateCcw, Trash2, X } from 'lucide-react'
 import Select from '@/components/Select'
 import { SOURCE_LABELS } from '../utils/secretsCodec'
 
-// Renders a compact source picker as a `leftSection` adornment inside
-// the credential input. Used when the form is in Secrets Manager mode;
-// `availableSources` is the subset offered to the user (always includes
-// the current secrets-manager provider + 'manual').
+// Renders a compact source picker as the input's leftSection adornment.
+// Used when the form is in Secrets Manager mode; `availableSources` is
+// the subset offered to the user (current provider + manual-input).
+// Auto-sized so the trigger label drives width; the popover stays wider
+// for legible options.
 function SourceSelectorAdornment({ source, availableSources, onSourceChange }) {
   if (!availableSources || availableSources.length < 2) return null
   return (
@@ -30,8 +31,7 @@ function SourceSelectorAdornment({ source, availableSources, onSourceChange }) {
       variant="unstyled"
       allowDeselect={false}
       withCheckIcon={false}
-      comboboxProps={{ width: 200 }}
-      w={140}
+      comboboxProps={{ width: 220 }}
     />
   )
 }
@@ -163,7 +163,7 @@ function ReplacingInput({
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         leftSection={adornment}
-        leftSectionWidth={adornment ? 160 : undefined}
+        leftSectionWidth={adornment ? 'auto' : undefined}
         {...textareaProps}
       />
     </Stack>
@@ -234,7 +234,7 @@ function NewInput({
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         leftSection={adornment}
-        leftSectionWidth={adornment ? 160 : undefined}
+        leftSectionWidth={adornment ? 'auto' : undefined}
         {...textareaProps}
       />
     </Stack>

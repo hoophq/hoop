@@ -16,9 +16,10 @@ const REFERENCE_PREFIXES = [
 
 // Source identifiers for the per-field "where does this credential come
 // from" selector that appears when the user is in Secrets Manager mode.
-// Mirrors CLJS connection_method.cljs::source-text.
+// Mirrors CLJS connection_method.cljs::source-text — keep these strings
+// identical to the CLJS values so future cross-app debugging maps 1:1.
 export const SOURCES = {
-  MANUAL: 'manual',
+  MANUAL: 'manual-input',
   VAULT_KV1: 'vault-kv1',
   VAULT_KV2: 'vault-kv2',
   AWS_SECRETS_MANAGER: 'aws-secrets-manager',

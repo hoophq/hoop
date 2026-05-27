@@ -102,6 +102,9 @@ export const CATALOG_FIELDS = {
 // since the gateway doesn't store an explicit "method" field. See
 // secretsCodec.js for reference detection.
 export const CONNECTION_METHODS = {
+  // These identifiers are React-side only — the backend doesn't have a
+  // "connection method" concept; it derives the meaning from value
+  // prefixes. Keep them stable so URL/local state migrations are easy.
   MANUAL: 'manual',
   SECRETS_MANAGER: 'secrets_manager',
   AWS_IAM: 'aws_iam',

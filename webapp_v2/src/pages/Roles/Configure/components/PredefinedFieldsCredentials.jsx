@@ -24,6 +24,11 @@ export default function PredefinedFieldsCredentials({
   fields,
   isAdmin,
   availableSources,
+  // When true, every field renders as if it had no existing value —
+  // the caller (CredentialsTab) sets this after the user switched the
+  // connection method, since pre-existing inline values don't apply
+  // to the new method anyway.
+  forceNewState,
 }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
@@ -32,6 +37,10 @@ export default function PredefinedFieldsCredentials({
   const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
 
   const currentSecrets = connection.secret || {}
+  // When the form forces a fresh-start UX, default each field's source
+  // to the first available option (the active provider in Secrets
+  // Manager mode) so the adornment shows the right pick on first paint.
+  const defaultSource = availableSources?.[0] || SOURCES.MANUAL
 
   return (
     <Stack gap="lg">
@@ -39,12 +48,13 @@ export default function PredefinedFieldsCredentials({
         const envKey = `envvar:${field.key.toUpperCase()}`
         const encodedValue = currentSecrets[envKey]
         const isExisting =
+          !forceNewState &&
           envKey in currentSecrets &&
           (encodedValue !== '' || connection.secrets_updated_at != null)
-        const isReference = isSecretReference(encodedValue)
+        const isReference = !forceNewState && isSecretReference(encodedValue)
         const referenceText = isReference ? decodeSecretValue(encodedValue) : ''
         const staged = stagedSecrets[envKey]
-        const source = fieldSources[envKey] || SOURCES.MANUAL
+        const source = fieldSources[envKey] || defaultSource
         return (
           <SecretField
             key={envKey}

@@ -1,8 +1,11 @@
 package apiconnections
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"testing"
+
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 func b64(s string) string {
@@ -101,6 +104,41 @@ func TestStripInlineSecrets(t *testing.T) {
 			t.Fatalf("input was mutated")
 		}
 	})
+}
+
+func TestIsFreeFormCustom(t *testing.T) {
+	mk := func(typ, sub string) *models.Connection {
+		c := &models.Connection{Type: typ}
+		if sub != "" {
+			c.SubType = sql.NullString{String: sub, Valid: true}
+		}
+		return c
+	}
+	cases := []struct {
+		name     string
+		conn     *models.Connection
+		expected bool
+	}{
+		{"nil", nil, false},
+		{"database/postgres is catalog", mk("database", "postgres"), false},
+		{"application/ssh is catalog", mk("application", "ssh"), false},
+		{"httpproxy/claude-code is catalog", mk("httpproxy", "claude-code"), false},
+		{"custom/kubernetes-token is predefined", mk("custom", "kubernetes-token"), false},
+		{"custom/dynamodb override is predefined", mk("custom", "dynamodb"), false},
+		{"custom/cloudwatch override is predefined", mk("custom", "cloudwatch"), false},
+		{"custom with no subtype is free-form", mk("custom", ""), true},
+		{"custom/tcp falls through to free-form", mk("custom", "tcp"), true},
+		{"custom/linux-vm is free-form", mk("custom", "linux-vm"), true},
+		{"custom/ssh is free-form (under custom only)", mk("custom", "ssh"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isFreeFormCustom(tc.conn)
+			if got != tc.expected {
+				t.Fatalf("isFreeFormCustom = %v, want %v", got, tc.expected)
+			}
+		})
+	}
 }
 
 func TestEnvsEqual(t *testing.T) {
