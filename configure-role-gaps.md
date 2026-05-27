@@ -6,67 +6,47 @@
 
 ## Backend strip policy (gateway/api/connections/secrets.go)
 
-The gateway returns connection secrets in two modes:
+The gateway returns connection secrets in two modes, picked by
+`shouldRoundTripSecrets`:
 
 | Connection shape | Behaviour |
 |------------------|-----------|
-| `type=custom` (any subtype, including free-form and the catalog-driven ones like `kubernetes-token`, `dynamodb`, `aws-cloudwatch`, legacy `cloudwatch`) | **Round-trip plaintext** — values come back base64-encoded so the editor can show / edit them. |
-| `type=httpproxy` (any subtype — `claude-code` and the generic web-application renderer) | **Round-trip plaintext** — Anthropic URL / API key / headers etc. need to be visible to drive the predefined form. |
-| `type=application` with subtype in `{ssh, git, github}` | **Round-trip plaintext** — host / user / private-key fields drive the SSH-family renderer. |
-| `type=database` (`postgres`, `mysql`, `mssql`, `oracledb`, `mongodb`) | **Write-only** — keys preserved, inline values blanked. Reference values (`_aws:`, `_vaultkv1:`, `_vaultkv2:`, `_aws_iam_rds:`) and boolean strings (`"true"` / `"false"`) round-trip unchanged. |
-| Anything else | **Write-only** (safe default). |
+| `application/ssh` | **Round-trip** — bespoke `SshRenderer` needs host/user/PASS or AUTHORIZED_SERVER_KEYS visible. |
+| `httpproxy/*` (claude-code, web-application, grafana, kibana) | **Round-trip** — bespoke `ClaudeCodeRenderer` and `HttpProxyRenderer` show REMOTE_URL, HTTP headers, allow-insecure-SSL. |
+| `custom/(empty subtype)`, `custom/linux-vm`, `custom/kubernetes-token` | **Round-trip** — free-form / Kubernetes renderers display env vars, configuration files, cluster URL, bearer token. |
+| Everything else (catalog applications `git`/`github`/`tcp`, every `database/*`, every catalog `custom/*` — `dynamodb`, `aws-*`, `kubernetes`, `redis`, …) | **Write-only** — keys preserved, inline values blanked. References (`_aws:`, `_vaultkv1:`, `_vaultkv2:`, `_aws_iam_rds:`) and boolean strings (`"true"`/`"false"`) round-trip unchanged. |
 
-Predicate: `shouldRoundTripSecrets(conn *models.Connection)` at
-`gateway/api/connections/secrets.go`. Tests at
-`gateway/api/connections/secrets_test.go::TestShouldRoundTripSecrets`.
-The legacy `isFreeFormCustom` predicate is kept around for audit /
-test purposes but no longer drives the strip decision.
+The catalog (subtypes with metadata-driven schemas) drives the policy —
+see https://github.com/hoophq/documentation/blob/main/store/connections.json.
+Tests at `gateway/api/connections/secrets_test.go::TestShouldRoundTripSecrets`.
 
-**Security trade-off** — round-tripping API keys (Anthropic, Vault tokens),
-SSH private keys, and Kubernetes JWTs means admins on the Configure
-page can read the existing values, not just replace them. This is a
-deliberate choice for parity with CLJS, which never stripped. Catalog
-DB credentials (`type=database`) stay write-only because the renderer
-already supports the Set / Replace pattern and host/user/password are
-pure credentials. If a customer flags the API-key exposure as a
-concern, narrow `shouldRoundTripSecrets` to specific subtypes and
-refactor the React renderers to use the Set / Replace pattern there
-instead.
+**Security trade-off** — round-tripping the five bespoke shapes means
+admins on the Configure page see existing Anthropic API keys, SSH
+private keys, Kubernetes bearer tokens, and so on. This matches CLJS,
+which never stripped these. If a customer flags API-key exposure as a
+concern, narrow `shouldRoundTripSecrets` and refactor the affected
+React renderer(s) to use the Set/Replace pattern.
 
-## React Credentials tab strip-vs-plaintext dispatch
+## React renderer dispatch
 
-`PredefinedFieldsCredentials` (the renderer used by every fixed-schema
-connection type) auto-detects per field:
+`webapp_v2/src/pages/Roles/Configure/components/renderers/index.jsx`
+holds the ordered match table. First match wins; new bespoke shapes
+get a new file in the same folder + a new entry here.
 
-- If the backend returned an inline plaintext value (not stripped, not
-  a `_aws:` / `_vaultkv*:` reference): render a `SourcedInput`
-  pre-filled with the decoded value. Mirrors CLJS — admins see what's
-  there and can type over it.
-- If the value is stripped (empty inline) or a reference: render
-  `SecretField` (Set badge → Replace flow). This is the catalog DB
-  path.
+1. `application/ssh` → `SshRenderer` (auth-method radio)
+2. `httpproxy/claude-code` → `ClaudeCodeRenderer` (Anthropic URL + Key + HTTP headers + insecure SSL + agent)
+3. `httpproxy/*` → `HttpProxyRenderer` (REMOTE_URL + HTTP headers + insecure SSL + agent)
+4. `custom/kubernetes-token` → `KubernetesTokenRenderer` (cluster URL + bearer token + insecure SSL + agent)
+5. `custom/linux-vm` → `FreeFormCustomRenderer` (env vars + config files + command + agent)
+6. Catalog subtype with schema (and not in the legacy custom free-form exclusion) → `CatalogRenderer` (Set/Replace per field + agent)
+7. `type=custom` catch-all → `FreeFormCustomRenderer`
+8. Anything else → `UnsupportedFallback` warning
 
-`WriteOnlyNotice` is hidden on round-trip connections — see
-`connectionRoundTripsSecrets` in `src/utils/connectionPolicy.js`.
-Keep that predicate in sync with `shouldRoundTripSecrets` on the
-gateway side.
-
-## React dispatch (webapp_v2/src/pages/Roles/Configure/components/CredentialsTab.jsx)
-
-Renderer is picked by the first matching entry in `buildRenderers(getSchema)`:
-
-1. `database` + has metadata schema → catalog renderer
-2. `application` + `{ssh, git, github}` → SSH renderer
-3. `httpproxy` + `claude-code` → Claude Code renderer (inline schema)
-4. `httpproxy` (any other) → HTTP proxy generic (inline schema)
-5. `custom` + `kubernetes-token` → Kubernetes token (inline schema)
-6. `custom` + subtype NOT in `{tcp, httpproxy, ssh, linux-vm, claude-code}` + has metadata schema → catalog renderer
-7. `custom` (everything else) → free-form `CustomCredentials`
-
-Mirrors CLJS `credentials_tab.cljs:11-33` with one intentional divergence:
-when CLJS would route to `metadata-driven` and the JSON has no schema, it
-renders `nil` (blank tab). React falls through to free-form so the user
-can at least see / edit existing envvars on legacy rows.
+Each renderer file owns the section titles, field schemas, and any
+shape-specific logic (Bearer prefix on kubernetes-token, auth-method
+radio on ssh). Shared sections (env vars list, HTTP headers list,
+configuration files, command args, agent picker, insecure-SSL toggle,
+predefined-field list) live in `renderers/shared/`.
 
 ## Known gaps
 
@@ -77,19 +57,22 @@ have `type=custom, subtype="cloudwatch"`. The documentation catalog
 only ships `aws-cloudwatch` today, so the legacy name doesn't match
 the catalog renderer.
 
-Status after the round-trip extension:
-- Backend `shouldRoundTripSecrets` returns true for every `type=custom`
-  subtype, so the values DO come back now. No more empty fields.
-- React `custom-catalog` still doesn't match (no schema for the bare
-  `cloudwatch` name) → falls through to free-form `CustomCredentials`.
-- Net effect: user sees their AWS env vars as free-form key/value
-  rows. Functional but loses the catalog form's structured fields.
+After the catalog-driven write-only flip:
+- Backend `shouldRoundTripSecrets` returns **false** for `custom/cloudwatch`
+  (not on the round-trip list). Values do NOT come back; they're write-only.
+- React dispatch: no catalog schema for `cloudwatch`, so the dispatch
+  falls through to `custom-freeform` → `FreeFormCustomRenderer`. The user
+  sees empty fields (because the backend stripped them) presented as
+  free-form key/value rows.
+- Net effect: the user can re-enter values via free-form but cannot
+  inspect existing ones, and the form loses the catalog renderer's
+  structured field layout.
 
 Fix candidates:
-- Backend learns the catalog and uses metadata-driven render decision
-  on the response (annotate which subtypes have catalog schemas).
-- Backend adds an alias map `cloudwatch → aws-cloudwatch`. Quick, but
-  alias maps tend to grow over time.
+- Backend learns the catalog and aliases `cloudwatch → aws-cloudwatch`
+  so it round-trips like a known catalog subtype OR so it renders via
+  the catalog renderer. (The current rule keys on the *subtype string*,
+  not on catalog presence — an alias map would fix both.)
 - Migrate legacy rows to the new subtype (one-time DB script).
 
 ### G2. Icons for subtypes outside the metadata catalog
@@ -101,33 +84,15 @@ JSON fall back to `/icons/connections/custom-ssh.svg`. Known misses:
 - `kubernetes-token` (catalog has `kubernetes` but not the `-token`
   variant) — should display the Kubernetes icon, currently displays the
   SSH fallback.
-- `httpproxy` (catalog has `web-application` as the generic, not
-  `httpproxy`) — same fallback.
-- Any subtype not in the documentation JSON.
+- `linux-vm` (not in catalog).
+- Any other subtype not in the documentation JSON.
 
 Fix candidates:
 - Add the missing variants to `hoophq/documentation:store/connections.json`.
 - Keep a tiny alias map *in the JSON* (e.g. `aliases: ["kubernetes-token"]`
   on the `kubernetes` entry) so React can resolve.
 
-### G3. Per-field source selector missing on free-form CustomCredentials
-
-When the user picks "Secrets Manager" from the Connection Method picker
-on a free-form custom connection, each row should offer a per-field
-provider selector (Vault KV / AWS Secrets Manager / Manual) — that's
-what CLJS does at `webapp/.../setup/configuration_inputs.cljs:153,170`.
-
-React `CustomCredentials.jsx` doesn't consume `availableSources` (the
-prop is passed in from `CredentialsTab` but the component ignores it),
-so the row always uses a plain `PasswordInput`. The Connection Method
-pick is still visible at the top, but the per-row source choice is
-not exposed.
-
-Fix: thread `availableSources` into `EnvvarRow`, render the source
-selector adornment when non-null. Mirrors how
-`PredefinedFieldsCredentials.jsx` already does it for catalog connections.
-
-### G4. AWS IAM Role gate
+### G3. AWS IAM Role gate
 
 The "AWS IAM Role" connection-method card is only shown when subtype is
 `postgres` or `mysql` (`connection_method.cljs:92`, mirrored in
@@ -137,75 +102,22 @@ correct policy today — only RDS auth uses it.
 If we ever add IAM-role auth for other AWS connection types (DynamoDB,
 CloudWatch, etc.) this set needs to grow.
 
-### G5. Inline schemas for connection types not in the JSON catalog
+### G4. Inline schemas for shapes not in the JSON catalog
 
-`webapp_v2/src/pages/Roles/Configure/components/CredentialsTab.jsx`
-holds inline `HTTPPROXY_FIELDS`, `CLAUDE_CODE_FIELDS`,
-`KUBERNETES_TOKEN_FIELDS` constants and `SSHCredentials.jsx` holds
-`SSH_FIELDS`, because:
+The five bespoke renderers carry their own field schemas because the
+JSON catalog either omits them or doesn't capture the full shape:
 
 - `claude-code` has no `credentials` array in the JSON.
-- The generic `httpproxy` subtype isn't in the JSON (catalog uses
-  `web-application`).
+- `linux-vm` isn't in the JSON.
 - `kubernetes-token` isn't in the JSON.
-- `ssh` has metadata credentials but the auth-method radio decides which
-  field is required (PASS vs AUTHORIZED_SERVER_KEYS) — not expressible
-  in the current JSON schema.
+- `ssh` has metadata credentials but the auth-method radio decides
+  which field is required (PASS vs AUTHORIZED_SERVER_KEYS) — not
+  expressible in the current JSON schema.
+- `httpproxy/*` catalog entries only ship REMOTE_URL; the HTTP headers
+  list and allow-insecure-SSL toggle live in `HttpProxyRenderer.jsx`.
 
 When the documentation catalog grows to cover these, drop the inline
 constants and route through the metadata.
-
-### G7. Predefined renderers missing CLJS form features
-
-The Configure Role credentials tab uses simplified renderers for the
-custom-renderer connection types (httpproxy/claude-code, custom/
-kubernetes-token, httpproxy generic). They cover only the credential
-fields — the CLJS form ships several additional sections we haven't
-brought over yet.
-
-Concretely, for **httpproxy/claude-code** the React renderer shows:
-- Connection method (Manual / Secrets Manager)
-- Basic info: Anthropic API URL + Anthropic API Key
-- Allow insecure SSL toggle
-
-CLJS additionally shows:
-- **HTTP headers** — a dynamic key/value list, with `Add header`. Lets
-  the user attach arbitrary HTTP headers (auth tokens, request ids)
-  to the proxied requests. Persisted as `envvar:HEADER_<KEY>` entries.
-- **Agent dropdown** — which agent runs the connection. The free-form
-  `CustomCredentials` already includes `AgentSelector`; predefined
-  renderers need it too.
-
-Same gap exists for **httpproxy generic** and **custom/
-kubernetes-token** (and would extend to any other catalog-driven
-custom subtype that grows out of `custom-catalog`).
-
-Fix path:
-- Promote `AgentSelector` to be rendered by `CredentialsTab` unconditionally
-  (or by every renderer that doesn't already include it).
-- Build a generic `HttpHeadersSection` that wraps a key/value list
-  prefix-locked to `envvar:HEADER_*`. Existing free-form helpers
-  (`PLACEHOLDER_KEY_RE`, sentinel `NEW_HEADER_<n>`) can be reused —
-  it's the same shape as the env vars editor with a different prefix.
-- Drop the simplified `PredefinedSection` wrapping inside the
-  httpproxy / kubernetes renderers and assemble the page from these
-  building blocks.
-
-Until then the legacy CLJS editor remains the only way to add HTTP
-headers or change the agent on these connections.
-
-### G6. Connection Method picker visibility
-
-CLJS shows the picker on every credentials tab (`server.cljs:43`,
-`server.cljs:137`, `server.cljs:186`, `network.cljs:34`,
-`network.cljs:84`, `metadata_driven.cljs:121-139`,
-`claude_code_edit.cljs:59`). React matches this behaviour after the
-recent fix — the picker now renders for database, application,
-httpproxy, custom (any subtype), and kubernetes-token.
-
-If we decide some renderer shouldn't expose the picker (e.g. if a
-connection type is forced to one method), gate at
-`CredentialsTab.jsx`'s `ConnectionMethodSection` call site.
 
 ## Field labels source
 
@@ -221,6 +133,6 @@ helper that respects acronyms.
 
 ## Where to refile
 
-Items G1–G6 belong in the product / engineering backlog. G1 is the
+Items G1–G4 belong in the product / engineering backlog. G1 is the
 biggest user-visible gap and probably wants a follow-up PR. G2/G3 are
-small quality-of-life. G5 will resolve itself as the catalog grows.
+small quality-of-life. G4 will resolve itself as the catalog grows.

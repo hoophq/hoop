@@ -1,5 +1,6 @@
 import { Stack, Title } from '@mantine/core'
 import PredefinedFields from './shared/PredefinedFields'
+import HttpHeadersSection from './shared/HttpHeadersSection'
 import AllowInsecureSslSection from './shared/AllowInsecureSslSection'
 import AgentSelectorSection from './shared/AgentSelectorSection'
 
@@ -21,6 +22,10 @@ const CLAUDE_CODE_FIELDS = [
   },
 ]
 
+// HEADER_X_API_KEY is rendered as a dedicated Anthropic API Key field
+// above; HttpHeadersSection hides it so it doesn't appear twice.
+const HEADERS_EXCLUDE = ['envvar:HEADER_X_API_KEY']
+
 export default function ClaudeCodeRenderer({
   connection,
   availableSources,
@@ -37,6 +42,11 @@ export default function ClaudeCodeRenderer({
           forceNewState={forceNewState}
         />
       </Stack>
+      <HttpHeadersSection
+        connection={connection}
+        availableSources={availableSources}
+        excludeKeys={HEADERS_EXCLUDE}
+      />
       <AllowInsecureSslSection connection={connection} />
       <AgentSelectorSection />
     </Stack>

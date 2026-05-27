@@ -9,7 +9,6 @@ import {
   CONNECTION_METHODS,
   supportsAwsIam,
   isFreeFormCustomSubtype,
-  connectionRoundTripsSecrets,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { deriveConnectionMethod } from '../utils/connectionMethod'
@@ -46,17 +45,6 @@ const METHOD_DEFINITIONS = [
     icon: ShieldCheck,
   },
 ]
-
-// Empty-state copy from the PRD, shown above every credentials section.
-function WriteOnlyNotice() {
-  return (
-    <Alert variant="light" color="indigo" icon={<Info size={16} />}>
-      Secret values are write-only. Once set, they cannot be viewed, only
-      replaced or deleted. This matches the security model used by GitHub
-      Actions and HashiCorp Vault.
-    </Alert>
-  )
-}
 
 function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) {
   const visibleMethods = METHOD_DEFINITIONS.filter(
@@ -214,15 +202,8 @@ export default function CredentialsTab({ connection }) {
   // user has switched away from the derived method.
   const forceNewState = !isDerivedMethod
 
-  // Notice only makes sense when at least one field is actually
-  // write-only — i.e. when the backend strips. Round-trip connections
-  // (the five frontend-mounted shapes) show values verbatim, so the
-  // "cannot be viewed" wording would be misleading.
-  const showWriteOnlyNotice = !connectionRoundTripsSecrets(connection)
-
   return (
     <Stack gap="xl" maw={720}>
-      {showWriteOnlyNotice && <WriteOnlyNotice />}
       <ConnectionMethodSection
         selectedMethod={selectedMethod}
         onSelect={setSelectedMethod}
