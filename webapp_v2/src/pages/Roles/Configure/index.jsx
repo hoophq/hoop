@@ -57,9 +57,7 @@ export default function ConfigureRolePage() {
     testAgentStatus,
     testConnectionStatus,
     testDurationMs,
-    stagedSecrets,
-    drafts,
-    baseline,
+    hasPendingChanges,
     loadConnection,
     loadAuxiliaryData,
     save,
@@ -95,8 +93,11 @@ export default function ConfigureRolePage() {
         text: 'Role ' + connection.name + ' updated!',
       })
       navigate('/resources?tab=roles')
-    } catch {
-      showSnackbar({ level: 'error', text: 'Failed to save connection.' })
+    } catch (err) {
+      showSnackbar({
+        level: 'error',
+        text: err?.response?.data?.message || err?.message || 'Failed to save connection.',
+      })
     }
   }
 
@@ -106,8 +107,11 @@ export default function ConfigureRolePage() {
       close()
       showSnackbar({ level: 'success', text: 'Connection deleted.' })
       navigate('/resources?tab=roles')
-    } catch {
-      showSnackbar({ level: 'error', text: 'Failed to delete connection.' })
+    } catch (err) {
+      showSnackbar({
+        level: 'error',
+        text: err?.response?.data?.message || err?.message || 'Failed to delete connection.',
+      })
     }
   }
 
@@ -121,9 +125,12 @@ export default function ConfigureRolePage() {
     return null
   }
 
-  const dirty =
-    Object.keys(stagedSecrets).length > 0 ||
-    JSON.stringify(drafts) !== JSON.stringify(baseline)
+  // Empty auto-placeholder rows (added by the credentials editors so
+  // the section never collapses to nothing) should not trip the
+  // "Unsaved changes" hint on a fresh load — the store's method
+  // filters those out. Bare `useConfigureRoleStore()` above subscribes
+  // to the whole slice, so re-renders happen as state changes.
+  const dirty = hasPendingChanges()
 
   return (
     <>

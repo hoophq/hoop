@@ -122,13 +122,16 @@ export default function ConfigurationFilesSection({ connection }) {
           // so the empty-state row shows a truly blank Name input.
           const isPlaceholder = PLACEHOLDER_KEY_RE.test(effectiveKey)
           const displayName = isPlaceholder ? '' : effectiveKey.slice('filesystem:'.length)
-          const stagedContent = staged?.value
-            ? decodeSecretValue(staged.value)
-            : null
-          const persistedContent = currentSecrets[fsKey]
-            ? decodeSecretValue(currentSecrets[fsKey])
-            : ''
-          const content = stagedContent != null ? stagedContent : persistedContent
+          // If anything is staged for this row we honour it verbatim,
+          // even when the value is an empty string — that's "user
+          // explicitly cleared the input" and we don't want to fall back
+          // to the persisted content (would resurrect stale data when
+          // the auto-placeholder kicks in after a delete).
+          const content = staged
+            ? decodeSecretValue(staged.value || '')
+            : currentSecrets[fsKey]
+              ? decodeSecretValue(currentSecrets[fsKey])
+              : ''
           return (
             <FileRow
               key={fsKey}
