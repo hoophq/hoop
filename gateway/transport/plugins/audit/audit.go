@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/session/eventbroker"
@@ -158,9 +159,8 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 				return nil, plugintypes.InternalErr("failed updating session input", err)
 			}
 
-			// Check AI
 			orgID := uuid.MustParse(pctx.OrgID)
-			analyzeRes, err := sessionapi.AIAnalyze(pctx.Context, orgID, pctx.ConnectionName, string(pkt.Payload))
+			analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(pctx.Context, orgID, pctx.ConnectionName, string(pkt.Payload))
 			if err != nil {
 				log.With("sid", pctx.SID, "org_id", pctx.OrgID).Errorf("failed analyzing session input with AI, err=%v", err)
 				return nil, plugintypes.InternalErr("failed analyzing session input with AI", err)
@@ -176,10 +176,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 					return nil, plugintypes.InternalErr("failed to getting session input", err)
 				}
 				session.BlobInput = blobInput
-
 				session.AIAnalysis = analyzeRes
 
 				shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+				requireReview := analyzeRes.Action == string(models.RequireAccessRequest)
 				if shouldBlock {
 					session.Status = string(openapi.SessionStatusDone)
 					session.ExitCode = internalExitCode
@@ -191,13 +191,37 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 					log.Errorf("failed updating session, err=%v", err)
 					return nil, plugintypes.InternalErr("failed updating session", err)
 				}
-				trackClient := analytics.New()
-				defer trackClient.Close()
-
-				trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 
 				if shouldBlock {
+					trackClient := analytics.New()
+					defer trackClient.Close()
+					trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 					return nil, plugintypes.NewPacketErr("session blocked by AI risk analyzer", nil)
+				}
+
+				if requireReview {
+					if aiAccessRule == nil {
+						return nil, plugintypes.InternalErr("ai analyzer requested review without resolving access request rule",
+							fmt.Errorf("aiAccessRule is nil for sid=%s", pctx.SID))
+					}
+					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, pctx.ConnectionName,
+						sessionapi.AIReviewRequester{
+							UserID:       pctx.UserID,
+							UserEmail:    pctx.UserEmail,
+							UserName:     pctx.UserName,
+							UserSlackID:  pctx.UserSlackID,
+							ConnectionID: pctx.ConnectionID,
+						},
+						aiAccessRule, string(pkt.Payload), nil, nil)
+					if err != nil {
+						return nil, plugintypes.InternalErr("failed creating ai-driven review", err)
+					}
+					pkt.Spec[pb.SpecHasReviewKey] = []byte("true")
+					return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
+						Type:    pbclient.SessionOpenWaitingApproval,
+						Payload: fmt.Appendf(nil, "%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
+						Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
+					}}, nil
 				}
 			}
 		}

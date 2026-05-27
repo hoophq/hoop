@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/aiclients"
@@ -26,7 +27,7 @@ type SessionAnalysisResult struct {
 	Explanation string
 }
 
-const sessionAnalyzerSystemPrompt = `You are a security-focused execution risk classifier for commands, scripts, and database queries.
+const SessionAnalyzerSystemPrompt = `You are a security-focused execution risk classifier for commands, scripts, and database queries.
 
 Goal: choose exactly ONE tool to call:
 - LowRiskAISessionAnalyzer
@@ -86,7 +87,10 @@ var sessionAnalyzerTools = []aiclients.Tool{
 //
 // The model is expected to call exactly one of the three risk tools; the tool
 // name is mapped to RiskLevelLow / RiskLevelMedium / RiskLevelHigh.
-func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string) (*SessionAnalysisResult, error) {
+//
+// customPrompt, when non-empty, is appended to the default system prompt so
+// the tool-calling contract (LowRisk/MediumRisk/HighRisk) is preserved.
+func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string, customPrompt *string) (*SessionAnalysisResult, error) {
 	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
 	if err != nil || provider == nil {
 		return nil, fmt.Errorf("session analyzer: failed to load ai provider: %w", err)
@@ -97,8 +101,13 @@ func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string) (*Sess
 		return nil, fmt.Errorf("session analyzer: failed to create ai client: %w", err)
 	}
 
+	systemPrompt := SessionAnalyzerSystemPrompt
+	if customPrompt != nil && strings.TrimSpace(*customPrompt) != "" {
+		systemPrompt = strings.TrimSpace(*customPrompt) + "\n\n" + SessionAnalyzerSystemPrompt
+	}
+
 	resp, err := client.Chat(ctx, aiclients.ChatRequest{
-		SystemPrompt: sessionAnalyzerSystemPrompt,
+		SystemPrompt: systemPrompt,
 		Messages: []aiclients.Message{
 			{Role: aiclients.RoleUser, Content: content},
 		},

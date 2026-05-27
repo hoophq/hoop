@@ -38,14 +38,63 @@ func (AIProvider) TableName() string {
 type RiskEvaluationAction string
 
 const (
-	AllowExecution RiskEvaluationAction = "allow_execution"
-	BlockExecution RiskEvaluationAction = "block_execution"
+	AllowExecution       RiskEvaluationAction = "allow_execution"
+	BlockExecution       RiskEvaluationAction = "block_execution"
+	RequireAccessRequest RiskEvaluationAction = "require_access_request"
 )
 
+func (a RiskEvaluationAction) IsValid() bool {
+	switch a {
+	case AllowExecution, BlockExecution, RequireAccessRequest:
+		return true
+	}
+	return false
+}
+
+type AISessionAnalyzerRiskTier struct {
+	Action                RiskEvaluationAction `json:"action"`
+	AccessRequestRuleName *string              `json:"access_request_rule_name,omitempty"`
+}
+
 type AISessionAnalyzerRiskEvaluation struct {
-	LowRiskAction    RiskEvaluationAction `json:"low_risk_action"`
-	MediumRiskAction RiskEvaluationAction `json:"medium_risk_action"`
-	HighRiskAction   RiskEvaluationAction `json:"high_risk_action"`
+	LowRiskAction    RiskEvaluationAction `json:"low_risk_action,omitempty"`
+	MediumRiskAction RiskEvaluationAction `json:"medium_risk_action,omitempty"`
+	HighRiskAction   RiskEvaluationAction `json:"high_risk_action,omitempty"`
+
+	LowRisk    *AISessionAnalyzerRiskTier `json:"low_risk,omitempty"`
+	MediumRisk *AISessionAnalyzerRiskTier `json:"medium_risk,omitempty"`
+	HighRisk   *AISessionAnalyzerRiskTier `json:"high_risk,omitempty"`
+}
+
+type RiskLevelKey string
+
+const (
+	RiskLevelKeyLow    RiskLevelKey = "low"
+	RiskLevelKeyMedium RiskLevelKey = "medium"
+	RiskLevelKeyHigh   RiskLevelKey = "high"
+)
+
+func (e *AISessionAnalyzerRiskEvaluation) Tier(level RiskLevelKey) AISessionAnalyzerRiskTier {
+	if e == nil {
+		return AISessionAnalyzerRiskTier{Action: AllowExecution}
+	}
+	var structured *AISessionAnalyzerRiskTier
+	var legacy RiskEvaluationAction
+	switch level {
+	case RiskLevelKeyLow:
+		structured, legacy = e.LowRisk, e.LowRiskAction
+	case RiskLevelKeyMedium:
+		structured, legacy = e.MediumRisk, e.MediumRiskAction
+	case RiskLevelKeyHigh:
+		structured, legacy = e.HighRisk, e.HighRiskAction
+	}
+	if structured != nil && structured.Action != "" {
+		return *structured
+	}
+	if legacy == "" {
+		return AISessionAnalyzerRiskTier{Action: AllowExecution}
+	}
+	return AISessionAnalyzerRiskTier{Action: legacy}
 }
 
 type AISessionAnalyzerRules struct {
@@ -56,6 +105,7 @@ type AISessionAnalyzerRules struct {
 	Description     *string                         `gorm:"column:description"`
 	ConnectionNames pq.StringArray                  `gorm:"column:connection_names;type:text[]"`
 	RiskEvaluation  AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;type:jsonb;serializer:json"`
+	CustomPrompt    *string                         `gorm:"column:custom_prompt"`
 
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
@@ -174,6 +224,7 @@ func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 			"description":      rule.Description,
 			"connection_names": rule.ConnectionNames,
 			"risk_evaluation":  rule.RiskEvaluation,
+			"custom_prompt":    rule.CustomPrompt,
 		})
 	if result.Error != nil {
 		return result.Error
