@@ -1,4 +1,5 @@
 import { Stack, Title, Text, Button } from '@mantine/core'
+import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import MultiSelect from '@/components/MultiSelect'
 import Select from '@/components/Select'
@@ -92,8 +93,8 @@ export default function TerminalAccessTab({ connection }) {
           size="xs"
           leftSection={<ArrowUpRight size={14} />}
           w="fit-content"
-          component="a"
-          href="/guardrails"
+          component={Link}
+          to="/guardrails"
         >
           Go to Guardrails
         </Button>
@@ -119,8 +120,8 @@ export default function TerminalAccessTab({ connection }) {
           size="xs"
           leftSection={<ArrowUpRight size={14} />}
           w="fit-content"
-          component="a"
-          href="/integrations/jira"
+          component={Link}
+          to="/jira-templates"
         >
           Go to JIRA Integration
         </Button>

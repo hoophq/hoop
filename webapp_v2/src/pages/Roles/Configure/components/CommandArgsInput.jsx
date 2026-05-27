@@ -1,27 +1,31 @@
 import { Stack, Title, Text, TagsInput as MantineTagsInput } from '@mantine/core'
 import { useConfigureRoleStore } from '../store'
 
-// Free-form list of command arguments stored as the connection's
-// `command` array. Mirrors CLJS server/credentials-step Additional
-// Command section. Each value is one argument; pressing Enter (or
-// comma) commits the current input as a new tag.
+// Additional command arguments. Stored as the connection's `command`
+// array. Mirrors the CLJS server/credentials-step "Additional command"
+// section — TagsInput collects each argument as one chip.
 export default function CommandArgsInput() {
   const command = useConfigureRoleStore((s) => s.drafts.command)
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
 
   return (
     <Stack gap="xs">
-      <Title order={5} fw={500}>Additional command</Title>
+      <Title order={4}>Additional command</Title>
       <Text size="sm" c="dimmed">
-        {"Each argument should be entered separately. Press Enter after each argument to add it to the list. Example: 'python', '-m', 'http.server', '8000'."}
+        Each argument should be entered separately. Press Enter after
+        each argument to add it to the list.
       </Text>
       <MantineTagsInput
-        placeholder="Add argument and press Enter"
+        label="Command Arguments"
+        placeholder="Select..."
         value={command}
         onChange={(value) => setDraft({ command: value })}
         clearable
         splitChars={[',']}
       />
+      <Text size="xs" c="dimmed">
+        {"Example: 'python', '-m', 'http.server', '8000'"}
+      </Text>
     </Stack>
   )
 }

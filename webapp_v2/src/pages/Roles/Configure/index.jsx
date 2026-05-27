@@ -166,19 +166,19 @@ export default function ConfigureRolePage() {
               <Tabs.Tab value="native">Native Access</Tabs.Tab>
             </Tabs.List>
 
-            <Tabs.Panel value="details" keepMounted>
+            <Tabs.Panel value="details" keepMounted pt="lg">
               <DetailsTab connection={connection} />
             </Tabs.Panel>
 
-            <Tabs.Panel value="credentials" keepMounted>
+            <Tabs.Panel value="credentials" keepMounted pt="lg">
               <CredentialsTab connection={connection} isAdmin={isAdmin} />
             </Tabs.Panel>
 
-            <Tabs.Panel value="terminal" keepMounted>
+            <Tabs.Panel value="terminal" keepMounted pt="lg">
               <TerminalAccessTab connection={connection} />
             </Tabs.Panel>
 
-            <Tabs.Panel value="native" keepMounted>
+            <Tabs.Panel value="native" keepMounted pt="lg">
               <NativeAccessTab connection={connection} />
             </Tabs.Panel>
           </Tabs>
