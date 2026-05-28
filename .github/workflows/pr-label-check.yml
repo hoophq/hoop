@@ -1,0 +1,34 @@
+name: PR Release Label Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited, ready_for_review]
+
+jobs:
+  check-label:
+    name: Check Release Label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify exactly one release label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          LABELS=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name')
+          COUNT=$(echo "$LABELS" | grep -cE '^(major|minor|patch|skip-release)$' || true)
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::PR must have exactly one of these labels: 'major', 'minor', 'patch', or 'skip-release'."
+            echo "::error::Use 'major'/'minor'/'patch' to publish a release on merge, or 'skip-release' for changes that don't need a release (docs, CI, etc)."
+            exit 1
+          fi
+
+          if [ "$COUNT" -gt 1 ]; then
+            FOUND=$(echo "$LABELS" | grep -E '^(major|minor|patch|skip-release)$' | tr '\n' ' ')
+            echo "::error::PR must have exactly ONE release label, but found multiple: $FOUND"
+            exit 1
+          fi
+
+          MATCHED=$(echo "$LABELS" | grep -E '^(major|minor|patch|skip-release)$')
+          echo "Release label found: $MATCHED"

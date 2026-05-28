@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -23,12 +22,11 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
 const (
@@ -37,34 +35,11 @@ const (
 	// and it uses Authorization header so using the same for consistency
 	// we will be able to get kubernetes connections in our database
 	// NOTE in the future we might want to support custom headers as well
-	proxyTokenHeader     = "Authorization"
-	proxyTokenCookie     = "hoop_proxy_token"
-	negativeAuthCacheTTL = 24 * time.Hour // Invalid auth keys will never be valid, so we will clean this up after hours
+	proxyTokenHeader = "Authorization"
+	proxyTokenCookie = "hoop_proxy_token"
 )
 
 var instanceStore sync.Map
-
-// negativeAuthEntry stores a cached authentication failure with timestamp
-type negativeAuthEntry struct {
-	err       error
-	timestamp time.Time
-}
-
-// credentialError wraps errors related to invalid or expired credentials.
-// Only these errors should be stored in the negative auth cache.
-type credentialError struct {
-	err error
-}
-
-func (e *credentialError) Error() string { return e.err.Error() }
-func (e *credentialError) Unwrap() error { return e.err }
-
-func newCredentialError(format string, a ...any) error {
-	return &credentialError{err: fmt.Errorf(format, a...)}
-}
-
-// negativeAuthCache caches failed authentication attempts to avoid repeated database queries
-var negativeAuthCache sync.Map // map[string]*negativeAuthEntry
 
 type HttpProxyServer struct {
 	sessionStore sync.Map // map[string]*httpProxySession
@@ -266,22 +241,6 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid proxy token", http.StatusUnauthorized)
 		return
 	}
-	// check if the key is in the negative auth cache
-	// avoid hammering the database with invalid requests
-	// avoid goroutine for each request
-	if cached, ok := negativeAuthCache.Load(secretKeyHash); ok {
-		log.Debugf("negative auth cache hit for secret key hash: %s", secretKeyHash)
-		entry := cached.(*negativeAuthEntry)
-		// Check if cache entry is still valid (not expired)
-		// we will clean this after 1 day just to clean the memory
-		if time.Since(entry.timestamp) < negativeAuthCacheTTL {
-			http.Error(w, entry.err.Error(), http.StatusUnauthorized)
-			return
-		}
-		// Cache expired, remove it
-		negativeAuthCache.Delete(secretKeyHash)
-	}
-
 	// The correlation ID is session-scoped: it is only honored on the request that
 	// creates the long-lived hoop session for this credential. Later requests reusing
 	// the session will have their X-Hoop-Correlation-Id header ignored.
@@ -290,20 +249,13 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if correlationID != "" {
 		correlationIDPtr = &correlationID
 	}
-	if err := sessionapi.ValidateCorrelationID(correlationIDPtr); err != nil {
+	if err := validateCorrelationID(correlationIDPtr); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	session, err := s.getOrCreateSession(secretKeyHash, correlationID)
 	if err != nil {
-		var credErr *credentialError
-		if errors.As(err, &credErr) {
-			negativeAuthCache.Store(secretKeyHash, &negativeAuthEntry{
-				err:       err,
-				timestamp: time.Now(),
-			})
-		}
 		log.Warnf("failed to get/create session: %v", err)
 		http.SetCookie(w, &http.Cookie{
 			Name:   proxyTokenCookie,
@@ -328,13 +280,13 @@ func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCred
 
 	if err != nil {
 		if err == models.ErrNotFound {
-			return nil, newCredentialError("http proxy invalid proxy token credentials")
+			return nil, fmt.Errorf("http proxy invalid proxy token credentials")
 		}
 		return nil, fmt.Errorf("http proxy failed obtaining credentials: %v", err)
 	}
 
 	if dba.ExpireAt.Before(time.Now().UTC()) {
-		return nil, newCredentialError("http proxy token credentials expired")
+		return nil, fmt.Errorf("http proxy token credentials expired")
 	}
 
 	return dba, nil
@@ -379,13 +331,19 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 	}
 	ctxDuration := time.Until(dba.ExpireAt)
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		return nil, err
-	}
+	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
-	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		return nil, err
+	var tokenVerifier idp.UserInfoTokenVerifier
+	if !isMachineCredential {
+		var err error
+		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			return nil, err
+		}
+
+		if err := usertoken.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+			return nil, err
+		}
 	}
 
 	sid := uuid.NewString()
@@ -406,9 +364,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		},
 	}
 
-	transport.PollingUserToken(session.ctx, func(cause error) {
-		session.cancelFn(cause.Error())
-	}, tokenVerifier, dba.UserSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(session.ctx, func(cause error) {
+			session.cancelFn(cause.Error())
+		}, tokenVerifier, dba.UserSubject)
+	}
 
 	grpcOpts := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
@@ -418,7 +378,12 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		grpc.WithOption("verb", pb.ClientVerbConnect),
 		grpc.WithOption("session-id", sid),
 	}
-	if dba.SessionID != "" {
+	if isMachineCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, dba.OrgID),
+		)
+	} else if dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
 	}
 	if correlationID != "" {
@@ -1031,4 +996,23 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			log.Debugf("unknown packet type received: %v, sid=%s", pkt.Type, sess.sid)
 		}
 	}
+}
+
+// validateCorrelationID ensures the correlation id is bounded and printable.
+// Accepts nil/empty (treated as absent). Mirrors the validator in api/session
+// to avoid an import cycle through services -> httpproxy -> api/session.
+func validateCorrelationID(v *string) error {
+	if v == nil || *v == "" {
+		return nil
+	}
+	s := *v
+	if len(s) > 255 {
+		return fmt.Errorf("correlation_id must not exceed 255 characters")
+	}
+	for _, r := range s {
+		if r < 0x20 || r > 0x7E {
+			return fmt.Errorf("correlation_id must contain only printable ASCII characters")
+		}
+	}
+	return nil
 }

@@ -2,10 +2,10 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Callout Flex Heading Link
                                Text]]
-   ["lucide-react" :refer [Combine FileLock2 FolderLock ListCheck ListTodo
-                           Settings2 ShieldCheck SlidersHorizontal TextSearch
-                           UserRoundCheck ArrowUpRight MonitorCheck FastForward
-                           SearchCode Sparkles]]
+   ["lucide-react" :refer [ArrowUpRight Combine Database FastForward FileLock2
+                           FolderLock Laptop ListCheck ListTodo Lock MonitorCheck
+                           SearchCode Settings2 ShieldCheck SlidersHorizontal
+                           Sparkles TextSearch UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -40,7 +40,7 @@
    Parameters:
    feature-name      - Name of the feature (Access Control, Guardrails, etc.)
    mode              - :empty-state or :upgrade-plan
-   image             - Path to the image (relative to /images/illustrations/)
+   image             - Optional path under /images/illustrations/; omit for a placeholder panel
    description       - Short description of the feature
    feature-items     - List of items with feature details (title, description, icon)
    on-primary-click  - Function for the primary button click
@@ -93,10 +93,12 @@
                     :class "self-start"}
          button-text])]
 
-     [:> Box {:class "w-1/2 bg-blue-50"}
-      [:img {:src (str "/images/illustrations/" image)
-             :alt (str feature-name " illustration")
-             :class "w-full h-full object-cover"}]]]))
+     [:> Box {:class "w-1/2 bg-blue-50 min-h-full flex-shrink-0"}
+      (if image
+        [:img {:src (str "/images/illustrations/" image)
+               :alt (str feature-name " illustration")
+               :class "w-full h-full object-cover"}]
+        [:> Box {:class "w-full h-full min-h-[28rem]"}])]]))
 
 (defn access-control-promotion
   "Specific component for Access Control"
@@ -331,3 +333,26 @@
                           (on-promotion-seen))
                         (rf/dispatch [:navigate :ai-session-analyzer]))
     :primary-text "Configure AI Session Analyzer"}])
+
+(defn machine-identities-promotion
+  "Specific component for Machine Identities"
+  [{:keys [mode on-promotion-seen]}]
+  [feature-promotion
+   {:feature-name "Machine Identities"
+    :mode mode
+    :image "machine-identities-promotion.png"
+    :description "Enable services and other non-human entities."
+    :feature-items [{:icon [:> Laptop {:size 20}]
+                     :title "Service Identity Management"
+                     :description "Create secure identities for services and applications."}
+                    {:icon [:> Database {:size 20}]
+                     :title "Data Identification"
+                     :description "Detect sensitive data flows between services and environments."}
+                    {:icon [:> Lock {:size 20}]
+                     :title "Access Control"
+                     :description "Control how machine identities access infrastructure resources."}]
+    :on-primary-click (fn []
+                        (when on-promotion-seen
+                          (on-promotion-seen))
+                        (rf/dispatch [:navigate :machine-identities]))
+    :primary-text "Configure Machine Identities"}])

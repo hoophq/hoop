@@ -191,6 +191,24 @@ func GetResourceConnections(db *gorm.DB, orgID, resourceName string) ([]Connecti
 	return connections, err
 }
 
+func GetConnectionsByResourceNames(db *gorm.DB, orgID string, resourceNames []string) (map[string][]Connection, error) {
+	if len(resourceNames) == 0 {
+		return map[string][]Connection{}, nil
+	}
+	var connections []Connection
+	err := db.Table(tableConnections).
+		Where("org_id = ? AND resource_name IN (?)", orgID, resourceNames).
+		Find(&connections).Error
+	if err != nil {
+		return nil, err
+	}
+	grouped := make(map[string][]Connection, len(resourceNames))
+	for _, c := range connections {
+		grouped[c.ResourceName] = append(grouped[c.ResourceName], c)
+	}
+	return grouped, nil
+}
+
 func DeleteResource(db *gorm.DB, orgID, name string) error {
 	return db.Where("org_id = ? AND name = ?", orgID, name).Delete(&Resources{}).Error
 }

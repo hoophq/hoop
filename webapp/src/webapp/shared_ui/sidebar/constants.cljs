@@ -1,10 +1,10 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
-   ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked Boxes BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
-                           Sparkles]]
+                           Sparkles KeyRound]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -42,6 +42,8 @@
                      [:> UserRoundCheck {:size size}])
    "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> CircleCheckBig {:size size}])
+   "MachineIdentities" (fn [& [{:keys [size] :or {size 24}}]]
+                         [:> KeyRound {:size size}])
    "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> PackageSearch {:size size}])
    "Agents" (fn [& [{:keys [size] :or {size 24}}]]
@@ -66,7 +68,9 @@
    "users" (fn [& [{:keys [size] :or {size 24}}]]
              [:> UserRoundCheck {:size size}])
    "Search" (fn [& [{:keys [size] :or {size 24}}]]
-              [:> Search {:size size}])})
+              [:> Search {:size size}])
+   "Provisioning" (fn [& [{:keys [size] :or {size 24}}]]
+                    [:> Boxes {:size size}])})
 
 ;; Menu principal
 (def main-routes
@@ -75,42 +79,41 @@
     :icon (get icons-registry "Resources")
     :uri (routes/url-for :resources)
     :navigate :resources
-    :free-feature? true
     :admin-only? false}
    {:name "Dashboard"
     :label "Dashboard"
     :icon (get icons-registry "Dashboard")
     :uri (routes/url-for :dashboard)
     :navigate :dashboard
-    :free-feature? false
-    :upgrade-plan-route :upgrade-plan
     :admin-only? true}
    {:name "Terminal"
     :label "Terminal"
     :icon (get icons-registry "Terminal")
     :uri (routes/url-for :editor-plugin)
     :navigate :editor-plugin
-    :free-feature? true
     :admin-only? false}
    {:name "Runbooks"
     :label "Runbooks"
     :icon (get icons-registry "Runbooks")
     :uri (routes/url-for :runbooks)
     :navigate :runbooks
-    :free-feature? true
     :admin-only? false}
    {:name "Sessions"
     :label "Sessions"
     :icon (get icons-registry "Sessions")
     :uri (routes/url-for :sessions)
     :navigate :sessions
-    :free-feature? true
     :admin-only? false}
+   {:name "Provisioning"
+    :label "Provisioning"
+    :icon (get icons-registry "Provisioning")
+    :uri (routes/url-for :provisioning)
+    :navigate :provisioning
+    :admin-only? true}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")
     :action #(rf/dispatch [:command-palette->open])
-    :free-feature? true
     :admin-only? false
     :badge (fn []
              [:> Flex {:gap "3"}
@@ -125,50 +128,42 @@
     :icon (get icons-registry "AccessRequest")
     :uri (routes/url-for :access-request)
     :navigate :access-request
-    :free-feature? true
     :admin-only? true}
    {:name "RunbooksSetup"
     :label "Runbooks Setup"
     :icon (get icons-registry "RunbooksSetup")
     :uri (routes/url-for :runbooks-setup)
     :navigate :runbooks-setup
-    :free-feature? true
     :admin-only? true}
    {:name "Guardrails"
     :label "Guardrails"
     :icon (get icons-registry "Guardrails")
     :uri (routes/url-for :guardrails)
     :navigate :guardrails
-    :free-feature? true
     :admin-only? true}
    {:name "JiraTemplates"
     :label "Jira Templates"
     :icon (get icons-registry "JiraTemplates")
     :uri (routes/url-for :jira-templates)
     :navigate :jira-templates
-    :free-feature? false
-    :upgrade-plan-route :jira-templates
     :admin-only? true}
    {:name "AISessionAnalyzer"
     :label "AI Session Analyzer"
     :icon (get icons-registry "AISessionAnalyzer")
     :uri (routes/url-for :ai-session-analyzer)
     :navigate :ai-session-analyzer
-    :free-feature? true
     :admin-only? true}
    {:name "AIDataMasking"
     :label "AI Data Masking"
     :icon (get icons-registry "AIDataMasking")
     :uri (routes/url-for :ai-data-masking)
     :navigate :ai-data-masking
-    :free-feature? true
     :admin-only? true}
    {:name "AccessControl"
     :label "Access Control"
     :icon (get icons-registry "AccessControl")
     :uri (routes/url-for :access-control)
     :navigate :access-control
-    :free-feature? true
     :admin-only? true}
    #_{:name "JustInTimeAccess"
       :label "Just-in-Time Access"
@@ -176,18 +171,20 @@
               [:> AlarmClockCheck {:size 24}])
       :uri (routes/url-for :just-in-time)
       :navigate :just-in-time
-      :free-feature? false
-      :upgrade-plan-route :upgrade-plan
       :admin-only? true}
    {:name "ResourceDiscovery"
     :label "Resource Discovery"
     :icon (get icons-registry "ResourceDiscovery")
     :uri (routes/url-for :integrations-aws-connect)
     :navigate :integrations-aws-connect
-    :free-feature? false
-    :upgrade-plan-route :upgrade-plan
     :admin-only? true
-    :badge "BETA"}])
+    :badge "BETA"}
+   {:name "MachineIdentities"
+    :label "Machine Identities"
+    :icon (get icons-registry "MachineIdentities")
+    :uri (routes/url-for :machine-identities)
+    :navigate :machine-identities
+    :admin-only? true}])
 
 ;; Seção Settings
 (def organization-routes
@@ -196,7 +193,6 @@
     :icon (get icons-registry "Agents")
     :uri (routes/url-for :agents)
     :navigate :agents
-    :free-feature? true
     :admin-only? true}])
 
 ;; Integrations
@@ -204,7 +200,6 @@
   [{:name "authentication"
     :label "Authentication"
     :plugin? false
-    :free-feature? true
     :uri (routes/url-for :integrations-authentication)
     :navigate :integrations-authentication
     :admin-only? true
@@ -214,19 +209,16 @@
     :plugin? false
     :uri (routes/url-for :settings-jira)
     :navigate :settings-jira
-    :free-feature? false
     :admin-only? true
     :selfhosted-only? false}
    {:name "webhooks"
     :label "Webhooks"
     :plugin? true
-    :free-feature? false
     :admin-only? true
     :selfhosted-only? false}
    {:name "slack"
     :label "Slack"
     :plugin? true
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false}])
 
@@ -236,7 +228,6 @@
     :label "API Keys"
     :uri (routes/url-for :settings-api-keys)
     :navigate :settings-api-keys
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false
     :badge "NEW"}
@@ -244,7 +235,6 @@
     :label "Attributes"
     :uri (routes/url-for :settings-attributes)
     :navigate :settings-attributes
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false
     :badge "NEW"}
@@ -252,14 +242,12 @@
     :label "Infrastructure"
     :uri (routes/url-for :settings-infrastructure)
     :navigate :settings-infrastructure
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? true}
    {:name "experimental"
     :label "Experimental"
     :uri (routes/url-for :settings-experimental)
     :navigate :settings-experimental
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false
     :badge "BETA"}
@@ -267,20 +255,17 @@
     :label "Internal Audit Logs"
     :uri (routes/url-for :settings-audit-logs)
     :navigate :settings-audit-logs
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false}
    {:name "license"
     :label "License"
     :uri (routes/url-for :license-management)
     :navigate :license-management
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false}
    {:name "users"
     :label "Users"
     :uri (routes/url-for :users)
     :navigate :users
-    :free-feature? true
     :admin-only? true
     :selfhosted-only? false}])

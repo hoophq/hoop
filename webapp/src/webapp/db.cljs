@@ -1,5 +1,6 @@
 (ns webapp.db
-  (:require [webapp.parallel-mode.db :as parallel-mode-db]))
+  (:require [webapp.parallel-mode.db :as parallel-mode-db]
+            [webapp.features.workflows.events :as workflows-events]))
 
 (def default-db
   {:agents {:status :loading, :data []}
@@ -9,6 +10,7 @@
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
+   :audit->session-stream {}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
    :audit-logs {:status :idle
                 :data []
@@ -92,6 +94,10 @@
                      :current-page :main
                      :context {}
                      :search-results {:status :idle :data {}}}
+   :machine-identities {:status :idle
+                        :data []
+                        :current-identity nil
+                        :credentials {:status :idle :data []}}
    :runbooks {:connection-dialog-open? false
               :selected-connection nil
               :list {:status :idle :data [] :error nil}
@@ -108,4 +114,9 @@
    :api-keys {:list {:status :idle :data []}
               :active {:status :idle :data nil}
               :created {:status :idle :data nil}
-              :submitting? false}})
+              :submitting? false}
+   :workflows workflows-events/initial-state
+   :provisioning {:resources {:status :idle :data []}
+                  :jobs      []
+                  :sessions  []}
+   :connections->list {:status :idle :data []}})

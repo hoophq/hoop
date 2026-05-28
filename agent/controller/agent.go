@@ -15,13 +15,16 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/awseks"
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"
+	"github.com/hoophq/hoop/agent/controller/system/bareexec"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
+	"github.com/hoophq/hoop/agent/controller/system/pgmanager"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
 	"github.com/hoophq/hoop/agent/secretsmanager"
@@ -34,9 +37,20 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
+	"golang.org/x/sync/singleflight"
 )
 
 type (
+	// sessionState carries a per-session RW lock and a closed sentinel.
+	// Packet handlers take RLock for the duration of their work; SessionClose
+	// takes Lock, which drains any in-flight handlers before cleanup runs.
+	// The closed flag, read under RLock, lets handlers drop packets that
+	// arrive after cleanup has begun.
+	sessionState struct {
+		mu     sync.RWMutex
+		closed atomic.Bool
+	}
+
 	Agent struct {
 		client           pb.ClientTransport
 		connStore        memory.Store
@@ -44,10 +58,24 @@ type (
 		runtimeEnvs      map[string]string
 		shutdownCtx      context.Context
 		shutdownCancelFn context.CancelCauseFunc
-		// Using sync.Map is more complex here due untyped nature, so we use a mutex + typed map
-		connMtx         map[string]*sync.Mutex
-		connMtxStoreMtx sync.Mutex
-		closedSessions  sync.Map
+
+		// sessionStates is keyed by gateway session ID. Entries are created
+		// lazily on first access and live for the duration of the agent
+		// process; never deleting them is what lets late packets find
+		// closed=true under RLock instead of racing through a fresh state.
+		sessionStates sync.Map
+
+		// connWriteLocks serializes writes per (sessionID, connectionID).
+		// Required when packet dispatch is async (see Run) so that two
+		// goroutines handling consecutive packets for the same connection
+		// don't reorder writes to the upstream proxy.
+		connWriteLocks sync.Map
+
+		// sshFlightGroup deduplicates concurrent first-packet handling for
+		// the same (sessionID, connectionID) in processSSHProtocol. Without
+		// it, async-dispatched goroutines could each miss the connStore
+		// cache and dial duplicate upstream SSH connections.
+		sshFlightGroup singleflight.Group
 	}
 	connEnv struct {
 		scheme             string
@@ -123,8 +151,33 @@ func New(client pb.ClientTransport, cfg *config.Config, runtimeEnvs map[string]s
 		runtimeEnvs:      runtimeEnvs,
 		shutdownCtx:      shutdownCtx,
 		shutdownCancelFn: cancelFn,
-		connMtx:          make(map[string]*sync.Mutex),
 	}
+}
+
+// sessionStateFor returns the per-session lock-and-state record, creating
+// it on first reference. Entries persist for the lifetime of the agent
+// process so that a late packet for a closed session always finds
+// closed=true rather than racing through a freshly-allocated state.
+func (a *Agent) sessionStateFor(sessionID string) *sessionState {
+	if v, ok := a.sessionStates.Load(sessionID); ok {
+		return v.(*sessionState)
+	}
+	state := &sessionState{}
+	actual, _ := a.sessionStates.LoadOrStore(sessionID, state)
+	return actual.(*sessionState)
+}
+
+// connWriteLockFor returns the per-connection write mutex. It serializes
+// writes to a single upstream proxy when packet dispatch is async, so
+// consecutive packets for the same (sessionID, connectionID) do not
+// reorder at the libhoop layer.
+func (a *Agent) connWriteLockFor(key string) *sync.Mutex {
+	if v, ok := a.connWriteLocks.Load(key); ok {
+		return v.(*sync.Mutex)
+	}
+	mu := &sync.Mutex{}
+	actual, _ := a.connWriteLocks.LoadOrStore(key, mu)
+	return actual.(*sync.Mutex)
 }
 
 func (a *Agent) Close(cause error) {
@@ -202,6 +255,15 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 	case pbsystem.RunbookHookRequestType:
 		runbookhook.ProcessRequest(a.client, pkt)
+
+	case pbsystem.BareExecRequestType:
+		bareexec.ProcessRequest(a.client, pkt)
+
+	case pbsystem.PgManagerPlanRequestType:
+		pgmanager.ProcessPlanRequest(a.client, pkt)
+
+	case pbsystem.PgManagerApplyRequestType:
+		pgmanager.ProcessApplyPlan(a.client, pkt)
 	}
 }
 
@@ -218,6 +280,22 @@ func (a *Agent) Run() error {
 		case <-a.shutdownCtx.Done():
 			return context.Cause(a.shutdownCtx)
 		default:
+		}
+
+		// SSH connection writes and the SessionClose that ends them can be
+		// dispatched concurrently when the async flag is enabled, so a
+		// slow upstream on one session does not stall packet processing
+		// for other sessions on this agent. processSSHProtocol uses the
+		// session RW lock, per-connection write mutex, and singleflight
+		// group on the Agent to keep concurrent handlers correct.
+		//
+		// SessionClose is included so the recv loop is not blocked when
+		// it has to wait for an in-flight SSH handler to drain before
+		// running session cleanup.
+		if featureflagstate.IsEnabled("experimental.agent_async_ssh") &&
+			(pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose) {
+			go a.processPacket(pkt)
+			continue
 		}
 
 		a.processPacket(pkt)
@@ -327,7 +405,17 @@ func (a *Agent) processSessionClose(pkt *pb.Packet) {
 
 func (a *Agent) sessionCleanup(sessionID string) {
 	log.With("sid", sessionID).Infof("cleaning up session")
-	a.closedSessions.Store(sessionID, true)
+
+	// Acquire the session's write lock and mark it closed before iterating
+	// the connStore. RLock holders (in-flight packet handlers) drain here,
+	// guaranteeing that no handler is mid-build when we start tearing down
+	// proxies. Late packets arriving after Unlock find closed=true under
+	// their own RLock and return without touching the store.
+	state := a.sessionStateFor(sessionID)
+	state.mu.Lock()
+	state.closed.Store(true)
+	defer state.mu.Unlock()
+
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if p, ok := obj.(libhoop.Proxy); ok {
@@ -345,6 +433,7 @@ func (a *Agent) sessionCleanup(sessionID string) {
 			}()
 		}
 		a.connStore.Del(key)
+		a.connWriteLocks.Delete(key)
 	}
 }
 
@@ -432,6 +521,14 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 
 	for key, val := range a.runtimeEnvs {
 		connParams.EnvVars[key] = val
+	}
+
+	// Override MSPresidio configuration
+	if analyzerURL, anonymizerURL, dlpMode, isSet := parseMSPresidioOverrideConfig(); isSet {
+		log.Infof("overriding MS Presidio configuration, dlp-mode=%v", dlpMode)
+		connParams.DlpPresidioAnalyzerURL = analyzerURL
+		connParams.DlpPresidioAnonymizerURL = anonymizerURL
+		connParams.DlpMode = dlpMode
 	}
 
 	// expose agent envs to session
@@ -777,5 +874,24 @@ func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSes
 	if cluster == "" || awsRegion == "" {
 		return "", "", "", "", fmt.Errorf("missing required envs [EKS_CLUSTER EKS_AWS_REGION]")
 	}
+	return
+}
+
+func parseMSPresidioOverrideConfig() (analyzerURL, anonymizerURL, dlpMode string, isSet bool) {
+	analyzerURL = os.Getenv("MSPRESIDIO_ANALYZER_URL")
+	anonymizerURL = os.Getenv("MSPRESIDIO_ANONYMIZER_URL")
+	dlpMode = os.Getenv("DLP_MODE")
+	if _, err := url.Parse(analyzerURL); err != nil {
+		log.Warnf("MSPRESIDIO_ANALYZER_URL failed loading override configuration, invalid url: %v", err)
+		return
+	}
+	if _, err := url.Parse(anonymizerURL); err != nil {
+		log.Warnf("MSPRESIDIO_ANONYMIZER_URL failed loading override configuration, invalid url: %v", err)
+		return
+	}
+	if dlpMode != "strict" && dlpMode != "best-effort" {
+		log.Warnf("DLP_MODE unknown value (%q), fallback to best-effort", dlpMode)
+	}
+	isSet = analyzerURL != "" && anonymizerURL != ""
 	return
 }

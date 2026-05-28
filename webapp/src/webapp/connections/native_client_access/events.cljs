@@ -126,16 +126,19 @@
                                                 :user-is-admin? is-admin?}]
                                      :maxWidth "446px"}]]]})))
 
-;; Revoke credential via API and clear session
+;; Disconnect via API: ends the audit session and tears down active proxy
+;; connections but keeps the stored token alive. The same secret key will be
+;; returned on the next credential request. Use :native-client-access->revoke-credential
+;; for explicit token invalidation.
 (rf/reg-event-fx
- :native-client-access->revoke-credential
+ :native-client-access->disconnect-credential
  (fn [_ [_ connection-name credential-id]]
    (if (or (nil? credential-id) (str/blank? credential-id))
      ;; No credential ID (e.g. legacy session) - just clear locally
      {:fx [[:dispatch [:native-client-access->clear-session connection-name]]
            [:dispatch [:modal->close]]]}
      {:fx [[:dispatch [:fetch {:method "POST"
-                              :uri (str "/connections/" connection-name "/credentials/" credential-id "/revoke")
+                              :uri (str "/connections/" connection-name "/credentials/" credential-id "/close")
                               :on-success (fn []
                                             (rf/dispatch [:native-client-access->clear-session connection-name])
                                             (rf/dispatch [:modal->close])
@@ -145,6 +148,28 @@
                                             (let [msg (or (:message err)
                                                           (get-in err [:response :message])
                                                           "Failed to disconnect")]
+                                              (rf/dispatch [:show-snackbar {:level :error :text msg}])))}]]]})))
+
+;; Revoke credential via API: invalidates the stored token and ends active
+;; sessions. Reserved for an explicit "revoke credential" UI action; the next
+;; credential request will generate a new token.
+(rf/reg-event-fx
+ :native-client-access->revoke-credential
+ (fn [_ [_ connection-name credential-id]]
+   (if (or (nil? credential-id) (str/blank? credential-id))
+     {:fx [[:dispatch [:native-client-access->clear-session connection-name]]
+           [:dispatch [:modal->close]]]}
+     {:fx [[:dispatch [:fetch {:method "POST"
+                              :uri (str "/connections/" connection-name "/credentials/" credential-id "/revoke")
+                              :on-success (fn []
+                                            (rf/dispatch [:native-client-access->clear-session connection-name])
+                                            (rf/dispatch [:modal->close])
+                                            (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text "Credential revoked successfully."}]))
+                              :on-failure (fn [err]
+                                            (let [msg (or (:message err)
+                                                          (get-in err [:response :message])
+                                                          "Failed to revoke credential")]
                                               (rf/dispatch [:show-snackbar {:level :error :text msg}])))}]]]})))
 
 ;; Clear specific native client access session

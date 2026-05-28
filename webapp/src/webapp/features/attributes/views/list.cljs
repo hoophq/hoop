@@ -45,5 +45,5 @@
                  [:> Button {:variant "outline"
                              :color "gray"
                              :size "3"
-                             :on-click #(rf/dispatch [:navigate :settings-attributes-edit {} :name (:name attr)])}
+                             :on-click #(rf/dispatch [:navigate :settings-attributes-edit {:name (:name attr)}])}
                   "Configure"]]])))]]))))

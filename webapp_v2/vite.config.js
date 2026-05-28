@@ -1,0 +1,52 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+
+export default defineConfig({
+  define: {
+    __BUILD_ID__: JSON.stringify(Date.now().toString()),
+    __SEGMENT_WRITE_KEY__: JSON.stringify(process.env.SEGMENT_WRITE_KEY || '043Lv52mAcoGOHWVq7n3bxZAVvocyqx0')
+  },
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    emptyOutDir: true
+  },
+  server: {
+    proxy: {
+      // API requests → gateway backend.
+      // Reads API_URL from .env — same variable the CLJS build uses via shadow-cljs closure-defines.
+      '/api': {
+        target: process.env.API_URL || 'http://localhost:8009',
+        changeOrigin: true
+      },
+      // ClojureScript assets (JS bundle, CSS, images) → shadow-cljs dev server
+      '/js': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true
+      },
+      '/css': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true
+      },
+      '/images': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true
+      },
+      '/data': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true
+      },
+      '/icons': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true
+      }
+    }
+  }
+});

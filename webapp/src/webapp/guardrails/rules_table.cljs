@@ -91,6 +91,7 @@
 
 (defn main [{:keys [title
                     state
+                    free-license?
                     select-state
                     words-state
                     pattern-state
@@ -102,7 +103,8 @@
                     on-toggle-select
                     on-toggle-all
                     on-rules-delete]}]
-  (let [selected? (every? :selected @state)]
+  (let [selected? (every? :selected @state)
+        disable-new? (and free-license? (>= (count @state) 1))]
     [:> Box {:class "space-y-radix-5"}
      [:> Text {:size "3" :weight "bold" :class "text-[--gray-12]"}
       title]
@@ -173,6 +175,7 @@
      ;; Action buttons
      [rule-buttons/main
       {:on-rule-add #(on-rule-add state)
+       :disable-new? disable-new?
        :on-toggle-select #(on-toggle-select select-state)
        :select-state select-state
        :selected? selected?

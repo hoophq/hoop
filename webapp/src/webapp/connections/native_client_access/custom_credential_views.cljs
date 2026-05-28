@@ -19,7 +19,7 @@
 
 (defn claude-code-credentials-fields
   "Claude Code specific credentials fields"
-  [{:keys [connection_credentials]}]
+  [{:keys [connection_credentials connection_name]}]
   (let [hostname (:hostname connection_credentials)
         port (:port connection_credentials)
         proxy-token (:proxy_token connection_credentials)
@@ -38,7 +38,6 @@
        :log-id "anthropic-settings-json"
        :log-content "~/.claude/settings.json"}]
 
-
      ;; Anthropic API Key
      [block-with-heading-and-text
       {:heading "If the file or folder doesn’t exist"
@@ -46,13 +45,12 @@
        :log-id "create-anthropic-settings-folder"
        :log-content "mkdir -p ~/.claude && touch ~/.claude/settings.json"}]
 
-
      [:> Box {:class "space-y-2"}
       [:> Box
        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
         "Add the following configuration"]
        [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
-        "Modify the following values accordingly. If you have more settings, you can leave then, you only need to modify "
+        "Modify the following values accordingly. If you have more settings, you can leave them, you only need to modify "
         [:> Text {:as "span" :size "2" :weight "bold" :class "text-[--gray-11]"}
          "ANTHROPIC_BASE_URL"]
         " and "
@@ -64,7 +62,15 @@
         :id "anthropic-authorization-header"
         :logs [:pre (js/JSON.stringify (clj->js (build-json-content
                                                  base-url
-                                                 custom-headers)) nil 2)]}]]
+                                                 custom-headers)) nil 2)]}]
+      [:> Box {:class "pt-1"}
+       [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
+        "Or run this command to apply automatically:"]
+       [:> Box {:class "mt-2"}
+        [logs/new-container
+         {:status :success
+          :id "claude-code-cli-configure"
+          :logs (str "hoop claude configure " connection_name)}]]]]
 
      [:> Box {:class "space-y-2"}
       [:> Box

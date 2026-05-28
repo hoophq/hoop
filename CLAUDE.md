@@ -4,7 +4,7 @@
 
 This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`.
 
- with five modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads and a standalone ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions.
+ with five modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
 
  `_libhoop/` is a symlink target; the build uses `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
 
@@ -119,8 +119,10 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
 | Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
 | Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
-| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly) |
+| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/dev/hoop` (plaintext-friendly; the `bin/` sibling is reserved for `hoop versions`' active symlink) |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
+| Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
+| Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
 | Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
@@ -171,6 +173,8 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Agent controller handlers follow one-file-per-protocol in `agent/controller/`.
 - Gateway API handlers follow one-package-per-domain in `gateway/api/` (e.g., `gateway/api/connections/`, `gateway/api/session/`).
 - Models use GORM; each entity gets its own file in `gateway/models/`.
+- Model functions in `gateway/` must receive `*gorm.DB` as a parameter — never use a global DB variable.
+- Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound` to the caller — never swallow it by returning `nil, nil`. Let callers decide how to handle not-found cases.
 - `libhoop` must stay independent — no imports from `gateway/`, `agent/`, `client/`, or `common/`.
 - Services layer: Business logic lives in `gateway/services/` — keep models focused on data, services on business logic.
 
@@ -184,10 +188,35 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Run `make generate-openapi-docs` to regenerate `gateway/api/openapi/autogen/`.
 - OpenAPI specs are served at `/api/openapiv2.json` and `/api/openapiv3.json`.
 
+### Environment variables
+- Whenever a new env var is added, removed, or renamed in `gateway/appconfig/appconfig.go` (or anywhere read via `os.Getenv` in the gateway), **update the helm chart in the same PR**:
+  - `deploy/helm-chart/chart/gateway/templates/secret-configs.yaml` — pass-through entry, e.g. `MY_VAR: '{{ .Values.config.MY_VAR | default "..." }}'`.
+  - `deploy/helm-chart/chart/gateway/values.yaml` — add an example or sensible default under the `config:` block (commented if optional).
+  - `deploy/helm-chart/chart/gateway/README.md` — document the new var if it is user-facing.
+- Same rule applies to the agent helm chart at `deploy/helm-chart/chart/agent/` for agent-side env vars.
+- For deployments managed in the `infra` repo (sandbox, hoopcloud envs), open a follow-up PR there if the new var needs to be enabled per-environment.
+- The local dev `.env.sample` should also be updated so contributors discover the new var.
+
 ### Versioning
 - Semantic versioning: `MAJOR.MINOR.PATCH`.
 - Version is injected at build time via `-ldflags` into `common/version`.
 - PR preview builds are tagged `{PR_NUMBER}.0.1-{SHORT_SHA}`.
+
+### PR Labels
+Every PR **must** have exactly one release label. Choose based on the nature of the change:
+
+| Label | When to use |
+|-------|-------------|
+| `major` | Breaking changes that require a major version bump |
+| `minor` | New features or non-breaking enhancements |
+| `patch` | Bug fixes, performance improvements, or minor non-breaking changes |
+| `skip-release` | No release needed: docs, CI/CD changes, internal refactors, test-only changes |
+
+Examples:
+- New API endpoint or feature → `minor`
+- Fix a crash or incorrect behavior → `patch`
+- Remove a public API or change wire format → `major`
+- Update `CLAUDE.md`, fix a GitHub Actions workflow, rename a variable → `skip-release`
 
 ## Merge Conflict Resolution
 When merging `main` into a feature branch:
@@ -214,4 +243,63 @@ When merging `main` into a feature branch:
 | SQL migrations | `rootfs/app/migrations/` |
 | Dev run script | `scripts/dev/run.sh` |
 | Env sample | `.env.sample` |
-| Webapp entry | `webapp/src/webapp/core.cljs` |
+| Webapp entry (legacy CLJS) | `webapp/src/webapp/core.cljs` |
+| Webapp entry (React shell) | `webapp_v2/src/main.jsx` |
+| Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
+| Frontend coding rules | `webapp_v2/CLAUDE.md` |
+
+## Coding
+
+NO HACKS. The user is EXTREMELY concerted about code quality much more than immediate results. If they ask you to build something and, while doing so, you hit a wall, and realize that the only way to ship the requested feature is to introduce a local hack, workaround, monkey patch, duct tap - STOP IMMEDIATLY. Either fix the underlying flaw that blocked you ina ROBUST, WELL DESIGNED, PRODUCTION READY manner, or be honest that the prompt can't be completed without hacks.
+
+- DO NOT INTRODUCE HACKS IN THE CODE BASE
+- DO NOT COMMIT CODE THAT COULD BREAK THINGS LATER
+- DO NOT COMMIT PARTIAL SOLUTIONS OR WORKAROUNDS.
+
+The author appreciates honestly and he WILL be glad and thankful if you respond a request with "I couldn't complete your request because the repository lacked support for X". He will be even happier if you go ahead and update the repo to provide necessary support in a well designed and robust way. But he will be VERY ANGRY if, while attempting to implement a feature, you introduce a workaround that will potentially break things latter.
+
+## Frontend Migration in Progress
+
+**The frontend is being migrated from ClojureScript (`webapp/`) to React (`webapp_v2/`).**
+
+`webapp_v2` is a React Shell that wraps the legacy ClojureScript app: it provides the global shell (Sidebar, CommandPalette) while ClojureScript continues to render page content. Pages are migrated one by one to React until the ClojureScript bundle can be removed entirely.
+
+### Before working on any frontend issue
+
+1. **Read `webapp_v2/CONTEXT_MIGRATION.md`** — explains the architecture, the shell/bridge contracts (`window.hoopSetRoute`, `localStorage.react-shell`, etc.), routing split, and migration status.
+2. **Read `webapp_v2/CLAUDE.md`** — contains all coding rules, styling guidelines (Mantine only, no Tailwind), store/service patterns, and gotchas that apply to every change in `webapp_v2/`.
+
+These two files are the authoritative source of truth for frontend work. Do not skip them.
+
+Additionally, read these before the specific task:
+- **Building UI or adding a component** → also read `webapp_v2/COMPONENTS.md` (catalog of existing components, hooks, stores, services — check before creating anything new).
+- **Migrating a CLJS page to React** → also read `webapp_v2/MIGRATION_CHECKLIST.md` (step-by-step process) and `webapp_v2/CLJS_PATTERNS.md` (CLJS → React pattern mapping).
+
+### Quick orientation
+
+- New React pages live in `webapp_v2/src/pages/`
+- Shared components live in `webapp_v2/src/components/`
+- Global state is managed by Zustand stores in `webapp_v2/src/stores/`
+- The reference implementation for a migrated page is `webapp_v2/src/pages/Agents/`
+- Stack: React 19, Vite, Mantine v8, Zustand, React Router v7, lucide-react
+
+### Dev servers
+
+Use `cd webapp_v2 && npm run dev:full` to launch both Vite and shadow-cljs
+together (recommended). Individual targets:
+
+| Service | Port | Command |
+|---------|------|---------|
+| Vite (React shell) | 5173 | `cd webapp_v2 && npm run dev` |
+| shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev` |
+| Gateway (backend) | 8009 | see `Makefile` |
+
+Hot reload: Vite HMRs React sources instantly. shadow-cljs rebuilds
+`/js/app.js` and `/css/site.css`, which Vite **proxies** — so CLJS/Tailwind
+edits do NOT propagate as HMR into the running page. Hard-reload the tab
+(Cmd+Shift+R) after a CLJS change.
+
+A `.env` in `webapp_v2/` is optional — `vite.config.js` defaults all dev
+proxy targets. Same goes for `webapp/.env`: only override `SENTRY_DSN`,
+`SEGMENT_WRITE_KEY` or `API_URL` if you need to (closure-defines in
+`shadow-cljs.edn` already supply usable defaults).

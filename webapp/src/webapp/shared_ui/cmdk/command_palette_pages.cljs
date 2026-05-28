@@ -9,7 +9,7 @@
 
 (defn action-item
   "Generic action item component"
-  [{:keys [id label icon requires-upgrade?] :as item}]
+  [{:keys [id label icon] :as item}]
   [:> CommandItem
    {:key id
     :value label
@@ -20,11 +20,8 @@
       [icon]
       [:> icon {:size 16 :class "text-gray-11"}])
     [:div {:class "flex justify-between items-center w-full"}
-     [:span {:class (str "text-sm font-medium"
-                         (when requires-upgrade? " text-opacity-70"))}
-      label]
-     (when requires-upgrade?
-       [:span {:class "text-xs text-blue-9 font-medium"} "Upgrade"])]]])
+     [:span {:class "text-sm font-medium"}
+      label]]]])
 
 (defn connection-result-item
   "Connection search result item"
@@ -75,7 +72,7 @@
       :keywords (filterv some? [repository runbook-name "runbook"])
       :onSelect #(do
                    (rf/dispatch [:runbooks/set-active-runbook template repository])
-                   (rf/dispatch [:navigate :runbooks])
+                   (rf/dispatch [:navigate :runbooks {:runbook runbook-name :repository repository}])
                    (rf/dispatch [:command-palette->close]))}
      [:div {:class "flex items-center gap-2"}
       [:> File {:size 16 :class "text-gray-9"}]

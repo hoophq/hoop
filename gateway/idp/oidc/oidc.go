@@ -291,12 +291,6 @@ func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo
 	log.With("issuer", idToken.Issuer, "subject", uinfo.Subject, "email", uinfo.Email, "email-verified", uinfo.EmailVerified).
 		Infof("token exchanged (oauth2) and id_token verified")
 
-	// overwrite the groups and indicate it should sync groups
-	if syncGsuiteGroups {
-		uinfo.Groups = groups
-		uinfo.MustSyncGroups = true
-		uinfo.MustSyncGsuiteGroups = true
-	}
 	return token, uinfo, err
 }
 
@@ -351,6 +345,105 @@ func (p *Provider) validateOidcAzpClaim(claims jwt.MapClaims) error {
 		return fmt.Errorf("it's not an authorized party, azp=%q, client_id=%q", azp, p.ClientID)
 	}
 	return nil
+}
+
+func (p *Provider) GetIssuerURL() string { return p.IssuerURL }
+
+// VerifyAccessTokenForResource validates a JWT access token against the configured OIDC
+// issuer and asserts that the token was minted for the given resource URI as required
+// by the MCP OAuth 2.1 Resource Server profile (RFC 8707, MCP 2025-11-25).
+//
+// The check is strict: it rejects opaque tokens, rejects tokens whose `aud` claim does
+// not contain expectedResource, and returns the parsed claims so callers can extract
+// subject, email, and groups without re-parsing.
+func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
+	var uinfo idptypes.ProviderUserInfo
+	if expectedResource == "" {
+		return uinfo, nil, fmt.Errorf("missing expected resource (aud) for token validation")
+	}
+	if len(strings.Split(accessToken, ".")) != 3 {
+		return uinfo, nil, fmt.Errorf("opaque tokens are not accepted on the MCP resource server")
+	}
+
+	token, err := jwt.Parse(accessToken, p.jwks.Keyfunc)
+	if err != nil {
+		return uinfo, nil, err
+	}
+	if !token.Valid {
+		return uinfo, nil, fmt.Errorf("token invalid")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return uinfo, nil, fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
+	}
+
+	subject, _ := claims["sub"].(string)
+	if subject == "" {
+		return uinfo, nil, fmt.Errorf("'sub' claim is missing or empty")
+	}
+
+	// Do no validate the azp claim, cause of the DCR
+	// if err := p.validateOidcAzpClaim(claims); err != nil {
+	// 	return uinfo, nil, err
+	// }
+
+	if iss, _ := claims["iss"].(string); iss != "" && iss != p.IssuerURL {
+		return uinfo, nil, fmt.Errorf("untrusted issuer, got=%q, want=%q", iss, p.IssuerURL)
+	}
+
+	if !audienceContains(claims["aud"], expectedResource) {
+		return uinfo, nil, fmt.Errorf("audience mismatch, expected=%q", expectedResource)
+	}
+
+	uinfo = p.parseUserInfo(claims)
+	uinfo.Subject = subject
+	if uinfo.Email == "" {
+		if email, _ := claims["email"].(string); email != "" {
+			uinfo.Email = strings.ToLower(email)
+		}
+	}
+	if uinfo.Profile == "" {
+		if name, _ := claims["preferred_username"].(string); name != "" {
+			uinfo.Profile = name
+		}
+	}
+
+	groups, syncGsuiteGroups, err := p.fetchGsuiteGroups(accessToken, uinfo.Email)
+	if err != nil {
+		log.Errorf("unable to synchronize groups from Google: %v", err)
+	}
+
+	// overwrite the groups and indicate it should sync groups
+	if syncGsuiteGroups {
+		uinfo.Groups = groups
+		uinfo.MustSyncGroups = true
+		uinfo.MustSyncGsuiteGroups = true
+	}
+
+	return uinfo, claims, nil
+}
+
+// audienceContains returns true when the JWT `aud` claim (which may be a string or
+// an array per RFC 7519 §4.1.3) explicitly includes expected.
+func audienceContains(claim any, expected string) bool {
+	switch v := claim.(type) {
+	case string:
+		return v == expected
+	case []any:
+		for _, raw := range v {
+			if s, _ := raw.(string); s == expected {
+				return true
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if s == expected {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Provider) userInfoEndpoint(accessToken string) (*idptypes.ProviderUserInfo, error) {

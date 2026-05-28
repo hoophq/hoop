@@ -7,7 +7,9 @@ import (
 	"net/url"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -178,6 +180,23 @@ func CreateResource(c *gin.Context) {
 		return
 	}
 
+	if len(connections) > 0 && ctx.UserEmail != "" && ctx.OrgID != "" {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+		trackClient.TrackCreateConnection(analytics.CreateConnectionEvent{
+			OrgID:         ctx.OrgID,
+			UserID:        ctx.UserID,
+			Source:        "resources-api",
+			LicenseType:   ctx.GetLicenseType(),
+			Type:          req.Type,
+			SubType:       req.SubType,
+			Command:       connections[0].Command,
+			ContentLength: c.Request.ContentLength,
+			UserAgent:     apiutils.NormalizeUserAgent(c.Request.Header.Values),
+			APIHostname:   c.Request.Host,
+		})
+	}
+
 	c.JSON(http.StatusCreated, toOpenApi(&resource))
 }
 
@@ -234,9 +253,27 @@ func ListResources(c *gin.Context) {
 		return
 	}
 
+	resourceNames := make([]string, len(resources))
+	for i, r := range resources {
+		resourceNames[i] = r.Name
+	}
+	connsByResource, err := models.GetConnectionsByResourceNames(models.DB, ctx.OrgID, resourceNames)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching resources roles: %v", err)
+		return
+	}
+
 	var resp []*openapi.ResourceResponse
 	for _, r := range resources {
-		resp = append(resp, toOpenApi(&r))
+		item := toOpenApi(&r)
+		if conns, ok := connsByResource[r.Name]; ok {
+			roles := make([]openapi.Connection, len(conns))
+			for j, conn := range conns {
+				roles[j] = apiconnections.ToOpenApi(&conn)
+			}
+			item.Roles = roles
+		}
+		resp = append(resp, item)
 	}
 
 	// Backwards compatibility: return a bare array when no pagination params are

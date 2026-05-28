@@ -50,11 +50,13 @@ make build-dev-webapp
 By default versioned clients are builded to strict connect via TLS. In order to build a client that permits connecting to remote hosts without TLS, execute the instruction below:
 
 ```sh
-# generate binary at $HOME/.hoop/bin/hoop
+# generate binary at $HOME/.hoop/dev/hoop
 make build-dev-client
 ```
 
-> Append `$HOME/.hoop/bin` to your `$PATH` in your profile to find commands when typing in your shell
+> Append `$HOME/.hoop/dev` to your `$PATH` in your profile to find commands when typing in your shell.
+>
+> Note: `$HOME/.hoop/bin/hoop` is reserved as the active symlink managed by `hoop versions`; the dev binary lives in `$HOME/.hoop/dev/hoop` so the two workflows don't collide. Put `$HOME/.hoop/dev` first on `PATH` if you want your dev build to take precedence; put `$HOME/.hoop/bin` first if you want whatever `hoop versions sync` / `hoop versions upgrade` last installed.
 
 ### Data Masking Setup
 
@@ -80,7 +82,7 @@ This writes a managed block into `.env`:
 # <<<HOOP_SPIFFE_DEV>>>
 HOOP_SPIFFE_MODE=enforce
 HOOP_SPIFFE_TRUST_DOMAIN=local.test
-HOOP_SPIFFE_BUNDLE_FILE=/app/spiffe/bundle.jwks
+HOOP_SPIFFE_BUNDLE_JWKS=<base64-encoded JWKS>
 HOOP_SPIFFE_AUDIENCE=http://127.0.0.1:8009
 HOOP_SPIFFE_REFRESH_PERIOD=30s
 # <<</HOOP_SPIFFE_DEV>>>
@@ -89,7 +91,7 @@ HOOP_SPIFFE_REFRESH_PERIOD=30s
 and emits three files under `dist/dev/spiffe/`:
 
 - `priv.pem` — RSA signing key (reused across runs, so the bundle stays stable)
-- `bundle.jwks` — JWKS trust bundle mounted into the gateway at `/app/spiffe/bundle.jwks`
+- `bundle.jwks` — JWKS trust bundle; its contents are base64-encoded into `HOOP_SPIFFE_BUNDLE_JWKS` in `.env`, so no file mount is needed in the gateway container
 - `agent.jwt` — JWT-SVID for `spiffe://local.test/agent/local-dev`, 24h TTL (re-minted every run)
 
 2. Start (or restart) the gateway so it picks up the new `HOOP_SPIFFE_*` vars:
@@ -108,12 +110,13 @@ make run-dev-spiffe-agent
 
 This script:
 
-- rebuilds `$HOME/.hoop/bin/hoop` if source files under `agent/` or `common/clientconfig/` are newer than the binary
-- copies `bundle.jwks` into the `hoopdev` container (where `/app/spiffe/` is mounted)
+- rebuilds `$HOME/.hoop/dev/hoop` if source files under `agent/` or `common/clientconfig/` are newer than the binary
 - reads `POSTGRES_DB_URI` from `hoopdev`'s env and seeds two rows in `hoopdevpg` (idempotent):
   - `private.agents` → a `spiffe-agent` row
   - `private.agent_spiffe_mappings` → maps `spiffe://local.test/agent/local-dev` to that agent
-- launches the agent on your host with `HOOP_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
+- launches the agent on your host with `HOOP_SPIFFE_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
+
+The trust bundle is delivered to the gateway via `HOOP_SPIFFE_BUNDLE_JWKS` in `.env` (set by `run-dev-spiffe-prep`), so this script does not touch the gateway container's filesystem.
 
 `Ctrl-C` stops only the agent; `run-dev` keeps running.
 
@@ -125,7 +128,7 @@ This script:
 | `HOOP_SPIFFE_ID` | `spiffe://local.test/agent/local-dev` | Subject of the minted JWT and the DB mapping |
 | `HOOP_SPIFFE_AUDIENCE` | `http://127.0.0.1:8009` | `aud` claim the gateway enforces |
 | `HOOP_SPIFFE_TTL` | `24h` | Lifetime of the minted JWT |
-| `HOOPDEV_APP_CONTAINER` | `hoopdev` | Gateway container (bundle copy + `POSTGRES_DB_URI` source) |
+| `HOOPDEV_APP_CONTAINER` | `hoopdev` | Gateway container (`POSTGRES_DB_URI` source) |
 | `HOOPDEV_DB_CONTAINER` | `hoopdevpg` | Postgres container where `psql` runs |
 
 #### Re-minting / rotating the JWT
@@ -142,6 +145,31 @@ To rotate the signing key too, delete `dist/dev/spiffe/priv.pem` before running 
 #### Disabling SPIFFE
 
 Edit `.env` and change `HOOP_SPIFFE_MODE=enforce` to `HOOP_SPIFFE_MODE=disabled` (or remove the managed block entirely), then restart `run-dev`. `enforce` is the only "on" value — the gateway always rejects invalid SVIDs and never falls back to DSN on a JWT-shaped token.
+
+## Running Tests
+
+### Unit tests
+
+```sh
+make test-oss
+```
+
+Fast, no external dependencies. Runs in CI on every PR.
+
+### Integration tests
+
+```sh
+make test-integration
+```
+
+End-to-end tests under `agent/integration/` that drive the real `controller.Agent` against real upstream servers (Postgres today; SSH and MySQL coming). They live behind the `//go:build integration` tag so they're invisible to `make test-oss`.
+
+Requirements:
+
+- **Docker daemon** running on the host — [testcontainers-go](https://golang.testcontainers.org/) manages the upstream container lifecycle.
+- **Enterprise `libhoop`** checked out as a sibling directory (`../libhoop`, matching the `replace libhoop => ../libhoop` directive in `agent/go.mod` and `gateway/go.mod`). The OSS stub at `_libhoop/libhoop.go` returns "missing protocol hoop library for X" and integration tests will fail at handshake. CI clones `hoophq/libhoop` into `./libhoop` via `secrets.GH_TOKEN` (same as the build jobs).
+
+CI runs integration tests on every PR via the `Integration Test` job in `.github/workflows/pullrequest.yml`.
 
 ## Swagger / OpenAPI
 

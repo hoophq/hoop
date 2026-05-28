@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -106,7 +108,12 @@ func Post(c *gin.Context) {
 	}
 	resp.Attributes = req.Attributes
 
-	c.JSON(http.StatusCreated, toOpenApi(resp))
+	// Reconcile machine identity credentials based on attribute overlap
+	if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
+		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
+	}
+
+	c.JSON(http.StatusCreated, ToOpenApi(resp))
 }
 
 // Put Connection
@@ -202,12 +209,17 @@ func Put(c *gin.Context) {
 	}
 	resp.Attributes = req.Attributes
 
-	c.JSON(http.StatusOK, toOpenApi(resp))
+	// Reconcile machine identity credentials based on attribute overlap
+	if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
+		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
+	}
+
+	c.JSON(http.StatusOK, ToOpenApi(resp))
 }
 
 // Patch Connection
 //
-//	@Summary	    Patch Connection
+//	@Summary		Patch Connection
 //	@Description	Partial update of a connection resource. Only provided fields will be updated.
 //	@Tags			Connections
 //	@Accept			json
@@ -321,9 +333,14 @@ func Patch(c *gin.Context) {
 			return
 		}
 		resp.Attributes = *req.Attributes
+
+		// Reconcile machine identity credentials based on attribute overlap
+		if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
+			log.Warnf("failed reconciling MI credentials after patching connection %s: %v", resp.Name, err)
+		}
 	}
 
-	c.JSON(http.StatusOK, toOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp))
 }
 
 // DeleteConnection
@@ -332,13 +349,13 @@ func Patch(c *gin.Context) {
 //	@Description	Delete a connection resource.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			name	path	string	true	"The name of the resource"
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
 //	@Success		204
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/connections/{name} [delete]
+//	@Router			/connections/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	connName := c.Param("name")
+	connName := c.Param("nameOrID")
 	if connName == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
@@ -370,7 +387,7 @@ func Delete(c *gin.Context) {
 //	@Param			subtype			query		string											false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string											false	"Filter by managed by"																	Format(string)
 //	@Param			resource_name	query		string											false	"Filter by resource name"																Format(string)
-//	@Param			attribute		query		string											false	"Filter by attributes, separated by comma"										Format(string)
+//	@Param			attribute		query		string											false	"Filter by attributes, separated by comma"												Format(string)
 //	@Param			connection_ids	query		string											false	"Filter by specific connection IDs, separated by comma"									Format(string)
 //	@Param			page_size		query		int												false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int												false	"Page number (1-based). When provided, enables pagination"								Format(int)
@@ -423,7 +440,7 @@ func List(c *gin.Context) {
 			// it should return empty to avoid leaking sensitive content
 			// in the future we plan to know which entry is sensitive or not
 			conn.Envs = map[string]string{}
-			responseConnList[i] = toOpenApi(&conn)
+			responseConnList[i] = ToOpenApi(&conn)
 		}
 
 		response := openapi.PaginatedResponse[openapi.Connection]{
@@ -450,7 +467,7 @@ func List(c *gin.Context) {
 		// it should return empty to avoid leaking sensitive content
 		// in the future we plan to know which entry is sensitive or not
 		conn.Envs = map[string]string{}
-		responseConnList = append(responseConnList, toOpenApi(&conn))
+		responseConnList = append(responseConnList, ToOpenApi(&conn))
 
 	}
 	c.JSON(http.StatusOK, responseConnList)
@@ -478,7 +495,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	apiConn := toOpenApi(conn)
+	apiConn := ToOpenApi(conn)
 	if orgID, err := uuid.Parse(ctx.OrgID); err == nil {
 		if rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit"); err == nil && rule != nil {
 			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
@@ -487,7 +504,7 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, apiConn)
 }
 
-func toOpenApi(conn *models.Connection) openapi.Connection {
+func ToOpenApi(conn *models.Connection) openapi.Connection {
 	var managedBy *string
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String

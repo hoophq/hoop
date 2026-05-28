@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -15,6 +17,59 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
+
+const connectionTagValuePrefix = "session.connection_tags."
+
+func countItems(m map[string]any) int {
+	if m == nil {
+		return 0
+	}
+	items, ok := m["items"].([]any)
+	if !ok {
+		return 0
+	}
+	return len(items)
+}
+
+func countMappingItemsByKind(m map[string]any) (tagCount, nonTagCount int) {
+	if m == nil {
+		return 0, 0
+	}
+	items, ok := m["items"].([]any)
+	if !ok {
+		return 0, 0
+	}
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		value, _ := item["value"].(string)
+		if strings.HasPrefix(value, connectionTagValuePrefix) {
+			tagCount++
+		} else {
+			nonTagCount++
+		}
+	}
+	return tagCount, nonTagCount
+}
+
+func validateOssTemplateLimits(req *openapi.JiraIssueTemplateRequest) error {
+	tagCount, nonTagCount := countMappingItemsByKind(req.MappingTypes)
+	if tagCount > 1 {
+		return fmt.Errorf("preset mapping rules are limited to 1 in the Free plan")
+	}
+	if nonTagCount > 1 {
+		return fmt.Errorf("custom mapping rules are limited to 1 in the Free plan")
+	}
+	if countItems(req.PromptTypes) > 1 {
+		return fmt.Errorf("prompt rules are limited to 1 in the Free plan")
+	}
+	if countItems(req.CmdbTypes) > 1 {
+		return fmt.Errorf("CMDB rules are limited to 1 in the Free plan")
+	}
+	return nil
+}
 
 // ListIssueTemplates
 //
@@ -173,6 +228,22 @@ func CreateIssueTemplates(c *gin.Context) {
 		return
 	}
 
+	if ctx.GetLicenseType() == license.OSSType {
+		existing, err := models.ListJiraIssueTemplates(ctx.GetOrgID())
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing issue templates: %v", err)
+			return
+		}
+		if len(existing) >= 1 {
+			c.JSON(http.StatusForbidden, gin.H{"message": "Jira templates are limited to 1 in the Free plan"})
+			return
+		}
+		if err := validateOssTemplateLimits(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
 	issue := &models.JiraIssueTemplate{
 		ID:                         uuid.NewString(),
 		OrgID:                      ctx.GetOrgID(),
@@ -233,6 +304,14 @@ func UpdateIssueTemplates(c *gin.Context) {
 	if req == nil {
 		return
 	}
+
+	if ctx.GetLicenseType() == license.OSSType {
+		if err := validateOssTemplateLimits(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
 	issue := &models.JiraIssueTemplate{
 		OrgID:                      ctx.GetOrgID(),
 		ID:                         c.Param("id"),

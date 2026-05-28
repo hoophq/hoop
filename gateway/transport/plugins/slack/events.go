@@ -81,12 +81,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 }
 
 func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {
-	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil, false)
-	if err == nil && status == models.ReviewStatusRejected && ev.msg.RejectionReason != "" {
-		if setErr := models.SetReviewRejectionReason(ev.orgID, ev.msg.SessionID, ev.msg.RejectionReason); setErr != nil {
-			log.With("sid", ev.msg.SessionID).Warnf("failed storing rejection reason from slack, err=%v", setErr)
-		}
-	}
+	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil, false, ev.msg.RejectionReason)
 	var msg string
 	switch err {
 	case reviewapi.ErrNotFound:

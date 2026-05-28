@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -159,7 +160,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	}
 
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
-	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview)
+	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview, req.RejectionReason)
 	switch err {
 	case ErrNotEligible, ErrSelfApproval, ErrWrongState:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -174,11 +175,6 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 				ptr.ToString(rev.OwnerSlackID),
 				rev.Status.Str(),
 			)
-		}
-		if rev.Status == models.ReviewStatusRejected && req.RejectionReason != "" {
-			if setErr := models.SetReviewRejectionReason(rev.OrgID, rev.SessionID, req.RejectionReason); setErr != nil {
-				log.Warnf("failed storing rejection reason, sid=%v, err=%v", rev.SessionID, setErr)
-			}
 		}
 		c.JSON(http.StatusOK, toOpenApiReview(rev))
 	default:
@@ -202,8 +198,11 @@ func (h *handler) ReviewBySid(c *gin.Context) { h.ReviewByIdOrSid(c) }
 
 // DoReview updates the status of a review identified by reviewIdOrSid. The hasForced parameter
 // indicates whether the review status change was forced by an administrator or privileged user,
-// bypassing normal review validation rules or approval workflows.
-func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow, hasForced bool) (*models.Review, error) {
+// bypassing normal review validation rules or approval workflows. When the resulting status is
+// ReviewStatusRejected, a non-empty rejectionReason is persisted on the review record in the
+// same transaction as the status change, so any downstream consumers (events, API responses,
+// Slack/MCP flows) observe a consistent state.
+func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow, hasForced bool, rejectionReason string) (*models.Review, error) {
 	rev, err := models.GetReviewByIdOrSid(ctx.OrgID, reviewIdOrSid)
 	switch err {
 	case models.ErrNotFound:
@@ -236,6 +235,10 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, err
 	}
 
+	if rev.Status == models.ReviewStatusRejected && rejectionReason != "" {
+		rev.RejectionReason = &rejectionReason
+	}
+
 	if err := models.UpdateReview(rev); err != nil {
 		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
 	}
@@ -245,6 +248,15 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		defer trackClient.Close()
 
 		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, rev.SessionID)
+
+		go func() {
+			session, err := models.GetSessionByID(ctx.OrgID, rev.SessionID)
+			if err != nil {
+				log.Warnf("event-routing: failed loading session %s for review event: %v", rev.SessionID, err)
+				return
+			}
+			events.DeriveFromReview(ctx.OrgID, rev, session)
+		}()
 	}
 
 	return rev, nil

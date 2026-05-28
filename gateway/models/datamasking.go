@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -21,6 +22,7 @@ type DataMaskingRule struct {
 	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
+	RulepackID           sql.NullString           `gorm:"column:rulepack_id"`
 	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
 	Attributes           pq.StringArray           `gorm:"column:attributes;type:text[];->"`
 	UpdatedAt            time.Time                `gorm:"column:updated_at"`
@@ -65,40 +67,56 @@ func (r *SupportedEntityTypesList) Scan(value any) error {
 
 func CreateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("private.datamasking_rules").Create(rule).Error; err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				return ErrAlreadyExists
-			}
-			return err
-		}
+		return CreateDataMaskingRuleTx(tx, rule)
+	})
+}
 
-		for _, connID := range rule.ConnectionIDs {
-			err := tx.Exec(`
+// CreateDataMaskingRuleTx is the transaction-aware variant of CreateDataMaskingRule.
+// It runs inside the caller's transaction so the rule (and its connection junction rows)
+// can be composed atomically with other writes.
+func CreateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
+	if err := tx.Table("private.datamasking_rules").Create(rule).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return ErrAlreadyExists
+		}
+		return err
+	}
+	for _, connID := range rule.ConnectionIDs {
+		err := tx.Exec(`
 			INSERT INTO private.datamasking_rules_connections (org_id, rule_id, connection_id)
 			VALUES (?, ?, ?)
-			`, rule.OrgID, rule.ID, connID).
-				Error
-			if err == gorm.ErrForeignKeyViolated {
-				return ErrNotFound
-			}
-			if err != nil {
-				return err
-			}
+		`, rule.OrgID, rule.ID, connID).Error
+		if err == gorm.ErrForeignKeyViolated {
+			return ErrNotFound
 		}
-		return nil
-	})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteDataMaskingRulesByRulepackIDTx removes all datamasking rules attached to a
+// rulepack within the caller's transaction. Junction tables (rule-attribute,
+// rule-connection) cascade automatically via their own FK constraints.
+func DeleteDataMaskingRulesByRulepackIDTx(tx *gorm.DB, orgID, rulepackID uuid.UUID) error {
+	return tx.Exec(
+		`DELETE FROM private.datamasking_rules WHERE org_id = ? AND rulepack_id = ?`,
+		orgID, rulepackID,
+	).Error
 }
 
 func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.datamasking_rules").
 			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "updated_at").
+			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "rulepack_id", "updated_at").
 			Updates(DataMaskingRule{
 				Description:          rule.Description,
 				SupportedEntityTypes: rule.SupportedEntityTypes,
 				CustomEntityTypes:    rule.CustomEntityTypes,
 				ScoreThreshold:       rule.ScoreThreshold,
+				RulepackID:           rule.RulepackID,
 				UpdatedAt:            rule.UpdatedAt,
 			})
 		if res.Error != nil {
@@ -130,11 +148,34 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	})
 }
 
-func ListDataMaskingRules(orgID string) ([]DataMaskingRule, error) {
+type DataMaskingListOption struct {
+	IncludeAllRulepackOwned bool
+	// RulepackID, when non-nil, restricts the result set to rules whose rulepack_id
+	// matches. Setting this implicitly includes rulepack-owned rules even when
+	// IncludeAllRulepackOwned is false.
+	RulepackID *uuid.UUID
+}
+
+func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMaskingRule, error) {
+	var opt DataMaskingListOption
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	extraClause := ""
+	args := []any{orgID, orgID, orgID}
+	switch {
+	case opt.RulepackID != nil:
+		extraClause = ` AND r.rulepack_id = ?`
+		args = append(args, *opt.RulepackID)
+	case !opt.IncludeAllRulepackOwned:
+		extraClause = ` AND r.rulepack_id IS NULL`
+	}
+
 	var rules []DataMaskingRule
 	return rules, DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
@@ -146,7 +187,7 @@ func ListDataMaskingRules(orgID string) ([]DataMaskingRule, error) {
 		r.updated_at
 	FROM private.datamasking_rules r
 	WHERE org_id = ?
-	`, orgID, orgID, orgID).
+	`+extraClause, args...).
 		Find(&rules).
 		Error
 }
@@ -155,7 +196,7 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 	var rule DataMaskingRule
 	err := DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'

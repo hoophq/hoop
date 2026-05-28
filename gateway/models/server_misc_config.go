@@ -7,7 +7,6 @@ import (
 )
 
 type ServerMiscConfig struct {
-	ProductAnalytics      *string                `gorm:"column:product_analytics"`
 	GrpcServerURL         *string                `gorm:"column:grpc_server_url"`
 	PostgresServerConfig  *PostgresServerConfig  `gorm:"column:postgres_server_config;serializer:json"`
 	SSHServerConfig       *SSHServerConfig       `gorm:"column:ssh_server_config;serializer:json"`
@@ -51,7 +50,6 @@ func UpsertServerMiscConfig(newObj *ServerMiscConfig) (*ServerMiscConfig, error)
 		res := DB.Table("private.serverconfig").
 			Where("1=1").
 			Updates(map[string]any{
-				"product_analytics":        newObj.ProductAnalytics,
 				"grpc_server_url":          newObj.GrpcServerURL,
 				"postgres_server_config":   newObj.PostgresServerConfig,
 				"ssh_server_config":        newObj.SSHServerConfig,

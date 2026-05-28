@@ -1,0 +1,11 @@
+.card {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-lg);
+  cursor: pointer;
+  background-color: transparent;
+  transition: background-color 120ms ease;
+}
+
+.card[data-selected] {
+  background-color: var(--sidebar-bg);
+}

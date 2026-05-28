@@ -43,10 +43,9 @@
        {:db (assoc-in db [:resource-setup :submitting?] true)
         :fx (vec (map-indexed
                   (fn [idx role]
-                    (let [metadata (->> resource-metadata
-                                        (filter #(= (get-in % [:resourceConfiguration :subtype])
-                                                    (:subtype role)))
-                                        first)
+                    (let [metadata (process-form/find-connection-metadata
+                                    resource-metadata
+                                    (:subtype role))
                           command-role (get-in metadata [:resourceConfiguration :command])
                           processed-role (process-form/process-role role agent-id command-role)
                           body (assoc processed-role :resource_name resource-name)]

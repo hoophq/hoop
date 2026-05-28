@@ -111,6 +111,8 @@ type Session struct {
 	ExitCode             *int                    `gorm:"column:exit_code"`
 	Review               *SessionReview          `gorm:"column:review;->"`
 	SessionBatchID       *string                 `gorm:"column:session_batch_id"`
+	MachineIdentityID    *string                 `gorm:"column:machine_identity_id"`
+	IdentityType         string                  `gorm:"column:identity_type"`
 	CorrelationID        *string                 `gorm:"column:correlation_id"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
@@ -223,7 +225,8 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	err := DB.Raw(`
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id, s.correlation_id,
+		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
+		s.machine_identity_id, s.identity_type, s.correlation_id,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.guardrails_info,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		c.resource_name,
@@ -356,7 +359,8 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		err = tx.Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id, s.correlation_id,
+			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
+			s.machine_identity_id, s.identity_type, s.correlation_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
 			c.resource_name,
@@ -467,6 +471,9 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 // UpsertSession updates or create all attributes of a session with exception of
 // session streams
 func UpsertSession(sess Session) error {
+	if sess.IdentityType == "" {
+		sess.IdentityType = "user"
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		// generate deterministic uuid based on the session id to avoid duplicates
 		blobInputID := sql.NullString{
@@ -510,6 +517,8 @@ func UpsertSession(sess Session) error {
 				Status:               sess.Status,
 				ExitCode:             sess.ExitCode,
 				SessionBatchID:       sess.SessionBatchID,
+				MachineIdentityID:    sess.MachineIdentityID,
+				IdentityType:         sess.IdentityType,
 				CorrelationID:        sess.CorrelationID,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
@@ -541,10 +550,124 @@ func SetSessionCredentialsRevokedAt(orgID, sessionID string, revokedAt time.Time
 	value := fmt.Sprintf(`{"credentials_revoked_at":%q}`, revokedAt.Format(time.RFC3339))
 	return DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).
-		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).
-		Update("status", "done").
-		Update("ended_at", revokedAt).
+		Updates(map[string]any{
+			"metadata": gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value),
+			"status":   "done",
+			"ended_at": revokedAt,
+		}).Error
+}
+
+// SessionFederationMetadata captures the audit fields IAM Federation writes
+// to the session row at SessionOpen time. The shape is intentionally flat
+// since downstream consumers (the v1.1 Sessions UI, SIEM exports) want to
+// project individual fields without parsing nested JSON.
+type SessionFederationMetadata struct {
+	// Provider is the federation provider that resolved the session (e.g.
+	// gcp_iam).
+	Provider string `json:"provider"`
+	// HookSource mirrors ConnectionFederationConfig.HookSource. Today only
+	// "builtin" is supported; the field is preserved so audit consumers can
+	// distinguish hook sources if new ones are added in future releases.
+	HookSource string `json:"hook_source"`
+	// ResolvedPrincipal is the cloud-side identity the session ran under.
+	// For GCP this is the user@org.com address GCP audit logs will attribute
+	// the query to.
+	ResolvedPrincipal string `json:"resolved_principal"`
+	// AdminPrincipal is the impersonator identity (admin SA's client_email
+	// for gcp_iam).
+	AdminPrincipal string `json:"admin_principal,omitempty"`
+	// TokenExpiresAt is the expiration of the credential the agent runs
+	// under. Sessions can outlive this; the credential's own expiry is the
+	// source of truth for the downstream API.
+	TokenExpiresAt time.Time `json:"token_expires_at"`
+	// FallbackApplied is true when the primary resolution failed and the
+	// session ran under the configured readonly_principal instead.
+	FallbackApplied bool `json:"fallback_applied,omitempty"`
+}
+
+// SetSessionFederationMetadata stores the federation audit data under the
+// "federation" key inside the session's metadata JSONB. Idempotent: re-running
+// with the same fields overwrites them in place via jsonb concatenation.
+//
+// Errors here are non-fatal for the SessionOpen flow — the caller logs and
+// continues. A missing federation entry just means the v1.1 UI won't have
+// audit data for that session; the session still opens successfully.
+func SetSessionFederationMetadata(orgID, sessionID string, m SessionFederationMetadata) error {
+	inner, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("failed encoding federation metadata: %v", err)
+	}
+	wrapped := fmt.Sprintf(`{"federation":%s}`, string(inner))
+	return DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", wrapped)).
 		Error
+}
+
+// SessionStreamBlobID returns the deterministic blob id for a session's stream.
+func SessionStreamBlobID(sessionID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobstream:%s", sessionID)).String()
+}
+
+// CreateEmptySessionStreamBlob inserts an empty stream blob and points the
+// session row at it. Subsequent flushes append to that row via AppendSessionStream.
+// Idempotent: re-running for the same session is a no-op on conflict.
+func CreateEmptySessionStreamBlob(orgID, sessionID string, blobFormat *string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		blobStreamID := SessionStreamBlobID(sessionID)
+		blob := Blob{
+			ID:         blobStreamID,
+			OrgID:      orgID,
+			BlobStream: json.RawMessage(`[]`),
+			Type:       "session-stream",
+			BlobFormat: blobFormat,
+		}
+		// upsert via UPDATE-then-INSERT pattern used elsewhere in this file
+		res := tx.Table("private.blobs").
+			Where("org_id = ? AND id = ?", orgID, blobStreamID).
+			Updates(map[string]any{"format": blobFormat})
+		if res.Error == nil && res.RowsAffected == 0 {
+			res.Error = tx.Table("private.blobs").Create(blob).Error
+		}
+		if res.Error != nil {
+			return fmt.Errorf("failed creating empty session stream blob: %v", res.Error)
+		}
+		return tx.Table("private.sessions").
+			Where("org_id = ? AND id = ?", orgID, sessionID).
+			Update("blob_stream_id", blobStreamID).Error
+	})
+}
+
+// AppendSessionStream concatenates entries onto the session's blob_stream
+// using Postgres jsonb concatenation. entries must already be a JSON array.
+// Returns ErrNotFound if the stream blob row does not exist — callers should
+// retry rather than silently dropping the flush window.
+func AppendSessionStream(orgID, sessionID string, entries json.RawMessage) error {
+	blobStreamID := SessionStreamBlobID(sessionID)
+	res := DB.Exec(
+		`UPDATE private.blobs SET blob_stream = blob_stream || ?::jsonb WHERE org_id = ? AND id = ?`,
+		string(entries), orgID, blobStreamID,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkSessionDone updates the session terminal columns without touching the
+// stream blob — flushes write the blob incrementally during the session.
+func MarkSessionDone(sess SessionDone) error {
+	return DB.Table("private.sessions AS s").
+		Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
+		Updates(map[string]any{
+			"exit_code": sess.ExitCode,
+			"status":    sess.Status,
+			"ended_at":  sess.EndSession,
+			"metrics":   gorm.Expr("COALESCE(s.metrics, '{}'::jsonb) || ?::jsonb", sess.Metrics),
+		}).Error
 }
 
 // UpdateSessionEventStream updates a session partially
@@ -630,17 +753,6 @@ func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
 	res := DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sid).
 		Update("guardrails_info", gorm.Expr("COALESCE(guardrails_info, '[]'::jsonb) || ?::jsonb", info))
-	if res.Error == nil && res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return res.Error
-}
-
-// SetReviewRejectionReason stores the rejection reason on the review record for the given session.
-func SetReviewRejectionReason(orgID, sessionID, reason string) error {
-	res := DB.Table("private.reviews").
-		Where("org_id = ? AND session_id = ?", orgID, sessionID).
-		Update("rejection_reason", reason)
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound
 	}

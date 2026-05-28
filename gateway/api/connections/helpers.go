@@ -42,6 +42,26 @@ func setConnectionDefaults(req *openapi.Connection) {
 	}
 }
 
+// ApplyDefaultsToModel fills subtype-specific runtime defaults (command and env vars)
+// on a connection model in place. Idempotent: existing command and env keys are preserved.
+// Mirrors setConnectionDefaults for callers that work directly with models.Connection
+// (e.g. the MCP server).
+func ApplyDefaultsToModel(conn *models.Connection) {
+	if conn.Envs == nil {
+		conn.Envs = map[string]string{}
+	}
+	hasMongoConnStr := conn.Envs["envvar:CONNECTION_STRING"] != ""
+	defaultCmd, defaultEnvs := GetConnectionDefaults(conn.Type, conn.SubType.String, hasMongoConnStr)
+	if len(conn.Command) == 0 {
+		conn.Command = defaultCmd
+	}
+	for k, v := range defaultEnvs {
+		if _, has := conn.Envs[k]; !has {
+			conn.Envs[k] = fmt.Sprintf("%v", v)
+		}
+	}
+}
+
 func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (cmd []string, envs map[string]any) {
 	envs = map[string]any{}
 	switch pb.ToConnectionType(connType, connSubType) {

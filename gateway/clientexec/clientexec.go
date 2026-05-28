@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	grpckey "github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
@@ -63,6 +64,8 @@ type Options struct {
 	Origin                    string
 	Verb                      string
 	UserAgent                 string
+
+	ImpersonateUserSubject string
 }
 
 type Response struct {
@@ -142,21 +145,35 @@ func New(opts *Options) (*clientExec, error) {
 		userAgent = opts.UserAgent
 	}
 
-	client, err := grpc.Connect(grpc.ClientConfig{
-		ServerAddress: grpc.LocalhostAddr,
-		Token:         opts.BearerToken,
-		UserAgent:     userAgent,
-		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
-		// it should be safe to skip verify here as we are connecting to localhost
-		TLSSkipVerify: true,
-	},
+	grpcOpts := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
 		grpc.WithOption("origin", opts.Origin),
 		grpc.WithOption("verb", opts.Verb),
 		grpc.WithOption("session-id", opts.SessionID),
 		grpc.WithOption("plain-exec-key", PlainExecSecretKey),
-	)
+	}
+
+	clientConfig := grpc.ClientConfig{
+		ServerAddress: grpc.LocalhostAddr,
+		UserAgent:     userAgent,
+		Insecure:      appconfig.Get().GatewayUseTLS() == false,
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
+	}
+
+	if opts.ImpersonateUserSubject != "" {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+			grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, opts.ImpersonateUserSubject),
+		)
+		clientConfig.Token = ""
+	} else {
+		clientConfig.Token = opts.BearerToken
+	}
+
+	client, err := grpc.Connect(clientConfig, grpcOpts...)
+
 	if err != nil {
 		_ = wlog.Close()
 		return nil, err

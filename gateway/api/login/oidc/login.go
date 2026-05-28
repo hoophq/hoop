@@ -1,6 +1,7 @@
 package loginoidcapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
@@ -300,6 +302,10 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 			return false, fmt.Errorf("failed creating default runbook configuration, err=%v", err)
 		}
 
+		if err := services.SeedDefaultRulepacksForOrg(context.Background(), org.ID); err != nil {
+			log.With("org_id", org.ID).Errorf("failed seeding default rulepacks, reason=%v", err)
+		}
+
 		emailVerified := false
 		if uinfo.EmailVerified != nil {
 			emailVerified = *uinfo.EmailVerified
@@ -502,7 +508,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	trackClient := analytics.New()
 	defer trackClient.Close()
 	if !isNewUser {
-		trackClient.Track(ctx.UserID, analytics.EventLogin, map[string]any{
+		trackClient.Track(ctx.UserSubject, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
@@ -513,14 +519,14 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	trackClient.Identify(&types.APIContext{
 		OrgID:          ctx.OrgID,
 		OrgLicenseData: &ctx.OrgLicenseData,
-		UserID:         ctx.UserID,
+		UserID:         ctx.UserSubject,
 		UserEmail:      ctx.UserEmail,
 		UserName:       ctx.UserName,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		trackClient.Track(ctx.UserID, analytics.EventSignup, map[string]any{
+		trackClient.Track(ctx.UserSubject, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,

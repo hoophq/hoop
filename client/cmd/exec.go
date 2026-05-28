@@ -363,7 +363,16 @@ func runExecSession(sessionID string) {
 	if resp.StatusCode >= 400 {
 		fatalErr(jsonMode, "failed executing session: %s", string(body))
 	}
+
+	timedOut := resp.StatusCode == http.StatusAccepted
+
 	if !jsonMode {
+		if timedOut {
+			fmt.Fprintln(os.Stderr, styles.Fainted("Session is still running."))
+			fmt.Fprintln(os.Stderr, styles.Fainted("The gateway timed out after 50s; your session keeps executing in the background."))
+			fmt.Fprintln(os.Stderr, styles.Fainted("Track progress: %s/sessions/%s", config.ApiURL, sessionID))
+			return
+		}
 		fmt.Print(string(body))
 		return
 	}
@@ -374,10 +383,18 @@ func runExecSession(sessionID string) {
 	}
 
 	status := "completed"
-	if resp.StatusCode == http.StatusAccepted {
-		status = "running"
-	}
+	exitCode := apiResp.ExitCode
+	exitCodeField := &apiResp.ExitCode
 	data := map[string]string{"session_id": sessionID}
+	if timedOut {
+		// Session keeps running in the background — report no exit code yet
+		// and exit the CLI with 0 so callers don't treat a still-running
+		// session as a failure.
+		status = "running"
+		exitCode = 0
+		exitCodeField = nil
+		data["session_url"] = fmt.Sprintf("%s/sessions/%s", config.ApiURL, sessionID)
+	}
 	if apiResp.Output != "" {
 		data["stdout"] = apiResp.Output
 	}
@@ -386,8 +403,8 @@ func runExecSession(sessionID string) {
 	}
 	emitJSONEvent(os.Stdout, JSONEvent{
 		Status:   status,
-		ExitCode: &apiResp.ExitCode,
+		ExitCode: exitCodeField,
 		Data:     data,
 	})
-	os.Exit(apiResp.ExitCode)
+	os.Exit(exitCode)
 }

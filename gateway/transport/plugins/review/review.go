@@ -87,7 +87,8 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			log.With("sid", pctx.SID, "id", jitr.ID, "user", jitr.OwnerEmail, "org", pctx.OrgID,
 				"revoke-at", jitr.RevokedAt.Format(time.RFC3339),
 				"duration", fmt.Sprintf("%vs", jitr.AccessDurationSec)).Infof("jit access granted")
-			newCtx, _ := context.WithTimeout(pctx.Context, time.Duration(jitr.AccessDurationSec)*time.Second)
+			newCtx, cancel := context.WithTimeout(pctx.Context, time.Duration(jitr.AccessDurationSec)*time.Second)
+			_ = cancel // cancel is not called here; the context expires via timeout or when the parent context is done
 			return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
 		default:
 			return nil, err
@@ -96,9 +97,14 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID).
 		Infof("jit review not found")
 
+	durationStr := []byte("30m") // default used on cli
+	if d, ok := pkt.Spec[pb.SpecJitTimeout]; ok {
+		durationStr = d
+	}
+
 	var accessDuration time.Duration
+	isJitReview := pctx.ClientVerb == pb.ClientVerbConnect
 	reviewType := models.ReviewTypeOneTime
-	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
 	if isJitReview {
 		reviewType = models.ReviewTypeJit
 		accessDuration, err = time.ParseDuration(string(durationStr))

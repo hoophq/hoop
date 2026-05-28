@@ -123,6 +123,11 @@
    (:audit->session-stream-result db)))
 
 (re-frame/reg-sub
+ :audit->session-stream-state
+ (fn [db [_ session-id]]
+   (get-in db [:audit->session-stream session-id :state])))
+
+(re-frame/reg-sub
  :connections->test-connection
  (fn [db _]
    (:connections->test-connection db)))
@@ -198,6 +203,14 @@
  :gateway->info
  (fn [db _]
    (:gateway->info db)))
+
+(re-frame/reg-sub
+ :feature-flag/enabled?
+ (fn [db [_ flag-name]]
+   (let [flags (get-in db [:gateway->info :data :feature_flags])
+         k (keyword flag-name)]
+     (boolean (or (get flags k)
+                  (get flags flag-name))))))
 
 (re-frame/reg-sub
  :gateway->public-info

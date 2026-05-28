@@ -1,0 +1,38 @@
+.item {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-xl);
+  overflow: hidden;
+}
+
+.item[data-active] .control {
+  background-color: var(--mantine-color-indigo-1);
+}
+
+.item[data-disabled] {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.control {
+  padding: var(--mantine-spacing-md);
+}
+
+.control:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--mantine-color-blue-5);
+}
+
+.content {
+  padding: var(--mantine-spacing-lg);
+  background-color: var(--mantine-color-white);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+/* Trigger row layout — flex: 1 cannot be expressed via Mantine props */
+.trigger {
+  flex: 1;
+}
+
+.triggerBody {
+  flex: 1;
+}

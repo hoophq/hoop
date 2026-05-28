@@ -11,7 +11,7 @@ image:
   #   pullPolicy: Always
   #   tag: latest
 
-# -- Enable the default agent
+# -- Enable the default agent (authenticates to the gateway via HOOP_KEY / DSN)
 defaultAgent:
   enabled: false
   imageRepository: 'hoophq/hoopdev'
@@ -134,6 +134,30 @@ config:
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
   # PLUGIN_AUDIT_PATH: ''
   # PLUGIN_INDEX_PATH: ''
+  #
+  # Async RDP session-replay PII analysis. Workers run OCR + Presidio over
+  # recorded RDP bitmap frames so the webapp can highlight PII on top of the
+  # replay. Defaults to 0 (disabled). Set RDP_ANALYSIS_WORKERS >= 1 and ensure
+  # MSPRESIDIO_ANALYZER_URL is reachable and tesseract is installed in the
+  # gateway image to enable.
+  # RDP_ANALYSIS_WORKERS: '0'
+  # RDP_PII_SNAPSHOT_INTERVAL: '0.25'
+  # RDP_PII_SCORE_THRESHOLD: '0.9'
+  # RDP_PII_ENTITY_DENYLIST: 'DATE_TIME,NRP'
+
+  ## SPIFFE / JWT-SVID authentication
+  ## When HOOP_SPIFFE_MODE=enforce, the gateway validates agent JWT-SVIDs
+  ## against the SPIFFE trust bundle. Supply the bundle via exactly one of:
+  ##   HOOP_SPIFFE_BUNDLE_JWKS (inline — raw JWKS JSON or base64 of it;
+  ##                            autodetected by the gateway on the env side),
+  ##   HOOP_SPIFFE_BUNDLE_URL  (HTTPS fetch, refreshed on HOOP_SPIFFE_REFRESH_PERIOD),
+  ##   HOOP_SPIFFE_BUNDLE_FILE (path mounted into the container).
+  # HOOP_SPIFFE_MODE: 'enforce'
+  # HOOP_SPIFFE_TRUST_DOMAIN: 'customer.com'
+  # HOOP_SPIFFE_AUDIENCE: 'https://hoop.customer.com'
+  # HOOP_SPIFFE_REFRESH_PERIOD: '5m'
+  # HOOP_SPIFFE_BUNDLE_URL: ''
+  # HOOP_SPIFFE_BUNDLE_JWKS: ''
 
 mainService:
   # -- Annotations to add in the main service
@@ -181,6 +205,100 @@ ingressGrpc:
   # - hosts:
   #   - grpc01.domain.tld
   #   - grpc02.domain.tld
+
+# -- Gateway API resources (gateway.networking.k8s.io/v1)
+# Requires the Gateway API CRDs to be installed in your cluster.
+# For Istio: install with `istioctl install` or the Istio Helm chart.
+# For other implementations: https://gateway-api.sigs.k8s.io/guides/
+gatewayApi:
+  # -- Enable Gateway API resources (HTTPRoute + optional Gateway)
+  enabled: false
+
+  # -- Create a Gateway resource.
+  # Set to false to attach the HTTPRoute to a pre-existing Gateway.
+  createGateway: true
+
+  # -- Gateway resource configuration
+  gateway:
+    # -- Gateway resource name (also used as the default parentRef for the HTTPRoute)
+    name: hoopgateway
+    # -- Annotations to add to the Gateway
+    annotations: {}
+    # -- GatewayClass name (e.g. istio, nginx, cilium)
+    gatewayClassName: istio
+    # -- Listeners define the addresses and ports for incoming traffic.
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.Listener
+    listeners:
+    - name: http
+      # -- Restrict the listener to a specific hostname; leave commented to accept all hosts
+      # hostname: hoop.yourdomain.org
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    # -- Requested addresses for the Gateway (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayAddress
+    # addresses:
+    # - type: IPAddress
+    #   value: 1.2.3.4
+    # - type: Hostname
+    #   value: hoop.yourdomain.org
+
+    # -- Infrastructure-level parameters passed to the underlying Gateway implementation (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayInfrastructure
+    # infrastructure:
+    #   labels:
+    #     environment: production
+    #   annotations:
+    #     networking.example.com/service-type: Internal
+    #   parametersRef:
+    #     group: example.com
+    #     kind: Config
+    #     name: my-config
+
+    # -- Backend TLS configuration applied to all backends via this Gateway (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayBackendTLS
+    # backendTLS:
+    #   clientCertificateRef:
+    #     name: my-client-cert
+
+  # -- HTTPRoute resource configuration
+  httpRoute:
+    # -- HTTPRoute resource name
+    name: hoopgateway-route
+    # -- Annotations to add to the HTTPRoute
+    annotations: {}
+    # -- Hostnames the route applies to; should match listener hostname(s) above
+    # hostnames:
+    # - hoop.yourdomain.org
+
+    # -- HTTPRoute rules. Specify the full list of match/backendRef/filter rules.
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.HTTPRouteRule
+    # rules:
+    # - matches:
+    #   - path:
+    #       type: PathPrefix
+    #       value: /protobuf.Transport
+    #   backendRefs:
+    #   - name: hoopgateway
+    #     port: 8010
+    # - matches:
+    #   - path:
+    #       type: PathPrefix
+    #       value: /
+    #   backendRefs:
+    #   - name: hoopgateway
+    #     port: 8009
+
+    # -- Parent references for this HTTPRoute (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.ParentReference
+    # parentRefs:
+    # - name: hoopgateway
+    # - name: hoopgateway
+    #   namespace: infra
+    #   sectionName: http
 
 # --- Expose proxy protocols direct access
 proxyService:

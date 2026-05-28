@@ -40,6 +40,48 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
 	},
+	"experimental.log_exec_input": {
+		Name:        "experimental.log_exec_input",
+		Description: "Include the truncated exec input as a structured log attribute on the agent (for SIEM export). May log sensitive content.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
+	"experimental.rdp_pii_detection": {
+		Name:        "experimental.rdp_pii_detection",
+		Description: "Enable async RDP PII detection workers and per-session analysis enqueue. Requires Presidio analyzer URL and tesseract OCR.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.event_routing": {
+		Name:        "experimental.event_routing",
+		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.agent_async_ssh": {
+		Name:        "experimental.agent_async_ssh",
+		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
+	"experimental.rulepacks": {
+		Name:        "experimental.rulepacks",
+		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.iam_federation": {
+		Name:        "experimental.iam_federation",
+		Description: "Resolve per-session cloud credentials by impersonating the calling user's IAM principal (GCP IAM v1) so cloud audit logs attribute queries to the human, not the shared admin SA. When enabled, federation config on a connection is consulted at SessionOpen and short-lived credentials are injected as env vars before the agent runs the command.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.

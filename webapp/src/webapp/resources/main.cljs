@@ -48,8 +48,7 @@
      "."]]])
 
 (defn- loading-list-view []
-  [:> Box {:class "flex items-center justify-center h-96"}
-   [loaders/simple-loader]])
+  [loaders/page-loading-screen {:full-page false}])
 
 (def resource-types
   [{:id "postgres" :value "postgres" :label "PostgreSQL"}
@@ -189,9 +188,8 @@
             (when (can-open-web-terminal? connection)
               [:> DropdownMenu.Item {:on-click
                                      (fn []
-                                       (js/localStorage.setItem "selected-connection" connection)
                                        (rf/dispatch [:database-schema->clear-schema])
-                                       (rf/dispatch [:navigate :editor-plugin-panel]))}
+                                       (rf/dispatch [:navigate :editor-plugin {:role (:name connection)}]))}
                "Open in Web Terminal"])
 
             (when (and (can-hoop-cli? connection)
@@ -430,7 +428,7 @@
                     (apply-filter (cond-> {}
                                     (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
                                     @selected-resource (assoc :subtype @selected-resource))))]]])
-             
+
              (when (= @active-tab "roles")
                [attribute-filter/main {:selected @selected-attribute
                                        :on-select (fn [attribute-name]

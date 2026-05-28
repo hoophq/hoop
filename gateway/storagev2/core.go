@@ -88,6 +88,11 @@ func (c *Context) WithOrgLicenseData(licenseData json.RawMessage) *Context {
 	return c
 }
 
+func (c *Context) WithOrgAnalyticsMode(mode string) *Context {
+	c.OrgAnalyticsMode = mode
+	return c
+}
+
 func (c *Context) WithApiURL(apiURL string) *Context {
 	c.ApiURL = apiURL
 	return c

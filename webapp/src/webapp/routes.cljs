@@ -3,6 +3,7 @@
    [bidi.bidi :as bidi]
    [pushy.core :as pushy]
    [re-frame.core :as rf]
+   [webapp.components.loaders :as loaders]
    [webapp.config :as config]
    [webapp.events :as events]))
 
@@ -22,6 +23,7 @@
      "/agents" [["" :agents]
                 ["/new" :new-agent]]
      "/auth/callback" :auth-callback-hoop
+     "/provisioning" :provisioning
      "/resource-catalog" :resource-catalog
      "/resources" [["" :resources]
                    ["/new" :resource-setup-new]
@@ -37,6 +39,10 @@
                   ["/access-request" :access-request]
                   ["/access-request/new" :access-request-new]
                   [["/access-request/edit/" :rule-name] :access-request-edit]
+                  ["/machine-identities" :machine-identities]
+                  ["/machine-identities/new" :machine-identities-new]
+                  [["/machine-identities/edit/" :identity-name] :machine-identities-edit]
+                  [["/machine-identities/" :identity-name "/roles"] :machine-identities-roles]
                   ["/runbooks/setup" :runbooks-setup]
                   ["/runbooks/rules/new" :create-runbooks-rule]
                   [["/runbooks/rules/edit/" :rule-id] :edit-runbooks-rule]
@@ -76,13 +82,14 @@
      "/sessions" [["" :sessions]
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
+     ["/workflows/" :correlation-id] :workflow-details
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
                   ["/experimental" :settings-experimental]
                   ["/audit-logs" :settings-audit-logs]
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
-                  [["/attributes/edit/" :name] :settings-attributes-edit]
+                  ["/attributes/edit" :settings-attributes-edit]
                   ["/jira" :settings-jira]
                   ["/api-keys" :settings-api-keys]
                   ["/api-keys/new" :settings-api-keys-new]
@@ -104,7 +111,7 @@
   [url]
   (try
     (bidi/match-route @routes url)
-    (catch js/Error e
+    (catch js/Error _
       {:handler :home})))
 
 (defn url-for
@@ -123,7 +130,13 @@
   [config]
   (let [uri (str (url-for (:handler config) (or (:params config) []))
                  (:query-params config))]
-    (pushy/set-token! history uri)))
+    (pushy/set-token! history uri)
+    ;; Notify the React shell that the URL changed. Pushy uses pushState,
+    ;; which does not fire popstate, so React Router v7 would otherwise
+    ;; miss the transition — the Layout/Sidebar wrapper wouldn't mount
+    ;; until a full page refresh.
+    (when (.getItem js/localStorage "react-shell")
+      (.dispatchEvent js/window (js/PopStateEvent. "popstate")))))
 
 (defn start!
   []
@@ -163,10 +176,9 @@
             (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
             [:div {:class "flex items-center justify-center h-full"}
              [:div {:class "text-center"}
-              [:div {:class "mb-4 text-xl font-medium text-gray-900"}
-               "Redirecting..."]
-              [:div {:class "text-sm text-gray-500"}
-               "You don't have permission to access this page."]]]))))))
+              [loaders/page-loading-screen {:full-page false
+                                            :message "Redirecting..."
+                                            :description "You don't have permission to access this page."}]]]))))))
 
 ;; Function wrapper to wrap admin components
 (defn wrap-admin-only [component]
@@ -187,10 +199,9 @@
             (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
             [:div {:class "flex items-center justify-center h-full"}
              [:div {:class "text-center"}
-              [:div {:class "mb-4 text-xl font-medium text-gray-900"}
-               "Redirecting..."]
-              [:div {:class "text-sm text-gray-500"}
-               "This feature is only available for self-hosted environments."]]]))))))
+              [loaders/page-loading-screen {:full-page false
+                                            :message "Redirecting..."
+                                            :description "This feature is only available for self-hosted environments."}]]]))))))
 
 ;; Function wrapper to wrap selfhosted components
 (defn wrap-selfhosted-only [component]

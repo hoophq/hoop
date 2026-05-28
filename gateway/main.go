@@ -18,6 +18,8 @@ import (
 	"github.com/hoophq/hoop/gateway/api"
 	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+
+	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -29,6 +31,8 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/eventrouting"
+	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -84,6 +88,7 @@ func Run() {
 	goMigrateStep.OK("")
 
 	services.WarmFeatureFlagCache()
+	analytics.WarmModeCache()
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL
@@ -96,11 +101,11 @@ func Run() {
 		log.Warnf("failed initializing SPIFFE provider, background refresh will retry: %v", err)
 	}
 
-	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {
-		appconfig.GetRef().SetAnalyticsTracking(enabled)
-	}
-
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
+	// Captured for the RDP analyzer supervisor so it can watch the default
+	// org's feature flag. Stays empty in multi-tenant deployments, which
+	// causes the supervisor to fall back to unconditional pool startup.
+	var defaultOrgID string
 	if !isOrgMultiTenant {
 		orgStep := bootstrap.Step("Default organization")
 		_, serverConfig, err := idp.NewTokenVerifierProvider()
@@ -114,16 +119,25 @@ func Run() {
 			orgStep.Fail(err)
 			log.Fatal(err)
 		}
+		defaultOrgID = org.ID
+		analytics.SetMode(org.ID, org.AnalyticsMode)
 
 		if isNewOrg {
 			trackClient := analytics.New()
 			defer trackClient.Close()
-			trackClient.TrackEvent(analytics.EventDefaultOrgCreated, map[string]interface{}{"org-id": org.ID})
+			trackClient.TrackEvent(analytics.EventDefaultOrgCreated, map[string]any{
+				"org-id":         org.ID,
+				"analytics-mode": org.AnalyticsMode,
+			})
 		}
 
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
 		if err != nil {
 			log.Errorf("failed creating default runbook configuration, reason=%v", err)
+		}
+
+		if err := services.SeedDefaultRulepacksForOrg(context.Background(), org.ID); err != nil {
+			log.Errorf("failed seeding default rulepacks, reason=%v", err)
 		}
 
 		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)
@@ -256,6 +270,15 @@ func Run() {
 			step.OK(fmt.Sprintf("%s %s", httpc.ListenAddress, tlsState))
 		}
 	}
+
+	// Start the RDP PII analyzer supervisor. It watches the
+	// experimental.rdp_pii_detection feature flag for the default org and
+	// starts/stops the worker pool as the flag toggles. In multi-tenant
+	// deployments (defaultOrgID empty) it falls back to running the pool
+	// unconditionally — per-org gating then happens on the enqueue side
+	// inside RDPSessionRecorder.
+	go analyzer.RunSupervisor(context.Background(), appconfig.Get().MSPresidioAnalyzerURL(), defaultOrgID)
+	go eventrouting.RunSupervisor(context.Background(), defaultOrgID)
 
 	bootstrap.Phase("Starting API")
 	grpcStep := bootstrap.Step("gRPC gateway")

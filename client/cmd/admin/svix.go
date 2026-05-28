@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +59,7 @@ hoop admin create svixet session.close --description --payload file:///path/to/s
 
 		var payloadMap map[string]any
 		if strings.HasPrefix(eventPayloadFlag, "file://") {
-			payload, err := getEnvValue(eventPayloadFlag)
+			payload, err := cmdutils.GetEnvValue(eventPayloadFlag)
 			if err != nil {
 				styles.PrintErrorAndExit("failed loading event payload: %v", err)
 			}
@@ -167,7 +168,7 @@ hoop admin create svixmessage file:///tmp/payload.json --event-type session.open
 
 		var payloadMap map[string]any
 		if strings.HasPrefix(args[1], "file://") {
-			payload, err := getEnvValue(args[1])
+			payload, err := cmdutils.GetEnvValue(args[1])
 			if err != nil {
 				styles.PrintErrorAndExit("failed loading event payload: %v", err)
 			}

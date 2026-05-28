@@ -2,8 +2,46 @@
   (:require
    [clojure.string :as string]
    [re-frame.core :as rf]
+   [webapp.config :as config]
    [webapp.formatters :as formatters]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]))
+
+;; Active SSE AbortControllers keyed by session id. Kept outside re-frame.db
+;; because AbortController is a non-serializable JS object.
+(defonce ^:private sse-controllers (atom {}))
+
+(defn- parse-sse-block
+  "Turn an SSE message block (lines separated by '\\n') into a map with
+  :event and :data keys. Lines starting with ':' are SSE comments and ignored.
+  Multiple 'data:' lines are concatenated with '\\n' per the SSE spec."
+  [block]
+  (reduce
+   (fn [acc line]
+     (cond
+       (string/starts-with? line ":") acc
+       (string/starts-with? line "event:")
+       (assoc acc :event (string/trim (subs line 6)))
+       (string/starts-with? line "data:")
+       (let [chunk (string/trim (subs line 5))]
+         (update acc :data (fn [d] (if d (str d "\n" chunk) chunk))))
+       :else acc))
+   {:event "message" :data nil}
+   (array-seq (.split block "\n"))))
+
+(defn- parse-sse-buffer
+  "Pull complete SSE messages out of `buffer`. Returns [parsed-events leftover].
+  Messages are delimited by a blank line ('\\n\\n')."
+  [buffer]
+  (loop [s buffer
+         out []]
+    (let [idx (.indexOf s "\n\n")]
+      (if (neg? idx)
+        [out s]
+        (let [block (.substring s 0 idx)
+              rest-s (.substring s (+ idx 2))
+              parsed (parse-sse-block block)]
+          (recur rest-s
+                 (if (:data parsed) (conj out parsed) out)))))))
 
 (rf/reg-event-fx
  :audit->get-sessions
@@ -191,11 +229,22 @@
          script-size (:script_size session)
          has-large-event? (and event-size (> event-size size-threshold))
          has-large-input? (and script-size (> script-size size-threshold))
-         event-stream (if (= "exec" (:verb session))
+         live-machine? (and (= "machine" (:identity_type session))
+                            (= "open" (:status session)))
+         event-stream (cond
+                        (= "exec" (:verb session))
                         "event_stream=base64"
-                        (if (= "postgres" (:connection_subtype session))
-                          "event_stream=raw-queries"
-                          ""))
+
+                        ;; Live machine session: keep raw wire frames so the
+                        ;; client-side decoder used by session-live-tail can
+                        ;; render historical and streamed events uniformly.
+                        live-machine?
+                        ""
+
+                        (= "postgres" (:connection_subtype session))
+                        "event_stream=raw-queries"
+
+                        :else "")
          expand-parts (cond-> []
                         (not has-large-event?) (conj "event_stream")
                         (not has-large-input?) (conj "session_input"))
@@ -327,9 +376,11 @@
 (rf/reg-event-fx
  :audit->handle-rerun-with-connection
  (fn [{:keys [db]} [_ connection session]]
-   (let [payload {:script (-> session :script :data)
-                  :labels {:re-run-from (:id session)}
-                  :connection (:connection session)}
+   (let [payload (cond-> {:script (-> session :script :data)
+                          :labels {:re-run-from (:id session)}
+                          :connection (:connection session)}
+                   (not (string/blank? (:correlation_id session)))
+                   (assoc :correlation_id (:correlation_id session)))
 
          jira-integration-enabled? (= "enabled" (-> db :jira-integration->details :data :status))
          needs-template? (boolean (and connection
@@ -510,3 +561,167 @@
                                                          {:level :error
                                                           :text "Failed to kill session"
                                                           :details error}]))}]]]}))
+
+(rf/reg-event-fx
+ :audit->get-session-logs-data
+ (fn
+   [{:keys [db]} [_ session-id]]
+   {:db (assoc-in db [:audit->session-logs] {:status :loading :data nil})
+    :fx [[:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/sessions/" session-id "?expand=event_stream,session_input&event_stream=base64")
+                      :on-success #(rf/dispatch [:audit->set-session-logs-data %])
+                      :on-failure (fn [error]
+                                    (rf/dispatch [:show-snackbar
+                                                  {:text "Failed to load session logs"
+                                                   :level :error
+                                                   :details error}])
+                                    (rf/dispatch [:audit->set-session-logs-error]))}]]]}))
+
+(rf/reg-event-db
+ :audit->set-session-logs-data
+ (fn
+   [db [_ session-data]]
+   (assoc-in db [:audit->session-logs] {:status :success
+                                        :data (:event_stream session-data)})))
+
+(rf/reg-event-db
+ :audit->set-session-logs-error
+ (fn
+   [db [_]]
+   (assoc-in db [:audit->session-logs] {:status :error :data nil})))
+
+;; ─── Server-Sent Events for live machine sessions ──────────────────────────
+;;
+;; Machine sessions (identity_type=machine) with status=open stream their
+;; audit events in real time via GET /sessions/<id>/stream (SSE). We open the
+;; stream when the session-details modal is rendered for a live machine
+;; session and close it on unmount / when the backend signals session_end.
+
+(rf/reg-fx
+ :audit->sse-start
+ (fn [{:keys [session-id]}]
+   (when (and session-id (not (contains? @sse-controllers session-id)))
+     (let [controller (js/AbortController.)
+           token (.getItem js/localStorage "jwt-token")
+           url (str config/api "/sessions/" session-id "/stream")]
+       (swap! sse-controllers assoc session-id controller)
+       (rf/dispatch [:audit->set-stream-state session-id :connecting])
+       (-> (js/fetch url
+                     #js {:method "GET"
+                          :headers #js {:Authorization (str "Bearer " token)
+                                        :Accept "text/event-stream"}
+                          :signal (.-signal controller)
+                          :cache "no-store"})
+           (.then
+            (fn [response]
+              (if-not (.-ok response)
+                (do
+                  (rf/dispatch [:audit->set-stream-state session-id :error])
+                  (swap! sse-controllers dissoc session-id))
+                (let [reader (.getReader (.-body response))
+                      decoder (js/TextDecoder.)
+                      buf (atom "")]
+                  (rf/dispatch [:audit->set-stream-state session-id :live])
+                  (letfn [(pump []
+                            (-> (.read reader)
+                                (.then
+                                 (fn [result]
+                                   (if (.-done result)
+                                     (do
+                                       (rf/dispatch [:audit->session-stream-ended session-id])
+                                       (swap! sse-controllers dissoc session-id))
+                                     (do
+                                       (swap! buf str (.decode decoder (.-value result)))
+                                       (let [[events leftover] (parse-sse-buffer @buf)]
+                                         (reset! buf leftover)
+                                         (doseq [ev events]
+                                           (rf/dispatch [:audit->session-stream-event
+                                                         session-id ev])))
+                                       (pump)))))
+                                (.catch
+                                 (fn [err]
+                                   (when (not= (.-name err) "AbortError")
+                                     (js/console.warn "SSE read error:" err)
+                                     (rf/dispatch [:audit->set-stream-state session-id :error]))
+                                   (swap! sse-controllers dissoc session-id)))))]
+                    (pump))))))
+           (.catch
+            (fn [err]
+              (when (not= (.-name err) "AbortError")
+                (js/console.warn "SSE connect error:" err)
+                (rf/dispatch [:audit->set-stream-state session-id :error]))
+              (swap! sse-controllers dissoc session-id))))))))
+
+(rf/reg-fx
+ :audit->sse-stop
+ (fn [session-id]
+   (when-let [ctrl (get @sse-controllers session-id)]
+     (.abort ctrl)
+     (swap! sse-controllers dissoc session-id))))
+
+(rf/reg-event-fx
+ :audit->session-stream-subscribe
+ (fn [_ [_ session-id]]
+   {:audit->sse-start {:session-id session-id}}))
+
+(rf/reg-event-fx
+ :audit->session-stream-unsubscribe
+ (fn [_ [_ session-id]]
+   ;; Only tear down the underlying fetch — keep whatever state
+   ;; `session-stream-ended` (or the next subscribe) wrote so the live tail
+   ;; can keep showing "Ended" after the SSE closes.
+   {:audit->sse-stop session-id}))
+
+(rf/reg-event-db
+ :audit->set-stream-state
+ (fn [db [_ session-id state]]
+   (assoc-in db [:audit->session-stream session-id :state] state)))
+
+(rf/reg-event-fx
+ :audit->session-stream-event
+ (fn [{:keys [db]} [_ session-id ev]]
+   (let [current-session (-> db :audit->session-details :session)
+         applies? (= (:id current-session) session-id)]
+     (cond
+       (not applies?) {}
+
+       (= (:event ev) "session_end")
+       {:fx [[:dispatch [:audit->session-stream-ended session-id]]]}
+
+       (= (:event ev) "event")
+       (let [parsed (try
+                      (js->clj (js/JSON.parse (:data ev)) :keywordize-keys true)
+                      (catch js/Object _ nil))]
+         (if parsed
+           (let [start-date (:start_date current-session)
+                 ev-time (:time parsed)
+                 start-ms (when start-date (.getTime (js/Date. start-date)))
+                 ev-ms (when ev-time (.getTime (js/Date. ev-time)))
+                 seconds (if (and start-ms ev-ms (pos? start-ms))
+                           (/ (- ev-ms start-ms) 1000.0)
+                           0)
+                 entry [seconds (:type parsed) (:payload parsed)]]
+             {:db (update-in db [:audit->session-details :session :event_stream]
+                             (fnil conj []) entry)})
+           {}))
+
+       :else {}))))
+
+(rf/reg-event-fx
+ :audit->session-stream-ended
+ (fn [{:keys [db]} [_ session-id]]
+   (let [current-session (-> db :audit->session-details :session)
+         applies? (= (:id current-session) session-id)
+         was-live? (= :live (get-in db [:audit->session-stream session-id :state]))
+         db' (cond-> (assoc-in db [:audit->session-stream session-id :state] :ended)
+               applies? (assoc-in [:audit->session-details :session :status] "done")
+               applies? (assoc-in [:audit->session-details :session :end_date]
+                                  (.toISOString (js/Date.))))]
+     (cond-> {:db db'
+              :audit->sse-stop session-id}
+       ;; Refresh the sessions list so its "Live" badge for this session
+       ;; clears. We only do this if the stream actually went live — for an
+       ;; already-ended session we wouldn't have anything new to show.
+       was-live?
+       (assoc :fx [[:dispatch [:audit->get-sessions]]])))))

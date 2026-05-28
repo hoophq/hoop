@@ -1,6 +1,6 @@
 (ns webapp.audit.views.main
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Text Link]]
+   ["@radix-ui/themes" :refer [Box Flex Link Text]]
    [re-frame.core :as rf]
    [webapp.audit.views.audit-filters :as filters]
    [webapp.audit.views.sessions-list :as sessions-list]

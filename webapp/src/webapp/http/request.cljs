@@ -2,6 +2,11 @@
   (:require
    [re-frame.core :as rf]))
 
+(defn- maybe-update-token!
+  [headers]
+  (when-let [new-token (.get headers "x-new-access-token")]
+    (.setItem js/localStorage "jwt-token" new-token)))
+
 (defn error-handling
   [error]
   (rf/dispatch [:show-snackbar {:level :error
@@ -14,7 +19,10 @@
   2 - when the status is 399 or below, it executes a on-failure function, that is provided by upperscope."
   [{:keys [status on-failure]}]
   (when (= status 401)
-    (rf/dispatch [:navigate :logout-hoop]))
+    ;; In React shell mode, let React handle the auth redirect
+    (if (.getItem js/localStorage "react-shell")
+      (set! js/window.location.href "/login")
+      (rf/dispatch [:navigate :logout-hoop])))
   (when (> status 399) (on-failure)))
 
 (defn parse-response
@@ -28,7 +36,9 @@
          ;; No content in body
          (empty? text)
          (if (.-ok response)
-           (on-success nil (.-headers response))
+           (do
+             (maybe-update-token! (.-headers response))
+             (on-success nil (.-headers response)))
            (not-ok {:status status
                     :on-failure #(on-failure {:status status})}))
 
@@ -39,7 +49,9 @@
           (fn [json]
             (let [payload (js->clj json :keywordize-keys true)]
               (if (.-ok response)
-                (on-success payload (.-headers response))
+                (do
+                  (maybe-update-token! (.-headers response))
+                  (on-success payload (.-headers response)))
                 (not-ok {:status status
                          :on-failure #(on-failure (merge
                                                    {:status status}
@@ -47,7 +59,9 @@
           (fn [_error]
             ;; JSON failed, return as text
             (if (.-ok response)
-              (on-success text (.-headers response))
+              (do
+                (maybe-update-token! (.-headers response))
+                (on-success text (.-headers response)))
               (not-ok {:status status
                        :on-failure #(on-failure {:message text :status status})})))))))))
 
@@ -64,6 +78,7 @@
     ;; HEAD requests only need headers, no body parsing
     (do
       (when (.-ok response)
+        (maybe-update-token! (.-headers response))
         (on-success response (.-headers response)))
       response)
     ;; Parse response intelligently based on content

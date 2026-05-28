@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Spinner]]
+   ["@radix-ui/themes" :refer [Box Heading]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
    ["sonner" :refer [Toaster]]
@@ -21,6 +21,7 @@
    [webapp.auth.views.logout :as logout]
    [webapp.auth.views.signup :as signup]
    [webapp.components.dialog :as dialog]
+   [webapp.components.loaders :as loaders]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
    [webapp.components.modal :as modals]
@@ -32,9 +33,12 @@
    [webapp.connections.views.setup.events.subs]
    [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
+   [webapp.provisioning.main :as provisioning]
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
+   [webapp.resources.setup.guardrails-suggestions.events]
+   [webapp.resources.setup.guardrails-suggestions.subs]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
    [webapp.resources.configure-role.main :as configure-role]
@@ -83,6 +87,11 @@
    [webapp.features.access-request.main :as access-request]
    [webapp.features.access-request.subs]
    [webapp.features.access-request.views.rule-form :as rule-form]
+   [webapp.features.machine-identities.events]
+   [webapp.features.machine-identities.main :as machine-identities]
+   [webapp.features.machine-identities.subs]
+   [webapp.features.machine-identities.views.identity-form :as identity-form]
+   [webapp.features.machine-identities.views.identity-roles :as identity-roles]
    [webapp.features.ai-session-analyzer.events]
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
@@ -101,6 +110,7 @@
    [webapp.features.users.events]
    [webapp.features.users.main :as users]
    [webapp.features.users.subs]
+   [webapp.features.users.views.org-migration-dialog :as org-migration-dialog]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -136,34 +146,21 @@
    [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
    [webapp.audit-logs.main :as audit-logs]
+   [webapp.features.workflows.events]
+   [webapp.features.workflows.subs]
+   [webapp.features.workflows.views.main :as workflows]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
    [webapp.subs :as subs]
    [webapp.upgrade-plan.main :as upgrade-plan]
+   [webapp.utilities :refer [clear-cookie get-cookie-value]]
    [webapp.views.home :as home]
    [webapp.webclient.events.codemirror]
    [webapp.webclient.events.primary-connection]
    [webapp.webclient.events.search]
    [webapp.webclient.events.metadata]
    [webapp.webclient.panel :as webclient]))
-
-;; Tracking initialization is now handled by :tracking->initialize-if-allowed
-;; which is dispatched after gateway info is loaded and checks do_not_track
-(defn- get-cookie-value
-  "Helper function to extract cookie value by name"
-  [cookie-name]
-  (when-let [cookie-string (.-cookie js/document)]
-    (let [cookies (cs/split cookie-string #"; ")
-          target-cookie (some #(when (cs/starts-with? % (str cookie-name "="))
-                                 %) cookies)]
-      (when target-cookie
-        (subs target-cookie (+ (count cookie-name) 1))))))
-
-(defn- clear-cookie
-  "Helper function to clear a cookie by setting it to empty with past expiration"
-  [cookie-name]
-  (set! js/document.cookie (str cookie-name "=; max-age=0; path=/")))
 
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -196,11 +193,8 @@
          #(rf/dispatch [:navigate :home])
          1500)))
 
-    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
-      [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:div {:class "flex justify-center"}
-       [:> Spinner {:size "3"}]]]]))
+    [loaders/page-loading-screen {:message "Verifying authentication..."
+                                  :description "Please wait while we complete your sign in"}]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -222,32 +216,29 @@
      #(rf/dispatch [:navigate destiny])
      1500)
 
-    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
-      [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:div {:class "flex justify-center"}
-       [:> Spinner {:size "3"}]]]]))
+    [loaders/page-loading-screen {:message "Setting up your account..."
+                                  :description "Please wait while we complete your sign up"}]))
 
 (defn loading-transition []
-  [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-   [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-    [:div {:class "text-center"}
-     [h/h2 "Loading..." {:class "mb-4"}]
-     [:div {:class "flex justify-center"}
-      [:> Spinner {:size "3"}]]]]])
+  [loaders/page-loading-screen {}])
 
 (defn- hoop-layout [_]
-  (let [user (rf/subscribe [:users->current-user])]
+  (let [user (rf/subscribe [:users->current-user])
+        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
     (if (nil? (.getItem js/localStorage "jwt-token"))
       (do
-        (let [current-url (.. js/window -location -href)]
-          (.setItem js/localStorage "redirect-after-auth" current-url)
-          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
+        ;; React shell handles auth redirect — skip if in shell mode
+        (when-not react-shell?
+          (let [current-url (.. js/window -location -href)]
+            (.setItem js/localStorage "redirect-after-auth" current-url)
+            (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000)))
         [loading-transition])
 
       (do
-        (rf/dispatch [:users->get-user])
-        (rf/dispatch [:gateway->get-info])
+        ;; In shell mode skip refetch if user data already exists (avoids loading flash on remount)
+        (when-not (and react-shell? (-> @user :data some?))
+          (rf/dispatch [:users->get-user])
+          (rf/dispatch [:gateway->get-info]))
 
         (fn [panels]
           (rf/dispatch [:routes->get-route])
@@ -262,26 +253,45 @@
             (and (not (:loading @user))
                  (empty? (:data @user)))
             (do
-              (let [current-url (.. js/window -location -href)]
-                (.setItem js/localStorage "redirect-after-auth" current-url)
-                (.removeItem js/localStorage "jwt-token")
-                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
+              ;; React shell handles invalid token via API interceptor
+              (when-not react-shell?
+                (let [current-url (.. js/window -location -href)]
+                  (.setItem js/localStorage "redirect-after-auth" current-url)
+                  (.removeItem js/localStorage "jwt-token")
+                  (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000)))
 
               [loading-transition])
 
             :else
-            [:section
-             {:class "antialiased min-h-screen"}
-             [:> Toaster {:position "top-right"}]
-             [modals/modal]
-             [modals/modal-radix]
-             [dialog/dialog]
-             [dialog/new-dialog]
-             [snackbar/snackbar]
-             [draggable-card/main]
-             [command-palette/command-palette]
-             [command-palette/keyboard-listener]
-             [sidebar/main panels]]))))))
+            (if react-shell?
+              ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
+              [:section
+               {:class "antialiased h-screen"}
+               [:> Toaster {:position "top-right"}]
+               [modals/modal]
+               [modals/modal-radix]
+               [dialog/dialog]
+               [dialog/new-dialog]
+               [snackbar/snackbar]
+               [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
+               [org-migration-dialog/main]
+               panels]
+              ;; Normal mode: full layout with sidebar and cmdk
+              [:section
+               {:class "antialiased h-screen"}
+               [:> Toaster {:position "top-right"}]
+               [modals/modal]
+               [modals/modal-radix]
+               [dialog/dialog]
+               [dialog/new-dialog]
+               [snackbar/snackbar]
+               [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
+               [org-migration-dialog/main]
+               [sidebar/main panels]])))))))
 
 (defmulti layout identity)
 (defmethod layout :application-hoop [_ panels]
@@ -339,6 +349,11 @@
 (defmethod routes/panels :resource-catalog-panel []
   [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 h-full space-y-radix-7"}
                              [resource-catalog/main]]])
+
+(defmethod routes/panels :provisioning-panel []
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [provisioning/panel]]])
 
 (defmethod routes/panels :resource-setup-new-panel []
   ;; Initialize if not coming from catalog
@@ -540,6 +555,26 @@
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
                                [session-details/main]]]))
 
+(defn- safe-decode-uri-component
+  "URL-decode but never throw. Falls back to the raw string when the input
+   contains malformed percent-escapes (e.g., a bare '%')."
+  [s]
+  (when s
+    (try
+      (js/decodeURIComponent s)
+      (catch :default _ s))))
+
+(defmethod routes/panels :workflow-details-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        encoded (-> current-route :route-params :correlation-id)
+        correlation-id (safe-decode-uri-component encoded)
+        loaded-id @(rf/subscribe [:workflows/correlation-id])]
+    (rf/dispatch [:destroy-page-loader])
+    (when (and correlation-id (not= correlation-id loaded-id))
+      (rf/dispatch [:workflows/get correlation-id]))
+    [layout :application-hoop [workflows/page correlation-id]]))
+
 (defmethod routes/panels :sessions-list-filtered-by-ids-panel []
   (let [search (.. js/window -location -search)
         url-search-params (new js/URLSearchParams search)
@@ -639,6 +674,39 @@
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [rule-form/main :edit {:rule-name rule-name}]]]]))
 
+(defmethod routes/panels :machine-identities-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [machine-identities/main]]])
+
+(defmethod routes/panels :machine-identities-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [identity-form/main :create]]]])
+
+(defmethod routes/panels :machine-identities-edit-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        identity-name (:identity-name (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [identity-form/main :edit {:identity-name identity-name}]]]]))
+
+(defmethod routes/panels :machine-identities-roles-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        identity-name (:identity-name (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [identity-roles/main {:identity-name identity-name}]]]]))
+
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
@@ -728,9 +796,9 @@
      [attributes-form/main :create]]]])
 
 (defmethod routes/panels :settings-attributes-edit-panel []
-  (let [attr-name (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
-                      :route-params
-                      :name)]
+  (let [attr-name (-> js/window .-location .-search
+                      js/URLSearchParams.
+                      (.get "name"))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:attributes/get attr-name])
     [layout :application-hoop
@@ -780,20 +848,18 @@
     (if (nil? matched-route)
       (do
         (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
-        [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-         [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-          [:div {:class "text-center"}
-           [h/h2 "Page not found" {:class "mb-4"}]
-           [:p {:class "text-gray-600 mb-6"} "In a few seconds you will be redirected to the home page."]
-           [:div {:class "flex justify-center"}
-            [:> Spinner {:size "3"}]]]]])
+        [loaders/page-loading-screen {:message "Page not found"
+                                      :description "In a few seconds you will be redirected to the home page."}])
 
       [loading-transition])))
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
-    (rf/dispatch [:gateway->get-public-info])
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+    ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
+    (when-not (and react-shell? (-> @gateway-public-info :data some?))
+      (rf/dispatch [:gateway->get-public-info]))
     (.registerPlugin gsap Draggable)
     (.registerModules ModuleRegistry #js[AllCommunityModule])
 
@@ -803,6 +869,7 @@
         [loading-transition]
 
         (and (-> @gateway-public-info :data :setup_required)
+             (not= (-> @gateway-public-info :data :auth_method) "oidc")
              (not= @active-panel :setup-panel))
         (do
           (rf/dispatch [:navigate :setup])

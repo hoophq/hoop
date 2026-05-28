@@ -7,63 +7,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/lib/pq"
 )
 
 func TestIdentifyTraits(t *testing.T) {
-	ossLicense := json.RawMessage(`{"payload":{"type":"oss"}}`)
-	enterpriseLicense := json.RawMessage(`{"payload":{"type":"enterprise"}}`)
-
-	t.Run("OSS install with email sends email and name traits", func(t *testing.T) {
-		ctx := &types.APIContext{
-			OrgID:          "org-1",
-			OrgLicenseData: &ossLicense,
-			UserID:         "user-1",
-			UserEmail:      "alice@example.com",
-			UserName:       "Alice",
-		}
-
-		traits := identifyTraits(ctx, "hashed-id", "env-1")
-
-		assertTrait(t, traits, "email", "alice@example.com")
-		assertTrait(t, traits, "name", "Alice")
-		assertTrait(t, traits, "user-id", "hashed-id")
-		assertTrait(t, traits, "org-id", "org-1")
-	})
-
-	t.Run("Enterprise install omits email and name traits", func(t *testing.T) {
-		ctx := &types.APIContext{
-			OrgID:          "org-1",
-			OrgLicenseData: &enterpriseLicense,
-			UserID:         "user-1",
-			UserEmail:      "alice@example.com",
-			UserName:       "Alice",
-		}
-
-		traits := identifyTraits(ctx, "hashed-id", "env-1")
-
-		assertTraitAbsent(t, traits, "email")
-		assertTraitAbsent(t, traits, "name")
-		assertTrait(t, traits, "user-id", "hashed-id")
-	})
-
-	t.Run("OSS install with empty email omits email and name traits", func(t *testing.T) {
-		ctx := &types.APIContext{
-			OrgID:          "org-1",
-			OrgLicenseData: &ossLicense,
-			UserID:         "user-1",
-		}
-
-		traits := identifyTraits(ctx, "hashed-id", "env-1")
-
-		assertTraitAbsent(t, traits, "email")
-		assertTraitAbsent(t, traits, "name")
-	})
-
-	t.Run("empty license data defaults to OSS and sends email", func(t *testing.T) {
+	t.Run("identified mode with email sends email and name traits", func(t *testing.T) {
 		ctx := &types.APIContext{
 			OrgID:     "org-1",
 			UserID:    "user-1",
@@ -71,13 +21,39 @@ func TestIdentifyTraits(t *testing.T) {
 			UserName:  "Alice",
 		}
 
-		if got := ctx.GetLicenseType(); got != license.OSSType {
-			t.Fatalf("expected empty license data to resolve to %q, got %q", license.OSSType, got)
-		}
-		traits := identifyTraits(ctx, "hashed-id", "env-1")
+		traits := identifyTraits(ctx, models.AnalyticsModeIdentified, "hashed-id", "env-1")
 
 		assertTrait(t, traits, "email", "alice@example.com")
 		assertTrait(t, traits, "name", "Alice")
+		assertTrait(t, traits, "user-id", "hashed-id")
+		assertTrait(t, traits, "org-id", "org-1")
+	})
+
+	t.Run("anonymous mode omits email and name traits", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:     "org-1",
+			UserID:    "user-1",
+			UserEmail: "alice@example.com",
+			UserName:  "Alice",
+		}
+
+		traits := identifyTraits(ctx, models.AnalyticsModeAnonymous, "hashed-id", "env-1")
+
+		assertTraitAbsent(t, traits, "email")
+		assertTraitAbsent(t, traits, "name")
+		assertTrait(t, traits, "user-id", "hashed-id")
+	})
+
+	t.Run("identified mode with empty email omits email and name traits", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:  "org-1",
+			UserID: "user-1",
+		}
+
+		traits := identifyTraits(ctx, models.AnalyticsModeIdentified, "hashed-id", "env-1")
+
+		assertTraitAbsent(t, traits, "email")
+		assertTraitAbsent(t, traits, "name")
 	})
 }
 
@@ -125,15 +101,21 @@ func TestSessionUsageProperties(t *testing.T) {
 		},
 	}
 
+	usageData := func(opts ...func(*sessionUsageData)) *sessionUsageData {
+		d := &sessionUsageData{
+			session:     baseSession,
+			connection:  baseConnection,
+			agent:       baseAgent,
+			dataMasking: json.RawMessage("[]"),
+		}
+		for _, opt := range opts {
+			opt(d)
+		}
+		return d
+	}
+
 	t.Run("basic properties with no optional features", func(t *testing.T) {
-		props := sessionUsageProperties(
-			baseSession,
-			baseConnection,
-			baseAgent,
-			nil,                   // no guardrails
-			json.RawMessage("[]"), // empty data masking
-			nil,                   // no access request rules
-		)
+		props := sessionUsageProperties(usageData())
 
 		assertProp(t, props, "org-id", "org-456")
 		assertProp(t, props, "session-id", "sess-123")
@@ -160,7 +142,7 @@ func TestSessionUsageProperties(t *testing.T) {
 		s := *baseSession
 		s.EndSession = &endTime
 
-		props := sessionUsageProperties(&s, baseConnection, baseAgent, nil, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.session = &s }))
 
 		assertProp(t, props, "finished-at", endTime.String())
 	})
@@ -172,7 +154,7 @@ func TestSessionUsageProperties(t *testing.T) {
 			Action:    "block",
 		}
 
-		props := sessionUsageProperties(&s, baseConnection, baseAgent, nil, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.session = &s }))
 
 		assertProp(t, props, "ai-session-analyzer-activated", true)
 		assertProp(t, props, "ai-session-analyzer-identified-risk", "high")
@@ -183,7 +165,7 @@ func TestSessionUsageProperties(t *testing.T) {
 		c := *baseConnection
 		c.MandatoryMetadataFields = pq.StringArray{"field1", "field2"}
 
-		props := sessionUsageProperties(baseSession, &c, baseAgent, nil, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.connection = &c }))
 
 		assertProp(t, props, "mandatory-metadata-activated", true)
 	})
@@ -192,7 +174,7 @@ func TestSessionUsageProperties(t *testing.T) {
 		c := *baseConnection
 		c.JiraIssueTemplateID = sql.NullString{String: "TMPL-001", Valid: true}
 
-		props := sessionUsageProperties(baseSession, &c, baseAgent, nil, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.connection = &c }))
 
 		assertProp(t, props, "jira-template-activated", true)
 	})
@@ -201,7 +183,7 @@ func TestSessionUsageProperties(t *testing.T) {
 		c := *baseConnection
 		c.JiraIssueTemplateID = sql.NullString{String: "", Valid: true}
 
-		props := sessionUsageProperties(baseSession, &c, baseAgent, nil, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.connection = &c }))
 
 		assertProp(t, props, "jira-template-activated", false)
 	})
@@ -212,7 +194,7 @@ func TestSessionUsageProperties(t *testing.T) {
 			GuardRailOutputRules: []byte(`[{"rule":"mask-ssn"}]`),
 		}
 
-		props := sessionUsageProperties(baseSession, baseConnection, baseAgent, gr, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.guardrails = gr }))
 
 		assertProp(t, props, "guardrails-activated", true)
 	})
@@ -223,7 +205,7 @@ func TestSessionUsageProperties(t *testing.T) {
 			GuardRailOutputRules: []byte(`[]`),
 		}
 
-		props := sessionUsageProperties(baseSession, baseConnection, baseAgent, gr, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.guardrails = gr }))
 
 		assertProp(t, props, "guardrails-activated", false)
 	})
@@ -231,29 +213,30 @@ func TestSessionUsageProperties(t *testing.T) {
 	t.Run("data masking activated", func(t *testing.T) {
 		dm := json.RawMessage(`[{"type":"email"}]`)
 
-		props := sessionUsageProperties(baseSession, baseConnection, baseAgent, nil, dm, nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.dataMasking = dm }))
 
 		assertProp(t, props, "data-masking-activated", true)
 	})
 
 	t.Run("access request rules with jit and command", func(t *testing.T) {
-		rules := []*models.AccessRequestRule{
-			{
-				ID:                   uuid.New(),
-				AccessType:           "jit",
-				ForceApprovalGroups:  pq.StringArray{"admins"},
-				AllGroupsMustApprove: true,
-				MinApprovals:         &minApprovals,
-			},
-			{
-				ID:                   uuid.New(),
-				AccessType:           "command",
-				ForceApprovalGroups:  pq.StringArray{},
-				AllGroupsMustApprove: false,
-			},
+		jit := &models.AccessRequestRule{
+			ID:                   uuid.New(),
+			AccessType:           "jit",
+			ForceApprovalGroups:  pq.StringArray{"admins"},
+			AllGroupsMustApprove: true,
+			MinApprovals:         &minApprovals,
+		}
+		command := &models.AccessRequestRule{
+			ID:                   uuid.New(),
+			AccessType:           "command",
+			ForceApprovalGroups:  pq.StringArray{},
+			AllGroupsMustApprove: false,
 		}
 
-		props := sessionUsageProperties(baseSession, baseConnection, baseAgent, nil, json.RawMessage("[]"), rules)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) {
+			d.jitAccessRequest = jit
+			d.commandAccessRequest = command
+		}))
 
 		assertProp(t, props, "jit-access-request-activated", true)
 		assertProp(t, props, "jit-access-request-force-approval", true)
@@ -270,9 +253,7 @@ func TestSessionUsageProperties(t *testing.T) {
 	})
 
 	t.Run("access request rules with nil entries are skipped", func(t *testing.T) {
-		rules := []*models.AccessRequestRule{nil, nil}
-
-		props := sessionUsageProperties(baseSession, baseConnection, baseAgent, nil, json.RawMessage("[]"), rules)
+		props := sessionUsageProperties(usageData())
 
 		assertProp(t, props, "jit-access-request-activated", false)
 		assertProp(t, props, "command-access-request-activated", false)
@@ -281,7 +262,7 @@ func TestSessionUsageProperties(t *testing.T) {
 	t.Run("nil agent returns empty metadata", func(t *testing.T) {
 		nilAgent := &models.Agent{}
 
-		props := sessionUsageProperties(baseSession, baseConnection, nilAgent, nil, json.RawMessage("[]"), nil)
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.agent = nilAgent }))
 
 		assertProp(t, props, "agent-version", "")
 		assertProp(t, props, "agent-platform", "")

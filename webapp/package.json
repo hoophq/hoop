@@ -7,8 +7,8 @@
     "download-connection-metadata": "bash scripts/download-connection-metadata.sh",
     "shadow:watch:hoop-ui": "npx shadow-cljs watch hoop-ui browser-test karma-test",
     "postcss:watch": "cross-env postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose -w",
-    "dev:hoop-ui": "source .env && run-p -l genversion shadow:watch:hoop-ui postcss:watch",
-    "dev": "source .env && npm run download-connection-metadata && run-p -l genversion shadow:watch:hoop-ui postcss:watch",
+    "dev:hoop-ui": "{ [ -f .env ] && set -a && . ./.env && set +a; true; } && run-p -l genversion shadow:watch:hoop-ui postcss:watch",
+    "dev": "{ [ -f .env ] && set -a && . ./.env && set +a; true; } && npm run download-connection-metadata && run-p -l genversion shadow:watch:hoop-ui postcss:watch",
     "shadow:release:hoop-ui": "npx shadow-cljs release hoop-ui",
     "postcss:build": "cross-env TAILWIND_MODE=build postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose",
     "postcss:release": "cross-env NODE_ENV=production postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose",
@@ -55,7 +55,7 @@
     "lucide-react": "^0.429.0",
     "markdown-it": "^14.1.0",
     "next-themes": "^0.3.0",
-    "papaparse": "^5.3.2",
+    "papaparse": "^5.5.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-select": "^5.7.0",
@@ -65,6 +65,9 @@
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "unique-names-generator": "^4.7.1"
+  },
+  "overrides": {
+    "js-cookie": "^3.0.7"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",

@@ -37,6 +37,21 @@
                                                     :repository repository-str
                                                     :ref-hash ref-hash}}))))
 
+(rf/reg-event-fx
+ :runbooks/initialize-from-query-params
+ (fn [{:keys [db]} _]
+   (let [search-string (.. js/window -location -search)
+         url-params (new js/URLSearchParams search-string)
+         runbook-from-query (.get url-params "runbook")
+         repository-from-query (.get url-params "repository")]
+     (if (and runbook-from-query
+              repository-from-query
+              (not= runbook-from-query "")
+              (not= repository-from-query ""))
+       (let [template {:name runbook-from-query}]
+         {:fx [[:dispatch-later {:ms 1000 :dispatch [:runbooks/set-active-runbook template repository-from-query]}]]})
+       {}))))
+
 ;; Connection Events
 (rf/reg-event-fx
  :runbooks/set-selected-connection
@@ -122,7 +137,7 @@
 (rf/reg-event-fx
  :runbooks/exec
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields extra-metadata on-success on-failure] :as context}]]
+   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields extra-metadata correlation-id on-success on-failure] :as context}]]
    ;; Check if parallel mode is active
    (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
          parallel-mode? (>= (count parallel-connections) 2)]
@@ -166,7 +181,9 @@
                               :metadata (metadata->json-stringify metadata)}
                        ref-hash (assoc :ref_hash ref-hash)
                        jira_fields (assoc :jira_fields jira_fields)
-                       cmdb_fields (assoc :cmdb_fields cmdb_fields))
+                       cmdb_fields (assoc :cmdb_fields cmdb_fields)
+                       (not (cs/blank? correlation-id))
+                       (assoc :correlation_id correlation-id))
              default-on-failure (fn [_error-message error]
                                   (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
                                                                 :level :error
@@ -175,9 +192,17 @@
                                   (when on-failure
                                     (on-failure _error-message error)))
              default-on-success (fn [res]
-                                  (rf/dispatch
-                                   [:show-snackbar {:level :success
-                                                    :text "Runbook was executed!"}])
+                                  (if (= "running" (:output_status res))
+                                    (rf/dispatch
+                                     [:show-snackbar
+                                      {:level :info
+                                       :text "Runbook is still running"
+                                       :description (str "The gateway timed out after 50s. "
+                                                         "Your runbook keeps executing in the background, "
+                                                         "open session details to track progress.")}])
+                                    (rf/dispatch
+                                     [:show-snackbar {:level :success
+                                                      :text "Runbook was executed!"}]))
                                   (rf/dispatch [:runbooks/exec-success res file-name])
                                   (rf/dispatch [:webapp.events.editor-plugin/editor-plugin->set-script-success res file-name])
                                   (when on-success
@@ -205,8 +230,9 @@
 (rf/reg-event-fx
  :runbooks/exec-success
  (fn [{:keys [db]} [_ data file-name]]
-   {:db (assoc-in db [:runbooks->exec] {:status :success
-                                        :data (merge data {:file-name file-name})})}))
+   (let [status (if (= "running" (:output_status data)) :running :success)]
+     {:db (assoc-in db [:runbooks->exec] {:status status
+                                          :data (merge data {:file-name file-name})})})))
 
 (rf/reg-event-fx
  :runbooks/exec-failure

@@ -3,12 +3,13 @@
    ["@radix-ui/themes" :refer [Button Flex]]
    ["lucide-react" :refer [Plus]]))
 
-(defn main [{:keys [on-rule-add on-toggle-select select-state selected? on-toggle-all on-rules-delete]}]
+(defn main [{:keys [on-rule-add on-toggle-select select-state selected? on-toggle-all on-rules-delete disable-new?]}]
   [:> Flex {:gap "2"}
    [:> Button
     {:variant "soft"
      :size "2"
      :type "button"
+     :disabled disable-new?
      :on-click on-rule-add}
     [:> Plus {:size 16}]
     "New"]

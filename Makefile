@@ -66,7 +66,8 @@ run-dev-spiffe-agent:
 run-dev-spiffe: run-dev-spiffe-agent
 
 build-dev-client:
-	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
+	mkdir -p ${HOME}/.hoop/dev
+	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/dev/hoop github.com/hoophq/hoop/client
 
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
@@ -87,7 +88,10 @@ test-oss: libhoop-map generate-wasm
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-generate-openapi-docs:
+test-integration: libhoop-map generate-wasm
+	env CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./agent/integration/...
+
+generate-openapi-docs: libhoop-map
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
 
@@ -130,9 +134,17 @@ build-go: build-empty-folder
 
 build-webapp:
 	mkdir -p ${DIST_FOLDER}
+	# Build CLJS bundle
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
 	cat ./webapp/src/webapp/version.js | awk -F"'" '{printf "%s", $$2}' > ./webapp/resources/version.txt
-	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./webapp/resources .
+	# Build React shell (webapp_v2)
+	cd ./webapp_v2 && npm ci && npm run build && cd ../
+	# Merge: CLJS resources first, React shell on top (React's index.html wins)
+	mkdir -p ${DIST_FOLDER}/_ui_merge
+	cp -a ./webapp/resources/. ${DIST_FOLDER}/_ui_merge/
+	cp -a ./webapp_v2/dist/. ${DIST_FOLDER}/_ui_merge/public/
+	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/_ui_merge .
+	rm -rf ${DIST_FOLDER}/_ui_merge
 
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
@@ -192,4 +204,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm

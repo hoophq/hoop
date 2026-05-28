@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> Every PR MUST have **exactly one** of these labels, the merge is blocked otherwise:
+> - `major` / `minor` / `patch` publishes a new release on merge with the corresponding semver bump.
+> - `skip-release` merges without publishing a release (use for docs, CI changes, refactors, etc.).
+
 ## 📝 Description
 
 <!-- Please provide a brief description of the changes in this PR -->
@@ -56,7 +61,6 @@ Fixes #
 
 <!-- Please check off the following items by replacing [ ] with [x] -->
 
-- [ ] I have run `make generate-openapi-docs` to update the OpenAPI docs
 - [ ] My code follows the style guidelines of this project
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented my code, particularly in hard-to-understand areas

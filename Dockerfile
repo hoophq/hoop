@@ -14,7 +14,9 @@ RUN mkdir -p /app && \
         openssh-client \
         procps \
         gettext-base \
-        curl
+        curl \
+        tesseract-ocr \
+        tesseract-ocr-eng
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen

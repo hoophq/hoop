@@ -1,8 +1,9 @@
 (ns webapp.audit.views.session-item
   (:require
+   [clojure.string :as string]
    [re-frame.core :as rf]
-   ["@radix-ui/themes" :refer [Badge Box Flex Grid]]
-   ["lucide-react" :refer [CircleCheckBig Clock2 OctagonX]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Grid Text Tooltip]]
+   ["lucide-react" :refer [CircleCheckBig Clock2 OctagonX Workflow]]
    [webapp.formatters :as formatters]
    [webapp.components.user-icon :as user-icon]
    [webapp.components.icon :as icon]
@@ -30,9 +31,44 @@
 (defmethod ^:private access-request-badge :default [_]
   nil)
 
+(defn- workflow-chip
+  "Compact, clickable chip linking to the workflow timeline."
+  [correlation-id]
+  (let [truncated (if (> (count correlation-id) 18)
+                    (str (subs correlation-id 0 16) "…")
+                    correlation-id)]
+    [:> Tooltip {:content (str "View workflow " correlation-id)}
+     [:> Button
+      {:size "1"
+       :variant "soft"
+       :on-click (fn [e]
+                   (.stopPropagation e)
+                   (rf/dispatch [:navigate :workflow-details
+                                 {}
+                                 :correlation-id
+                                 (js/encodeURIComponent correlation-id)]))}
+      [:> Workflow {:size 12}]
+      truncated]]))
+
+(defn- live-badge []
+  [:> Tooltip {:content "Machine session is currently running"}
+   [:> Badge {:color "green" :variant "soft" :size "2"
+              :class "animate-pulse"
+              :aria-label "Live machine session"}
+    [:> Flex {:gap "1" :align "center"}
+     [:span {:class "inline-block w-2 h-2 rounded-full bg-[--green-9]"
+             :aria-hidden true}]
+     "Live"]]])
+
 (defn session-item [session]
   (let [user-name (:user_name session)
-        review (:review session)]
+        review (:review session)
+        correlation-id (:correlation_id session)
+        has-workflow? (and correlation-id
+                           (not (string/blank? correlation-id)))
+        machine? (= (:identity_type session) "machine")
+        open? (= (:status session) "open")
+        live? (and machine? open?)]
     [:> Grid
      {:columns "4"
       :gap "4"
@@ -60,11 +96,17 @@
       [:> Box
        [:b (:connection session)]]
       [:> Box {:class "text-xxs text-gray-800"}
-       [:span (:type session)]]]
+       [:> Text (:type session)]]]
 
-     [:> Box {:id "badge-column"}
+     [:> Flex {:id "badge-column"
+               :gap "2"
+               :align "center"
+               :wrap "wrap"}
+      (when live? [live-badge])
       (when review
-        [access-request-badge (-> session :review :status)])]
+        [access-request-badge (-> session :review :status)])
+      (when has-workflow?
+        [workflow-chip correlation-id])]
 
      [:> Flex {:id "status-info"
                :gap "4"

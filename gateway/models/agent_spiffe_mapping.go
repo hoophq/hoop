@@ -20,7 +20,7 @@ import (
 // match resolves to a specific agent_id; prefix matches render AgentTemplate
 // against the captured suffix to produce an agent name to look up.
 type AgentSPIFFEMapping struct {
-	ID            string         `gorm:"column:id"`
+	ID            string         `gorm:"column:id;primaryKey;default:uuid_generate_v4()"`
 	OrgID         string         `gorm:"column:org_id"`
 	TrustDomain   string         `gorm:"column:trust_domain"`
 	SPIFFEID      *string        `gorm:"column:spiffe_id"`

@@ -775,6 +775,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/ai/session-analyzer/system-prompt": {
+            "get": {
+                "description": "Returns the read-only system prompt that the gateway prepends before any custom_prompt configured on a rule",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Get AI Session Analyzer System Prompt",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerSystemPrompt"
+                        }
+                    }
+                }
+            }
+        },
         "/api-keys": {
             "get": {
                 "description": "List all API keys for the organization",
@@ -1774,6 +1794,42 @@ const docTemplate = `{
                     }
                 }
             },
+            "delete": {
+                "description": "Delete a connection resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Delete Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "patch": {
                 "description": "Partial update of a connection resource. Only provided fields will be updated.",
                 "consumes": [
@@ -1912,6 +1968,51 @@ const docTemplate = `{
             }
         },
         "/connections/{nameOrID}/credentials": {
+            "get": {
+                "description": "Returns the current active, non-expired credentials for the authenticated user on the given connection without creating a new session. Returns 404 if no active credentials exist or they have expired.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Get Active Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "post": {
                 "description": "Create Connection Credentials",
                 "consumes": [
@@ -1970,9 +2071,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials/{credentialID}/close": {
+            "post": {
+                "description": "Ends the current audit session for a credential and tears down any active proxy connections, but keeps the credential itself usable. The stored token is preserved so the next credential request for the same (user, connection) pair returns the same value. For explicit token invalidation use the revoke endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Close Connection Credentials Session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the credential",
+                        "name": "credentialID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/credentials/{credentialID}/revoke": {
             "post": {
-                "description": "Revokes a connection credential, invalidating it and disconnecting any active sessions",
+                "description": "Revokes a connection credential, invalidating the stored token and disconnecting any active sessions. The next credential request for the same (user, connection) pair will issue a fresh token.",
                 "produces": [
                     "application/json"
                 ],
@@ -2204,6 +2362,137 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/federation": {
+            "get": {
+                "description": "Returns the IAM federation configuration for a connection. The admin credentials are never returned in plaintext; only a presence indicator is included.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Get Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Creates or updates the IAM federation configuration for a connection. AdminCredentialsJSON is write-only; omit on update to preserve the stored value.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Upsert Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the IAM federation configuration for a connection. Subsequent sessions on this connection revert to the static connection envs.",
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Delete Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -2336,44 +2625,6 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
                         }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/connections/{name}": {
-            "delete": {
-                "description": "Delete a connection resource.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Connections"
-                ],
-                "summary": "Delete Connection",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The name of the resource",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
                     },
                     "404": {
                         "description": "Not Found",
@@ -2725,6 +2976,94 @@ const docTemplate = `{
                 }
             }
         },
+        "/feature-flags": {
+            "get": {
+                "description": "List all feature flags from the catalog with their per-org state",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "List Feature Flags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.FeatureFlagItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/feature-flags/{name}": {
+            "put": {
+                "description": "Enable or disable a feature flag for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "Update Feature Flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature flag name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/features/ask-ai/v1/chat/completions": {
             "post": {
                 "description": "Proxy to OpenAI chat completions ` + "`" + `/vi/chat/completions` + "`" + `",
@@ -2735,6 +3074,52 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/federation/test": {
+            "post": {
+                "description": "Resolves the candidate federation configuration against a synthetic user AND dispatches a one-shot smoke probe (the caller-supplied test_script, e.g. \"SELECT 1\") to the agent identified in the request body. Persisted state is never read or written: the entire candidate connection + federation pair lives in the body. Returns the resolved principal, the env-var keys that were injected (values are never returned), and the agent-side stdout/stderr of the probe. Success requires both phases to succeed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Test a Federation Configuration End-to-End",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -3781,6 +4166,332 @@ const docTemplate = `{
                 }
             }
         },
+        "/machineidentities": {
+            "get": {
+                "description": "List all machine identities (non-human identities)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "List Machine Identities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.MachineIdentity"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a machine identity (non-human identity) with native credentials for each connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Create Machine Identity",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentity"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentityCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities/{name}": {
+            "get": {
+                "description": "Get a machine identity by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Get Machine Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentity"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update a machine identity. Adding connections provisions new credentials; removing connections revokes them.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Update Machine Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentity"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentityUpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a machine identity and revoke all associated credentials",
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Delete Machine Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities/{name}/credentials": {
+            "get": {
+                "description": "List full credential details for a machine identity including connection strings and secret keys",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "List Machine Identity Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities/{name}/credentials/{connectionName}/rotate": {
+            "post": {
+                "description": "Rotate (regenerate) a credential for a specific connection. The old credential is revoked and a new one is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Rotate Machine Identity Credential",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Connection Name",
+                        "name": "connectionName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/metrics/sessions": {
             "get": {
                 "description": "Query session metrics data with advanced filtering. Supports AND/OR logic for combining filters. Filter by resource types (connection_type), resource subtypes (connection_subtype), resources (connection_name), Presidio data types (info_type), masked/unmasked status, date ranges, session dates, and session duration.",
@@ -3946,6 +4657,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/analytics-mode": {
+            "get": {
+                "description": "Get the analytics privacy mode of the caller's organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Analytics Mode",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgAnalyticsModeResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update the analytics privacy mode of the caller's organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Organization Analytics Mode",
+                "parameters": [
+                    {
+                        "description": "The new analytics mode",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgAnalyticsModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgAnalyticsModeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/orgs/features": {
             "put": {
                 "description": "Updates a feature configuration. It will report if this feature is available in the user info endpoint.",
@@ -3970,6 +4751,64 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/orgs/invitations": {
+            "post": {
+                "description": "Accept or decline a pending organization invitation. On accept, the current user is migrated to the invited org and the old auto-created org is removed if empty. On decline, the invitation is dismissed permanently.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Handle Organization Invitation",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgInvitationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPSuccess"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -5053,6 +5892,117 @@ const docTemplate = `{
                 }
             }
         },
+        "/resources/apply": {
+            "post": {
+                "description": "Applies a batch of previously created resource plans. Each item references a plan session by SID and the target resource name. All items are processed concurrently and the response is returned once all have completed. Per-item failures are embedded in the results with status \"failed\" rather than returned as HTTP errors.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Applies a batch of resource plans",
+                "parameters": [
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceApplyBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceApplyBatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/health": {
+            "post": {
+                "description": "Performs concurrent connectivity tests for the given resources. Each execution has a 10-second timeout.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Tests connectivity for multiple resources",
+                "parameters": [
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceHealthCheckBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceHealthCheckBatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/plan": {
+            "post": {
+                "description": "Validates provisioning plans for a batch of resources by computing the diff between the desired and current role state for each resource. Each item is session-audited and receives its own plan ID (SID) that can be referenced when applying. All items are processed concurrently and the response is returned once all have completed. Per-item failures are embedded in the results with status \"failed\" rather than returned as HTTP errors.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Creates a batch of resource plans",
+                "parameters": [
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcePlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcePlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/resources/{name}": {
             "get": {
                 "description": "Gets a resource by ID for the organization.",
@@ -5187,6 +6137,168 @@ const docTemplate = `{
                 }
             }
         },
+        "/resources/{name}/apply": {
+            "post": {
+                "description": "Applies a previously created provisioning plan to a single resource. The plan session referenced by SID must have been created by the plan endpoint. On success, the resulting role and its credentials are synced as a connection.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Applies a resource plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceApplyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceApplyResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/{name}/health": {
+            "get": {
+                "description": "Performs a connectivity test against the resource's master credentials to verify network connectivity. Uses a minimal query (e.g. SELECT 1) to confirm the host is reachable and the master user can authenticate.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Tests connectivity for a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcHealthCheckResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/{name}/plan": {
+            "post": {
+                "description": "Validates a provisioning plan for a single resource by computing the diff between the desired and current role state. The plan is session-audited and returns a plan ID (SID) that can be referenced when applying.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Creates a resource plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcePlanItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourcePlanResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reviews": {
             "get": {
                 "description": "Get all reviews resource",
@@ -5307,6 +6419,161 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/rulepacks": {
+            "get": {
+                "description": "List rulepacks for the organization with optional pagination and search.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "List Rulepacks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by display_name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (1-100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_Rulepack"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/rulepacks/{id}": {
+            "get": {
+                "description": "Get a rulepack by its UUID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Get Rulepack",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rulepack ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Rulepack"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/rulepacks/{id}/apply": {
+            "post": {
+                "description": "Replace the set of connections this rulepack is applied to. After the call, the rulepack is attached to exactly the supplied connections (additions and removals as needed). Non-rulepack attributes on each affected connection are preserved. Pass an empty array to remove the rulepack from all connections. Returns 400 with a list of missing names if any connection in the request does not exist.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rulepacks"
+                ],
+                "summary": "Apply Rulepack to Connections",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rulepack ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Connections to apply the rulepack to",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RulepackApplyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -6235,6 +7502,94 @@ const docTemplate = `{
                 }
             }
         },
+        "/serverconfig/mcp-auth": {
+            "get": {
+                "description": "Returns the per-org MCP OAuth Resource Server settings. When disabled (default), /mcp accepts Hoop-issued bearer tokens only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get MCP OAuth 2.1 Resource Server Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMcpAuthConfig"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Enable, disable, or reconfigure the OAuth 2.1 Resource Server profile for the /mcp endpoint.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update MCP OAuth 2.1 Resource Server Configuration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMcpAuthConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMcpAuthConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverconfig/misc": {
             "get": {
                 "description": "Get server miscellaneous configuration",
@@ -6702,6 +8057,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{id}/rdp-detections/retry": {
+            "post": {
+                "description": "Resets a failed RDP analysis job to pending so the worker pool can re-claim it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Retry RDP PII analysis",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/sessionapi.RDPDetectionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}": {
             "get": {
                 "description": "Get a session by id. This endpoint returns a conditional response\n\n- When the query string ` + "`" + `extension` + "`" + ` is present it will return a payload containing a link to download the session\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"download_url\": \"http://127.0.0.1:8009/api/sessions/\u003cid\u003e/download?token=\u003ctoken\u003e\u0026extension=csv\u0026newline=1\u0026event-time=0\u0026events=o,e\",\n  \"expire_at\": \"2024-07-25T15:56:35.317601Z\",\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n- Fetching the endpoint without any query string returns the payload documented for this endpoint\n- The attribute ` + "`" + `event_stream` + "`" + ` will be rendered differently if the request contains the query string ` + "`" + `event_stream` + "`" + ` with the values ` + "`" + `utf8` + "`" + ` or ` + "`" + `base64` + "`" + `.\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  (...)\n  \"event_stream\": [\"hello world\"]\n  (...)\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nThe attribute ` + "`" + `metrics` + "`" + ` contains the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"data_masking\": {\n    \"err_count\": 0,\n    \"info_types\": {\n      \"EMAIL_ADDRESS\": 1\n    },\n    \"total_redact_count\": 1,\n    \"transformed_bytes\": 31\n  },\n  \"event_size\": 356\n}\n` + "`" + `` + "`" + `` + "`" + `\n",
@@ -7114,6 +8516,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/rdp-detections": {
+            "get": {
+                "description": "Returns PII entity detections with screen-space coordinates for an RDP session recording",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Get RDP session PII detections",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the session",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/sessionapi.RDPDetectionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/rdp-frames": {
             "get": {
                 "description": "Returns paginated bitmap frames from an RDP session recording",
@@ -7282,6 +8737,59 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/stream": {
+            "get": {
+                "description": "Streams audit events for a machine session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Stream Session Events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -8088,32 +9596,82 @@ const docTemplate = `{
         "openapi.AISessionAnalyzerRiskEvaluation": {
             "type": "object",
             "properties": {
+                "high_risk": {
+                    "description": "Tier configuration for high-risk sessions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskTier"
+                        }
+                    ]
+                },
                 "high_risk_action": {
-                    "description": "Action for high-risk sessions",
+                    "description": "Deprecated: use high_risk",
                     "type": "string",
                     "enum": [
                         "allow_execution",
-                        "block_execution"
+                        "block_execution",
+                        "require_access_request"
                     ],
                     "example": "block_execution"
                 },
+                "low_risk": {
+                    "description": "Tier configuration for low-risk sessions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskTier"
+                        }
+                    ]
+                },
                 "low_risk_action": {
-                    "description": "Action for low-risk sessions",
+                    "description": "Deprecated: use low_risk",
                     "type": "string",
                     "enum": [
                         "allow_execution",
-                        "block_execution"
+                        "block_execution",
+                        "require_access_request"
                     ],
                     "example": "allow_execution"
                 },
+                "medium_risk": {
+                    "description": "Tier configuration for medium-risk sessions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskTier"
+                        }
+                    ]
+                },
                 "medium_risk_action": {
-                    "description": "Action for medium-risk sessions",
+                    "description": "Deprecated: use medium_risk",
                     "type": "string",
                     "enum": [
                         "allow_execution",
-                        "block_execution"
+                        "block_execution",
+                        "require_access_request"
                     ],
                     "example": "allow_execution"
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerRiskTier": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "access_request_rule_name": {
+                    "description": "Name of the access request rule that supplies approver groups when action is require_access_request",
+                    "type": "string",
+                    "example": "prod-approvals"
+                },
+                "action": {
+                    "description": "Action to take when the AI classifies a session at this risk level",
+                    "type": "string",
+                    "enum": [
+                        "allow_execution",
+                        "block_execution",
+                        "require_access_request"
+                    ],
+                    "example": "require_access_request"
                 }
             }
         },
@@ -8136,6 +9694,11 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "custom_prompt": {
+                    "description": "Optional extra instructions appended to the default system prompt",
+                    "type": "string",
+                    "example": "Treat any query that touches the payments schema as high risk."
                 },
                 "description": {
                     "description": "Optional description",
@@ -8189,6 +9752,11 @@ const docTemplate = `{
                         "mysql-prod"
                     ]
                 },
+                "custom_prompt": {
+                    "description": "Optional extra instructions appended to the default system prompt",
+                    "type": "string",
+                    "example": "Treat any query that touches the payments schema as high risk."
+                },
                 "description": {
                     "description": "Optional description",
                     "type": "string",
@@ -8206,6 +9774,15 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerSystemPrompt": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "description": "The read-only system prompt the gateway prepends before any custom_prompt configured on a rule",
+                    "type": "string"
                 }
             }
         },
@@ -8924,6 +10501,19 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.AnalyticsModeType": {
+            "type": "string",
+            "enum": [
+                "identified",
+                "anonymous",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "AnalyticsModeIdentified",
+                "AnalyticsModeAnonymous",
+                "AnalyticsModeDisabled"
+            ]
+        },
         "openapi.AttributeRequest": {
             "type": "object",
             "required": [
@@ -8971,6 +10561,7 @@ const docTemplate = `{
                     ]
                 },
                 "description": {
+                    "description": "The description of the attribute",
                     "type": "string",
                     "example": "Blocks high-risk SQL commands"
                 },
@@ -8985,7 +10576,6 @@ const docTemplate = `{
                     ]
                 },
                 "name": {
-                    "description": "The name of the attribute",
                     "type": "string",
                     "example": "default-session-attribute"
                 }
@@ -9422,6 +11012,92 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "openapi.ConnectionFederationConfig": {
+            "type": "object",
+            "required": [
+                "hook_source"
+            ],
+            "properties": {
+                "admin_credentials_json": {
+                    "description": "AdminCredentialsJSON is the plaintext admin credential blob (for\nbuiltin/gcp_iam: the admin service account JSON). Write-only — never\nreturned on GET. Required on the initial POST when HookSource=builtin;\noptional on PUT (omitting it leaves the stored value unchanged).",
+                    "type": "string"
+                },
+                "builtin_provider": {
+                    "description": "BuiltinProvider is required when HookSource=builtin. Only \"gcp_iam\"\nships today.",
+                    "type": "string",
+                    "enum": [
+                        "gcp_iam"
+                    ],
+                    "example": "gcp_iam"
+                },
+                "connection_id": {
+                    "description": "ConnectionID is the connection this federation config applies to.\nPopulated by the server from the URL path on writes.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "created_at": {
+                    "description": "CreatedAt / UpdatedAt are server-set audit timestamps.",
+                    "type": "string",
+                    "example": "2025-05-25T17:00:00Z"
+                },
+                "extra_config": {
+                    "description": "ExtraConfig is provider-specific freeform JSON (e.g. {\"project_id\":\n\"my-gcp-proj\"}). The gateway does not interpret unknown keys.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "fallback_policy": {
+                    "description": "FallbackPolicy controls behavior when resolution fails.",
+                    "type": "string",
+                    "enum": [
+                        "deny",
+                        "readonly"
+                    ],
+                    "example": "deny"
+                },
+                "has_admin_credentials": {
+                    "description": "HasAdminCredentials is server-set on GET responses to let the UI know\nwhether a credential is stored without exposing its value.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "hook_source": {
+                    "description": "HookSource selects which resolver category the gateway runs. Only the\nbuilt-in resolver category ships today; the field is preserved so new\nsources can be added without breaking existing configurations.",
+                    "type": "string",
+                    "enum": [
+                        "builtin"
+                    ],
+                    "example": "builtin"
+                },
+                "id": {
+                    "description": "ID is the federation row's UUID. Empty on POST requests; populated on\nGET/PUT responses.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "identity_source_attribute": {
+                    "description": "IdentitySourceAttribute is a JSONPath-like accessor into the Hoop user\n(defaults to $.user.email).",
+                    "type": "string",
+                    "example": "$.user.email"
+                },
+                "identity_target_template": {
+                    "description": "IdentityTargetTemplate is the principal template the source attribute\nsubstitutes into (defaults to \"{user.email}\").",
+                    "type": "string",
+                    "example": "{user.email}"
+                },
+                "readonly_principal": {
+                    "description": "ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as\nthe impersonation target on the fallback path.",
+                    "type": "string",
+                    "example": "hoop-readonly@example.com"
+                },
+                "token_ttl_seconds": {
+                    "description": "TokenTTLSeconds caps the lifetime of generated credentials (default\n3600, max 43200). Built-in providers may clamp lower based on cloud\nAPI limits.",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2025-05-25T17:00:00Z"
                 }
             }
         },
@@ -10359,6 +12035,60 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.FeatureFlagItem": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "description": "Components affected by this flag",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gateway",
+                        "agent"
+                    ]
+                },
+                "default": {
+                    "description": "Default value when not explicitly set",
+                    "type": "boolean",
+                    "example": false
+                },
+                "description": {
+                    "description": "Human-readable description",
+                    "type": "string",
+                    "example": "New IronRDP-based proxy"
+                },
+                "enabled": {
+                    "description": "Current effective value for the organization",
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "description": "The feature flag name",
+                    "type": "string",
+                    "example": "experimental.rdp_v2"
+                },
+                "stability": {
+                    "description": "Stability level",
+                    "type": "string",
+                    "enum": [
+                        "experimental",
+                        "beta"
+                    ],
+                    "example": "experimental"
+                }
+            }
+        },
+        "openapi.FeatureFlagUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the feature flag should be enabled",
+                    "type": "boolean"
+                }
+            }
+        },
         "openapi.FeatureRequest": {
             "type": "object",
             "required": [
@@ -10393,6 +12123,156 @@ const docTemplate = `{
                 "FeatureStatusEnabled",
                 "FeatureStatusDisabled"
             ]
+        },
+        "openapi.FederationTestConnection": {
+            "type": "object",
+            "required": [
+                "agent_id",
+                "command",
+                "test_script"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "AgentID is the agent the probe will run on. Required. Must be the\nid of an agent currently connected to the gateway.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "command": {
+                    "description": "Command is the argv the agent invokes. args[0] is the binary,\nargs[1:] are flags. Required: keeping it caller-supplied avoids\nshipping connection-type-specific defaults inside the gateway that\nmay drift from real connections.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "bq",
+                        "query",
+                        "--use_legacy_sql=false"
+                    ]
+                },
+                "envs": {
+                    "description": "Envs are the candidate connection's static env vars (host, port,\nproject id, etc.). The federation-produced env vars are merged on\ntop; on conflict the federated value wins.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "subtype": {
+                    "type": "string",
+                    "example": "bigquery"
+                },
+                "test_script": {
+                    "description": "TestScript is the payload fed to the spawned process on stdin (and\nrendered through text/template by the agent). For SQL connections\nthis is the smoke query (e.g. \"SELECT 1\"). Required for the same\nreason as Command: the gateway does not infer it.",
+                    "type": "string",
+                    "example": "SELECT 1"
+                },
+                "type": {
+                    "description": "Type and SubType mirror the persisted connection's type+subtype.\nInformational only: the gateway does not derive any behaviour from\nthem today — the probe binary is taken from Command. They are\nsurfaced in the response to make audit-trail correlation easier and\nto give future versions a structured place to plug in\ntype-aware defaults without breaking the wire contract.",
+                    "type": "string",
+                    "example": "database"
+                }
+            }
+        },
+        "openapi.FederationTestRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "connection",
+                "user_email"
+            ],
+            "properties": {
+                "config": {
+                    "description": "Config is the candidate federation configuration to test. Required.\nCarries the plaintext admin_credentials_json the resolver will use to\nauthenticate; the value never reaches persistence on this endpoint.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    ]
+                },
+                "connection": {
+                    "description": "Connection is the candidate connection the probe runs against.\nRequired. The endpoint does NOT look up a persisted connection by\nname/id — the caller supplies the agent, command, script and envs\ndirectly so a wizard draft can be exercised before persistence.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.FederationTestConnection"
+                        }
+                    ]
+                },
+                "user_email": {
+                    "description": "UserEmail is the synthetic user to resolve. Required.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "user_id": {
+                    "description": "UserID is the synthetic user ID. Optional; defaults to a deterministic\nUUID derived from UserEmail.",
+                    "type": "string",
+                    "example": "00000000-0000-0000-0000-000000000001"
+                }
+            }
+        },
+        "openapi.FederationTestResponse": {
+            "type": "object",
+            "properties": {
+                "admin_principal": {
+                    "description": "AdminPrincipal is the impersonator identity (e.g. admin SA email).",
+                    "type": "string",
+                    "example": "hoop-admin@proj.iam.gserviceaccount.com"
+                },
+                "env_var_keys": {
+                    "description": "EnvVarKeys lists the env vars the resolver injected into the probe.\nValues are never returned.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "HOOP_GCP_ACCESS_TOKEN",
+                        "HOOP_GCP_TOKEN_EXPIRES_AT"
+                    ]
+                },
+                "error": {
+                    "description": "Error is the human-readable failure reason when Success=false.\nPopulated for federation-resolve failures; probe-side failures are\nreported via ProbeStatus + ProbeOutput.",
+                    "type": "string",
+                    "example": "failed minting access token: permission denied"
+                },
+                "probe_output": {
+                    "description": "ProbeOutput is the agent's merged stdout+stderr from the smoke\nprobe. Empty when ProbeStatus=\"skipped\".",
+                    "type": "string",
+                    "example": "+---+\n| f0_ |\n+---+\n| 1 |\n+---+"
+                },
+                "probe_status": {
+                    "description": "ProbeStatus reports the agent-side outcome. \"success\" when exit\ncode was 0; \"failed\" otherwise; \"skipped\" when federation resolve\nfailed and the probe was not dispatched.",
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed",
+                        "skipped"
+                    ],
+                    "example": "success"
+                },
+                "resolved_principal": {
+                    "description": "ResolvedPrincipal is the principal the resolver impersonated.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "success": {
+                    "description": "Success is true only when federation resolved AND the agent probe\nreturned exit code 0.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "superseded_env_vars": {
+                    "description": "SupersededEnvVars lists the candidate connection's static env var\nnames that the provider's output supersedes and that were therefore\nstripped from the probe (and would be stripped from a real session).\nLets the admin UI show \"these legacy credentials were ignored\" so\nthe operator can confidently remove them from the persisted\nconnection. Example: gcp_iam supersedes GOOGLE_APPLICATION_CREDENTIALS.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "GOOGLE_APPLICATION_CREDENTIALS"
+                    ]
+                },
+                "token_expires_at": {
+                    "description": "TokenExpiresAt is the would-be credential expiry.",
+                    "type": "string",
+                    "example": "2025-05-25T18:00:00Z"
+                }
+            }
         },
         "openapi.GenerateApiKeyResponse": {
             "type": "object",
@@ -10526,6 +12406,15 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "the error description"
+                }
+            }
+        },
+        "openapi.HTTPSuccess": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "operation completed successfully"
                 }
             }
         },
@@ -10954,6 +12843,278 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.MachineIdentity": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "attributes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "env:prod",
+                        "team:backend"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod-postgres",
+                        "api-proxy"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Production backend service identity"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "backend-prod"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.MachineIdentityCreateResponse": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "attributes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "env:prod",
+                        "team:backend"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod-postgres",
+                        "api-proxy"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "credentials": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Production backend service identity"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "backend-prod"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.MachineIdentityCredentialResponse": {
+            "type": "object",
+            "properties": {
+                "aws_access_key_id": {
+                    "type": "string"
+                },
+                "aws_secret_access_key": {
+                    "type": "string"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "connection_name": {
+                    "type": "string"
+                },
+                "connection_string": {
+                    "type": "string"
+                },
+                "connection_subtype": {
+                    "type": "string"
+                },
+                "connection_type": {
+                    "type": "string"
+                },
+                "database_name": {
+                    "type": "string"
+                },
+                "endpoint_url": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "string"
+                },
+                "proxy_token": {
+                    "type": "string"
+                },
+                "secret_key": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.MachineIdentityUpdateResponse": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "attributes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "env:prod",
+                        "team:backend"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod-postgres",
+                        "api-proxy"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Production backend service identity"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "backend-prod"
+                },
+                "new_credentials": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                    }
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.OrgAnalyticsModeRequest": {
+            "type": "object",
+            "required": [
+                "analytics_mode"
+            ],
+            "properties": {
+                "analytics_mode": {
+                    "enum": [
+                        "identified",
+                        "anonymous",
+                        "disabled"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AnalyticsModeType"
+                        }
+                    ],
+                    "example": "identified"
+                }
+            }
+        },
+        "openapi.OrgAnalyticsModeResponse": {
+            "type": "object",
+            "properties": {
+                "analytics_mode": {
+                    "enum": [
+                        "identified",
+                        "anonymous",
+                        "disabled"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AnalyticsModeType"
+                        }
+                    ],
+                    "example": "identified"
+                }
+            }
+        },
+        "openapi.OrgInvitationRequest": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "accept",
+                        "decline"
+                    ]
+                }
+            }
+        },
         "openapi.OrgKeyResponse": {
             "type": "object",
             "properties": {
@@ -11041,6 +13202,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_Rulepack": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Rulepack"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_SecurityAuditLogResponse": {
             "type": "object",
             "properties": {
@@ -11080,6 +13255,15 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "openapi.PendingOrgInvitation": {
+            "type": "object",
+            "properties": {
+                "org_name": {
+                    "description": "Organization name",
+                    "type": "string"
                 }
             }
         },
@@ -11464,6 +13648,283 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ResourcHealthCheckResponse": {
+            "type": "object",
+            "properties": {
+                "output": {
+                    "description": "Output is the raw stdout/stderr returned by the connectivity test query",
+                    "type": "string",
+                    "example": "1\n(1 row)\n"
+                },
+                "status": {
+                    "description": "Status reports the outcome of the connectivity test",
+                    "type": "string",
+                    "enum": [
+                        "failed",
+                        "success"
+                    ],
+                    "example": "success"
+                }
+            }
+        },
+        "openapi.ResourceApplyBatchRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "description": "The list of apply items to process",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceApplyRequest"
+                    }
+                }
+            }
+        },
+        "openapi.ResourceApplyBatchResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "description": "The list of apply results",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceApplyResult"
+                    }
+                }
+            }
+        },
+        "openapi.ResourceApplyRequest": {
+            "type": "object",
+            "required": [
+                "sid"
+            ],
+            "properties": {
+                "resource_name": {
+                    "description": "The resource name to apply to. Required for batch requests.",
+                    "type": "string",
+                    "example": "my-postgres"
+                },
+                "sid": {
+                    "description": "The Session ID of the plan to apply",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5701046A-7B7A-4A78-ABB0-A24C95E6FE54"
+                }
+            }
+        },
+        "openapi.ResourceApplyResult": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Error message populated when status is \"failed\"; empty on success",
+                    "type": "string",
+                    "example": "failed obtaining blob stream: empty blob stream"
+                },
+                "resource_name": {
+                    "description": "The resource name this apply result is for",
+                    "type": "string",
+                    "example": "my-postgres"
+                },
+                "sid": {
+                    "description": "The session ID for tracking and auditing this apply execution",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5701046A-7B7A-4A78-ABB0-A24C95E6FE54"
+                },
+                "status": {
+                    "description": "Status of the apply execution",
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed"
+                    ],
+                    "example": "success"
+                }
+            }
+        },
+        "openapi.ResourceHealthCheckBatchRequest": {
+            "type": "object",
+            "required": [
+                "names"
+            ],
+            "properties": {
+                "names": {
+                    "description": "Names is the list of resource names to test",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "my-postgres",
+                        "analytics-db"
+                    ]
+                }
+            }
+        },
+        "openapi.ResourceHealthCheckBatchResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "description": "Results contains one entry per requested resource, in the same order as the input names",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceHealthCheckResult"
+                    }
+                }
+            }
+        },
+        "openapi.ResourceHealthCheckResult": {
+            "type": "object",
+            "properties": {
+                "output": {
+                    "description": "Output is the raw stdout/stderr returned by the connectivity test query",
+                    "type": "string",
+                    "example": "1\n(1 row)\n"
+                },
+                "resource_name": {
+                    "description": "ResourceName is the name of the resource that was tested",
+                    "type": "string",
+                    "example": "my-postgres"
+                },
+                "status": {
+                    "description": "Status reports the outcome of the connectivity test",
+                    "type": "string",
+                    "enum": [
+                        "failed",
+                        "success"
+                    ],
+                    "example": "success"
+                }
+            }
+        },
+        "openapi.ResourcePlanItem": {
+            "type": "object",
+            "required": [
+                "privileges",
+                "role",
+                "scopes",
+                "type"
+            ],
+            "properties": {
+                "privileges": {
+                    "description": "The list of privileges to grant on all tables in each scope.\nSupported values: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, EXECUTE.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "SELECT",
+                        "INSERT"
+                    ]
+                },
+                "resource_name": {
+                    "description": "The resource name to plan provisioning for. Required for batch requests.",
+                    "type": "string",
+                    "example": "my-postgres"
+                },
+                "role": {
+                    "description": "A short label used to derive the generated postgres role name (e.g. \"ro\", \"rw\", \"analyst\").\nThe actual role created in postgres is a deterministic slug of the form hoopdev_\u003cresource\u003e_\u003crole\u003e_\u003chash\u003e.",
+                    "type": "string",
+                    "example": "ro"
+                },
+                "rotate_password": {
+                    "description": "When true, rotates the role's password on this plan run. Only takes effect if the role already exists;\nnew roles always receive a freshly generated password regardless of this flag.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "scopes": {
+                    "description": "The list of databases and schemas to apply privileges to, formatted as \"database\" or \"database.schema\".\nIf the schema is omitted, privileges are applied to the public schema of that database.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "mydb",
+                        "otherdb.public"
+                    ]
+                },
+                "source_role": {
+                    "description": "An existing postgres role whose privileges the new role will inherit via membership.\nOnly relevant when type is \"external\"; ignored for \"managed\".",
+                    "type": "string",
+                    "example": "pg_read_all_data"
+                },
+                "type": {
+                    "description": "Role management mode. \"managed\" creates and fully owns the postgres role (password managed by hoop).\n\"external\" attaches the role as a member of an existing parent role specified by source_role.",
+                    "type": "string",
+                    "enum": [
+                        "managed",
+                        "external"
+                    ],
+                    "example": "managed"
+                }
+            }
+        },
+        "openapi.ResourcePlanRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "description": "The list of plan items to process",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourcePlanItem"
+                    }
+                }
+            }
+        },
+        "openapi.ResourcePlanResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "description": "The list of plan results",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourcePlanResult"
+                    }
+                }
+            }
+        },
+        "openapi.ResourcePlanResult": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Error message populated when status is \"failed\"; empty on success",
+                    "type": "string",
+                    "example": "failed retrieving resource: connection refused"
+                },
+                "resource_name": {
+                    "description": "The resource name this plan result is for",
+                    "type": "string",
+                    "example": "my-postgres"
+                },
+                "role": {
+                    "description": "The generated postgres role name derived from the resource name and role label\n(format: hoopdev_\u003cresource-slug\u003e_\u003crole-label\u003e_\u003c8-char-hash\u003e).",
+                    "type": "string",
+                    "example": "hoopdev_my_postgres_ro_ab3c1f7e"
+                },
+                "sid": {
+                    "description": "The session ID for tracking and auditing this plan execution",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5701046A-7B7A-4A78-ABB0-A24C95E6FE54"
+                },
+                "status": {
+                    "description": "Status of the plan execution",
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed"
+                    ],
+                    "example": "success"
+                }
+            }
+        },
         "openapi.ResourceRequest": {
             "type": "object",
             "required": [
@@ -11545,6 +14006,13 @@ const docTemplate = `{
                     "description": "The resource name",
                     "type": "string",
                     "example": "my-resource"
+                },
+                "roles": {
+                    "description": "Connections (roles) associated with this resource",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Connection"
+                    }
                 },
                 "subtype": {
                     "description": "The resource subtype",
@@ -11943,6 +14411,152 @@ const docTemplate = `{
                 "ReviewTypeJit",
                 "ReviewTypeOneTime"
             ]
+        },
+        "openapi.Rulepack": {
+            "type": "object",
+            "properties": {
+                "connection_names": {
+                    "description": "Names of connections this rulepack has been applied to. Populated from the\nrulepack attribute's connection junctions; empty when no connections are tagged.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "data_masking_rules": {
+                    "description": "Data masking rules attached to this rulepack",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DataMaskingRule"
+                    }
+                },
+                "description": {
+                    "description": "Optional description",
+                    "type": "string",
+                    "example": "Standard PCI controls for production DBs"
+                },
+                "display_name": {
+                    "description": "Human-readable display name for the rulepack",
+                    "type": "string",
+                    "example": "PCI Database Access"
+                },
+                "guardrail_rules": {
+                    "description": "Guardrail rules attached to this rulepack",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.GuardRailRuleResponse"
+                    }
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "is_managed": {
+                    "description": "True for Hoop-managed rulepacks (read-only for users)",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
+                },
+                "org_id": {
+                    "description": "Organization ID that owns this rulepack",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "tags": {
+                    "description": "Tags for grouping and filtering rulepacks",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pci",
+                        "production"
+                    ]
+                },
+                "updated_at": {
+                    "description": "The time the resource was last updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "version": {
+                    "description": "Optional version string",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.RulepackApplyRequest": {
+            "type": "object",
+            "required": [
+                "connection_names"
+            ],
+            "properties": {
+                "connection_names": {
+                    "description": "Names of connections this rulepack should be applied to. Replace-all semantics:\nafter the call, the rulepack is attached to exactly these connections.\nConnections previously tagged with this rulepack that are not in the list lose\nthe tag; non-rulepack attributes on every affected connection are preserved.\nPass an empty array to remove the rulepack from all connections.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                }
+            }
+        },
+        "openapi.RulepackRequest": {
+            "type": "object",
+            "required": [
+                "display_name"
+            ],
+            "properties": {
+                "data_masking_rules": {
+                    "description": "Data masking rules to create as part of this rulepack. On PUT, the supplied list\nfully replaces any existing rulepack-owned data masking rules.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DataMaskingRuleRequest"
+                    }
+                },
+                "description": {
+                    "description": "Optional description of what the rulepack provides",
+                    "type": "string",
+                    "example": "Standard PCI controls for production DBs"
+                },
+                "display_name": {
+                    "description": "Human-readable display name for the rulepack (unique per organization)",
+                    "type": "string",
+                    "example": "PCI Database Access"
+                },
+                "guardrail_rules": {
+                    "description": "Guardrail rules to create as part of this rulepack. On PUT, the supplied list\nfully replaces any existing rulepack-owned guardrail rules.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.GuardRailRuleRequest"
+                    }
+                },
+                "tags": {
+                    "description": "Tags for grouping and filtering rulepacks",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pci",
+                        "production"
+                    ]
+                }
+            }
         },
         "openapi.Runbook": {
             "type": "object",
@@ -12854,8 +15468,22 @@ const docTemplate = `{
         "openapi.ServerInfo": {
             "type": "object",
             "properties": {
+                "analytics_mode": {
+                    "description": "The analytics privacy mode for the caller's organization",
+                    "enum": [
+                        "identified",
+                        "anonymous",
+                        "disabled"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AnalyticsModeType"
+                        }
+                    ],
+                    "example": "identified"
+                },
                 "analytics_tracking": {
-                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
+                    "description": "Indicates if all tracking and analytics should be enabled or disabled.\nDerived from analytics_mode for backwards compatibility: \"disabled\"\nwhen analytics_mode is \"disabled\"; \"enabled\" otherwise.\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
                     "type": "string",
                     "enum": [
                         "enabled",
@@ -12889,6 +15517,13 @@ const docTemplate = `{
                 "disable_sessions_download": {
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
                     "type": "boolean"
+                },
+                "feature_flags": {
+                    "description": "Effective feature flags for the caller's organization",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
                 },
                 "go_debug": {
                     "description": "Expose ` + "`" + `GODEBUG` + "`" + ` flags enabled",
@@ -13029,6 +15664,25 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ServerMcpAuthConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition\nto Hoop-issued bearer tokens.",
+                    "type": "boolean"
+                },
+                "groups_claim": {
+                    "description": "JWT claim name from which user groups are extracted. Defaults to \"groups\".",
+                    "type": "string",
+                    "example": "groups"
+                },
+                "resource_uri": {
+                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/mcp\" when empty. Must match the ` + "`" + `aud` + "`" + ` claim of inbound JWTs.",
+                    "type": "string",
+                    "example": "https://use.hoop.dev/mcp"
+                }
+            }
+        },
         "openapi.ServerMiscConfig": {
             "type": "object",
             "properties": {
@@ -13052,11 +15706,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.PostgresServerConfig"
                         }
                     ]
-                },
-                "product_analytics": {
-                    "description": "Either to enable or disable the product analytics tracking",
-                    "type": "string",
-                    "example": "active"
                 },
                 "rdp_server_config": {
                     "description": "The RDP server proxy configuration",
@@ -13213,6 +15862,15 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 },
+                "identity_type": {
+                    "description": "The type of identity that created this session\n* user - a human user\n* machine - a machine identity (non-human identity)",
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "machine"
+                    ],
+                    "example": "user"
+                },
                 "integrations_metadata": {
                     "description": "Metadata attributes related to integrations with third party services",
                     "type": "object",
@@ -13225,6 +15883,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.SessionLabelsType"
                         }
                     ]
+                },
+                "machine_identity_id": {
+                    "description": "The machine identity ID if this session was created by a machine identity",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
                 },
                 "metadata": {
                     "type": "object",
@@ -13957,6 +16621,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "mysecurepassword"
                 },
+                "pending_org_invitations": {
+                    "description": "Pending organization invitations for this user. When non-empty, the user can migrate\nto one of these organizations. Only populated in multi-tenant environments.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.PendingOrgInvitation"
+                    }
+                },
                 "picture": {
                     "description": "The profile picture url to display",
                     "type": "string",
@@ -14029,6 +16700,80 @@ const docTemplate = `{
                 "url": {
                     "type": "string",
                     "example": "https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"
+                }
+            }
+        },
+        "sessionapi.RDPAnalysisInfo": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status mirrors the rdp_analysis_jobs.status column when a job exists,\nfalling back to the sessions.metrics rdp_analysis_status key for sessions\nthat pre-date the jobs table or where analysis is disabled. Possible\nvalues: \"pending\", \"running\", \"analyzing\", \"done\", \"failed\", or empty\nwhen analysis is not configured for the session.",
+                    "type": "string"
+                }
+            }
+        },
+        "sessionapi.RDPDetection": {
+            "type": "object",
+            "properties": {
+                "entity_type": {
+                    "type": "string"
+                },
+                "frame_index": {
+                    "type": "integer"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "timestamp": {
+                    "type": "number"
+                },
+                "width": {
+                    "type": "integer"
+                },
+                "x": {
+                    "type": "integer"
+                },
+                "y": {
+                    "type": "integer"
+                }
+            }
+        },
+        "sessionapi.RDPDetectionsResponse": {
+            "type": "object",
+            "properties": {
+                "analysis": {
+                    "$ref": "#/definitions/sessionapi.RDPAnalysisInfo"
+                },
+                "analysis_status": {
+                    "description": "AnalysisStatus is preserved for backwards compatibility with older\nwebapp builds; new code should read .Analysis.Status.",
+                    "type": "string"
+                },
+                "detections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sessionapi.RDPDetection"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -14121,6 +16866,9 @@ const docTemplate = `{
         {
             "description": "Users are active and assigned to the default organization when they signup. A user could be set to an inactive state preventing it from accessing the platform, however it’s recommended to manage the state of users in the identity provider.\n\n- The ` + "`" + `sub` + "`" + ` claim is used as the main identifier of the user in the platform.\n- The profile of the user is derived from the id_token claims ` + "`" + `email` + "`" + ` and ` + "`" + `name` + "`" + `.\n\nWhen a user authenticates for the first time, it performs an automatic signup that persist the profile claims along with it’s unique identifier.\n​\n### Groups\n\nGroups allows defining who may access or interact with certain resources.\n\n- For connection resources it’s possible to define which groups has access to a specific connection, this is enforced when the Access Control feature is enabled.\n- For review resources, it’s possible to define which groups are allowed to approve an execution, this is enforced when the Review feature is enabled.\n\n\u003e This resource could be managed manually via Webapp or propagated by the identity provider via ID Token. In this mode, groups are sync when a user performs a login.\n\n### Roles\n\n- The ` + "`" + `admin` + "`" + ` group is a special role that grants full access to all resources\n\nThis role should be granted to users that are responsible for managing the Gateway. All other users are regular, meaning that they can access their own resources and interact with connections.\n",
             "name": "User Management"
+        },
+        {
+            "name": "Machine Identities"
         },
         {
             "description": "Routes used to manage and obtain information about the runtime server.",

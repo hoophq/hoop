@@ -61,7 +61,8 @@
                         (when (pos? level) "pl-4"))
             :on-click (fn []
                         (let [template (filter-template-selected filename repository)]
-                          (rf/dispatch [:runbooks/set-active-runbook template repository])))}
+                          (rf/dispatch [:runbooks/set-active-runbook template repository])
+                          (rf/dispatch [:navigate :runbooks {:runbook filename :repository repository}])))}
    [:> Flex {:class (str "w-fit gap-2 items-center py-1.5" (when selected?  " bg-[--indigo-a3] rounded-2"))}
     [:> File {:size 16
               :class "text-[--gray-11]"}]

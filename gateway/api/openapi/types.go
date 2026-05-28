@@ -12,6 +12,15 @@ type HTTPError struct {
 	Message string `json:"message" example:"the error description"`
 }
 
+type HTTPSuccess struct {
+	Message string `json:"message" example:"operation completed successfully"`
+}
+
+// OrgInvitationRequest is used to accept or decline a pending org invitation
+type OrgInvitationRequest struct {
+	Action string `json:"action" binding:"required" enums:"accept,decline"`
+}
+
 type Login struct {
 	// The URL to redirect the user to the identity provider
 	URL string `json:"login_url"`
@@ -85,6 +94,13 @@ type UserGroup struct {
 	Name string `json:"name" binding:"required" example:"engineering"`
 }
 
+// PendingOrgInvitation represents an organization the user has been invited to
+// but has not yet joined. Only populated in multi-tenant environments.
+type PendingOrgInvitation struct {
+	// Organization name
+	OrgName string `json:"org_name"`
+}
+
 type UserInfo struct {
 	User `json:",inline"`
 	// DEPRECATED in flavor of role
@@ -111,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// Pending organization invitations for this user. When non-empty, the user can migrate
+	// to one of these organizations. Only populated in multi-tenant environments.
+	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
 }
 
 type ServiceAccountStatusType string
@@ -763,6 +782,12 @@ type Session struct {
 	// GuardRailsInfo contains information about guardrail rules that matched during the session.
 	// A non-empty list indicates the session was blocked by at least one guardrail rule.
 	GuardRailsInfo []SessionGuardRailsInfo `json:"guardrails_info" readonly:"true"`
+	// The type of identity that created this session
+	// * user - a human user
+	// * machine - a machine identity (non-human identity)
+	IdentityType string `json:"identity_type" enums:"user,machine" example:"user"`
+	// The machine identity ID if this session was created by a machine identity
+	MachineIdentityID *string `json:"machine_identity_id,omitempty" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
 }
 
 type ProvisionSession struct {
@@ -1133,6 +1158,27 @@ const (
 	AnalyticsTrackingDisabled AnalyticsTrackingStatusType = "disabled"
 )
 
+// AnalyticsModeType represents the per-organization analytics privacy mode.
+//   - identified - PII (email, name) is sent to third-party destinations so
+//     the org's users are addressable for support and lifecycle outreach.
+//   - anonymous  - Only hashed identifiers are sent; no PII leaves the gateway.
+//   - disabled   - No analytics events are emitted for the org.
+type AnalyticsModeType string
+
+const (
+	AnalyticsModeIdentified AnalyticsModeType = "identified"
+	AnalyticsModeAnonymous  AnalyticsModeType = "anonymous"
+	AnalyticsModeDisabled   AnalyticsModeType = "disabled"
+)
+
+type OrgAnalyticsModeRequest struct {
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" binding:"required" enums:"identified,anonymous,disabled" example:"identified"`
+}
+
+type OrgAnalyticsModeResponse struct {
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -1229,10 +1275,14 @@ type ServerInfo struct {
 	// * true - Clipboard copy and cut are disabled and not available to users
 	// * false - Clipboard copy and cut are enabled and available to users
 	DisableClipboardCopyCut bool `json:"disable_clipboard_copy_cut"`
-	// Indicates if all tracking and analytics should be enabled or disabled
+	// Indicates if all tracking and analytics should be enabled or disabled.
+	// Derived from analytics_mode for backwards compatibility: "disabled"
+	// when analytics_mode is "disabled"; "enabled" otherwise.
 	// * enabled - Analytics/tracking are enabled
 	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
+	// The analytics privacy mode for the caller's organization
+	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
@@ -1935,9 +1985,159 @@ type DataMaskingRuleConnection struct {
 	Status string `json:"status" enums:"active,inactive" example:"active"`
 }
 
+// ConnectionFederationConfig is the API representation of an IAM Federation
+// configuration attached to a single connection. The admin_credentials_json
+// field is write-only: it is base64-decoded then AES-256-GCM encrypted at
+// rest, and never returned on GET responses (only a metadata summary is).
+type ConnectionFederationConfig struct {
+	// ID is the federation row's UUID. Empty on POST requests; populated on
+	// GET/PUT responses.
+	ID string `json:"id,omitempty" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// ConnectionID is the connection this federation config applies to.
+	// Populated by the server from the URL path on writes.
+	ConnectionID string `json:"connection_id,omitempty" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// HookSource selects which resolver category the gateway runs. Only the
+	// built-in resolver category ships today; the field is preserved so new
+	// sources can be added without breaking existing configurations.
+	HookSource string `json:"hook_source" enums:"builtin" example:"builtin" binding:"required"`
+	// BuiltinProvider is required when HookSource=builtin. Only "gcp_iam"
+	// ships today.
+	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam" example:"gcp_iam"`
+	// AdminCredentialsJSON is the plaintext admin credential blob (for
+	// builtin/gcp_iam: the admin service account JSON). Write-only — never
+	// returned on GET. Required on the initial POST when HookSource=builtin;
+	// optional on PUT (omitting it leaves the stored value unchanged).
+	AdminCredentialsJSON string `json:"admin_credentials_json,omitempty"`
+	// HasAdminCredentials is server-set on GET responses to let the UI know
+	// whether a credential is stored without exposing its value.
+	HasAdminCredentials bool `json:"has_admin_credentials,omitempty" example:"true"`
+	// IdentitySourceAttribute is a JSONPath-like accessor into the Hoop user
+	// (defaults to $.user.email).
+	IdentitySourceAttribute string `json:"identity_source_attribute" example:"$.user.email"`
+	// IdentityTargetTemplate is the principal template the source attribute
+	// substitutes into (defaults to "{user.email}").
+	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
+	// FallbackPolicy controls behavior when resolution fails.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
+	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
+	// the impersonation target on the fallback path.
+	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// TokenTTLSeconds caps the lifetime of generated credentials (default
+	// 3600, max 43200). Built-in providers may clamp lower based on cloud
+	// API limits.
+	TokenTTLSeconds int `json:"token_ttl_seconds" example:"3600"`
+	// ExtraConfig is provider-specific freeform JSON (e.g. {"project_id":
+	// "my-gcp-proj"}). The gateway does not interpret unknown keys.
+	ExtraConfig map[string]any `json:"extra_config,omitempty"`
+	// CreatedAt / UpdatedAt are server-set audit timestamps.
+	CreatedAt string `json:"created_at,omitempty" example:"2025-05-25T17:00:00Z"`
+	UpdatedAt string `json:"updated_at,omitempty" example:"2025-05-25T17:00:00Z"`
+}
+
+// FederationTestRequest drives the POST /federation/test endpoint. The
+// endpoint resolves the candidate federation configuration against a
+// synthetic user AND dispatches a real one-shot smoke probe to the agent
+// supplied in Connection (e.g. `SELECT 1` against a BigQuery dataset). It
+// requires no persisted state — the admin UI provides the entire
+// candidate connection + federation pair in the body, so a wizard can
+// validate everything end-to-end before saving anything.
+type FederationTestRequest struct {
+	// UserEmail is the synthetic user to resolve. Required.
+	UserEmail string `json:"user_email" example:"alice@example.com" binding:"required"`
+	// UserID is the synthetic user ID. Optional; defaults to a deterministic
+	// UUID derived from UserEmail.
+	UserID string `json:"user_id,omitempty" example:"00000000-0000-0000-0000-000000000001"`
+	// Config is the candidate federation configuration to test. Required.
+	// Carries the plaintext admin_credentials_json the resolver will use to
+	// authenticate; the value never reaches persistence on this endpoint.
+	Config *ConnectionFederationConfig `json:"config" binding:"required"`
+	// Connection is the candidate connection the probe runs against.
+	// Required. The endpoint does NOT look up a persisted connection by
+	// name/id — the caller supplies the agent, command, script and envs
+	// directly so a wizard draft can be exercised before persistence.
+	Connection *FederationTestConnection `json:"connection" binding:"required"`
+}
+
+// FederationTestConnection is the minimal connection-shaped object the
+// /federation/test probe needs to dispatch a one-shot exec to the agent.
+// It intentionally carries only the fields the probe consumes — not the
+// full openapi.Connection — so the wire contract is honest about what is
+// used. The agent identified by AgentID must be online; the endpoint
+// reports a failure if no live stream is attached.
+type FederationTestConnection struct {
+	// AgentID is the agent the probe will run on. Required. Must be the
+	// id of an agent currently connected to the gateway.
+	AgentID string `json:"agent_id" binding:"required" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Type and SubType mirror the persisted connection's type+subtype.
+	// Informational only: the gateway does not derive any behaviour from
+	// them today — the probe binary is taken from Command. They are
+	// surfaced in the response to make audit-trail correlation easier and
+	// to give future versions a structured place to plug in
+	// type-aware defaults without breaking the wire contract.
+	Type    string `json:"type,omitempty" example:"database"`
+	SubType string `json:"subtype,omitempty" example:"bigquery"`
+	// Command is the argv the agent invokes. args[0] is the binary,
+	// args[1:] are flags. Required: keeping it caller-supplied avoids
+	// shipping connection-type-specific defaults inside the gateway that
+	// may drift from real connections.
+	Command []string `json:"command" binding:"required" example:"bq,query,--use_legacy_sql=false"`
+	// TestScript is the payload fed to the spawned process on stdin (and
+	// rendered through text/template by the agent). For SQL connections
+	// this is the smoke query (e.g. "SELECT 1"). Required for the same
+	// reason as Command: the gateway does not infer it.
+	TestScript string `json:"test_script" binding:"required" example:"SELECT 1"`
+	// Envs are the candidate connection's static env vars (host, port,
+	// project id, etc.). The federation-produced env vars are merged on
+	// top; on conflict the federated value wins.
+	Envs map[string]string `json:"envs,omitempty"`
+}
+
+// FederationTestResponse reports the outcome of a /federation/test call.
+// Two phases happen on the gateway side:
+//
+//  1. Federation resolve — mint the per-user OAuth token via the admin SA.
+//  2. Probe — dispatch a BareExec to the agent with the merged env vars
+//     and the caller-supplied command + test script.
+//
+// Success is the conjunction of both phases. Phase 1 failures surface in
+// Error; phase 2 failures surface in ProbeStatus + ProbeOutput so the
+// admin can see the exact agent-side stdout/stderr (e.g. a GCP permission
+// error or a wrong project id). EnvVarKeys is emitted instead of EnvVars
+// so resolved credentials never travel back over HTTP.
+type FederationTestResponse struct {
+	// Success is true only when federation resolved AND the agent probe
+	// returned exit code 0.
+	Success bool `json:"success" example:"true"`
+	// ResolvedPrincipal is the principal the resolver impersonated.
+	ResolvedPrincipal string `json:"resolved_principal,omitempty" example:"alice@example.com"`
+	// AdminPrincipal is the impersonator identity (e.g. admin SA email).
+	AdminPrincipal string `json:"admin_principal,omitempty" example:"hoop-admin@proj.iam.gserviceaccount.com"`
+	// EnvVarKeys lists the env vars the resolver injected into the probe.
+	// Values are never returned.
+	EnvVarKeys []string `json:"env_var_keys,omitempty" example:"HOOP_GCP_ACCESS_TOKEN,HOOP_GCP_TOKEN_EXPIRES_AT"`
+	// SupersededEnvVars lists the candidate connection's static env var
+	// names that the provider's output supersedes and that were therefore
+	// stripped from the probe (and would be stripped from a real session).
+	// Lets the admin UI show "these legacy credentials were ignored" so
+	// the operator can confidently remove them from the persisted
+	// connection. Example: gcp_iam supersedes GOOGLE_APPLICATION_CREDENTIALS.
+	SupersededEnvVars []string `json:"superseded_env_vars,omitempty" example:"GOOGLE_APPLICATION_CREDENTIALS"`
+	// TokenExpiresAt is the would-be credential expiry.
+	TokenExpiresAt string `json:"token_expires_at,omitempty" example:"2025-05-25T18:00:00Z"`
+	// ProbeStatus reports the agent-side outcome. "success" when exit
+	// code was 0; "failed" otherwise; "skipped" when federation resolve
+	// failed and the probe was not dispatched.
+	ProbeStatus string `json:"probe_status,omitempty" enums:"success,failed,skipped" example:"success"`
+	// ProbeOutput is the agent's merged stdout+stderr from the smoke
+	// probe. Empty when ProbeStatus="skipped".
+	ProbeOutput string `json:"probe_output,omitempty" example:"+---+\n| f0_ |\n+---+\n| 1 |\n+---+"`
+	// Error is the human-readable failure reason when Success=false.
+	// Populated for federation-resolve failures; probe-side failures are
+	// reported via ProbeStatus + ProbeOutput.
+	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
+}
+
 type ServerMiscConfig struct {
-	// Either to enable or disable the product analytics tracking
-	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
 	// The PostgreSQL server proxy configuration
@@ -2022,6 +2222,22 @@ type ServerAuthConfig struct {
 	AdminRoleName string `json:"admin_role_name" default:"admin"`
 	// Changes the default auditor role of the system
 	AuditorRoleName string `json:"auditor_role_name" default:"auditor"`
+}
+
+// ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the
+// /mcp endpoint per the MCP 2025-11-25 authorization specification. When
+// disabled (the default), /mcp continues to accept Hoop-issued bearer tokens
+// only; when enabled, /mcp additionally accepts JWTs issued by the configured
+// OIDC issuer whose `aud` claim matches resource_uri.
+type ServerMcpAuthConfig struct {
+	// Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition
+	// to Hoop-issued bearer tokens.
+	Enabled bool `json:"enabled"`
+	// Canonical resource URI used for RFC 8707 audience binding. Defaults to
+	// "<API_URL>/mcp" when empty. Must match the `aud` claim of inbound JWTs.
+	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/mcp"`
+	// JWT claim name from which user groups are extracted. Defaults to "groups".
+	GroupsClaim string `json:"groups_claim" example:"groups"`
 }
 
 type GenerateApiKeyResponse struct {
@@ -2292,10 +2508,172 @@ type ResourceResponse struct {
 	EnvVars map[string]string `json:"env_vars"`
 	// The agent associated with this resource
 	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Connections (roles) associated with this resource
+	Roles []Connection `json:"roles,omitempty"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type ResourcHealthCheckResponse struct {
+	// Output is the raw stdout/stderr returned by the connectivity test query
+	Output string `json:"output" example:"1\n(1 row)\n"`
+	// Status reports the outcome of the connectivity test
+	Status string `json:"status" enums:"failed,success" example:"success"`
+}
+
+type ResourceHealthCheckResult struct {
+	// ResourceName is the name of the resource that was tested
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// Output is the raw stdout/stderr returned by the connectivity test query
+	Output string `json:"output" example:"1\n(1 row)\n"`
+	// Status reports the outcome of the connectivity test
+	Status string `json:"status" enums:"failed,success" example:"success"`
+}
+
+type ResourceHealthCheckBatchRequest struct {
+	// Names is the list of resource names to test
+	Names []string `json:"names" binding:"required,min=1" example:"my-postgres,analytics-db"`
+}
+
+type ResourceHealthCheckBatchResponse struct {
+	// Results contains one entry per requested resource, in the same order as the input names
+	Results []ResourceHealthCheckResult `json:"results"`
+}
+
+type ResourcePlanItem struct {
+	// The resource name to plan provisioning for. Required for batch requests.
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// Role management mode. "managed" creates and fully owns the postgres role (password managed by hoop).
+	// "external" attaches the role as a member of an existing parent role specified by source_role.
+	Type string `json:"type" enums:"managed,external" binding:"required" example:"managed"`
+	// A short label used to derive the generated postgres role name (e.g. "ro", "rw", "analyst").
+	// The actual role created in postgres is a deterministic slug of the form hoopdev_<resource>_<role>_<hash>.
+	Role string `json:"role" binding:"required" example:"ro"`
+	// An existing postgres role whose privileges the new role will inherit via membership.
+	// Only relevant when type is "external"; ignored for "managed".
+	SourceRole string `json:"source_role" example:"pg_read_all_data"`
+	// The list of databases and schemas to apply privileges to, formatted as "database" or "database.schema".
+	// If the schema is omitted, privileges are applied to the public schema of that database.
+	Scopes []string `json:"scopes" binding:"required" example:"mydb,otherdb.public"`
+	// The list of privileges to grant on all tables in each scope.
+	// Supported values: SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, EXECUTE.
+	Privileges []string `json:"privileges" binding:"required" example:"SELECT,INSERT"`
+	// When true, rotates the role's password on this plan run. Only takes effect if the role already exists;
+	// new roles always receive a freshly generated password regardless of this flag.
+	RotatePassword bool `json:"rotate_password" example:"false"`
+}
+
+type ResourcePlanRequest struct {
+	// The list of plan items to process
+	Items []ResourcePlanItem `json:"items" binding:"required,min=1"`
+}
+
+type ResourcePlanResult struct {
+	// The session ID for tracking and auditing this plan execution
+	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name this plan result is for
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// The generated postgres role name derived from the resource name and role label
+	// (format: hoopdev_<resource-slug>_<role-label>_<8-char-hash>).
+	Role string `json:"role" example:"hoopdev_my_postgres_ro_ab3c1f7e"`
+	// Status of the plan execution
+	Status string `json:"status" enums:"success,failed" example:"success"`
+	// Error message populated when status is "failed"; empty on success
+	Message string `json:"message" example:"failed retrieving resource: connection refused"`
+}
+
+type ResourcePlanResponse struct {
+	// The list of plan results
+	Results []ResourcePlanResult `json:"results"`
+}
+
+type ResourceApplyRequest struct {
+	// The Session ID of the plan to apply
+	SID string `json:"sid" binding:"required" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name to apply to. Required for batch requests.
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+}
+
+type ResourceApplyResult struct {
+	// The session ID for tracking and auditing this apply execution
+	SID string `json:"sid" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// The resource name this apply result is for
+	ResourceName string `json:"resource_name" example:"my-postgres"`
+	// Status of the apply execution
+	Status string `json:"status" enums:"success,failed" example:"success"`
+	// Error message populated when status is "failed"; empty on success
+	Message string `json:"message" example:"failed obtaining blob stream: empty blob stream"`
+}
+
+type ResourceApplyBatchRequest struct {
+	// The list of apply items to process
+	Items []ResourceApplyRequest `json:"items" binding:"required,min=1"`
+}
+
+type ResourceApplyBatchResponse struct {
+	// The list of apply results
+	Results []ResourceApplyResult `json:"results"`
+}
+
+type BatchPlanItem struct {
+	// The resource name
+	ResourceName string `json:"resource_name" binding:"required" example:"analytics-db-011"`
+	// The role name to plan
+	Role string `json:"role" binding:"required" example:"analytics-db-read"`
+	// The database (schema) target
+	Database string `json:"database" binding:"required" example:"dbprod.public"`
+	// The SQL permissions to grant
+	Permissions []string `json:"permissions" binding:"required" example:"SELECT,INSERT"`
+}
+
+type BatchPlanRequest struct {
+	// The items to plan
+	Items []BatchPlanItem `json:"items" binding:"required,dive"`
+}
+
+type BatchPlanResultItem struct {
+	// The resource name
+	ResourceName string `json:"resource_name" example:"analytics-db-011"`
+	// The role name
+	Role string `json:"role" example:"analytics-db-read"`
+	// The plan ID
+	PlanID string `json:"plan_id" example:"plan-1717171717-1234"`
+	// The plan status: Create, Update, or Failed
+	Status string `json:"status" enums:"Create,Update,Failed" example:"Create"`
+	// The session ID for reviewing the plan output
+	SessionID string `json:"session_id" example:"sess-plan-1717171717-1234"`
+	// Error message if the plan failed
+	Error string `json:"error,omitempty" example:"resource not found"`
+}
+
+type BatchPlanResponse struct {
+	// The results for each item
+	Results []BatchPlanResultItem `json:"results"`
+}
+
+type BatchApplyRequest struct {
+	// The plan IDs to apply
+	PlanIDs []string `json:"plan_ids" binding:"required" example:"plan-1717171717-1234"`
+}
+
+type BatchApplyResultItem struct {
+	// The plan ID that was applied
+	PlanID string `json:"plan_id" example:"plan-1717171717-1234"`
+	// The apply status: Applied or ApplyFailed
+	Status string `json:"status" enums:"Applied,ApplyFailed" example:"Applied"`
+	// The session ID for reviewing the apply output
+	SessionID string `json:"session_id" example:"sess-apply-1717171717-1234"`
+	// The role (connection) name that was created or updated
+	RoleName string `json:"role_name,omitempty" example:"analytics-db-read"`
+	// Error message if the apply failed
+	Error string `json:"error,omitempty"`
+}
+
+type BatchApplyResponse struct {
+	// The results for each plan
+	Results []BatchApplyResultItem `json:"results"`
 }
 
 type RunbookConfigurationRequest struct {
@@ -2588,13 +2966,32 @@ type AIProviderResponse struct {
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
+type AISessionAnalyzerRiskTier struct {
+	// Action to take when the AI classifies a session at this risk level
+	Action string `json:"action" binding:"required" enums:"allow_execution,block_execution,require_access_request" example:"require_access_request"`
+	// Name of the access request rule that supplies approver groups when action is require_access_request
+	AccessRequestRuleName *string `json:"access_request_rule_name,omitempty" example:"prod-approvals"`
+}
+
+type AISessionAnalyzerSystemPrompt struct {
+	// The read-only system prompt the gateway prepends before any custom_prompt configured on a rule
+	Prompt string `json:"prompt"`
+}
+
 type AISessionAnalyzerRiskEvaluation struct {
-	// Action for low-risk sessions
-	LowRiskAction string `json:"low_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Action for medium-risk sessions
-	MediumRiskAction string `json:"medium_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Action for high-risk sessions
-	HighRiskAction string `json:"high_risk_action" enums:"allow_execution,block_execution" example:"block_execution"`
+	// Deprecated: use low_risk
+	LowRiskAction string `json:"low_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`
+	// Deprecated: use medium_risk
+	MediumRiskAction string `json:"medium_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"allow_execution"`
+	// Deprecated: use high_risk
+	HighRiskAction string `json:"high_risk_action,omitempty" enums:"allow_execution,block_execution,require_access_request" example:"block_execution"`
+
+	// Tier configuration for low-risk sessions
+	LowRisk *AISessionAnalyzerRiskTier `json:"low_risk,omitempty"`
+	// Tier configuration for medium-risk sessions
+	MediumRisk *AISessionAnalyzerRiskTier `json:"medium_risk,omitempty"`
+	// Tier configuration for high-risk sessions
+	HighRisk *AISessionAnalyzerRiskTier `json:"high_risk,omitempty"`
 }
 
 type AISessionAnalyzerRuleRequest struct {
@@ -2606,6 +3003,8 @@ type AISessionAnalyzerRuleRequest struct {
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
+	// Optional extra instructions appended to the default system prompt
+	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
 }
 
 type AISessionAnalyzerRule struct {
@@ -2619,6 +3018,8 @@ type AISessionAnalyzerRule struct {
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
+	// Optional extra instructions appended to the default system prompt
+	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2649,12 +3050,185 @@ type Attributes struct {
 }
 
 type AttributeRequest struct {
-	// The name of the attribute
-	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Name string `json:"name" binding:"required" example:"default-session-attribute"`
+	// The description of the attribute
 	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
 	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
 	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
+}
+
+type RulepackRequest struct {
+	// Human-readable display name for the rulepack (unique per organization)
+	DisplayName string `json:"display_name" binding:"required" example:"PCI Database Access"`
+	// Optional description of what the rulepack provides
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// Data masking rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned data masking rules.
+	DataMaskingRules []DataMaskingRuleRequest `json:"data_masking_rules,omitempty"`
+	// Guardrail rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned guardrail rules.
+	GuardRailRules []GuardRailRuleRequest `json:"guardrail_rules,omitempty"`
+}
+
+type RulepackApplyRequest struct {
+	// Names of connections this rulepack should be applied to. Replace-all semantics:
+	// after the call, the rulepack is attached to exactly these connections.
+	// Connections previously tagged with this rulepack that are not in the list lose
+	// the tag; non-rulepack attributes on every affected connection are preserved.
+	// Pass an empty array to remove the rulepack from all connections.
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+}
+
+type Rulepack struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this rulepack
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// Human-readable display name for the rulepack
+	DisplayName string `json:"display_name" example:"PCI Database Access"`
+	// Optional description
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Optional version string
+	Version *string `json:"version,omitempty" example:"1.0.0"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// True for Hoop-managed rulepacks (read-only for users)
+	IsManaged bool `json:"is_managed" readonly:"true" example:"false"`
+	// Data masking rules attached to this rulepack
+	DataMaskingRules []DataMaskingRule `json:"data_masking_rules"`
+	// Guardrail rules attached to this rulepack
+	GuardRailRules []GuardRailRuleResponse `json:"guardrail_rules"`
+	// Names of connections this rulepack has been applied to. Populated from the
+	// rulepack attribute's connection junctions; empty when no connections are tagged.
+	ConnectionNames []string `json:"connection_names"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was last updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+// Event Routing types
+
+type EventSchemaFieldResponse struct {
+	Name     string `json:"name" example:"session_id"`
+	Type     string `json:"type" example:"string"`
+	Required bool   `json:"required" example:"true"`
+}
+
+type EventTypeResponse struct {
+	Name          string                     `json:"name" example:"session.guardrail_violation"`
+	Category      string                     `json:"category" example:"Session"`
+	Description   string                     `json:"description"`
+	Schema        []EventSchemaFieldResponse `json:"schema"`
+	SamplePayload map[string]any             `json:"sample_payload"`
+}
+
+type EventSubscriptionRequest struct {
+	Name              string            `json:"name" binding:"required"`
+	Description       string            `json:"description"`
+	EventTypes        []string          `json:"event_types" binding:"required,min=1"`
+	RunbookRepository string            `json:"runbook_repository" binding:"required"`
+	RunbookFile       string            `json:"runbook_file" binding:"required"`
+	ConnectionName    string            `json:"connection_name" binding:"required"`
+	ParameterMapping  map[string]string `json:"parameter_mapping" binding:"required"`
+	Status            string            `json:"status"`
+}
+
+type EventSubscriptionResponse struct {
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	EventTypes        []string          `json:"event_types"`
+	RunbookRepository string            `json:"runbook_repository"`
+	RunbookFile       string            `json:"runbook_file"`
+	ConnectionName    string            `json:"connection_name"`
+	ParameterMapping  map[string]string `json:"parameter_mapping"`
+	Status            string            `json:"status"`
+	CreatedByEmail    string            `json:"created_by_email"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	DeliveredCount7d  int64             `json:"delivered_count_7d,omitempty"`
+	FailedCount7d     int64             `json:"failed_count_7d,omitempty"`
+	LastError         string            `json:"last_error,omitempty"`
+}
+
+type EventDispatchListItemResponse struct {
+	ID           string     `json:"id"`
+	EventID      string     `json:"event_id"`
+	EventType    string     `json:"event_type"`
+	Status       string     `json:"status"`
+	Attempt      int        `json:"attempt"`
+	SessionID    *string    `json:"session_id,omitempty"`
+	LastError    *string    `json:"last_error,omitempty"`
+	ReplayedFrom *string    `json:"replayed_from,omitempty"`
+	DurationMS   *int64     `json:"duration_ms,omitempty"`
+	OccurredAt   time.Time  `json:"occurred_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	DispatchedAt *time.Time `json:"dispatched_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+type EventDispatchListResponse struct {
+	Items []EventDispatchListItemResponse `json:"items"`
+	Total int64                           `json:"total"`
+	Page  int                             `json:"page"`
+	Limit int                             `json:"limit"`
+}
+
+type EventDispatchDetailResponse struct {
+	EventDispatchListItemResponse
+	EventPayload     json.RawMessage `json:"event_payload,omitempty"`
+	SubscriptionName string          `json:"subscription_name,omitempty"`
+}
+
+type MachineIdentity struct {
+	ID              string     `json:"id" readonly:"true" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
+	Name            string     `json:"name" binding:"required" example:"backend-prod"`
+	Description     string     `json:"description" example:"Production backend service identity"`
+	ConnectionNames []string   `json:"connection_names" example:"prod-postgres,api-proxy"`
+	Attributes      []string   `json:"attributes" example:"env:prod,team:backend"`
+	CreatedAt       *time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	UpdatedAt       *time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type MachineIdentityCreateResponse struct {
+	MachineIdentity
+	Credentials []MachineIdentityCredentialResponse `json:"credentials"`
+}
+
+type MachineIdentityUpdateResponse struct {
+	MachineIdentity
+	NewCredentials []MachineIdentityCredentialResponse `json:"new_credentials"`
+}
+
+type MachineIdentityCredentialResponse struct {
+	ConnectionName     string `json:"connection_name"`
+	ConnectionType     string `json:"connection_type"`
+	ConnectionSubType  string `json:"connection_subtype,omitempty"`
+	SecretKey          string `json:"secret_key"`
+	Hostname           string `json:"hostname,omitempty"`
+	Port               string `json:"port,omitempty"`
+	DatabaseName       string `json:"database_name,omitempty"`
+	ConnectionString   string `json:"connection_string,omitempty"`
+	Username           string `json:"username,omitempty"`
+	Password           string `json:"password,omitempty"`
+	Command            string `json:"command,omitempty"`
+	ProxyToken         string `json:"proxy_token,omitempty"`
+	EndpointURL        string `json:"endpoint_url,omitempty"`
+	AwsAccessKeyId     string `json:"aws_access_key_id,omitempty"`
+	AwsSecretAccessKey string `json:"aws_secret_access_key,omitempty"`
+}
+
+type MachineIdentityCredentialInfo struct {
+	ConnectionName    string     `json:"connection_name"`
+	ConnectionType    string     `json:"connection_type"`
+	ConnectionSubType string     `json:"connection_subtype,omitempty"`
+	Hostname          string     `json:"hostname,omitempty"`
+	Port              string     `json:"port,omitempty"`
+	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
 }

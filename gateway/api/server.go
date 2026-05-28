@@ -27,6 +27,7 @@ import (
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
+	apieventrouting "github.com/hoophq/hoop/gateway/api/eventrouting"
 	apifeatureflags "github.com/hoophq/hoop/gateway/api/featureflags"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
@@ -36,6 +37,8 @@ import (
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
+	machineidentityapi "github.com/hoophq/hoop/gateway/api/machineidentity"
+	apimcpauth "github.com/hoophq/hoop/gateway/api/mcpauth"
 	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -47,6 +50,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
+	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
@@ -85,6 +89,8 @@ type Api struct {
 
 //	@tag.name	User Management
 //	@tag.description.markdown
+
+//	@tag.name	Machine Identities
 
 //	@tag.name	Server Management
 //	@tag.description.markdown
@@ -147,6 +153,9 @@ func (a *Api) StartAPI() {
 			return
 		}
 	})
+
+	route.GET("/.well-known/oauth-protected-resource", apimcpauth.MetadataHandler)
+	route.GET("/.well-known/oauth-protected-resource"+apimcpauth.McpResourcePath(), apimcpauth.MetadataHandler)
 
 	ssmGroup := route.Group(baseURL + "/ssm")
 	ssmInstance := ssmproxy.GetServerInstance()
@@ -221,6 +230,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.GetUserInfo)
+	r.POST("/orgs/invitations",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.HandleOrgInvitation)
 	r.GET("/users",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -281,6 +294,42 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
+
+	r.GET("/machineidentities",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.List)
+	r.GET("/machineidentities/:name",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.Get)
+	r.POST("/machineidentities",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateMachineIdentity),
+		machineidentityapi.Create)
+	r.PUT("/machineidentities/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateMachineIdentity),
+		machineidentityapi.Update)
+	r.DELETE("/machineidentities/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventDeleteMachineIdentity),
+		machineidentityapi.Delete)
+	r.GET("/machineidentities/:name/credentials",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.ListCredentials)
+	r.POST("/machineidentities/:name/credentials/:connectionName/rotate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		machineidentityapi.RotateCredential)
 
 	r.GET("/api-keys",
 		apiroutes.AdminOnlyAccessRole,
@@ -360,7 +409,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.Get)
-	r.DELETE("/connections/:name",
+	r.DELETE("/connections/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
@@ -383,6 +432,30 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
 
+	// IAM Federation: per-connection config (admin-only). The credentials
+	// payload contains an encrypted SA blob, so even read access is
+	// restricted to admins.
+	r.GET("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetConnectionFederationConfig)
+	r.PUT("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.PutConnectionFederationConfig)
+	r.DELETE("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.DeleteConnectionFederationConfig)
+	// Federation dry-run endpoint is intentionally NOT connection-scoped: it
+	// runs against a candidate config supplied entirely in the request body
+	// so the admin UI can validate a draft before any connection or
+	// federation row is persisted.
+	r.POST("/federation/test",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.TestFederationConfig)
+
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -392,6 +465,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.TestConnection)
+	r.GET("/connections/:nameOrID/credentials",
+		r.AuthMiddleware,
+		apiconnections.GetConnectionCredentials,
+	)
 	r.POST("/connections/:nameOrID/credentials",
 		r.AuthMiddleware,
 		apiconnections.CreateConnectionCredentials,
@@ -403,6 +480,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/connections/:nameOrID/credentials/:ID/revoke",
 		r.AuthMiddleware,
 		apiconnections.RevokeConnectionCredentials,
+	)
+	r.POST("/connections/:nameOrID/credentials/:ID/close",
+		r.AuthMiddleware,
+		apiconnections.CloseConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",
@@ -512,6 +593,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiorgs.SignLicense)
 
+	r.GET("/orgs/analytics-mode",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.GetOrgAnalyticsMode)
+	r.PUT("/orgs/analytics-mode",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiorgs.UpdateOrgAnalyticsMode)
+
 	r.PUT("/orgs/features",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -584,10 +675,24 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.GetRDPFrames)
 
+	r.GET("/sessions/:session_id/rdp-detections",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.GetRDPDetections)
+
+	r.POST("/sessions/:session_id/rdp-detections/retry",
+		r.AuthMiddleware,
+		sessionapi.RetryRDPDetections)
+
 	r.GET("/sessions/:session_id/result/stream",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		sessionapi.StreamSessionResult)
+
+	r.GET("/sessions/:session_id/stream",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.StreamSession)
 
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
@@ -844,6 +949,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiai.DeleteSessionAnalyzerRule)
+	r.GET("/ai/session-analyzer/system-prompt",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerSystemPrompt)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
@@ -933,6 +1042,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiserverconfig.GenerateApiKey,
+	)
+	r.GET("/serverconfig/mcp-auth",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.GetMcpAuthConfig,
+	)
+	r.PUT("/serverconfig/mcp-auth",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiserverconfig.UpdateMcpAuthConfig,
 	)
 
 	r.GET("/search",
@@ -1035,6 +1155,34 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
+	r.GET("/resources/:name/health",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ResourceHealthCheck)
+	r.POST("/resources/health",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.ResourceHealthCheckBatch)
+	r.POST("/resources/:name/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourcePlan)
+	r.POST("/resources/plan",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourcePlanBatch)
+	r.POST("/resources/:name/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourceApply)
+	r.POST("/resources/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		resourcesapi.ResourceApplyBatch)
 
 	r.GET("/audit/logs",
 		apiroutes.AdminAndAuditorAccessRole,
@@ -1062,7 +1210,87 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiattributes.Delete)
 
+	r.GET("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.List)
+	r.GET("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Get)
+	r.POST("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Post)
+	r.PUT("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Put)
+	r.DELETE("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Delete)
+	r.POST("/rulepacks/:id/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Apply)
+
+	// Event Routing
+	r.GET("/event-routing/catalog",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ListCatalog)
+	r.GET("/event-routing/catalog/:event_type",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.GetCatalogEntry)
+	r.GET("/event-routing/subscriptions",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ListSubscriptions)
+	r.POST("/event-routing/subscriptions",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.CreateSubscription)
+	r.GET("/event-routing/subscriptions/:id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.GetSubscription)
+	r.PUT("/event-routing/subscriptions/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.UpdateSubscription)
+	r.DELETE("/event-routing/subscriptions/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.DeleteSubscription)
+	r.POST("/event-routing/subscriptions/:id/pause",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.PauseSubscription)
+	r.POST("/event-routing/subscriptions/:id/resume",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ResumeSubscription)
+	r.GET("/event-routing/subscriptions/:id/dispatches",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.ListDispatches)
+	r.GET("/event-routing/dispatches/:id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apieventrouting.GetDispatch)
+	r.POST("/event-routing/dispatches/:id/replay",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apieventrouting.ReplayDispatch)
+
 	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
 	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)
-	r.RouterGroup.Any("/mcp", r.AuthMiddleware, api.AuditMiddleware(), mcpServer.GinHandler)
+	mcpAuth := apimcpauth.Middleware(r.AuthMiddleware)
+	r.RouterGroup.Any("/mcp", mcpAuth, api.AuditMiddleware(), mcpServer.GinHandler)
 }

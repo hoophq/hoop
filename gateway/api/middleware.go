@@ -44,6 +44,9 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 				properties["mode"] = fmt.Sprintf("%v", agentMode)
 			}
 		case analytics.EventUpdateConnection, analytics.EventCreateConnection:
+			if eventName == analytics.EventCreateConnection {
+				properties["source"] = "connections-api"
+			}
 			requestBody, _ := io.ReadAll(c.Request.Body)
 			data := getBodyAsMap(requestBody)
 			reCopyBody(requestBody, c)
@@ -108,6 +111,8 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, accept, origin, user-client")
+		// gateway/api/middleware.go (CORSMiddleware)
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-New-Access-Token, X-Set-Cookie")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {
@@ -159,9 +164,6 @@ func (r *catchAll5xxResponseBodyWriter) Write(b []byte) (int, error) {
 
 func sentryCatchAll5xxMiddleware(c *gin.Context) {
 	defer c.Next()
-	if enabled := appconfig.Get().AnalyticsTracking(); !enabled {
-		return
-	}
 
 	rbw := &catchAll5xxResponseBodyWriter{
 		body:           &bytes.Buffer{},
