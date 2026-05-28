@@ -352,8 +352,10 @@ When adding a new service file, follow the pattern in `services/agents.js`.
 ## Notifications — `showSnackbar`
 
 Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
-same library the legacy CLJS app uses — so toasts look identical across React and
-CLJS routes. The single `<Toaster>` is mounted in `src/App.jsx`.
+same library the legacy CLJS app uses — and renders through
+`src/components/Snackbar/Toast.jsx`, a one-to-one port of
+`webapp.components.toast` so toasts look identical across React and CLJS routes.
+The single `<Toaster>` is mounted in `src/App.jsx`.
 
 ```js
 import { showSnackbar } from '@/utils/snackbar'
@@ -361,12 +363,20 @@ import { showSnackbar } from '@/utils/snackbar'
 showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
 showSnackbar({ level: 'error',   text: 'Failed to update.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
+
+// Error toasts can expand to show a `details` panel (object → key/value lines)
+showSnackbar({
+  level: 'error',
+  text: 'Validation failed.',
+  details: { field: 'name', reason: 'required' },
+})
 ```
 
-Do NOT import `notifications` from `@mantine/notifications` in new code — it renders a
-completely different visual and breaks parity with v1. Pre-existing pages that still
-use it should be migrated opportunistically. See the "Snackbars / Toasts" section of
-`CLAUDE.md` for the full rule.
+Error toasts auto-dismiss after 10 seconds (mirrors v1); other levels use sonner's
+default. Do NOT import `notifications` from `@mantine/notifications` in new code — it
+renders a completely different visual and breaks parity with v1. Pre-existing pages
+that still use it should be migrated opportunistically. See the "Snackbars / Toasts"
+section of `CLAUDE.md` for the full rule.
 
 ---
 

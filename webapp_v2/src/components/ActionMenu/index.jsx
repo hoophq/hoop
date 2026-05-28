@@ -1,5 +1,6 @@
 import { Menu, ActionIcon } from '@mantine/core'
 import { MoreHorizontal } from 'lucide-react'
+import classes from './ActionMenu.module.css'
 
 /**
  * Dropdown action menu for table rows and cards.
@@ -25,7 +26,11 @@ function ActionMenu({ children, disabled = false }) {
 
 function ActionMenuItem({ danger = false, onClick, disabled = false, children }) {
   return (
-    <Menu.Item onClick={onClick} disabled={disabled} color={danger ? 'red' : undefined}>
+    <Menu.Item
+      onClick={onClick}
+      disabled={disabled}
+      classNames={danger ? { item: classes.itemDanger } : undefined}
+    >
       {children}
     </Menu.Item>
   )
