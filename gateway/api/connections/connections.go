@@ -219,7 +219,7 @@ func Put(c *gin.Context) {
 
 // Patch Connection
 //
-//	@Summary	    Patch Connection
+//	@Summary		Patch Connection
 //	@Description	Partial update of a connection resource. Only provided fields will be updated.
 //	@Tags			Connections
 //	@Accept			json
@@ -349,13 +349,13 @@ func Patch(c *gin.Context) {
 //	@Description	Delete a connection resource.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			name	path	string	true	"The name of the resource"
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
 //	@Success		204
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/connections/{name} [delete]
+//	@Router			/connections/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	connName := c.Param("name")
+	connName := c.Param("nameOrID")
 	if connName == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
@@ -387,7 +387,7 @@ func Delete(c *gin.Context) {
 //	@Param			subtype			query		string											false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string											false	"Filter by managed by"																	Format(string)
 //	@Param			resource_name	query		string											false	"Filter by resource name"																Format(string)
-//	@Param			attribute		query		string											false	"Filter by attributes, separated by comma"										Format(string)
+//	@Param			attribute		query		string											false	"Filter by attributes, separated by comma"												Format(string)
 //	@Param			connection_ids	query		string											false	"Filter by specific connection IDs, separated by comma"									Format(string)
 //	@Param			page_size		query		int												false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int												false	"Page number (1-based). When provided, enables pagination"								Format(int)

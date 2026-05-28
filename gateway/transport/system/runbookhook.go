@@ -12,8 +12,19 @@ import (
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 )
 
-var hookTimeoutRequest = time.Second * 15
+// hookTimeoutRequest is the upper bound for a runbook hook to respond before
+// the gateway gives up. Session-open and session-close hooks are fire-and-
+// forget logging hooks; 15 s is generous for their typical workload.
+const hookTimeoutRequest = 15 * time.Second
 
+// RunRunbookHook sends a hook request to the agent and blocks until either
+// the agent responds or hookTimeoutRequest elapses. Returns a synthesized
+// error response with ExitCode=-2 on transport failures, decode errors, or
+// timeouts so callers can switch on ExitCode without nil-checking.
+//
+// The gateway's only caller today is processEventOpenSessionHook, which
+// dispatches in a goroutine and treats the response as a log line — the
+// blocking behavior is therefore not user-visible.
 func RunRunbookHook(agentID string, req *pbsystem.RunbookHookRequest) *pbsystem.RunbookHookResponse {
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
