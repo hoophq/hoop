@@ -12102,6 +12102,16 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": true
                 },
+                "superseded_env_vars": {
+                    "description": "SupersededEnvVars lists the candidate connection's static env var\nnames that the provider's output supersedes and that were therefore\nstripped from the probe (and would be stripped from a real session).\nLets the admin UI show \"these legacy credentials were ignored\" so\nthe operator can confidently remove them from the persisted\nconnection. Example: gcp_iam supersedes GOOGLE_APPLICATION_CREDENTIALS.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "GOOGLE_APPLICATION_CREDENTIALS"
+                    ]
+                },
                 "token_expires_at": {
                     "description": "TokenExpiresAt is the would-be credential expiry.",
                     "type": "string",
