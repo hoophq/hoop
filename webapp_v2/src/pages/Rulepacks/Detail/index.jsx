@@ -1,13 +1,18 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Group, Stack, Tabs, Text, Title } from '@mantine/core'
+import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import PageLoader from '@/components/PageLoader'
+import Tabs from '@/components/Tabs'
+import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import { useRulepackStore } from '../store'
 import FeatureFlagGate from '../FeatureFlagGate'
 import ConfigurationTab from './ConfigurationTab'
 import RolesTab from './RolesTab'
+
+const FREE_LICENSE_MESSAGE =
+  'Applying rulepacks to connections is an Enterprise feature. Upgrade to bundle and roll out guardrails and data masking rules across many connections at once.'
 
 function DetailHeader({ rulepack, onBack }) {
   return (
@@ -36,6 +41,7 @@ function RulepackDetailContent() {
   const navigate = useNavigate()
   const { id } = useParams()
   const { active, activeStatus, selectedConnections, fetchActive } = useRulepackStore()
+  const isFreeLicense = useUserStore((state) => state.isFreeLicense)
 
   useEffect(() => {
     if (id) fetchActive(id)
@@ -54,6 +60,8 @@ function RulepackDetailContent() {
   return (
     <Stack gap="xl">
       <DetailHeader rulepack={active} onBack={() => navigate('/rulepacks')} />
+
+      {isFreeLicense && <FreeLicenseCallout message={FREE_LICENSE_MESSAGE} />}
 
       <Tabs defaultValue="roles" keepMounted={false}>
         <Tabs.List>

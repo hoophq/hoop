@@ -1,29 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
-  Button,
   Card,
   Checkbox,
-  Flex,
   Group,
-  Popover,
   Stack,
   Text,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import {
-  Check,
-  ListVideo,
-  Rotate3d,
-  Search,
-  Shapes,
-  Tag,
-  X,
-} from 'lucide-react'
+import { ListVideo, Rotate3d, Search, Shapes } from 'lucide-react'
+import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import Table from '@/components/Table'
 import TextInput from '@/components/TextInput'
+import ValueFilter from '@/components/ValueFilter'
 import { useRulepackStore } from '../store'
+
+function connectionTagValues(connection) {
+  const tags = connection?.connection_tags
+  if (!tags) return []
+  return Object.values(tags).filter((v) => typeof v === 'string' && v.trim() !== '')
+}
 
 function distinctNonBlank(items, extract) {
   const seen = new Set()
@@ -39,12 +36,6 @@ function distinctNonBlank(items, extract) {
   return Array.from(seen).sort()
 }
 
-function connectionTagValues(connection) {
-  const tags = connection?.connection_tags
-  if (!tags) return []
-  return Object.values(tags).filter((v) => typeof v === 'string' && v.trim() !== '')
-}
-
 function connectionMatchesFilters(connection, filters) {
   const { resource, type, attribute, tag } = filters
   if (resource && connection.resource_name !== resource) return false
@@ -58,114 +49,6 @@ function connectionMatchesFilters(connection, filters) {
     if (!connectionTagValues(connection).includes(tag)) return false
   }
   return true
-}
-
-function ValueFilter({ icon, label, values, selected, onSelect, onClear }) {
-  const [open, setOpen] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const Icon = icon
-
-  const hasSelected = typeof selected === 'string' && selected.trim() !== ''
-  const filtered = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (!q) return values
-    return values.filter((v) => v.toLowerCase().includes(q))
-  }, [values, searchTerm])
-
-  const close = () => {
-    setOpen(false)
-    setSearchTerm('')
-  }
-
-  return (
-    <Popover
-      opened={open}
-      onChange={setOpen}
-      position="bottom-start"
-      width={320}
-      withinPortal
-    >
-      <Popover.Target>
-        <Button
-          variant={hasSelected ? 'light' : 'default'}
-          color="gray"
-          onClick={() => setOpen((value) => !value)}
-          leftSection={<Icon size={16} />}
-          rightSection={
-            hasSelected ? (
-              <X
-                size={14}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onClear()
-                  close()
-                }}
-              />
-            ) : null
-          }
-        >
-          {hasSelected ? selected : label}
-        </Button>
-      </Popover.Target>
-      <Popover.Dropdown p="xs">
-        <Stack gap="xs">
-          {hasSelected && (
-            <Box
-              px="sm"
-              py="xs"
-              onClick={() => {
-                onClear()
-                close()
-              }}
-              style={{ cursor: 'pointer', borderRadius: 4 }}
-            >
-              <Text size="sm" c="dimmed">
-                Clear filter
-              </Text>
-            </Box>
-          )}
-          <TextInput
-            placeholder={`Search ${label.toLowerCase()}`}
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.currentTarget.value)}
-            leftSection={<Search size={14} />}
-            size="xs"
-          />
-          {filtered.length > 0 ? (
-            <Stack gap={0} mah={288} style={{ overflowY: 'auto' }}>
-              {filtered.map((value) => (
-                <Flex
-                  key={value}
-                  align="center"
-                  justify="space-between"
-                  px="sm"
-                  py="xs"
-                  onClick={() => {
-                    onSelect(value)
-                    close()
-                  }}
-                  style={{ cursor: 'pointer', borderRadius: 4 }}
-                >
-                  <Text size="sm" lineClamp={1}>
-                    {value}
-                  </Text>
-                  {value === selected && <Check size={14} />}
-                </Flex>
-              ))}
-            </Stack>
-          ) : (
-            <Box px="sm" py="md">
-              <Text size="xs" c="dimmed" fs="italic">
-                {searchTerm
-                  ? `No ${label.toLowerCase()} found`
-                  : `No ${label.toLowerCase()} available`}
-              </Text>
-            </Box>
-          )}
-        </Stack>
-      </Popover.Dropdown>
-    </Popover>
-  )
 }
 
 const INITIAL_FILTERS = { resource: null, type: null, attribute: null }

@@ -62,7 +62,6 @@ export const DISCOVER_ITEMS = [
     label: 'Rulepacks',
     path: '/rulepacks',
     icon: WandSparkles,
-    freeFeature: false,
     adminOnly: true,
     featureFlag: 'experimental.rulepacks'
   },

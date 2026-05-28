@@ -4,7 +4,7 @@
    ["lucide-react" :refer [BookMarked Boxes BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
-                           Sparkles KeyRound WandSparkles]]
+                           Sparkles KeyRound]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -38,8 +38,6 @@
                      [:> VenetianMask {:size size}])
    "AISessionAnalyzer" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> Sparkles {:size size}])
-   "Rulepacks" (fn [& [{:keys [size] :or {size 24}}]]
-                         [:> WandSparkles {:size size}])
    "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> UserRoundCheck {:size size}])
    "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
@@ -166,14 +164,6 @@
     :icon (get icons-registry "AccessControl")
     :uri (routes/url-for :access-control)
     :navigate :access-control
-    :admin-only? true}
-   {:name "Rulepacks"
-    :label "Rulepacks"
-    :icon (get icons-registry "Rulepacks")
-    :uri (routes/url-for :rulepacks)
-    :navigate :rulepacks
-    :feature-flag "experimental.rulepacks"
-    :free-feature? true
     :admin-only? true}
    #_{:name "JustInTimeAccess"
       :label "Just-in-Time Access"

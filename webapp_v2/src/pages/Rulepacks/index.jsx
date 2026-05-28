@@ -16,8 +16,12 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import Badge from '@/components/Badge'
+import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import { useRulepackStore } from './store'
 import FeatureFlagGate from './FeatureFlagGate'
+
+const FREE_LICENSE_MESSAGE =
+  'Applying rulepacks to connections is an Enterprise feature. Upgrade to bundle and roll out guardrails and data masking rules across many connections at once.'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -79,6 +83,7 @@ function RulepackRow({ rulepack, isLast, onConfigure }) {
 function RulepackListContent() {
   const navigate = useNavigate()
   const { list, listStatus, listSearch, fetchList } = useRulepackStore()
+  const isFreeLicense = useUserStore((state) => state.isFreeLicense)
 
   const [input, setInput] = useState(listSearch ?? '')
   const debounceRef = useRef(null)
@@ -115,6 +120,8 @@ function RulepackListContent() {
           Bundle configurations and apply them to many connections at once.
         </Text>
       </Stack>
+
+      {isFreeLicense && <FreeLicenseCallout message={FREE_LICENSE_MESSAGE} />}
 
       <TextInput
         placeholder="Search rulepacks by name"
