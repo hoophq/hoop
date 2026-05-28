@@ -43,7 +43,7 @@ export const MAIN_ITEMS = [
 ]
 
 export const DISCOVER_ITEMS = [
-  { label: 'AI Agents Identities', path: '/features/ai-agents-identities', icon: Bot, adminOnly: true },
+  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true },
   { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true },
   { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true },
   {

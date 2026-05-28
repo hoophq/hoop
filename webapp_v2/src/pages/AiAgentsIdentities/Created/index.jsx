@@ -6,7 +6,7 @@ import CodeSnippet from '@/components/CodeSnippet'
 import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
 
-const LIST_PATH = '/features/ai-agents-identities'
+const LIST_PATH = '/ai-agents-identities'
 const MCP_DOCS_URL = 'https://hoop.dev/docs/learn/features/mcp-server#mcp-server'
 const CLI_DOCS_URL = 'https://hoop.dev/docs/clients/cli#command-line'
 

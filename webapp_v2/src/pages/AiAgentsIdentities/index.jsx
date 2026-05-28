@@ -13,8 +13,8 @@ import Tooltip from '@/components/Tooltip'
 import { aiAgentsService } from '@/services/aiAgents'
 import { truncateKey } from '@/utils/maskedKey'
 
-const LIST_PATH = '/features/ai-agents-identities'
-const NEW_PATH = '/features/ai-agents-identities/new'
+const LIST_PATH = '/ai-agents-identities'
+const NEW_PATH = '/ai-agents-identities/new'
 
 function formatDate(dateStr) {
   if (!dateStr) return '—'

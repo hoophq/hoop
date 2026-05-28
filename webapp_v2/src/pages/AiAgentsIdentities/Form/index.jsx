@@ -10,8 +10,8 @@ import MultiSelect from '@/components/MultiSelect'
 import { aiAgentsService } from '@/services/aiAgents'
 import { usersService } from '@/services/users'
 
-const LIST_PATH = '/features/ai-agents-identities'
-const CREATED_PATH = '/features/ai-agents-identities/created'
+const LIST_PATH = '/ai-agents-identities'
+const CREATED_PATH = '/ai-agents-identities/created'
 
 function SectionRow({ title, description, children }) {
   return (

@@ -25,9 +25,9 @@ import SettingsExperimental from '@/pages/Settings/Experimental'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
-import AiAgentsIdentities from '@/pages/Features/AiAgentsIdentities'
-import AiAgentsIdentitiesForm from '@/pages/Features/AiAgentsIdentities/Form'
-import AiAgentsIdentitiesCreated from '@/pages/Features/AiAgentsIdentities/Created'
+import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
+import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
+import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 
 /**
  * Routing strategy:
@@ -292,7 +292,7 @@ function Router() {
 
       {/* AI Agents Identities */}
       <Route
-        path="/features/ai-agents-identities"
+        path="/ai-agents-identities"
         element={
           <ProtectedRoute adminOnly>
             <Layout>
@@ -304,7 +304,7 @@ function Router() {
         }
       />
       <Route
-        path="/features/ai-agents-identities/new"
+        path="/ai-agents-identities/new"
         element={
           <ProtectedRoute adminOnly>
             <Layout>
@@ -316,7 +316,7 @@ function Router() {
         }
       />
       <Route
-        path="/features/ai-agents-identities/created"
+        path="/ai-agents-identities/created"
         element={
           <ProtectedRoute adminOnly>
             <Layout>
@@ -328,7 +328,7 @@ function Router() {
         }
       />
       <Route
-        path="/features/ai-agents-identities/:id/configure"
+        path="/ai-agents-identities/:id/configure"
         element={
           <ProtectedRoute adminOnly>
             <Layout>
