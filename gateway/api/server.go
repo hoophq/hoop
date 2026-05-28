@@ -50,6 +50,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
+	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
@@ -1208,6 +1209,31 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.Delete)
+
+	r.GET("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.List)
+	r.GET("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Get)
+	r.POST("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Post)
+	r.PUT("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Put)
+	r.DELETE("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Delete)
+	r.POST("/rulepacks/:id/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Apply)
 
 	// Event Routing
 	r.GET("/event-routing/catalog",

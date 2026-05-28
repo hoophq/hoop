@@ -136,6 +136,10 @@ func Run() {
 			log.Errorf("failed creating default runbook configuration, reason=%v", err)
 		}
 
+		if err := services.SeedDefaultRulepacksForOrg(context.Background(), org.ID); err != nil {
+			log.Errorf("failed seeding default rulepacks, reason=%v", err)
+		}
+
 		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)

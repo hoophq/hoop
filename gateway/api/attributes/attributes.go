@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -15,6 +16,18 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
+
+const (
+	rulepackFlagName = "experimental.rulepacks"
+)
+
+type validationError struct{ msg string }
+
+func (e *validationError) Error() string { return e.msg }
+
+func guardManagedAttribute(c *gin.Context, attr *models.Attribute, orgID uuid.UUID) bool {
+	return attr.RulepackID != nil
+}
 
 func buildAttributeModel(orgID uuid.UUID, req openapi.AttributeRequest) *models.Attribute {
 	var connAttrs []models.ConnectionAttribute
@@ -151,6 +164,12 @@ func Put(c *gin.Context) {
 		return
 	}
 
+	if featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName) {
+		if guardManagedAttribute(c, existentAttr, orgID) {
+			return
+		}
+	}
+
 	attr := buildAttributeModel(orgID, req)
 	attr.ID = existentAttr.ID
 
@@ -184,6 +203,15 @@ func Delete(c *gin.Context) {
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
+	}
+
+	if featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName) {
+		existentAttr, gerr := models.GetAttribute(models.DB, orgID, c.Param("name"))
+		if gerr == nil {
+			if guardManagedAttribute(c, existentAttr, orgID) {
+				return
+			}
+		}
 	}
 
 	err = models.DeleteAttribute(models.DB, orgID, c.Param("name"))
