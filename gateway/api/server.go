@@ -50,6 +50,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
+	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
@@ -408,7 +409,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.Get)
-	r.DELETE("/connections/:name",
+	r.DELETE("/connections/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
@@ -430,6 +431,30 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
+
+	// IAM Federation: per-connection config (admin-only). The credentials
+	// payload contains an encrypted SA blob, so even read access is
+	// restricted to admins.
+	r.GET("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetConnectionFederationConfig)
+	r.PUT("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.PutConnectionFederationConfig)
+	r.DELETE("/connections/:nameOrID/federation",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.DeleteConnectionFederationConfig)
+	// Federation dry-run endpoint is intentionally NOT connection-scoped: it
+	// runs against a candidate config supplied entirely in the request body
+	// so the admin UI can validate a draft before any connection or
+	// federation row is persisted.
+	r.POST("/federation/test",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.TestFederationConfig)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
@@ -1184,6 +1209,31 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.Delete)
+
+	r.GET("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.List)
+	r.GET("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Get)
+	r.POST("/rulepacks",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Post)
+	r.PUT("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Put)
+	r.DELETE("/rulepacks/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Delete)
+	r.POST("/rulepacks/:id/apply",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirulepacks.Apply)
 
 	// Event Routing
 	r.GET("/event-routing/catalog",

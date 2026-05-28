@@ -18,6 +18,8 @@ import (
 	"github.com/hoophq/hoop/gateway/api"
 	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+
+	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -132,6 +134,10 @@ func Run() {
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
 		if err != nil {
 			log.Errorf("failed creating default runbook configuration, reason=%v", err)
+		}
+
+		if err := services.SeedDefaultRulepacksForOrg(context.Background(), org.ID); err != nil {
+			log.Errorf("failed seeding default rulepacks, reason=%v", err)
 		}
 
 		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)

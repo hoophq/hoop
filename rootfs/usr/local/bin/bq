@@ -1,11 +1,81 @@
 #!/bin/bash
+#
+# bq wrapper used by the Hoop agent for BigQuery sessions. Supports two auth
+# modes — picked deterministically by which env vars are populated:
+#
+#   1. IAM Federation (preferred when HOOP_GCP_ACCESS_TOKEN is set).
+#      The Hoop gateway resolved a per-user short-lived OAuth token via
+#      service-account impersonation and injected it as an env var. We write
+#      the token to a 0600-mode temp file inside a self-cleaning trap and
+#      point CLOUDSDK_AUTH_ACCESS_TOKEN_FILE at it; gcloud and bq then use
+#      that bearer for every API call so GCP audit logs attribute the query
+#      to the impersonated principal (the human user) instead of to the
+#      admin service account.
+#
+#   2. Legacy service-account file (GOOGLE_APPLICATION_CREDENTIALS pointing
+#      at a JSON key on disk). This is the pre-federation path and stays
+#      supported so customers who have not adopted federation yet keep
+#      working unchanged.
+#
+# The two modes are mutually exclusive. On a current gateway the federation
+# resolver declares GOOGLE_APPLICATION_CREDENTIALS as a superseded static env
+# (see gateway/federation/gcpiam) and the gateway strips it from the session
+# before dispatch, so the "both set" branch below should never fire from a
+# normal session. We still emit the warning as a defense-in-depth signal: it
+# means either an old gateway is in front of this agent or a client passed
+# the legacy var via -e at connect time, and the operator should notice.
 
 set -eo pipefail
 
-: "${GOOGLE_APPLICATION_CREDENTIALS:? Required environment variable not set}"
 export CLOUDSDK_PYTHON=${CLOUDSDK_PYTHON:-"/usr/bin/python3.12"}
 
-gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS 2> /dev/null
-touch $HOME/.bigqueryrc
+touch "$HOME/.bigqueryrc"
 
-/usr/lib/google-cloud-sdk/bin/bq $@
+# Temp dir tracking for federation mode. Cleanup runs unconditionally via
+# trap so a partial failure does not leave the OAuth token on disk.
+HOOP_BQ_TMPDIR=""
+cleanup() {
+  if [[ -n "$HOOP_BQ_TMPDIR" && -d "$HOOP_BQ_TMPDIR" ]]; then
+    rm -rf "$HOOP_BQ_TMPDIR"
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if [[ -n "${HOOP_GCP_ACCESS_TOKEN:-}" ]]; then
+  # IAM Federation path. The token has a finite TTL (minted by the gateway
+  # with a default of 1h); long-running BigQuery jobs that exceed that TTL
+  # will need to be re-submitted in a fresh Hoop session.
+
+  if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+    echo "warning: both HOOP_GCP_ACCESS_TOKEN and GOOGLE_APPLICATION_CREDENTIALS are set; preferring federation" >&2
+  fi
+
+  HOOP_BQ_TMPDIR=$(mktemp -d)
+  chmod 0700 "$HOOP_BQ_TMPDIR"
+  TOKEN_FILE="$HOOP_BQ_TMPDIR/access_token"
+
+  # umask before writing so the file is 0600 even on systems where
+  # mktemp's default differs.
+  ( umask 0177 && printf '%s' "$HOOP_GCP_ACCESS_TOKEN" > "$TOKEN_FILE" )
+  chmod 0600 "$TOKEN_FILE"
+
+  export CLOUDSDK_AUTH_ACCESS_TOKEN_FILE="$TOKEN_FILE"
+  # Defensive: never let the OAuth token bleed into child processes that
+  # only inspect env vars. The token file is the canonical handoff.
+  unset HOOP_GCP_ACCESS_TOKEN
+
+  if [[ -n "${CLOUDSDK_CORE_PROJECT:-}" ]]; then
+    export CLOUDSDK_CORE_PROJECT
+  fi
+
+elif [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+  # Legacy path: activate the service account key file. Suppress the
+  # gcloud nag output but keep stderr captured for errors.
+  gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" 2>/dev/null
+
+else
+  echo "error: no GCP credentials available (set HOOP_GCP_ACCESS_TOKEN via federation or GOOGLE_APPLICATION_CREDENTIALS for legacy path)" >&2
+  exit 1
+fi
+
+/usr/lib/google-cloud-sdk/bin/bq "$@"

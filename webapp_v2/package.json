@@ -26,6 +26,9 @@
     "react-router-dom": "^7.13.0",
     "zustand": "^5.0.11"
   },
+  "overrides": {
+    "js-cookie": "^3.0.7"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.7",

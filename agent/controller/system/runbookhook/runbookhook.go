@@ -61,7 +61,6 @@ func processRequest(client pb.ClientTransport, pkt *pb.Packet) {
 		_ = stdoutw.Close()
 		_ = stderrw.Close()
 
-		// truncate at 4096 bytes
 		outputContent := output.String()
 		if len(outputContent) > maxOutputBytes {
 			remainingBytes := len(outputContent[maxOutputBytes:])

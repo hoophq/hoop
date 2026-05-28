@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"errors"
 	"time"
 
@@ -19,6 +20,7 @@ type GuardRailRules struct {
 	Description   string         `gorm:"column:description"`
 	Input         map[string]any `gorm:"column:input;serializer:json"`
 	Output        map[string]any `gorm:"column:output;serializer:json"`
+	RulepackID    sql.NullString `gorm:"column:rulepack_id"`
 	CreatedAt     time.Time      `gorm:"column:created_at"`
 	UpdatedAt     time.Time      `gorm:"column:updated_at"`
 	ConnectionIDs []string       `gorm:"-"` // Not stored in DB, populated from join query
@@ -33,13 +35,30 @@ type GuardRailConnection struct {
 	CreatedAt    time.Time `gorm:"column:created_at"`
 }
 
-func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
-	var rules []*GuardRailRules
-	err := DB.Table(tableGuardRails).
-		Where("org_id = ?", orgID).
-		Order("name DESC").
-		Find(&rules).Error
+type GuardRailListOption struct {
+	IncludeAllRulepackOwned bool
+	// RulepackID, when non-nil, restricts the result set to rules whose rulepack_id
+	// matches. Setting this implicitly includes rulepack-owned rules.
+	RulepackID *uuid.UUID
+}
 
+func ListGuardRailRules(orgID string, opts ...GuardRailListOption) ([]*GuardRailRules, error) {
+	var opt GuardRailListOption
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	var rules []*GuardRailRules
+	query := DB.Table(tableGuardRails).Where("org_id = ?", orgID)
+
+	switch {
+	case opt.RulepackID != nil:
+		query = query.Where("rulepack_id = ?", *opt.RulepackID)
+	case !opt.IncludeAllRulepackOwned:
+		query = query.Where("rulepack_id IS NULL")
+	}
+
+	err := query.Order("name DESC").Find(&rules).Error
 	if err != nil {
 		return nil, err
 	}
@@ -205,84 +224,103 @@ func DeleteGuardRailRules(orgID, ruleID string) error {
 }
 
 // UpsertGuardRailRuleWithConnections creates or updates a guardrail rule and its connections in a single transaction
+// DeleteGuardRailRulesByRulepackIDTx removes all guardrail rules attached to a rulepack
+// within the caller's transaction. Junction tables (rule-attribute, rule-connection)
+// cascade automatically via their own FK constraints.
+func DeleteGuardRailRulesByRulepackIDTx(tx *gorm.DB, orgID, rulepackID uuid.UUID) error {
+	return tx.Exec(
+		`DELETE FROM `+tableGuardRails+` WHERE org_id = ? AND rulepack_id = ?`,
+		orgID, rulepackID,
+	).Error
+}
+
 func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []string, isNew bool) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		// 1. Create or update the guardrail rule
-		var err error
-		if isNew {
-			// Create new guardrail rule
-			err = tx.Table(tableGuardRails).Model(rule).Create(rule).Error
-			if err == gorm.ErrDuplicatedKey {
-				return ErrAlreadyExists
-			} else if err != nil {
-				return err
-			}
-		} else {
-			// Update existing guardrail rule
-			res := tx.Table(tableGuardRails).
-				Model(rule).
-				Clauses(clause.Returning{}).
-				Updates(GuardRailRules{
-					Name:        rule.Name,
-					Description: rule.Description,
-					Input:       rule.Input,
-					Output:      rule.Output,
-					UpdatedAt:   rule.UpdatedAt,
-				}).
-				Where("org_id = ? AND id = ?", rule.OrgID, rule.ID)
+		return UpsertGuardRailRuleWithConnectionsTx(tx, rule, connectionIDs, isNew)
+	})
+}
 
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected == 0 {
-				return ErrNotFound
-			}
+// UpsertGuardRailRuleWithConnectionsTx is the transaction-aware variant of
+// UpsertGuardRailRuleWithConnections. It runs inside the caller's transaction so the
+// rule and its connection junction rows can be composed atomically with other writes.
+func UpsertGuardRailRuleWithConnectionsTx(tx *gorm.DB, rule *GuardRailRules, connectionIDs []string, isNew bool) error {
+	// 1. Create or update the guardrail rule
+	var err error
+	if isNew {
+		// Create new guardrail rule
+		err = tx.Table(tableGuardRails).Model(rule).Create(rule).Error
+		if err == gorm.ErrDuplicatedKey {
+			return ErrAlreadyExists
+		} else if err != nil {
+			return err
 		}
+	} else {
+		// Update existing guardrail rule
+		res := tx.Table(tableGuardRails).
+			Model(rule).
+			Clauses(clause.Returning{}).
+			Select("name", "description", "input", "output", "rulepack_id", "updated_at").
+			Updates(GuardRailRules{
+				Name:        rule.Name,
+				Description: rule.Description,
+				Input:       rule.Input,
+				Output:      rule.Output,
+				RulepackID:  rule.RulepackID,
+				UpdatedAt:   rule.UpdatedAt,
+			}).
+			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID)
 
-		// 2. Delete existing connections
-		if err := tx.Table(tableGuardRailsConnections).
-			Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
-			Delete(&GuardRailConnection{}).Error; err != nil {
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+	}
+
+	// 2. Delete existing connections
+	if err := tx.Table(tableGuardRailsConnections).
+		Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
+		Delete(&GuardRailConnection{}).Error; err != nil {
+		return err
+	}
+
+	// 3. Add new connections
+	var validConnectionIDs []string
+	for _, connID := range connectionIDs {
+		// Find the connection
+		var conn Connection
+		err := tx.Table("private.connections").
+			Where("org_id = ? AND id = ?", rule.OrgID, connID).
+			First(&conn).Error
+
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// Skip non-existent connections
+				continue
+			}
 			return err
 		}
 
-		// 3. Add new connections
-		var validConnectionIDs []string
-		for _, connID := range connectionIDs {
-			// Find the connection
-			var conn Connection
-			err := tx.Table("private.connections").
-				Where("org_id = ? AND id = ?", rule.OrgID, connID).
-				First(&conn).Error
-
-			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					// Skip non-existent connections
-					continue
-				}
-				return err
-			}
-
-			// Add the association
-			newConnection := GuardRailConnection{
-				ID:           uuid.NewString(),
-				OrgID:        rule.OrgID,
-				RuleID:       rule.ID,
-				ConnectionID: conn.ID,
-				CreatedAt:    time.Now().UTC(),
-			}
-
-			if err := tx.Table(tableGuardRailsConnections).Create(&newConnection).Error; err != nil {
-				return err
-			}
-
-			// Track successfully added connection ID
-			validConnectionIDs = append(validConnectionIDs, conn.ID)
+		// Add the association
+		newConnection := GuardRailConnection{
+			ID:           uuid.NewString(),
+			OrgID:        rule.OrgID,
+			RuleID:       rule.ID,
+			ConnectionID: conn.ID,
+			CreatedAt:    time.Now().UTC(),
 		}
 
-		// Set the valid connection IDs directly
-		rule.ConnectionIDs = validConnectionIDs
+		if err := tx.Table(tableGuardRailsConnections).Create(&newConnection).Error; err != nil {
+			return err
+		}
 
-		return nil
-	})
+		// Track successfully added connection ID
+		validConnectionIDs = append(validConnectionIDs, conn.ID)
+	}
+
+	// Set the valid connection IDs directly
+	rule.ConnectionIDs = validConnectionIDs
+
+	return nil
 }

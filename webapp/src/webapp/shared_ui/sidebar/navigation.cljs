@@ -48,6 +48,8 @@
                [nav-link {:uri (:uri route)
                           :icon (:icon route)
                           :label (:name route)
+                          :feature-flag (:feature-flag route)
+                          :free-feature? (:free-feature? route)
                           :admin-only? (:admin-only? route)
                           :admin? admin?
                           :current-route current-route
@@ -75,6 +77,8 @@
                  [nav-link {:uri (:uri route)
                             :icon (:icon route)
                             :label (:label route)
+                            :feature-flag (:feature-flag route)
+                            :free-feature? (:free-feature? route)
                             :admin-only? (:admin-only? route)
                             :admin? admin?
                             :current-route current-route
@@ -94,6 +98,8 @@
                  [nav-link {:uri (:uri route)
                             :icon (:icon route)
                             :label (:label route)
+                            :feature-flag (:feature-flag route)
+                            :free-feature? (:free-feature? route)
                             :admin-only? (:admin-only? route)
                             :admin? admin?
                             :current-route current-route
