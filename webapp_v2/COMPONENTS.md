@@ -349,15 +349,24 @@ When adding a new service file, follow the pattern in `services/agents.js`.
 
 ---
 
-## Notifications
+## Notifications — `showSnackbar`
 
-Use `@mantine/notifications` directly in page components after async actions:
+Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
+same library the legacy CLJS app uses — so toasts look identical across React and
+CLJS routes. The single `<Toaster>` is mounted in `src/App.jsx`.
+
 ```js
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar'
 
-notifications.show({ message: 'Agent deleted.', color: 'green' })
-notifications.show({ message: 'Failed to delete agent.', color: 'red' })
+showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
+showSnackbar({ level: 'error',   text: 'Failed to update.', description: err.message })
+showSnackbar({ level: 'info',    text: 'Heads up.' })
 ```
+
+Do NOT import `notifications` from `@mantine/notifications` in new code — it renders a
+completely different visual and breaks parity with v1. Pre-existing pages that still
+use it should be migrated opportunistically. See the "Snackbars / Toasts" section of
+`CLAUDE.md` for the full rule.
 
 ---
 

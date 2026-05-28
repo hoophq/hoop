@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Grid, Group, Stack, Text, Title, Box } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar'
 import { ArrowLeft } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
@@ -57,7 +57,7 @@ export default function AiAgentsIdentitiesForm() {
           setGroups(agent.groups ?? [])
         }
       } catch {
-        notifications.show({ message: 'Failed to load data.', color: 'red' })
+        showSnackbar({ level: 'error', text: 'Failed to load data.' })
       } finally {
         setLoading(false)
       }
@@ -67,23 +67,23 @@ export default function AiAgentsIdentitiesForm() {
 
   async function handleSubmit() {
     if (!name.trim()) {
-      notifications.show({ message: 'Name is required.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Name is required.' })
       return
     }
     setSaving(true)
     try {
       if (isEdit) {
         await aiAgentsService.update(id, { name, groups })
-        notifications.show({ message: 'AI Agent updated.', color: 'green' })
+        showSnackbar({ level: 'success', text: 'AI Agent updated.' })
         navigate(LIST_PATH)
       } else {
         const res = await aiAgentsService.create({ name, groups })
         navigate(CREATED_PATH, { state: { agent: res.data } })
       }
     } catch {
-      notifications.show({
-        message: `Failed to ${isEdit ? 'update' : 'create'} AI Agent.`,
-        color: 'red',
+      showSnackbar({
+        level: 'error',
+        text: `Failed to ${isEdit ? 'update' : 'create'} AI Agent.`,
       })
     } finally {
       setSaving(false)

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Group, Stack, Text, Title, Tooltip } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
+import { Button, Group, Stack, Text, Title } from '@mantine/core'
+import { showSnackbar } from '@/utils/snackbar'
 import { KeyRound, Unplug } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
@@ -9,6 +9,7 @@ import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
 import ActionMenu from '@/components/ActionMenu'
 import Modal from '@/components/Modal'
+import Tooltip from '@/components/Tooltip'
 import { aiAgentsService } from '@/services/aiAgents'
 import { truncateKey } from '@/utils/maskedKey'
 
@@ -51,10 +52,10 @@ export default function AiAgentsIdentities() {
   async function handleRevoke(agent) {
     try {
       await aiAgentsService.revoke(agent.id)
-      notifications.show({ message: 'AI Agent deactivated.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
       fetchAgents()
     } catch {
-      notifications.show({ message: 'Failed to deactivate AI Agent.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Failed to deactivate AI Agent.' })
     } finally {
       setConfirmRevoke(null)
     }
@@ -63,10 +64,10 @@ export default function AiAgentsIdentities() {
   async function handleReactivate(agent) {
     try {
       await aiAgentsService.reactivate(agent.id)
-      notifications.show({ message: 'AI Agent reactivated.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'AI Agent reactivated.' })
       fetchAgents()
     } catch {
-      notifications.show({ message: 'Failed to reactivate AI Agent.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Failed to reactivate AI Agent.' })
     }
   }
 
