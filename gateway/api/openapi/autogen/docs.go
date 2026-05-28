@@ -8438,7 +8438,7 @@ const docTemplate = `{
         },
         "/sessions/{session_id}/stream": {
             "get": {
-                "description": "Streams audit events for a machine session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
+                "description": "Streams audit events for an open session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
                 "produces": [
                     "text/event-stream"
                 ],

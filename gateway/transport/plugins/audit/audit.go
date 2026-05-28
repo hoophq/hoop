@@ -138,10 +138,8 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
 
-	if isMachine {
-		if err := p.startMachineFlushTicker(pctx); err != nil {
-			return fmt.Errorf("failed starting machine flush ticker, reason=%v", err)
-		}
+	if err := p.startFlushTicker(pctx); err != nil {
+		return fmt.Errorf("failed starting flush ticker, reason=%v", err)
 	}
 
 	p.mu = sync.RWMutex{}
@@ -316,17 +314,11 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 	go func() {
 		defer memorySessionStore.Del(pctx.SID)
 
-		if pctx.IdentityType == identityTypeMachine {
-			if cerr := p.closeMachineSession(pctx, err); cerr != nil {
-				log.With("sid", pctx.SID).Warnf("failed closing machine session: %v", cerr)
-			}
-			eventbroker.Default.Remove(pctx.SID)
-		} else {
-			if err := p.writeOnClose(pctx, err); err != nil {
-				log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-					Warnf("failed closing session, reason=%v", err)
-			}
+		if cerr := p.closeSessionWAL(pctx, err); cerr != nil {
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Warnf("failed closing session, reason=%v", cerr)
 		}
+		eventbroker.Default.Remove(pctx.SID)
 
 		trackClient := analytics.New()
 		defer trackClient.Close()

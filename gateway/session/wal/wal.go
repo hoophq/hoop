@@ -38,7 +38,7 @@ func Open(filePath string) (*WalLog, error) {
 	return &WalLog{filePath: filePath, writeIndex: defaultHeaderIndex, wlog: wlog}, nil
 }
 
-// OpenWithHeader opens the wallog and write the header, it's up to the caller to close the wal file
+// OpenWriteHeader opens the wallog and writes the header; it's up to the caller to close the wal file
 func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 	wlog, err := Open(filepPath)
 	if err != nil {
@@ -50,16 +50,6 @@ func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 func FileNotExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return os.IsNotExist(err)
-}
-
-// OpenWithHeader opens the wallog and returns the header of the log, it's up to the caller to close the wal file
-func OpenWithHeader(filepPath string) (wlog *WalLog, h *Header, err error) {
-	wlog, err = Open(filepPath)
-	if err != nil {
-		return
-	}
-	h, err = wlog.Header()
-	return
 }
 
 // Header retrieves the header from the wal file
@@ -132,11 +122,6 @@ func (w *WalLog) ReadAtMost(max uint32, readerFn ReaderFunc) (bool, error) {
 		}
 	}
 	return truncated, nil
-}
-
-// ReadFull reads events from the write ahead log until it reaches it max default size.
-func (w *WalLog) ReadFull(readerFn ReaderFunc) (bool, error) {
-	return w.ReadAtMost(DefaultMaxRead, readerFn)
 }
 
 // ReadFrom reads events starting at startIndex (inclusive) until end of log,

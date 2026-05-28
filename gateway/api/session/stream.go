@@ -28,7 +28,7 @@ type sessionStreamEvent struct {
 // StreamSession streams session events via Server-Sent Events.
 //
 //	@Summary		Stream Session Events
-//	@Description	Streams audit events for a machine session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.
+//	@Description	Streams audit events for an open session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.
 //	@Tags			Sessions
 //	@Produce		text/event-stream
 //	@Param			session_id		path	string	true	"The session ID"
@@ -50,10 +50,6 @@ func StreamSession(c *gin.Context) {
 	}
 	if !canAccessSession(ctx, session) {
 		c.JSON(http.StatusForbidden, gin.H{"message": "user is not allowed to access this session"})
-		return
-	}
-	if session.IdentityType != "machine" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "streaming is only supported for machine sessions"})
 		return
 	}
 

@@ -21,6 +21,18 @@ func (s *SessionMetric) addInfoType(key string, size int64) {
 	}
 }
 
+// merge folds another metric's DLP counters into this one. Used to accumulate
+// per-flush window metrics into the cumulative session total. Both receiver and
+// argument come from newSessionMetric, so DataMasking is always initialized.
+func (s *SessionMetric) merge(other SessionMetric) {
+	s.DataMasking.TotalRedactCount += other.DataMasking.TotalRedactCount
+	s.DataMasking.TransformedBytes += other.DataMasking.TransformedBytes
+	s.DataMasking.ErrCount += other.DataMasking.ErrCount
+	for k, v := range other.DataMasking.InfoTypes {
+		s.DataMasking.InfoTypes[k] += v
+	}
+}
+
 func (s *SessionMetric) toMap() (map[string]any, error) {
 	data, err := json.Marshal(s)
 	if err != nil {
