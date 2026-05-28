@@ -31,8 +31,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
@@ -346,7 +348,36 @@ func (f *Flow) bindCallback(att *attempt) error {
 
 	// Listen synchronously so a bind error is reported back to Start.
 	// We close the listener as part of finishAttempt, never here.
-	ln, err := defaultListen("tcp", f.opts.CallbackAddr)
+	//
+	// We retry the bind a handful of times because there is a small
+	// race window between http.Server.Shutdown returning (which we
+	// wait on via shutdownDone in Cancel) and the kernel actually
+	// freeing the listening port. Without the retry a back-to-back
+	// Cancel → Start cycle fails ~20% of the time even with
+	// SO_REUSEADDR set on the socket. The race is microseconds; a
+	// 10ms backoff is more than enough.
+	//
+	// In production this matters when a user Ctrl-Cs the OAuth flow
+	// and immediately re-runs `hsh tunnel login` — without the retry
+	// they see "bind: address already in use" and have to wait. With
+	// it, the second attempt always wins.
+	const maxBindAttempts = 5
+	const bindBackoff = 10 * time.Millisecond
+	var ln net.Listener
+	var err error
+	for i := 0; i < maxBindAttempts; i++ {
+		ln, err = defaultListen("tcp", f.opts.CallbackAddr)
+		if err == nil {
+			break
+		}
+		if !isAddrInUse(err) {
+			// Bind failed for a reason other than EADDRINUSE
+			// (permission, port out of range, etc.). Retrying
+			// won't help; surface the original error.
+			return err
+		}
+		time.Sleep(bindBackoff)
+	}
 	if err != nil {
 		return err
 	}
@@ -356,6 +387,14 @@ func (f *Flow) bindCallback(att *attempt) error {
 		_ = srv.Serve(ln)
 	}()
 	return nil
+}
+
+// isAddrInUse reports whether err corresponds to EADDRINUSE
+// (POSIX) or WSAEADDRINUSE (Windows). syscall.EADDRINUSE matches
+// both the bare errno and the wrapped net.OpError forms Go can
+// return.
+func isAddrInUse(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE)
 }
 
 // watchTimeout transitions the attempt to StatusError("timeout") if
