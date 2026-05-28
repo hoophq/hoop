@@ -1794,6 +1794,42 @@ const docTemplate = `{
                     }
                 }
             },
+            "delete": {
+                "description": "Delete a connection resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Delete Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "patch": {
                 "description": "Partial update of a connection resource. Only provided fields will be updated.",
                 "consumes": [
@@ -2326,6 +2362,137 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/federation": {
+            "get": {
+                "description": "Returns the IAM federation configuration for a connection. The admin credentials are never returned in plaintext; only a presence indicator is included.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Get Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Creates or updates the IAM federation configuration for a connection. AdminCredentialsJSON is write-only; omit on update to preserve the stored value.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Upsert Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the IAM federation configuration for a connection. Subsequent sessions on this connection revert to the static connection envs.",
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Delete Federation Configuration for a Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -2458,44 +2625,6 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
                         }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/connections/{name}": {
-            "delete": {
-                "description": "Delete a connection resource.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Connections"
-                ],
-                "summary": "Delete Connection",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The name of the resource",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
                     },
                     "404": {
                         "description": "Not Found",
@@ -2945,6 +3074,52 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/federation/test": {
+            "post": {
+                "description": "Resolves the candidate federation configuration against a synthetic user AND dispatches a one-shot smoke probe (the caller-supplied test_script, e.g. \"SELECT 1\") to the agent identified in the request body. Persisted state is never read or written: the entire candidate connection + federation pair lives in the body. Returns the resolved principal, the env-var keys that were injected (values are never returned), and the agent-side stdout/stderr of the probe. Success requires both phases to succeed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Test a Federation Configuration End-to-End",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationTestResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -10840,6 +11015,92 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionFederationConfig": {
+            "type": "object",
+            "required": [
+                "hook_source"
+            ],
+            "properties": {
+                "admin_credentials_json": {
+                    "description": "AdminCredentialsJSON is the plaintext admin credential blob (for\nbuiltin/gcp_iam: the admin service account JSON). Write-only — never\nreturned on GET. Required on the initial POST when HookSource=builtin;\noptional on PUT (omitting it leaves the stored value unchanged).",
+                    "type": "string"
+                },
+                "builtin_provider": {
+                    "description": "BuiltinProvider is required when HookSource=builtin. Only \"gcp_iam\"\nships today.",
+                    "type": "string",
+                    "enum": [
+                        "gcp_iam"
+                    ],
+                    "example": "gcp_iam"
+                },
+                "connection_id": {
+                    "description": "ConnectionID is the connection this federation config applies to.\nPopulated by the server from the URL path on writes.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "created_at": {
+                    "description": "CreatedAt / UpdatedAt are server-set audit timestamps.",
+                    "type": "string",
+                    "example": "2025-05-25T17:00:00Z"
+                },
+                "extra_config": {
+                    "description": "ExtraConfig is provider-specific freeform JSON (e.g. {\"project_id\":\n\"my-gcp-proj\"}). The gateway does not interpret unknown keys.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "fallback_policy": {
+                    "description": "FallbackPolicy controls behavior when resolution fails.",
+                    "type": "string",
+                    "enum": [
+                        "deny",
+                        "readonly"
+                    ],
+                    "example": "deny"
+                },
+                "has_admin_credentials": {
+                    "description": "HasAdminCredentials is server-set on GET responses to let the UI know\nwhether a credential is stored without exposing its value.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "hook_source": {
+                    "description": "HookSource selects which resolver category the gateway runs. Only the\nbuilt-in resolver category ships today; the field is preserved so new\nsources can be added without breaking existing configurations.",
+                    "type": "string",
+                    "enum": [
+                        "builtin"
+                    ],
+                    "example": "builtin"
+                },
+                "id": {
+                    "description": "ID is the federation row's UUID. Empty on POST requests; populated on\nGET/PUT responses.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "identity_source_attribute": {
+                    "description": "IdentitySourceAttribute is a JSONPath-like accessor into the Hoop user\n(defaults to $.user.email).",
+                    "type": "string",
+                    "example": "$.user.email"
+                },
+                "identity_target_template": {
+                    "description": "IdentityTargetTemplate is the principal template the source attribute\nsubstitutes into (defaults to \"{user.email}\").",
+                    "type": "string",
+                    "example": "{user.email}"
+                },
+                "readonly_principal": {
+                    "description": "ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as\nthe impersonation target on the fallback path.",
+                    "type": "string",
+                    "example": "hoop-readonly@example.com"
+                },
+                "token_ttl_seconds": {
+                    "description": "TokenTTLSeconds caps the lifetime of generated credentials (default\n3600, max 43200). Built-in providers may clamp lower based on cloud\nAPI limits.",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2025-05-25T17:00:00Z"
+                }
+            }
+        },
         "openapi.ConnectionPatch": {
             "type": "object",
             "properties": {
@@ -11862,6 +12123,156 @@ const docTemplate = `{
                 "FeatureStatusEnabled",
                 "FeatureStatusDisabled"
             ]
+        },
+        "openapi.FederationTestConnection": {
+            "type": "object",
+            "required": [
+                "agent_id",
+                "command",
+                "test_script"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "AgentID is the agent the probe will run on. Required. Must be the\nid of an agent currently connected to the gateway.",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "command": {
+                    "description": "Command is the argv the agent invokes. args[0] is the binary,\nargs[1:] are flags. Required: keeping it caller-supplied avoids\nshipping connection-type-specific defaults inside the gateway that\nmay drift from real connections.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "bq",
+                        "query",
+                        "--use_legacy_sql=false"
+                    ]
+                },
+                "envs": {
+                    "description": "Envs are the candidate connection's static env vars (host, port,\nproject id, etc.). The federation-produced env vars are merged on\ntop; on conflict the federated value wins.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "subtype": {
+                    "type": "string",
+                    "example": "bigquery"
+                },
+                "test_script": {
+                    "description": "TestScript is the payload fed to the spawned process on stdin (and\nrendered through text/template by the agent). For SQL connections\nthis is the smoke query (e.g. \"SELECT 1\"). Required for the same\nreason as Command: the gateway does not infer it.",
+                    "type": "string",
+                    "example": "SELECT 1"
+                },
+                "type": {
+                    "description": "Type and SubType mirror the persisted connection's type+subtype.\nInformational only: the gateway does not derive any behaviour from\nthem today — the probe binary is taken from Command. They are\nsurfaced in the response to make audit-trail correlation easier and\nto give future versions a structured place to plug in\ntype-aware defaults without breaking the wire contract.",
+                    "type": "string",
+                    "example": "database"
+                }
+            }
+        },
+        "openapi.FederationTestRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "connection",
+                "user_email"
+            ],
+            "properties": {
+                "config": {
+                    "description": "Config is the candidate federation configuration to test. Required.\nCarries the plaintext admin_credentials_json the resolver will use to\nauthenticate; the value never reaches persistence on this endpoint.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ConnectionFederationConfig"
+                        }
+                    ]
+                },
+                "connection": {
+                    "description": "Connection is the candidate connection the probe runs against.\nRequired. The endpoint does NOT look up a persisted connection by\nname/id — the caller supplies the agent, command, script and envs\ndirectly so a wizard draft can be exercised before persistence.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.FederationTestConnection"
+                        }
+                    ]
+                },
+                "user_email": {
+                    "description": "UserEmail is the synthetic user to resolve. Required.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "user_id": {
+                    "description": "UserID is the synthetic user ID. Optional; defaults to a deterministic\nUUID derived from UserEmail.",
+                    "type": "string",
+                    "example": "00000000-0000-0000-0000-000000000001"
+                }
+            }
+        },
+        "openapi.FederationTestResponse": {
+            "type": "object",
+            "properties": {
+                "admin_principal": {
+                    "description": "AdminPrincipal is the impersonator identity (e.g. admin SA email).",
+                    "type": "string",
+                    "example": "hoop-admin@proj.iam.gserviceaccount.com"
+                },
+                "env_var_keys": {
+                    "description": "EnvVarKeys lists the env vars the resolver injected into the probe.\nValues are never returned.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "HOOP_GCP_ACCESS_TOKEN",
+                        "HOOP_GCP_TOKEN_EXPIRES_AT"
+                    ]
+                },
+                "error": {
+                    "description": "Error is the human-readable failure reason when Success=false.\nPopulated for federation-resolve failures; probe-side failures are\nreported via ProbeStatus + ProbeOutput.",
+                    "type": "string",
+                    "example": "failed minting access token: permission denied"
+                },
+                "probe_output": {
+                    "description": "ProbeOutput is the agent's merged stdout+stderr from the smoke\nprobe. Empty when ProbeStatus=\"skipped\".",
+                    "type": "string",
+                    "example": "+---+\n| f0_ |\n+---+\n| 1 |\n+---+"
+                },
+                "probe_status": {
+                    "description": "ProbeStatus reports the agent-side outcome. \"success\" when exit\ncode was 0; \"failed\" otherwise; \"skipped\" when federation resolve\nfailed and the probe was not dispatched.",
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed",
+                        "skipped"
+                    ],
+                    "example": "success"
+                },
+                "resolved_principal": {
+                    "description": "ResolvedPrincipal is the principal the resolver impersonated.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "success": {
+                    "description": "Success is true only when federation resolved AND the agent probe\nreturned exit code 0.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "superseded_env_vars": {
+                    "description": "SupersededEnvVars lists the candidate connection's static env var\nnames that the provider's output supersedes and that were therefore\nstripped from the probe (and would be stripped from a real session).\nLets the admin UI show \"these legacy credentials were ignored\" so\nthe operator can confidently remove them from the persisted\nconnection. Example: gcp_iam supersedes GOOGLE_APPLICATION_CREDENTIALS.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "GOOGLE_APPLICATION_CREDENTIALS"
+                    ]
+                },
+                "token_expires_at": {
+                    "description": "TokenExpiresAt is the would-be credential expiry.",
+                    "type": "string",
+                    "example": "2025-05-25T18:00:00Z"
+                }
+            }
         },
         "openapi.GenerateApiKeyResponse": {
             "type": "object",
