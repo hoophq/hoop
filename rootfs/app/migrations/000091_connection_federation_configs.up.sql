@@ -1,7 +1,7 @@
 BEGIN;
 SET search_path TO private;
 
-CREATE TABLE connection_federation_configs (
+CREATE TABLE IF NOT EXISTS connection_federation_configs (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id                      UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
   connection_id               UUID NOT NULL UNIQUE REFERENCES connections(id) ON DELETE CASCADE,
@@ -22,7 +22,7 @@ CREATE TABLE connection_federation_configs (
     CHECK (fallback_policy <> 'readonly' OR readonly_principal IS NOT NULL)
 );
 
-CREATE INDEX idx_connection_federation_configs_org_id
+CREATE INDEX IF NOT EXISTS idx_connection_federation_configs_org_id
   ON connection_federation_configs (org_id);
 
 COMMIT;
