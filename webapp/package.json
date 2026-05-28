@@ -66,6 +66,9 @@
     "tailwindcss-animate": "^1.0.7",
     "unique-names-generator": "^4.7.1"
   },
+  "overrides": {
+    "js-cookie": "^3.0.7"
+  },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
     "asciinema-player": "^3.0.1",
