@@ -529,6 +529,24 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	if pctx.ConnectionSecret == nil {
 		pctx.ConnectionSecret = map[string]any{}
 	}
+	// Strip static envs the provider declared as superseded BEFORE the
+	// overlay so the federated envs always win the final state. Both
+	// "envvar:" and "filesystem:" prefixes are removed because connection
+	// templates carry credential blobs under either form (e.g. the
+	// BigQuery template persists GOOGLE_APPLICATION_CREDENTIALS as a
+	// filesystem entry that materializes into a /tmp file on the agent).
+	supersededRemoved := make([]string, 0, len(res.SupersededEnvVars))
+	for _, name := range res.SupersededEnvVars {
+		envKey := fmt.Sprintf("envvar:%s", name)
+		fsKey := fmt.Sprintf("filesystem:%s", name)
+		_, hadEnv := pctx.ConnectionSecret[envKey]
+		_, hadFs := pctx.ConnectionSecret[fsKey]
+		if hadEnv || hadFs {
+			supersededRemoved = append(supersededRemoved, name)
+		}
+		delete(pctx.ConnectionSecret, envKey)
+		delete(pctx.ConnectionSecret, fsKey)
+	}
 	for k, v := range res.EnvVars {
 		// Wire contract: keys are "envvar:NAME" (or "filesystem:NAME"); values
 		// are base64-encoded plaintext that the agent's NewEnvVarStore
@@ -564,7 +582,9 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 		"principal", res.ResolvedPrincipal,
 		"fallback", fallbackApplied,
 		"expires-at", res.TokenExpiresAt.Format(time.RFC3339),
-	).Infof("federation: injected %d env var(s) into session", len(res.EnvVars))
+		"superseded", supersededRemoved,
+	).Infof("federation: injected %d env var(s) into session, superseded %d static env(s)",
+		len(res.EnvVars), len(supersededRemoved))
 	_ = stream // reserved for future stream-level acks; suppress unused param warning.
 	return nil
 }

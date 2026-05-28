@@ -32,6 +32,23 @@ type Result struct {
 	// agent/secretsmanager.Decode.
 	EnvVars map[string]string
 
+	// SupersededEnvVars lists static connection env-var NAMES (without any
+	// "envvar:"/"filesystem:" prefix) whose presence on the connection is
+	// made redundant by EnvVars. The session-open path removes these from
+	// the connection's secret map before propagating to the agent so
+	// federated and legacy credentials cannot coexist at runtime.
+	//
+	// Example: the gcp_iam provider emits HOOP_GCP_ACCESS_TOKEN and lists
+	// GOOGLE_APPLICATION_CREDENTIALS here, because the agent-side bq
+	// wrapper prefers the federated token and the legacy key file becomes
+	// dead weight (and a confusing co-existence warning) once federation
+	// is in place.
+	//
+	// Provider authors must keep this list narrow: only the env vars the
+	// provider's output truly supersedes belong here. Stripping unrelated
+	// connection envs would silently break sessions for the customer.
+	SupersededEnvVars []string
+
 	// ResolvedPrincipal is the cloud-side identity the user was impersonated
 	// as. Recorded in session metadata for audit (PRD v1.1 surfaces it).
 	ResolvedPrincipal string

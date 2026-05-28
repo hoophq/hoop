@@ -290,14 +290,22 @@ func TestFederationConfig(c *gin.Context) {
 		return
 	}
 
-	// Phase 2 — agent-side probe. Merge the connection's static envs
-	// with the resolver's output; the federated values must win on key
-	// conflicts because that is what a real session would do (the agent
-	// secretsmanager applies federated envs after static envs on the
-	// session-open path).
+	// Phase 2 — agent-side probe. Mirror the real session-open merge
+	// (see gateway/transport/client.go resolveFederationForSession): start
+	// from the candidate static envs, drop the provider-declared
+	// SupersededEnvVars, then overlay the federation output on top. This
+	// keeps the wizard's "test" verdict honest — if a real session would
+	// run without GOOGLE_APPLICATION_CREDENTIALS, so should the probe.
 	probeEnvs := make(map[string]string, len(req.Connection.Envs)+len(res.EnvVars))
 	for k, v := range req.Connection.Envs {
 		probeEnvs[k] = v
+	}
+	supersededInTest := make([]string, 0, len(res.SupersededEnvVars))
+	for _, name := range res.SupersededEnvVars {
+		if _, ok := probeEnvs[name]; ok {
+			supersededInTest = append(supersededInTest, name)
+		}
+		delete(probeEnvs, name)
 	}
 	for k, v := range res.EnvVars {
 		probeEnvs[k] = v
@@ -327,6 +335,7 @@ func TestFederationConfig(c *gin.Context) {
 		ResolvedPrincipal: res.ResolvedPrincipal,
 		AdminPrincipal:    res.AdminPrincipal,
 		EnvVarKeys:        envKeys,
+		SupersededEnvVars: supersededInTest,
 		TokenExpiresAt:    res.TokenExpiresAt.Format(time.RFC3339),
 		ProbeStatus:       probeResp.Status,
 		ProbeOutput:       probeResp.Output,

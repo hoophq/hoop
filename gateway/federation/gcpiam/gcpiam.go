@@ -15,6 +15,20 @@
 //	HOOP_FEDERATED_PRINCIPAL      The resolved user principal (e.g. user@org.com).
 //	                              Informational, surfaces in audit + bq logs.
 //
+// Superseded static envs (removed from the connection's secret map at
+// session-open):
+//
+//	GOOGLE_APPLICATION_CREDENTIALS The legacy service-account key file path.
+//	                              Federation replaces it with the
+//	                              CLOUDSDK_AUTH_ACCESS_TOKEN_FILE flow the
+//	                              agent's bq wrapper sets up from the access
+//	                              token. Stripping it server-side means
+//	                              customers who haven't pruned the legacy
+//	                              credential from the connection don't see
+//	                              both auth paths active simultaneously, and
+//	                              the bq wrapper's "both set" warning never
+//	                              fires from a fresh deployment.
+//
 // The agent's bq wrapper at rootfs/usr/local/bin/bq writes the access token to
 // a tmpfile and exports CLOUDSDK_AUTH_ACCESS_TOKEN_FILE so the bq CLI picks up
 // the impersonated identity. Customers who bring their own agent image are
@@ -152,6 +166,13 @@ func (r *Resolver) Resolve(ctx context.Context, req federation.ResolveRequest) (
 			"CLOUDSDK_CORE_PROJECT":     extra.ProjectID,
 			"HOOP_FEDERATED_PRINCIPAL":  req.ResolvedPrincipal,
 		},
+		// GOOGLE_APPLICATION_CREDENTIALS is the legacy SA-key auth path; the
+		// federated access token replaces it end-to-end (gateway mints token
+		// → agent's bq wrapper writes a 0600 token file → bq picks it up
+		// via CLOUDSDK_AUTH_ACCESS_TOKEN_FILE). Stripping it server-side
+		// keeps both auth modes from coexisting at runtime — see the
+		// supersede contract on federation.Result.
+		SupersededEnvVars: []string{"GOOGLE_APPLICATION_CREDENTIALS"},
 		ResolvedPrincipal: req.ResolvedPrincipal,
 		AdminPrincipal:    adminEmail,
 		TokenExpiresAt:    expiresAt,

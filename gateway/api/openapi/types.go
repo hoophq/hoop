@@ -2115,6 +2115,13 @@ type FederationTestResponse struct {
 	// EnvVarKeys lists the env vars the resolver injected into the probe.
 	// Values are never returned.
 	EnvVarKeys []string `json:"env_var_keys,omitempty" example:"HOOP_GCP_ACCESS_TOKEN,HOOP_GCP_TOKEN_EXPIRES_AT"`
+	// SupersededEnvVars lists the candidate connection's static env var
+	// names that the provider's output supersedes and that were therefore
+	// stripped from the probe (and would be stripped from a real session).
+	// Lets the admin UI show "these legacy credentials were ignored" so
+	// the operator can confidently remove them from the persisted
+	// connection. Example: gcp_iam supersedes GOOGLE_APPLICATION_CREDENTIALS.
+	SupersededEnvVars []string `json:"superseded_env_vars,omitempty" example:"GOOGLE_APPLICATION_CREDENTIALS"`
 	// TokenExpiresAt is the would-be credential expiry.
 	TokenExpiresAt string `json:"token_expires_at,omitempty" example:"2025-05-25T18:00:00Z"`
 	// ProbeStatus reports the agent-side outcome. "success" when exit

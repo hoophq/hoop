@@ -203,6 +203,30 @@ func TestProvider_ReturnsRegisteredName(t *testing.T) {
 	}
 }
 
+// TestResolve_SupersedesLegacyGAC pins the public contract: when the gcp_iam
+// resolver succeeds, the session-open path must drop the legacy
+// GOOGLE_APPLICATION_CREDENTIALS from the connection's static envs. Without
+// this, customers who haven't manually pruned their connection see both the
+// federated access token AND the legacy SA key file active at runtime — the
+// agent's bq wrapper detects the dual-set state and emits a noisy "both set;
+// preferring federation" warning on every session, hiding real problems.
+func TestResolve_SupersedesLegacyGAC(t *testing.T) {
+	issuer := &fakeIssuer{token: "ya29.ok", expiresAt: time.Now().Add(time.Hour)}
+	r := newResolverWithIssuer(issuer)
+
+	res, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "alice@acme.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.SupersededEnvVars) != 1 || res.SupersededEnvVars[0] != "GOOGLE_APPLICATION_CREDENTIALS" {
+		t.Errorf("SupersededEnvVars=%v, want [GOOGLE_APPLICATION_CREDENTIALS]", res.SupersededEnvVars)
+	}
+}
+
 // TestResolve_PreflightRejectsBrokenSAPrincipal exercises the path that bit
 // real users: a template like "{user.email}@<project>.iam.gserviceaccount.com"
 // against a user whose email is "alice@acme.com" produces a double-"@"

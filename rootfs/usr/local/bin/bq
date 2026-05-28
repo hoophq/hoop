@@ -17,9 +17,13 @@
 #      supported so customers who have not adopted federation yet keep
 #      working unchanged.
 #
-# The two modes are mutually exclusive — if both are set, federation wins,
-# but we log a warning to stderr so the operator notices and removes the
-# obsolete credential.
+# The two modes are mutually exclusive. On a current gateway the federation
+# resolver declares GOOGLE_APPLICATION_CREDENTIALS as a superseded static env
+# (see gateway/federation/gcpiam) and the gateway strips it from the session
+# before dispatch, so the "both set" branch below should never fire from a
+# normal session. We still emit the warning as a defense-in-depth signal: it
+# means either an old gateway is in front of this agent or a client passed
+# the legacy var via -e at connect time, and the operator should notice.
 
 set -eo pipefail
 
