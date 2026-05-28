@@ -22,6 +22,8 @@ import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
+import Rulepacks from '@/pages/Rulepacks'
+import RulepackDetail from '@/pages/Rulepacks/Detail'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
@@ -220,6 +222,32 @@ function Router() {
             <Layout>
               <PageLayout>
                 <OrganizationUsers />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Rulepacks (gated by experimental.rulepacks feature flag) */}
+      <Route
+        path="/rulepacks"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <Rulepacks />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rulepacks/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <RulepackDetail />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

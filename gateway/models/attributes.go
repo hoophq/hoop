@@ -9,11 +9,12 @@ import (
 )
 
 type Attribute struct {
-	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	OrgID       uuid.UUID `gorm:"column:org_id;index:idx_attributes_org_name,unique"`
-	Name        string    `gorm:"column:name;index:idx_attributes_org_name,unique"`
-	Description *string   `gorm:"column:description"`
-	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
+	ID          uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID       uuid.UUID  `gorm:"column:org_id;index:idx_attributes_org_name,unique"`
+	Name        string     `gorm:"column:name;index:idx_attributes_org_name,unique"`
+	Description *string    `gorm:"column:description"`
+	RulepackID  *uuid.UUID `gorm:"column:rulepack_id"`
+	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime"`
 
 	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
@@ -197,11 +198,16 @@ type AttributeFilterOption struct {
 	Search   string
 	Page     int
 	PageSize int
+	IncludeRulepackOwned bool
 }
 
 func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([]*Attribute, int64, error) {
 	var total int64
 	query := db.Model(&Attribute{}).Where("org_id = ?", orgID)
+
+	if !opts.IncludeRulepackOwned {
+		query = query.Where("rulepack_id IS NULL")
+	}
 
 	if opts.Search != "" {
 		query = query.Where("name ILIKE ?", "%"+opts.Search+"%")
@@ -281,12 +287,25 @@ func GetConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string
 	return attributeNames, nil
 }
 
-// UpsertConnectionAttributes replaces all attribute associations for the given connection.
-// If an attribute name does not exist in the attributes table, it is created automatically.
+// UpsertConnectionAttributes replaces the user-owned attribute associations for the given
+// connection. Rulepack-owned attribute associations (those whose attribute row has a non-null
+// rulepack_id) are preserved across the update so that a round-trip from the list endpoint
+// (which omits rulepack-owned attributes from the response) cannot accidentally remove them.
+// If an attribute name in the request does not exist in the attributes table, it is created
+// automatically as a non-rulepack attribute.
 func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string, attributeNames []string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("org_id = ? AND connection_name = ?", orgID, connectionName).
-			Delete(&ConnectionAttribute{}).Error; err != nil {
+		err := tx.Exec(`
+			DELETE FROM private.connections_attributes ca
+			WHERE ca.org_id = ? AND ca.connection_name = ?
+			  AND NOT EXISTS (
+			    SELECT 1 FROM private.attributes a
+			    WHERE a.org_id = ca.org_id
+			      AND a.name = ca.attribute_name
+			      AND a.rulepack_id IS NOT NULL
+			  )
+		`, orgID, connectionName).Error
+		if err != nil {
 			return err
 		}
 		if len(attributeNames) == 0 {

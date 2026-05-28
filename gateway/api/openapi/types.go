@@ -3102,14 +3102,66 @@ type Attributes struct {
 }
 
 type AttributeRequest struct {
-	// The name of the attribute
-	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Name string `json:"name" binding:"required" example:"default-session-attribute"`
+	// The description of the attribute
 	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
 	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
 	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
+}
+
+type RulepackRequest struct {
+	// Human-readable display name for the rulepack (unique per organization)
+	DisplayName string `json:"display_name" binding:"required" example:"PCI Database Access"`
+	// Optional description of what the rulepack provides
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// Data masking rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned data masking rules.
+	DataMaskingRules []DataMaskingRuleRequest `json:"data_masking_rules,omitempty"`
+	// Guardrail rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned guardrail rules.
+	GuardRailRules []GuardRailRuleRequest `json:"guardrail_rules,omitempty"`
+}
+
+type RulepackApplyRequest struct {
+	// Names of connections this rulepack should be applied to. Replace-all semantics:
+	// after the call, the rulepack is attached to exactly these connections.
+	// Connections previously tagged with this rulepack that are not in the list lose
+	// the tag; non-rulepack attributes on every affected connection are preserved.
+	// Pass an empty array to remove the rulepack from all connections.
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+}
+
+type Rulepack struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this rulepack
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// Human-readable display name for the rulepack
+	DisplayName string `json:"display_name" example:"PCI Database Access"`
+	// Optional description
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Optional version string
+	Version *string `json:"version,omitempty" example:"1.0.0"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// True for Hoop-managed rulepacks (read-only for users)
+	IsManaged bool `json:"is_managed" readonly:"true" example:"false"`
+	// Data masking rules attached to this rulepack
+	DataMaskingRules []DataMaskingRule `json:"data_masking_rules"`
+	// Guardrail rules attached to this rulepack
+	GuardRailRules []GuardRailRuleResponse `json:"guardrail_rules"`
+	// Names of connections this rulepack has been applied to. Populated from the
+	// rulepack attribute's connection junctions; empty when no connections are tagged.
+	ConnectionNames []string `json:"connection_names"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was last updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 // Event Routing types

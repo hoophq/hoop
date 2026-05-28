@@ -8,11 +8,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -71,7 +73,9 @@ func Post(c *gin.Context) {
 	}
 
 	if getLicenseType(ctx) == license.OSSType {
-		rules, err := models.ListGuardRailRules(ctx.GetOrgID())
+		rules, err := models.ListGuardRailRules(ctx.GetOrgID(), models.GuardRailListOption{
+			IncludeAllRulepackOwned: false,
+		})
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guardrail rules: %v", err)
 			return
@@ -144,6 +148,24 @@ func Put(c *gin.Context) {
 		return
 	}
 
+	ruleID := c.Param("id")
+	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
+		existing, err := models.GetGuardRailRules(ctx.GetOrgID(), ruleID)
+		switch err {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+			return
+		case nil:
+			if existing.RulepackID.Valid {
+				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
+				return
+			}
+		default:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching guardrail rule: %v", err)
+			return
+		}
+	}
+
 	if getLicenseType(ctx) == license.OSSType {
 		if err := validateOssRulesLimitations(req); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
@@ -156,7 +178,7 @@ func Put(c *gin.Context) {
 
 	rule := &models.GuardRailRules{
 		OrgID:       ctx.GetOrgID(),
-		ID:          c.Param("id"),
+		ID:          ruleID,
 		Name:        req.Name,
 		Description: req.Description,
 		Input:       req.Input,
@@ -250,8 +272,10 @@ func Get(c *gin.Context) {
 			Description:   rule.Description,
 			Input:         rule.Input,
 			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs, Attributes: rule.Attributes, CreatedAt: rule.CreatedAt,
-			UpdatedAt: rule.UpdatedAt,
+			ConnectionIDs: rule.ConnectionIDs,
+			Attributes:    rule.Attributes,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
@@ -271,6 +295,23 @@ func Get(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleID := c.Param("id")
+
+	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
+		existing, err := models.GetGuardRailRules(ctx.GetOrgID(), ruleID)
+		switch err {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+			return
+		case nil:
+			if existing.RulepackID.Valid {
+				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
+				return
+			}
+		default:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching guardrail rule: %v", err)
+			return
+		}
+	}
 
 	err := models.DeleteGuardRailRules(ctx.GetOrgID(), ruleID)
 	switch err {

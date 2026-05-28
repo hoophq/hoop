@@ -16,6 +16,7 @@ import {
   Puzzle,
   Settings,
   Search,
+  WandSparkles,
   Layers,
   KeyRound,
   Webhook,
@@ -59,6 +60,13 @@ export const DISCOVER_ITEMS = [
   { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true },
   { label: 'AI Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
   { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true },
+  {
+    label: 'Rulepacks',
+    path: '/rulepacks',
+    icon: WandSparkles,
+    adminOnly: true,
+    featureFlag: 'experimental.rulepacks'
+  },
   {
     label: 'Resource Discovery',
     path: '/integrations/aws-connect',
