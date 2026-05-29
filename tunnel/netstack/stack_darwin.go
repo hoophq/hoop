@@ -52,14 +52,23 @@ const (
 	utunHeaderLen = 4
 )
 
-// afInet6Prefix is the 4-byte big-endian AF_INET6 family header utun
-// expects in front of every IPv6 packet we write. macOS uses 30 for
-// AF_INET6. Precomputed once because we prepend it on every Write.
-var afInet6Prefix = func() [utunHeaderLen]byte {
-	var b [utunHeaderLen]byte
-	binary.BigEndian.PutUint32(b[:], uint32(unix.AF_INET6))
-	return b
-}()
+// afInet6Prefix / afInetPrefix are the 4-byte big-endian protocol-family
+// headers utun expects in front of every packet we write — AF_INET6 (30)
+// for IPv6, AF_INET (2) for IPv4. Now that the tunnel is dual-stack, the
+// family is chosen per packet from its IP version nibble. Precomputed
+// once because we prepend one on every Write.
+var (
+	afInet6Prefix = func() [utunHeaderLen]byte {
+		var b [utunHeaderLen]byte
+		binary.BigEndian.PutUint32(b[:], uint32(unix.AF_INET6))
+		return b
+	}()
+	afInetPrefix = func() [utunHeaderLen]byte {
+		var b [utunHeaderLen]byte
+		binary.BigEndian.PutUint32(b[:], uint32(unix.AF_INET))
+		return b
+	}()
+)
 
 // darwinTUN is the utun-backed tunDevice. It wraps the kernel-control
 // socket fd in an *os.File so we get blocking Read/Write semantics and
@@ -160,13 +169,27 @@ func (t *darwinTUN) Read(p []byte) (int, error) {
 	return payload, nil
 }
 
-// Write prepends the AF_INET6 family header utun requires and writes the
-// combined frame in a single syscall. We only ever carry IPv6 (the ADR's
-// ULA-v6 decision), so the family is constant; if we ever add IPv4 here
-// the prefix would have to be derived from the packet's version nibble.
+// Write prepends the protocol-family header utun requires and writes the
+// combined frame in a single syscall. The tunnel is dual-stack, so the
+// family is derived from the IP version nibble of the packet: 6 → AF_INET6,
+// 4 → AF_INET. A packet too short to classify is dropped (reported as 0
+// written) rather than mis-framed.
 func (t *darwinTUN) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	prefix := afInet6Prefix
+	switch p[0] >> 4 {
+	case 6:
+		prefix = afInet6Prefix
+	case 4:
+		prefix = afInetPrefix
+	default:
+		// Not an IPv4 or IPv6 packet — utun would reject it. Drop.
+		return len(p), nil
+	}
 	frame := t.wbuf[:utunHeaderLen+len(p)]
-	copy(frame[:utunHeaderLen], afInet6Prefix[:])
+	copy(frame[:utunHeaderLen], prefix[:])
 	copy(frame[utunHeaderLen:], p)
 	n, err := t.f.Write(frame)
 	if err != nil {
@@ -218,7 +241,7 @@ func parseRequestedUnit(name string) (uint32, error) {
 // PF_ROUTE socket is doable but adds a non-trivial helper for no benefit
 // while we still require root anyway; we can revisit if/when we drop the
 // sudo requirement (post-GA, per RD-207).
-func ConfigureRoutes(deviceName string, prefix string, hostAddr string) error {
+func ConfigureRoutes(cfg RouteConfig) error {
 	if !commandExists("ifconfig") {
 		return fmt.Errorf("netstack: `ifconfig` not found in PATH")
 	}
@@ -226,33 +249,50 @@ func ConfigureRoutes(deviceName string, prefix string, hostAddr string) error {
 		return fmt.Errorf("netstack: `route` not found in PATH")
 	}
 
-	// Assign the host address to the utun interface. macOS uses
+	// --- IPv6 ---
+	// Assign the v6 host address to the utun interface. macOS uses
 	// `ifconfig <dev> inet6 <addr> prefixlen 128` for a single-address
 	// assignment. Re-running on an already-configured interface returns
 	// "File exists"; tolerate it for idempotency.
-	if err := runCmd("ifconfig", deviceName, "inet6", hostAddr, "prefixlen", "128"); err != nil {
+	if err := runCmd("ifconfig", cfg.Device, "inet6", cfg.HostAddr, "prefixlen", "128"); err != nil {
 		if !strings.Contains(err.Error(), "File exists") {
 			return err
 		}
 	}
+	if err := addRoute(cfg.Device, "-inet6", cfg.Prefix); err != nil {
+		return err
+	}
 
-	// Route the whole /48 at the interface. `route -n add -inet6
-	// <prefix> -interface <dev>` is the macOS equivalent of Linux's
-	// `ip -6 route replace <prefix> dev <dev>`. A pre-existing route
-	// produces "File exists"; replace it so a stale route from a crashed
-	// previous run does not point at a dead interface.
-	if err := runCmd("route", "-n", "add", "-inet6", prefix, "-interface", deviceName); err != nil {
-		if strings.Contains(err.Error(), "File exists") {
-			// Replace the stale entry.
-			_ = runCmd("route", "-n", "delete", "-inet6", prefix, "-interface", deviceName)
-			if err := runCmd("route", "-n", "add", "-inet6", prefix, "-interface", deviceName); err != nil {
-				return err
-			}
-		} else {
+	// --- IPv4 ---
+	// Assign the v4 host address. macOS point-to-point utun wants
+	// `ifconfig <dev> inet <addr> <peer>`; using the same address for both
+	// local and peer is the conventional way to put a /32-style host
+	// address on a utun. The kernel then has a valid v4 source address for
+	// traffic into the CGNAT range.
+	if err := runCmd("ifconfig", cfg.Device, "inet", cfg.HostAddrV4, cfg.HostAddrV4); err != nil {
+		if !strings.Contains(err.Error(), "File exists") {
 			return err
 		}
 	}
+	if err := addRoute(cfg.Device, "-inet", cfg.PrefixV4); err != nil {
+		return err
+	}
 	return nil
+}
+
+// addRoute adds a route for prefix at the interface, replacing any stale
+// entry (a "File exists" from a crashed previous run that left a route
+// pointing at a now-dead interface). family is "-inet" or "-inet6".
+func addRoute(device, family, prefix string) error {
+	err := runCmd("route", "-n", "add", family, prefix, "-interface", device)
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(err.Error(), "File exists") {
+		return err
+	}
+	_ = runCmd("route", "-n", "delete", family, prefix, "-interface", device)
+	return runCmd("route", "-n", "add", family, prefix, "-interface", device)
 }
 
 // UnconfigureRoutes is the inverse of ConfigureRoutes. Best-effort: the
@@ -260,9 +300,11 @@ func ConfigureRoutes(deviceName string, prefix string, hostAddr string) error {
 // fd is closed, so a failure here is harmless — we run it anyway so a
 // long-lived host doesn't accumulate stale routes if the kernel is slow
 // to reap the interface.
-func UnconfigureRoutes(deviceName string, prefix string, hostAddr string) {
-	_ = runCmd("route", "-n", "delete", "-inet6", prefix, "-interface", deviceName)
-	_ = runCmd("ifconfig", deviceName, "inet6", hostAddr, "-alias")
+func UnconfigureRoutes(cfg RouteConfig) {
+	_ = runCmd("route", "-n", "delete", "-inet6", cfg.Prefix, "-interface", cfg.Device)
+	_ = runCmd("ifconfig", cfg.Device, "inet6", cfg.HostAddr, "-alias")
+	_ = runCmd("route", "-n", "delete", "-inet", cfg.PrefixV4, "-interface", cfg.Device)
+	_ = runCmd("ifconfig", cfg.Device, "inet", cfg.HostAddrV4, "-alias")
 }
 
 // setIFMTU sets the interface MTU via ifconfig. macOS has no

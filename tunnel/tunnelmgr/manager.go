@@ -189,6 +189,12 @@ type liveTunnel struct {
 	gateway    netip.Addr
 	apiBase    string
 
+	// routeCfg is the exact addressing handed to netstack.ConfigureRoutes
+	// at bring-up. Stored verbatim so teardown reverses precisely what was
+	// installed (both v4 and v6) without closeTunnel having to re-derive
+	// it from the allocator.
+	routeCfg netstack.RouteConfig
+
 	// resolvedActive is true iff the systemd-resolved registration
 	// for this tunnel succeeded. Drives both the post-bring-up
 	// banner (Snapshot.ResolvedConfigured) and the teardown order
@@ -380,11 +386,11 @@ func closeTunnel(logger Logger, t *liveTunnel) {
 		}
 	}
 	// UnconfigureRoutes only runs once buildTunnel has actually
-	// installed them — the deviceName + prefix + hostAddr fields are
-	// set together right before the function returns success, so any
-	// non-zero hostAddr implies the routes are real.
-	if t.deviceName != "" && t.hostAddr.IsValid() {
-		netstack.UnconfigureRoutes(t.deviceName, t.prefix, t.hostAddr.String())
+	// installed them — routeCfg is populated together with the rest of
+	// the live-tunnel state right before buildTunnel returns success, so
+	// a non-empty Device implies the routes are real.
+	if t.routeCfg.Device != "" {
+		netstack.UnconfigureRoutes(t.routeCfg)
 	}
 	if t.stack != nil {
 		if err := t.stack.Close(); err != nil {
@@ -446,6 +452,8 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 	stack, err := netstack.New(ctx, netstack.Options{
 		Prefix:     alloc.Prefix(),
 		Gateway:    alloc.Gateway(),
+		PrefixV4:   alloc.PrefixV4(),
+		GatewayV4:  alloc.GatewayV4(),
 		DeviceName: m.opts.DeviceName,
 		TCPAccept:  m.makeAcceptFunc(alloc, subTypeByName),
 		TCPHandler: m.makeTCPHandler(alloc, subTypeByName, gatewayCfg),
@@ -456,7 +464,14 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 	}
 
 	deviceName := stack.DeviceName()
-	if err := netstack.ConfigureRoutes(deviceName, alloc.Prefix().String(), alloc.HostAddr().String()); err != nil {
+	routeCfg := netstack.RouteConfig{
+		Device:     deviceName,
+		Prefix:     alloc.Prefix().String(),
+		HostAddr:   alloc.HostAddr().String(),
+		PrefixV4:   alloc.PrefixV4().String(),
+		HostAddrV4: alloc.HostAddrV4().String(),
+	}
+	if err := netstack.ConfigureRoutes(routeCfg); err != nil {
 		_ = stack.Close()
 		return cleanup(fmt.Errorf("configure routes: %w", err))
 	}
@@ -502,6 +517,7 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		hostAddr:       alloc.HostAddr(),
 		gateway:        alloc.Gateway(),
 		apiBase:        apiBase,
+		routeCfg:       routeCfg,
 		resolvedActive: resolvedActive,
 		resolved:       m.opts.ResolvedConfigurer,
 	}, nil

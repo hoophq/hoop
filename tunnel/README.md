@@ -45,7 +45,7 @@ supported. Windows (Wintun) TUN setup is still tracked under Phase 2.
 
 | Path                  | What lives there                                              |
 |-----------------------|---------------------------------------------------------------|
-| `addressing/`         | Deterministic name → ULA IPv6 allocator (ADR-0001).           |
+| `addressing/`         | Deterministic name → dual-stack (ULA IPv6 + CGNAT IPv4) allocator (ADR-0001). |
 | `resolver/`           | DNS resolver bound inside the netstack.                       |
 | `netstack/`           | gVisor stack + TUN device wiring (Linux `/dev/net/tun`, macOS `utun`). |
 | `resolved/`           | Host DNS routing for `*.<tld>` (Linux systemd-resolved, macOS `/etc/resolver`). |
@@ -159,6 +159,27 @@ connections need protocol-specific clients (or interactive shells) and
 are intentionally filtered out of the resolver. Use `hoop connect <name>`
 for those.
 
+## Addressing (dual-stack)
+
+Every connection is allocated **two** stable virtual IPs from a
+deterministic, session-seeded map:
+
+- An **IPv6 ULA** address inside a per-session `fd00::/8` `/48`.
+- An **IPv4 CGNAT** address inside a per-session `100.64.0.0/10` `/16`
+  (RFC 6598 shared-address space — like Tailscale uses; it won't collide
+  with typical RFC 1918 LANs).
+
+The in-stack resolver answers **both** `AAAA` (v6) and `A` (v4) for each
+name, and the netstack accepts TCP flows over either family.
+
+Why dual-stack and not v6-only: macOS `getaddrinfo()` honours
+`AI_ADDRCONFIG` and refuses to query/return `AAAA` for hostnames when the
+host has no globally-routable IPv6 address (the common case — only the
+tunnel provides v6). A v6-only answer is therefore invisible to real apps
+on macOS (`psql -h foo.hoop` fails) even though `dig`/`ping6` work. IPv4
+has no such gating, so handing out an A record makes resolution work
+everywhere with no per-OS divergence. See ADR-0001 for the full rationale.
+
 ## Flags
 
 | Flag        | Default          | Meaning                                                |
@@ -173,6 +194,16 @@ for those.
   whose stream dies must be re-initiated by the application. The daemon
   process itself does not need reconnect logic (see RD-209).
 - **No UDP.** TCP only.
+- **`ping` works over IPv6 but not IPv4.** The netstack runs in gVisor's
+  promiscuous/spoofing mode (it owns every connection IP on demand rather
+  than assigning thousands of addresses). gVisor's IPv6 stack answers
+  ICMPv6 echo for these on-demand addresses; its IPv4 stack deliberately
+  does not reply to ICMPv4 echo for "temporary" (spoofed) addresses. So
+  `ping6 foo.hoop` succeeds but `ping foo.hoop` (which resolves to the v4
+  address) times out. This is cosmetic: the tunnel is **TCP-only**, so
+  test connectivity with `nc -z foo.hoop <port>` or the actual client
+  (`psql`/`mysql`/…), not `ping`. Implementing a custom ICMPv4 echo
+  responder was judged not worth the complexity for a non-data-path poke.
 - **Linux + macOS.** Windows (Wintun) TUN setup is not implemented yet.
 - **Permissions.** The daemon runs as root: it opens `/dev/net/tun`
   (Linux, `CAP_NET_ADMIN`) or a `utun` device (macOS, PF_SYSTEM control

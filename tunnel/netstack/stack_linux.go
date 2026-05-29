@@ -142,29 +142,46 @@ func setIFUp(name string) error {
 // We shell out to `ip` here. Doing the equivalent via rtnetlink is doable
 // but adds a chunky helper for no spike-time benefit; we'll revisit when we
 // drop the sudo requirement.
-func ConfigureRoutes(deviceName string, prefix string, hostAddr string) error {
+func ConfigureRoutes(cfg RouteConfig) error {
 	if !commandExists("ip") {
 		return fmt.Errorf("netstack: `ip` not found in PATH; install iproute2")
 	}
-	// Assign the host address to the TUN interface so the kernel has a valid
-	// source address when sending packets into the /48. The gVisor gateway
-	// address is intentionally NOT added here — it lives only inside gVisor.
-	if err := runIP("addr", "add", hostAddr+"/128", "dev", deviceName); err != nil {
+	// --- IPv6 ---
+	// Assign the v6 host address to the TUN interface so the kernel has a
+	// valid source address when sending packets into the /48. The gVisor
+	// gateway address is intentionally NOT added here — it lives only
+	// inside gVisor.
+	if err := runIP("addr", "add", cfg.HostAddr+"/128", "dev", cfg.Device); err != nil {
 		// "RTNETLINK answers: File exists" on re-runs is fine.
 		if !strings.Contains(err.Error(), "File exists") {
 			return err
 		}
 	}
-	if err := runIP("-6", "route", "replace", prefix, "dev", deviceName); err != nil {
+	if err := runIP("-6", "route", "replace", cfg.Prefix, "dev", cfg.Device); err != nil {
+		return err
+	}
+
+	// --- IPv4 ---
+	// Same shape for the CGNAT /16: assign the v4 host address and route
+	// the whole range at the interface. This is what makes connections
+	// reachable over v4 (the path macOS apps use; harmless on Linux).
+	if err := runIP("addr", "add", cfg.HostAddrV4+"/32", "dev", cfg.Device); err != nil {
+		if !strings.Contains(err.Error(), "File exists") {
+			return err
+		}
+	}
+	if err := runIP("-4", "route", "replace", cfg.PrefixV4, "dev", cfg.Device); err != nil {
 		return err
 	}
 	return nil
 }
 
 // UnconfigureRoutes is the inverse of ConfigureRoutes. Best-effort.
-func UnconfigureRoutes(deviceName string, prefix string, hostAddr string) {
-	_ = runIP("-6", "route", "del", prefix, "dev", deviceName)
-	_ = runIP("addr", "del", hostAddr+"/128", "dev", deviceName)
+func UnconfigureRoutes(cfg RouteConfig) {
+	_ = runIP("-6", "route", "del", cfg.Prefix, "dev", cfg.Device)
+	_ = runIP("addr", "del", cfg.HostAddr+"/128", "dev", cfg.Device)
+	_ = runIP("-4", "route", "del", cfg.PrefixV4, "dev", cfg.Device)
+	_ = runIP("addr", "del", cfg.HostAddrV4+"/32", "dev", cfg.Device)
 }
 
 func runIP(args ...string) error {

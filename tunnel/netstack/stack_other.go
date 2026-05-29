@@ -8,10 +8,10 @@ func openTUN(requestedName string, mtu uint32) (tunDevice, error) {
 	return nil, errors.New("netstack: TUN device support is implemented on Linux and macOS only")
 }
 
-// ConfigureRoutes is a non-Linux stub.
-func ConfigureRoutes(deviceName string, prefix string, gateway string) error {
+// ConfigureRoutes is a non-Linux/darwin stub.
+func ConfigureRoutes(cfg RouteConfig) error {
 	return errors.New("netstack: ConfigureRoutes not implemented on this platform")
 }
 
-// UnconfigureRoutes is a non-Linux stub.
-func UnconfigureRoutes(deviceName string, prefix string, gateway string) {}
+// UnconfigureRoutes is a non-Linux/darwin stub.
+func UnconfigureRoutes(cfg RouteConfig) {}

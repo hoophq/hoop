@@ -1,9 +1,15 @@
 # ADR-0001: Virtual network addressing scheme for `hsh tunnel`
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-05-29 — dual-stack; see "Amendment" below)
 - **Date:** 2026-05-18
 - **Linear:** RD-204
-- **Related:** RD-176 (transport spike), RD-183 (`hsh tunnel` CLI), RD-182 (connection list API), RD-208 (DNS routing)
+- **Related:** RD-176 (transport spike), RD-183 (`hsh tunnel` CLI), RD-182 (connection list API), RD-208 (DNS routing), RD-217 (macOS support)
+
+> **Amendment (2026-05-29):** the original "IPv6-only" decision below was
+> superseded by a **dual-stack** scheme (ULA IPv6 **and** CGNAT IPv4)
+> after macOS support landed. The body of the ADR is preserved for the
+> historical rationale; read the **"Amendment: dual-stack"** section at
+> the end for what actually ships and why.
 
 ## Context
 
@@ -115,3 +121,86 @@ Considered briefly: resolver returns a sentinel IP, TUN driver figures out the n
 ### Gateway-allocated IPs
 
 Rejected: adds a coordination service to the gateway for no benefit. The gateway doesn't need to know about virtual IPs because resolution happens client-side.
+
+## Amendment: dual-stack (ULA IPv6 + CGNAT IPv4)
+
+- **Date:** 2026-05-29
+- **Linear:** RD-217 (macOS support), RD-208 (DNS routing)
+
+### What changed
+
+The virtual network is now **dual-stack**. Every connection name is
+allocated **both**:
+
+- a ULA IPv6 address inside the per-session `fd00::/8` `/48` (unchanged), and
+- a CGNAT IPv4 address inside a per-session `100.64.0.0/10` `/16`.
+
+The resolver answers `AAAA` with the v6 address **and** `A` with the v4
+address. The netstack registers both IPv4 and IPv6 in gVisor, owns a
+gateway address per family, routes both ranges locally, and accepts TCP
+flows over either. Outbound reverse lookup (IP → name) accepts both
+families, so the gateway still never sees virtual IPs.
+
+### Why the original "IPv6-only" decision was wrong in practice
+
+It broke macOS, which is a first-class client (RD-217). macOS's
+`getaddrinfo()` honours `AI_ADDRCONFIG`: it will not even **query** — let
+alone return — `AAAA` records for a hostname unless the host has a
+*globally-routable* IPv6 address. A machine whose only IPv6 is the tunnel
+itself (the common case: no v6 from Wi-Fi/Ethernet) does not qualify, so
+every real application (`psql`, `curl`, browsers — anything using
+`getaddrinfo` with default hints) silently fails to resolve `*.hoop`,
+while `dig`/`ping6` (which bypass `AI_ADDRCONFIG`) work and mislead you
+into thinking DNS is fine.
+
+The documented workarounds to make macOS treat a `utun` v6 address as
+routable — registering a `SystemConfiguration` network service, adding
+broad v6 routes — **do not** flip macOS 26's resolver out of "Request A
+records" mode (verified empirically). Fighting `AI_ADDRCONFIG` is a
+losing, version-fragile battle.
+
+IPv4 has no equivalent gating: macOS always queries `A` and always uses
+the answer. Handing out an A record sidesteps the entire problem on every
+platform with no per-OS branching in the data path.
+
+### Revisiting the original CGNAT rejection
+
+The 2026-05-18 ADR rejected `100.64.0.0/10` for two reasons; both are
+acceptable now that v4 is **additive**, not the sole family:
+
+- *"Collides with real ISP CGNAT / Tailscale."* The collision risk is
+  real but bounded: the range is non-globally-routable by definition, we
+  scope to a per-session `/16` (not the whole `/10`), and a user who is
+  simultaneously behind ISP CGNAT *and* running Tailscale *and* hitting
+  our exact `/16` still has the IPv6 address as the parallel path. CGNAT
+  remains the least-bad v4 choice — RFC 1918 `10/8` and `192.168/16`
+  collide with corporate/home LANs far more often, which is strictly
+  worse.
+- *"Sizing math past a few thousand resources."* A `/16` gives ~65k
+  addresses per session, far beyond any realistic per-user connection
+  count, with linear probing for the rare hash collision.
+
+The "future-proof for IPv6-only networks" argument still holds — and is
+preserved: we did not drop IPv6, we added IPv4 alongside it. On a genuine
+IPv6-only host, `AI_ADDRCONFIG` is satisfied and the AAAA path works; on
+the far more common IPv4-capable host, the A path works. Dual-stack is
+strictly more robust than either alone.
+
+### Updated resolver behaviour
+
+Supersedes the "Resolution: client-owned static table" section:
+
+- `<name>.hoop` AAAA → mapped ULA IPv6.
+- `<name>.hoop` A → mapped CGNAT IPv4 (was: NOERROR empty).
+- Negative answers (NXDOMAIN for unknown names; NODATA for an
+  unsupported qtype on a known name) carry an SOA in the authority
+  section per RFC 2308, which stub resolvers (notably macOS) require to
+  accept and cache the negative answer.
+
+### Known limitation
+
+`ping` works over IPv6 but not IPv4: gVisor's promiscuous-mode IPv6 stack
+answers ICMPv6 echo for on-demand addresses, but its IPv4 stack declines
+ICMPv4 echo for "temporary" (spoofed) addresses. The tunnel is TCP-only,
+so this is cosmetic — test with `nc`/`psql`, not `ping`. A custom ICMPv4
+echo responder was judged not worth the complexity.
