@@ -63,29 +63,9 @@ func TestDarwinManager_PlatformName(t *testing.T) {
 	}
 }
 
-// TestIsAlreadyLoaded / TestIsNotLoaded pin the launchctl error-string
-// classification. These substrings are how we keep Install/Stop
-// idempotent across macOS versions; a typo would silently turn a
-// tolerated no-op into a hard failure.
-func TestIsAlreadyLoaded(t *testing.T) {
-	yes := []string{
-		"launchctl bootstrap: exit status 37 (output: Bootstrap failed: 37: ...)",
-		"service already loaded",
-		"Operation already in progress",
-	}
-	for _, m := range yes {
-		if !isAlreadyLoaded(errors.New(m)) {
-			t.Errorf("isAlreadyLoaded(%q) = false, want true", m)
-		}
-	}
-	if isAlreadyLoaded(nil) {
-		t.Error("isAlreadyLoaded(nil) = true")
-	}
-	if isAlreadyLoaded(errors.New("some unrelated failure")) {
-		t.Error("isAlreadyLoaded(unrelated) = true")
-	}
-}
-
+// TestIsNotLoaded pins the launchctl error-string classification used by
+// Stop/reload to treat "service was not loaded" as a tolerated no-op. A
+// typo would turn an idempotent stop into a hard failure.
 func TestIsNotLoaded(t *testing.T) {
 	yes := []string{
 		"launchctl bootout: Could not find specified service",

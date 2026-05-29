@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // macOS LaunchDaemon backend for hsh-tunneld (RD-217).
@@ -171,29 +172,23 @@ func (d *darwinManager) Install(opts Options) error {
 	if err != nil {
 		return err
 	}
-	changed, err := writeFileIfDifferent(d.plistPath(), []byte(body), 0644)
-	if err != nil {
+	if _, err := writeFileIfDifferent(d.plistPath(), []byte(body), 0644); err != nil {
 		return fmt.Errorf("write plist %q: %w", d.plistPath(), err)
 	}
-	if changed {
-		// A changed plist must be re-bootstrapped. bootout first so a
-		// previously-loaded service picks up the new definition; ignore
-		// its error (the service may not be loaded yet on a fresh
-		// install). Then bootstrap the new plist.
-		_ = d.launchctl("bootout", d.target())
-		if err := d.launchctl("bootstrap", launchdDomain, d.plistPath()); err != nil {
-			return fmt.Errorf("launchctl bootstrap: %w", err)
-		}
-	} else {
-		// Plist unchanged but the service might not be loaded (e.g. a
-		// reinstall after a manual bootout). Bootstrap is idempotent —
-		// it errors with "service already loaded" (exit 37/EALREADY),
-		// which we tolerate.
-		if err := d.launchctl("bootstrap", launchdDomain, d.plistPath()); err != nil {
-			if !isAlreadyLoaded(err) {
-				return fmt.Errorf("launchctl bootstrap: %w", err)
-			}
-		}
+	// Reload deterministically: always bootout (so a reinstall with a
+	// new binary actually picks it up) then bootstrap fresh. We do NOT
+	// branch on whether the plist content changed — the service may be
+	// loaded from an *older binary at the same path*, in which case the
+	// plist is byte-identical but a reload is still required.
+	//
+	// Why not "bootstrap if not loaded, skip if loaded": on modern macOS,
+	// `bootstrap` against an already-loaded service returns EIO (exit 5),
+	// not a tidy EALREADY, and `bootout` is asynchronous — so a
+	// bootout-then-immediate-bootstrap races the unload and also fails
+	// with EIO. The robust pattern is bootout, wait until launchd reports
+	// the service is actually gone, then bootstrap.
+	if err := d.reloadService(); err != nil {
+		return err
 	}
 
 	// (6) enable + start.
@@ -295,9 +290,12 @@ func (d *darwinManager) Start() error {
 	if _, err := os.Stat(d.plistPath()); errors.Is(err, os.ErrNotExist) {
 		return ErrNotInstalled
 	}
-	// Ensure it is loaded (bootstrap is idempotent), then kickstart.
-	if err := d.launchctl("bootstrap", launchdDomain, d.plistPath()); err != nil {
-		if !isAlreadyLoaded(err) {
+	// If the service isn't loaded yet, bootstrap it; otherwise kickstart
+	// the already-loaded one. We check load state first rather than
+	// bootstrap-and-tolerate-error because bootstrap-on-loaded returns a
+	// non-specific EIO on modern macOS (see reloadService).
+	if !d.isLoaded() {
+		if err := d.launchctl("bootstrap", launchdDomain, d.plistPath()); err != nil {
 			return fmt.Errorf("launchctl bootstrap: %w", err)
 		}
 	}
@@ -437,6 +435,65 @@ func (d *darwinManager) launchctl(args ...string) error {
 	return nil
 }
 
+// isLoaded reports whether launchd currently knows about the service.
+// `launchctl print system/<label>` exits 0 when the service is loaded and
+// non-zero (113, "Could not find service") when it is not. We use the
+// load state as the source of truth rather than guessing from
+// bootstrap/bootout exit codes, which are inconsistent across macOS
+// versions (bootstrap-on-loaded returns EIO, not EALREADY).
+func (d *darwinManager) isLoaded() bool {
+	_, code, err := d.launchctlOutput("print", d.target())
+	if err != nil {
+		return false
+	}
+	return code == 0
+}
+
+// waitUntilNotLoaded polls until launchd reports the service is no longer
+// loaded, or the timeout elapses. bootout is asynchronous — it returns
+// before launchd has finished unloading — so a bootstrap issued
+// immediately after a bootout races the teardown and fails with EIO.
+// Waiting for the unload to complete removes that race.
+//
+// The timeout is generous (a few seconds) because a daemon with
+// in-flight work can take a moment to exit after SIGTERM; the poll
+// interval is short so the common fast case adds negligible latency.
+func (d *darwinManager) waitUntilNotLoaded(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if !d.isLoaded() {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("service %s still loaded after %s", d.target(), timeout)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// reloadService performs an idempotent load of the service regardless of
+// its current state: if loaded, bootout and wait for the unload to
+// complete; then bootstrap fresh. This is the only reliable way to make
+// `install` pick up a new binary at the same path (where the plist is
+// byte-identical but the running process is stale) without tripping over
+// launchd's EIO-on-already-loaded / async-bootout behaviour.
+func (d *darwinManager) reloadService() error {
+	if d.isLoaded() {
+		// bootout is async; tolerate "not loaded" in case it raced away
+		// between our check and the call.
+		if err := d.launchctl("bootout", d.target()); err != nil && !isNotLoaded(err) {
+			return fmt.Errorf("launchctl bootout (for reload): %w", err)
+		}
+		if err := d.waitUntilNotLoaded(5 * time.Second); err != nil {
+			return fmt.Errorf("waiting for service to unload: %w", err)
+		}
+	}
+	if err := d.launchctl("bootstrap", launchdDomain, d.plistPath()); err != nil {
+		return fmt.Errorf("launchctl bootstrap: %w", err)
+	}
+	return nil
+}
+
 // launchctlOutput is the variant that returns stdout+stderr and the exit
 // code so Status can branch on launchctl's documented non-zero returns.
 func (d *darwinManager) launchctlOutput(args ...string) (string, int, error) {
@@ -483,21 +540,6 @@ func runDSCL(bin string, args ...string) error {
 		return fmt.Errorf("dscl %s: %w (output: %s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// isAlreadyLoaded reports whether a bootstrap error means the service was
-// already loaded (which we treat as success for idempotency). launchctl
-// uses several phrasings across macOS versions; match the stable
-// substrings.
-func isAlreadyLoaded(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "already loaded") ||
-		strings.Contains(msg, "service already") ||
-		strings.Contains(msg, "Operation already in progress") ||
-		strings.Contains(msg, "Bootstrap failed: 37")
 }
 
 // isNotLoaded reports whether a bootout error means the service was not
