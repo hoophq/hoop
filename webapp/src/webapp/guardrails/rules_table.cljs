@@ -69,6 +69,9 @@
        :not-margin-bottom? true
        :on-change #(on-pattern-change pattern-state idx (-> % .-target .-value))
        :on-blur #(on-rule-field-change state idx :pattern_regex (get @pattern-state idx ""))
+       :on-keyDown (fn [e]
+                     (when (= (.-key e) "Enter")
+                       (.preventDefault e)))
        :value (get @pattern-state idx "")}]
      [:> Tooltip {:content "Use Go regex syntax."}
       [:> CircleHelp {:size 16}]]]
@@ -140,7 +143,7 @@
 
            [:> Table.Cell {:p "4" :width "220px"}
             (when-not (empty? (:type rule))
-              [:div {:class (str " text-sm w-full")}
+              [:div {:class "text-sm w-full"}
                [:div {:class "flex items-center gap-2"}
                 [:> Select.Root
                  {:size "2"
