@@ -49,6 +49,7 @@ import (
 
 	"github.com/hoophq/hoop/tunnel/daemonconfig"
 	"github.com/hoophq/hoop/tunnel/ipc"
+	"github.com/hoophq/hoop/tunnel/resolved"
 	"github.com/hoophq/hoop/tunnel/resolver"
 	"github.com/hoophq/hoop/tunnel/tunnelmgr"
 )
@@ -192,6 +193,16 @@ func run(logger *log.Logger, opts runOptions) error {
 	cfg := mergeConfigWithEnv(fileCfg)
 	logger.Printf("config: file=%s api_url=%q logged_in=%v", opts.configFile, cfg.APIURL, cfg.LoggedIn())
 
+	// Self-heal any stale host DNS routing left behind by an ungraceful
+	// exit of a previous run (RD-208). On macOS this removes a
+	// /etc/resolver/<tld> file orphaned by a SIGKILL/crash; on Linux and
+	// elsewhere it is a no-op because per-interface DNS state vanishes
+	// with the TUN device. Best-effort: a failure here must not block
+	// the daemon from starting.
+	if err := resolved.CleanupStale(opts.tld); err != nil {
+		logger.Printf("startup: stale DNS cleanup for *.%s: %v (continuing)", opts.tld, err)
+	}
+
 	// Build the lifecycle owner. The Manager handles every operation
 	// that touches the netstack / gateway / route table; main.go only
 	// triggers it via the daemonService.
@@ -326,8 +337,11 @@ func printTunnelUpBanner(logger *log.Logger, snap tunnelmgr.Snapshot, tld string
 	}
 
 	if snap.ResolvedConfigured {
-		// Happy path: native resolution works right now.
-		logger.Printf("  *.%s now resolves natively (systemd-resolved registered).", tld)
+		// Happy path: native resolution works right now. The host DNS
+		// manager varies by platform (systemd-resolved on Linux,
+		// mDNSResponder via /etc/resolver on macOS) so the message stays
+		// mechanism-neutral.
+		logger.Printf("  *.%s now resolves natively (host DNS routing configured).", tld)
 		logger.Printf("  try:       psql -h %s.%s ...   (or any *.%s host)", first, tld, tld)
 		return
 	}
