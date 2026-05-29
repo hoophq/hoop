@@ -91,7 +91,7 @@ var catalog = map[string]Flag{
 	},
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
-		Description: "Run Postgres/MySQL/MSSQL exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd). Eliminates client meta-command shell escapes (e.g. psql \\!) and keeps the connection credential out of any user-reachable process.",
+		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},

@@ -30,6 +30,8 @@ func dbExecDriver(connType string) (string, bool) {
 		return string(dbexec.DriverMySQL), true
 	case pb.ConnectionTypeMSSQL:
 		return string(dbexec.DriverMSSQL), true
+	case pb.ConnectionTypeOracleDB:
+		return string(dbexec.DriverOracle), true
 	}
 	return "", false
 }
@@ -180,6 +182,7 @@ func (a *Agent) newDBExecProxy(driver string, connParams *pb.AgentConnectionPara
 	opts[dbexec.OptKeyPassword] = connenv.pass
 	opts[dbexec.OptKeyDBName] = connenv.dbname
 	opts[dbexec.OptKeySSLMode] = connenv.postgresSSLMode
+	opts[dbexec.OptKeyServiceName] = connenv.serviceName
 	if connenv.insecure {
 		opts[dbexec.OptKeyInsecure] = "true"
 	}

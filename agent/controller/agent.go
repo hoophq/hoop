@@ -86,6 +86,7 @@ type (
 		port               string
 		authorizedSSHKeys  string
 		dbname             string
+		serviceName        string
 		insecure           bool
 		options            string
 		postgresSSLMode    string
@@ -728,6 +729,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		port:              envVarS.Getenv("PORT"),
 		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_SERVER_KEYS"),
 		dbname:            envVarS.Getenv("DB"),
+		serviceName:       envVarS.Getenv("SID"),
 		insecure:          envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
 		options:           envVarS.Getenv("OPTIONS"),
@@ -771,6 +773,13 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, errors.New("missing required secrets for mssql connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeOracleDB:
+		if env.port == "" {
+			env.port = "1521"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" || env.serviceName == "" {
+			return nil, errors.New("missing required secrets for oracledb connection [HOST, USER, PASS, SID]")
 		}
 	case pb.ConnectionTypeMongoDB:
 		if env.connectionString != "" {
