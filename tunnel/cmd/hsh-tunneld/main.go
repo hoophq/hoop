@@ -382,7 +382,14 @@ func startIPCServer(ctx context.Context, logger *log.Logger, opts runOptions, sv
 		tokenPath = filepath.Join(filepath.Dir(opts.ipcSocket), "control-token")
 	}
 
-	store, err := ipc.NewFileTokenStore(tokenPath, ipc.FileTokenOptions{})
+	store, err := ipc.NewFileTokenStore(tokenPath, ipc.FileTokenOptions{
+		// Chown the token file to the IPC group so members of that group
+		// (the user added by `hsh-tunneld install`) can read it without
+		// sudo — same group the socket is chowned to. Empty in dev runs
+		// that pass no --ipc-group, which leaves the file at the process
+		// group (fine, since those runs read it as the same user).
+		GroupName: opts.ipcGroup,
+	})
 	if err != nil {
 		logger.Printf("IPC disabled: %v", err)
 		return func() {}

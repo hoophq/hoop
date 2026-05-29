@@ -94,6 +94,20 @@ func platformListen(opts ListenerOptions) (net.Listener, error) {
 	return ln, nil
 }
 
+// chownToGroup chowns path to gid (keeping the current owner uid). A
+// gid of -1 is a no-op — the caller had no group to apply, so we leave
+// ownership at the process default. Used for the control-token file so
+// members of the IPC group can read it, mirroring the socket chown.
+func chownToGroup(path string, gid int) error {
+	if gid < 0 {
+		return nil
+	}
+	if err := os.Chown(path, -1, gid); err != nil {
+		return fmt.Errorf("ipc: chown %q to gid %d: %w", path, gid, err)
+	}
+	return nil
+}
+
 // ensureSocketDir creates the parent directory of the socket path (if
 // missing) and, when groupName is set, chowns it to root:<group> with
 // mode 0750 so group members can reach the socket inside it. Idempotent:

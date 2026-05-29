@@ -1,9 +1,29 @@
 package ipc
 
 import (
+	"fmt"
 	"net"
 	"os"
+	"os/user"
+	"strconv"
 )
+
+// lookupGID resolves a group name to its numeric gid. Shared by the
+// socket listener and the token store so both apply the same group
+// ownership to the artifacts inside the runtime directory. Returns a
+// wrapped error the caller annotates with which artifact it was
+// chowning.
+func lookupGID(groupName string) (int, error) {
+	grp, err := user.LookupGroup(groupName)
+	if err != nil {
+		return -1, fmt.Errorf("lookup group %q: %w", groupName, err)
+	}
+	gid, err := strconv.Atoi(grp.Gid)
+	if err != nil {
+		return -1, fmt.Errorf("parse gid for group %q: %w", groupName, err)
+	}
+	return gid, nil
+}
 
 // DefaultSocketPath is the platform-default location the daemon binds
 // its control plane to. Tests and dev invocations can override via
