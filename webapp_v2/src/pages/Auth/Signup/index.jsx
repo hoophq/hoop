@@ -71,7 +71,7 @@ function Signup() {
 
     try {
       await authService.signup(orgName, userName || undefined)
-      navigate('/')
+      navigate('/client')
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to set up organization. Please try again.')
     } finally {

@@ -14,7 +14,6 @@ import {
   Box,
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
-import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
 
@@ -51,7 +50,6 @@ function AuthCard({ children }) {
 function Login() {
   const navigate = useNavigate()
   const { setToken, getAndClearRedirectUrl, isAuthenticated } = useAuthStore()
-  const { setUser } = useUserStore()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -66,7 +64,7 @@ function Login() {
       if (redirectUrl) {
         window.location.href = redirectUrl
       } else {
-        navigate('/')
+        navigate('/client')
       }
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
@@ -86,6 +84,12 @@ function Login() {
       try {
         const serverInfo = await authService.getPublicServerInfo()
         const method = serverInfo.auth_method || 'local'
+
+        if (serverInfo.setup_required && method !== 'oidc') {
+          navigate('/setup', { replace: true })
+          return
+        }
+
         setAuthMethod(method)
 
         if (method !== 'local') {
@@ -120,16 +124,16 @@ function Login() {
     setLoading(true)
 
     try {
-      const { token, user } = await authService.loginLocal(email, password)
+      const { token } = await authService.loginLocal(email, password)
       setToken(token)
-      setUser(user)
 
       const redirectUrl = getAndClearRedirectUrl()
       if (redirectUrl) {
         window.location.href = redirectUrl
-      } else {
-        navigate('/')
+        return
       }
+
+      navigate('/client')
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid email or password')
     } finally {

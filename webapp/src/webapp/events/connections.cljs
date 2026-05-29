@@ -332,7 +332,7 @@
                                                           :text "Role created!"}])
                             (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                             (rf/dispatch [:plugins->get-my-plugins])
-                            (rf/dispatch [:navigate :home]))}]]]})))
+                            (rf/dispatch [:navigate :editor-plugin]))}]]]})))
 
 (def quickstart-query
   "SELECT c.firstname, c.lastname, o.orderid, o.orderdate, SUM(ol.quantity) AS total_quantity, SUM(ol.quantity * p.price) AS total_amount
