@@ -67,10 +67,8 @@
        :full-width? true
        :size "3"
        :not-margin-bottom? true
-       :on-change (fn [e]
-                    (let [value (-> e .-target .-value)]
-                      (on-pattern-change pattern-state idx value)
-                      (on-rule-field-change state idx :pattern_regex value)))
+       :on-change #(on-pattern-change pattern-state idx (-> % .-target .-value))
+       :on-blur #(on-rule-field-change state idx :pattern_regex (get @pattern-state idx ""))
        :on-key-down (fn [e]
                       (when (= (.-key e) "Enter")
                         (.preventDefault e)))
