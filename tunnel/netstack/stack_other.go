@@ -1,11 +1,11 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package netstack
 
 import "errors"
 
 func openTUN(requestedName string, mtu uint32) (tunDevice, error) {
-	return nil, errors.New("netstack: TUN device support is currently Linux-only (RD-176 spike)")
+	return nil, errors.New("netstack: TUN device support is implemented on Linux and macOS only")
 }
 
 // ConfigureRoutes is a non-Linux stub.
