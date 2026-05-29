@@ -199,7 +199,7 @@ func accessRequestRulesCreateHandler(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	if len(args.Attributes) > 0 {
-		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, args.Attributes, args.AccessType)
+		found, err := models.GetRequestRuleByAttributesAndAccessType(models.DB, orgID, args.Attributes, args.AccessType)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return nil, nil, fmt.Errorf("failed to check existing attributes rule: %w", err)
 		}
@@ -281,7 +281,7 @@ func accessRequestRulesUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	if len(args.Attributes) > 0 {
-		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, args.Attributes, args.AccessType)
+		found, err := models.GetRequestRuleByAttributesAndAccessType(models.DB, orgID, args.Attributes, args.AccessType)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return nil, nil, fmt.Errorf("failed to check existing attributes rule: %w", err)
 		}
@@ -396,12 +396,12 @@ func ensureStringArray(s []string) []string {
 
 func accessRequestRuleToMap(rule *models.AccessRequestRule) map[string]any {
 	m := map[string]any{
-		"id":                       rule.ID.String(),
-		"name":                     rule.Name,
-		"access_type":              rule.AccessType,
-		"all_groups_must_approve":  rule.AllGroupsMustApprove,
-		"created_at":               rule.CreatedAt,
-		"updated_at":               rule.UpdatedAt,
+		"id":                      rule.ID.String(),
+		"name":                    rule.Name,
+		"access_type":             rule.AccessType,
+		"all_groups_must_approve": rule.AllGroupsMustApprove,
+		"created_at":              rule.CreatedAt,
+		"updated_at":              rule.UpdatedAt,
 	}
 	if rule.Description != nil {
 		m["description"] = *rule.Description

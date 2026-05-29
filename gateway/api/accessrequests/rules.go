@@ -104,7 +104,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 	}
 
 	if req.Attributes != nil {
-		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, req.Attributes, req.AccessType)
+		found, err := models.GetRequestRuleByAttributesAndAccessType(models.DB, orgID, req.Attributes, req.AccessType)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get request rules by attributes")
 			return
@@ -316,7 +316,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	}
 
 	if req.Attributes != nil {
-		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, req.Attributes, req.AccessType)
+		found, err := models.GetRequestRuleByAttributesAndAccessType(models.DB, orgID, req.Attributes, req.AccessType)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get request rules by attributes")
 			return
