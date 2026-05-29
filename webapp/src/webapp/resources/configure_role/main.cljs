@@ -13,12 +13,22 @@
    [webapp.resources.configure-role.credentials-tab :as credentials-tab]
    [webapp.resources.configure-role.details-tab :as details-tab]
    [webapp.resources.configure-role.native-access-tab :as native-access-tab]
-   [webapp.resources.configure-role.terminal-access-tab :as terminal-access-tab]))
+   [webapp.resources.configure-role.terminal-access-tab :as terminal-access-tab]
+   [webapp.resources.federation.events]
+   [webapp.resources.federation.subs]))
 
 (defn get-form-id
-  "Returns the form ID based on connection type"
-  [connection-type connection-subtype]
+  "Returns the form ID based on connection type and (for BigQuery) the
+   selected connection method."
+  [connection-type connection-subtype connection-method]
   (cond
+    ;; BigQuery with IAM federation uses the federation form; otherwise it
+    ;; falls through to the metadata-credentials form below.
+    (and (= connection-type "database")
+         (= connection-subtype "bigquery")
+         (= connection-method "iam_federation"))
+    "federation-form"
+
     ;; Kubernetes Token connections
     (and (= connection-type "custom")
          (= connection-subtype "kubernetes-token"))
@@ -89,9 +99,14 @@
                          (= (:status @guardrails-list) :loading)
                          (= (:status @jira-templates-list) :loading))
 
+            is-bigquery? (and (= (:type conn-data) "database")
+                              (= (:subtype conn-data) "bigquery"))
+            connection-method @(rf/subscribe [:connection-setup/connection-method])
+            federation-selected? (and is-bigquery? (= connection-method "iam_federation"))
+
             handle-save (fn []
                           (let [{:keys [type subtype]} conn-data
-                                form-id (get-form-id type subtype)
+                                form-id (get-form-id type subtype connection-method)
                                 form (.getElementById js/document form-id)]
 
                             (if-not form
@@ -109,13 +124,13 @@
                                         "key" (rf/dispatch [:connection-setup/update-ssh-credentials "pass" ""])
                                         nil)))
 
-                                    (let [selected-attrs @(rf/subscribe [:resources/selected-attributes])
-                                          initial-attrs  @(rf/subscribe [:resources/initial-attributes])]
-                                      (when (not= (set selected-attrs) (set initial-attrs))
-                                        (rf/dispatch [:attributes/update-for-connection
-                                                      connection-name
-                                                      selected-attrs
-                                                      initial-attrs])))
+                                  (let [selected-attrs @(rf/subscribe [:resources/selected-attributes])
+                                        initial-attrs  @(rf/subscribe [:resources/initial-attributes])]
+                                    (when (not= (set selected-attrs) (set initial-attrs))
+                                      (rf/dispatch [:attributes/update-for-connection
+                                                    connection-name
+                                                    selected-attrs
+                                                    initial-attrs])))
 
                                   (when-let [tag-key @(rf/subscribe [:connection-setup/current-key])]
                                     (when (.-value tag-key)
@@ -127,6 +142,10 @@
                                         current-env-value @(rf/subscribe [:connection-setup/env-current-value])]
                                     (when (every? not-empty [current-env-key current-env-value])
                                       (rf/dispatch [:connection-setup/add-env-row])))
+
+                                  (when federation-selected?
+                                    (rf/dispatch [:federation/save connection-name]))
+
                                   (rf/dispatch [:resources->update-role-connection
                                                 {:name connection-name
                                                  :resource-name (:resource_name conn-data)
@@ -144,6 +163,8 @@
                            (:data @guardrails-list)
                            (:data @jira-templates-list))]
             (rf/dispatch [:connection-setup/initialize-state processed])
+            (when is-bigquery?
+              (rf/dispatch [:federation/load connection-name]))
             (reset! initialized? true)))
 
         (if loading?
@@ -207,4 +228,5 @@
     (finally
       (rf/dispatch [:connection-setup/initialize-state nil])
       (rf/dispatch [:resources/clear-attributes])
-      (rf/dispatch [:connections->clear-connection-details]))))
+      (rf/dispatch [:connections->clear-connection-details])
+      (rf/dispatch [:federation/clear]))))

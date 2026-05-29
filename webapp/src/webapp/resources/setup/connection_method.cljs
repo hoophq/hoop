@@ -1,13 +1,14 @@
 (ns webapp.resources.setup.connection-method
   (:require
    ["@radix-ui/themes" :refer [Box Flex Heading Link Select Text]]
-   ["lucide-react" :refer [FileSpreadsheet GlobeLock]]
+   ["lucide-react" :refer [FileSpreadsheet GlobeLock Cloud]]
    [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.components.selection-card :refer [selection-card]]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.resources.federation.views.setup :as federation-setup]))
 
 (defn source-selector [role-index field-key]
   (let [open? (r/atom false)
@@ -86,7 +87,8 @@
     (fn []
       (let [connection-method @connection-method-sub
             resource-subtype @resource-subtype-sub
-            supports-aws-iam? (contains? #{"mysql" "postgres"} resource-subtype)]
+            supports-aws-iam? (contains? #{"mysql" "postgres"} resource-subtype)
+            supports-iam-federation? (= resource-subtype "bigquery")]
         [:> Box {:class "space-y-3"}
          [selection-card
           {:icon (r/as-element [:> FileSpreadsheet {:size 20}])
@@ -120,7 +122,16 @@
                :selected? (= connection-method "aws-iam-role")
                :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
                                         role-index
-                                        "aws-iam-role"])}]))]))))
+                                        "aws-iam-role"])}]))
+         (when supports-iam-federation?
+           [selection-card
+            {:icon (r/as-element [:> Cloud {:size 20}])
+             :title "IAM Federation"
+             :description "Impersonate users at session time via GCP IAM — no static credentials stored per user."
+             :selected? (= connection-method "iam_federation")
+             :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
+                                      role-index
+                                      "iam_federation"])}])]))))
 
 (defn secrets-manager-provider-selector [role-index]
   (let [provider-sub (rf/subscribe [:resource-setup/secrets-manager-provider role-index])]
@@ -161,7 +172,10 @@
 
 (defn main
   [role-index]
-  (let [connection-method-sub (rf/subscribe [:resource-setup/role-connection-method role-index])]
+  (let [connection-method-sub (rf/subscribe [:resource-setup/role-connection-method role-index])
+        agent-id-sub (rf/subscribe [:resource-setup/agent-id])
+        subtype-sub (rf/subscribe [:resource-setup/resource-subtype])
+        type-sub (rf/subscribe [:resource-setup/resource-type])]
     (fn []
       (let [connection-method @connection-method-sub]
         [:> Box {:class "space-y-6"}
@@ -174,5 +188,12 @@
            [secrets-manager-provider-selector role-index]
 
            (= connection-method "aws-iam-role")
-           [aws-iam-role-section role-index])]))))
+           [aws-iam-role-section role-index]
+
+           (= connection-method "iam_federation")
+           [federation-setup/main
+            {:connection-name nil
+             :conn-data {:agent_id @agent-id-sub
+                         :type (or @type-sub "database")
+                         :subtype (or @subtype-sub "bigquery")}}])]))))
 
