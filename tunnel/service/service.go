@@ -133,12 +133,10 @@ type Options struct {
 	// without sudo. Empty defaults to "hsh".
 	//
 	// The Install operation creates the group if it does not exist
-	// (groupadd on Linux, dscl on macOS). Membership of the calling
-	// user is the responsibility of the caller — we deliberately do
-	// NOT add the caller to the group here, because doing so requires
-	// the user to log out / log back in for the new group to take
-	// effect on their shell, and silently adding them would mask that
-	// requirement.
+	// (groupadd on Linux, dscl on macOS) and — when AddInvokingUser is
+	// true — adds the human who ran `sudo hsh-tunneld install` to it so
+	// the unprivileged `hsh` CLI / tray can talk to the daemon without
+	// sudo afterward.
 	GroupName string
 
 	// CopyBinary controls whether Install copies the running
@@ -155,6 +153,27 @@ type Options struct {
 	// usually want to manage groups themselves through scriptlet hooks.
 	// Defaults to true.
 	CreateGroup bool
+
+	// AddInvokingUser controls whether Install adds the human who ran
+	// `sudo hsh-tunneld install` (resolved from $SUDO_USER) to GroupName.
+	// This is what makes the post-install UX seamless: the unprivileged
+	// `hsh` CLI and tray can read the control token + connect to the IPC
+	// socket without sudo. Defaults to true.
+	//
+	// Caveat the installer must surface to the user: OS group membership
+	// only takes effect for *new* login sessions, so a shell or tray that
+	// was already running before install will not see the new group until
+	// it is relaunched (or the user logs out / back in). Install never
+	// errors when this step fails (e.g. $SUDO_USER unset because the
+	// operator is a real root login, or a packager ran install with no
+	// invoking user) — it logs the skip and continues, because a missing
+	// group membership is recoverable after the fact and must not abort an
+	// otherwise-successful service registration.
+	//
+	// Packagers (brew/deb/rpm) typically set this false and manage
+	// membership through their own hooks, the same way they manage
+	// CreateGroup.
+	AddInvokingUser bool
 
 	// EnableOnBoot controls whether the unit is enabled (so the
 	// service starts at next boot) in addition to being started right
@@ -288,6 +307,7 @@ func PlatformDefaults() Options {
 			GroupName:         "hsh",
 			CopyBinary:        true,
 			CreateGroup:       true,
+			AddInvokingUser:   true,
 			EnableOnBoot:      true,
 			StartAfterInstall: true,
 		}
@@ -299,6 +319,7 @@ func PlatformDefaults() Options {
 			GroupName:         "", // not used on Windows
 			CopyBinary:        true,
 			CreateGroup:       false,
+			AddInvokingUser:   false, // Windows uses a DACL granting local Users
 			EnableOnBoot:      true,
 			StartAfterInstall: true,
 		}

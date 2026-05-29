@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -61,11 +62,22 @@ type DNSHandler func(query []byte, src netip.AddrPort) ([]byte, error)
 
 // Options configures a Stack.
 type Options struct {
-	// Prefix is the per-session /48 the netstack will route locally.
+	// Prefix is the per-session IPv6 /48 the netstack will route locally.
 	Prefix netip.Prefix
 
-	// Gateway is the address the resolver listens on. Must be inside Prefix.
+	// Gateway is the IPv6 address the resolver listens on. Must be inside
+	// Prefix.
 	Gateway netip.Addr
+
+	// PrefixV4 is the per-session IPv4 /16 (inside 100.64.0.0/10) the
+	// netstack also routes locally. Required for dual-stack; the resolver
+	// hands out A records from it and macOS apps reach connections over
+	// it (see addressing package for why v4 is mandatory on macOS).
+	PrefixV4 netip.Prefix
+
+	// GatewayV4 is the IPv4 address the resolver also listens on (and the
+	// netstack's v4 local address). Must be inside PrefixV4.
+	GatewayV4 netip.Addr
 
 	// MTU for the TUN device. Default 1500.
 	MTU uint32
@@ -121,6 +133,12 @@ func New(ctx context.Context, opts Options) (*Stack, error) {
 	if !opts.Gateway.Is6() || !opts.Prefix.Contains(opts.Gateway) {
 		return nil, errors.New("netstack: Gateway must be inside Prefix and IPv6")
 	}
+	if !opts.PrefixV4.IsValid() || !opts.PrefixV4.Addr().Is4() {
+		return nil, errors.New("netstack: PrefixV4 must be a valid IPv4 prefix")
+	}
+	if !opts.GatewayV4.Is4() || !opts.PrefixV4.Contains(opts.GatewayV4) {
+		return nil, errors.New("netstack: GatewayV4 must be inside PrefixV4 and IPv4")
+	}
 	if opts.MTU == 0 {
 		opts.MTU = 1500
 	}
@@ -132,7 +150,7 @@ func New(ctx context.Context, opts Options) (*Stack, error) {
 
 	ep := channel.New(512, opts.MTU, "")
 	stk := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 
@@ -140,9 +158,9 @@ func New(ctx context.Context, opts Options) (*Stack, error) {
 		_ = device.Close()
 		return nil, fmt.Errorf("netstack: CreateNIC: %s", err)
 	}
-	// Address the NIC with the gateway IP. gVisor delivers traffic for
+	// Address the NIC with the v6 gateway IP. gVisor delivers traffic for
 	// every address in the routing table to this NIC, but it must own at
-	// least one local address before it accepts incoming TCP.
+	// least one local address per family before it accepts incoming TCP.
 	protoAddr := tcpip.ProtocolAddress{
 		Protocol: ipv6.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
@@ -152,12 +170,25 @@ func New(ctx context.Context, opts Options) (*Stack, error) {
 	}
 	if err := stk.AddProtocolAddress(NICID, protoAddr, stack.AddressProperties{}); err != nil {
 		_ = device.Close()
-		return nil, fmt.Errorf("netstack: AddProtocolAddress: %s", err)
+		return nil, fmt.Errorf("netstack: AddProtocolAddress(v6): %s", err)
 	}
-	// Make the NIC promiscuous on its prefix: any destination address inside
-	// the /48 is delivered locally instead of being treated as forward
-	// traffic. This is what lets `fd...:beef::1234` route to the netstack
-	// without a per-address AddProtocolAddress call.
+	// And the v4 gateway IP, so the NIC owns a v4 local address too.
+	protoAddrV4 := tcpip.ProtocolAddress{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(opts.GatewayV4.AsSlice()),
+			PrefixLen: opts.PrefixV4.Bits(),
+		},
+	}
+	if err := stk.AddProtocolAddress(NICID, protoAddrV4, stack.AddressProperties{}); err != nil {
+		_ = device.Close()
+		return nil, fmt.Errorf("netstack: AddProtocolAddress(v4): %s", err)
+	}
+	// Make the NIC promiscuous on its prefixes: any destination address
+	// inside the /48 (or the v4 /16) is delivered locally instead of being
+	// treated as forward traffic. This is what lets `fd...:beef::1234` or
+	// `100.x.y.z` route to the netstack without a per-address
+	// AddProtocolAddress call.
 	if err := stk.SetSpoofing(NICID, true); err != nil {
 		_ = device.Close()
 		return nil, fmt.Errorf("netstack: SetSpoofing: %s", err)
@@ -166,8 +197,12 @@ func New(ctx context.Context, opts Options) (*Stack, error) {
 		_ = device.Close()
 		return nil, fmt.Errorf("netstack: SetPromiscuousMode: %s", err)
 	}
-	// Route everything in the prefix locally.
+	// Route everything (both families) locally to this NIC.
 	stk.SetRouteTable([]tcpip.Route{
+		{
+			Destination: header.IPv4EmptySubnet,
+			NIC:         NICID,
+		},
 		{
 			Destination: header.IPv6EmptySubnet,
 			NIC:         NICID,
@@ -258,49 +293,71 @@ func (s *Stack) onTCP(req *tcp.ForwarderRequest) {
 	go s.opts.TCPHandler(conn, localAddr, id.LocalPort)
 }
 
-// serveUDPDNS listens on the gateway address port 53 and routes datagrams to
-// the DNS handler.
+// serveUDPDNS binds the DNS resolver on both the IPv6 and IPv4 gateway
+// addresses (port 53) so the resolver is reachable regardless of which
+// family the host's DNS path uses to query it. On macOS the
+// /etc/resolver/<tld> entry points at the v6 gateway and mDNSResponder
+// queries over v6; a v4-only host (or a v4 /etc/resolver entry) reaches
+// the v4 gateway. Binding both costs nothing and removes a footgun.
 func (s *Stack) serveUDPDNS() {
-	addr := tcpip.FullAddress{
+	v6 := tcpip.FullAddress{
 		NIC:  NICID,
 		Addr: tcpip.AddrFromSlice(s.opts.Gateway.AsSlice()),
 		Port: 53,
 	}
-	pc, err := gonet.DialUDP(s.stk, &addr, nil, ipv6.ProtocolNumber)
-	if err != nil {
-		// Without DNS the tunnel is useless, but we don't have a great way
-		// to surface this back to New's caller post-construction. Log via
-		// context cancellation cause.
+	if err := s.listenDNS(v6, ipv6.ProtocolNumber); err != nil {
+		// Without DNS the tunnel is useless. Cancel so New's goroutines
+		// unwind and the manager surfaces the failure.
 		s.cancel()
 		return
 	}
-	defer pc.Close()
+	v4 := tcpip.FullAddress{
+		NIC:  NICID,
+		Addr: tcpip.AddrFromSlice(s.opts.GatewayV4.AsSlice()),
+		Port: 53,
+	}
+	if err := s.listenDNS(v4, ipv4.ProtocolNumber); err != nil {
+		s.cancel()
+		return
+	}
+}
 
+// listenDNS opens a single UDP listener on addr and spawns the read loop
+// in a goroutine. Returns an error if the bind fails so the caller can
+// decide whether a missing listener is fatal.
+func (s *Stack) listenDNS(addr tcpip.FullAddress, proto tcpip.NetworkProtocolNumber) error {
+	pc, err := gonet.DialUDP(s.stk, &addr, nil, proto)
+	if err != nil {
+		return err
+	}
 	go func() {
 		<-s.ctx.Done()
 		_ = pc.Close()
 	}()
-
-	buf := make([]byte, 1500)
-	for {
-		n, raddr, err := pc.ReadFrom(buf)
-		if err != nil {
-			return
-		}
-		src, err := netip.ParseAddrPort(raddr.String())
-		if err != nil {
-			continue
-		}
-		query := append([]byte(nil), buf[:n]...)
-		raddrCopy := raddr
-		go func(query []byte, src netip.AddrPort) {
-			resp, err := s.opts.DNSHandler(query, src)
-			if err != nil || len(resp) == 0 {
+	go func() {
+		defer pc.Close()
+		buf := make([]byte, 1500)
+		for {
+			n, raddr, err := pc.ReadFrom(buf)
+			if err != nil {
 				return
 			}
-			_, _ = pc.WriteTo(resp, raddrCopy)
-		}(query, src)
-	}
+			src, err := netip.ParseAddrPort(raddr.String())
+			if err != nil {
+				continue
+			}
+			query := append([]byte(nil), buf[:n]...)
+			raddrCopy := raddr
+			go func(query []byte, src netip.AddrPort) {
+				resp, err := s.opts.DNSHandler(query, src)
+				if err != nil || len(resp) == 0 {
+					return
+				}
+				_, _ = pc.WriteTo(resp, raddrCopy)
+			}(query, src)
+		}
+	}()
+	return nil
 }
 
 // deviceToStack reads packets from the TUN and injects them into gVisor.
@@ -316,11 +373,26 @@ func (s *Stack) deviceToStack() {
 		if n == 0 {
 			continue
 		}
+		// Dispatch to the correct network protocol by inspecting the IP
+		// version nibble. The tunnel is dual-stack, so a packet may be
+		// IPv4 or IPv6; injecting everything as IPv6 (as the v6-only
+		// design did) makes gVisor silently drop v4 packets — the SYN
+		// arrives on the TUN but never reaches the v4 TCP stack.
+		proto := ipv6.ProtocolNumber
+		switch buf[0] >> 4 {
+		case 4:
+			proto = ipv4.ProtocolNumber
+		case 6:
+			proto = ipv6.ProtocolNumber
+		default:
+			// Not an IP packet we understand; drop it.
+			continue
+		}
 		view := buffer.MakeWithData(append([]byte(nil), buf[:n]...))
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: view,
 		})
-		s.endpoint.InjectInbound(ipv6.ProtocolNumber, pkt)
+		s.endpoint.InjectInbound(proto, pkt)
 		pkt.DecRef()
 	}
 }

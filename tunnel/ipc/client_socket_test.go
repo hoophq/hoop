@@ -14,14 +14,31 @@ import (
 	"time"
 )
 
+// shortSocketPath returns a unix-socket path short enough to fit inside
+// the platform's sockaddr_un.sun_path limit (104 bytes on macOS/BSD, 108
+// on Linux). The standard t.TempDir() on macOS lives under
+// /var/folders/<...long...>/T/ which alone can exceed 104 chars, making
+// bind(2) fail with EINVAL ("invalid argument") before the listener ever
+// comes up. We bind under /tmp (a short, world-writable, test-only
+// location) and register the parent dir for cleanup so we don't leak
+// socket files.
+func shortSocketPath(t *testing.T, name string) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "hsh-ipc-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, name)
+}
+
 // TestClient_EndToEndOverUnixSocket exercises the full stack:
 // Listen → Server.Serve → real net.Dialer in the Client → response
 // decoded back into typed Go values. It catches any wiring mistake in
 // either side (wrong content-type, missing auth header, JSON shape
 // drift) that would slip past the in-process Handler() tests.
 func TestClient_EndToEndOverUnixSocket(t *testing.T) {
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "hsh-test.sock")
+	sockPath := shortSocketPath(t, "hsh-test.sock")
 
 	svc := &fakeService{
 		statusResp: StatusResponse{
@@ -111,8 +128,7 @@ func TestClient_EndToEndOverUnixSocket(t *testing.T) {
 }
 
 func TestClient_UnauthorizedSurfacesAPIError(t *testing.T) {
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "hsh-test.sock")
+	sockPath := shortSocketPath(t, "hsh-test.sock")
 
 	var store MemoryTokenStore
 	if _, err := store.Rotate(); err != nil {
@@ -173,8 +189,7 @@ func TestListen_RefusesNonSocketPath(t *testing.T) {
 }
 
 func TestListen_RemovesStaleSocket(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "hsh-test.sock")
+	path := shortSocketPath(t, "hsh-test.sock")
 
 	// Bind once and close immediately, leaving the socket file behind.
 	ln1, err := Listen(ListenerOptions{Path: path, Mode: 0o600})

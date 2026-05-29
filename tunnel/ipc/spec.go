@@ -82,6 +82,13 @@ type Connection struct {
 	// session.
 	VirtualIP string `json:"virtual_ip"`
 
+	// VirtualIPV4 is the CGNAT (100.64.0.0/10) IPv4 address that also
+	// resolves to this connection. The tunnel is dual-stack: the resolver
+	// answers both A (this) and AAAA (VirtualIP). macOS apps use the v4
+	// address because getaddrinfo suppresses AAAA without global IPv6;
+	// Linux can use either. Stable for the daemon's current session.
+	VirtualIPV4 string `json:"virtual_ip_v4"`
+
 	// ExpectedPort is the canonical TCP port the client is expected to
 	// connect to (5432 for postgres, etc.). Zero for `tcp` subtype,
 	// which accepts any user-defined upstream port.

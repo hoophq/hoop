@@ -31,3 +31,8 @@ func socketNetwork(_ string) string { return "unix" }
 func platformListen(_ ListenerOptions) (net.Listener, error) {
 	return nil, errors.New("ipc: Windows named-pipe listener not implemented in this build (see RD-215 follow-up)")
 }
+
+// chownToGroup is a no-op on Windows: access to the control-token file
+// is governed by a DACL granting the local Users group, not POSIX group
+// ownership (see RD-215). The gid argument is ignored.
+func chownToGroup(_ string, _ int) error { return nil }

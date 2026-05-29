@@ -129,7 +129,11 @@ func (m *MemoryTokenStore) Rotate() (ControlToken, error) {
 // fresh each time.
 type fileTokenStore struct {
 	path string
-	tok  atomic.Pointer[ControlToken]
+	// gid is the group the token file is chowned to (-1 = leave at the
+	// process's primary group). Resolved once from FileTokenOptions.GroupName
+	// at construction so Rotate doesn't re-do the lookup on every restart.
+	gid int
+	tok atomic.Pointer[ControlToken]
 }
 
 // FileTokenOptions tunes how NewFileTokenStore writes the token file.
@@ -144,6 +148,16 @@ type FileTokenOptions struct {
 	// DirMode is the mode applied to the containing directory if it has
 	// to be created. Defaults to 0750.
 	DirMode os.FileMode
+
+	// GroupName, when set, is the OS group the token file is chowned to
+	// so members of that group can read it (the IPC group, typically
+	// "hsh"). Without this the file stays owned by the daemon's primary
+	// group (e.g. root:daemon on macOS, root:root on Linux) and the
+	// 0640 mode's group-read bit is useless because no non-root user is
+	// in that group. Empty leaves the group at the process default —
+	// fine for tests and dev runs that don't use a group ACL. Ignored on
+	// Windows (which uses a DACL instead).
+	GroupName string
 }
 
 // NewFileTokenStore constructs a TokenStore that persists the control
@@ -168,7 +182,20 @@ func NewFileTokenStore(path string, opts FileTokenOptions) (TokenStore, error) {
 	if err := os.MkdirAll(dir, opts.DirMode); err != nil {
 		return nil, fmt.Errorf("ipc: ensure token dir %q: %w", dir, err)
 	}
-	s := &fileTokenStore{path: path}
+
+	// Resolve the group once. An unknown group is a configuration error
+	// worth surfacing at construction rather than silently leaving the
+	// token unreadable by the intended audience.
+	gid := -1
+	if opts.GroupName != "" {
+		resolved, err := lookupGID(opts.GroupName)
+		if err != nil {
+			return nil, fmt.Errorf("ipc: resolve token group %q: %w", opts.GroupName, err)
+		}
+		gid = resolved
+	}
+
+	s := &fileTokenStore{path: path, gid: gid}
 	// If a token file from a previous daemon lifetime still exists, do
 	// NOT reuse it: we want every restart to rotate. The caller is
 	// expected to Rotate before serving the first request. We still
@@ -176,6 +203,11 @@ func NewFileTokenStore(path string, opts FileTokenOptions) (TokenStore, error) {
 	// stale token readable across reboots.
 	if err := os.WriteFile(path, nil, opts.Mode); err != nil {
 		return nil, fmt.Errorf("ipc: truncate token file %q: %w", path, err)
+	}
+	// Chown the (empty) file now so its group is correct even before the
+	// first Rotate; Rotate re-applies it on the renamed temp file too.
+	if err := chownToGroup(path, gid); err != nil {
+		return nil, fmt.Errorf("ipc: chown token file %q: %w", path, err)
 	}
 	return s, nil
 }
@@ -215,6 +247,15 @@ func (s *fileTokenStore) Rotate() (ControlToken, error) {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("ipc: chmod temp token: %w", err)
+	}
+	// Apply the group ownership to the temp file *before* the rename so
+	// the token is never visible at its final path with the wrong group
+	// (which would briefly make it unreadable by the hsh group, racing a
+	// client poll).
+	if err := chownToGroup(tmp.Name(), s.gid); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("ipc: chown temp token: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmp.Name())

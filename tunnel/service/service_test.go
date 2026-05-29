@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -75,6 +76,26 @@ func TestStatus_String(t *testing.T) {
 	}
 }
 
+// TestDefaultOptions_AddInvokingUser pins the default that makes the
+// post-install UX seamless: on POSIX the installing user is auto-added
+// to the hsh group; on Windows (DACL model, no group) it stays off.
+func TestDefaultOptions_AddInvokingUser(t *testing.T) {
+	got := DefaultOptions()
+	switch runtime.GOOS {
+	case "linux", "darwin":
+		if !got.AddInvokingUser {
+			t.Error("AddInvokingUser should default true on linux/darwin")
+		}
+		if got.GroupName == "" {
+			t.Error("GroupName should be non-empty when AddInvokingUser is on")
+		}
+	case "windows":
+		if got.AddInvokingUser {
+			t.Error("AddInvokingUser should default false on windows")
+		}
+	}
+}
+
 // TestNew_ReturnsManager makes sure New always returns a usable value
 // regardless of GOOS — the stub paths must not return nil.
 func TestNew_ReturnsManager(t *testing.T) {
@@ -107,12 +128,15 @@ func TestDefaultPurgeOptions_DefaultsAreSafe(t *testing.T) {
 // returned by stubs is identifiable via errors.Is, which is how the
 // CLI verb checks for "this platform isn't ready yet".
 func TestUnsupportedPlatformErrorWraps(t *testing.T) {
-	s := &stubManager{platform: "launchd"}
+	// "windows" and "unsupported" are the platforms still backed by the
+	// stub (Linux and macOS now have real managers). We construct the
+	// stub directly so the test is independent of the host GOOS.
+	s := &stubManager{platform: "windows"}
 	err := s.Install(Options{})
 	if !errors.Is(err, ErrUnsupportedPlatform) {
 		t.Fatalf("expected wrapped ErrUnsupportedPlatform, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "launchd") {
+	if !strings.Contains(err.Error(), "windows") {
 		t.Errorf("error did not include platform name: %v", err)
 	}
 }

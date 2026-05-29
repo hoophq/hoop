@@ -181,3 +181,89 @@ func TestNameWithDotsIsStillStable(t *testing.T) {
 		t.Fatalf("name stability or unexpected encoding: %v / %v", a1, a2)
 	}
 }
+
+// --- dual-stack (IPv4) tests ---
+
+func TestV4PrefixIsCGNAT(t *testing.T) {
+	a := New("session-1")
+	p := a.PrefixV4()
+	if p.Bits() != 16 {
+		t.Fatalf("v4 prefix bits: got %d want 16", p.Bits())
+	}
+	b := p.Addr().As4()
+	if b[0] != 100 || b[1] < 64 || b[1] > 127 {
+		t.Fatalf("v4 prefix %v is not inside 100.64.0.0/10", p)
+	}
+}
+
+func TestV4DeterministicAndInsidePrefix(t *testing.T) {
+	a := New("seed")
+	_, _ = a.AddName("pg-prod")
+	v4a, ok := a.LookupNameV4("pg-prod")
+	if !ok {
+		t.Fatal("v4 not allocated for pg-prod")
+	}
+	// Same seed + name on a fresh allocator yields the same v4 address.
+	b := New("seed")
+	_, _ = b.AddName("pg-prod")
+	v4b, _ := b.LookupNameV4("pg-prod")
+	if v4a != v4b {
+		t.Errorf("v4 not deterministic: %v vs %v", v4a, v4b)
+	}
+	if !a.PrefixV4().Contains(v4a) {
+		t.Errorf("v4 %v not inside prefix %v", v4a, a.PrefixV4())
+	}
+}
+
+func TestV4ReverseLookupAndFamilyRouting(t *testing.T) {
+	a := New("seed")
+	_, _ = a.AddName("pg-prod")
+	v6, _ := a.LookupName("pg-prod")
+	v4, _ := a.LookupNameV4("pg-prod")
+
+	// LookupAddr routes by family: a v4 addr resolves via the v4 table,
+	// a v6 addr via the v6 table — both back to the same name.
+	if n, ok := a.LookupAddr(v4); !ok || n != "pg-prod" {
+		t.Errorf("LookupAddr(v4=%v) = %q,%v want pg-prod,true", v4, n, ok)
+	}
+	if n, ok := a.LookupAddr(v6); !ok || n != "pg-prod" {
+		t.Errorf("LookupAddr(v6=%v) = %q,%v want pg-prod,true", v6, n, ok)
+	}
+	if n, ok := a.LookupAddrV4(v4); !ok || n != "pg-prod" {
+		t.Errorf("LookupAddrV4(%v) = %q,%v want pg-prod,true", v4, n, ok)
+	}
+}
+
+func TestV4GatewayHostReserved(t *testing.T) {
+	a := New("seed")
+	gw, host := a.GatewayV4(), a.HostAddrV4()
+	if !gw.Is4() || !host.Is4() {
+		t.Fatalf("v4 gateway/host not IPv4: %v / %v", gw, host)
+	}
+	if gw == host {
+		t.Fatal("v4 gateway and host must differ")
+	}
+	// Neither reserved address is ever handed to a connection name.
+	for i := 0; i < 200; i++ {
+		_, _ = a.AddName(string(rune('a'+i%26)) + string(rune('0'+i/26)))
+	}
+	for _, name := range a.Names() {
+		v4, _ := a.LookupNameV4(name)
+		if v4 == gw || v4 == host {
+			t.Errorf("name %q got reserved v4 %v", name, v4)
+		}
+	}
+}
+
+func TestV4DistinctFromV6LowBits(t *testing.T) {
+	// The v4 host part uses a different hash slice than the v6 suffix, so
+	// the two are not trivially correlated. Mostly a smoke test that both
+	// allocations happen and differ in form.
+	a := New("seed")
+	_, _ = a.AddName("conn")
+	v6, _ := a.LookupName("conn")
+	v4, _ := a.LookupNameV4("conn")
+	if !v6.Is6() || !v4.Is4() {
+		t.Fatalf("families wrong: v6=%v v4=%v", v6, v4)
+	}
+}

@@ -230,12 +230,16 @@ func (s *daemonService) Connections(context.Context) ([]ipc.Connection, error) {
 		}
 		subType := snap.SubTypeByName[name]
 		port, _ := portmap.CanonicalPort(subType)
-		out = append(out, ipc.Connection{
+		conn := ipc.Connection{
 			Name:         name,
 			SubType:      subType,
 			VirtualIP:    ip.String(),
 			ExpectedPort: port,
-		})
+		}
+		if ipv4, ok := snap.Allocator.LookupNameV4(name); ok {
+			conn.VirtualIPV4 = ipv4.String()
+		}
+		out = append(out, conn)
 	}
 	return out, nil
 }

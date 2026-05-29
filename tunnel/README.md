@@ -38,26 +38,35 @@ Architecture in one picture:
                                                                 hoop agent → upstream
 ```
 
-This is currently **Linux-only**. macOS and Windows TUN setup is tracked
-under Phase 2.
+**Linux** (stock `/dev/net/tun`) and **macOS** (stock `utun`) are both
+supported. Windows (Wintun) TUN setup is still tracked under Phase 2.
 
 ## Layout
 
 | Path                  | What lives there                                              |
 |-----------------------|---------------------------------------------------------------|
-| `addressing/`         | Deterministic name → ULA IPv6 allocator (ADR-0001).           |
+| `addressing/`         | Deterministic name → dual-stack (ULA IPv6 + CGNAT IPv4) allocator (ADR-0001). |
 | `resolver/`           | DNS resolver bound inside the netstack.                       |
-| `netstack/`           | gVisor stack + TUN device wiring (Linux only).                |
+| `netstack/`           | gVisor stack + TUN device wiring (Linux `/dev/net/tun`, macOS `utun`). |
+| `resolved/`           | Host DNS routing for `*.<tld>` (Linux systemd-resolved, macOS `/etc/resolver`). |
+| `service/`            | System-service install/uninstall (Linux systemd, macOS LaunchDaemon). |
 | `client/pipe.go`      | Per-flow gRPC pipe; sends SessionOpen + TCPConnectionWrite.   |
 | `client/connections.go` | Lists tunnelable connections via `GET /api/connections`.    |
 | `cmd/hsh-tunneld/`    | Daemon binary entry point.                                    |
 
 ## Running standalone (dev / integration)
 
-You need one terminal and Linux. The daemon needs `CAP_NET_ADMIN` to open
-the TUN device — either run with `sudo` or `setcap cap_net_admin+ep` the
-binary once. The same gateway you already run locally (the OSS dev
-gateway via `make run-dev`) is used as-is.
+You need one terminal and either Linux or macOS. The daemon needs to open
+a TUN device, which requires elevated privileges:
+
+- **Linux**: run with `sudo`, or grant `CAP_NET_ADMIN` once with
+  `setcap cap_net_admin+ep` on the binary.
+- **macOS**: run with `sudo` (opening a `utun` device via the
+  PF_SYSTEM control socket requires root). There is no capability
+  equivalent; the LaunchDaemon install runs the daemon as root.
+
+The same gateway you already run locally (the OSS dev gateway via
+`make run-dev`) is used as-is.
 
 ### 1. Build
 
@@ -118,7 +127,21 @@ psql -h fd5a:1b2c:3d4e::a1b2:c3d4 -U noop
 
 ### 5. Verify (with host DNS routing)
 
+The daemon wires host DNS automatically on bring-up, so on a stock
+system `*.hoop` already resolves and you can skip straight to `psql -h
+pg-prod.hoop`:
+
+- **Linux (systemd-resolved)**: the daemon runs `resolvectl dns/domain`
+  on the TUN interface. If you need to do it by hand (e.g. resolved
+  isn't running), the banner prints the exact commands. The device name
+  is kernel-assigned (`tun0`, `tun1`, …).
+- **macOS**: the daemon writes `/etc/resolver/hoop` pointing
+  mDNSResponder at the in-stack resolver; no manual step. The device
+  name is kernel-assigned (`utun3`, `utun7`, …). To inspect it:
+  `cat /etc/resolver/hoop` and `scutil --dns | grep -A3 hoop`.
+
 ```bash
+# Linux, manual fallback only:
 sudo resolvectl dns tun0 fd5a:1b2c:3d4e::1
 sudo resolvectl domain tun0 '~hoop'
 
@@ -136,12 +159,33 @@ connections need protocol-specific clients (or interactive shells) and
 are intentionally filtered out of the resolver. Use `hoop connect <name>`
 for those.
 
+## Addressing (dual-stack)
+
+Every connection is allocated **two** stable virtual IPs from a
+deterministic, session-seeded map:
+
+- An **IPv6 ULA** address inside a per-session `fd00::/8` `/48`.
+- An **IPv4 CGNAT** address inside a per-session `100.64.0.0/10` `/16`
+  (RFC 6598 shared-address space — like Tailscale uses; it won't collide
+  with typical RFC 1918 LANs).
+
+The in-stack resolver answers **both** `AAAA` (v6) and `A` (v4) for each
+name, and the netstack accepts TCP flows over either family.
+
+Why dual-stack and not v6-only: macOS `getaddrinfo()` honours
+`AI_ADDRCONFIG` and refuses to query/return `AAAA` for hostnames when the
+host has no globally-routable IPv6 address (the common case — only the
+tunnel provides v6). A v6-only answer is therefore invisible to real apps
+on macOS (`psql -h foo.hoop` fails) even though `dig`/`ping6` work. IPv4
+has no such gating, so handing out an A record makes resolution work
+everywhere with no per-OS divergence. See ADR-0001 for the full rationale.
+
 ## Flags
 
 | Flag        | Default          | Meaning                                                |
 |-------------|------------------|--------------------------------------------------------|
 | `-tld`      | `hoop`           | Tunnel TLD (also `$HSH_TUNNEL_DOMAIN`).                |
-| `-dev`      | _kernel-picked_  | Requested TUN device name.                             |
+| `-dev`      | _kernel-picked_  | Requested TUN device name (`tunN` on Linux, `utunN` on macOS). |
 | `-session`  | `spike-session`  | Session seed (drives the `/48` and the deterministic IPs). |
 
 ## Limitations (v1)
@@ -150,12 +194,25 @@ for those.
   whose stream dies must be re-initiated by the application. The daemon
   process itself does not need reconnect logic (see RD-209).
 - **No UDP.** TCP only.
-- **Linux only.** macOS/Windows TUN setup not implemented yet.
-- **Permissions.** The daemon needs `CAP_NET_ADMIN` to open `/dev/net/tun`.
-  When installed via `hsh install`, this is handled by the system service
-  unit (LaunchDaemon / systemd / Windows Service).
-- **Host DNS routing is manual.** RD-208 ships an automatic per-platform
-  flow.
+- **`ping` works over IPv6 but not IPv4.** The netstack runs in gVisor's
+  promiscuous/spoofing mode (it owns every connection IP on demand rather
+  than assigning thousands of addresses). gVisor's IPv6 stack answers
+  ICMPv6 echo for these on-demand addresses; its IPv4 stack deliberately
+  does not reply to ICMPv4 echo for "temporary" (spoofed) addresses. So
+  `ping6 foo.hoop` succeeds but `ping foo.hoop` (which resolves to the v4
+  address) times out. This is cosmetic: the tunnel is **TCP-only**, so
+  test connectivity with `nc -z foo.hoop <port>` or the actual client
+  (`psql`/`mysql`/…), not `ping`. Implementing a custom ICMPv4 echo
+  responder was judged not worth the complexity for a non-data-path poke.
+- **Linux + macOS.** Windows (Wintun) TUN setup is not implemented yet.
+- **Permissions.** The daemon runs as root: it opens `/dev/net/tun`
+  (Linux, `CAP_NET_ADMIN`) or a `utun` device (macOS, PF_SYSTEM control
+  socket) and mutates the host route table + DNS config. When installed
+  via `hsh install` this is handled by the system service (systemd unit /
+  LaunchDaemon).
+- **Host DNS routing is automatic** on Linux (systemd-resolved) and macOS
+  (`/etc/resolver`). Hosts without systemd-resolved fall back to the
+  manual hint printed in the bring-up banner.
 - **JIT review per flow.** Connections requiring access review will fail
   fast on the tunnel: there is no user-facing UI per TCP connection.
   Run `hoop connect <name>` once to request access out-of-band.

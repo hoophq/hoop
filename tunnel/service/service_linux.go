@@ -5,7 +5,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -34,9 +33,10 @@ type linuxManager struct {
 
 	// systemctlPath overrides exec.LookPath("systemctl") in tests.
 	systemctlPath string
-	// groupaddPath / groupdelPath override the same way.
+	// groupaddPath / groupdelPath / usermodPath override the same way.
 	groupaddPath string
 	groupdelPath string
+	usermodPath  string
 }
 
 func (l *linuxManager) PlatformName() string { return "systemd" }
@@ -100,10 +100,17 @@ func (l *linuxManager) Install(opts Options) error {
 		}
 	}
 
-	// (2) create the group.
+	// (2) create the group, then add the invoking user to it so the
+	// unprivileged hsh CLI / tray can reach the daemon without sudo.
 	if opts.CreateGroup {
 		if err := l.ensureGroup(opts.GroupName); err != nil {
 			return fmt.Errorf("ensure group %q: %w", opts.GroupName, err)
+		}
+	}
+	if opts.AddInvokingUser && opts.GroupName != "" {
+		if err := l.addInvokingUserToGroup(opts.GroupName); err != nil {
+			// Non-fatal: see service.go AddInvokingUser docs.
+			fmt.Printf("hsh-tunneld: note: could not add invoking user to %q: %v\n", opts.GroupName, err)
 		}
 	}
 
@@ -287,6 +294,42 @@ func (l *linuxManager) ensureGroup(name string) error {
 	return nil
 }
 
+// addInvokingUserToGroup adds the human who ran `sudo hsh-tunneld
+// install` (resolved from $SUDO_USER) to the named group via
+// `usermod -aG`. Idempotent: a user already in the group is a no-op.
+// Returns nil (not an error) when there is no invoking user — the
+// real-root / packager case.
+//
+// The new membership only applies to new login sessions, so the caller
+// must tell the user to relaunch any already-running shell/tray.
+func (l *linuxManager) addInvokingUserToGroup(groupName string) error {
+	username := invokingUser()
+	if username == "" {
+		return nil // real root login or packager hook — nothing to add
+	}
+	already, err := userInGroup(username, groupName)
+	if err != nil {
+		return err
+	}
+	if already {
+		return nil
+	}
+	usermod := l.usermodPath
+	if usermod == "" {
+		usermod, err = exec.LookPath("usermod")
+		if err != nil {
+			return fmt.Errorf("usermod not found on PATH: %w", err)
+		}
+	}
+	// -a appends (don't strip existing supplementary groups), -G names
+	// the group. Order matters: `usermod -aG <grp> <user>`.
+	cmd := exec.Command(usermod, "-aG", groupName, username)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("usermod -aG %s %s: %w (output: %s)", groupName, username, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // removeGroup deletes the group if it exists. Idempotent.
 func (l *linuxManager) removeGroup(name string) error {
 	if _, err := user.LookupGroup(name); err != nil {
@@ -305,114 +348,6 @@ func (l *linuxManager) removeGroup(name string) error {
 		return fmt.Errorf("groupdel: %w (output: %s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// ensureConfigDirAndFile creates /etc/hsh/ (or the parent of
-// configPath) and writes an empty config.toml if one is not already
-// there. The directory gets mode 0750 and is chowned to root:groupName
-// so the daemon (root) and the hsh group can both read it. The file
-// itself stays mode 0600 — only root needs to read the token.
-//
-// Existing files are left untouched. This lets a reinstall preserve
-// the user's saved token without an explicit migration.
-func ensureConfigDirAndFile(configPath, groupName string) error {
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("mkdir %q: %w", dir, err)
-	}
-	// chown the dir to root:hsh. LookupGroup may return ErrNoGroup if
-	// the install is racing CreateGroup=false + an external packager
-	// — in that case skip the chown (the operator can fix it later)
-	// rather than fail the entire install.
-	if grp, err := user.LookupGroup(groupName); err == nil {
-		var gid int
-		fmt.Sscanf(grp.Gid, "%d", &gid)
-		if err := os.Chown(dir, 0, gid); err != nil {
-			return fmt.Errorf("chown %q to root:%s: %w", dir, groupName, err)
-		}
-	}
-
-	// Touch config.toml so validate-config has something to parse.
-	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
-		f, err := os.OpenFile(configPath, os.O_CREATE|os.O_WRONLY, 0600)
-		if err != nil {
-			return fmt.Errorf("create %q: %w", configPath, err)
-		}
-		if _, err := f.WriteString("# hsh-tunneld config — managed by `hsh tunnel config`\n"); err != nil {
-			_ = f.Close()
-			return fmt.Errorf("write %q: %w", configPath, err)
-		}
-		if err := f.Close(); err != nil {
-			return fmt.Errorf("close %q: %w", configPath, err)
-		}
-		// Belt and braces: re-chmod in case the umask gave us 0644.
-		if err := os.Chmod(configPath, 0600); err != nil {
-			return fmt.Errorf("chmod %q: %w", configPath, err)
-		}
-	}
-	return nil
-}
-
-// copyExecutable copies src to dst with mode 0755 and root:root
-// ownership (we are already running as root). It is safe to copy onto
-// the running binary's own path because we copy through a temp file
-// + rename — the same trick the Go updater uses.
-func copyExecutable(src, dst string) error {
-	if src == dst {
-		// Already where we want it (e.g. a packager-supplied install
-		// where the user happened to be running the installed binary).
-		// Just ensure the mode bits are right.
-		return os.Chmod(dst, 0755)
-	}
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open %q: %w", src, err)
-	}
-	defer in.Close()
-
-	tmp := dst + ".new"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-	if err != nil {
-		return fmt.Errorf("create %q: %w", tmp, err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmp)
-		return fmt.Errorf("copy: %w", err)
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("close %q: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename %q -> %q: %w", tmp, dst, err)
-	}
-	return nil
-}
-
-// writeFileIfDifferent writes contents to path if (a) the file does
-// not exist or (b) its current contents differ. Returns (changed, err).
-//
-// Skipping the write when the contents match means re-running
-// `hsh-tunneld install` does not bump the mtime of the unit file (and
-// therefore does not trigger a daemon-reload), which is the cheap-fast
-// path for an idempotent reinstall.
-func writeFileIfDifferent(path string, contents []byte, mode os.FileMode) (bool, error) {
-	if existing, err := os.ReadFile(path); err == nil {
-		if string(existing) == string(contents) {
-			return false, nil
-		}
-	}
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, contents, mode); err != nil {
-		return false, fmt.Errorf("write %q: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return false, fmt.Errorf("rename %q -> %q: %w", tmp, path, err)
-	}
-	return true, nil
 }
 
 // systemctl runs `systemctl <args>` and returns any non-zero exit as

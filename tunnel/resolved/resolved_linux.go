@@ -33,6 +33,14 @@ var resolvectlOverride = ""
 // first bring-up still picks it up.
 func newPlatformConfigurer() Configurer { return &linuxConfigurer{} }
 
+// CleanupStale is a no-op on Linux: systemd-resolved keys its routing
+// state on the TUN interface, which the kernel destroys when the daemon
+// (and therefore the utun/tun fd) goes away. There is no persistent file
+// to orphan, so a crashed previous run leaves nothing to self-heal. The
+// function exists so the cross-platform daemon startup can call it
+// unconditionally; see resolved_darwin.go for the /etc/resolver case.
+func CleanupStale(domain string) error { return nil }
+
 // linuxConfigurer drives systemd-resolved via the resolvectl CLI.
 // Stateless — all per-bring-up state lives in resolved itself
 // (keyed on the interface name).

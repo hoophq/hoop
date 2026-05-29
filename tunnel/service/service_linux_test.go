@@ -56,51 +56,6 @@ func TestLinuxManager_Status_NoUnit(t *testing.T) {
 	}
 }
 
-// TestWriteFileIfDifferent_NoOpOnIdentical confirms the cheap-fast path
-// of writeFileIfDifferent: a file that already matches the desired
-// contents leaves the on-disk mtime untouched.
-func TestWriteFileIfDifferent_NoOpOnIdentical(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "u.service")
-	if err := os.WriteFile(p, []byte("hello\n"), 0644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	before, _ := os.Stat(p)
-
-	changed, err := writeFileIfDifferent(p, []byte("hello\n"), 0644)
-	if err != nil {
-		t.Fatalf("writeFileIfDifferent: %v", err)
-	}
-	if changed {
-		t.Fatal("changed=true for identical content")
-	}
-	after, _ := os.Stat(p)
-	if !after.ModTime().Equal(before.ModTime()) {
-		t.Errorf("mtime changed (%v -> %v); expected no-op", before.ModTime(), after.ModTime())
-	}
-}
-
-// TestWriteFileIfDifferent_WritesNewContent confirms a real change is
-// actually written.
-func TestWriteFileIfDifferent_WritesNewContent(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "u.service")
-	if err := os.WriteFile(p, []byte("old\n"), 0644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	changed, err := writeFileIfDifferent(p, []byte("new\n"), 0644)
-	if err != nil {
-		t.Fatalf("writeFileIfDifferent: %v", err)
-	}
-	if !changed {
-		t.Fatal("changed=false for changed content")
-	}
-	got, _ := os.ReadFile(p)
-	if string(got) != "new\n" {
-		t.Errorf("content = %q, want %q", string(got), "new\n")
-	}
-}
-
 // fakeElevatedLinuxManager wraps a linuxManager and lies about
 // elevation. Used only inside this test file to exercise the
 // validation logic without needing root.
