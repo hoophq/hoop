@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 )
 
@@ -44,6 +45,24 @@ func platformListen(opts ListenerOptions) (net.Listener, error) {
 		path = DefaultSocketPathUnix
 	}
 
+	// Ensure the socket's parent directory exists before binding.
+	//
+	// On Linux this is normally provided by systemd's
+	// `RuntimeDirectory=hsh` clause, but we create it here too so the
+	// daemon also works when launched outside systemd (dev runs, or a
+	// host where the directory was reaped). On macOS it is mandatory:
+	// /var/run is on a volatile filesystem whose contents do not survive
+	// a reboot, so the directory the installer created is gone by the
+	// time the LaunchDaemon starts at next boot. launchd has no
+	// RuntimeDirectory equivalent, so the daemon owns this.
+	//
+	// We chown the directory to the IPC group (when set) and give it
+	// mode 0750 so members of that group can traverse into it to reach
+	// the socket, matching the systemd unit's RuntimeDirectoryMode.
+	if err := ensureSocketDir(path, opts.GroupName); err != nil {
+		return nil, err
+	}
+
 	// Remove the path if (and only if) it is already a unix socket.
 	// Anything else (regular file, directory) is treated as a hard
 	// error so we never accidentally clobber a user's data.
@@ -73,6 +92,44 @@ func platformListen(opts ListenerOptions) (net.Listener, error) {
 	}
 
 	return ln, nil
+}
+
+// ensureSocketDir creates the parent directory of the socket path (if
+// missing) and, when groupName is set, chowns it to root:<group> with
+// mode 0750 so group members can reach the socket inside it. Idempotent:
+// an existing directory has its ownership/permissions re-asserted but is
+// never removed. A failure to create the directory is fatal — without it
+// net.Listen cannot bind.
+//
+// We deliberately do not MkdirAll arbitrary depth with loose
+// permissions: only the immediate parent is created (the canonical
+// /var/run/hsh under an existing /var/run), and it gets 0750 so the
+// socket is not world-reachable even before the per-socket chmod runs.
+func ensureSocketDir(socketPath, groupName string) error {
+	dir := filepath.Dir(socketPath)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("ipc: create socket dir %q: %w", dir, err)
+	}
+	if groupName != "" {
+		grp, err := user.LookupGroup(groupName)
+		if err != nil {
+			return fmt.Errorf("ipc: lookup group %q: %w", groupName, err)
+		}
+		gid, err := strconv.Atoi(grp.Gid)
+		if err != nil {
+			return fmt.Errorf("ipc: parse gid for group %q: %w", groupName, err)
+		}
+		if err := os.Chown(dir, -1, gid); err != nil {
+			return fmt.Errorf("ipc: chown socket dir %q to group %q: %w", dir, groupName, err)
+		}
+	}
+	// Re-assert mode in case MkdirAll was a no-op (dir already existed
+	// with a looser mode from a previous version) or the umask trimmed
+	// our requested bits.
+	if err := os.Chmod(dir, 0o750); err != nil {
+		return fmt.Errorf("ipc: chmod socket dir %q: %w", dir, err)
+	}
+	return nil
 }
 
 // applySocketPerms enforces the configured GroupName + Mode on the

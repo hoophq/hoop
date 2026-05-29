@@ -16,8 +16,11 @@ const (
 	// ownership and persists nothing across reboots (which is exactly
 	// what we want for a transient socket + token).
 	//
-	// On macOS, /var/run is created by launchd at boot and is writable
-	// by root; the LaunchDaemon installer makes /var/run/hsh/ itself.
+	// On macOS, /var/run is on a volatile filesystem whose contents do
+	// not survive a reboot, so the daemon (re)creates /var/run/hsh/ at
+	// startup when binding the socket — see ensureSocketDir in
+	// socket_unix.go. launchd has no RuntimeDirectory equivalent, so the
+	// daemon owns the directory's lifecycle on macOS.
 	//
 	// We keep the socket inside that same directory (not at /var/run/hsh.sock
 	// at the parent) so a single chown of /var/run/hsh/ is enough to
@@ -39,7 +42,8 @@ type ListenerOptions struct {
 	// daemon does not have permission to write to /var/run.
 	//
 	// On Unix this must be an absolute filesystem path that the daemon
-	// can write to; the parent directory is NOT created automatically.
+	// can write to; the parent directory is created automatically (with
+	// group-traversable 0750 permissions when GroupName is set).
 	// On Windows it must look like `\\.\pipe\<name>`.
 	Path string
 
