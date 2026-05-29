@@ -47,6 +47,18 @@ func GetAccessRequestRuleByResourceNameAndAccessType(db *gorm.DB, orgID uuid.UUI
 	return &accessRequestRule, nil
 }
 
+func GetAccessRequestRuleByResourceName(db *gorm.DB, orgID uuid.UUID, resourceName string) ([]AccessRequestRule, error) {
+	var accessRequestRules []AccessRequestRule
+	result := db.
+		Where("org_id = ? AND connection_names @> ?", orgID, pq.Array([]string{resourceName})).
+		Find(&accessRequestRules)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return accessRequestRules, nil
+}
+
 func GetAccessRequestRuleByResourceNamesAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName []string, accessType string) (*AccessRequestRule, error) {
 	var accessRequestRule AccessRequestRule
 	result := db.
@@ -149,4 +161,22 @@ func GetRequestRuleByAttributesAndAccessType(db *gorm.DB, orgID uuid.UUID, attri
 	}
 
 	return &accessRequestRule, nil
+}
+
+func GetRequestRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributes []string) ([]AccessRequestRule, error) {
+	var accessRequestRules []AccessRequestRule
+
+	ruleNamesSubQuery := db.Model(&AccessRequestRuleAttribute{}).
+		Distinct("access_rule_name").
+		Where("org_id = ? AND attribute_name IN (?)", orgID, attributes)
+
+	result := db.Model(&AccessRequestRule{}).
+		Where("org_id = ?", orgID).
+		Where("name IN (?)", ruleNamesSubQuery).
+		Find(&accessRequestRules)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return accessRequestRules, nil
 }

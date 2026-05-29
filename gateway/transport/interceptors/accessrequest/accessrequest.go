@@ -194,15 +194,34 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 	}
 
 	orgID := uuid.MustParse(pctx.OrgID)
-	accessRule, err := services.GetRuleForConnection(orgID, pctx.ConnectionName, accessType)
+
+	var accessRule *models.AccessRequestRule
+	accessRules, err := services.GetRulesForConnection(orgID, pctx.ConnectionName)
 	if err != nil {
-		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
+		return nil, plugintypes.InternalErr("failed fetching access request rules", err)
 	}
 
-	if accessRule == nil {
+	switch len(accessRules) {
+	case 0:
 		log.With("sid", pctx.SID, "orgid", pctx.OrgID, "user-id", pctx.UserID, "connection-id", pctx.ConnectionID,
-			"access-type", accessType).Infof("no access rule found for this resource and access type")
+			"access-type", accessType).Infof("no access rules found for this resource")
 		return nil, nil
+	case 1:
+		accessRule = &accessRules[0]
+		if accessRule.AccessType != accessType {
+			return nil, plugintypes.InvalidArgument("request denied due to access request rules")
+		}
+	default:
+		for _, ar := range accessRules {
+			if ar.AccessType == accessType {
+				accessRule = &ar
+				break
+			}
+		}
+
+		if accessRule == nil {
+			return nil, plugintypes.InvalidArgument("request denied due to access request rules")
+		}
 	}
 
 	if len(accessRule.ApprovalRequiredGroups) > 0 {
