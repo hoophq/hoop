@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -71,6 +72,26 @@ func TestStatus_String(t *testing.T) {
 	for _, c := range cases {
 		if got := c.s.String(); got != c.want {
 			t.Errorf("Status(%d).String() = %q, want %q", c.s, got, c.want)
+		}
+	}
+}
+
+// TestDefaultOptions_AddInvokingUser pins the default that makes the
+// post-install UX seamless: on POSIX the installing user is auto-added
+// to the hsh group; on Windows (DACL model, no group) it stays off.
+func TestDefaultOptions_AddInvokingUser(t *testing.T) {
+	got := DefaultOptions()
+	switch runtime.GOOS {
+	case "linux", "darwin":
+		if !got.AddInvokingUser {
+			t.Error("AddInvokingUser should default true on linux/darwin")
+		}
+		if got.GroupName == "" {
+			t.Error("GroupName should be non-empty when AddInvokingUser is on")
+		}
+	case "windows":
+		if got.AddInvokingUser {
+			t.Error("AddInvokingUser should default false on windows")
 		}
 	}
 }

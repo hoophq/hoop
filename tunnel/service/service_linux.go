@@ -33,9 +33,10 @@ type linuxManager struct {
 
 	// systemctlPath overrides exec.LookPath("systemctl") in tests.
 	systemctlPath string
-	// groupaddPath / groupdelPath override the same way.
+	// groupaddPath / groupdelPath / usermodPath override the same way.
 	groupaddPath string
 	groupdelPath string
+	usermodPath  string
 }
 
 func (l *linuxManager) PlatformName() string { return "systemd" }
@@ -99,10 +100,17 @@ func (l *linuxManager) Install(opts Options) error {
 		}
 	}
 
-	// (2) create the group.
+	// (2) create the group, then add the invoking user to it so the
+	// unprivileged hsh CLI / tray can reach the daemon without sudo.
 	if opts.CreateGroup {
 		if err := l.ensureGroup(opts.GroupName); err != nil {
 			return fmt.Errorf("ensure group %q: %w", opts.GroupName, err)
+		}
+	}
+	if opts.AddInvokingUser && opts.GroupName != "" {
+		if err := l.addInvokingUserToGroup(opts.GroupName); err != nil {
+			// Non-fatal: see service.go AddInvokingUser docs.
+			fmt.Printf("hsh-tunneld: note: could not add invoking user to %q: %v\n", opts.GroupName, err)
 		}
 	}
 
@@ -282,6 +290,42 @@ func (l *linuxManager) ensureGroup(name string) error {
 	cmd := exec.Command(groupadd, "--system", "-f", name)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("groupadd: %w (output: %s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// addInvokingUserToGroup adds the human who ran `sudo hsh-tunneld
+// install` (resolved from $SUDO_USER) to the named group via
+// `usermod -aG`. Idempotent: a user already in the group is a no-op.
+// Returns nil (not an error) when there is no invoking user — the
+// real-root / packager case.
+//
+// The new membership only applies to new login sessions, so the caller
+// must tell the user to relaunch any already-running shell/tray.
+func (l *linuxManager) addInvokingUserToGroup(groupName string) error {
+	username := invokingUser()
+	if username == "" {
+		return nil // real root login or packager hook — nothing to add
+	}
+	already, err := userInGroup(username, groupName)
+	if err != nil {
+		return err
+	}
+	if already {
+		return nil
+	}
+	usermod := l.usermodPath
+	if usermod == "" {
+		usermod, err = exec.LookPath("usermod")
+		if err != nil {
+			return fmt.Errorf("usermod not found on PATH: %w", err)
+		}
+	}
+	// -a appends (don't strip existing supplementary groups), -G names
+	// the group. Order matters: `usermod -aG <grp> <user>`.
+	cmd := exec.Command(usermod, "-aG", groupName, username)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("usermod -aG %s %s: %w (output: %s)", groupName, username, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

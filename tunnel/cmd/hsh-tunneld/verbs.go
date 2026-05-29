@@ -117,10 +117,22 @@ func runInstall(args []string) error {
 
 	st, _ := mgr.Status()
 	fmt.Printf("\nhsh-tunneld: install OK — service is %s\n", st)
-	if opts.StartAfterInstall {
-		fmt.Printf("\nNext: add yourself to the %q group so you can drive the daemon without sudo:\n", opts.GroupName)
-		fmt.Printf("  sudo usermod -aG %s $USER\n", opts.GroupName)
-		fmt.Printf("Then log out / log back in and run: hsh tunnel status\n")
+	if opts.AddInvokingUser && opts.GroupName != "" {
+		if u := os.Getenv("SUDO_USER"); u != "" && u != "root" {
+			// We added them to the group during Install. Membership only
+			// applies to new login sessions, so be explicit about the
+			// relaunch requirement rather than implying it works instantly.
+			fmt.Printf("\nAdded %q to the %q group — the hsh CLI and tray can now\n", u, opts.GroupName)
+			fmt.Printf("drive the daemon without sudo. Group membership applies to NEW\n")
+			fmt.Printf("login sessions, so relaunch your terminal/tray (or log out and\n")
+			fmt.Printf("back in), then run: hsh tunnel status\n")
+		} else {
+			// Real-root login / packager: no invoking user to add.
+			fmt.Printf("\nTo drive the daemon without sudo, add a user to the %q group:\n", opts.GroupName)
+			fmt.Printf("  sudo dscl . -append /Groups/%s GroupMembership <user>   # macOS\n", opts.GroupName)
+			fmt.Printf("  sudo usermod -aG %s <user>                              # Linux\n", opts.GroupName)
+			fmt.Printf("Then relaunch their session and run: hsh tunnel status\n")
+		}
 	}
 	return nil
 }

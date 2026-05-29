@@ -4,6 +4,7 @@ package service
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 )
@@ -82,5 +83,78 @@ func TestEnsureConfigDirAndFile_CreatesAndPreserves(t *testing.T) {
 	got, _ := os.ReadFile(cfgPath)
 	if string(got) != sentinel {
 		t.Errorf("reinstall clobbered existing config: got %q", string(got))
+	}
+}
+
+// TestInvokingUser covers the $SUDO_USER resolution that drives the
+// add-to-group step. A real-root login (SUDO_USER unset or "root") must
+// resolve to "" so Install skips the membership add rather than trying
+// to add root to the hsh group.
+func TestInvokingUser(t *testing.T) {
+	cases := []struct {
+		set   bool
+		value string
+		want  string
+	}{
+		{true, "alice", "alice"},
+		{true, "root", ""}, // sudo -i / sudo su — not a real target user
+		{true, "", ""},     // explicitly empty
+		{false, "", ""},    // unset entirely (real root login)
+	}
+	for _, c := range cases {
+		if c.set {
+			t.Setenv("SUDO_USER", c.value)
+		} else {
+			// t.Setenv can't unset; emulate "unset" by clearing it.
+			t.Setenv("SUDO_USER", "")
+		}
+		if got := invokingUser(); got != c.want {
+			t.Errorf("invokingUser() with SUDO_USER=%q (set=%v) = %q, want %q", c.value, c.set, got, c.want)
+		}
+	}
+}
+
+// TestUserInGroup_SelfPrimaryGroup sanity-checks the membership probe
+// against the running test user's own primary group, which they are by
+// definition a member of. Keeps the idempotency check honest without
+// needing root to mutate group state.
+func TestUserInGroup_SelfPrimaryGroup(t *testing.T) {
+	me, err := user.Current()
+	if err != nil {
+		t.Skipf("cannot resolve current user: %v", err)
+	}
+	grp, err := user.LookupGroupId(me.Gid)
+	if err != nil {
+		t.Skipf("cannot resolve current user's primary group: %v", err)
+	}
+	in, err := userInGroup(me.Username, grp.Name)
+	if err != nil {
+		t.Fatalf("userInGroup: %v", err)
+	}
+	if !in {
+		t.Errorf("userInGroup(%q, %q) = false; the user must be in their own primary group", me.Username, grp.Name)
+	}
+}
+
+// TestUserInGroup_NonMember verifies a user is reported as not-a-member
+// of a group they don't belong to. We use a group the test user is very
+// unlikely to be in; if the lookup fails (group absent) we skip rather
+// than assert, since group tables vary across CI images.
+func TestUserInGroup_NonMember(t *testing.T) {
+	me, err := user.Current()
+	if err != nil {
+		t.Skipf("cannot resolve current user: %v", err)
+	}
+	// "daemon" exists on virtually every POSIX system and the test user
+	// is essentially never a member of it.
+	if _, err := user.LookupGroup("daemon"); err != nil {
+		t.Skip("no 'daemon' group on this host")
+	}
+	in, err := userInGroup(me.Username, "daemon")
+	if err != nil {
+		t.Fatalf("userInGroup: %v", err)
+	}
+	if in {
+		t.Skip("test user is unexpectedly in the 'daemon' group; skipping negative assertion")
 	}
 }

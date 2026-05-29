@@ -21,6 +21,53 @@ import (
 	"path/filepath"
 )
 
+// invokingUser returns the human who ran `sudo hsh-tunneld install`,
+// resolved from the $SUDO_USER environment variable sudo sets. Returns
+// "" (no error) when there is no invoking user to add — e.g. the operator
+// logged in as real root (no sudo), or a packager ran install from a
+// post-install hook with a clean environment. Callers treat "" as "skip
+// the add-to-group step", never as an error.
+//
+// We deliberately ignore $SUDO_USER == "root": adding root to the hsh
+// group is meaningless (root can already read everything) and usually
+// signals `sudo -i`/`sudo su` rather than a real target user.
+func invokingUser() string {
+	u := os.Getenv("SUDO_USER")
+	if u == "" || u == "root" {
+		return ""
+	}
+	return u
+}
+
+// userInGroup reports whether the named user is already a member of the
+// named group (primary or supplementary). Used to keep the add-to-group
+// step idempotent: a reinstall must not error or duplicate membership.
+func userInGroup(username, groupName string) (bool, error) {
+	u, err := user.Lookup(username)
+	if err != nil {
+		return false, fmt.Errorf("lookup user %q: %w", username, err)
+	}
+	grp, err := user.LookupGroup(groupName)
+	if err != nil {
+		return false, fmt.Errorf("lookup group %q: %w", groupName, err)
+	}
+	// Primary group match.
+	if u.Gid == grp.Gid {
+		return true, nil
+	}
+	// Supplementary group membership.
+	gids, err := u.GroupIds()
+	if err != nil {
+		return false, fmt.Errorf("group ids for %q: %w", username, err)
+	}
+	for _, g := range gids {
+		if g == grp.Gid {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ensureConfigDirAndFile creates /etc/hsh/ (or the parent of
 // configPath) and writes an empty config.toml if one is not already
 // there. The directory gets mode 0750 and is chowned to root:groupName

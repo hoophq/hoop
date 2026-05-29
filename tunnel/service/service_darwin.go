@@ -133,10 +133,19 @@ func (d *darwinManager) Install(opts Options) error {
 		}
 	}
 
-	// (2) create the group.
+	// (2) create the group, then add the invoking user to it so the
+	// unprivileged hsh CLI / tray can reach the daemon without sudo.
 	if opts.CreateGroup {
 		if err := d.ensureGroup(opts.GroupName); err != nil {
 			return fmt.Errorf("ensure group %q: %w", opts.GroupName, err)
+		}
+	}
+	if opts.AddInvokingUser && opts.GroupName != "" {
+		if err := d.addInvokingUserToGroup(opts.GroupName); err != nil {
+			// Non-fatal: a missing group membership is recoverable and
+			// must not abort an otherwise-successful install. The CLI
+			// surfaces a follow-up hint.
+			fmt.Printf("hsh-tunneld: note: could not add invoking user to %q: %v\n", opts.GroupName, err)
 		}
 	}
 
@@ -342,6 +351,42 @@ func (d *darwinManager) ensureGroup(name string) error {
 	}
 	if err := runDSCL(dscl, ".", "-create", "/Groups/"+name, "PrimaryGroupID", gid); err != nil {
 		return fmt.Errorf("dscl set gid: %w", err)
+	}
+	return nil
+}
+
+// addInvokingUserToGroup adds the human who ran `sudo hsh-tunneld
+// install` (resolved from $SUDO_USER) to the named group via Directory
+// Services. Idempotent: a user already in the group is a no-op. Returns
+// nil (not an error) when there is no invoking user to add — that is the
+// real-root / packager case, which is a legitimate skip, not a failure.
+//
+// On macOS, supplementary group membership is recorded by appending the
+// short user name to the group's GroupMembership attribute:
+//
+//	dscl . -append /Groups/<grp> GroupMembership <user>
+//
+// The new membership only applies to *new* login sessions, so the
+// caller is responsible for telling the user that an already-running
+// shell/tray must be relaunched to pick it up.
+func (d *darwinManager) addInvokingUserToGroup(groupName string) error {
+	username := invokingUser()
+	if username == "" {
+		return nil // real root login or packager hook — nothing to add
+	}
+	already, err := userInGroup(username, groupName)
+	if err != nil {
+		return err
+	}
+	if already {
+		return nil
+	}
+	dscl, err := d.dscl()
+	if err != nil {
+		return err
+	}
+	if err := runDSCL(dscl, ".", "-append", "/Groups/"+groupName, "GroupMembership", username); err != nil {
+		return fmt.Errorf("dscl append membership: %w", err)
 	}
 	return nil
 }
