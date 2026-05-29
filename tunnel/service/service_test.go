@@ -107,12 +107,15 @@ func TestDefaultPurgeOptions_DefaultsAreSafe(t *testing.T) {
 // returned by stubs is identifiable via errors.Is, which is how the
 // CLI verb checks for "this platform isn't ready yet".
 func TestUnsupportedPlatformErrorWraps(t *testing.T) {
-	s := &stubManager{platform: "launchd"}
+	// "windows" and "unsupported" are the platforms still backed by the
+	// stub (Linux and macOS now have real managers). We construct the
+	// stub directly so the test is independent of the host GOOS.
+	s := &stubManager{platform: "windows"}
 	err := s.Install(Options{})
 	if !errors.Is(err, ErrUnsupportedPlatform) {
 		t.Fatalf("expected wrapped ErrUnsupportedPlatform, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "launchd") {
+	if !strings.Contains(err.Error(), "windows") {
 		t.Errorf("error did not include platform name: %v", err)
 	}
 }
