@@ -68,6 +68,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.hoop_tunnel": {
+		Name:        "experimental.hoop_tunnel",
+		Description: "Enable Hoop Tunnel: WebSocket-based virtual network exposing authorized connections as *.hoop hostnames on the user's machine. Gates all tunnel-related code paths across gateway, agent, and client.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
+	},
 	"experimental.rulepacks": {
 		Name:        "experimental.rulepacks",
 		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",
