@@ -9,12 +9,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -244,6 +246,24 @@ func Put(c *gin.Context) {
 		return
 	}
 
+	ruleID := c.Param("id")
+	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
+		existing, err := models.GetDataMaskingRuleByID(ctx.GetOrgID(), ruleID)
+		switch err {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+			return
+		case nil:
+			if existing.RulepackID.Valid {
+				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
+				return
+			}
+		default:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
+			return
+		}
+	}
+
 	licenseType := getLicenseType(ctx)
 	if licenseType == license.OSSType {
 		if err := validateOssRulesLimitations(req); err != nil {
@@ -269,7 +289,6 @@ func Put(c *gin.Context) {
 		})
 	}
 
-	ruleID := c.Param("id")
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionUpdate).
 		Resource(ruleID, req.Name).
 		Set("name", req.Name).
@@ -370,6 +389,22 @@ func Get(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleID := c.Param("id")
+	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
+		existing, err := models.GetDataMaskingRuleByID(ctx.GetOrgID(), ruleID)
+		switch err {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+			return
+		case nil:
+			if existing.RulepackID.Valid {
+				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
+				return
+			}
+		default:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
+			return
+		}
+	}
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionDelete).
 		Resource(ruleID, "")
 	defer func() { evt.Log(c) }()

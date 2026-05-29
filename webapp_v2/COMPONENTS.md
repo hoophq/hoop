@@ -275,6 +275,40 @@ import DatePickerInput from '@/components/DatePickerInput'
 <DatePickerInput type="range" label="Period" value={[start, end]} onChange={setRange} w={220} size="sm" />
 ```
 
+### `FreeLicenseCallout`
+In-page callout for free-license users on Enterprise-gated feature pages. React equivalent of `webapp.shared-ui.free-license-banner` from the CLJS app. The callout's "Contact our Sales team" link opens Intercom when analytics tracking is enabled, otherwise opens `https://hoop.dev/meet` in a new tab.
+```jsx
+import FreeLicenseCallout from '@/components/FreeLicenseCallout'
+import { useUserStore } from '@/stores/useUserStore'
+
+const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+
+{isFreeLicense && (
+  <FreeLicenseCallout message="Applying rulepacks to connections is an Enterprise feature." />
+)}
+
+// Hard limit reached — red variant
+<FreeLicenseCallout variant="limit" message="You reached the free-plan limit." />
+```
+Props: `message` (string), `variant` (`'info'` | `'limit'`, default `'info'`). Always gate the render on `useUserStore.isFreeLicense` at the call site so it disappears for Enterprise users.
+
+### `ValueFilter`
+Popover-backed single-value filter dropdown — icon trigger, search input, and a scrollable list. Used for filtering tables by a single column value (resource, type, attribute, tag, …).
+```jsx
+import ValueFilter from '@/components/ValueFilter'
+import { Rotate3d } from 'lucide-react'
+
+<ValueFilter
+  icon={Rotate3d}
+  label="Resource"
+  values={resourceOptions}
+  selected={filters.resource}
+  onSelect={(v) => setFilter('resource', v)}
+  onClear={() => setFilter('resource', null)}
+/>
+```
+Props: `icon` (lucide component), `label` (string), `values` (string[]), `selected` (string | null), `onSelect(value)`, `onClear()`.
+
 ---
 
 ## Page Patterns

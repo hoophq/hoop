@@ -60,7 +60,7 @@ var catalog = map[string]Flag{
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
-	},	
+	},
 	"experimental.agent_async_ssh": {
 		Name:        "experimental.agent_async_ssh",
 		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
@@ -74,6 +74,20 @@ var catalog = map[string]Flag{
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
+	},
+	"experimental.rulepacks": {
+		Name:        "experimental.rulepacks",
+		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.iam_federation": {
+		Name:        "experimental.iam_federation",
+		Description: "Resolve per-session cloud credentials by impersonating the calling user's IAM principal (GCP IAM v1) so cloud audit logs attribute queries to the human, not the shared admin SA. When enabled, federation config on a connection is consulted at SessionOpen and short-lived credentials are injected as env vars before the agent runs the command.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
 	},
 }
 

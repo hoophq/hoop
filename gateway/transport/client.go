@@ -1,14 +1,19 @@
 package transport
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"libhoop/redactor"
 
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -19,6 +24,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
@@ -30,6 +36,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// federationResolveTimeout caps the SessionOpen-time blocking call to the
+// federation service. Tight by design: we'd rather fail-closed than hang
+// MCP clients waiting on a stuck cloud-side credential mint. The custom
+// runbook hook has its own (longer) timeout managed by transportsystem.
+const federationResolveTimeout = 30 * time.Second
 
 func requestProxyConnection(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
@@ -398,6 +410,22 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		clientArgs := clientArgsDecode(pkt.Spec)
+
+		// Federation resolution. Runs only when the experimental.iam_federation
+		// flag is enabled for the org and a federation row exists for the
+		// connection. Resolved env vars are merged into pctx.ConnectionSecret
+		// in the format the agent's secretsmanager.Decode expects
+		// (envvar:NAME → base64(plaintext)). Failure semantics are governed by
+		// the per-connection fallback_policy: "deny" aborts the session with a
+		// SessionOpenAgentOffline-style error packet so the client surfaces a
+		// human-readable reason; "readonly" retries once with the configured
+		// readonly_principal and proceeds. Either path writes audit metadata
+		// to sessions.metadata.federation so admins can correlate sessions
+		// with the cloud-side identity used.
+		if err := resolveFederationForSession(&pctx, stream); err != nil {
+			return err
+		}
+
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
 			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
@@ -437,6 +465,128 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 	default:
 		return stream.SendToAgent(pkt)
 	}
+}
+
+// resolveFederationForSession looks up the federation config for the
+// session's connection and, if one is present and the org has the feature
+// flag enabled, calls services.ResolveFederation. On success it mutates
+// pctx.ConnectionSecret in place to inject the resolved env vars and writes
+// the audit metadata to the session row.
+//
+// Returning a non-nil error from this function aborts the session-open
+// flow: the caller bails out before sending the AgentConnectionParams to
+// the agent. Use this for "deny" semantics. For "readonly" semantics this
+// function never returns an error; it retries internally and only fails if
+// the retry also fails.
+func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient.ProxyStream) error {
+	if !featureflag.IsEnabled(pctx.OrgID, "experimental.iam_federation") {
+		return nil
+	}
+	cfg, err := models.GetConnectionFederationConfig(models.DB, pctx.OrgID, pctx.ConnectionID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return nil
+		}
+		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+			Errorf("federation: failed loading config: %v", err)
+		return status.Errorf(codes.Internal, "failed loading federation config: %v", err)
+	}
+
+	in := services.FederationInput{
+		OrgID:        pctx.OrgID,
+		ConnectionID: pctx.ConnectionID,
+		UserID:       pctx.UserID,
+		UserEmail:    pctx.UserEmail,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), federationResolveTimeout)
+	defer cancel()
+
+	res, resolveErr := services.ResolveFederation(ctx, cfg, in)
+	fallbackApplied := false
+	if resolveErr != nil {
+		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+			Warnf("federation: primary resolve failed (policy=%s): %v", cfg.FallbackPolicy, resolveErr)
+		switch cfg.FallbackPolicy {
+		case models.FederationFallbackReadonly:
+			fallbackCtx, fallbackCancel := context.WithTimeout(context.Background(), federationResolveTimeout)
+			defer fallbackCancel()
+			fallbackRes, fbErr := services.ResolveFederationFallback(fallbackCtx, cfg, in)
+			if fbErr != nil {
+				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+					Errorf("federation: fallback (readonly) also failed: %v", fbErr)
+				return status.Errorf(codes.FailedPrecondition,
+					"federation failed and fallback also failed: primary=%v fallback=%v",
+					resolveErr, fbErr)
+			}
+			res = fallbackRes
+			fallbackApplied = true
+		default:
+			// deny is the secure default for any unrecognized policy too.
+			return status.Errorf(codes.FailedPrecondition, "federation failed: %v", resolveErr)
+		}
+	}
+
+	if pctx.ConnectionSecret == nil {
+		pctx.ConnectionSecret = map[string]any{}
+	}
+	// Strip static envs the provider declared as superseded BEFORE the
+	// overlay so the federated envs always win the final state. Both
+	// "envvar:" and "filesystem:" prefixes are removed because connection
+	// templates carry credential blobs under either form (e.g. the
+	// BigQuery template persists GOOGLE_APPLICATION_CREDENTIALS as a
+	// filesystem entry that materializes into a /tmp file on the agent).
+	supersededRemoved := make([]string, 0, len(res.SupersededEnvVars))
+	for _, name := range res.SupersededEnvVars {
+		envKey := fmt.Sprintf("envvar:%s", name)
+		fsKey := fmt.Sprintf("filesystem:%s", name)
+		_, hadEnv := pctx.ConnectionSecret[envKey]
+		_, hadFs := pctx.ConnectionSecret[fsKey]
+		if hadEnv || hadFs {
+			supersededRemoved = append(supersededRemoved, name)
+		}
+		delete(pctx.ConnectionSecret, envKey)
+		delete(pctx.ConnectionSecret, fsKey)
+	}
+	for k, v := range res.EnvVars {
+		// Wire contract: keys are "envvar:NAME" (or "filesystem:NAME"); values
+		// are base64-encoded plaintext that the agent's NewEnvVarStore
+		// base64-decodes once. Federation provider values are always
+		// plaintext strings, so we always emit the envvar prefix and a
+		// single base64 layer.
+		pctx.ConnectionSecret[fmt.Sprintf("envvar:%s", k)] = base64.StdEncoding.EncodeToString([]byte(v))
+	}
+
+	// Best-effort audit write. The session row may not yet exist in some
+	// flows (e.g. very early aborts); a missing row simply means no audit
+	// metadata. We do not fail the session over an audit error.
+	provider := cfg.HookSource
+	if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
+		provider = *cfg.BuiltinProvider
+	}
+	auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
+		Provider:          provider,
+		HookSource:        cfg.HookSource,
+		ResolvedPrincipal: res.ResolvedPrincipal,
+		AdminPrincipal:    res.AdminPrincipal,
+		TokenExpiresAt:    res.TokenExpiresAt,
+		FallbackApplied:   fallbackApplied,
+	})
+	if auditErr != nil {
+		log.With("sid", pctx.SID).Warnf("federation: failed writing session audit metadata: %v", auditErr)
+	}
+
+	log.With(
+		"sid", pctx.SID,
+		"connection-id", pctx.ConnectionID,
+		"provider", provider,
+		"principal", res.ResolvedPrincipal,
+		"fallback", fallbackApplied,
+		"expires-at", res.TokenExpiresAt.Format(time.RFC3339),
+		"superseded", supersededRemoved,
+	).Infof("federation: injected %d env var(s) into session, superseded %d static env(s)",
+		len(res.EnvVars), len(supersededRemoved))
+	_ = stream // reserved for future stream-level acks; suppress unused param warning.
+	return nil
 }
 
 func clientArgsDecode(spec map[string][]byte) []string {

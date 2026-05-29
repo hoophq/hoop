@@ -1985,6 +1985,158 @@ type DataMaskingRuleConnection struct {
 	Status string `json:"status" enums:"active,inactive" example:"active"`
 }
 
+// ConnectionFederationConfig is the API representation of an IAM Federation
+// configuration attached to a single connection. The admin_credentials_json
+// field is write-only: it is base64-decoded then AES-256-GCM encrypted at
+// rest, and never returned on GET responses (only a metadata summary is).
+type ConnectionFederationConfig struct {
+	// ID is the federation row's UUID. Empty on POST requests; populated on
+	// GET/PUT responses.
+	ID string `json:"id,omitempty" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// ConnectionID is the connection this federation config applies to.
+	// Populated by the server from the URL path on writes.
+	ConnectionID string `json:"connection_id,omitempty" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// HookSource selects which resolver category the gateway runs. Only the
+	// built-in resolver category ships today; the field is preserved so new
+	// sources can be added without breaking existing configurations.
+	HookSource string `json:"hook_source" enums:"builtin" example:"builtin" binding:"required"`
+	// BuiltinProvider is required when HookSource=builtin. Only "gcp_iam"
+	// ships today.
+	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam" example:"gcp_iam"`
+	// AdminCredentialsJSON is the plaintext admin credential blob (for
+	// builtin/gcp_iam: the admin service account JSON). Write-only — never
+	// returned on GET. Required on the initial POST when HookSource=builtin;
+	// optional on PUT (omitting it leaves the stored value unchanged).
+	AdminCredentialsJSON string `json:"admin_credentials_json,omitempty"`
+	// HasAdminCredentials is server-set on GET responses to let the UI know
+	// whether a credential is stored without exposing its value.
+	HasAdminCredentials bool `json:"has_admin_credentials,omitempty" example:"true"`
+	// IdentitySourceAttribute is a JSONPath-like accessor into the Hoop user
+	// (defaults to $.user.email).
+	IdentitySourceAttribute string `json:"identity_source_attribute" example:"$.user.email"`
+	// IdentityTargetTemplate is the principal template the source attribute
+	// substitutes into (defaults to "{user.email}").
+	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
+	// FallbackPolicy controls behavior when resolution fails.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
+	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
+	// the impersonation target on the fallback path.
+	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// TokenTTLSeconds caps the lifetime of generated credentials (default
+	// 3600, max 43200). Built-in providers may clamp lower based on cloud
+	// API limits.
+	TokenTTLSeconds int `json:"token_ttl_seconds" example:"3600"`
+	// ExtraConfig is provider-specific freeform JSON (e.g. {"project_id":
+	// "my-gcp-proj"}). The gateway does not interpret unknown keys.
+	ExtraConfig map[string]any `json:"extra_config,omitempty"`
+	// CreatedAt / UpdatedAt are server-set audit timestamps.
+	CreatedAt string `json:"created_at,omitempty" example:"2025-05-25T17:00:00Z"`
+	UpdatedAt string `json:"updated_at,omitempty" example:"2025-05-25T17:00:00Z"`
+}
+
+// FederationTestRequest drives the POST /federation/test endpoint. The
+// endpoint resolves the candidate federation configuration against a
+// synthetic user AND dispatches a real one-shot smoke probe to the agent
+// supplied in Connection (e.g. `SELECT 1` against a BigQuery dataset). It
+// requires no persisted state — the admin UI provides the entire
+// candidate connection + federation pair in the body, so a wizard can
+// validate everything end-to-end before saving anything.
+type FederationTestRequest struct {
+	// UserEmail is the synthetic user to resolve. Required.
+	UserEmail string `json:"user_email" example:"alice@example.com" binding:"required"`
+	// UserID is the synthetic user ID. Optional; defaults to a deterministic
+	// UUID derived from UserEmail.
+	UserID string `json:"user_id,omitempty" example:"00000000-0000-0000-0000-000000000001"`
+	// Config is the candidate federation configuration to test. Required.
+	// Carries the plaintext admin_credentials_json the resolver will use to
+	// authenticate; the value never reaches persistence on this endpoint.
+	Config *ConnectionFederationConfig `json:"config" binding:"required"`
+	// Connection is the candidate connection the probe runs against.
+	// Required. The endpoint does NOT look up a persisted connection by
+	// name/id — the caller supplies the agent, command, script and envs
+	// directly so a wizard draft can be exercised before persistence.
+	Connection *FederationTestConnection `json:"connection" binding:"required"`
+}
+
+// FederationTestConnection is the minimal connection-shaped object the
+// /federation/test probe needs to dispatch a one-shot exec to the agent.
+// It intentionally carries only the fields the probe consumes — not the
+// full openapi.Connection — so the wire contract is honest about what is
+// used. The agent identified by AgentID must be online; the endpoint
+// reports a failure if no live stream is attached.
+type FederationTestConnection struct {
+	// AgentID is the agent the probe will run on. Required. Must be the
+	// id of an agent currently connected to the gateway.
+	AgentID string `json:"agent_id" binding:"required" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Type and SubType mirror the persisted connection's type+subtype.
+	// Informational only: the gateway does not derive any behaviour from
+	// them today — the probe binary is taken from Command. They are
+	// surfaced in the response to make audit-trail correlation easier and
+	// to give future versions a structured place to plug in
+	// type-aware defaults without breaking the wire contract.
+	Type    string `json:"type,omitempty" example:"database"`
+	SubType string `json:"subtype,omitempty" example:"bigquery"`
+	// Command is the argv the agent invokes. args[0] is the binary,
+	// args[1:] are flags. Required: keeping it caller-supplied avoids
+	// shipping connection-type-specific defaults inside the gateway that
+	// may drift from real connections.
+	Command []string `json:"command" binding:"required" example:"bq,query,--use_legacy_sql=false"`
+	// TestScript is the payload fed to the spawned process on stdin (and
+	// rendered through text/template by the agent). For SQL connections
+	// this is the smoke query (e.g. "SELECT 1"). Required for the same
+	// reason as Command: the gateway does not infer it.
+	TestScript string `json:"test_script" binding:"required" example:"SELECT 1"`
+	// Envs are the candidate connection's static env vars (host, port,
+	// project id, etc.). The federation-produced env vars are merged on
+	// top; on conflict the federated value wins.
+	Envs map[string]string `json:"envs,omitempty"`
+}
+
+// FederationTestResponse reports the outcome of a /federation/test call.
+// Two phases happen on the gateway side:
+//
+//  1. Federation resolve — mint the per-user OAuth token via the admin SA.
+//  2. Probe — dispatch a BareExec to the agent with the merged env vars
+//     and the caller-supplied command + test script.
+//
+// Success is the conjunction of both phases. Phase 1 failures surface in
+// Error; phase 2 failures surface in ProbeStatus + ProbeOutput so the
+// admin can see the exact agent-side stdout/stderr (e.g. a GCP permission
+// error or a wrong project id). EnvVarKeys is emitted instead of EnvVars
+// so resolved credentials never travel back over HTTP.
+type FederationTestResponse struct {
+	// Success is true only when federation resolved AND the agent probe
+	// returned exit code 0.
+	Success bool `json:"success" example:"true"`
+	// ResolvedPrincipal is the principal the resolver impersonated.
+	ResolvedPrincipal string `json:"resolved_principal,omitempty" example:"alice@example.com"`
+	// AdminPrincipal is the impersonator identity (e.g. admin SA email).
+	AdminPrincipal string `json:"admin_principal,omitempty" example:"hoop-admin@proj.iam.gserviceaccount.com"`
+	// EnvVarKeys lists the env vars the resolver injected into the probe.
+	// Values are never returned.
+	EnvVarKeys []string `json:"env_var_keys,omitempty" example:"HOOP_GCP_ACCESS_TOKEN,HOOP_GCP_TOKEN_EXPIRES_AT"`
+	// SupersededEnvVars lists the candidate connection's static env var
+	// names that the provider's output supersedes and that were therefore
+	// stripped from the probe (and would be stripped from a real session).
+	// Lets the admin UI show "these legacy credentials were ignored" so
+	// the operator can confidently remove them from the persisted
+	// connection. Example: gcp_iam supersedes GOOGLE_APPLICATION_CREDENTIALS.
+	SupersededEnvVars []string `json:"superseded_env_vars,omitempty" example:"GOOGLE_APPLICATION_CREDENTIALS"`
+	// TokenExpiresAt is the would-be credential expiry.
+	TokenExpiresAt string `json:"token_expires_at,omitempty" example:"2025-05-25T18:00:00Z"`
+	// ProbeStatus reports the agent-side outcome. "success" when exit
+	// code was 0; "failed" otherwise; "skipped" when federation resolve
+	// failed and the probe was not dispatched.
+	ProbeStatus string `json:"probe_status,omitempty" enums:"success,failed,skipped" example:"success"`
+	// ProbeOutput is the agent's merged stdout+stderr from the smoke
+	// probe. Empty when ProbeStatus="skipped".
+	ProbeOutput string `json:"probe_output,omitempty" example:"+---+\n| f0_ |\n+---+\n| 1 |\n+---+"`
+	// Error is the human-readable failure reason when Success=false.
+	// Populated for federation-resolve failures; probe-side failures are
+	// reported via ProbeStatus + ProbeOutput.
+	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
@@ -2898,14 +3050,66 @@ type Attributes struct {
 }
 
 type AttributeRequest struct {
-	// The name of the attribute
-	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Name string `json:"name" binding:"required" example:"default-session-attribute"`
+	// The description of the attribute
 	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
 	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
 	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
+}
+
+type RulepackRequest struct {
+	// Human-readable display name for the rulepack (unique per organization)
+	DisplayName string `json:"display_name" binding:"required" example:"PCI Database Access"`
+	// Optional description of what the rulepack provides
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// Data masking rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned data masking rules.
+	DataMaskingRules []DataMaskingRuleRequest `json:"data_masking_rules,omitempty"`
+	// Guardrail rules to create as part of this rulepack. On PUT, the supplied list
+	// fully replaces any existing rulepack-owned guardrail rules.
+	GuardRailRules []GuardRailRuleRequest `json:"guardrail_rules,omitempty"`
+}
+
+type RulepackApplyRequest struct {
+	// Names of connections this rulepack should be applied to. Replace-all semantics:
+	// after the call, the rulepack is attached to exactly these connections.
+	// Connections previously tagged with this rulepack that are not in the list lose
+	// the tag; non-rulepack attributes on every affected connection are preserved.
+	// Pass an empty array to remove the rulepack from all connections.
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+}
+
+type Rulepack struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this rulepack
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// Human-readable display name for the rulepack
+	DisplayName string `json:"display_name" example:"PCI Database Access"`
+	// Optional description
+	Description *string `json:"description,omitempty" example:"Standard PCI controls for production DBs"`
+	// Optional version string
+	Version *string `json:"version,omitempty" example:"1.0.0"`
+	// Tags for grouping and filtering rulepacks
+	Tags []string `json:"tags" example:"pci,production"`
+	// True for Hoop-managed rulepacks (read-only for users)
+	IsManaged bool `json:"is_managed" readonly:"true" example:"false"`
+	// Data masking rules attached to this rulepack
+	DataMaskingRules []DataMaskingRule `json:"data_masking_rules"`
+	// Guardrail rules attached to this rulepack
+	GuardRailRules []GuardRailRuleResponse `json:"guardrail_rules"`
+	// Names of connections this rulepack has been applied to. Populated from the
+	// rulepack attribute's connection junctions; empty when no connections are tagged.
+	ConnectionNames []string `json:"connection_names"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was last updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 // Event Routing types
@@ -2917,11 +3121,11 @@ type EventSchemaFieldResponse struct {
 }
 
 type EventTypeResponse struct {
-	Name          string                   `json:"name" example:"session.guardrail_violation"`
-	Category      string                   `json:"category" example:"Session"`
-	Description   string                   `json:"description"`
+	Name          string                     `json:"name" example:"session.guardrail_violation"`
+	Category      string                     `json:"category" example:"Session"`
+	Description   string                     `json:"description"`
 	Schema        []EventSchemaFieldResponse `json:"schema"`
-	SamplePayload map[string]any           `json:"sample_payload"`
+	SamplePayload map[string]any             `json:"sample_payload"`
 }
 
 type EventSubscriptionRequest struct {
@@ -2961,7 +3165,7 @@ type EventDispatchListItemResponse struct {
 	Attempt      int        `json:"attempt"`
 	SessionID    *string    `json:"session_id,omitempty"`
 	LastError    *string    `json:"last_error,omitempty"`
-	ReplayedFrom *string   `json:"replayed_from,omitempty"`
+	ReplayedFrom *string    `json:"replayed_from,omitempty"`
 	DurationMS   *int64     `json:"duration_ms,omitempty"`
 	OccurredAt   time.Time  `json:"occurred_at"`
 	CreatedAt    time.Time  `json:"created_at"`

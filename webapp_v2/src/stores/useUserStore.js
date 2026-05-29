@@ -38,6 +38,7 @@ export const useUserStore = create((set, get) => ({
     const featureFlags = serverInfo?.feature_flags || {}
     set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, featureFlags })
   },
+  setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   setLoading: (loading) => set({ loading }),
   clear: () => {
