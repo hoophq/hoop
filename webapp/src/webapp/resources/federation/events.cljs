@@ -1,5 +1,6 @@
 (ns webapp.resources.federation.events
   (:require
+   [clojure.string :as str]
    [re-frame.core :as rf]))
 
 (def ^:private default-form
@@ -41,12 +42,20 @@
 (rf/reg-event-fx
  :federation/load-success
  (fn [{:keys [db]} [_ response]]
-   (let [form {:enabled (if (contains? response :enabled)
+   ;; The GET never echoes admin credentials back, but the same SA JSON is
+   ;; stored as the connection's static GOOGLE_APPLICATION_CREDENTIALS secret —
+   ;; recover it from connection-setup so the operator sees their credentials.
+   (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])
+         sa-json (some (fn [{:keys [key value]}]
+                         (when (= key "GOOGLE_APPLICATION_CREDENTIALS")
+                           (if (map? value) (:value value) value)))
+                       config-files)
+         form {:enabled (if (contains? response :enabled)
                           (boolean (:enabled response))
                           true)
                :hook_source (or (:hook_source response) "builtin")
                :builtin_provider (or (:builtin_provider response) "gcp_iam")
-               :admin_credentials_json ""
+               :admin_credentials_json (or sa-json "")
                :extra_config {:project_id (get-in response [:extra_config :project_id] "")}
                :identity_source_attribute (or (:identity_source_attribute response) "$.user.email")
                :identity_target_template (or (:identity_target_template response) "{user.email}")
@@ -96,10 +105,9 @@
  :federation/save
  (fn [{:keys [db]} [_ connection-name]]
    (let [form (get-in db [:resources/federation :form])
-         credentials-editing? (get-in db [:resources/federation :credentials-editing?])
-         has-credentials? (get-in db [:resources/federation :data :has_admin_credentials])
+         ;; omitting admin_credentials_json tells the backend to keep the stored value
          body (cond-> (build-config form)
-                (or credentials-editing? (not has-credentials?))
+                (not (str/blank? (:admin_credentials_json form)))
                 (assoc :admin_credentials_json (:admin_credentials_json form)))]
      {:db (assoc-in db [:resources/federation :save-status] :loading)
       :fx [[:dispatch [:fetch {:method "PUT"

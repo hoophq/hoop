@@ -193,6 +193,7 @@
            (= connection-method "iam_federation")
            [federation-setup/main
             {:connection-name nil
+             :embedded? true
              :conn-data {:agent_id @agent-id-sub
                          :type (or @type-sub "database")
                          :subtype (or @subtype-sub "bigquery")}}])]))))

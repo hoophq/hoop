@@ -11,17 +11,17 @@
 
 (defn bigquery-credentials [connection]
   (let [method (or @(rf/subscribe [:connection-setup/connection-method]) "manual-input")]
-    [:> Box {:class "space-y-8"}
-     [connection-method/main "bigquery"]
-     (if (= method "iam_federation")
+    (if (= method "iam_federation")
+      [:> Box {:class "max-w-[600px] space-y-8"}
+       [connection-method/main "bigquery"]
        [federation-setup/main {:connection-name (:name connection)
-                               :conn-data connection}]
-       [:> Box {:class "max-w-[600px]"}
-        [metadata-driven/credentials-step "bigquery" :update]])]))
+                               :conn-data connection}]]
+      ;; credentials-step already renders its own method selector
+      [metadata-driven/credentials-step "bigquery" :update])))
 
 (defn main [connection]
-  (if (and (= (:type connection) "database")
-           (= (:subtype connection) "bigquery"))
+  ;; BigQuery's connection type is "custom", so match on the unique subtype
+  (if (= (:subtype connection) "bigquery")
     [bigquery-credentials connection]
 
     [:> Box {:class "max-w-[600px] space-y-8"}

@@ -20,7 +20,9 @@
 (defn- sa-json-field [form credentials-editing? has-credentials?]
   (r/with-let [reveal? (r/atom true)]
     (fn [form credentials-editing? has-credentials?]
-      (let [masked? (and has-credentials? (not credentials-editing?))]
+      (let [masked? (and has-credentials?
+                         (not credentials-editing?)
+                         (str/blank? (:admin_credentials_json form)))]
         [:> Box {:class "space-y-2"}
          [:> Flex {:align "center" :justify "between"}
           [:> Text {:size "2" :weight "medium" :class "text-[--gray-12]"}
@@ -158,7 +160,7 @@
     "Hoop guarantees these names exist for every successful session. "
     "Your queries can rely on them the same way they would with statically configured credentials."]])
 
-(defn main [{:keys [connection-name conn-data]}]
+(defn main [{:keys [connection-name conn-data embedded?]}]
   (r/with-let [status-sub (rf/subscribe [:federation/status])
                data-sub (rf/subscribe [:federation/data])
                form-sub (rf/subscribe [:federation/form])
@@ -177,11 +179,16 @@
                            (not (str/blank? (get-in form [:extra_config :project_id])))
                            (not (str/blank? (:identity_source_attribute form)))
                            (not (str/blank? (:identity_target_template form)))
-                           (not (str/blank? (:agent_id conn-data))))]
+                           (not (str/blank? (:agent_id conn-data))))
+            ;; embedded inside the wizard's roles-step <form>: a nested <form>
+            ;; is invalid HTML and breaks the outer form's submit
+            wrapper (if embedded?
+                      [:> Box {:class "space-y-8 w-full"}]
+                      [:form {:id "federation-form"
+                              :on-submit (fn [e] (.preventDefault e))
+                              :class "space-y-8 w-full"}])]
 
-        [:form {:id "federation-form"
-                :on-submit (fn [e] (.preventDefault e))
-                :class "space-y-8 w-full"}
+        (conj wrapper
 
          [:> Flex {:justify "between" :align "center"}
           [:> Heading {:as "h3" :size "5" :weight "bold" :class "text-[--gray-12]"}
@@ -224,4 +231,4 @@
          [section
           "Output preview"
           "Environment variables the hook will write into the command runtime. These exist only for the duration of the session and are discarded on exit."
-          [output-preview-section]]]))))
+          [output-preview-section]])))))

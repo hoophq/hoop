@@ -22,10 +22,8 @@
    selected connection method."
   [connection-type connection-subtype connection-method]
   (cond
-    ;; BigQuery with IAM federation uses the federation form; otherwise it
-    ;; falls through to the metadata-credentials form below.
-    (and (= connection-type "database")
-         (= connection-subtype "bigquery")
+    ;; BigQuery's type is "custom", so key on the unique subtype
+    (and (= connection-subtype "bigquery")
          (= connection-method "iam_federation"))
     "federation-form"
 
@@ -99,8 +97,7 @@
                          (= (:status @guardrails-list) :loading)
                          (= (:status @jira-templates-list) :loading))
 
-            is-bigquery? (and (= (:type conn-data) "database")
-                              (= (:subtype conn-data) "bigquery"))
+            is-bigquery? (= (:subtype conn-data) "bigquery")
             connection-method @(rf/subscribe [:connection-setup/connection-method])
             federation-selected? (and is-bigquery? (= connection-method "iam_federation"))
 
@@ -144,7 +141,16 @@
                                       (rf/dispatch [:connection-setup/add-env-row])))
 
                                   (when federation-selected?
-                                    (rf/dispatch [:federation/save connection-name]))
+                                    ;; mirror the federation form into the static
+                                    ;; fallback secret before the connection update
+                                    (let [fed-form @(rf/subscribe [:federation/form])]
+                                      (rf/dispatch [:connection-setup/update-config-file-by-key
+                                                    "GOOGLE_APPLICATION_CREDENTIALS"
+                                                    (:admin_credentials_json fed-form)])
+                                      (rf/dispatch [:connection-setup/update-metadata-credentials
+                                                    "CLOUDSDK_CORE_PROJECT"
+                                                    (get-in fed-form [:extra_config :project_id])])
+                                      (rf/dispatch [:federation/save connection-name])))
 
                                   (rf/dispatch [:resources->update-role-connection
                                                 {:name connection-name
