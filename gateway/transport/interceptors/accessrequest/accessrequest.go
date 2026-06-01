@@ -209,7 +209,7 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 	case 1:
 		accessRule = &accessRules[0]
 		if accessRule.AccessType != accessType {
-			return nil, plugintypes.InvalidArgument("request denied due to access request rules")
+			return nil, plugintypes.InvalidArgument("request denied due to access request rules, name=%v", accessRule.Name)
 		}
 	default:
 		for _, ar := range accessRules {
@@ -220,7 +220,7 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 		}
 
 		if accessRule == nil {
-			return nil, plugintypes.InvalidArgument("request denied due to access request rules")
+			return nil, plugintypes.InvalidArgument("request denied due to access request rules, rule with access type %v not found", accessType)
 		}
 	}
 
