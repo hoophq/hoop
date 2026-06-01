@@ -227,10 +227,18 @@ func Run() {
 		sshc := serverConfig.SSHServerConfig
 		if sshc != nil && sshc.ListenAddress != "" && len(sshc.HostsKey) > 0 {
 			step := bootstrap.Step("SSH proxy")
-			err := sshproxy.GetServerInstance().Start(
-				serverConfig.SSHServerConfig.ListenAddress,
-				serverConfig.SSHServerConfig.HostsKey,
-			)
+			sshServerConfig := sshproxy.ServerConfig{
+				ListenAddress: sshc.ListenAddress,
+				HostsKey:      sshc.HostsKey,
+				TrustedCAs:    sshc.TrustedCAs,
+			}
+			if sshc.UserMapping != nil {
+				sshServerConfig.UserMapping = sshproxy.UserMapping{
+					CertAttr: sshc.UserMapping.CertAttribute,
+					UserAttr: sshc.UserMapping.UserAttribute,
+				}
+			}
+			err := sshproxy.GetServerInstance().Start(sshServerConfig)
 			if err != nil {
 				step.Fail(err)
 				log.Fatalf("failed to start ssh server, reason=%v", err)

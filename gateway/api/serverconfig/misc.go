@@ -64,10 +64,7 @@ func GetServerMisc(c *gin.Context) {
 
 	var sshServerConfig *openapi.SSHServerConfig
 	if config.SSHServerConfig != nil {
-		sshServerConfig = &openapi.SSHServerConfig{
-			ListenAddress: config.SSHServerConfig.ListenAddress,
-			HostsKey:      config.SSHServerConfig.HostsKey,
-		}
+		sshServerConfig = modelSSHToOpenAPI(config.SSHServerConfig)
 	}
 	var rdpServerConfig *openapi.RDPServerConfig
 	if config.RDPServerConfig != nil {
@@ -173,7 +170,11 @@ func UpdateServerMisc(c *gin.Context) {
 		}
 
 		_ = sshInstance.Stop()
-		err = sshInstance.Start(sshConf.ListenAddress, sshConf.HostsKey)
+		err = sshInstance.Start(sshproxy.ServerConfig{
+			ListenAddress: sshConf.ListenAddress,
+			HostsKey:      sshConf.HostsKey,
+			TrustedCAs:    sshConf.TrustedCAs,
+		})
 	case instanceStateStop:
 		err = sshInstance.Stop()
 	}
@@ -228,10 +229,7 @@ func UpdateServerMisc(c *gin.Context) {
 
 	var sshServerConfig *openapi.SSHServerConfig
 	if updatedConfig.SSHServerConfig != nil {
-		sshServerConfig = &openapi.SSHServerConfig{
-			ListenAddress: updatedConfig.SSHServerConfig.ListenAddress,
-			HostsKey:      updatedConfig.SSHServerConfig.HostsKey,
-		}
+		sshServerConfig = modelSSHToOpenAPI(updatedConfig.SSHServerConfig)
 	}
 
 	var rdpServerConfig *openapi.RDPServerConfig
@@ -295,9 +293,33 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 		if _, _, found := strings.Cut(req.SSHServerConfig.ListenAddress, ":"); req.SSHServerConfig.ListenAddress != "" && !found {
 			return nil, errListenAddrFormat
 		}
+		if len(req.SSHServerConfig.TrustedCAs) > 0 {
+			if req.SSHServerConfig.UserMapping == nil {
+				return nil, fmt.Errorf("user_mapping is required when trusted_cas is configured")
+			}
+			switch req.SSHServerConfig.UserMapping.CertAttribute {
+			case "principal", "key_id":
+			default:
+				return nil, fmt.Errorf("invalid cert_attr %q: must be 'principal' or 'key_id'",
+					req.SSHServerConfig.UserMapping.CertAttribute)
+			}
+			switch req.SSHServerConfig.UserMapping.UserAttribute {
+			case "email", "subject", "user_id":
+			default:
+				return nil, fmt.Errorf("invalid user_attr %q: must be 'email', 'subject', or 'user_id'",
+					req.SSHServerConfig.UserMapping.UserAttribute)
+			}
+		}
 		sshServerConfig = &models.SSHServerConfig{
 			ListenAddress: req.SSHServerConfig.ListenAddress,
 			HostsKey:      req.SSHServerConfig.HostsKey,
+			TrustedCAs:    req.SSHServerConfig.TrustedCAs,
+		}
+		if req.SSHServerConfig.UserMapping != nil {
+			sshServerConfig.UserMapping = &models.SSHUserMapping{
+				CertAttribute: req.SSHServerConfig.UserMapping.CertAttribute,
+				UserAttribute: req.SSHServerConfig.UserMapping.UserAttribute,
+			}
 		}
 	}
 
@@ -405,9 +427,11 @@ func parseSSHConfigState(currentState, newState *models.ServerMiscConfig) (newCo
 	// stop instance when new configuration is empty
 	case newConf.ListenAddress == "":
 		return newConf, "stop"
-	// restart on configuration drift
+	// restart on configuration drift (including cert auth fields)
 	case currentConf.ListenAddress != newConf.ListenAddress,
-		currentConf.HostsKey != newConf.HostsKey:
+		currentConf.HostsKey != newConf.HostsKey,
+		strings.Join(currentConf.TrustedCAs, "\n") != strings.Join(newConf.TrustedCAs, "\n"),
+		sshUserMappingDiffers(currentConf.UserMapping, newConf.UserMapping):
 		return newConf, "start"
 	// noop, no configuration drift
 	default:
@@ -435,6 +459,31 @@ func parseHttpProxyConfigState(currentState, newState *models.ServerMiscConfig) 
 	default:
 		return
 	}
+}
+
+func sshUserMappingDiffers(a, b *models.SSHUserMapping) bool {
+	if (a == nil) != (b == nil) {
+		return true
+	}
+	if a == nil {
+		return false
+	}
+	return a.CertAttribute != b.CertAttribute || a.UserAttribute != b.UserAttribute
+}
+
+func modelSSHToOpenAPI(m *models.SSHServerConfig) *openapi.SSHServerConfig {
+	out := &openapi.SSHServerConfig{
+		ListenAddress: m.ListenAddress,
+		HostsKey:      m.HostsKey,
+		TrustedCAs:    m.TrustedCAs,
+	}
+	if m.UserMapping != nil {
+		out.UserMapping = &openapi.SSHUserMapping{
+			CertAttribute: m.UserMapping.CertAttribute,
+			UserAttribute: m.UserMapping.UserAttribute,
+		}
+	}
+	return out
 }
 
 func newEd25519PrivateKey() (privateKey []byte, err error) {

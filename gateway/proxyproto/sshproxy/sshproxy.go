@@ -34,11 +34,29 @@ const instanceKey = "ssh_server"
 
 var instanceStore sync.Map
 
+// ServerConfig holds all configuration required to start the SSH proxy server.
+type ServerConfig struct {
+	ListenAddress string
+	// HostsKey is the base64-encoded PEM private key used as the SSH host key.
+	HostsKey string
+	// TrustedCAs is the list of trusted SSH CA public keys in authorized_keys
+	// format. When non-empty, the server accepts SSH certificate authentication
+	// in addition to password (secret-key) authentication.
+	TrustedCAs []string
+	// UserMapping specifies which certificate attribute (principal or key_id) is
+	// matched against which user table column (email, subject, user_id).
+	// Required when TrustedCAs is non-empty.
+	UserMapping UserMapping
+}
+
 type proxyServer struct {
-	listenAddress   string
-	connectionStore sync.Map
-	listener        net.Listener
-	hostKey         ssh.Signer
+	listenAddress       string
+	connectionStore     sync.Map
+	pendingCertSessions sync.Map // sessionID → *certSession; populated during PublicKeyCallback
+	listener            net.Listener
+	hostKey             ssh.Signer
+	certChecker         *ssh.CertChecker // nil when cert auth is not configured
+	userMapping         UserMapping
 }
 
 // GetServerInstance returns the singleton instance of SSHServer.
@@ -52,20 +70,25 @@ func GetServerInstance() *proxyServer {
 	return server
 }
 
-func (s *proxyServer) Start(listenAddr, hostsKeyB64Enc string) (err error) {
+func (s *proxyServer) Start(cfg ServerConfig) (err error) {
 	instance, _ := instanceStore.Load(instanceKey)
 	if _, ok := instance.(*proxyServer); ok && s.listener != nil {
 		return nil
 	}
 
-	sshHostsKey, err := parseHostsKey(hostsKeyB64Enc)
+	sshHostsKey, err := parseHostsKey(cfg.HostsKey)
 	if err != nil {
 		return fmt.Errorf("failed parsing hosts key, reason=%v", err)
 	}
-	log.Infof("starting ssh server proxy at %v", listenAddr)
 
-	// start new instance
-	server, err := runProxyServer(listenAddr, sshHostsKey)
+	certChecker, err := buildCertChecker(cfg.TrustedCAs)
+	if err != nil {
+		return fmt.Errorf("failed building cert checker, reason=%v", err)
+	}
+
+	log.Infof("starting ssh server proxy at %v", cfg.ListenAddress)
+
+	server, err := runProxyServer(cfg.ListenAddress, sshHostsKey, certChecker, cfg.UserMapping)
 	if err != nil {
 		return err
 	}
@@ -104,7 +127,7 @@ func (s *proxyServer) Stop() error {
 	return nil
 }
 
-func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error) {
+func runProxyServer(listenAddr string, hostKey ssh.Signer, certChecker *ssh.CertChecker, userMapping UserMapping) (*proxyServer, error) {
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
@@ -114,6 +137,8 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 		listener:        lis,
 		listenAddress:   listenAddr,
 		hostKey:         hostKey,
+		certChecker:     certChecker,
+		userMapping:     userMapping,
 	}
 
 	go func() {
@@ -136,7 +161,7 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 
 			// creates a new SSH connection instance
 			sessionID := uuid.NewString()
-			conn, err := newSSHConnection(sessionID, connectionID, netConn, hostKey)
+			conn, err := newSSHConnection(sessionID, connectionID, netConn, server)
 			if err != nil {
 				// Prevents log pollution from health check requests on this port
 				if err == io.EOF {
@@ -191,15 +216,18 @@ type sshConnection struct {
 	sshChannels         sync.Map
 	pendingRequests     sync.Map // maps channelID (uint16) to *pendingReplyQueue
 	channelWg           sync.WaitGroup
+	// certSession is non-nil when the connection was authenticated via an SSH
+	// certificate. It holds the verified cert and the per-connection policy
+	// that governs which channel types and requests are permitted.
+	certSession *certSession
 }
 
-func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*sshConnection, error) {
+func newSSHConnection(sid, connID string, conn net.Conn, server *proxyServer) (*sshConnection, error) {
 	sshServerConfig := &ssh.ServerConfig{
-		// NoClientAuth: true, // Ignore client authentication
-		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+		PasswordCallback: func(c ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 			log.
 				With("sid", sid).
-				Infof("ssh connection attempt, user=%v, remote-addr=%v, local-addr=%v", conn.User(), conn.RemoteAddr(), conn.LocalAddr())
+				Infof("ssh connection attempt, user=%v, remote-addr=%v, local-addr=%v", c.User(), c.RemoteAddr(), c.LocalAddr())
 
 			// Hash the received password (secret access key)
 			secretKeyHash, err := keys.Hash256Key(string(password))
@@ -230,6 +258,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 				dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 			extensions := map[string]string{
+				"hoop-auth-method":      "password",
 				"hoop-credential-id":    dba.ID,
 				"hoop-user-subject":     dba.UserSubject,
 				"hoop-connection-name":  dba.ConnectionName,
@@ -245,9 +274,47 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		},
 	}
 
+	// When trusted CAs are configured, also accept SSH certificate authentication.
+	// The certificate's first principal is matched against a Hoop user email and
+	// the SSH username (conn.User()) is used as the connection name.
+	if server.certChecker != nil {
+		log.Info("CERT CHECK IS ON, configuring SSH SERVER to accept cert auth with trusted CAs")
+		sshServerConfig.PublicKeyCallback = func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			fmt.Println("VALIDATING CERTIFICATE FOR SSH CONNECTION")
+			cert, ok := key.(*ssh.Certificate)
+			if !ok {
+				return nil, fmt.Errorf("only certificate-based public key authentication is accepted")
+			}
+
+			// Authenticate validates: cert type, CA trust (IsUserAuthority), validity
+			// window, critical options (including source-address against remote IP).
+			if _, err := server.certChecker.Authenticate(c, cert); err != nil {
+				log.With("sid", sid).Infof("cert auth failed for user=%v: %v", c.User(), err)
+				return nil, fmt.Errorf("certificate verification failed: %w", err)
+			}
+
+			if len(cert.ValidPrincipals) == 0 && server.userMapping.CertAttr != "key_id" {
+				return nil, fmt.Errorf("certificate has no principals")
+			}
+
+			log.With("sid", sid).Infof("cert auth accepted: user=%v key-id=%q serial=%d principals=%v",
+				c.User(), cert.KeyId, cert.Serial, cert.ValidPrincipals)
+
+			// Stash the cert state so newCertAuthConnection can retrieve it after
+			// the handshake completes. The session ID is the stable key.
+			server.pendingCertSessions.Store(string(c.SessionID()), &certSession{
+				cert: cert,
+			})
+
+			return &ssh.Permissions{Extensions: map[string]string{
+				"hoop-auth-method": "cert",
+			}}, nil
+		}
+	}
+
 	// the encryption key to be used we use a single hosts key
 	// used for the SSH handshake and related to the known_hosts file
-	sshServerConfig.AddHostKey(hostKey)
+	sshServerConfig.AddHostKey(server.hostKey)
 
 	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, sshServerConfig)
 	if err != nil {
@@ -265,6 +332,79 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		return nil, fmt.Errorf("missing ssh permissions after authentication")
 	}
 
+	authMethod := sshConn.Permissions.Extensions["hoop-auth-method"]
+	if authMethod == "cert" {
+		return newCertAuthConnection(sid, connID, conn, sshConn, clientNewCh, server)
+	}
+	return newPasswordAuthConnection(sid, connID, conn, sshConn, clientNewCh)
+}
+
+// newCertAuthConnection completes connection setup for certificate-authenticated
+// connections. It retrieves the cert session stashed during PublicKeyCallback,
+// looks up the Hoop user by the certificate's first principal (email), and
+// derives the session lifetime from the certificate's ValidBefore field.
+//
+// Unlike password auth, no session-level gRPC connection is established here.
+// Each port-forwarding channel (direct-tcpip) opens its own gRPC connection,
+// using the channel's destination host as the Hoop connection name. Regular
+// SSH session channels (shell, exec, subsystem) are rejected — certificate
+// authentication is only valid for port-forwarding.
+func newCertAuthConnection(sid, connID string, tcpConn net.Conn, sshConn *ssh.ServerConn, clientNewCh <-chan ssh.NewChannel, server *proxyServer) (*sshConnection, error) {
+	sessAny, ok := server.pendingCertSessions.LoadAndDelete(string(sshConn.SessionID()))
+	if !ok {
+		return nil, fmt.Errorf("missing cert session state after handshake (sid=%s)", sid)
+	}
+	sess := sessAny.(*certSession)
+
+	// Resolve the certificate to a Hoop user using the configured mapping.
+	user, matchedValue, err := lookupUserByCert(sess.cert, server.userMapping)
+	if err != nil {
+		return nil, fmt.Errorf("cert auth user lookup failed: %w", err)
+	}
+	if user.Status != "active" {
+		return nil, fmt.Errorf("user %q is not active (status=%s)", matchedValue, user.Status)
+	}
+	sess.matchedValue = matchedValue
+	sess.userSubject = user.Subject
+
+	// Derive session lifetime from the certificate's ValidBefore timestamp.
+	// var ctxDuration time.Duration
+	ctxDuration := 24 * time.Hour
+	if sess.cert.ValidBefore != ssh.CertTimeInfinity {
+		expiry := time.Unix(int64(sess.cert.ValidBefore), 0)
+		ctxDuration = time.Until(expiry)
+		if ctxDuration <= 0 {
+			return nil, fmt.Errorf("certificate has already expired (matched=%s)", matchedValue)
+		}
+	}
+
+	log.With("sid", sid, "remote-addr", tcpConn.RemoteAddr()).
+		Infof("cert auth: matched=%v user=%v expires-in=%v",
+			matchedValue, user.Subject, ctxDuration.Truncate(time.Second))
+
+	ctx, cancelFn := context.WithCancelCause(context.Background())
+	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
+		fmt.Errorf("certificate expired, resourceid=%v", connID))
+	sessionConn := &sshConnection{
+		id:  connID,
+		sid: sid,
+		ctx: ctx,
+		cancelFn: func(msg string, a ...any) {
+			cancelFn(fmt.Errorf(msg, a...))
+			timeoutCancelFn()
+		},
+		sshConn:             sshConn,
+		grpcClient:          nil,
+		clientNewSshChannel: clientNewCh,
+		certSession:         sess,
+	}
+	return sessionConn, nil
+}
+
+// newPasswordAuthConnection completes connection setup for password-authenticated
+// connections. This is the original authentication path using secret access key
+// credentials stored in the database.
+func newPasswordAuthConnection(sid, connID string, tcpConn net.Conn, sshConn *ssh.ServerConn, clientNewCh <-chan ssh.NewChannel) (*sshConnection, error) {
 	connectionName := sshConn.Permissions.Extensions["hoop-connection-name"]
 	userSubject := sshConn.Permissions.Extensions["hoop-user-subject"]
 	ctxDurationStr := sshConn.Permissions.Extensions["hoop-context-duration"]
@@ -297,7 +437,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	}
 
 	log.
-		With("sid", sid, "remote-addr", conn.RemoteAddr()).
+		With("sid", sid, "remote-addr", tcpConn.RemoteAddr()).
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
 
 	grpcOpts := []*grpc.ClientOptions{
@@ -357,6 +497,18 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 }
 
 func (c *sshConnection) handleConnection() {
+	// Cert-auth connections have no session-level gRPC stream. Each
+	// direct-tcpip channel manages its own gRPC connection independently.
+	// Skip handleClientWrite (which establishes the session-level stream) and
+	// proceed directly to accepting SSH channels.
+	if c.certSession != nil {
+		go c.handleServerWrite()
+		<-c.ctx.Done()
+		c.channelWg.Wait()
+		_ = c.sshConn.Close()
+		return
+	}
+
 	// it is important to wait for the session to be established
 	// before handling ssh channels
 	c.handleClientWrite()
@@ -645,6 +797,28 @@ func (c *sshConnection) handleServerWrite() {
 func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	log.With("conn", c.id, "sid", c.sid, "ch", channelID).Infof("received new channel, type=%v", newCh.ChannelType())
 
+	// Cert-auth connections only support port-forwarding. Route each channel
+	// type accordingly and return; the password-auth path below is skipped.
+	if c.certSession != nil {
+		switch newCh.ChannelType() {
+		case "direct-tcpip":
+			if !c.certSession.allowPortForwarding() {
+				log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+					Infof("denied direct-tcpip: cert lacks permit-port-forwarding (principal=%s)", c.certSession.matchedValue)
+				_ = newCh.Reject(ssh.Prohibited, "hoop: cert does not permit port forwarding")
+				return
+			}
+			c.handleCertDirectTcpip(newCh, channelID)
+		default:
+			log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+				Infof("rejected %q channel: cert auth only supports port-forwarding (principal=%s)",
+					newCh.ChannelType(), c.certSession.matchedValue)
+			_ = newCh.Reject(ssh.Prohibited,
+				"hoop: certificate authentication only supports port-forwarding; use ssh -L to connect")
+		}
+		return
+	}
+
 	clientCh, clientRequests, err := newCh.Accept()
 	if err != nil {
 		c.cancelFn("failed obtaining channel, err=%v", err)
@@ -714,6 +888,57 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 		for req := range clientRequests {
 			log.With("sid", c.sid, "conn", c.id, "ch", channelID, "type", req.Type).Debug("received client ssh request")
 
+			// Enforce cert extensions and critical options on channel requests
+			// before forwarding.
+			if c.certSession != nil {
+				var denied bool
+				switch req.Type {
+				case "pty-req":
+					if !c.certSession.allowPTY() {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Infof("denied pty-req: cert lacks permit-pty (principal=%s)", c.certSession.matchedValue)
+						denied = true
+					}
+				case "x11-req":
+					if !c.certSession.allowX11Forwarding() {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Infof("denied x11-req: cert lacks permit-X11-forwarding (principal=%s)", c.certSession.matchedValue)
+						denied = true
+					}
+				case "auth-agent-req@openssh.com":
+					if !c.certSession.allowAgentForwarding() {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Infof("denied auth-agent-req: cert lacks permit-agent-forwarding (principal=%s)", c.certSession.matchedValue)
+						denied = true
+					}
+				case "exec":
+					if fc := c.certSession.forceCommand(); fc != "" {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Infof("force-command applied: %q (principal=%s)", fc, c.certSession.matchedValue)
+						req.Payload = ssh.Marshal(struct{ Command string }{fc})
+					}
+				case "shell":
+					if fc := c.certSession.forceCommand(); fc != "" {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Infof("force-command applied (shell→exec): %q (principal=%s)", fc, c.certSession.matchedValue)
+						req.Type = "exec"
+						req.Payload = ssh.Marshal(struct{ Command string }{fc})
+					}
+				case "subsystem":
+					if fc := c.certSession.forceCommand(); fc != "" {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Infof("denied subsystem: force-command is set (principal=%s)", c.certSession.matchedValue)
+						denied = true
+					}
+				}
+				if denied {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
+			}
+
 			data := (sshtypes.SSHRequest{
 				ChannelID:   channelID,
 				RequestType: req.Type,
@@ -768,6 +993,225 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 
 		log.With("ch", channelID, "conn", c.id).Debugf("done processing ssh client requests")
 	}()
+}
+
+// directTcpipExtra is the wire format of the extra data carried by a
+// direct-tcpip channel open request (RFC 4254 §7.2).
+type directTcpipExtra struct {
+	ConnectedHost  string
+	ConnectedPort  uint32
+	OriginatorIP   string
+	OriginatorPort uint32
+}
+
+// handleCertDirectTcpip handles one direct-tcpip channel for a cert-auth
+// connection. It derives the Hoop connection name from the channel's
+// destination host, establishes a dedicated per-channel gRPC session, and
+// proxies data bidirectionally. The channel is rejected before Accept is
+// called if the connection cannot be found or accessed, so the SSH client
+// receives a protocol-level rejection rather than a silent close.
+func (c *sshConnection) handleCertDirectTcpip(newCh ssh.NewChannel, channelID uint16) {
+	var dest directTcpipExtra
+	if err := ssh.Unmarshal(newCh.ExtraData(), &dest); err != nil || dest.ConnectedHost == "" {
+		_ = newCh.Reject(ssh.ConnectionFailed, "hoop: invalid or missing port-forward destination")
+		return
+	}
+	connectionName := dest.ConnectedHost
+
+	// Each direct-tcpip channel is an independent Hoop session.
+	channelSID := uuid.New().String()
+	channelConnID := fmt.Sprintf("%s-%d", c.id, channelID)
+
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, connectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, c.certSession.userSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", channelSID),
+	}
+	grpcClient, err := grpc.Connect(grpc.ClientConfig{
+		ServerAddress: grpc.LocalhostAddr,
+		UserAgent:     "ssh/grpc",
+		Insecure:      appconfig.Get().GatewayUseTLS() == false,
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		TLSSkipVerify: true,
+	}, grpcOpts...)
+	if err != nil {
+		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+			Infof("cert port-forward: failed to connect for %q: %v", connectionName, err)
+		_ = newCh.Reject(ssh.ConnectionFailed,
+			fmt.Sprintf("hoop: connection %q not found", connectionName))
+		return
+	}
+
+	// Send SessionOpen and wait for SessionOpenOK before accepting the channel
+	// so a missing/inaccessible connection is surfaced as a protocol rejection.
+	if err := grpcClient.Send(&pb.Packet{
+		Type: pbagent.SessionOpen,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(channelSID),
+			pb.SpecClientConnectionID: []byte(channelConnID),
+		},
+	}); err != nil {
+		_, _ = grpcClient.Close()
+		_ = newCh.Reject(ssh.ConnectionFailed, "hoop: failed to open session")
+		return
+	}
+
+	if err := waitForCertSessionOpen(c.ctx, grpcClient); err != nil {
+		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+			Infof("cert port-forward: session open failed for %q: %v", connectionName, err)
+		_, _ = grpcClient.Close()
+		_ = newCh.Reject(ssh.ConnectionFailed,
+			fmt.Sprintf("hoop: connection %q not found", connectionName))
+		return
+	}
+
+	clientCh, clientRequests, err := newCh.Accept()
+	if err != nil {
+		_, _ = grpcClient.Close()
+		return
+	}
+
+	log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+		Infof("cert port-forward: opened to %q (principal=%s)", connectionName, c.certSession.matchedValue)
+
+	streamW := pb.NewStreamWriter(grpcClient, pbagent.SSHConnectionWrite, map[string][]byte{
+		string(pb.SpecGatewaySessionID):   []byte(channelSID),
+		string(pb.SpecClientConnectionID): []byte(channelConnID),
+	})
+
+	openChData := (sshtypes.OpenChannel{
+		ChannelID:        channelID,
+		ChannelType:      "direct-tcpip",
+		ChannelExtraData: newCh.ExtraData(),
+	}).Encode()
+	if _, err := streamW.Write(openChData); err != nil {
+		_ = clientCh.Close()
+		_, _ = grpcClient.Close()
+		return
+	}
+
+	// SSH client → gRPC
+	c.channelWg.Add(1)
+	go func() {
+		defer c.channelWg.Done()
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := clientCh.Read(buf)
+			if n > 0 {
+				data := sshtypes.Data{ChannelID: channelID, Payload: buf[:n]}
+				if _, err := streamW.Write(data.Encode()); err != nil {
+					return
+				}
+			}
+			if readErr != nil {
+				if readErr == io.EOF {
+					eofData := sshtypes.EOF{ChannelID: channelID}
+					_, _ = streamW.Write(eofData.Encode())
+				}
+				return
+			}
+		}
+	}()
+
+	// channel requests (uncommon for direct-tcpip; discard with reply)
+	c.channelWg.Add(1)
+	go func() {
+		defer c.channelWg.Done()
+		for req := range clientRequests {
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+		}
+	}()
+
+	defer func() {
+		_ = grpcClient.Send(&pb.Packet{
+			Type: pbagent.SessionClose,
+			Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(channelSID)},
+		})
+		_, _ = grpcClient.Close()
+	}()
+
+	// gRPC → SSH client (main read loop for this channel)
+	for {
+		pkt, err := grpcClient.Recv()
+		if err != nil {
+			_ = clientCh.Close()
+			return
+		}
+		if pkt == nil {
+			_ = clientCh.Close()
+			return
+		}
+
+		switch pb.PacketType(pkt.Type) {
+		case pbclient.SSHConnectionWrite:
+			switch sshtypes.DecodeType(pkt.Payload) {
+			case sshtypes.DataType:
+				var data sshtypes.Data
+				if err := sshtypes.Decode(pkt.Payload, &data); err != nil {
+					_ = clientCh.Close()
+					return
+				}
+				if _, err := clientCh.Write(data.Payload); err != nil {
+					return
+				}
+			case sshtypes.CloseChannelType:
+				_ = clientCh.Close()
+				return
+			case sshtypes.EOFType:
+				if ch, ok := clientCh.(interface{ CloseWrite() error }); ok {
+					_ = ch.CloseWrite()
+				}
+			}
+		case pbclient.TCPConnectionClose, pbclient.SessionClose:
+			_ = clientCh.Close()
+			return
+		}
+
+		select {
+		case <-c.ctx.Done():
+			_ = clientCh.Close()
+			return
+		default:
+		}
+	}
+}
+
+// waitForCertSessionOpen reads from grpcClient until it receives SessionOpenOK,
+// a terminal failure packet, or times out. It is used by handleCertDirectTcpip
+// to confirm the Hoop connection is accessible before accepting the SSH channel.
+func waitForCertSessionOpen(ctx context.Context, grpcClient pb.ClientTransport) error {
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	pktCh := make(chan *pb.Packet, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		pkt, err := grpcClient.Recv()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		pktCh <- pkt
+	}()
+
+	select {
+	case pkt := <-pktCh:
+		if pb.PacketType(pkt.Type) == pbclient.SessionOpenOK {
+			return nil
+		}
+		return fmt.Errorf("unexpected session response: %v", pkt.Type)
+	case err := <-errCh:
+		return fmt.Errorf("session open failed: %w", err)
+	case <-timer.C:
+		return fmt.Errorf("session open timed out")
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
 }
 
 func parseHostsKey(privateKeyB64Enc string) (hostsKey ssh.Signer, err error) {
