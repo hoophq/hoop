@@ -247,8 +247,8 @@ func TestResolve_PreflightRejectsBrokenSAPrincipal(t *testing.T) {
 	if !strings.Contains(err.Error(), "invalid GCP service-account name") {
 		t.Errorf("error %q should call out the invalid SA name", err.Error())
 	}
-	if !strings.Contains(err.Error(), "{user.email_local}") {
-		t.Errorf("error %q should hint at the {user.email_local} placeholder", err.Error())
+	if !strings.Contains(err.Error(), "{user.email}") {
+		t.Errorf("error %q should hint at the {user.email} placeholder", err.Error())
 	}
 	if issuer.calledPrincipal != "" {
 		t.Errorf("issuer must not be called when preflight rejects; got principal=%q", issuer.calledPrincipal)
@@ -257,7 +257,7 @@ func TestResolve_PreflightRejectsBrokenSAPrincipal(t *testing.T) {
 
 // TestResolve_PreflightRejectsDottedSALocalPart guards against the silent
 // failure mode where a dotted email (e.g. first.last@example.com) is fed into
-// {user.email_local} verbatim. SA names can't carry dots; GCP would refuse and
+// {user.email} verbatim. SA names can't carry dots; GCP would refuse and
 // the preflight should surface the rule before the API call.
 func TestResolve_PreflightRejectsDottedSALocalPart(t *testing.T) {
 	issuer := &fakeIssuer{}
@@ -280,7 +280,7 @@ func TestResolve_PreflightRejectsDottedSALocalPart(t *testing.T) {
 }
 
 // TestResolve_PreflightAcceptsWellFormedSAPrincipal documents the happy case:
-// a template that uses {user.email_local} cleanly produces a valid SA email,
+// a template that uses {user.email} cleanly produces a valid SA email,
 // preflight is a no-op, and the issuer is invoked with the principal verbatim.
 func TestResolve_PreflightAcceptsWellFormedSAPrincipal(t *testing.T) {
 	issuer := &fakeIssuer{token: "ya29.ok", expiresAt: time.Now().Add(time.Hour)}

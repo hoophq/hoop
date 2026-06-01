@@ -393,7 +393,7 @@ func validateFederationRequest(req openapi.ConnectionFederationConfig) error {
 	}
 
 	// Dry-render the identity template now so typo placeholders (e.g.
-	// {user.handle} instead of {user.email_local}) surface as a 400 here
+	// {user.handle} instead of {user.email}) surface as a 400 here
 	// rather than as a runtime federation failure on the first session.
 	// The synthetic context populates every supported source so we exercise
 	// the full substitution surface. Empty-source failures are a runtime
