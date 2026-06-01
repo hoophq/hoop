@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"libhoop"
+	"strconv"
 	"strings"
 
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
@@ -80,6 +83,12 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		"dlp_experimental_redact_rows": connenv.experimentalRedactRows,
 		"guard_rail_rules":             guardRailRules,
 		"analyzer_metrics_rules":       analyzerMetricsRules,
+	}
+	// When the large-query flag is enabled, raise the Postgres packet cap so the
+	// libhoop proxy honors the same ceiling the client and gRPC transport use.
+	// libhoop falls back to its own default when this option is absent.
+	if featureflagstate.IsEnabled("experimental.pg_large_query") {
+		opts["max_packet_size"] = strconv.Itoa(pgtypes.LargeBufferSize)
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {

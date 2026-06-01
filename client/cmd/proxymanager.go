@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -50,7 +51,7 @@ var (
 					return backoff.Error()
 				}
 				defer client.Close()
-				err = runAutoConnect(client)
+				err = runAutoConnect(client, config)
 				if status, ok := status.FromError(err); ok {
 					switch status.Code() {
 					case codes.Canceled:
@@ -79,7 +80,7 @@ var (
 
 func init() { rootCmd.AddCommand(proxyManagerCmd) }
 
-func runAutoConnect(client pb.ClientTransport) (err error) {
+func runAutoConnect(client pb.ClientTransport, config *clientconfig.Config) (err error) {
 	connStore := memory.New()
 	defer func() {
 		for _, obj := range connStore.List() {
@@ -122,7 +123,11 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			client.StartKeepAlive()
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
-				srv := proxy.NewPGServer(proxyPort, client)
+				pgMaxPacketSize := pgtypes.DefaultBufferSize
+				if clientconfig.IsFeatureEnabled(config, "experimental.pg_large_query") {
+					pgMaxPacketSize = pgtypes.LargeBufferSize
+				}
+				srv := proxy.NewPGServer(proxyPort, client, pgMaxPacketSize)
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}

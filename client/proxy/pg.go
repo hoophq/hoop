@@ -20,6 +20,7 @@ type PGServer struct {
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
+	maxPacketSize   int
 }
 
 type pgConnection struct {
@@ -28,15 +29,22 @@ type pgConnection struct {
 	backendKeyData *pgtypes.BackendKeyData
 }
 
-func NewPGServer(proxyPort string, client pb.ClientTransport) *PGServer {
+// NewPGServer creates a Postgres proxy server. maxPacketSize bounds the frame
+// size of a single decoded Postgres packet read from the local client; a
+// non-positive value falls back to pgtypes.DefaultBufferSize.
+func NewPGServer(proxyPort string, client pb.ClientTransport, maxPacketSize int) *PGServer {
 	listenAddr := defaultListenAddr(defaultPostgresPort)
 	if proxyPort != "" {
 		listenAddr = defaultListenAddr(proxyPort)
+	}
+	if maxPacketSize <= 0 {
+		maxPacketSize = pgtypes.DefaultBufferSize
 	}
 	return &PGServer{
 		listenAddr:      listenAddr,
 		client:          client,
 		connectionStore: memory.New(),
+		maxPacketSize:   maxPacketSize,
 	}
 }
 
@@ -155,7 +163,7 @@ func (p *PGServer) lookupConnectionByPid(pid uint32) *pgConnection {
 func (p *PGServer) copyPGBuffer(dst io.Writer, src *pgConnection) (written int64, err error) {
 	closedConn := false
 	for {
-		pkt, err := pgtypes.Decode(src.client)
+		pkt, err := pgtypes.DecodeWithMaxSize(src.client, p.maxPacketSize)
 		if err != nil {
 			if err == io.EOF || closedConn {
 				break

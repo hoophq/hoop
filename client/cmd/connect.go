@@ -24,6 +24,7 @@ import (
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -205,7 +206,11 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 			}
 			switch connectionType {
 			case pb.ConnectionTypePostgres:
-				srv := proxy.NewPGServer(c.proxyPort, c.client)
+				pgMaxPacketSize := pgtypes.DefaultBufferSize
+				if clientconfig.IsFeatureEnabled(config, "experimental.pg_large_query") {
+					pgMaxPacketSize = pgtypes.LargeBufferSize
+				}
+				srv := proxy.NewPGServer(c.proxyPort, c.client, pgMaxPacketSize)
 				if err := srv.Serve(string(sessionID)); err != nil {
 					c.processGracefulExit(err)
 				}
