@@ -82,13 +82,6 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.iam_federation": {
-		Name:        "experimental.iam_federation",
-		Description: "Resolve per-session cloud credentials by impersonating the calling user's IAM principal (GCP IAM v1) so cloud audit logs attribute queries to the human, not the shared admin SA. When enabled, federation config on a connection is consulted at SessionOpen and short-lived credentials are injected as env vars before the agent runs the command.",
-		Default:     false,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway},
-	},
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
 		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",

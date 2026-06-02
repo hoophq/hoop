@@ -13,7 +13,6 @@ import (
 	"libhoop/redactor"
 
 	"github.com/hoophq/hoop/common/apiutils"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -411,8 +410,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 
 		clientArgs := clientArgsDecode(pkt.Spec)
 
-		// Federation resolution. Runs only when the experimental.iam_federation
-		// flag is enabled for the org and a federation row exists for the
+		// Federation resolution. Runs when a federation row exists for the
 		// connection. Resolved env vars are merged into pctx.ConnectionSecret
 		// in the format the agent's secretsmanager.Decode expects
 		// (envvar:NAME → base64(plaintext)). Failure semantics are governed by
@@ -468,10 +466,10 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 }
 
 // resolveFederationForSession looks up the federation config for the
-// session's connection and, if one is present and the org has the feature
-// flag enabled, calls services.ResolveFederation. On success it mutates
-// pctx.ConnectionSecret in place to inject the resolved env vars and writes
-// the audit metadata to the session row.
+// session's connection and, if one is present, calls
+// services.ResolveFederation. On success it mutates pctx.ConnectionSecret in
+// place to inject the resolved env vars and writes the audit metadata to the
+// session row.
 //
 // Returning a non-nil error from this function aborts the session-open
 // flow: the caller bails out before sending the AgentConnectionParams to
@@ -479,9 +477,6 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 // function returns nil without mutating pctx.ConnectionSecret, leaving the
 // connection's existing static credentials in place for the session.
 func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient.ProxyStream) error {
-	if !featureflag.IsEnabled(pctx.OrgID, "experimental.iam_federation") {
-		return nil
-	}
 	cfg, err := models.GetConnectionFederationConfig(models.DB, pctx.OrgID, pctx.ConnectionID)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
