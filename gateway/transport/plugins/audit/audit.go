@@ -202,13 +202,20 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 						return nil, plugintypes.InternalErr("ai analyzer requested review without resolving access request rule",
 							fmt.Errorf("aiAccessRule is nil for sid=%s", pctx.SID))
 					}
-					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, pctx.ConnectionName,
+					ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
+					ctx.WithUserInfo(pctx.UserName, pctx.UserEmail, "active", "", pctx.UserGroups)
+
+					conn, err := models.GetBareConnectionByNameOrID(ctx, pctx.ConnectionName, models.DB)
+					if err != nil {
+						return nil, plugintypes.InternalErr("failed retrieving connection for ai-driven review", err)
+					}
+					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, conn,
 						sessionapi.AIReviewRequester{
-							UserID:       pctx.UserID,
-							UserEmail:    pctx.UserEmail,
-							UserName:     pctx.UserName,
-							UserSlackID:  pctx.UserSlackID,
-							ConnectionID: pctx.ConnectionID,
+							UserID:      pctx.UserID,
+							UserEmail:   pctx.UserEmail,
+							UserName:    pctx.UserName,
+							UserSlackID: pctx.UserSlackID,
+							UserGroups:  pctx.UserGroups,
 						},
 						aiAccessRule, string(pkt.Payload), nil, nil)
 					if err != nil {
