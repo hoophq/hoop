@@ -865,7 +865,7 @@ func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSes
 			cluster = string(val)
 		case "envvar:EKS_AWS_REGION":
 			awsRegion = string(val)
-		case "envvar:EKS_ROLE_SESSION":
+		case "envvar:EKS_ROLE_SESSION", "envvar:EKS_BINDING_USER_ROLE":
 			roleSession = string(val)
 		case "envvar:EKS_ROLE_ARN":
 			roleArn = string(val)
