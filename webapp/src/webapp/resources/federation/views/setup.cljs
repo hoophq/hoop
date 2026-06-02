@@ -105,7 +105,7 @@
     {:label "Fallback when no match"
      :not-margin-bottom? true
      :options [{:value "deny" :text "Deny session"}
-               {:value "readonly" :text "Read-only access"}]
+               {:value "static" :text "Fallback to connection principal"}]
      :selected (:fallback form)
      :full-width? true
      :on-change #(rf/dispatch [:federation/set-field :fallback %])}]])

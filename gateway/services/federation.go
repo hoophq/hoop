@@ -92,30 +92,6 @@ func ResolveFederationDryRun(ctx context.Context, cfg *models.ConnectionFederati
 	}
 }
 
-// ResolveFederationFallback runs the federation flow again with the
-// configured readonly_principal forced into the target. Returns
-// ErrNoFallbackConfigured when fallback_policy is anything other than
-// "readonly".
-func ResolveFederationFallback(ctx context.Context, cfg *models.ConnectionFederationConfig, in FederationInput) (*federation.Result, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("missing federation config")
-	}
-	if cfg.FallbackPolicy != models.FederationFallbackReadonly {
-		return nil, ErrNoFallbackConfigured
-	}
-	if cfg.ReadonlyPrincipal == nil || *cfg.ReadonlyPrincipal == "" {
-		return nil, fmt.Errorf("fallback_policy=readonly but readonly_principal is empty")
-	}
-	// Reuse the same provider branch logic but pre-resolve the principal to
-	// the readonly one. We still pass IdentityContext through so providers
-	// that want to log the original user can do so.
-	return dispatchWithStoredCreds(ctx, cfg, in, *cfg.ReadonlyPrincipal)
-}
-
-// ErrNoFallbackConfigured signals that the caller asked for the fallback
-// resolution path but the federation config is set to deny on failure.
-var ErrNoFallbackConfigured = fmt.Errorf("no fallback configured (fallback_policy=deny)")
-
 // dispatchWithStoredCreds dispatches to the configured hook source after
 // decrypting admin credentials from the persisted row. This is the common
 // path for session-open and post-save diagnostics; the dry-run variant

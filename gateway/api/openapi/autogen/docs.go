@@ -11049,11 +11049,11 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "fallback_policy": {
-                    "description": "FallbackPolicy controls behavior when resolution fails.",
+                    "description": "FallbackPolicy controls behavior when resolution fails. \"deny\" aborts\nthe session; \"static\" skips federation and lets the session run on the\nconnection's existing static credentials.",
                     "type": "string",
                     "enum": [
                         "deny",
-                        "readonly"
+                        "static"
                     ],
                     "example": "deny"
                 },
@@ -11084,11 +11084,6 @@ const docTemplate = `{
                     "description": "IdentityTargetTemplate is the principal template the source attribute\nsubstitutes into (defaults to \"{user.email}\").",
                     "type": "string",
                     "example": "{user.email}"
-                },
-                "readonly_principal": {
-                    "description": "ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as\nthe impersonation target on the fallback path.",
-                    "type": "string",
-                    "example": "hoop-readonly@example.com"
                 },
                 "token_ttl_seconds": {
                     "description": "TokenTTLSeconds caps the lifetime of generated credentials (default\n3600, max 43200). Built-in providers may clamp lower based on cloud\nAPI limits.",
