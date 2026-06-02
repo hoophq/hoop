@@ -221,6 +221,24 @@ func preflightServiceAccountPrincipal(principal string) error {
 		// name; GCP SA emails are "<name>@<project>.iam.gserviceaccount.com".
 		localPart = localPart[:at]
 	}
+	// A too-short local part is the single most common SA-name failure, so
+	// call it out explicitly instead of folding it into the generic regex
+	// message below. {user.email} expands to the local part of the user's
+	// email (everything before the @), so a user like "al@acme.com" yields a
+	// 2-char SA name. GCP requires service-account names to be at least 6
+	// characters; the regex's {4,28} middle quantifier enforces the same
+	// floor, but the operator-facing message is far clearer when it names the
+	// length problem directly and points at the prefix fix.
+	if n := len(localPart); n < 6 {
+		return fmt.Errorf(
+			"resolved principal %q has a GCP service-account name %q that is only %d character(s) long: "+
+				"GCP requires service-account names to be at least 6 characters. The {user.email} portion of your "+
+				"identity template expands to the local part of the user's email (before the @), which is too short "+
+				"here. Add a literal prefix to pad it (e.g. \"hoop-{user.email}@<project>%s\") or map the user to a "+
+				"longer handle",
+			principal, localPart, n, saEmailSuffix,
+		)
+	}
 	if !saLocalPartRegex.MatchString(localPart) {
 		return fmt.Errorf(
 			"resolved principal %q has an invalid GCP service-account name %q: "+

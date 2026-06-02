@@ -290,7 +290,7 @@ func TestFederationConfig(c *gin.Context) {
 		return
 	}
 
-	// Phase 2 — agent-side probe. Mirror the real session-open merge
+	// agent-side probe. Mirror the real session-open merge
 	// (see gateway/transport/client.go resolveFederationForSession): start
 	// from the candidate static envs, drop the provider-declared
 	// SupersededEnvVars, then overlay the federation output on top. This
