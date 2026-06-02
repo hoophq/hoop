@@ -12,6 +12,24 @@
        (not (str/blank? email))
        (re-matches #"^[^@\s]+@[^@\s]+\.[^@\s]+$" email)))
 
+(defn- result-row [label value]
+  [:> Box {:class "space-y-0.5"}
+   [:> Text {:size "1" :class "text-[--gray-10] uppercase tracking-wide block"} label]
+   [:> Text {:size "2" :class "font-mono text-[--gray-12] break-all block"} value]])
+
+(defn- test-success-display [test-result token-ttl-seconds email]
+  [:> Box {:class "space-y-3"}
+   [:> Flex {:align "center" :gap "2"}
+    [:> CheckCircle {:size 18 :class "text-[--green-11] flex-shrink-0"}]
+    [:> Text {:size "3" :weight "bold" :class "text-[--gray-12]"}
+     (str "Session would start as " email)]]
+
+   [:> Box {:class "rounded-lg border border-[--gray-6] p-4 space-y-3"}
+    [result-row "Resolved principal" (:resolved_principal test-result)]
+    [result-row "Impersonated via" (:admin_principal test-result)]
+    [result-row "Token TTL" (str (quot (or token-ttl-seconds 3600) 60) " minutes")]
+    [result-row "Env vars emitted" (str/join ", " (:env_var_keys test-result))]]])
+
 (defn- test-error-display [test-result]
   (let [error-str (or (:error test-result) (:message test-result) (str test-result))
         probe-status (:probe_status test-result)]
@@ -46,10 +64,9 @@
             test-result @test-result-sub
             form @form-sub
             loading? (= test-status :loading)
+            success? (= test-status :success)
             project-id (get-in form [:extra_config :project_id])
             target-template (:identity_target_template form)
-            credentials? (or (get-in form [:admin_credentials_json])
-                             (get-in @form-sub [:admin_credentials_json]))
             ready-to-run? (and (valid-email? @email)
                                (not (str/blank? project-id))
                                (not (str/blank? target-template))
@@ -67,53 +84,56 @@
           [:> Text {:size "2" :class "text-[--gray-11]"}
            "Run the federation hook as a specific Hoop user and inspect what the session would receive."]]
 
-         [forms/input
-          {:label "Hoop user"
-           :placeholder "user@example.com"
-           :type "email"
-           :required true
-           :not-margin-bottom? true
-           :value (or @email "")
-           :on-change #(reset! email (-> % .-target .-value))}]
+         (if success?
+           [test-success-display test-result (:token_ttl_seconds form) @email]
 
-         [:> Callout.Root {:color "blue" :variant "soft" :size "1"}
-          [:> Callout.Icon [:> Info {:size 14}]]
-          [:> Callout.Text {:size "1"}
-           "This is a dry run. No session is opened, no audit record is created."]]
+           [:<>
+            [forms/input
+             {:label "Hoop user"
+              :placeholder "user@example.com"
+              :type "email"
+              :required true
+              :not-margin-bottom? true
+              :value (or @email "")
+              :on-change #(reset! email (-> % .-target .-value))}]
 
-         (case test-status
-           :loading
-           [:> Flex {:align "center" :gap "2" :class "text-[--gray-11]"}
-            [:span {:class "inline-block w-4 h-4 border-2 border-[--gray-8] border-t-transparent rounded-full animate-spin"}]
-            [:> Text {:size "2"} "Running test…"]]
+            [:> Callout.Root {:color "blue" :variant "soft" :size "1" :class "items-center"}
+             [:> Callout.Icon [:> Info {:size 14}]]
+             [:> Callout.Text {:size "1"}
+              "This is a dry run. No session is opened, no audit record is created."]]
 
-           :success
-           [:> Flex {:align "start" :gap "2" :class "text-[--green-11]"}
-            [:> CheckCircle {:size 18 :class "mt-0.5 flex-shrink-0"}]
-            [:> Box {:class "min-w-0 flex-1"}
-             [:> Text {:size "2" :weight "medium" :as "p"} "Test passed"]
-             (when-let [probe-status (:probe_status test-result)]
-               [:> Text {:size "1" :class "text-[--gray-11] block"}
-                "Probe: " probe-status])
-             (when-let [output (or (:output test-result)
-                                   (:stdout test-result)
-                                   (:probe_output test-result))]
-               [:> Box {:class "mt-2 p-2 bg-[--gray-3] rounded font-mono text-xs whitespace-pre-wrap break-all max-h-48 overflow-auto"}
-                output])]]
+            (case test-status
+              :loading
+              [:> Flex {:align "center" :gap "2" :class "text-[--gray-11]"}
+               [:span {:class "inline-block w-4 h-4 border-2 border-[--gray-8] border-t-transparent rounded-full animate-spin"}]
+               [:> Text {:size "2"} "Running test…"]]
 
-           :error
-           [test-error-display test-result]
+              :error
+              [test-error-display test-result]
 
-           nil)
+              nil)])
 
          [:> Flex {:justify "end" :gap "2"}
-          [:> Button {:variant "soft"
-                      :color "gray"
-                      :type "button"
-                      :on-click close-modal}
-           "Cancel"]
-          [:> Button {:variant "solid"
-                      :type "button"
-                      :disabled (not ready-to-run?)
-                      :on-click run-test}
-           "Run test"]]]))))
+          (if success?
+            [:<>
+             [:> Button {:variant "soft"
+                         :color "gray"
+                         :type "button"
+                         :on-click #(rf/dispatch [:federation/reset-test])}
+              "Run again"]
+             [:> Button {:variant "solid"
+                         :type "button"
+                         :on-click close-modal}
+              "Done"]]
+
+            [:<>
+             [:> Button {:variant "soft"
+                         :color "gray"
+                         :type "button"
+                         :on-click close-modal}
+              "Cancel"]
+             [:> Button {:variant "solid"
+                         :type "button"
+                         :disabled (not ready-to-run?)
+                         :on-click run-test}
+              "Run test"]])]]))))

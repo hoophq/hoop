@@ -11,7 +11,7 @@
    :extra_config {:project_id ""}
    :identity_source_attribute "$.user.email"
    :identity_target_template "{user.email}"
-   :fallback "deny"
+   :fallback_policy "deny"
    :token_ttl_seconds 3600})
 
 (defn- build-config [form]
@@ -21,7 +21,7 @@
    :extra_config {:project_id (get-in form [:extra_config :project_id])}
    :identity_source_attribute (:identity_source_attribute form)
    :identity_target_template (:identity_target_template form)
-   :fallback (:fallback form)
+   :fallback_policy (:fallback_policy form)
    :token_ttl_seconds (:token_ttl_seconds form)})
 
 (rf/reg-event-fx
@@ -59,7 +59,7 @@
                :extra_config {:project_id (get-in response [:extra_config :project_id] "")}
                :identity_source_attribute (or (:identity_source_attribute response) "$.user.email")
                :identity_target_template (or (:identity_target_template response) "{user.email}")
-               :fallback (or (:fallback response) "deny")
+               :fallback_policy (or (:fallback_policy response) "deny")
                :token_ttl_seconds (or (:token_ttl_seconds response) 3600)}]
      {:db (-> db
               (assoc-in [:resources/federation :status] :ready)

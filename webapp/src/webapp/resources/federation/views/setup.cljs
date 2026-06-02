@@ -1,7 +1,7 @@
 (ns webapp.resources.federation.views.setup
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Text Tooltip]]
-   ["lucide-react" :refer [ArrowRight ChevronDown Eye EyeOff FlaskConical HelpCircle Info]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Text Tooltip]]
+   ["lucide-react" :refer [Eye EyeOff HelpCircle Info]]
    [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -17,9 +17,9 @@
        [:> HelpCircle {:size 14 :class "text-[--gray-10]"}]])]
    (into [:> Box {:class "space-y-4"}] children)])
 
-(defn- sa-json-field [form credentials-editing? has-credentials?]
-  (r/with-let [reveal? (r/atom true)]
-    (fn [form credentials-editing? has-credentials?]
+(defn- sa-json-field [form credentials-editing? has-credentials? reveal-default?]
+  (r/with-let [reveal? (r/atom (boolean reveal-default?))]
+    (fn [form credentials-editing? has-credentials? _reveal-default?]
       (let [masked? (and has-credentials?
                          (not credentials-editing?)
                          (str/blank? (:admin_credentials_json form)))]
@@ -67,15 +67,6 @@
            "This service account never touches end-user sessions directly. "
            "It is only used by the federation script to mint short-lived credentials for the mapped identity."]]]))))
 
-(defn- identity-pill [text]
-  [:> Box {:class "inline-flex items-center px-2 py-0.5 rounded bg-[--accent-3] text-[--accent-11] text-xs font-mono font-medium"}
-   text])
-
-(defn- source-attribute->display [source-attribute]
-  (-> (or source-attribute "$.user.email")
-      (str/replace #"^\$\." "")
-      (#(str "{" % "}"))))
-
 (defn- identity-mapping-editor [form]
   [:> Box {:class "space-y-4"}
    [forms/input
@@ -98,52 +89,21 @@
     [:> Text {:size "1" :class "text-[--gray-11]"}
      "Use a literal email or interpolate from the source. Example: "
      [:> Text {:as "span" :size "1" :class "font-mono bg-[--gray-3] px-1 py-0.5 rounded text-[--gray-12]"}
-      "analyst-{user.id}@your-project.iam.gserviceaccount.com"]
+      "analyst-{user.email}@your-project.iam.gserviceaccount.com"]
      "."]]
 
    [forms/select
-    {:label "Fallback when no match"
+    {:label "Fallback method"
+     :helper-text (str "What happens when a user's identity can't be mapped to a "
+                       "cloud principal at session start. \"Deny the session\" blocks "
+                       "access; \"Use the connection's static credentials\" runs the "
+                       "session on the credentials stored on the connection.")
      :not-margin-bottom? true
-     :options [{:value "deny" :text "Deny session"}
-               {:value "static" :text "Fallback to connection principal"}]
-     :selected (:fallback form)
+     :options [{:value "deny" :text "Deny the session"}
+               {:value "static" :text "Use the connection's static credentials"}]
+     :selected (:fallback_policy form)
      :full-width? true
-     :on-change #(rf/dispatch [:federation/set-field :fallback %])}]])
-
-(defn- identity-mapping-accordion [form open?]
-  [:> Box {:class "border border-[--gray-6] rounded-md overflow-hidden"}
-   [:> Box {:class "p-4 space-y-4"}
-    [:> Grid {:columns "5" :gap "2" :align "center"}
-     [:> Box {:grid-column "span 2 / span 2"}
-      [:> Text {:size "1" :weight "bold" :class "text-[--gray-10] uppercase tracking-wide mb-2 block"}
-       "HOOP USER (via Entra ID)"]
-      [identity-pill (source-attribute->display (:identity_source_attribute form))]]
-
-     [:> Flex {:justify "center" :align "center"}
-      [:> ArrowRight {:size 16 :class "text-[--gray-9]"}]]
-
-     [:> Box {:grid-column "span 2 / span 2" :class "text-right"}
-      [:> Text {:size "1" :weight "bold" :class "text-[--gray-10] uppercase tracking-wide mb-2 block"}
-       "GCP PRINCIPAL"]
-      [identity-pill (let [tmpl (:identity_target_template form "")]
-                       (if (str/blank? tmpl) "{user.email}" tmpl))]]]
-
-    [:> Flex {:justify "start"}
-     [:> Flex {:as "button"
-               :align "center"
-               :gap "1"
-               :type "button"
-               :aria-expanded open?
-               :on-click #(rf/dispatch [:federation/toggle-mapping-editor])
-               :class "text-[--accent-11] hover:underline cursor-pointer"}
-      [:> Text {:size "1" :weight "medium"} "Edit mapping"]
-      [:> ChevronDown {:size 12
-                       :class (str "transition-transform"
-                                   (when open? " rotate-180"))}]]]]
-
-   (when open?
-     [:> Box {:class "border-t border-[--gray-5] p-4 bg-[--gray-2]"}
-      [identity-mapping-editor form]])])
+     :on-change #(rf/dispatch [:federation/set-field :fallback_policy %])}]])
 
 (defn- env-var-row [var-name]
   [:> Flex {:align "center"}
@@ -164,14 +124,12 @@
   (r/with-let [status-sub (rf/subscribe [:federation/status])
                data-sub (rf/subscribe [:federation/data])
                form-sub (rf/subscribe [:federation/form])
-               credentials-editing?-sub (rf/subscribe [:federation/credentials-editing?])
-               mapping-editor-open?-sub (rf/subscribe [:federation/mapping-editor-open?])]
+               credentials-editing?-sub (rf/subscribe [:federation/credentials-editing?])]
     (fn []
       (let [status @status-sub
             data @data-sub
             form @form-sub
             credentials-editing? @credentials-editing?-sub
-            mapping-editor-open? @mapping-editor-open?-sub
             has-credentials? (:has_admin_credentials data)
             has-admin-creds? (or (not (str/blank? (:admin_credentials_json form)))
                                  has-credentials?)
@@ -206,13 +164,12 @@
                                                 {:content [test-dialog/main
                                                            {:conn-data conn-data}]
                                                  :maxWidth "540px"}])}
-            [:> FlaskConical {:size 14}]
             "Test as user"]]]
 
          [section
           "Admin role credentials"
           "The service account that the hook impersonates with. Must hold roles/iam.serviceAccountTokenCreator on the principals it issues credentials for."
-          [sa-json-field form credentials-editing? has-credentials?]
+          [sa-json-field form credentials-editing? has-credentials? embedded?]
           [forms/input
            {:label "GCP Project ID"
             :placeholder "e.g. my-gcp-project"
@@ -226,7 +183,7 @@
          [section
           "Identity mapping"
           "How the Hoop user's identity maps to the cloud IAM principal that gets impersonated."
-          [identity-mapping-accordion form mapping-editor-open?]]
+          [identity-mapping-editor form]]
 
          [section
           "Output preview"

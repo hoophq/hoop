@@ -129,7 +129,7 @@
                                  :extra_config {:project_id ""}
                                  :identity_source_attribute "$.user.email"
                                  :identity_target_template "{user.email}"
-                                 :fallback "deny"
+                                 :fallback_policy "deny"
                                  :token_ttl_seconds 3600}
                           :credentials-editing? false
                           :mapping-editor-open? false
