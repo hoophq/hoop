@@ -8768,7 +8768,7 @@ const docTemplate = `{
         },
         "/sessions/{session_id}/stream": {
             "get": {
-                "description": "Streams audit events for a machine session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
+                "description": "Streams audit events for an open session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
                 "produces": [
                     "text/event-stream"
                 ],
@@ -10974,7 +10974,7 @@ const docTemplate = `{
                     "example": "2025-08-25T12:00:00Z"
                 },
                 "expire_at": {
-                    "description": "When the database access connection expires",
+                    "description": "When the database access connection expires. Null when the credential\nhas no expiration (persistent native-client credentials issued without\naccess_duration_seconds).",
                     "type": "string",
                     "example": "2025-08-25T13:00:00Z"
                 },

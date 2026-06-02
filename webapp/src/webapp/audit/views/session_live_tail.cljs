@@ -1,5 +1,6 @@
 (ns webapp.audit.views.session-live-tail
-  "Dedicated view for live machine sessions (identity_type=machine + status=open).
+  "Terminal-style view for interactive connect-verb sessions (postgres/ssh/
+  tcp/http-proxy/…), used for the whole lifecycle regardless of identity type.
 
   Renders the event stream as a terminal-style tail: newest entries at the
   bottom, auto-scroll, status pill that reflects the SSE connection state, and
@@ -240,7 +241,7 @@
 ;; ─── Main component ────────────────────────────────────────────────────────
 
 (defn main
-  "Live event stream for machine sessions.
+  "Live event stream for interactive connect-verb sessions.
   Receives the current session map and renders the live tail."
   [_session]
   (let [scroll-ref (r/atom nil)
