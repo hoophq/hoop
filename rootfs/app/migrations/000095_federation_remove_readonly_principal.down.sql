@@ -19,6 +19,8 @@ ALTER TABLE connection_federation_configs
   CHECK (fallback_policy IN ('deny', 'readonly'));
 
 ALTER TABLE connection_federation_configs
+  DROP CONSTRAINT IF EXISTS chk_readonly_principal_present;
+ALTER TABLE connection_federation_configs
   ADD CONSTRAINT chk_readonly_principal_present
   CHECK (fallback_policy <> 'readonly' OR readonly_principal IS NOT NULL);
 

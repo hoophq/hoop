@@ -1,3 +1,6 @@
+-- Idempotent / re-runnable: every statement uses IF EXISTS / IF NOT EXISTS or
+-- the drop-before-add pattern, so running this migration twice is a no-op on
+-- the second pass rather than an error.
 BEGIN;
 SET search_path TO private;
 
