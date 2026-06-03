@@ -176,6 +176,123 @@ func TestShouldRoundTripSecrets(t *testing.T) {
 	}
 }
 
+// Connections that carry any provider reference (Secrets Manager or
+// AWS IAM Role mode) round-trip regardless of shape — the stored values
+// are pointers/config, not raw secrets. This lets the UI render every
+// field consistently instead of mixing locked Set/Replace cards with
+// editable reference inputs in the same form.
+func TestShouldRoundTripSecrets_ReferencePromotion(t *testing.T) {
+	mk := func(typ, sub string, envs map[string]string) *models.Connection {
+		c := &models.Connection{Type: typ, Envs: envs}
+		if sub != "" {
+			c.SubType = sql.NullString{String: sub, Valid: true}
+		}
+		return c
+	}
+	cases := []struct {
+		name     string
+		conn     *models.Connection
+		expected bool
+	}{
+		{
+			name: "database/postgres with AWS IAM USER promotes the whole connection",
+			conn: mk("database", "postgres", map[string]string{
+				"envvar:HOST": b64("db.internal"),
+				"envvar:PORT": b64("5432"),
+				"envvar:USER": b64("_aws_iam_rds:appuser"),
+				"envvar:PASS": b64("_aws_iam_rds:authtoken"),
+				"envvar:DB":   b64("appdb"),
+			}),
+			expected: true,
+		},
+		{
+			name: "database/postgres with AWS Secrets Manager USER promotes",
+			conn: mk("database", "postgres", map[string]string{
+				"envvar:HOST": b64("db.internal"),
+				"envvar:USER": b64("_aws:prod/db:user"),
+				"envvar:PASS": b64("_aws:prod/db:password"),
+			}),
+			expected: true,
+		},
+		{
+			name: "database/mysql with Vault KV v1 reference promotes",
+			conn: mk("database", "mysql", map[string]string{
+				"envvar:USER": b64("_vaultkv1:secret/db:user"),
+			}),
+			expected: true,
+		},
+		{
+			name: "database/mssql with Vault KV v2 reference promotes",
+			conn: mk("database", "mssql", map[string]string{
+				"envvar:PASS": b64("_vaultkv2:secret/db:password"),
+			}),
+			expected: true,
+		},
+		{
+			name: "application/git with reference promotes (was write-only by shape)",
+			conn: mk("application", "git", map[string]string{
+				"envvar:TOKEN": b64("_aws:ci/git:token"),
+			}),
+			expected: true,
+		},
+		{
+			name: "custom/dynamodb with reference promotes (was write-only by shape)",
+			conn: mk("custom", "dynamodb", map[string]string{
+				"envvar:AWS_SECRET_ACCESS_KEY": b64("_aws:aws/keys:secret"),
+			}),
+			expected: true,
+		},
+		{
+			name:     "database/postgres with only inline values stays write-only",
+			conn:     mk("database", "postgres", map[string]string{"envvar:HOST": b64("db.internal"), "envvar:PASS": b64("hunter2")}),
+			expected: false,
+		},
+		{
+			name:     "database/postgres with only boolean values stays write-only",
+			conn:     mk("database", "postgres", map[string]string{"envvar:INSECURE": b64("true")}),
+			expected: false,
+		},
+		{
+			name:     "database/postgres with empty envs stays write-only",
+			conn:     mk("database", "postgres", map[string]string{}),
+			expected: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldRoundTripSecrets(tc.conn)
+			if got != tc.expected {
+				t.Fatalf("shouldRoundTripSecrets = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestHasAnySecretReference(t *testing.T) {
+	cases := []struct {
+		name     string
+		envs     map[string]string
+		expected bool
+	}{
+		{"nil map", nil, false},
+		{"empty map", map[string]string{}, false},
+		{"only inline values", map[string]string{"envvar:HOST": b64("db.internal"), "envvar:PASS": b64("hunter2")}, false},
+		{"only boolean values", map[string]string{"envvar:INSECURE": b64("true")}, false},
+		{"single aws reference", map[string]string{"envvar:PASS": b64("_aws:prod/db:password")}, true},
+		{"single aws_iam_rds reference", map[string]string{"envvar:USER": b64("_aws_iam_rds:appuser")}, true},
+		{"single vaultkv1 reference", map[string]string{"envvar:USER": b64("_vaultkv1:secret/db:user")}, true},
+		{"mixed inline + reference", map[string]string{"envvar:HOST": b64("db.internal"), "envvar:USER": b64("_aws:prod/db:user")}, true},
+		{"non-base64 value ignored", map[string]string{"envvar:HOST": "not-base64!!"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasAnySecretReference(tc.envs); got != tc.expected {
+				t.Fatalf("hasAnySecretReference = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestEnvsEqual(t *testing.T) {
 	cases := []struct {
 		name     string
