@@ -6,7 +6,9 @@ import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
 import { userGroupsService } from '@/services/userGroups'
 import {
+  decodeForDisplay,
   decodeSecretValue,
+  encodeSecretForSource,
   isSecretReference,
   PLACEHOLDER_KEY_RE,
   sourceFromEncodedValue,
@@ -470,6 +472,55 @@ export const useConfigureRoleStore = create((set, get) => ({
         }
       }
       return { stagedSecrets, renames: {}, fieldSources: {} }
+    })
+  },
+
+  // Re-encodes every persisted Secrets Manager reference (and any staged
+  // reference) under the newly-picked provider's prefix, plus updates the
+  // per-field source map so the in-row picker reflects the change.
+  //
+  // Without this, swapping the top-level provider only updates the
+  // dropdown — existing values keep their original `_aws:` / `_vaultkv*:`
+  // prefix in the stored base64, save() emits an empty patch, and the
+  // next load derives the old provider again. AWS IAM references are
+  // skipped because they belong to a different connection method, not
+  // a provider choice inside Secrets Manager mode.
+  setSecretsManagerProvider: (newProvider) => {
+    set((state) => {
+      const persisted = state.connection?.secret || {}
+      const stagedSecrets = { ...state.stagedSecrets }
+      const fieldSources = { ...state.fieldSources }
+
+      // Walk persisted refs: stage a replace under the new prefix.
+      for (const [key, encoded] of Object.entries(persisted)) {
+        if (!encoded || !isSecretReference(encoded)) continue
+        const plain = decodeSecretValue(encoded)
+        if (plain.startsWith('_aws_iam_rds:')) continue
+        const stripped = decodeForDisplay(encoded)
+        stagedSecrets[key] = {
+          action: 'replace',
+          value: encodeSecretForSource(stripped, newProvider),
+        }
+        fieldSources[key] = newProvider
+      }
+
+      // Walk anything already staged: a user may have flipped the
+      // provider mid-edit. Keep their typed plaintext, just swap the
+      // prefix on the way out so save() sends the right thing.
+      for (const [key, change] of Object.entries(state.stagedSecrets)) {
+        if (!change || change.action === 'delete' || !change.value) continue
+        if (!isSecretReference(change.value)) continue
+        const plain = decodeSecretValue(change.value)
+        if (plain.startsWith('_aws_iam_rds:')) continue
+        const stripped = decodeForDisplay(change.value)
+        stagedSecrets[key] = {
+          ...change,
+          value: encodeSecretForSource(stripped, newProvider),
+        }
+        fieldSources[key] = newProvider
+      }
+
+      return { stagedSecrets, fieldSources }
     })
   },
 

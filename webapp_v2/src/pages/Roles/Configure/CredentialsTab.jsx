@@ -10,7 +10,7 @@ import {
   supportsAwsIam,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
-import { deriveConnectionMethod } from './utils/connectionMethod'
+import { deriveConnectionInfo } from './utils/connectionMethod'
 import { SOURCES, SOURCE_LABELS } from './utils/secretsCodec'
 import { useConfigureRoleStore } from './store'
 import { pickRendererRule } from './sections/credentials'
@@ -149,18 +149,27 @@ function SecretsManagerProviderSection({ provider, onProviderChange }) {
 }
 
 export default function CredentialsTab({ connection }) {
-  const derivedMethod = deriveConnectionMethod(connection.secret)
-  const [selectedMethod, setSelectedMethodState] = useState(derivedMethod)
-  const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
+  // Derive method AND provider from the loaded values so the top-level
+  // dropdown reflects what's actually stored — without this the
+  // provider always opens as AWS Secrets Manager even when the
+  // connection holds `_vaultkv1:` references.
+  const derived = deriveConnectionInfo(connection.secret)
+  const [selectedMethod, setSelectedMethodState] = useState(derived.method)
+  const [secretsProvider, setSecretsProviderState] = useState(
+    derived.provider || SOURCES.AWS_SECRETS_MANAGER,
+  )
   const switchConnectionMethod = useConfigureRoleStore(
     (s) => s.switchConnectionMethod,
+  )
+  const setSecretsManagerProvider = useConfigureRoleStore(
+    (s) => s.setSecretsManagerProvider,
   )
   // CLJS shows the picker on every credentials tab — see
   // server.cljs:43, server.cljs:137, server.cljs:186, network.cljs:34/84,
   // metadata_driven.cljs:121-139, claude_code_edit.cljs:59.
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
-  const isDerivedMethod = selectedMethod === derivedMethod
+  const isDerivedMethod = selectedMethod === derived.method
 
   // Switching method is a fresh start in write-only land: existing
   // "Set" cards become meaningless (the user can't peek at the value
@@ -173,6 +182,17 @@ export default function CredentialsTab({ connection }) {
     if (next === selectedMethod) return
     switchConnectionMethod(next)
     setSelectedMethodState(next)
+  }
+
+  // Switching the Secrets Manager provider re-encodes every persisted
+  // reference under the new prefix (the prefix lives inside the base64,
+  // so the wire format only changes by ~10 chars per value). Without
+  // this, save() would emit an empty patch and the next load would
+  // derive the old provider back from the unchanged stored values.
+  const setSecretsProvider = (next) => {
+    if (next === secretsProvider) return
+    setSecretsManagerProvider(next)
+    setSecretsProviderState(next)
   }
 
   // availableSources drives the per-field source-selector adornment.
