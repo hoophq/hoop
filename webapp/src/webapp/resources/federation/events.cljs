@@ -27,9 +27,8 @@
 (rf/reg-event-fx
  :federation/load
  (fn [{:keys [db]} [_ connection-name]]
-   {:db (-> db
-            (assoc-in [:resources/federation :status] :loading)
-            (assoc-in [:resources/federation :credentials-editing?] false))
+   {:db (update db :resources/federation merge {:status :loading
+                                                :credentials-editing? false})
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/connections/" connection-name "/federation")
                              :on-success (fn [response]
@@ -61,10 +60,9 @@
                :identity_target_template (or (:identity_target_template response) "{user.email}")
                :fallback_policy (or (:fallback_policy response) "deny")
                :token_ttl_seconds (or (:token_ttl_seconds response) 3600)}]
-     {:db (-> db
-              (assoc-in [:resources/federation :status] :ready)
-              (assoc-in [:resources/federation :data] response)
-              (assoc-in [:resources/federation :form] form))
+     {:db (update db :resources/federation merge {:status :ready
+                                                   :data response
+                                                   :form form})
       ;; A connection that already has federation configured should default
       ;; the edit-mode connection-method selector to "iam_federation".
       :fx [[:dispatch [:connection-setup/update-connection-method "iam_federation"]]]})))
@@ -72,9 +70,7 @@
 (rf/reg-event-db
  :federation/load-failure
  (fn [db [_ error]]
-   (-> db
-       (assoc-in [:resources/federation :status] :error)
-       (assoc-in [:resources/federation :error] error))))
+   (update db :resources/federation merge {:status :error :error error})))
 
 (rf/reg-event-db
  :federation/set-status
@@ -121,11 +117,11 @@
 (rf/reg-event-fx
  :federation/save-success
  (fn [{:keys [db]} [_ response]]
-   {:db (-> db
-            (assoc-in [:resources/federation :status] :ready)
-            (assoc-in [:resources/federation :save-status] :ready)
-            (assoc-in [:resources/federation :data] (assoc response :has_admin_credentials true))
-            (assoc-in [:resources/federation :credentials-editing?] false))
+   {:db (update db :resources/federation merge
+                {:status :ready
+                 :save-status :ready
+                 :data (assoc response :has_admin_credentials true)
+                 :credentials-editing? false})
     :fx [[:dispatch [:show-snackbar {:level :success
                                      :text "IAM Federation configuration saved"}]]]}))
 
@@ -164,12 +160,11 @@
 (rf/reg-event-db
  :federation/delete-success
  (fn [db _]
-   (-> db
-       (assoc-in [:resources/federation :status] :idle)
-       (assoc-in [:resources/federation :data] nil)
-       (assoc-in [:resources/federation :save-status] :idle)
-       (assoc-in [:resources/federation :mapping-editor-open?] false)
-       (assoc-in [:resources/federation :form] default-form))))
+   (update db :resources/federation merge {:status :idle
+                                           :data nil
+                                           :save-status :idle
+                                           :mapping-editor-open? false
+                                           :form default-form})))
 
 (rf/reg-event-fx
  :federation/test
@@ -187,9 +182,8 @@
                                :envs (merge (or (:envs conn-data) {})
                                             (when project-id
                                               {:CLOUDSDK_CORE_PROJECT project-id}))}}]
-     {:db (-> db
-              (assoc-in [:resources/federation :test-status] :loading)
-              (assoc-in [:resources/federation :test-result] nil))
+     {:db (update db :resources/federation merge {:test-status :loading
+                                                  :test-result nil})
       :fx [[:dispatch [:fetch {:method "POST"
                                :uri "/federation/test"
                                :body payload
@@ -204,24 +198,19 @@
    ;; The /federation/test endpoint returns HTTP 200 even when the test
    ;; itself fails — the actual outcome lives in the response body's
    ;; :success field. Inspect it to drive UI status.
-   (-> db
-       (assoc-in [:resources/federation :test-status]
-                 (if (:success response) :success :error))
-       (assoc-in [:resources/federation :test-result] response))))
+   (update db :resources/federation merge
+           {:test-status (if (:success response) :success :error)
+            :test-result response})))
 
 (rf/reg-event-db
  :federation/test-failure
  (fn [db [_ error]]
-   (-> db
-       (assoc-in [:resources/federation :test-status] :error)
-       (assoc-in [:resources/federation :test-result] error))))
+   (update db :resources/federation merge {:test-status :error :test-result error})))
 
 (rf/reg-event-db
  :federation/reset-test
  (fn [db _]
-   (-> db
-       (assoc-in [:resources/federation :test-status] :idle)
-       (assoc-in [:resources/federation :test-result] nil))))
+   (update db :resources/federation merge {:test-status :idle :test-result nil})))
 
 (rf/reg-event-db
  :federation/clear
