@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"golang.org/x/crypto/ssh"
 )
@@ -37,13 +38,7 @@ type certSession struct {
 	cert         *ssh.Certificate
 	matchedValue string // the cert attribute value (principal or key_id) that resolved the user
 	userSubject  string // Hoop user subject resolved from the mapping at auth time
-}
-
-// allowPTY reports whether PTY allocation (pty-req) is permitted.
-// The permit-pty extension must be present in the certificate.
-func (s *certSession) allowPTY() bool {
-	_, ok := s.cert.Extensions["permit-pty"]
-	return ok
+	orgID        string // org the user belongs to; used for connection existence checks
 }
 
 // allowPortForwarding reports whether TCP port forwarding (direct-tcpip) is
@@ -51,30 +46,6 @@ func (s *certSession) allowPTY() bool {
 func (s *certSession) allowPortForwarding() bool {
 	_, ok := s.cert.Extensions["permit-port-forwarding"]
 	return ok
-}
-
-// allowAgentForwarding reports whether SSH agent forwarding
-// (auth-agent-req@openssh.com) is permitted. The permit-agent-forwarding
-// extension must be present.
-func (s *certSession) allowAgentForwarding() bool {
-	_, ok := s.cert.Extensions["permit-agent-forwarding"]
-	return ok
-}
-
-// allowX11Forwarding reports whether X11 forwarding (x11-req) is permitted.
-// The permit-X11-forwarding extension must be present.
-func (s *certSession) allowX11Forwarding() bool {
-	_, ok := s.cert.Extensions["permit-X11-forwarding"]
-	return ok
-}
-
-// forceCommand returns the value of the force-command critical option, or an
-// empty string if not set. When non-empty, any exec or shell request from the
-// client must run this command instead of the one the client requested.
-// Subsystem requests are rejected when force-command is set.
-func (s *certSession) forceCommand() string {
-	cmd, _ := s.cert.CriticalOptions["force-command"]
-	return cmd
 }
 
 // lookupUserByCert finds the Hoop user that matches the certificate using the
@@ -90,7 +61,7 @@ func lookupUserByCert(cert *ssh.Certificate, m UserMapping) (*models.User, strin
 			return nil, "", fmt.Errorf("user lookup by key_id=%q failed: %w", cert.KeyId, err)
 		}
 		if user == nil {
-			return nil, "", fmt.Errorf("no user found matching key_id=%q via %s", cert.KeyId, m.UserAttr)
+			return nil, "", fmt.Errorf("no user found matching key_id=%q, user-attr=%q", cert.KeyId, m.UserAttr)
 		}
 		return user, cert.KeyId, nil
 	default: // "principal"
@@ -101,7 +72,7 @@ func lookupUserByCert(cert *ssh.Certificate, m UserMapping) (*models.User, strin
 			}
 			return user, p, nil
 		}
-		return nil, "", fmt.Errorf("no user found matching any principal via %s", m.UserAttr)
+		return nil, "", fmt.Errorf("no user found matching any principal, user-attr=%q", m.UserAttr)
 	}
 }
 
@@ -112,6 +83,9 @@ func lookupUserByAttr(userAttr, value string) (*models.User, error) {
 	case "subject":
 		return models.GetUserBySubject(value)
 	case "user_id":
+		if _, err := uuid.Parse(value); err != nil {
+			return nil, nil
+		}
 		return models.GetUserByID(value)
 	default:
 		return nil, fmt.Errorf("unknown user_attr %q", userAttr)

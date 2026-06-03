@@ -180,11 +180,13 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer, certChecker *ssh.Cert
 			server.connectionStore.Store(sessionID, conn)
 
 			go func() {
-				// handle the SSH connection
+				defer server.connectionStore.Delete(sessionID)
+				if conn.certSession != nil {
+					log.Infof("handling cert connection ...")
+					conn.handleCertConnection()
+					return
+				}
 				conn.handleConnection()
-
-				// remove the connection from the store once done
-				server.connectionStore.Delete(sessionID)
 			}()
 		}
 	}()
@@ -216,6 +218,12 @@ type sshConnection struct {
 	sshChannels         sync.Map
 	pendingRequests     sync.Map // maps channelID (uint16) to *pendingReplyQueue
 	channelWg           sync.WaitGroup
+	// certGrpcOnce ensures the session-level gRPC connection is established
+	// at most once, on the first direct-tcpip channel of a cert-auth session.
+	certGrpcOnce sync.Once
+	// certConnType is the connection type resolved from SessionOpenOK on the
+	// first direct-tcpip channel. Zero value until certGrpcOnce completes.
+	certConnType pb.ConnectionType
 	// certSession is non-nil when the connection was authenticated via an SSH
 	// certificate. It holds the verified cert and the per-connection policy
 	// that governs which channel types and requests are permitted.
@@ -278,9 +286,8 @@ func newSSHConnection(sid, connID string, conn net.Conn, server *proxyServer) (*
 	// The certificate's first principal is matched against a Hoop user email and
 	// the SSH username (conn.User()) is used as the connection name.
 	if server.certChecker != nil {
-		log.Info("CERT CHECK IS ON, configuring SSH SERVER to accept cert auth with trusted CAs")
+		sshServerConfig.PasswordCallback = nil // disable password auth when cert auth is configured
 		sshServerConfig.PublicKeyCallback = func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			fmt.Println("VALIDATING CERTIFICATE FOR SSH CONNECTION")
 			cert, ok := key.(*ssh.Certificate)
 			if !ok {
 				return nil, fmt.Errorf("only certificate-based public key authentication is accepted")
@@ -341,14 +348,13 @@ func newSSHConnection(sid, connID string, conn net.Conn, server *proxyServer) (*
 
 // newCertAuthConnection completes connection setup for certificate-authenticated
 // connections. It retrieves the cert session stashed during PublicKeyCallback,
-// looks up the Hoop user by the certificate's first principal (email), and
-// derives the session lifetime from the certificate's ValidBefore field.
+// resolves the Hoop user via the configured mapping, derives the session lifetime
+// from the certificate's ValidBefore field, and establishes a session-level gRPC
+// connection using the SSH username as the Hoop connection name.
 //
-// Unlike password auth, no session-level gRPC connection is established here.
-// Each port-forwarding channel (direct-tcpip) opens its own gRPC connection,
-// using the channel's destination host as the Hoop connection name. Regular
-// SSH session channels (shell, exec, subsystem) are rejected — certificate
-// authentication is only valid for port-forwarding.
+// Certificate authentication is restricted to port-forwarding (direct-tcpip)
+// channels only. Regular SSH session channels (shell, exec, subsystem) are
+// rejected at the channel-open stage.
 func newCertAuthConnection(sid, connID string, tcpConn net.Conn, sshConn *ssh.ServerConn, clientNewCh <-chan ssh.NewChannel, server *proxyServer) (*sshConnection, error) {
 	sessAny, ok := server.pendingCertSessions.LoadAndDelete(string(sshConn.SessionID()))
 	if !ok {
@@ -366,9 +372,9 @@ func newCertAuthConnection(sid, connID string, tcpConn net.Conn, sshConn *ssh.Se
 	}
 	sess.matchedValue = matchedValue
 	sess.userSubject = user.Subject
+	sess.orgID = user.OrgID
 
 	// Derive session lifetime from the certificate's ValidBefore timestamp.
-	// var ctxDuration time.Duration
 	ctxDuration := 24 * time.Hour
 	if sess.cert.ValidBefore != ssh.CertTimeInfinity {
 		expiry := time.Unix(int64(sess.cert.ValidBefore), 0)
@@ -382,6 +388,9 @@ func newCertAuthConnection(sid, connID string, tcpConn net.Conn, sshConn *ssh.Se
 		Infof("cert auth: matched=%v user=%v expires-in=%v",
 			matchedValue, user.Subject, ctxDuration.Truncate(time.Second))
 
+	// The gRPC session is not established here. It is deferred to the first
+	// direct-tcpip channel open, which carries the Hoop connection name as the
+	// port-forward destination host.
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
 		fmt.Errorf("certificate expired, resourceid=%v", connID))
@@ -497,18 +506,6 @@ func newPasswordAuthConnection(sid, connID string, tcpConn net.Conn, sshConn *ss
 }
 
 func (c *sshConnection) handleConnection() {
-	// Cert-auth connections have no session-level gRPC stream. Each
-	// direct-tcpip channel manages its own gRPC connection independently.
-	// Skip handleClientWrite (which establishes the session-level stream) and
-	// proceed directly to accepting SSH channels.
-	if c.certSession != nil {
-		go c.handleServerWrite()
-		<-c.ctx.Done()
-		c.channelWg.Wait()
-		_ = c.sshConn.Close()
-		return
-	}
-
 	// it is important to wait for the session to be established
 	// before handling ssh channels
 	c.handleClientWrite()
@@ -619,6 +616,7 @@ func (c *sshConnection) handleClientWrite() {
 
 			switch pb.PacketType(pkt.Type) {
 			case pbclient.SessionOpenOK:
+				c.certConnType = pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 				log.With("sid", c.sid).Infof("session opened successfully")
 				startupCh <- struct{}{}
 
@@ -735,6 +733,21 @@ func (c *sshConnection) handleClientWrite() {
 					return
 				}
 
+			case pbclient.PGConnectionWrite:
+				// Route postgres data back to the originating direct-tcpip channel.
+				// The SpecClientConnectionID is the per-channel key set by handleCertChannel.
+				chanKey := string(pkt.Spec[pb.SpecClientConnectionID])
+				connWrapperObj, _ := c.sshChannels.Load(chanKey)
+				clientCh, ok := connWrapperObj.(io.WriteCloser)
+				if !ok {
+					log.With("sid", c.sid, "conn", c.id).Warnf("dropping PG data for unknown channel %q", chanKey)
+					continue
+				}
+				if _, err := clientCh.Write(pkt.Payload); err != nil {
+					c.cancelFn("failed writing PG data to channel, err=%v", err)
+					return
+				}
+
 			case pbclient.SessionOpenWaitingApproval:
 				c.cancelFn("session with review are not implemented yet, closing connection")
 				return
@@ -784,6 +797,11 @@ func (c *sshConnection) handleServerWrite() {
 	channelID := uint16(0)
 	for newCh := range c.clientNewSshChannel {
 		channelID++
+		log.With("conn", c.id, "sid", c.sid, "ch", channelID).Infof("received new channel, type=%v", newCh.ChannelType())
+		if c.certSession != nil {
+			go c.handleCertChannel(newCh, channelID)
+			continue
+		}
 		go c.handleChannel(newCh, channelID)
 	}
 	// The SSH client disconnected (clientNewSshChannel was closed).
@@ -796,28 +814,6 @@ func (c *sshConnection) handleServerWrite() {
 
 func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	log.With("conn", c.id, "sid", c.sid, "ch", channelID).Infof("received new channel, type=%v", newCh.ChannelType())
-
-	// Cert-auth connections only support port-forwarding. Route each channel
-	// type accordingly and return; the password-auth path below is skipped.
-	if c.certSession != nil {
-		switch newCh.ChannelType() {
-		case "direct-tcpip":
-			if !c.certSession.allowPortForwarding() {
-				log.With("conn", c.id, "sid", c.sid, "ch", channelID).
-					Infof("denied direct-tcpip: cert lacks permit-port-forwarding (principal=%s)", c.certSession.matchedValue)
-				_ = newCh.Reject(ssh.Prohibited, "hoop: cert does not permit port forwarding")
-				return
-			}
-			c.handleCertDirectTcpip(newCh, channelID)
-		default:
-			log.With("conn", c.id, "sid", c.sid, "ch", channelID).
-				Infof("rejected %q channel: cert auth only supports port-forwarding (principal=%s)",
-					newCh.ChannelType(), c.certSession.matchedValue)
-			_ = newCh.Reject(ssh.Prohibited,
-				"hoop: certificate authentication only supports port-forwarding; use ssh -L to connect")
-		}
-		return
-	}
 
 	clientCh, clientRequests, err := newCh.Accept()
 	if err != nil {
@@ -847,9 +843,7 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	// the client may still be waiting to receive data (e.g., git clone sends a command
 	// then waits for the response). The channel will be closed when we receive
 	// a CloseChannel message from the agent.
-	c.channelWg.Add(1)
-	go func() {
-		defer c.channelWg.Done()
+	c.channelWg.Go(func() {
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := clientCh.Read(buf)
@@ -879,65 +873,12 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 				break
 			}
 		}
-	}()
+	})
 
 	// handle incoming requests from the client
-	c.channelWg.Add(1)
-	go func() {
-		defer c.channelWg.Done()
+	c.channelWg.Go(func() {
 		for req := range clientRequests {
 			log.With("sid", c.sid, "conn", c.id, "ch", channelID, "type", req.Type).Debug("received client ssh request")
-
-			// Enforce cert extensions and critical options on channel requests
-			// before forwarding.
-			if c.certSession != nil {
-				var denied bool
-				switch req.Type {
-				case "pty-req":
-					if !c.certSession.allowPTY() {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Infof("denied pty-req: cert lacks permit-pty (principal=%s)", c.certSession.matchedValue)
-						denied = true
-					}
-				case "x11-req":
-					if !c.certSession.allowX11Forwarding() {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Infof("denied x11-req: cert lacks permit-X11-forwarding (principal=%s)", c.certSession.matchedValue)
-						denied = true
-					}
-				case "auth-agent-req@openssh.com":
-					if !c.certSession.allowAgentForwarding() {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Infof("denied auth-agent-req: cert lacks permit-agent-forwarding (principal=%s)", c.certSession.matchedValue)
-						denied = true
-					}
-				case "exec":
-					if fc := c.certSession.forceCommand(); fc != "" {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Infof("force-command applied: %q (principal=%s)", fc, c.certSession.matchedValue)
-						req.Payload = ssh.Marshal(struct{ Command string }{fc})
-					}
-				case "shell":
-					if fc := c.certSession.forceCommand(); fc != "" {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Infof("force-command applied (shell→exec): %q (principal=%s)", fc, c.certSession.matchedValue)
-						req.Type = "exec"
-						req.Payload = ssh.Marshal(struct{ Command string }{fc})
-					}
-				case "subsystem":
-					if fc := c.certSession.forceCommand(); fc != "" {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Infof("denied subsystem: force-command is set (principal=%s)", c.certSession.matchedValue)
-						denied = true
-					}
-				}
-				if denied {
-					if req.WantReply {
-						_ = req.Reply(false, nil)
-					}
-					continue
-				}
-			}
 
 			data := (sshtypes.SSHRequest{
 				ChannelID:   channelID,
@@ -992,117 +933,160 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 		}
 
 		log.With("ch", channelID, "conn", c.id).Debugf("done processing ssh client requests")
-	}()
+	})
 }
 
-// directTcpipExtra is the wire format of the extra data carried by a
-// direct-tcpip channel open request (RFC 4254 §7.2).
-type directTcpipExtra struct {
-	ConnectedHost  string
-	ConnectedPort  uint32
-	OriginatorIP   string
-	OriginatorPort uint32
+// handleCertConnection runs the full lifecycle for a certificate-authenticated
+// SSH connection. The gRPC session is not known at this point — it is deferred
+// to the first direct-tcpip channel via handleCertChannel. Teardown nil-checks
+// grpcClient because the client may disconnect before any channel is opened.
+func (c *sshConnection) handleCertConnection() {
+	go c.handleServerWrite()
+	<-c.ctx.Done()
+	ctxErr := context.Cause(c.ctx)
+	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
+
+	hasUserError := false
+	if ctxErr != nil {
+		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
+			notifyOpenChannels(&c.sshChannels, msg)
+			hasUserError = true
+		}
+	}
+
+	if !hasUserError {
+		flushDone := make(chan struct{})
+		go func() {
+			c.channelWg.Wait()
+			close(flushDone)
+		}()
+		select {
+		case <-flushDone:
+		case <-time.After(5 * time.Second):
+			log.With("sid", c.sid, "conn", c.id).Warnf("timed out waiting for channel goroutines to finish")
+		}
+	}
+
+	if c.grpcClient != nil {
+		err := c.grpcClient.Send(&pb.Packet{
+			Type: pbagent.SessionClose,
+			Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(c.sid)},
+		})
+		if err != nil {
+			log.With("sid", c.sid, "conn", c.id).Warnf("failed sending session close packet, err=%v", err)
+		} else if !hasUserError {
+			time.Sleep(time.Second * 2)
+		}
+		_, _ = c.grpcClient.Close()
+	}
+	_ = c.sshConn.Close()
 }
 
-// handleCertDirectTcpip handles one direct-tcpip channel for a cert-auth
-// connection. It derives the Hoop connection name from the channel's
-// destination host, establishes a dedicated per-channel gRPC session, and
-// proxies data bidirectionally. The channel is rejected before Accept is
-// called if the connection cannot be found or accessed, so the SSH client
-// receives a protocol-level rejection rather than a silent close.
-func (c *sshConnection) handleCertDirectTcpip(newCh ssh.NewChannel, channelID uint16) {
-	var dest directTcpipExtra
-	if err := ssh.Unmarshal(newCh.ExtraData(), &dest); err != nil || dest.ConnectedHost == "" {
-		_ = newCh.Reject(ssh.ConnectionFailed, "hoop: invalid or missing port-forward destination")
-		return
-	}
-	connectionName := dest.ConnectedHost
-
-	// Each direct-tcpip channel is an independent Hoop session.
-	channelSID := uuid.New().String()
-	channelConnID := fmt.Sprintf("%s-%d", c.id, channelID)
-
-	grpcOpts := []*grpc.ClientOptions{
-		grpc.WithOption(grpc.OptionConnectionName, connectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, c.certSession.userSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", channelSID),
-	}
-	grpcClient, err := grpc.Connect(grpc.ClientConfig{
-		ServerAddress: grpc.LocalhostAddr,
-		UserAgent:     "ssh/grpc",
-		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
-		TLSSkipVerify: true,
-	}, grpcOpts...)
+// handleCertChannel is the complete cert-auth channel handler. It validates the
+// channel type and certificate extensions, establishes the session-level gRPC
+// connection on the first call, then accepts the channel and proxies data
+// bidirectionally using the protocol appropriate for the connection type.
+// Channels that fail validation are rejected before Accept is called so the
+// SSH client receives a protocol-level error message.
+func (c *sshConnection) handleCertChannel(newCh ssh.NewChannel, channelID uint16) {
+	connType, reason, err := c.validateCertChannel(newCh, channelID)
 	if err != nil {
-		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-			Infof("cert port-forward: failed to connect for %q: %v", connectionName, err)
-		_ = newCh.Reject(ssh.ConnectionFailed,
-			fmt.Sprintf("hoop: connection %q not found", connectionName))
-		return
-	}
-
-	// Send SessionOpen and wait for SessionOpenOK before accepting the channel
-	// so a missing/inaccessible connection is surfaced as a protocol rejection.
-	if err := grpcClient.Send(&pb.Packet{
-		Type: pbagent.SessionOpen,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:   []byte(channelSID),
-			pb.SpecClientConnectionID: []byte(channelConnID),
-		},
-	}); err != nil {
-		_, _ = grpcClient.Close()
-		_ = newCh.Reject(ssh.ConnectionFailed, "hoop: failed to open session")
-		return
-	}
-
-	if err := waitForCertSessionOpen(c.ctx, grpcClient); err != nil {
-		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-			Infof("cert port-forward: session open failed for %q: %v", connectionName, err)
-		_, _ = grpcClient.Close()
-		_ = newCh.Reject(ssh.ConnectionFailed,
-			fmt.Sprintf("hoop: connection %q not found", connectionName))
+		_ = newCh.Reject(reason, err.Error())
 		return
 	}
 
 	clientCh, clientRequests, err := newCh.Accept()
 	if err != nil {
-		_, _ = grpcClient.Close()
+		c.cancelFn("cert: failed obtaining channel, err=%v", err)
 		return
 	}
 
-	log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-		Infof("cert port-forward: opened to %q (principal=%s)", connectionName, c.certSession.matchedValue)
+	if connType == pb.ConnectionTypePostgres {
+		c.handleCertChannelPG(clientCh, clientRequests, channelID)
+		return
+	}
+	c.handleCertChannelSSH(clientCh, clientRequests, newCh, channelID)
+}
 
-	streamW := pb.NewStreamWriter(grpcClient, pbagent.SSHConnectionWrite, map[string][]byte{
-		string(pb.SpecGatewaySessionID):   []byte(channelSID),
-		string(pb.SpecClientConnectionID): []byte(channelConnID),
+// handleCertChannelPG proxies a direct-tcpip channel over the postgres wire
+// protocol. Each channel gets a unique per-channel connection ID so the agent
+// maintains a separate backend postgres connection per channel. The session-level
+// gRPC stream is shared; routing back uses SpecClientConnectionID.
+func (c *sshConnection) handleCertChannelPG(clientCh ssh.Channel, clientRequests <-chan *ssh.Request, channelID uint16) {
+	// Unique connection ID per channel so the agent creates separate postgres
+	// connections for each port-forward channel on this SSH session.
+	pgConnID := fmt.Sprintf("%s-ch%d", c.id, channelID)
+	c.sshChannels.Store(pgConnID, clientCh)
+
+	pktSpec := map[string][]byte{
+		string(pb.SpecGatewaySessionID):   []byte(c.sid),
+		string(pb.SpecClientConnectionID): []byte(pgConnID),
+	}
+
+	// Forward raw bytes from the SSH channel to the agent via PG packets.
+	// The first packet triggers the agent to open a new postgres connection.
+	c.channelWg.Go(func() {
+		defer c.sshChannels.Delete(pgConnID)
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := clientCh.Read(buf)
+			if n > 0 {
+				if err := c.grpcClient.Send(&pb.Packet{
+					Type:    pbagent.PGConnectionWrite,
+					Payload: buf[:n],
+					Spec:    pktSpec,
+				}); err != nil {
+					c.cancelFn("cert-pg: failed forwarding data to agent, err=%v", err)
+					return
+				}
+			}
+			if readErr != nil {
+				break
+			}
+		}
+	})
+
+	// direct-tcpip channels do not carry session requests (pty-req, exec, etc.),
+	// but drain the channel to avoid blocking the SSH mux.
+	c.channelWg.Go(func() {
+		for req := range clientRequests {
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+		}
+	})
+}
+
+// handleCertChannelSSH proxies a direct-tcpip channel over the SSH tunnel
+// protocol (sshtypes.Data / SSHConnectionWrite). Used for non-postgres
+// connections such as ssh and tcp types.
+func (c *sshConnection) handleCertChannelSSH(clientCh ssh.Channel, clientRequests <-chan *ssh.Request, newCh ssh.NewChannel, channelID uint16) {
+	c.sshChannels.Store(fmt.Sprintf("%v", channelID), clientCh)
+
+	streamW := pb.NewStreamWriter(c.grpcClient, pbagent.SSHConnectionWrite, map[string][]byte{
+		string(pb.SpecGatewaySessionID):   []byte(c.sid),
+		string(pb.SpecClientConnectionID): []byte(c.id),
 	})
 
 	openChData := (sshtypes.OpenChannel{
 		ChannelID:        channelID,
-		ChannelType:      "direct-tcpip",
+		ChannelType:      newCh.ChannelType(),
 		ChannelExtraData: newCh.ExtraData(),
 	}).Encode()
+
 	if _, err := streamW.Write(openChData); err != nil {
-		_ = clientCh.Close()
-		_, _ = grpcClient.Close()
+		c.cancelFn("cert: failed writing open channel to stream, err=%v", err)
 		return
 	}
 
-	// SSH client → gRPC
-	c.channelWg.Add(1)
-	go func() {
-		defer c.channelWg.Done()
+	c.channelWg.Go(func() {
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := clientCh.Read(buf)
 			if n > 0 {
 				data := sshtypes.Data{ChannelID: channelID, Payload: buf[:n]}
-				if _, err := streamW.Write(data.Encode()); err != nil {
+				if _, writeErr := streamW.Write(data.Encode()); writeErr != nil {
+					c.cancelFn("cert: failed writing client data to agent, err=%v", writeErr)
 					return
 				}
 			}
@@ -1111,107 +1095,113 @@ func (c *sshConnection) handleCertDirectTcpip(newCh ssh.NewChannel, channelID ui
 					eofData := sshtypes.EOF{ChannelID: channelID}
 					_, _ = streamW.Write(eofData.Encode())
 				}
-				return
+				break
 			}
 		}
-	}()
+	})
 
-	// channel requests (uncommon for direct-tcpip; discard with reply)
-	c.channelWg.Add(1)
-	go func() {
-		defer c.channelWg.Done()
+	// direct-tcpip channels do not carry session requests (pty-req, exec, etc.),
+	// but drain the channel to avoid blocking the SSH mux.
+	c.channelWg.Go(func() {
 		for req := range clientRequests {
 			if req.WantReply {
 				_ = req.Reply(false, nil)
 			}
 		}
-	}()
-
-	defer func() {
-		_ = grpcClient.Send(&pb.Packet{
-			Type: pbagent.SessionClose,
-			Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(channelSID)},
-		})
-		_, _ = grpcClient.Close()
-	}()
-
-	// gRPC → SSH client (main read loop for this channel)
-	for {
-		pkt, err := grpcClient.Recv()
-		if err != nil {
-			_ = clientCh.Close()
-			return
-		}
-		if pkt == nil {
-			_ = clientCh.Close()
-			return
-		}
-
-		switch pb.PacketType(pkt.Type) {
-		case pbclient.SSHConnectionWrite:
-			switch sshtypes.DecodeType(pkt.Payload) {
-			case sshtypes.DataType:
-				var data sshtypes.Data
-				if err := sshtypes.Decode(pkt.Payload, &data); err != nil {
-					_ = clientCh.Close()
-					return
-				}
-				if _, err := clientCh.Write(data.Payload); err != nil {
-					return
-				}
-			case sshtypes.CloseChannelType:
-				_ = clientCh.Close()
-				return
-			case sshtypes.EOFType:
-				if ch, ok := clientCh.(interface{ CloseWrite() error }); ok {
-					_ = ch.CloseWrite()
-				}
-			}
-		case pbclient.TCPConnectionClose, pbclient.SessionClose:
-			_ = clientCh.Close()
-			return
-		}
-
-		select {
-		case <-c.ctx.Done():
-			_ = clientCh.Close()
-			return
-		default:
-		}
-	}
+	})
 }
 
-// waitForCertSessionOpen reads from grpcClient until it receives SessionOpenOK,
-// a terminal failure packet, or times out. It is used by handleCertDirectTcpip
-// to confirm the Hoop connection is accessible before accepting the SSH channel.
-func waitForCertSessionOpen(ctx context.Context, grpcClient pb.ClientTransport) error {
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
+// validateCertChannel enforces cert-auth constraints and establishes the
+// session-level gRPC connection on the first call. Returns the resolved
+// connection type alongside a rejection reason and error when the channel must
+// be refused; reason and err are zero/nil and connType is set on success.
+func (c *sshConnection) validateCertChannel(newCh ssh.NewChannel, channelID uint16) (connType pb.ConnectionType, reason ssh.RejectionReason, err error) {
+	if newCh.ChannelType() != "direct-tcpip" {
+		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+			Infof("rejected %q channel: cert auth only supports port-forwarding (matched=%s)",
+				newCh.ChannelType(), c.certSession.matchedValue)
+		return "", ssh.Prohibited,
+			fmt.Errorf("hoop: certificate authentication only supports port-forwarding; use ssh -L to connect")
+	}
 
-	pktCh := make(chan *pb.Packet, 1)
-	errCh := make(chan error, 1)
-	go func() {
-		pkt, err := grpcClient.Recv()
+	if !c.certSession.allowPortForwarding() {
+		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+			Infof("denied direct-tcpip: cert lacks permit-port-forwarding (matched=%s)", c.certSession.matchedValue)
+		return "", ssh.Prohibited, fmt.Errorf("hoop: cert does not permit port forwarding")
+	}
+
+	// Parse the connection name from the port-forward destination (RFC 4254 §7.2).
+	var dest struct {
+		ConnectedHost  string
+		ConnectedPort  uint32
+		OriginatorIP   string
+		OriginatorPort uint32
+	}
+	if err := ssh.Unmarshal(newCh.ExtraData(), &dest); err != nil || dest.ConnectedHost == "" {
+		return "", ssh.ConnectionFailed, fmt.Errorf("hoop: invalid or missing port-forward destination")
+	}
+	connectionName := dest.ConnectedHost
+
+	// Verify the connection resource exists before spending a gRPC round-trip.
+	// Returns a clear SSH-level error to the client if the name is unknown.
+	if _, err := models.GetConnectionByOrgAndName(c.certSession.orgID, connectionName); err != nil {
+		if err == models.ErrNotFound {
+			log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+				Infof("cert port-forward: connection %q not found (org=%s matched=%s)",
+					connectionName, c.certSession.orgID, c.certSession.matchedValue)
+			return "", ssh.ConnectionFailed, fmt.Errorf("hoop: connection %q not found", connectionName)
+		}
+		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+			Warnf("cert port-forward: failed looking up connection %q: %v", connectionName, err)
+		return "", ssh.ConnectionFailed, fmt.Errorf("hoop: failed looking up connection %q", connectionName)
+	}
+
+	log.Infof("cert auth: received direct-tcpip for connection %q (matched=%s)", connectionName, c.certSession.matchedValue)
+
+	// Establish the session-level gRPC connection on the first direct-tcpip
+	// channel. sync.Once ensures this runs exactly once per SSH connection;
+	// subsequent channels reuse the same gRPC session.
+	// handleClientWrite populates c.certConnType from SessionOpenOK before returning.
+	c.certGrpcOnce.Do(func() {
+		grpcOpts := []*grpc.ClientOptions{
+			grpc.WithOption(grpc.OptionConnectionName, connectionName),
+			grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+			grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, c.certSession.userSubject),
+			grpc.WithOption("origin", pb.ConnectionOriginClient),
+			grpc.WithOption("verb", pb.ClientVerbConnect),
+			grpc.WithOption("session-id", c.sid),
+		}
+		grpcClient, err := grpc.Connect(grpc.ClientConfig{
+			ServerAddress: grpc.LocalhostAddr,
+			UserAgent:     "ssh/grpc",
+			Insecure:      appconfig.Get().GatewayUseTLS() == false,
+			TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+			TLSSkipVerify: true,
+		}, grpcOpts...)
 		if err != nil {
-			errCh <- err
+			c.cancelFn("cert auth: failed to connect to grpc for connection %q: %v", connectionName, err)
 			return
 		}
-		pktCh <- pkt
-	}()
+		c.grpcClient = grpcClient
+		// handleClientWrite sends SessionOpen, starts the gRPC→channel dispatch
+		// goroutine, and blocks until SessionOpenOK is received (or times out).
+		// On SessionOpenOK it stores the connection type in c.certConnType before
+		// signalling the startup channel — so c.certConnType is readable as soon as
+		// handleClientWrite returns. On failure it calls c.cancelFn.
+		c.handleClientWrite()
+	})
 
+	// If gRPC setup failed, handleClientWrite cancelled the context.
 	select {
-	case pkt := <-pktCh:
-		if pb.PacketType(pkt.Type) == pbclient.SessionOpenOK {
-			return nil
-		}
-		return fmt.Errorf("unexpected session response: %v", pkt.Type)
-	case err := <-errCh:
-		return fmt.Errorf("session open failed: %w", err)
-	case <-timer.C:
-		return fmt.Errorf("session open timed out")
-	case <-ctx.Done():
-		return context.Cause(ctx)
+	case <-c.ctx.Done():
+		return "", ssh.ConnectionFailed,
+			fmt.Errorf("hoop: connection %q not found or not accessible", connectionName)
+	default:
 	}
+
+	log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+		Infof("cert port-forward: connection=%q matched=%s conntype=%s", connectionName, c.certSession.matchedValue, c.certConnType)
+	return c.certConnType, 0, nil
 }
 
 func parseHostsKey(privateKeyB64Enc string) (hostsKey ssh.Signer, err error) {
