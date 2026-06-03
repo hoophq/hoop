@@ -1,3 +1,5 @@
+//go:build !windows
+
 package upgrade
 
 import (
@@ -5,44 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
-// ErrBinLinkConflict is returned when $HOME/.hoop/bin/hoop already
-// exists but is a regular file or a symlink pointing outside of
-// $HOME/.hoop/versions. We refuse to overwrite it because it may
-// belong to the user — most often a stale `make build-dev-client`
-// output from before the dev binary moved to $HOME/.hoop/dev/hoop.
-var ErrBinLinkConflict = errors.New("hoop bin path is owned by something else; refusing to overwrite")
-
-// SetActive atomically updates the active symlink at $HOME/.hoop/bin/hoop
-// to point at the installed version's binary and updates the store's
-// Active field. It does NOT save the store; callers do that explicitly.
-//
-// Returns ErrBinLinkConflict if a non-symlink file exists at the bin path
-// or if an existing symlink resolves outside the versions directory.
-func SetActive(l Layout, store *Store, version string) error {
-	version = NormalizeVersion(version)
-	target := l.VersionBinary(version)
-	if _, err := os.Stat(target); err != nil {
-		return fmt.Errorf("version %s is not installed (missing %s)", version, target)
-	}
-	if !store.Has(version) {
-		return fmt.Errorf("version %s is not in the versions store; reinstall it with `hoop versions install %s`", version, version)
-	}
-	if err := l.EnsureDirs(); err != nil {
-		return err
-	}
-	if runtime.GOOS == "windows" {
-		return fmt.Errorf("setting the active version requires symlink privileges that are not available by default on Windows; install the matching version with brew/chocolatey or download from %s", ReleasesBaseURL)
-	}
-
-	if err := safeReplaceSymlink(l, target); err != nil {
-		return err
-	}
-	store.Active = version
-	return nil
+// activate points the bin path at the installed binary. On Unix this is a
+// symlink swap; the store argument is unused here (it is only needed by
+// the Windows copy-based activation, which can't rely on symlinks).
+func activate(l Layout, _ *Store, target string) error {
+	return safeReplaceSymlink(l, target)
 }
 
 // safeReplaceSymlink replaces the bin symlink with a new target pointing
