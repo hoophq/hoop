@@ -364,6 +364,18 @@ import TagsInput from '@/components/TagsInput'
 />
 ```
 
+### `MarkdownText`
+Mantine `<Text>` drop-in that renders inline markdown links (`[label](url)`) as anchors. Used for catalog field descriptions sourced from `connections-metadata.json`, where helper text occasionally points to external docs. Only inline links are interpreted — bold, italics, lists, code, and other markdown stay verbatim.
+```jsx
+import MarkdownText from '@/components/MarkdownText'
+
+<MarkdownText>{'Read more in [our docs](https://hoop.dev/docs/postgres).'}</MarkdownText>
+
+// Override defaults like a regular Text:
+<MarkdownText size="sm" c="gray.7">{description}</MarkdownText>
+```
+Links open in a new tab with `rel="noopener noreferrer"`. Default `size="xs" c="dimmed"` matches helper-text styling.
+
 ---
 
 ### `AsyncValueFilter`

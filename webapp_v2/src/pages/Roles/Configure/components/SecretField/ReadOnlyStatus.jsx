@@ -1,6 +1,7 @@
 import { Group, Stack, Text, Paper, ThemeIcon } from '@mantine/core'
 import { Check } from 'lucide-react'
 import Button from '@/components/Button'
+import MarkdownText from '@/components/MarkdownText'
 import { formatTimestamp } from './util'
 
 // The "set" state of SecretField: an existing inline secret. We never
@@ -30,11 +31,7 @@ export default function ReadOnlyStatus({
           </Button>
         </Group>
       </Group>
-      {description && (
-        <Text size="xs" c="dimmed">
-          {description}
-        </Text>
-      )}
+      {description && <MarkdownText>{description}</MarkdownText>}
       <Paper p="sm" radius="sm" bg="gray.0" withBorder>
         {isReference ? (
           <Group gap="xs" wrap="nowrap">

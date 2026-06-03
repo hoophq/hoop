@@ -2,6 +2,7 @@ import { Group, Stack, Text } from '@mantine/core'
 import { Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import SourcedInput from '@/components/SourcedInput'
+import MarkdownText from '@/components/MarkdownText'
 import { sourceOptionsFor } from './util'
 
 // The "new" state of SecretField: there is no existing value (the key
@@ -34,11 +35,7 @@ export default function NewInput({
           </ActionIcon>
         )}
       </Group>
-      {description && (
-        <Text size="xs" c="dimmed">
-          {description}
-        </Text>
-      )}
+      {description && <MarkdownText>{description}</MarkdownText>}
       <SourcedInput
         type={type}
         required={required}

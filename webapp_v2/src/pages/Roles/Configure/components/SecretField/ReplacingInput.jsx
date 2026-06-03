@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import Badge from '@/components/Badge'
 import ActionIcon from '@/components/ActionIcon'
 import SourcedInput from '@/components/SourcedInput'
+import MarkdownText from '@/components/MarkdownText'
 import { sourceOptionsFor } from './util'
 
 // The "editing" state of SecretField: user clicked Replace on a set
@@ -37,11 +38,7 @@ export default function ReplacingInput({
           </ActionIcon>
         </Group>
       </Group>
-      {description && (
-        <Text size="xs" c="dimmed">
-          {description}
-        </Text>
-      )}
+      {description && <MarkdownText>{description}</MarkdownText>}
       <SourcedInput
         type={type}
         autoFocus
