@@ -1,15 +1,18 @@
-/* Single-outline variant: picker + value + right-section in one outlined
- * cell. The container owns the border and focus state via :focus-within
- * so clicking the picker target OR focusing the input lights up the
- * same ring. All values via Mantine CSS variables per project rules. */
+/* Single-outline variant: picker chip + value + right-section all sit
+ * inside one outlined cell. The composite paints the outer border and
+ * focus-within ring; the picker is a self-contained chip with its own
+ * subtle background so it reads as a separate control without needing
+ * a hard divider line. */
 .composite {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
   background: var(--mantine-color-body);
-  border: 1px solid var(--mantine-color-gray-4);
+  border: 1px solid var(--mantine-color-gray-3);
   border-radius: var(--mantine-radius-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  min-height: 42px;
   transition: border-color 100ms ease, box-shadow 100ms ease;
-  overflow: hidden;
 }
 
 .composite:hover {
@@ -26,24 +29,26 @@
   border-color: var(--mantine-color-gray-3);
 }
 
-/* Picker target slot. Inherits the parent's height; ChevronDown sits at
- * the trailing edge with spacing matched to Mantine's sm input padding. */
+/* Picker chip — subtle indigo tint, soft radius, content-driven width.
+ * No icon: the label name carries the meaning. ChevronDown sits at the
+ * trailing edge with theme spacing. */
 .picker {
   display: inline-flex;
   align-items: center;
   gap: var(--mantine-spacing-xs);
-  padding: 0 var(--mantine-spacing-sm);
-  background: var(--mantine-color-gray-0);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  background: var(--mantine-color-indigo-0);
   color: var(--mantine-color-text);
-  border-right: 1px solid var(--mantine-color-gray-3);
+  border-radius: var(--mantine-radius-sm);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: background-color 100ms ease;
 }
 
 .picker:hover {
-  background: var(--mantine-color-gray-1);
+  background: var(--mantine-color-indigo-1);
 }
 
 .picker:disabled {
@@ -51,15 +56,16 @@
   opacity: 0.6;
 }
 
-/* Bare input: strip Mantine's own border + radius so only the composite
- * outline is visible. We target the .mantine-Input-input slot via the
- * `input` className the parent passes down. */
+/* Bare input: strip Mantine's own border / background / padding so the
+ * composite cell is the only outline. The flex:1 lets it expand to
+ * fill the row, pushing any rightSection (eye toggle) to the far edge. */
 .bareInput {
   border: 0;
-  border-radius: 0;
   background: transparent;
-  min-height: 36px;
-  height: 36px;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  box-shadow: none;
 }
 
 .bareInput:focus {
@@ -69,9 +75,8 @@
 }
 
 /* Glued-siblings variant. Two separate components touching at a shared
- * border. The picker keeps its right radius zeroed; the input keeps
- * its left radius zeroed. The picker provides the seam border so we
- * don't double up. */
+ * border. The picker carries the seam border (right border removed on
+ * the input) so we don't double up at the joint. */
 .pickerSibling {
   display: inline-flex;
   align-items: center;
