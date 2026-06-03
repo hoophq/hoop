@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Stack, Title, Text, Anchor } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, Info, ExternalLink } from 'lucide-react'
+import { FileText, Cloud, ShieldCheck, TriangleAlert, ExternalLink } from 'lucide-react'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
 import SelectionCard from '@/components/SelectionCard'
@@ -68,33 +68,14 @@ function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable }) 
   )
 }
 
-function UnsupportedFallback({ connection }) {
+function CredentialsError({ title, message }) {
   return (
-    <Alert variant="light" color="yellow" icon={<Info size={16} />}>
+    <Alert variant="light" color="red" icon={<TriangleAlert size={16} />}>
       <Stack gap={4}>
         <Text size="sm" fw={600}>
-          {'Editing credentials for ' +
-            (connection.subtype || connection.type) +
-            ' connections is not yet available in the new editor.'}
+          {title}
         </Text>
-        <Text size="sm">
-          The write-only treatment still applies at the API level — values
-          are never returned. Use the legacy editor to change credentials
-          for this connection type.
-        </Text>
-      </Stack>
-    </Alert>
-  )
-}
-
-function MetadataError({ message }) {
-  return (
-    <Alert variant="light" color="red" icon={<Info size={16} />}>
-      <Stack gap={4}>
-        <Text size="sm" fw={600}>
-          Could not load the connection catalog.
-        </Text>
-        <Text size="sm">{message}</Text>
+        {message && <Text size="sm">{message}</Text>}
       </Stack>
     </Alert>
   )
@@ -108,19 +89,43 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
     (s) => s.getCredentialSchema,
   )
 
+  const shape = connection.subtype
+    ? connection.type + '/' + connection.subtype
+    : connection.type
+
   const rule = pickRendererRule(connection)
-  if (!rule) return <UnsupportedFallback connection={connection} />
+  if (!rule) {
+    return (
+      <CredentialsError
+        title={`No credential editor is registered for ${shape}.`}
+      />
+    )
+  }
 
   if (rule.requiresCatalog) {
     if (loading && !metadata) return <PageLoader />
-    if (error && !metadata) return <MetadataError message={error} />
+    if (error && !metadata) {
+      return (
+        <CredentialsError
+          title="Could not load the connection catalog."
+          message={error}
+        />
+      )
+    }
   }
 
   const node = rule.render(
     { connection, availableSources, forceNewState, connectionMethod },
     { getSchema: getCredentialSchema },
   )
-  if (!node) return <UnsupportedFallback connection={connection} />
+  if (!node) {
+    return (
+      <CredentialsError
+        title={`No catalog entry for ${shape}.`}
+        message="Try refreshing the page — if it keeps failing, the connections catalog is missing this subtype."
+      />
+    )
+  }
   return node
 }
 
