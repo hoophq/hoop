@@ -1,145 +1,11 @@
-/* Single-outline variant: picker chip + value + right-section all sit
- * inside one outlined cell painted by .composite. The composite owns
- * the outer border + focus-within ring so any click inside lights up
- * the same outline.
+/* SourcedInput — picker glued to the input on the left. The picker
+ * carries the seam border (the input drops its left border) so the two
+ * components meet at a single shared edge instead of doubling up.
  *
- * Sizes match Mantine's input scale (xs/sm/md/lg/xl). Base values are
- * for `sm` — Mantine's default — and the data-size attribute selectors
- * below override only what differs per size. Heights track Mantine's
- * own --input-height-* variables so a `size="md"` SourcedInput and a
- * `size="md"` TextInput line up visually. */
-.composite {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  background: var(--mantine-color-body);
-  border: 1px solid var(--mantine-color-gray-3);
-  border-radius: var(--mantine-radius-sm);
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-xs);
-  min-height: var(--input-height-sm);
-  transition: border-color 100ms ease, box-shadow 100ms ease;
-}
-
-.composite:hover {
-  border-color: var(--mantine-color-gray-5);
-}
-
-.composite:focus-within {
-  border-color: var(--mantine-color-indigo-6);
-  box-shadow: 0 0 0 1px var(--mantine-color-indigo-6);
-}
-
-.composite[data-disabled='true'] {
-  background: var(--mantine-color-gray-0);
-  border-color: var(--mantine-color-gray-3);
-}
-
-.composite[data-size='xs'] {
-  min-height: var(--input-height-xs);
-  padding: 2px var(--mantine-spacing-xs);
-}
-
-.composite[data-size='md'] {
-  min-height: var(--input-height-md);
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  gap: var(--mantine-spacing-sm);
-}
-
-.composite[data-size='lg'] {
-  min-height: var(--input-height-lg);
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
-  gap: var(--mantine-spacing-md);
-}
-
-.composite[data-size='xl'] {
-  min-height: var(--input-height-xl);
-  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
-  gap: var(--mantine-spacing-md);
-}
-
-/* Picker chip — subtle indigo tint, soft radius, content-driven width. */
-.picker {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  padding: 2px var(--mantine-spacing-xs);
-  background: var(--mantine-color-indigo-0);
-  color: var(--mantine-color-text);
-  border-radius: var(--mantine-radius-sm);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  flex-shrink: 0;
-  font-size: var(--mantine-font-size-sm);
-  transition: background-color 100ms ease;
-}
-
-.picker:hover {
-  background: var(--mantine-color-indigo-1);
-}
-
-.picker:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.composite[data-size='xs'] .picker {
-  padding: 2px var(--mantine-spacing-xs);
-  font-size: var(--mantine-font-size-xs);
-}
-
-.composite[data-size='md'] .picker {
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  font-size: var(--mantine-font-size-sm);
-}
-
-.composite[data-size='lg'] .picker {
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  font-size: var(--mantine-font-size-md);
-}
-
-.composite[data-size='xl'] .picker {
-  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
-  font-size: var(--mantine-font-size-md);
-}
-
-/* Bare input: strip Mantine's own border / background / padding so the
- * composite cell is the only outline. flex:1 lets it fill the row. */
-.bareInput {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  flex: 1;
-  min-height: 0;
-  box-shadow: none;
-  font-size: var(--mantine-font-size-sm);
-  color: inherit;
-  font-family: inherit;
-}
-
-.bareInput:focus {
-  border: 0;
-  outline: 0;
-  box-shadow: none;
-}
-
-.bareInput::placeholder {
-  color: var(--mantine-color-placeholder);
-}
-
-.composite[data-size='xs'] .bareInput {
-  font-size: var(--mantine-font-size-xs);
-}
-
-.composite[data-size='lg'] .bareInput,
-.composite[data-size='xl'] .bareInput {
-  font-size: var(--mantine-font-size-md);
-}
-
-/* Glued-siblings variant. Two separate components touching at a shared
- * border. The picker carries the seam border (input drops its left)
- * so we don't double up at the joint. Size cascades from the input's
- * Mantine size (heights match --input-height-*). */
+ * Sizes mirror Mantine's input scale (xs/sm/md/lg/xl). Base values are
+ * for `sm` (Mantine's default); the data-size attribute selectors below
+ * override only what differs per size so the picker height tracks
+ * --input-height-* exactly and lines up with the sibling input. */
 .pickerSibling {
   display: inline-flex;
   align-items: center;
@@ -194,6 +60,13 @@
   box-shadow: -1px 0 0 0 var(--mantine-color-indigo-6);
 }
 
+.pickerSibling:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Zero out the input's left radius so the seam with the picker is a
+ * straight vertical edge with no rounded shoulders peeking out. */
 .inputSibling {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
