@@ -131,6 +131,83 @@ type ConnectionJiraIssueTemplateTypes struct {
 	IssueTemplatesPromptTypes  []byte `gorm:"column:prompt_types;->"`
 }
 
+// resolveSecretsUpdatedAt loads the prior connection state and decides what
+// timestamp value should land in `connections.secrets_updated_at`. Splitting
+// the DB I/O from the pure decision (computeSecretsUpdatedAt) makes the rule
+// unit-testable.
+func resolveSecretsUpdatedAt(tx *gorm.DB, c *Connection) (*time.Time, error) {
+	var prevRow struct {
+		SecretsUpdatedAt *time.Time `gorm:"column:secrets_updated_at"`
+	}
+	err := tx.Table(tableConnections).
+		Select("secrets_updated_at").
+		Where("org_id = ? AND id = ?", c.OrgID, c.ID).
+		First(&prevRow).Error
+	isInsert := errors.Is(err, gorm.ErrRecordNotFound)
+	if !isInsert && err != nil {
+		return nil, fmt.Errorf("failed loading previous connection state, reason=%v", err)
+	}
+
+	var prevEnvs map[string]string
+	if !isInsert {
+		var prevEnvRow EnvVars
+		envErr := tx.Table("private.env_vars").
+			Where("org_id = ? AND id = ?", c.OrgID, c.ID).
+			First(&prevEnvRow).Error
+		if envErr != nil && !errors.Is(envErr, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed loading previous env vars, reason=%v", envErr)
+		}
+		prevEnvs = prevEnvRow.Envs
+	}
+
+	now := time.Now().UTC()
+	return computeSecretsUpdatedAt(isInsert, prevRow.SecretsUpdatedAt, prevEnvs, c.Envs, now), nil
+}
+
+// computeSecretsUpdatedAt is the pure decision used by every model write that
+// touches a connection's secrets. Semantics:
+//
+//   - Insert with non-empty envs → stamp `now`.
+//   - Insert with empty envs     → nil.
+//   - Update with empty envs     → preserve prev (the caller is touching
+//     non-secret fields and a GORM Save would otherwise blank the column).
+//   - Update with unchanged envs → preserve prev (no real change).
+//   - Update with changed envs   → stamp `now`.
+//
+// `now` is a parameter so tests can use a deterministic timestamp.
+func computeSecretsUpdatedAt(isInsert bool, prev *time.Time, prevEnvs, nextEnvs map[string]string, now time.Time) *time.Time {
+	if isInsert {
+		if len(nextEnvs) > 0 {
+			return &now
+		}
+		return nil
+	}
+	if len(nextEnvs) == 0 {
+		return prev
+	}
+	if envsMapEqual(prevEnvs, nextEnvs) {
+		return prev
+	}
+	return &now
+}
+
+// envsMapEqual reports whether two envvar maps contain the same set of keys
+// with the same values. nil and an empty map compare equal so callers can
+// pass either interchangeably. Mirrors `envsEqual` in
+// gateway/api/connections/secrets.go; duplicated because the model package
+// can't import the api package.
+func envsMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if other, ok := b[k]; !ok || other != v {
+			return false
+		}
+	}
+	return true
+}
+
 func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 	if c.JiraIssueTemplateID.String == "" {
 		c.JiraIssueTemplateID.Valid = false
@@ -171,6 +248,20 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 			if err != nil {
 				return fmt.Errorf("failed upserting resource, reason=%v", err)
 			}
+		}
+
+		// Decide secrets_updated_at before Save. Every caller of
+		// UpsertConnection (HTTP /connections, /resources, AWS provisioner,
+		// MCP server, agent sync) gets correct stamping here so the rule
+		// lives in one place — without this, GORM Save would overwrite a
+		// previously-set timestamp with NULL whenever a caller forgot to
+		// populate the field.
+		if c.SecretsUpdatedAt == nil {
+			stamp, err := resolveSecretsUpdatedAt(tx, c)
+			if err != nil {
+				return err
+			}
+			c.SecretsUpdatedAt = stamp
 		}
 
 		err = tx.Table(tableConnections).
@@ -290,6 +381,17 @@ func UpsertBatchConnections(db *gorm.DB, connections []*Connection) error {
 		connections[i].ID = connID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			connections[i].ID = uuid.NewString()
+		}
+
+		// Stamp secrets_updated_at the same way UpsertConnection does, so
+		// batch creators (resources API, AWS provisioner) don't need to
+		// remember and so GORM Save can't blank a previously-set value.
+		if c.SecretsUpdatedAt == nil {
+			stamp, err := resolveSecretsUpdatedAt(db, c)
+			if err != nil {
+				return err
+			}
+			c.SecretsUpdatedAt = stamp
 		}
 
 		err = db.Table(tableConnections).

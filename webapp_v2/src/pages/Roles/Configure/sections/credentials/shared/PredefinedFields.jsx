@@ -101,10 +101,13 @@ export default function PredefinedFields({
       {visibleFields.map((field) => {
         const envKey = `envvar:${field.key.toUpperCase()}`
         const encodedValue = currentSecrets[envKey]
-        const isExisting =
-          !forceNewState &&
-          envKey in currentSecrets &&
-          (encodedValue !== '' || connection.secrets_updated_at != null)
+        // Key presence is the authoritative existence signal. The gateway
+        // strips inline values for write-only shapes (encodedValue becomes
+        // '') but preserves the key set, so a present key means the
+        // credential exists on the server. Don't gate on
+        // `secrets_updated_at` — legacy rows from before the migration
+        // have it NULL.
+        const isExisting = !forceNewState && envKey in currentSecrets
         const isReference = !forceNewState && isSecretReference(encodedValue)
         const referenceText = isReference ? decodeSecretValue(encodedValue) : ''
         const staged = stagedSecrets[envKey]
