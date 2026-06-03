@@ -7,15 +7,9 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 )
 
-// secretReferencePrefixes lists the value prefixes that indicate an envvar
-// holds a reference to an external secret provider rather than the secret
-// itself. References are not sensitive (they only name where to look) and
-// must remain visible to admins so they can audit and reconfigure them.
-//
-// Keep in sync with:
-//   - agent/secretsmanager/secretsmanager.go (provider constants)
-//   - agent/rds/iam_rds.go                   (_aws_iam_rds prefix)
-//   - agent/controller/agent.go              (_aws_iam_rds detection)
+// Value prefixes that mark an envvar as a pointer to an external secret
+// provider rather than the secret itself. Keep in sync with
+// agent/secretsmanager/, agent/rds/iam_rds.go, agent/controller/agent.go.
 var secretReferencePrefixes = []string{
 	"_aws:",
 	"_envjson:",
@@ -24,12 +18,8 @@ var secretReferencePrefixes = []string{
 	"_aws_iam_rds:",
 }
 
-// IsSecretReference reports whether a stored envvar value is a reference to
-// an external secret provider. Stored values are base64-encoded; we decode
-// once and look at the leading prefix.
-//
-// A nil/empty value is treated as not-a-reference so it can be stripped or
-// ignored by callers.
+// IsSecretReference reports whether a base64-encoded envvar value decodes
+// to a string starting with one of secretReferencePrefixes.
 func IsSecretReference(encodedValue string) bool {
 	if encodedValue == "" {
 		return false
@@ -47,11 +37,9 @@ func IsSecretReference(encodedValue string) bool {
 	return false
 }
 
-// isBooleanValue reports whether an encoded envvar value decodes to exactly
-// "true" or "false". Boolean configuration flags (e.g. envvar:INSECURE,
-// envvar:SSLMODE-ish toggles) aren't secrets — they're settings that
-// influence connection behaviour and the UI needs to display their current
-// state so toggles work. We exempt them from stripping.
+// isBooleanValue reports whether an encoded envvar value decodes to
+// "true" or "false". Boolean toggles aren't secrets and round-trip so
+// the UI can render their current state.
 func isBooleanValue(encodedValue string) bool {
 	if encodedValue == "" {
 		return false
@@ -67,10 +55,6 @@ func isBooleanValue(encodedValue string) bool {
 	return false
 }
 
-// hasAnySecretReference reports whether any value in the envvar map is a
-// provider reference. Used to detect when a connection is operating in
-// Secrets Manager or AWS IAM Role mode without needing an explicit
-// "method" column on the model.
 func hasAnySecretReference(envs map[string]string) bool {
 	for _, v := range envs {
 		if IsSecretReference(v) {
@@ -80,37 +64,22 @@ func hasAnySecretReference(envs map[string]string) bool {
 	return false
 }
 
-// shouldRoundTripSecrets reports whether a connection's envvars are
-// safe to send back to the admin UI verbatim instead of going through
-// the write-only strip.
+// shouldRoundTripSecrets returns true when the connection's envvars
+// should be returned verbatim instead of going through the write-only
+// strip. Two paths:
 //
-// Two paths return true:
+//  1. Any env value is a provider reference — the connection runs
+//     under Secrets Manager / AWS IAM Role and stored values are
+//     pointers/config, not raw secrets. Trade-off: adding even one
+//     reference to a previously-Manual connection makes the other
+//     inline values visible on subsequent reads. The admin opted in.
 //
-//  1. Any env value is a provider reference (`_aws:`, `_vaultkv1:`,
-//     `_vaultkv2:`, `_aws_iam_rds:`, `_envjson:`). That marks the
-//     connection as running under Secrets Manager or AWS IAM Role —
-//     the stored values are pointers/config, not raw secrets, and the
-//     real material lives in the external backend. Round-tripping
-//     keeps the form consistent (no half-locked / half-editable rows).
-//     One-way trade-off worth noting: a connection that flips from
-//     pure Manual to Secrets Manager (by replacing one value with a
-//     reference) starts revealing the other inline values on the next
-//     read. The admin opted in by adding the reference.
-//
-//  2. The connection shape has a bespoke React renderer that needs to
-//     populate URL / header / host fields to function:
-//       - application/ssh        — SshRenderer
-//       - httpproxy/*            — ClaudeCodeRenderer + HttpProxyRenderer
-//       - custom/(empty subtype) — FreeFormCustomRenderer
-//       - custom/linux-vm        — FreeFormCustomRenderer
-//       - custom/kubernetes-token — KubernetesTokenRenderer
+//  2. The connection shape has a bespoke React renderer
+//     (application/ssh, httpproxy/*, custom/{empty|linux-vm|kubernetes-token})
+//     that needs the values to populate host/URL/header inputs.
 //
 // Everything else (catalog databases, catalog custom subtypes,
-// application/{git,github,tcp}) in pure Manual mode goes through the
-// catalog renderer and stays write-only.
-//
-// The full catalog inventory drives the shape list — see
-// https://github.com/hoophq/documentation/blob/main/store/connections.json.
+// application/{git,github,tcp}) stays write-only.
 func shouldRoundTripSecrets(conn *models.Connection) bool {
 	if conn == nil {
 		return false
@@ -121,30 +90,18 @@ func shouldRoundTripSecrets(conn *models.Connection) bool {
 	sub := conn.SubType.String
 	switch conn.Type {
 	case "httpproxy":
-		// claude-code, web-application, grafana, kibana — every one
-		// has a bespoke renderer that adds HTTP headers + insecure SSL
-		// on top of REMOTE_URL.
 		return true
 	case "application":
-		// Only ssh is bespoke; git/github/tcp ship full catalog schemas
-		// and render via CatalogRenderer (write-only).
 		return sub == "ssh"
 	case "custom":
-		// Free-form (no subtype) + the two custom subtypes the catalog
-		// doesn't define. Catalog custom subtypes (dynamodb, aws-*,
-		// kubernetes, redis, …) stay write-only.
 		return sub == "" || sub == "linux-vm" || sub == "kubernetes-token"
 	}
 	return false
 }
 
-// stripInlineSecrets returns a copy of envs where inline secret values are
-// blanked out. References to external providers are preserved verbatim so
-// admins can still see what provider/key a connection points at.
-//
-// The returned map has the same key set as the input; only inline values
-// are replaced with an empty string. This preserves the "keys present"
-// shape that the UI relies on to render the list of credentials.
+// stripInlineSecrets returns a copy of envs where inline secret values
+// are blanked out. References and boolean toggles round-trip; the key
+// set is preserved so the UI knows which credentials exist.
 func stripInlineSecrets(envs map[string]string) map[string]string {
 	if envs == nil {
 		return nil
@@ -160,10 +117,8 @@ func stripInlineSecrets(envs map[string]string) map[string]string {
 	return out
 }
 
-// envsEqual reports whether two envvar maps contain the same set of keys
-// with the same (base64-encoded) values. nil and an empty map compare
-// equal; this keeps the comparison robust against callers that pass one or
-// the other interchangeably.
+// envsEqual reports whether two envvar maps have the same keys and
+// values. nil and an empty map compare equal.
 func envsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
@@ -176,21 +131,12 @@ func envsEqual(a, b map[string]string) bool {
 	return true
 }
 
-// mergeSecrets applies a patch onto an existing envs map and returns the
-// resulting map plus a boolean indicating whether anything changed.
-//
-// Semantics:
-//   - A key present in patch with a non-empty value replaces the existing
-//     value (or adds a new key).
-//   - A key present in patch with an empty value deletes the key from the
-//     resulting map. This is how the write-only UI signals "delete this
-//     secret" without ever sending the old value back to the server.
-//   - A key absent from patch is preserved untouched.
-//
+// mergeSecrets applies a patch onto existing envs. Patch semantics:
+// non-empty value replaces (or adds), empty value deletes, absent key
+// is preserved. Returns the new map and whether anything changed.
 // `existing` is not mutated.
 func mergeSecrets(existing, patch map[string]string) (map[string]string, bool) {
 	if patch == nil {
-		// nil patch is a no-op; mirror the input
 		out := make(map[string]string, len(existing))
 		for k, v := range existing {
 			out[k] = v

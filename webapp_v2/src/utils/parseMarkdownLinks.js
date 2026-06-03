@@ -1,14 +1,6 @@
-// Splits a string into an array of segments, separating inline markdown
-// links of the form `[label](url)` from plain text. No other markdown is
-// recognised — descriptions sourced from connections-metadata.json only
-// carry inline links.
-//
-// Returns:
-//   [{ type: 'text', value: '...' }, { type: 'link', value: 'label', url: '...' }, ...]
-//
-// Mirrors the CLJS reference at
-// webapp/src/webapp/components/text_with_markdown_link.cljs so behaviour
-// stays in sync while both apps coexist.
+// Splits text into segments separating inline `[label](url)` links from
+// plain text. Returns
+//   [{ type: 'text', value }, { type: 'link', value, url }, ...]
 const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g
 
 export function parseMarkdownLinks(text) {
@@ -17,7 +9,6 @@ export function parseMarkdownLinks(text) {
   const segments = []
   let lastIndex = 0
   let match
-  // Reset lastIndex defensively even though we re-create the regex above.
   LINK_RE.lastIndex = 0
   while ((match = LINK_RE.exec(str)) !== null) {
     if (match.index > lastIndex) {

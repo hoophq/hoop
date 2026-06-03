@@ -420,31 +420,18 @@ export const useConfigureRoleStore = create((set, get) => ({
     })
   },
 
-  // Wipes every staged secret in one go. Used when the user switches
-  // the Credentials tab's connection method — switching is a fresh
-  // start in write-only land, so any half-typed staged values for the
-  // previous method don't bleed into the new one. Also resets the
-  // per-field source map so each field falls back to whichever
-  // provider the new method advertises as default (otherwise existing
-  // rows would stay tagged with whatever source the loaded values
-  // happened to imply — typically `manual` — and the source selector
-  // would not reflect the just-picked Secrets Manager provider).
   clearStagedSecrets: () =>
     set({ stagedSecrets: {}, renames: {}, fieldSources: {} }),
 
-  // Switches the credentials connection method and stages deletes for
-  // any persisted provider reference that doesn't belong to the new
-  // method. Without the deletes, save() would only send the user's
-  // newly-typed values and the surviving references (e.g. `_aws:...`)
-  // would re-trigger deriveConnectionMethod() on next load — pinning
-  // the picker back to the old method even though the user explicitly
-  // switched away.
+  // Stages deletes for any persisted reference that doesn't belong to
+  // the new method, so save() actually wipes them on the wire instead
+  // of leaving stale prefixes that would re-derive the old method on
+  // the next load.
   //
-  // Compatibility table (mirrors deriveConnectionMethod):
+  // Compat table (mirrors deriveConnectionMethod):
   //   MANUAL          → wipe every reference prefix
-  //   SECRETS_MANAGER → wipe `_aws_iam_rds:` only; other refs are valid
+  //   SECRETS_MANAGER → wipe `_aws_iam_rds:` only
   //   AWS_IAM         → wipe `_aws:` / `_vaultkv*:`; keep `_aws_iam_rds:`
-  //                     (the form will (re)stamp it on save)
   switchConnectionMethod: (newMethod) => {
     set((state) => {
       const stagedSecrets = {}
@@ -475,47 +462,35 @@ export const useConfigureRoleStore = create((set, get) => ({
     })
   },
 
-  // Re-encodes every persisted Secrets Manager reference (and any staged
-  // reference) under the newly-picked provider's prefix, plus updates the
-  // per-field source map so the in-row picker reflects the change.
-  //
-  // Without this, swapping the top-level provider only updates the
-  // dropdown — existing values keep their original `_aws:` / `_vaultkv*:`
-  // prefix in the stored base64, save() emits an empty patch, and the
-  // next load derives the old provider again. AWS IAM references are
-  // skipped because they belong to a different connection method, not
-  // a provider choice inside Secrets Manager mode.
+  // Re-encodes every Secrets Manager reference (persisted + staged)
+  // under the newly-picked provider's prefix. Without this, swapping
+  // the top-level provider would only update the dropdown — values
+  // keep their original prefix, save() emits an empty patch, and the
+  // next load derives the old provider again. `_aws_iam_rds:` refs are
+  // skipped (they belong to AWS IAM mode, not a provider choice).
   setSecretsManagerProvider: (newProvider) => {
     set((state) => {
       const persisted = state.connection?.secret || {}
       const stagedSecrets = { ...state.stagedSecrets }
       const fieldSources = { ...state.fieldSources }
 
-      // Walk persisted refs: stage a replace under the new prefix.
       for (const [key, encoded] of Object.entries(persisted)) {
         if (!encoded || !isSecretReference(encoded)) continue
-        const plain = decodeSecretValue(encoded)
-        if (plain.startsWith('_aws_iam_rds:')) continue
-        const stripped = decodeForDisplay(encoded)
+        if (decodeSecretValue(encoded).startsWith('_aws_iam_rds:')) continue
         stagedSecrets[key] = {
           action: 'replace',
-          value: encodeSecretForSource(stripped, newProvider),
+          value: encodeSecretForSource(decodeForDisplay(encoded), newProvider),
         }
         fieldSources[key] = newProvider
       }
 
-      // Walk anything already staged: a user may have flipped the
-      // provider mid-edit. Keep their typed plaintext, just swap the
-      // prefix on the way out so save() sends the right thing.
       for (const [key, change] of Object.entries(state.stagedSecrets)) {
         if (!change || change.action === 'delete' || !change.value) continue
         if (!isSecretReference(change.value)) continue
-        const plain = decodeSecretValue(change.value)
-        if (plain.startsWith('_aws_iam_rds:')) continue
-        const stripped = decodeForDisplay(change.value)
+        if (decodeSecretValue(change.value).startsWith('_aws_iam_rds:')) continue
         stagedSecrets[key] = {
           ...change,
-          value: encodeSecretForSource(stripped, newProvider),
+          value: encodeSecretForSource(decodeForDisplay(change.value), newProvider),
         }
         fieldSources[key] = newProvider
       }
@@ -531,17 +506,11 @@ export const useConfigureRoleStore = create((set, get) => ({
     return Object.keys(buildDraftsPatch(state.drafts, state.baseline)).length > 0
   },
 
-  // Builds the secrets sub-payload for the PATCH request.
-  // Empty value = delete (per backend mergeSecrets semantics).
-  // Renames translate into delete-old + replace-new so save preserves
-  // row position for the user while doing the right thing on the wire.
-  // Placeholder rows (auto-added when the list would otherwise be
-  // empty) get dropped so they don't pollute the payload.
-  //
-  // Special-case: `filesystem:SSH_PRIVATE_KEY` requires a trailing
-  // newline for the agent's key parser to accept it. The CLJS form
-  // adds it in helpers.cljs's config->json (L46-48); we mirror that
-  // here so the React save path doesn't ship keys without the newline.
+  // Empty value = delete (per backend mergeSecrets). Renames become
+  // delete-old + replace-new so row position is preserved in the UI
+  // while the wire stays correct. SSH_PRIVATE_KEY gets a trailing
+  // newline because the agent's parser requires it (mirrors CLJS
+  // helpers.cljs config->json).
   buildSecretsPatch: () => {
     const { stagedSecrets, renames, connection } = get()
     const out = {}
@@ -577,13 +546,8 @@ export const useConfigureRoleStore = create((set, get) => ({
   save: async () => {
     const { connection, stagedSecrets, renames, drafts, baseline } = get()
     if (!connection) return
-    // Reject when a placeholder row has content the user hasn't named.
-    // The sentinel key (`envvar:NEW_KEY_N` / `filesystem:NEW_FILE_N`)
-    // is a UI affordance for the empty state; saving it as-is would
-    // persist a junk record like `filesystem:NEW_FILE_1`. Renamed
-    // entries — even when stagedSecrets keeps the sentinel key — count
-    // as named (the new name lives in the `renames` map and
-    // buildSecretsPatch translates it onto the wire).
+    // Reject placeholder rows that have a value but no name — saving
+    // them as-is would persist sentinel keys like `envvar:NEW_KEY_1`.
     const unnamed = Object.entries(stagedSecrets).find(
       ([k, ch]) =>
         ch.action === 'new' &&

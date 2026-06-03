@@ -1,15 +1,8 @@
 import { Text, Anchor } from '@mantine/core'
 import { parseMarkdownLinks } from '@/utils/parseMarkdownLinks'
 
-// Mantine <Text> drop-in that renders inline markdown links found in the
-// content as Anchors. Useful for catalog field descriptions that ship
-// `[label](url)` segments inside connections-metadata.json. Other
-// markdown syntax is not interpreted — descriptions only carry inline
-// links today and reaching for a full markdown parser is overkill.
-//
-// Pass any prop the underlying Mantine Text accepts (size, c, fw, ...);
-// the defaults match the helper-text styling used throughout the
-// Configure Role form so call sites can simply drop in this component.
+// Mantine <Text> drop-in that renders inline `[label](url)` segments
+// as Anchors. No other markdown is interpreted.
 export default function MarkdownText({
   children,
   size = 'xs',

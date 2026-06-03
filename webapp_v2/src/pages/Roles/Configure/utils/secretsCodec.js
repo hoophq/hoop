@@ -1,44 +1,26 @@
-// Placeholder rows for the empty-state row in envvars / HTTP headers /
-// config files. Their keys never reach the backend (the store's
-// buildSecretsPatch filters them), so the UI should render the Key
-// input empty too — otherwise the user sees `NEW_KEY_1` as if it were
-// their data.
+// Sentinel keys used for the blank row that the UI keeps visible at the
+// bottom of envvars / HTTP headers / config files. buildSecretsPatch
+// drops them before save.
 export const PLACEHOLDER_KEY_RE =
   /^(envvar:NEW_KEY_|envvar:HEADER_NEW_HEADER_|filesystem:NEW_FILE_)\d+$/
 
-// Validators for the Key input on each k/v section. Mirrors the CLJS
-// rules at configuration_inputs.cljs:10-17, applied per keystroke so
-// invalid characters don't make it into the input. Empty is always
-// accepted so the user can clear the field.
-
-// POSIX-compatible env-var name: starts with a letter, followed by
-// letters/digits/underscores. Used by environment variables and
-// configuration file names.
+// POSIX env-var name validator. Mirrors CLJS configuration_inputs.cljs.
+// Empty is accepted so the user can clear the field.
 export function isValidPosixKey(value) {
   return value === '' || /^[A-Za-z][A-Za-z0-9_]*$/.test(value)
 }
 
-// HTTP header name: any non-whitespace string. Case-sensitive
-// (headers like X-Request-Id keep their casing).
+// HTTP header name validator: any non-whitespace token.
 export function isValidHeaderKey(value) {
   return value === '' || /^\S+$/.test(value)
 }
 
-// Provider prefixes recognised on the wire. References (values
-// prefixed with one of these) are not sensitive — they only name where
-// to look up the actual secret — so the UI shows them verbatim instead
-// of hiding behind a Set badge. `decodeForDisplay` strips the prefix
-// because the source picker conveys which provider applies.
 export const PROVIDER_PREFIX_RE =
   /^(_aws:|_envjson:|_vaultkv1:|_vaultkv2:|_aws_iam_rds:)/
 
-// Helpers to translate between the form's plaintext view of a secret value
-// and the base64-encoded JSONB representation that the gateway stores.
-//
-// Reference detection mirrors the backend (gateway/api/connections/secrets.go);
-// any value whose base64 decodes to one of the well-known provider prefixes
-// is a reference (not a sensitive secret) and the UI shows it verbatim
-// instead of hiding it behind the write-only "Set" badge.
+// Helpers to translate between the form's plaintext view and the
+// base64-encoded representation the gateway stores. Reference detection
+// mirrors gateway/api/connections/secrets.go::IsSecretReference.
 
 const REFERENCE_PREFIXES = [
   '_aws:',
@@ -48,15 +30,10 @@ const REFERENCE_PREFIXES = [
   '_aws_iam_rds:',
 ]
 
-// Source identifiers for the per-field "where does this credential come
-// from" selector that appears when the user is in Secrets Manager mode.
-// Mirrors CLJS connection_method.cljs::source-text — keep these strings
-// identical to the CLJS values so future cross-app debugging maps 1:1.
-//
-// `AWS_IAM_ROLE` is connection-method-driven (the picker doesn't expose
-// it as a per-field source). Listed here so detection round-trips
-// existing values that carry the `_aws_iam_rds:` prefix and saves
-// re-encode under the same source identifier.
+// Source identifiers — keep identical to CLJS connection_method.cljs
+// values so the wire encoding stays compatible across both webapps.
+// AWS_IAM_ROLE isn't a user-pickable source; listed so detection +
+// re-encoding round-trip values that already carry its prefix.
 export const SOURCES = {
   MANUAL: 'manual-input',
   VAULT_KV1: 'vault-kv1',
@@ -87,9 +64,6 @@ const SOURCE_BY_PREFIX = {
   '_aws_iam_rds:': SOURCES.AWS_IAM_ROLE,
 }
 
-// Returns the source identifier implied by an encoded value's prefix.
-// Inline values (no provider prefix) map to 'manual'. IAM RDS and
-// envjson references don't surface as source choices today.
 export function sourceFromEncodedValue(encoded) {
   if (!encoded) return SOURCES.MANUAL
   const plain = safeAtob(encoded)
@@ -100,9 +74,7 @@ export function sourceFromEncodedValue(encoded) {
   return SOURCES.MANUAL
 }
 
-// Wraps a plaintext value in the encoded form for a given source. When
-// the source is manual, the value is stored as-is. For provider
-// sources, the prefix is prepended before base64-encoding.
+// Prepends the source's prefix (if any) and base64-encodes.
 export function encodeSecretForSource(plain, source) {
   if (plain == null) return ''
   const prefix = PREFIX_BY_SOURCE[source]
@@ -123,9 +95,8 @@ export function decodeSecretValue(encoded) {
   return plain == null ? '' : plain
 }
 
-// Decode + strip provider prefix for display in a credential input.
-// The source picker conveys which provider applies, so the bare
-// reference id is what the user should see and edit.
+// Decode + strip the provider prefix — the source picker conveys which
+// provider applies, so the bare reference id is what the user edits.
 export function decodeForDisplay(encoded) {
   if (!encoded) return ''
   return decodeSecretValue(encoded).replace(PROVIDER_PREFIX_RE, '')
@@ -143,9 +114,9 @@ export function isSecretReference(encoded) {
   return REFERENCE_PREFIXES.some((p) => plain.startsWith(p))
 }
 
-// Reads the (already-decoded) reference string and returns its parts.
-// e.g. "_aws:my-secret:password" -> { provider: '_aws', secretId: 'my-secret', secretKey: 'password' }
-// Returns null if the value isn't a recognised reference format.
+// Parses a reference value into its parts —
+// "_aws:my-secret:password" → { provider: 'aws', secretId: 'my-secret', secretKey: 'password' }.
+// Returns null for non-reference values.
 export function parseReference(encoded) {
   if (!encoded) return null
   const plain = safeAtob(encoded)
