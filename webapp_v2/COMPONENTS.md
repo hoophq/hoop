@@ -226,7 +226,7 @@ import TextInput from '@/components/TextInput'
 ```
 
 ### `SourcedInput`
-Input paired with an optional credential source picker (Manual / Vault KV / AWS Secrets Manager / AWS IAM Role). The picker shows a lucide icon (FileText / KeyRound / Cloud / ShieldCheck — see `SOURCE_ICONS` in `pages/Roles/Configure/utils/secretsCodec.js`) and label per source. When `sources` is empty/single, only the input renders.
+Input paired with an optional credential source picker (Manual / Vault KV / AWS Secrets Manager / AWS IAM Role). The picker is a chip rendered inside the input's outline, showing the label of the selected source. When `sources` is empty/single, only the input renders.
 ```jsx
 import SourcedInput from '@/components/SourcedInput'
 
@@ -240,8 +240,11 @@ import SourcedInput from '@/components/SourcedInput'
   sources={['manual-input', 'aws-secrets-manager']}
   onSourceChange={setSource}
 />
+
+// Sizes match Mantine inputs — default `sm`, accepts xs/sm/md/lg/xl:
+<SourcedInput size="md" {...props} />
 ```
-Supports `type="text" | "password" | "textarea"`. Renders descriptions through `MarkdownText` so inline links work. The picker layout is currently under A/B evaluation (`SourcedInputVariantContext` in `components/SourcedInput/variantContext.js`) — once the design is locked the context goes away and the chosen variant becomes the default. Textarea inputs always render the picker stacked above instead of inline (multi-line + horizontal picker looks broken).
+Supports `type="text" | "password" | "textarea"` and `size="xs" | "sm" | "md" | "lg" | "xl"` (default `sm`, matching Mantine's input default). Heights track Mantine's `--input-height-*` variables so a `size="md"` SourcedInput lines up with a `size="md"` TextInput on the same form. Renders descriptions through `MarkdownText` so inline links work. The picker layout is currently under A/B evaluation (`SourcedInputVariantContext` in `components/SourcedInput/variantContext.js`) — once the design is locked the context goes away and the chosen variant becomes the default. Textarea inputs always render the picker stacked above instead of inline (multi-line + horizontal picker looks broken).
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
