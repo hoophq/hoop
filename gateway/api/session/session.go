@@ -174,13 +174,13 @@ func Post(c *gin.Context) {
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	// The webapp (CLJS) is the only client that sends `User-Client: webapp.core`;
-	// every other caller of this endpoint is treated as a raw API consumer. Once
-	// webapp_v2 (React) issues its own session calls it must set the same header
-	// to keep being attributed as `webapp` instead of `api`.
-	sessionOrigin := proto.SessionOriginAPI
+	// Attribute the session to the calling surface via the User-Client/User-Agent
+	// header: the webapp (CLJS) sends "webapp.core", the CLI sends "hoopcli", and
+	// everything else is treated as a raw API consumer. Once webapp_v2 (React)
+	// issues its own session calls it must send the same header to keep being
+	// attributed as `webapp`.
+	sessionOrigin := proto.SessionOriginFromUserAgent(userAgent)
 	if userAgent == "webapp.core" {
-		sessionOrigin = proto.SessionOriginWebApp
 		userAgent = "webapp.editor.exec"
 	}
 	log := log.With("sid", sid, "user", ctx.UserEmail)

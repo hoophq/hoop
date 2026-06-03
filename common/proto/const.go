@@ -130,6 +130,24 @@ func SessionOriginFromClientOrigin(clientOrigin string) string {
 	}
 }
 
+// SessionOriginFromUserAgent maps a normalized user-agent token (as produced by
+// apiutils.NormalizeUserAgent — i.e. the leading "product" of the User-Client
+// or User-Agent header) to the product-level session origin. It is used by HTTP
+// entry points that only know the caller through that header, such as the
+// connection-credentials mint and the REST exec endpoint. The webapp sends
+// "webapp.core" and the CLI sends "hoopcli"; anything else is treated as a raw
+// API consumer.
+func SessionOriginFromUserAgent(normalizedUserAgent string) string {
+	switch normalizedUserAgent {
+	case "webapp.core":
+		return SessionOriginWebApp
+	case "hoopcli":
+		return SessionOriginCLI
+	default:
+		return SessionOriginAPI
+	}
+}
+
 var DefaultInfoTypes = []string{
 	"PHONE_NUMBER",
 	"CREDIT_CARD_NUMBER",
