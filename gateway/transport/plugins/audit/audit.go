@@ -119,6 +119,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ExitCode:             nil,
 			IdentityType:         sessionIdentityType,
 			MachineIdentityID:    machineIdentityID,
+			Origin:               pb.SessionOriginFromClientOrigin(pctx.ClientOrigin),
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}

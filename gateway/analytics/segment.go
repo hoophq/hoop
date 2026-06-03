@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -307,11 +308,20 @@ func loadSessionUsageData(orgID, sessionID string) (*sessionUsageData, error) {
 func sessionUsageProperties(d *sessionUsageData) map[string]any {
 	s, c := d.session, d.connection
 
+	// origin is persisted at session creation; sessions created before the
+	// column existed (or any path that failed to set it) report as "unknown".
+	origin := s.Origin
+	if origin == "" {
+		origin = pb.SessionOriginUnknown
+	}
+
 	props := map[string]any{
 		"org-id":                           s.OrgID,
 		"session-id":                       s.ID,
 		"resource-type":                    s.ConnectionType,
 		"resource-subtype":                 s.ConnectionSubtype,
+		"verb":                             s.Verb,
+		"origin":                           origin,
 		"status":                           s.Status,
 		"created-at":                       s.CreatedAt.String(),
 		"ai-session-analyzer-activated":    false,

@@ -76,6 +76,21 @@ const (
 	ClientVerbExec      = "exec"
 	ClientVerbPlainExec = "plain-exec"
 
+	// SessionOrigin* are the product-level origins of a session. They are
+	// persisted on the session record (sessions.origin) and emitted on the
+	// session analytics events so we can tell how a session was initiated.
+	// Unlike ConnectionOrigin* (a transport-level concept), these distinguish
+	// product surfaces that share the same transport origin (e.g. MCP and the
+	// REST API both connect with ConnectionOriginClientAPI).
+	SessionOriginCLI          = "cli"
+	SessionOriginWebApp       = "webapp"
+	SessionOriginAPI          = "api"
+	SessionOriginMCP          = "mcp"
+	SessionOriginRunbooks     = "runbooks"
+	SessionOriginProxyManager = "proxymanager"
+	SessionOriginAgent        = "agent"
+	SessionOriginUnknown      = "unknown"
+
 	SessionPhaseClientConnect       = "client-connect"
 	SessionPhaseClientConnected     = "client-connected"
 	SessionPhaseClientSessionOpen   = "client-session-open"
@@ -93,6 +108,27 @@ const (
 	PreConnectStatusConnectType string = "CONNECT"
 	PreConnectStatusBackoffType string = "BACKOFF"
 )
+
+// SessionOriginFromClientOrigin maps a transport-level client origin to the
+// product-level session origin. It is used by the gRPC session-creation path,
+// which only sees the transport origin. API-driven surfaces (REST, MCP,
+// runbooks) declare their SessionOrigin explicitly at the call site instead.
+func SessionOriginFromClientOrigin(clientOrigin string) string {
+	switch clientOrigin {
+	case ConnectionOriginClient:
+		return SessionOriginCLI
+	case ConnectionOriginClientProxyManager:
+		return SessionOriginProxyManager
+	case ConnectionOriginClientAPI:
+		return SessionOriginAPI
+	case ConnectionOriginClientAPIRunbooks:
+		return SessionOriginRunbooks
+	case ConnectionOriginAgent:
+		return SessionOriginAgent
+	default:
+		return SessionOriginUnknown
+	}
+}
 
 var DefaultInfoTypes = []string{
 	"PHONE_NUMBER",

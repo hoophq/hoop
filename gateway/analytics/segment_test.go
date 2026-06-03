@@ -138,6 +138,23 @@ func TestSessionUsageProperties(t *testing.T) {
 		}
 	})
 
+	t.Run("verb and origin are emitted from the session", func(t *testing.T) {
+		s := *baseSession
+		s.Verb = "connect"
+		s.Origin = "cli"
+
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) { d.session = &s }))
+
+		assertProp(t, props, "verb", "connect")
+		assertProp(t, props, "origin", "cli")
+	})
+
+	t.Run("empty origin falls back to unknown", func(t *testing.T) {
+		props := sessionUsageProperties(usageData())
+
+		assertProp(t, props, "origin", "unknown")
+	})
+
 	t.Run("session with EndSession set", func(t *testing.T) {
 		s := *baseSession
 		s.EndSession = &endTime
