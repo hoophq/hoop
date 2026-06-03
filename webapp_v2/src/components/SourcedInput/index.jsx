@@ -3,6 +3,7 @@ import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import Textarea from '@/components/Textarea'
 import Select from '@/components/Select'
+import MarkdownText from '@/components/MarkdownText'
 
 const INPUT_BY_TYPE = {
   password: PasswordInput,
@@ -46,11 +47,7 @@ export default function SourcedInput({
           {required && <Text size="sm" c="red">*</Text>}
         </Group>
       )}
-      {description && (
-        <Text size="xs" c="dimmed">
-          {description}
-        </Text>
-      )}
+      {description && <MarkdownText>{description}</MarkdownText>}
       <Group gap="xs" wrap="nowrap" align="stretch">
         {showSourceSelect && (
           <Select
