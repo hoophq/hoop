@@ -413,3 +413,65 @@ func (s *daemonService) Reconnect(context.Context) error {
 	return ipc.ErrNotImplemented
 }
 
+// Up brings the tunnel netstack online using the daemon's persisted
+// token. It is the lifecycle counterpart to Down: a logged-in daemon
+// whose tunnel was taken Down can be brought back Up without
+// re-authenticating. It does not touch the token or the config file.
+//
+// Semantics:
+//   - already Up        → no-op success, AlreadyUp=true.
+//   - logged out        → ipc.ErrNotLoggedIn (409); no token to dial with.
+//   - bring-up failure  → error is recorded in lastError and returned
+//     (the HTTP layer renders a 500), matching BringUpFromConfig.
+func (s *daemonService) Up(context.Context) (ipc.TunnelUpResponse, error) {
+	// Fast path: if the manager already has a live tunnel, report it
+	// without re-dialling the gateway. State() is cheap and the check
+	// is advisory — BringUp re-checks under its own lock and returns
+	// ErrAlreadyUp if a concurrent Up won the slot, which we fold into
+	// the same AlreadyUp response below.
+	if s.mgr.State() == tunnelmgr.StateUp {
+		return ipc.TunnelUpResponse{Running: true, AlreadyUp: true}, nil
+	}
+
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+	if !cfg.LoggedIn() {
+		return ipc.TunnelUpResponse{}, ipc.ErrNotLoggedIn
+	}
+
+	if err := s.mgr.BringUp(s.parentCtx, cfg); err != nil {
+		// A concurrent Up that won the race is success from the
+		// caller's point of view: the tunnel is Up.
+		if errors.Is(err, tunnelmgr.ErrAlreadyUp) {
+			return ipc.TunnelUpResponse{Running: true, AlreadyUp: true}, nil
+		}
+		s.SetLastError("bring up: " + err.Error())
+		return ipc.TunnelUpResponse{}, fmt.Errorf("bring up tunnel: %w", err)
+	}
+	s.SetLastError("")
+	if s.onTunnelUp != nil {
+		s.onTunnelUp(s.mgr.Snapshot())
+	}
+	return ipc.TunnelUpResponse{Running: true, AlreadyUp: false}, nil
+}
+
+// Down tears the tunnel netstack down while leaving the daemon's token
+// intact, so the user stays logged in. Idempotent: tearing down an
+// already-idle daemon succeeds with AlreadyDown=true.
+func (s *daemonService) Down(context.Context) (ipc.TunnelDownResponse, error) {
+	if s.mgr.State() == tunnelmgr.StateIdle {
+		return ipc.TunnelDownResponse{AlreadyDown: true}, nil
+	}
+
+	if err := s.mgr.TearDown(); err != nil {
+		s.SetLastError("tear down: " + err.Error())
+		return ipc.TunnelDownResponse{}, fmt.Errorf("tear down tunnel: %w", err)
+	}
+	s.SetLastError("")
+	if s.onTunnelDown != nil {
+		s.onTunnelDown()
+	}
+	return ipc.TunnelDownResponse{AlreadyDown: false}, nil
+}
+

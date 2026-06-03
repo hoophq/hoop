@@ -75,6 +75,23 @@ type Service interface {
 	// gateway pipes asynchronously. Returns nil immediately (HTTP 202)
 	// — completion is observable via Status.LastError + Running.
 	Reconnect(ctx context.Context) error
+
+	// Up brings the tunnel netstack up using the daemon's persisted
+	// token, without touching authentication. It is the lifecycle
+	// counterpart to Logout/Login: a logged-in daemon whose tunnel was
+	// taken Down can be brought back Up without re-authenticating.
+	//
+	// Bring-up is synchronous: the response reflects the post-call
+	// state. Calling Up on an already-Up tunnel is a no-op success
+	// (AlreadyUp=true). Calling Up while logged out is a 409 conflict —
+	// there is no token to dial the gateway with.
+	Up(ctx context.Context) (TunnelUpResponse, error)
+
+	// Down tears the tunnel netstack down while leaving the daemon's
+	// token intact. Idempotent: calling Down on an already-idle daemon
+	// succeeds with AlreadyDown=true. The user stays logged in and can
+	// bring the tunnel back Up without re-authenticating.
+	Down(ctx context.Context) (TunnelDownResponse, error)
 }
 
 // ErrNotImplemented is the canonical sentinel a Service implementation
@@ -87,6 +104,14 @@ type Service interface {
 // consumers (especially the TS UI in hoophq/hsh) can code against the
 // full spec from day one and feature-detect by hitting the endpoint.
 var ErrNotImplemented = errors.New("ipc: endpoint not implemented in this daemon build")
+
+// ErrNotLoggedIn is the canonical sentinel a Service returns when an
+// operation requires authentication that is not present — e.g. Up
+// cannot bring the tunnel online without a token to dial the gateway.
+// The HTTP layer translates it to a 409 Conflict (the daemon is in the
+// wrong state for the request), distinguishing it from a 401 (the
+// caller's control-token was rejected).
+var ErrNotLoggedIn = errors.New("ipc: not logged in")
 
 // ServerOptions configures NewServer.
 type ServerOptions struct {
@@ -210,6 +235,8 @@ func (s *Server) buildHandler() http.Handler {
 	mux.HandleFunc("GET /v1/config", s.handleConfigGet)
 	mux.HandleFunc("PUT /v1/config", s.handleConfigPut)
 	mux.HandleFunc("POST /v1/reconnect", s.handleReconnect)
+	mux.HandleFunc("POST /v1/tunnel/up", s.handleTunnelUp)
+	mux.HandleFunc("POST /v1/tunnel/down", s.handleTunnelDown)
 
 	// Any other path returns a JSON 404 instead of the default text body
 	// so clients can parse the response uniformly.
@@ -356,6 +383,24 @@ func (s *Server) handleReconnect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, ReconnectResponse{Accepted: true})
 }
 
+func (s *Server) handleTunnelUp(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.opts.Service.Up(r.Context())
+	if err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleTunnelDown(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.opts.Service.Down(r.Context())
+	if err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // writeServiceError translates a Service-layer error into the right
 // HTTP status. The mapping is intentional and stable so the UI can
 // distinguish "feature not yet built" from "transient failure" without
@@ -364,6 +409,8 @@ func (s *Server) writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotImplemented):
 		writeError(w, http.StatusNotImplemented, err.Error(), "not_implemented")
+	case errors.Is(err, ErrNotLoggedIn):
+		writeError(w, http.StatusConflict, err.Error(), "not_logged_in")
 	default:
 		// Generic internal error. We DO include the underlying message
 		// because this is a local-only control plane and the operator

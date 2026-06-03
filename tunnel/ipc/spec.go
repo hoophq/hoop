@@ -223,6 +223,30 @@ type ReconnectResponse struct {
 	Accepted bool `json:"accepted"`
 }
 
+// TunnelUpResponse is returned by POST /v1/tunnel/up. Bringing the
+// tunnel up is synchronous (the daemon dials the gateway and publishes
+// the netstack before responding), so a 200 means the tunnel is Up by
+// the time the caller sees it.
+type TunnelUpResponse struct {
+	// Running is true once the netstack is published. Always true on a
+	// 200 response; included so the UI can render state without a
+	// follow-up /v1/status call.
+	Running bool `json:"running"`
+	// AlreadyUp is true when the tunnel was already Up before this
+	// call (the request was a no-op). Lets the CLI say "already up"
+	// instead of "brought up" without racing a status poll.
+	AlreadyUp bool `json:"already_up"`
+}
+
+// TunnelDownResponse is returned by POST /v1/tunnel/down. Tearing the
+// tunnel down is synchronous and idempotent — calling it on an
+// already-idle daemon succeeds with AlreadyDown=true.
+type TunnelDownResponse struct {
+	// AlreadyDown is true when the tunnel was already Idle before this
+	// call (the request was a no-op).
+	AlreadyDown bool `json:"already_down"`
+}
+
 // ----------------------------------------------------------------------
 // Errors
 // ----------------------------------------------------------------------

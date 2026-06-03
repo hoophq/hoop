@@ -160,6 +160,20 @@ func (c *Client) Reconnect(ctx context.Context) (ReconnectResponse, error) {
 	return out, err
 }
 
+// Up corresponds to POST /v1/tunnel/up.
+func (c *Client) Up(ctx context.Context) (TunnelUpResponse, error) {
+	var out TunnelUpResponse
+	err := c.do(ctx, http.MethodPost, "/v1/tunnel/up", nil, &out)
+	return out, err
+}
+
+// Down corresponds to POST /v1/tunnel/down.
+func (c *Client) Down(ctx context.Context) (TunnelDownResponse, error) {
+	var out TunnelDownResponse
+	err := c.do(ctx, http.MethodPost, "/v1/tunnel/down", nil, &out)
+	return out, err
+}
+
 // ----------------------------------------------------------------------
 // internals
 // ----------------------------------------------------------------------
