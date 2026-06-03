@@ -60,7 +60,7 @@ export default function GluedSiblingsSourcedInput({
         {descriptionSlot}
         {showSourceMenu && (
           <Select
-            data={sources.map((s) => ({ value: s, label: SOURCE_LABELS[s] || s }))}
+            data={normalizeForSelect(sources)}
             value={source}
             onChange={(v) => v && onSourceChange?.(v)}
             allowDeselect={false}
@@ -119,5 +119,13 @@ export default function GluedSiblingsSourcedInput({
         />
       </Group>
     </Stack>
+  )
+}
+
+function normalizeForSelect(sources) {
+  return (sources || []).map((s) =>
+    typeof s === 'string'
+      ? { value: s, label: SOURCE_LABELS[s] || s }
+      : { value: s.value, label: s.label || SOURCE_LABELS[s.value] || s.value },
   )
 }
