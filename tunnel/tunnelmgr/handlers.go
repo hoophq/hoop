@@ -25,7 +25,7 @@ import (
 // MySQL connection; we reject before opening the upstream).
 func (m *Manager) makeAcceptFunc(
 	alloc *addressing.Allocator,
-	subTypeByName map[string]string,
+	registry *connRegistry,
 ) netstack.AcceptFunc {
 	logger := m.opts.Logger
 	return func(localAddr netip.Addr, localPort uint16) bool {
@@ -34,9 +34,13 @@ func (m *Manager) makeAcceptFunc(
 			logger.Printf("tunnelmgr: reject SYN %s:%d — unmapped address", localAddr, localPort)
 			return false
 		}
-		subType, ok := subTypeByName[name]
+		// subTypeOf returns ok=false for unknown names AND for
+		// connections that were deleted on the gateway (marked inactive
+		// by a refresh). Either way we refuse to open a pipe to a
+		// connection the gateway no longer offers.
+		subType, ok := registry.subTypeOf(name)
 		if !ok {
-			logger.Printf("tunnelmgr: reject SYN %s:%d -> %s — no subtype recorded", localAddr, localPort, name)
+			logger.Printf("tunnelmgr: reject SYN %s:%d -> %s — connection unknown or no longer active", localAddr, localPort, name)
 			return false
 		}
 		if !portmap.IsAcceptedPort(subType, localPort) {
@@ -59,7 +63,7 @@ func (m *Manager) makeAcceptFunc(
 // per-flow gRPC pipe.
 func (m *Manager) makeTCPHandler(
 	alloc *addressing.Allocator,
-	subTypeByName map[string]string,
+	registry *connRegistry,
 	gatewayCfg grpc.ClientConfig,
 ) netstack.Handler {
 	logger := m.opts.Logger
@@ -72,7 +76,7 @@ func (m *Manager) makeTCPHandler(
 			logger.Printf("tunnelmgr: inbound TCP to unmapped address %s — dropping", localAddr)
 			return
 		}
-		subType := subTypeByName[name]
+		subType, _ := registry.subTypeOf(name)
 		logger.Printf("tunnelmgr: accept %s:%d -> %s (%s)", localAddr, localPort, name, subType)
 		err := client.DialAndPipe(context.Background(), conn, client.PipeOptions{
 			GatewayConfig:  gatewayCfg,

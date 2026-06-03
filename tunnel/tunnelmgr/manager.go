@@ -92,13 +92,16 @@ type Snapshot struct {
 	Since time.Time
 
 	// Allocator is the address allocator for the current session, or
-	// nil when idle. The IPC layer iterates it to build /v1/connections.
+	// nil when idle. Retained so callers can resolve a name→IP for the
+	// active connections in Connections below.
 	Allocator *addressing.Allocator
 
-	// SubTypeByName maps connection name → hoop subtype ("postgres",
-	// "mysql", ...). Keyed by the same names the allocator holds.
-	// nil when idle.
-	SubTypeByName map[string]string
+	// Connections is the set of currently-active tunnelable connections
+	// (name + subtype), captured under the registry lock at Snapshot
+	// time so callers can range over it without racing a concurrent
+	// refresh. nil/empty when idle. Connections deleted on the gateway
+	// are excluded even though their IP stays reserved in Allocator.
+	Connections []ConnInfo
 
 	// HostAddr / Gateway are the addresses the kernel and gVisor own
 	// on the current session's /48. Zero when idle.
@@ -178,16 +181,21 @@ type Manager struct {
 // "up" session. Held under Manager.mu while transitioning; readable
 // without the lock once published to Manager.current.
 type liveTunnel struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	alloc      *addressing.Allocator
-	subTypeBy  map[string]string
-	stack      *netstack.Stack
+	ctx      context.Context
+	cancel   context.CancelFunc
+	alloc    *addressing.Allocator
+	registry *connRegistry
+	stack    *netstack.Stack
 	deviceName string
 	prefix     string
 	hostAddr   netip.Addr
 	gateway    netip.Addr
 	apiBase    string
+	// token is the gateway bearer token captured at bring-up, reused by
+	// Refresh to re-fetch the connection list without going through the
+	// daemon config again. It lives only in memory for the tunnel's
+	// lifetime (the daemon's config file is the durable copy).
+	token string
 
 	// routeCfg is the exact addressing handed to netstack.ConfigureRoutes
 	// at bring-up. Stored verbatim so teardown reverses precisely what was
@@ -246,7 +254,7 @@ func (m *Manager) Snapshot() Snapshot {
 		State:              m.state,
 		Since:              m.since,
 		Allocator:          m.current.alloc,
-		SubTypeByName:      m.current.subTypeBy,
+		Connections:        m.current.registry.activeConnections(),
 		HostAddr:           m.current.hostAddr,
 		Gateway:            m.current.gateway,
 		DeviceName:         m.current.deviceName,
@@ -428,25 +436,14 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 	m.opts.Logger.Printf("tunnelmgr: session prefix %s gateway %s",
 		alloc.Prefix(), alloc.Gateway())
 
-	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
-		APIBaseURL: apiBase,
-		Token:      gatewayCfg.Token,
-	})
+	registry := newConnRegistry()
+	added, err := loadConnections(ctx, alloc, registry, apiBase, gatewayCfg.Token, m.opts.Logger)
 	if err != nil {
-		return cleanup(fmt.Errorf("fetch connections: %w", err))
+		return cleanup(err)
 	}
-	if len(conns) == 0 {
+	if added == 0 {
 		return cleanup(errors.New("no tunnelable connections found for this user"))
 	}
-
-	subTypeByName := make(map[string]string, len(conns))
-	for _, c := range conns {
-		if _, err := alloc.AddName(c.Name); err != nil {
-			return cleanup(fmt.Errorf("allocate %s: %w", c.Name, err))
-		}
-		subTypeByName[c.Name] = c.SubType
-	}
-	m.opts.Logger.Printf("tunnelmgr: loaded %d tunnelable connection(s)", len(conns))
 
 	rsvr := resolver.New(alloc, m.opts.TLD)
 	stack, err := netstack.New(ctx, netstack.Options{
@@ -455,8 +452,8 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		PrefixV4:   alloc.PrefixV4(),
 		GatewayV4:  alloc.GatewayV4(),
 		DeviceName: m.opts.DeviceName,
-		TCPAccept:  m.makeAcceptFunc(alloc, subTypeByName),
-		TCPHandler: m.makeTCPHandler(alloc, subTypeByName, gatewayCfg),
+		TCPAccept:  m.makeAcceptFunc(alloc, registry),
+		TCPHandler: m.makeTCPHandler(alloc, registry, gatewayCfg),
 		DNSHandler: rsvr.HandleUDP,
 	})
 	if err != nil {
@@ -510,17 +507,78 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		ctx:            ctx,
 		cancel:         cancel,
 		alloc:          alloc,
-		subTypeBy:      subTypeByName,
+		registry:       registry,
 		stack:          stack,
 		deviceName:     deviceName,
 		prefix:         alloc.Prefix().String(),
 		hostAddr:       alloc.HostAddr(),
 		gateway:        alloc.Gateway(),
 		apiBase:        apiBase,
+		token:          gatewayCfg.Token,
 		routeCfg:       routeCfg,
 		resolvedActive: resolvedActive,
 		resolved:       m.opts.ResolvedConfigurer,
 	}, nil
+}
+
+// loadConnections fetches the tunnelable connection list from the
+// gateway, allocates a stable IP for every name (append-only — existing
+// allocations are untouched and re-adds are no-ops), and reconciles the
+// registry's active set to exactly the fetched list. Returns the number
+// of currently-active connections (i.e. len of the fetched list on
+// success).
+//
+// Shared by buildTunnel (initial load) and Refresh (periodic / manual
+// re-load) so both paths apply identical filtering and allocation
+// semantics. The allocator's determinism means a name that vanished and
+// later reappears regains its original IP.
+func loadConnections(
+	ctx context.Context,
+	alloc *addressing.Allocator,
+	registry *connRegistry,
+	apiBase, token string,
+	logger Logger,
+) (activeCount int, err error) {
+	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
+		APIBaseURL: apiBase,
+		Token:      token,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("fetch connections: %w", err)
+	}
+
+	active := make(map[string]string, len(conns))
+	for _, c := range conns {
+		if _, err := alloc.AddName(c.Name); err != nil {
+			return 0, fmt.Errorf("allocate %s: %w", c.Name, err)
+		}
+		active[c.Name] = c.SubType
+	}
+
+	added, removed := registry.reconcile(active)
+	logger.Printf("tunnelmgr: connection list synced — %d active (%d new, %d retired)",
+		len(active), added, removed)
+	return len(active), nil
+}
+
+// Refresh re-fetches the connection list and reconciles it into the
+// live tunnel without disturbing the netstack, routes, or in-flight
+// flows. New connections become routable immediately (the allocator and
+// resolver hold live references); connections deleted on the gateway
+// are marked inactive (hidden from listings, new SYNs rejected) but
+// keep their reserved IP.
+//
+// No-op (returns nil) when the tunnel is not up — there is nothing to
+// refresh against and the periodic caller may race a teardown.
+func (m *Manager) Refresh(ctx context.Context) error {
+	m.mu.RLock()
+	t := m.current
+	m.mu.RUnlock()
+	if t == nil {
+		return nil
+	}
+	_, err := loadConnections(ctx, t.alloc, t.registry, t.apiBase, t.token, m.opts.Logger)
+	return err
 }
 
 // Compile-time assertion: *log.Logger satisfies our Logger interface.

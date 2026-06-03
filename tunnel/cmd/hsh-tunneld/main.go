@@ -127,6 +127,11 @@ func runDaemon(logger *log.Logger) error {
 	tld := flag.String("tld", resolver.DefaultTLD, "TLD owned by the tunnel (HSH_TUNNEL_DOMAIN overrides)")
 	devName := flag.String("dev", "", "TUN device name (kernel picks if empty)")
 	sessionSeed := flag.String("session", "spike-session", "session seed (controls the /48 prefix)")
+	// refreshInterval drives the periodic connection-list refresh while
+	// the tunnel is up. 0 disables auto-refresh (manual
+	// /v1/connections/refresh still works). HSH_TUNNELD_REFRESH_INTERVAL
+	// (a Go duration like "30s") overrides.
+	refreshInterval := flag.Duration("refresh-interval", defaultRefreshInterval, "how often to auto-refresh the connection list while up (0 disables; HSH_TUNNELD_REFRESH_INTERVAL overrides)")
 	// ipcSocket and ipcTokenFile control the local control plane (RD-215).
 	// Empty `--ipc-socket` skips the IPC layer entirely, which keeps the
 	// daemon usable for standalone dev / integration tests where the
@@ -148,18 +153,32 @@ func runDaemon(logger *log.Logger) error {
 	if *configFile == "" {
 		*configFile = daemonconfig.DefaultConfigPathPlatform()
 	}
+	if env := os.Getenv("HSH_TUNNELD_REFRESH_INTERVAL"); env != "" {
+		if d, err := time.ParseDuration(env); err == nil {
+			*refreshInterval = d
+		} else {
+			logger.Printf("ignoring invalid HSH_TUNNELD_REFRESH_INTERVAL=%q: %v", env, err)
+		}
+	}
 
 	cfg := runOptions{
-		tld:          *tld,
-		devName:      *devName,
-		sessionSeed:  *sessionSeed,
-		ipcSocket:    *ipcSocket,
-		ipcTokenFile: *ipcTokenFile,
-		ipcGroup:     *ipcGroup,
-		configFile:   *configFile,
+		tld:             *tld,
+		devName:         *devName,
+		sessionSeed:     *sessionSeed,
+		ipcSocket:       *ipcSocket,
+		ipcTokenFile:    *ipcTokenFile,
+		ipcGroup:        *ipcGroup,
+		configFile:      *configFile,
+		refreshInterval: *refreshInterval,
 	}
 	return run(logger, cfg)
 }
+
+// defaultRefreshInterval is how often the daemon auto-refreshes the
+// connection list while the tunnel is up. A minute keeps newly-created
+// connections discoverable within a bounded delay without hammering the
+// gateway's /api/connections endpoint.
+const defaultRefreshInterval = time.Minute
 
 // runOptions groups every configurable knob `run` cares about. Using a
 // struct here keeps the function signature stable as we add more
@@ -176,6 +195,10 @@ type runOptions struct {
 
 	// configFile is the path of the daemon-managed TOML config file.
 	configFile string
+
+	// refreshInterval is how often to auto-refresh the connection list
+	// while the tunnel is up. Zero disables the background refresh.
+	refreshInterval time.Duration
 }
 
 func run(logger *log.Logger, opts runOptions) error {
@@ -260,6 +283,12 @@ func run(logger *log.Logger, opts runOptions) error {
 		logger.Printf("not logged in — netstack will not start.")
 		logger.Printf("  run `hsh tunnel login` (the tunnel will come up automatically when you finish).")
 	}
+
+	// Start the background connection-list refresh. It runs for the
+	// whole daemon lifetime (parented to ctx) and no-ops while the
+	// tunnel is down, so it covers both "tunnel already up at startup"
+	// and "tunnel comes up later via login" without extra wiring.
+	svc.StartAutoRefresh(ctx, opts.refreshInterval, logger.Printf)
 
 	// Block on signal. TearDown on shutdown is best-effort: the
 	// per-tunnel ctx is parented to ctx, so closing it cancels the
