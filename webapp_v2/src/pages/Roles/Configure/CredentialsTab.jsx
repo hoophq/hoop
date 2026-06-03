@@ -1,10 +1,16 @@
 import { useState } from 'react'
-import { Stack, Title, Text, Anchor } from '@mantine/core'
+import { Group, Stack, Title, Text, Anchor } from '@mantine/core'
 import { FileText, Cloud, ShieldCheck, Info, ExternalLink } from 'lucide-react'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
+import Switch from '@/components/Switch'
+import {
+  SourcedInputVariantProvider,
+  VARIANT_SINGLE_OUTLINE,
+  VARIANT_GLUED_SIBLINGS,
+} from '@/components/SourcedInput/variantContext'
 import {
   CONNECTION_METHODS,
   supportsAwsIam,
@@ -152,6 +158,11 @@ export default function CredentialsTab({ connection }) {
   const derivedMethod = deriveConnectionMethod(connection.secret)
   const [selectedMethod, setSelectedMethodState] = useState(derivedMethod)
   const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
+  // TEMPORARY: A/B switch for the SourcedInput redesign. Toggling flips
+  // the picker visual for every field on the page so we can compare the
+  // two layouts side-by-side. Remove this useState + the Switch below
+  // + the SourcedInputVariantProvider wrapping once the design is locked.
+  const [sourceVariant, setSourceVariant] = useState(VARIANT_SINGLE_OUTLINE)
   const switchConnectionMethod = useConfigureRoleStore(
     (s) => s.switchConnectionMethod,
   )
@@ -189,24 +200,49 @@ export default function CredentialsTab({ connection }) {
   const forceNewState = !isDerivedMethod
 
   return (
-    <Stack gap="xl" maw={720}>
-      <ConnectionMethodSection
-        selectedMethod={selectedMethod}
-        onSelect={setSelectedMethod}
-        awsIamAvailable={awsIamAvailable}
-      />
-      {isSecretsManager && (
-        <SecretsManagerProviderSection
-          provider={secretsProvider}
-          onProviderChange={setSecretsProvider}
+    <SourcedInputVariantProvider value={sourceVariant}>
+      <Stack gap="xl" maw={720}>
+        {/* TEMPORARY: variant preview switch. Remove after the design
+            decision lands. */}
+        <Group gap="sm" align="center">
+          <Text size="xs" c="dimmed">
+            Source picker variant (preview):
+          </Text>
+          <Switch
+            size="sm"
+            checked={sourceVariant === VARIANT_GLUED_SIBLINGS}
+            onChange={(e) =>
+              setSourceVariant(
+                e.currentTarget.checked
+                  ? VARIANT_GLUED_SIBLINGS
+                  : VARIANT_SINGLE_OUTLINE,
+              )
+            }
+            label={
+              sourceVariant === VARIANT_GLUED_SIBLINGS
+                ? 'Glued siblings'
+                : 'Single outline'
+            }
+          />
+        </Group>
+        <ConnectionMethodSection
+          selectedMethod={selectedMethod}
+          onSelect={setSelectedMethod}
+          awsIamAvailable={awsIamAvailable}
         />
-      )}
-      <CredentialsBody
-        connection={connection}
-        availableSources={availableSources}
-        forceNewState={forceNewState}
-        connectionMethod={selectedMethod}
-      />
-    </Stack>
+        {isSecretsManager && (
+          <SecretsManagerProviderSection
+            provider={secretsProvider}
+            onProviderChange={setSecretsProvider}
+          />
+        )}
+        <CredentialsBody
+          connection={connection}
+          availableSources={availableSources}
+          forceNewState={forceNewState}
+          connectionMethod={selectedMethod}
+        />
+      </Stack>
+    </SourcedInputVariantProvider>
   )
 }
