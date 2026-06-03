@@ -150,6 +150,36 @@ components:
       properties:
         accepted: { type: boolean }
 
+    TunnelUpResponse:
+      type: object
+      required: [running, already_up]
+      properties:
+        running:
+          type: boolean
+          description: True once the netstack is published (always true on 200).
+        already_up:
+          type: boolean
+          description: True when the tunnel was already up before this call (no-op).
+
+    TunnelDownResponse:
+      type: object
+      required: [already_down]
+      properties:
+        already_down:
+          type: boolean
+          description: True when the tunnel was already idle before this call (no-op).
+
+    RefreshConnectionsResponse:
+      type: object
+      required: [running, count]
+      properties:
+        running:
+          type: boolean
+          description: False when the tunnel was down at refresh time (no-op).
+        count:
+          type: integer
+          description: Number of active connections after the refresh (0 when down).
+
     ErrorResponse:
       type: object
       required: [error]
@@ -165,6 +195,7 @@ components:
             - bad_request
             - not_found
             - not_implemented
+            - not_logged_in
             - internal
 
   responses:
@@ -312,3 +343,64 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ReconnectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/tunnel/up:
+    post:
+      summary: Bring the tunnel netstack up using the persisted token.
+      description: |
+        Lifecycle counterpart to /v1/tunnel/down. Brings the netstack
+        online without touching authentication, so a logged-in daemon
+        whose tunnel was taken down can be restored without
+        re-authenticating. Synchronous: the response reflects the
+        post-call state. Idempotent: calling it on an already-up tunnel
+        returns already_up=true. Returns 409 when logged out (no token
+        to dial the gateway with).
+      responses:
+        "200":
+          description: Tunnel is up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TunnelUpResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Daemon is logged out; cannot bring the tunnel up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/tunnel/down:
+    post:
+      summary: Tear the tunnel netstack down, leaving the token intact.
+      description: |
+        Lifecycle counterpart to /v1/tunnel/up. Tears the netstack down
+        while keeping the daemon logged in, so the tunnel can be brought
+        back up later without re-authenticating. Idempotent: calling it
+        on an already-idle daemon returns already_down=true.
+      responses:
+        "200":
+          description: Tunnel is down.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TunnelDownResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/connections/refresh:
+    post:
+      summary: Re-fetch and reconcile the connection list now.
+      description: |
+        On-demand counterpart to the daemon's periodic auto-refresh.
+        Re-fetches the connection list from the gateway and reconciles
+        it into the live tunnel: connections created on the gateway
+        become routable, deleted ones are hidden (their IP stays
+        reserved), all without disturbing in-flight flows. Synchronous.
+        A no-op (running=false) when the tunnel is down.
+      responses:
+        "200":
+          description: Refresh completed (or no-op when down).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefreshConnectionsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }

@@ -64,7 +64,7 @@ func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
 	}
-	if aiAnalyzerRule == nil {
+	if aiAnalyzerRule == nil || script == "" {
 		return nil, nil, nil
 	}
 
@@ -293,13 +293,13 @@ func Post(c *gin.Context) {
 				"failed creating ai-driven review")
 			return
 		}
-		review, err := CreateReviewFromAIAnalysis(orgID, sid, conn.Name,
+		review, err := CreateReviewFromAIAnalysis(orgID, sid, conn,
 			AIReviewRequester{
-				UserID:       ctx.UserID,
-				UserEmail:    ctx.UserEmail,
-				UserName:     ctx.UserName,
-				UserSlackID:  ctx.SlackID,
-				ConnectionID: conn.ID,
+				UserID:      ctx.UserID,
+				UserEmail:   ctx.UserEmail,
+				UserName:    ctx.UserName,
+				UserSlackID: ctx.SlackID,
+				UserGroups:  ctx.UserGroups,
 			},
 			aiAccessRule, req.Script, req.EnvVars, req.ClientArgs)
 		if err != nil {

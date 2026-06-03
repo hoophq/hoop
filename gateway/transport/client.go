@@ -13,7 +13,6 @@ import (
 	"libhoop/redactor"
 
 	"github.com/hoophq/hoop/common/apiutils"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -411,17 +410,16 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 
 		clientArgs := clientArgsDecode(pkt.Spec)
 
-		// Federation resolution. Runs only when the experimental.iam_federation
-		// flag is enabled for the org and a federation row exists for the
+		// Federation resolution. Runs when a federation row exists for the
 		// connection. Resolved env vars are merged into pctx.ConnectionSecret
 		// in the format the agent's secretsmanager.Decode expects
 		// (envvar:NAME → base64(plaintext)). Failure semantics are governed by
 		// the per-connection fallback_policy: "deny" aborts the session with a
 		// SessionOpenAgentOffline-style error packet so the client surfaces a
-		// human-readable reason; "readonly" retries once with the configured
-		// readonly_principal and proceeds. Either path writes audit metadata
-		// to sessions.metadata.federation so admins can correlate sessions
-		// with the cloud-side identity used.
+		// human-readable reason; "static" skips federation and lets the session
+		// run on the connection's existing static credentials. Either path
+		// writes audit metadata to sessions.metadata.federation so admins can
+		// correlate sessions with the cloud-side identity used.
 		if err := resolveFederationForSession(&pctx, stream); err != nil {
 			return err
 		}
@@ -468,20 +466,17 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 }
 
 // resolveFederationForSession looks up the federation config for the
-// session's connection and, if one is present and the org has the feature
-// flag enabled, calls services.ResolveFederation. On success it mutates
-// pctx.ConnectionSecret in place to inject the resolved env vars and writes
-// the audit metadata to the session row.
+// session's connection and, if one is present, calls
+// services.ResolveFederation. On success it mutates pctx.ConnectionSecret in
+// place to inject the resolved env vars and writes the audit metadata to the
+// session row.
 //
 // Returning a non-nil error from this function aborts the session-open
 // flow: the caller bails out before sending the AgentConnectionParams to
-// the agent. Use this for "deny" semantics. For "readonly" semantics this
-// function never returns an error; it retries internally and only fails if
-// the retry also fails.
+// the agent. Use this for "deny" semantics. For "static" semantics this
+// function returns nil without mutating pctx.ConnectionSecret, leaving the
+// connection's existing static credentials in place for the session.
 func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient.ProxyStream) error {
-	if !featureflag.IsEnabled(pctx.OrgID, "experimental.iam_federation") {
-		return nil
-	}
 	cfg, err := models.GetConnectionFederationConfig(models.DB, pctx.OrgID, pctx.ConnectionID)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
@@ -502,24 +497,30 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	defer cancel()
 
 	res, resolveErr := services.ResolveFederation(ctx, cfg, in)
-	fallbackApplied := false
 	if resolveErr != nil {
 		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
 			Warnf("federation: primary resolve failed (policy=%s): %v", cfg.FallbackPolicy, resolveErr)
 		switch cfg.FallbackPolicy {
-		case models.FederationFallbackReadonly:
-			fallbackCtx, fallbackCancel := context.WithTimeout(context.Background(), federationResolveTimeout)
-			defer fallbackCancel()
-			fallbackRes, fbErr := services.ResolveFederationFallback(fallbackCtx, cfg, in)
-			if fbErr != nil {
-				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
-					Errorf("federation: fallback (readonly) also failed: %v", fbErr)
-				return status.Errorf(codes.FailedPrecondition,
-					"federation failed and fallback also failed: primary=%v fallback=%v",
-					resolveErr, fbErr)
+		case models.FederationFallbackStatic:
+			// Static fallback: do not federate this session. Leave the
+			// connection's existing static credentials in pctx.ConnectionSecret
+			// untouched (nothing injected, nothing superseded) so the session
+			// runs the pre-federation flow. We still write an audit entry so
+			// operators can see federation was attempted and fell back.
+			log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+				Infof("federation: primary resolve failed; falling back to static connection credentials (policy=static)")
+			provider := cfg.HookSource
+			if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
+				provider = *cfg.BuiltinProvider
 			}
-			res = fallbackRes
-			fallbackApplied = true
+			if auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
+				Provider:        provider,
+				HookSource:      cfg.HookSource,
+				FallbackApplied: true,
+			}); auditErr != nil {
+				log.With("sid", pctx.SID).Warnf("federation: failed writing static-fallback audit metadata: %v", auditErr)
+			}
+			return nil
 		default:
 			// deny is the secure default for any unrecognized policy too.
 			return status.Errorf(codes.FailedPrecondition, "federation failed: %v", resolveErr)
@@ -563,13 +564,16 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
 		provider = *cfg.BuiltinProvider
 	}
+	// Reaching here means the primary resolve succeeded; the static-fallback
+	// path returns earlier without injecting anything, so FallbackApplied is
+	// always false at this point.
 	auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
 		Provider:          provider,
 		HookSource:        cfg.HookSource,
 		ResolvedPrincipal: res.ResolvedPrincipal,
 		AdminPrincipal:    res.AdminPrincipal,
 		TokenExpiresAt:    res.TokenExpiresAt,
-		FallbackApplied:   fallbackApplied,
+		FallbackApplied:   false,
 	})
 	if auditErr != nil {
 		log.With("sid", pctx.SID).Warnf("federation: failed writing session audit metadata: %v", auditErr)
@@ -580,7 +584,6 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 		"connection-id", pctx.ConnectionID,
 		"provider", provider,
 		"principal", res.ResolvedPrincipal,
-		"fallback", fallbackApplied,
 		"expires-at", res.TokenExpiresAt.Format(time.RFC3339),
 		"superseded", supersededRemoved,
 	).Infof("federation: injected %d env var(s) into session, superseded %d static env(s)",

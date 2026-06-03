@@ -290,7 +290,7 @@ func TestFederationConfig(c *gin.Context) {
 		return
 	}
 
-	// Phase 2 — agent-side probe. Mirror the real session-open merge
+	// agent-side probe. Mirror the real session-open merge
 	// (see gateway/transport/client.go resolveFederationForSession): start
 	// from the candidate static envs, drop the provider-declared
 	// SupersededEnvVars, then overlay the federation output on top. This
@@ -380,20 +380,16 @@ func validateFederationRequest(req openapi.ConnectionFederationConfig) error {
 		return errBadRequest("hook_source must be %q", models.FederationHookSourceBuiltin)
 	}
 	switch req.FallbackPolicy {
-	case "", models.FederationFallbackDeny:
-	case models.FederationFallbackReadonly:
-		if req.ReadonlyPrincipal == "" {
-			return errBadRequest("readonly_principal is required when fallback_policy=readonly")
-		}
+	case "", models.FederationFallbackDeny, models.FederationFallbackStatic:
 	default:
-		return errBadRequest("fallback_policy must be one of: deny, readonly")
+		return errBadRequest("fallback_policy must be one of: deny, static")
 	}
 	if req.TokenTTLSeconds < 0 || req.TokenTTLSeconds > 43200 {
 		return errBadRequest("token_ttl_seconds must be between 1 and 43200")
 	}
 
 	// Dry-render the identity template now so typo placeholders (e.g.
-	// {user.handle} instead of {user.email_local}) surface as a 400 here
+	// {user.handle} instead of {user.email}) surface as a 400 here
 	// rather than as a runtime federation failure on the first session.
 	// The synthetic context populates every supported source so we exercise
 	// the full substitution surface. Empty-source failures are a runtime
@@ -453,9 +449,6 @@ func modelToAPI(cfg *models.ConnectionFederationConfig) openapi.ConnectionFedera
 	if cfg.BuiltinProvider != nil {
 		out.BuiltinProvider = *cfg.BuiltinProvider
 	}
-	if cfg.ReadonlyPrincipal != nil {
-		out.ReadonlyPrincipal = *cfg.ReadonlyPrincipal
-	}
 	if len(cfg.ExtraConfig) > 0 {
 		extra := map[string]any{}
 		if err := json.Unmarshal(cfg.ExtraConfig, &extra); err == nil {
@@ -493,10 +486,6 @@ func apiToModel(req openapi.ConnectionFederationConfig, orgID, connectionID stri
 	if req.BuiltinProvider != "" {
 		v := req.BuiltinProvider
 		cfg.BuiltinProvider = &v
-	}
-	if req.ReadonlyPrincipal != "" {
-		v := req.ReadonlyPrincipal
-		cfg.ReadonlyPrincipal = &v
 	}
 	if len(req.ExtraConfig) > 0 {
 		raw, _ := json.Marshal(req.ExtraConfig)

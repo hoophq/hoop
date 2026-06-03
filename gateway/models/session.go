@@ -583,7 +583,9 @@ type SessionFederationMetadata struct {
 	// source of truth for the downstream API.
 	TokenExpiresAt time.Time `json:"token_expires_at"`
 	// FallbackApplied is true when the primary resolution failed and the
-	// session ran under the configured readonly_principal instead.
+	// configured fallback policy was applied instead (e.g. "static": the
+	// session ran on the connection's existing static credentials rather than
+	// a federated identity).
 	FallbackApplied bool `json:"fallback_applied,omitempty"`
 }
 

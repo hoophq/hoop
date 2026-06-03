@@ -36,6 +36,15 @@ type fakeService struct {
 	updateGot     ConfigUpdateRequest
 	reconnectErr  error
 	reconnectHits int
+	upResp        TunnelUpResponse
+	upErr         error
+	upHits        int
+	downResp      TunnelDownResponse
+	downErr       error
+	downHits      int
+	refreshResp   RefreshConnectionsResponse
+	refreshErr    error
+	refreshHits   int
 }
 
 func (f *fakeService) Status(context.Context) (StatusResponse, error) {
@@ -93,6 +102,27 @@ func (f *fakeService) Reconnect(context.Context) error {
 	defer f.mu.Unlock()
 	f.reconnectHits++
 	return f.reconnectErr
+}
+
+func (f *fakeService) Up(context.Context) (TunnelUpResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.upHits++
+	return f.upResp, f.upErr
+}
+
+func (f *fakeService) Down(context.Context) (TunnelDownResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.downHits++
+	return f.downResp, f.downErr
+}
+
+func (f *fakeService) RefreshConnections(context.Context) (RefreshConnectionsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshHits++
+	return f.refreshResp, f.refreshErr
 }
 
 // newTestServer builds a Server backed by fakeService and a fresh
@@ -358,6 +388,130 @@ func TestServer_ReconnectReturns202(t *testing.T) {
 	}
 	if svc.reconnectHits != 1 {
 		t.Errorf("Reconnect called %d times, want 1", svc.reconnectHits)
+	}
+}
+
+func TestServer_TunnelUpReturns200(t *testing.T) {
+	svc := &fakeService{upResp: TunnelUpResponse{Running: true, AlreadyUp: false}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/tunnel/up", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	if svc.upHits != 1 {
+		t.Errorf("Up called %d times, want 1", svc.upHits)
+	}
+	var resp TunnelUpResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Running || resp.AlreadyUp {
+		t.Errorf("resp = %+v, want running=true already_up=false", resp)
+	}
+}
+
+func TestServer_TunnelUpAlreadyUp(t *testing.T) {
+	svc := &fakeService{upResp: TunnelUpResponse{Running: true, AlreadyUp: true}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/tunnel/up", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var resp TunnelUpResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.AlreadyUp {
+		t.Errorf("already_up = false, want true")
+	}
+}
+
+// TestServer_TunnelUpNotLoggedIn verifies the ErrNotLoggedIn sentinel
+// maps to 409 with the not_logged_in code, distinct from a 401 control
+// token rejection.
+func TestServer_TunnelUpNotLoggedIn(t *testing.T) {
+	svc := &fakeService{upErr: ErrNotLoggedIn}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/tunnel/up", nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body=%q", rec.Code, rec.Body.String())
+	}
+	var e ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if e.Code != "not_logged_in" {
+		t.Errorf("code = %q, want not_logged_in", e.Code)
+	}
+}
+
+func TestServer_TunnelDownReturns200(t *testing.T) {
+	svc := &fakeService{downResp: TunnelDownResponse{AlreadyDown: false}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/tunnel/down", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	if svc.downHits != 1 {
+		t.Errorf("Down called %d times, want 1", svc.downHits)
+	}
+	var resp TunnelDownResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.AlreadyDown {
+		t.Errorf("already_down = true, want false")
+	}
+}
+
+func TestServer_TunnelDownAlreadyDown(t *testing.T) {
+	svc := &fakeService{downResp: TunnelDownResponse{AlreadyDown: true}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/tunnel/down", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var resp TunnelDownResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.AlreadyDown {
+		t.Errorf("already_down = false, want true")
+	}
+}
+
+func TestServer_ConnectionsRefreshReturns200(t *testing.T) {
+	svc := &fakeService{refreshResp: RefreshConnectionsResponse{Running: true, Count: 3}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/connections/refresh", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	if svc.refreshHits != 1 {
+		t.Errorf("RefreshConnections called %d times, want 1", svc.refreshHits)
+	}
+	var resp RefreshConnectionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Running || resp.Count != 3 {
+		t.Errorf("resp = %+v, want running=true count=3", resp)
+	}
+}
+
+func TestServer_ConnectionsRefreshWhenDown(t *testing.T) {
+	svc := &fakeService{refreshResp: RefreshConnectionsResponse{Running: false, Count: 0}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/connections/refresh", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var resp RefreshConnectionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Running {
+		t.Errorf("running = true, want false (tunnel down)")
 	}
 }
 

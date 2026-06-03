@@ -1,7 +1,7 @@
 (ns webapp.connections.views.setup.connection-method
   (:require
    ["@radix-ui/themes" :refer [Box Flex Heading Link Select Text]]
-   ["lucide-react" :refer [FileSpreadsheet GlobeLock]]
+   ["lucide-react" :refer [Cloud FileSpreadsheet GlobeLock]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -89,7 +89,8 @@
   (let [connection-method-sub (rf/subscribe [:connection-setup/connection-method])]
     (fn []
       (let [connection-method @connection-method-sub
-            supports-aws-iam? (contains? #{"mysql" "postgres"} connection-subtype)]
+            supports-aws-iam? (contains? #{"mysql" "postgres"} connection-subtype)
+            supports-iam-federation? (= connection-subtype "bigquery")]
         [:> Box {:class "space-y-3"}
          [selection-card
           {:icon (r/as-element [:> FileSpreadsheet {:size 20}])
@@ -117,7 +118,14 @@
                :title "AWS IAM Role"
                :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
                :selected? (= connection-method "aws-iam-role")
-               :on-click #(rf/dispatch [:connection-setup/update-connection-method "aws-iam-role"])}]))]))))
+               :on-click #(rf/dispatch [:connection-setup/update-connection-method "aws-iam-role"])}]))
+         (when supports-iam-federation?
+           [selection-card
+            {:icon (r/as-element [:> Cloud {:size 20}])
+             :title "IAM Federation"
+             :description "Issue short-lived credentials at session start by federating the user's Hoop identity to a cloud IAM principal. No static credentials are stored on this role."
+             :selected? (= connection-method "iam_federation")
+             :on-click #(rf/dispatch [:connection-setup/update-connection-method "iam_federation"])}])]))))
 
 (defn secrets-manager-provider-selector []
   (let [provider-sub (rf/subscribe [:connection-setup/secrets-manager-provider])]

@@ -2017,11 +2017,10 @@ type ConnectionFederationConfig struct {
 	// IdentityTargetTemplate is the principal template the source attribute
 	// substitutes into (defaults to "{user.email}").
 	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
-	// FallbackPolicy controls behavior when resolution fails.
-	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
-	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
-	// the impersonation target on the fallback path.
-	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// FallbackPolicy controls behavior when resolution fails. "deny" aborts
+	// the session; "static" skips federation and lets the session run on the
+	// connection's existing static credentials.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,static" example:"deny"`
 	// TokenTTLSeconds caps the lifetime of generated credentials (default
 	// 3600, max 43200). Built-in providers may clamp lower based on cloud
 	// API limits.

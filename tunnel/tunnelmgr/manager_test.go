@@ -128,8 +128,8 @@ func TestSnapshot_IsDecoupledFromInternal(t *testing.T) {
 	_ = snap.HostAddr
 	_ = snap.Gateway
 	_ = snap.DeviceName
-	_ = snap.Allocator     // nil OK
-	_ = snap.SubTypeByName // nil OK
+	_ = snap.Allocator   // nil OK
+	_ = snap.Connections // nil OK
 }
 
 func TestIsInsecureScheme(t *testing.T) {
