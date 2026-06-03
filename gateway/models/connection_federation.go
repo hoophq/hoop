@@ -24,12 +24,12 @@ const (
 )
 
 // Fallback policies for federation resolution failures. The semantics are
-// enforced by the federation service: deny aborts the session; readonly retries
-// with the configured readonly_principal so users still get a degraded but
-// audited experience.
+// enforced by the federation service: deny aborts the session; static skips
+// federation for the session and leaves the connection's existing static
+// credentials in place so it runs the pre-federation flow.
 const (
-	FederationFallbackDeny     = "deny"
-	FederationFallbackReadonly = "readonly"
+	FederationFallbackDeny   = "deny"
+	FederationFallbackStatic = "static"
 )
 
 // ConnectionFederationConfig holds per-connection identity-federation settings.
@@ -49,7 +49,6 @@ type ConnectionFederationConfig struct {
 	IdentitySourceAttribute   string          `gorm:"column:identity_source_attribute"`
 	IdentityTargetTemplate    string          `gorm:"column:identity_target_template"`
 	FallbackPolicy            string          `gorm:"column:fallback_policy"`
-	ReadonlyPrincipal         *string         `gorm:"column:readonly_principal"`
 	TokenTTLSeconds           int             `gorm:"column:token_ttl_seconds"`
 	ExtraConfig               json.RawMessage `gorm:"column:extra_config"`
 	CreatedAt                 time.Time       `gorm:"column:created_at"`
@@ -91,9 +90,9 @@ func UpsertConnectionFederationConfig(db *gorm.DB, cfg *ConnectionFederationConf
 			id, org_id, connection_id, hook_source, builtin_provider,
 			admin_credentials_encrypted,
 			identity_source_attribute, identity_target_template,
-			fallback_policy, readonly_principal, token_ttl_seconds,
+			fallback_policy, token_ttl_seconds,
 			extra_config, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (connection_id) DO UPDATE SET
 			hook_source                 = EXCLUDED.hook_source,
 			builtin_provider            = EXCLUDED.builtin_provider,
@@ -101,7 +100,6 @@ func UpsertConnectionFederationConfig(db *gorm.DB, cfg *ConnectionFederationConf
 			identity_source_attribute   = EXCLUDED.identity_source_attribute,
 			identity_target_template    = EXCLUDED.identity_target_template,
 			fallback_policy             = EXCLUDED.fallback_policy,
-			readonly_principal          = EXCLUDED.readonly_principal,
 			token_ttl_seconds           = EXCLUDED.token_ttl_seconds,
 			extra_config                = EXCLUDED.extra_config,
 			updated_at                  = EXCLUDED.updated_at
@@ -109,7 +107,7 @@ func UpsertConnectionFederationConfig(db *gorm.DB, cfg *ConnectionFederationConf
 		cfg.ID, cfg.OrgID, cfg.ConnectionID, cfg.HookSource, cfg.BuiltinProvider,
 		cfg.AdminCredentialsEncrypted,
 		cfg.IdentitySourceAttribute, cfg.IdentityTargetTemplate,
-		cfg.FallbackPolicy, cfg.ReadonlyPrincipal, cfg.TokenTTLSeconds,
+		cfg.FallbackPolicy, cfg.TokenTTLSeconds,
 		cfg.ExtraConfig, cfg.CreatedAt, cfg.UpdatedAt,
 	).Error
 }

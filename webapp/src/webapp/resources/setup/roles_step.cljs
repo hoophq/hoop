@@ -434,6 +434,12 @@
         (= resource-subtype "kubernetes-token")
         [kubernetes-token-role-form role-index]
 
+        ;; BigQuery with IAM federation: credentials are managed by the
+        ;; federation config; no static credential form needed here.
+        (and (= resource-subtype "bigquery")
+             (= (:connection-method (get roles role-index)) "iam_federation"))
+        nil
+
         :else
         [metadata-driven-role-form role-index])
 
