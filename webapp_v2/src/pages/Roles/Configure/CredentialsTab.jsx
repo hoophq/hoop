@@ -152,7 +152,9 @@ export default function CredentialsTab({ connection }) {
   const derivedMethod = deriveConnectionMethod(connection.secret)
   const [selectedMethod, setSelectedMethodState] = useState(derivedMethod)
   const [secretsProvider, setSecretsProvider] = useState(SOURCES.AWS_SECRETS_MANAGER)
-  const clearStagedSecrets = useConfigureRoleStore((s) => s.clearStagedSecrets)
+  const switchConnectionMethod = useConfigureRoleStore(
+    (s) => s.switchConnectionMethod,
+  )
   // CLJS shows the picker on every credentials tab — see
   // server.cljs:43, server.cljs:137, server.cljs:186, network.cljs:34/84,
   // metadata_driven.cljs:121-139, claude_code_edit.cljs:59.
@@ -163,11 +165,13 @@ export default function CredentialsTab({ connection }) {
   // Switching method is a fresh start in write-only land: existing
   // "Set" cards become meaningless (the user can't peek at the value
   // they would re-encode), so we clear all fields and let the user
-  // re-enter. Returning to the derived method drops the staged work,
-  // which surfaces the original Set state from the loaded connection.
+  // re-enter. The store also stages deletes for any persisted
+  // provider reference that doesn't belong to the new method so the
+  // save patch actually wipes them on the wire — otherwise the next
+  // load would re-derive the old method from the surviving refs.
   const setSelectedMethod = (next) => {
     if (next === selectedMethod) return
-    clearStagedSecrets()
+    switchConnectionMethod(next)
     setSelectedMethodState(next)
   }
 
