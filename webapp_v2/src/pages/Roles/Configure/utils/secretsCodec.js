@@ -1,5 +1,3 @@
-import { Cloud, FileText, KeyRound, ShieldCheck } from 'lucide-react'
-
 // Placeholder rows for the empty-state row in envvars / HTTP headers /
 // config files. Their keys never reach the backend (the store's
 // buildSecretsPatch filters them), so the UI should render the Key
@@ -73,20 +71,6 @@ export const SOURCE_LABELS = {
   [SOURCES.VAULT_KV2]: 'Vault KV v2',
   [SOURCES.AWS_SECRETS_MANAGER]: 'AWS Secrets Manager',
   [SOURCES.AWS_IAM_ROLE]: 'AWS IAM Role',
-}
-
-// Lucide icons shown next to each source label inside the SourcedInput
-// picker. The Manual/Cloud/ShieldCheck triple matches the icons used by
-// the Connection Method picker in CredentialsTab.jsx so the visual
-// vocabulary stays consistent across the page. Vault gets KeyRound —
-// lucide doesn't ship a Vault brand icon and KeyRound communicates the
-// "wrapped secret" semantics cleanly.
-export const SOURCE_ICONS = {
-  [SOURCES.MANUAL]: FileText,
-  [SOURCES.VAULT_KV1]: KeyRound,
-  [SOURCES.VAULT_KV2]: KeyRound,
-  [SOURCES.AWS_SECRETS_MANAGER]: Cloud,
-  [SOURCES.AWS_IAM_ROLE]: ShieldCheck,
 }
 
 const PREFIX_BY_SOURCE = {
