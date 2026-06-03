@@ -14,20 +14,10 @@ const INPUT_BY_TYPE = {
   text: TextInput,
 }
 
-// Input field with an optional credential source picker (Manual /
-// Vault KV / AWS Secrets Manager / AWS IAM Role) glued to its left.
-// The picker is a button styled to share the input's outline at the
-// seam — same border color, matching radii, and a single shared edge
-// between them — so the two read as one control.
-//
-// Sizes match Mantine's input scale (xs/sm/md/lg/xl); default `sm`,
-// matching every other input wrapper in the app. Heights come from
-// the Mantine --input-height-* variables so SourcedInput aligns with
-// a sibling TextInput at the same size.
-//
-// Textareas don't glue cleanly — the picker stacks above as a plain
-// Select instead. PasswordInput's built-in eye toggle keeps working
-// since we don't touch its right section.
+// Credential input with an optional source picker (Manual / Vault KV /
+// AWS Secrets Manager / AWS IAM Role) glued to its left edge. Textareas
+// stack the picker above instead — gluing a Select to a tall textarea
+// looks broken.
 export default function SourcedInput({
   label,
   required,

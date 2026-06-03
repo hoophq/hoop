@@ -2,14 +2,10 @@ import { Menu, Text, UnstyledButton } from '@mantine/core'
 import { ChevronDown } from 'lucide-react'
 import { SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
 
-// Picker dropdown used by both SourcedInput variants. The trigger is an
-// UnstyledButton so each variant can apply its own outline / spacing
-// styles via `targetClassName`. Just a label and a chevron — no icons,
-// since the source name itself is what carries the meaning.
-//
-// Accepts either a plain string array (`['manual-input', '...']`) or
-// the Mantine Select shape (`[{value, label}]`) so it works with the
-// existing `sourceOptionsFor` helper unchanged.
+// Source picker dropdown. Accepts either a string array
+// (`['manual-input', ...]`) or the Mantine Select shape
+// (`[{value, label}]`) so it composes with the existing
+// `sourceOptionsFor` helper unchanged.
 export default function SourceMenu({
   source,
   sources,

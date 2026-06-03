@@ -149,10 +149,8 @@ function SecretsManagerProviderSection({ provider, onProviderChange }) {
 }
 
 export default function CredentialsTab({ connection }) {
-  // Derive method AND provider from the loaded values so the top-level
-  // dropdown reflects what's actually stored — without this the
-  // provider always opens as AWS Secrets Manager even when the
-  // connection holds `_vaultkv1:` references.
+  // Derive method + provider from existing values so the top-level
+  // controls reflect what's actually stored, not a hardcoded default.
   const derived = deriveConnectionInfo(connection.secret)
   const [selectedMethod, setSelectedMethodState] = useState(derived.method)
   const [secretsProvider, setSecretsProviderState] = useState(
@@ -164,48 +162,34 @@ export default function CredentialsTab({ connection }) {
   const setSecretsManagerProvider = useConfigureRoleStore(
     (s) => s.setSecretsManagerProvider,
   )
-  // CLJS shows the picker on every credentials tab — see
-  // server.cljs:43, server.cljs:137, server.cljs:186, network.cljs:34/84,
-  // metadata_driven.cljs:121-139, claude_code_edit.cljs:59.
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
   const isDerivedMethod = selectedMethod === derived.method
 
-  // Switching method is a fresh start in write-only land: existing
-  // "Set" cards become meaningless (the user can't peek at the value
-  // they would re-encode), so we clear all fields and let the user
-  // re-enter. The store also stages deletes for any persisted
-  // provider reference that doesn't belong to the new method so the
-  // save patch actually wipes them on the wire — otherwise the next
-  // load would re-derive the old method from the surviving refs.
+  // Method switch wipes existing fields and stages deletes for any
+  // surviving reference that doesn't belong to the new method.
   const setSelectedMethod = (next) => {
     if (next === selectedMethod) return
     switchConnectionMethod(next)
     setSelectedMethodState(next)
   }
 
-  // Switching the Secrets Manager provider re-encodes every persisted
-  // reference under the new prefix (the prefix lives inside the base64,
-  // so the wire format only changes by ~10 chars per value). Without
-  // this, save() would emit an empty patch and the next load would
-  // derive the old provider back from the unchanged stored values.
+  // Provider switch re-encodes every existing reference under the new
+  // prefix so the dropdown choice actually survives save + reload.
   const setSecretsProvider = (next) => {
     if (next === secretsProvider) return
     setSecretsManagerProvider(next)
     setSecretsProviderState(next)
   }
 
-  // availableSources drives the per-field source-selector adornment.
-  // In Secrets Manager mode the provider is the default; manual-input
-  // is offered as the secondary option. AWS IAM mode renders no
-  // adornment — the source is implicit.
+  // In Secrets Manager mode every row gets the per-field source picker.
+  // Manual / AWS IAM render no per-field adornment.
   const availableSources = isSecretsManager
     ? [secretsProvider, SOURCES.MANUAL]
     : null
 
-  // forceNewState tells field renderers to ignore the connection's
-  // existing values (treat every field as empty). Active whenever the
-  // user has switched away from the derived method.
+  // Render every field as fresh whenever the user switched away from
+  // the derived method — the persisted values no longer apply.
   const forceNewState = !isDerivedMethod
 
   return (

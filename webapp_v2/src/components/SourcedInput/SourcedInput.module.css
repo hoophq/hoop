@@ -1,11 +1,6 @@
-/* SourcedInput — picker glued to the input on the left. The picker
- * carries the seam border (the input drops its left border) so the two
- * components meet at a single shared edge instead of doubling up.
- *
- * Sizes mirror Mantine's input scale (xs/sm/md/lg/xl). Base values are
- * for `sm` (Mantine's default); the data-size attribute selectors below
- * override only what differs per size so the picker height tracks
- * --input-height-* exactly and lines up with the sibling input. */
+/* The picker carries the seam border (input drops its left) so the two
+ * components meet at one shared edge. Base values target Mantine's `sm`
+ * input; data-size selectors override per-size to track --input-height-*. */
 .pickerSibling {
   display: inline-flex;
   align-items: center;
@@ -65,8 +60,6 @@
   opacity: 0.6;
 }
 
-/* Zero out the input's left radius so the seam with the picker is a
- * straight vertical edge with no rounded shoulders peeking out. */
 .inputSibling {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
