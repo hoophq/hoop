@@ -67,33 +67,56 @@ func isBooleanValue(encodedValue string) bool {
 	return false
 }
 
+// hasAnySecretReference reports whether any value in the envvar map is a
+// provider reference. Used to detect when a connection is operating in
+// Secrets Manager or AWS IAM Role mode without needing an explicit
+// "method" column on the model.
+func hasAnySecretReference(envs map[string]string) bool {
+	for _, v := range envs {
+		if IsSecretReference(v) {
+			return true
+		}
+	}
+	return false
+}
+
 // shouldRoundTripSecrets reports whether a connection's envvars are
 // safe to send back to the admin UI verbatim instead of going through
 // the write-only strip.
 //
-// Five connection shapes have bespoke React renderers in
-// webapp_v2/.../Configure/components/renderers/ that need to display
-// existing values to function (host/user pickers, header lists,
-// connection URLs, auth-method radios). Everything else — including
-// catalog applications like git/github, every database, and every
-// catalog custom subtype (dynamodb, aws-*, kubernetes, redis, …) —
-// goes through the catalog renderer and stays write-only:
+// Two paths return true:
 //
-//  1. application/ssh        — SshRenderer
-//  2. httpproxy/*            — ClaudeCodeRenderer + HttpProxyRenderer
-//  3. custom/(empty subtype) — FreeFormCustomRenderer (env vars,
-//                              configuration files, command args)
-//  4. custom/linux-vm        — FreeFormCustomRenderer
-//  5. custom/kubernetes-token — KubernetesTokenRenderer
+//  1. Any env value is a provider reference (`_aws:`, `_vaultkv1:`,
+//     `_vaultkv2:`, `_aws_iam_rds:`, `_envjson:`). That marks the
+//     connection as running under Secrets Manager or AWS IAM Role —
+//     the stored values are pointers/config, not raw secrets, and the
+//     real material lives in the external backend. Round-tripping
+//     keeps the form consistent (no half-locked / half-editable rows).
+//     One-way trade-off worth noting: a connection that flips from
+//     pure Manual to Secrets Manager (by replacing one value with a
+//     reference) starts revealing the other inline values on the next
+//     read. The admin opted in by adding the reference.
 //
-// The full catalog inventory drives this rule — see
+//  2. The connection shape has a bespoke React renderer that needs to
+//     populate URL / header / host fields to function:
+//       - application/ssh        — SshRenderer
+//       - httpproxy/*            — ClaudeCodeRenderer + HttpProxyRenderer
+//       - custom/(empty subtype) — FreeFormCustomRenderer
+//       - custom/linux-vm        — FreeFormCustomRenderer
+//       - custom/kubernetes-token — KubernetesTokenRenderer
+//
+// Everything else (catalog databases, catalog custom subtypes,
+// application/{git,github,tcp}) in pure Manual mode goes through the
+// catalog renderer and stays write-only.
+//
+// The full catalog inventory drives the shape list — see
 // https://github.com/hoophq/documentation/blob/main/store/connections.json.
-//
-// Edge cases live in `/configure-role-gaps.md` — keep that doc in sync
-// when this list changes.
 func shouldRoundTripSecrets(conn *models.Connection) bool {
 	if conn == nil {
 		return false
+	}
+	if hasAnySecretReference(conn.Envs) {
+		return true
 	}
 	sub := conn.SubType.String
 	switch conn.Type {
