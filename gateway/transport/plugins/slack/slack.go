@@ -20,7 +20,7 @@ var ErrMissingRequiredCredentials = fmt.Errorf("missing required credentials for
 
 const (
 	PluginConfigEnvVarsParam = "plugin_config"
-	slackMaxButtons          = 20
+	SlackMaxButtons          = 20
 )
 
 type (
@@ -33,7 +33,7 @@ type (
 var instances map[string]*slack.SlackService
 var mu sync.RWMutex
 
-func getSlackServiceInstance(orgID string) *slack.SlackService {
+func GetSlackServiceInstance(orgID string) *slack.SlackService {
 	mu.Lock()
 	defer mu.Unlock()
 	return instances[orgID]
@@ -130,7 +130,7 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 }
 
 func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) error {
-	slackInstance := getSlackServiceInstance(newState.GetOrgID())
+	slackInstance := GetSlackServiceInstance(newState.GetOrgID())
 	if slackInstance == nil {
 		slackInstance = &slack.SlackService{}
 	}
@@ -190,7 +190,7 @@ func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) er
 
 // SendApprovedMessage sends a message informing the session is ready
 func SendApprovedMessage(orgID, slackID, sid, apiURL string) {
-	if slacksvc := getSlackServiceInstance(orgID); slacksvc != nil {
+	if slacksvc := GetSlackServiceInstance(orgID); slacksvc != nil {
 		msg := fmt.Sprintf("Your session is ready.\nFollow this link to see the details: %s/sessions/%s",
 			apiURL, sid)
 		_ = slacksvc.PostMessage(slackID, msg)
@@ -202,7 +202,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
 	}
-	slackSvc := getSlackServiceInstance(pctx.OrgID)
+	slackSvc := GetSlackServiceInstance(pctx.OrgID)
 	log.With("sid", pctx.SID).Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
 	if slackSvc == nil {
 		return nil, nil
@@ -232,7 +232,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		sreq.ID = rev.ID
 		sreq.WebappURL = fmt.Sprintf("%s/sessions/%s", p.apiURL, rev.SessionID)
-		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
+		sreq.ApprovalGroups = ParseGroups(rev.ReviewGroups)
 		if rev.AccessDurationSec > 0 {
 			ad := time.Duration(rev.AccessDurationSec) * time.Second
 			sreq.SessionTime = &ad
@@ -240,9 +240,9 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		sreq.Script = reviewInput
 	}
 
-	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slackMaxButtons {
+	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= SlackMaxButtons {
 		log.With("sid", pctx.SID).Infof("no review message to process, has-webapp-url=%v, approval-groups=%v/%v",
-			sreq.WebappURL != "", len(sreq.ApprovalGroups), slackMaxButtons)
+			sreq.WebappURL != "", len(sreq.ApprovalGroups), SlackMaxButtons)
 		return nil, nil
 	}
 	log.With("sid", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v", sreq.Connection, sreq.SessionTime != nil)
@@ -278,7 +278,7 @@ func parseSlackConfig(envVars map[string]string) (*slackConfig, error) {
 	return &sc, nil
 }
 
-func parseGroups(reviewGroups []models.ReviewGroups) []string {
+func ParseGroups(reviewGroups []models.ReviewGroups) []string {
 	groups := make([]string, 0)
 	for _, g := range reviewGroups {
 		groups = append(groups, g.GroupName)
