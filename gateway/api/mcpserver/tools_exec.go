@@ -102,6 +102,7 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 		IdentityType:         "user",
 		SessionBatchID:       nil,
 		CorrelationID:        nil,
+		Origin:               pb.SessionOriginMCP,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
@@ -125,7 +126,11 @@ func CreateConnectionCredentials(c *gin.Context) {
 		sessionStatus = openapi.SessionStatusDone
 	}
 
-	// Create session for audit trail
+	// Create session for audit trail. The origin recorded here is inherited by
+	// the per-connection session the proxy stack creates on each TCP connect
+	// (via the credential-session-id link), so a native client connecting with
+	// webapp-minted credentials is attributed to `webapp` rather than the
+	// generic `cli` the proxy would otherwise stamp.
 	sid := uuid.NewString()
 	newSession := models.Session{
 		ID:                sid,
@@ -139,6 +144,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		ConnectionTags:    conn.ConnectionTags,
 		Verb:              proto.ClientVerbConnect,
 		Status:            string(sessionStatus),
+		Origin:            proto.SessionOriginFromUserAgent(apiutils.NormalizeUserAgent(c.Request.Header.Values)),
 		CreatedAt:         time.Now().UTC(),
 	}
 

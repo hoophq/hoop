@@ -574,6 +574,7 @@ func RunbookExec(c *gin.Context) {
 		SessionBatchID:       req.SessionBatchID,
 		CorrelationID:        req.CorrelationID,
 		ExitCode:             nil,
+		Origin:               proto.SessionOriginRunbooks,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}

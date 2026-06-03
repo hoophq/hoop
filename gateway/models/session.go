@@ -114,6 +114,7 @@ type Session struct {
 	MachineIdentityID    *string                 `gorm:"column:machine_identity_id"`
 	IdentityType         string                  `gorm:"column:identity_type"`
 	CorrelationID        *string                 `gorm:"column:correlation_id"`
+	Origin               string                  `gorm:"column:origin"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -226,7 +227,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
-		s.machine_identity_id, s.identity_type, s.correlation_id,
+		s.machine_identity_id, s.identity_type, s.correlation_id, s.origin,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.guardrails_info,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		c.resource_name,
@@ -520,6 +521,7 @@ func UpsertSession(sess Session) error {
 				MachineIdentityID:    sess.MachineIdentityID,
 				IdentityType:         sess.IdentityType,
 				CorrelationID:        sess.CorrelationID,
+				Origin:               sess.Origin,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
 				AIAnalysis:           sess.AIAnalysis,

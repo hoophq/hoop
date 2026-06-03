@@ -91,6 +91,19 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
 		}
 
+		// Native clients connect through a protocol proxy, which stamps the
+		// generic ConnectionOriginClient regardless of how the credential was
+		// minted. When the connection is credential-backed, inherit the origin
+		// recorded on the issuing credential session (e.g. webapp) so the proxy
+		// session is attributed to the surface that granted access; otherwise
+		// fall back to the transport origin.
+		sessionOrigin := pb.SessionOriginFromClientOrigin(pctx.ClientOrigin)
+		if pctx.CredentialSessionID != "" {
+			if credSession, err := models.GetSessionByID(pctx.OrgID, pctx.CredentialSessionID); err == nil && credSession.Origin != "" {
+				sessionOrigin = credSession.Origin
+			}
+		}
+
 		sessionIdentityType := identityTypeUser
 		var machineIdentityID *string
 		if isMachine {
@@ -119,6 +132,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ExitCode:             nil,
 			IdentityType:         sessionIdentityType,
 			MachineIdentityID:    machineIdentityID,
+			Origin:               sessionOrigin,
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
