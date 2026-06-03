@@ -15,6 +15,7 @@ export default function SourceMenu({
   sources,
   onSourceChange,
   targetClassName,
+  targetSize,
   disabled,
 }) {
   const options = normalizeOptions(sources)
@@ -28,10 +29,11 @@ export default function SourceMenu({
         <UnstyledButton
           type="button"
           className={targetClassName}
+          data-size={targetSize}
           aria-label="Credential source"
           disabled={disabled}
         >
-          <Text size="sm" lh={1} fw={500} component="span">
+          <Text lh={1} fw={500} component="span" inherit>
             {activeLabel}
           </Text>
           <ChevronDown size={14} />

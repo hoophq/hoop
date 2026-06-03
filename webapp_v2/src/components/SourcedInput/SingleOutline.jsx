@@ -35,6 +35,7 @@ export default function SingleOutlineSourcedInput({
   onSourceChange,
   rightSection,
   descriptionSlot,
+  size = 'sm',
 }) {
   const showSourceMenu = Array.isArray(sources) && sources.length > 1
 
@@ -50,7 +51,7 @@ export default function SingleOutlineSourcedInput({
             onChange={(v) => v && onSourceChange?.(v)}
             allowDeselect={false}
             w={220}
-            size="sm"
+            size={size}
             aria-label="Credential source"
           />
         )}
@@ -61,6 +62,7 @@ export default function SingleOutlineSourcedInput({
           disabled={disabled}
           autoFocus={autoFocus}
           required={required}
+          size={size}
         />
       </Stack>
     )
@@ -70,7 +72,7 @@ export default function SingleOutlineSourcedInput({
     <Stack gap={4}>
       {label && <FieldLabel label={label} required={required} />}
       {descriptionSlot}
-      <CompositeRow disabled={disabled}>
+      <CompositeRow disabled={disabled} size={size}>
         {showSourceMenu && (
           <SourceMenu
             source={source}
@@ -95,10 +97,11 @@ export default function SingleOutlineSourcedInput({
   )
 }
 
-function CompositeRow({ disabled, children }) {
+function CompositeRow({ disabled, size, children }) {
   return (
     <div
       className={classes.composite}
+      data-size={size}
       data-disabled={disabled ? 'true' : undefined}
     >
       {children}

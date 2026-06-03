@@ -35,6 +35,7 @@ export default function GluedSiblingsSourcedInput({
   onSourceChange,
   rightSection,
   descriptionSlot,
+  size = 'sm',
 }) {
   const Input = INPUT_BY_TYPE[type] || TextInput
   const showSourceMenu = sources && sources.length > 1
@@ -65,7 +66,7 @@ export default function GluedSiblingsSourcedInput({
             onChange={(v) => v && onSourceChange?.(v)}
             allowDeselect={false}
             w={220}
-            size="sm"
+            size={size}
             aria-label="Credential source"
           />
         )}
@@ -76,6 +77,7 @@ export default function GluedSiblingsSourcedInput({
           disabled={disabled}
           autoFocus={autoFocus}
           required={required}
+          size={size}
         />
       </Stack>
     )
@@ -103,6 +105,7 @@ export default function GluedSiblingsSourcedInput({
             sources={sources}
             onSourceChange={onSourceChange}
             targetClassName={classes.pickerSibling}
+            targetSize={size}
             disabled={disabled}
           />
         )}
@@ -115,6 +118,7 @@ export default function GluedSiblingsSourcedInput({
           autoFocus={autoFocus}
           required={required}
           rightSection={rightSection}
+          size={size}
           classNames={showSourceMenu ? { input: classes.inputSibling } : undefined}
         />
       </Group>
