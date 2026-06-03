@@ -1,0 +1,107 @@
+/* Single-outline variant: picker + value + right-section in one outlined
+ * cell. The container owns the border and focus state via :focus-within
+ * so clicking the picker target OR focusing the input lights up the
+ * same ring. All values via Mantine CSS variables per project rules. */
+.composite {
+  display: flex;
+  align-items: stretch;
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-gray-4);
+  border-radius: var(--mantine-radius-sm);
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+  overflow: hidden;
+}
+
+.composite:hover {
+  border-color: var(--mantine-color-gray-5);
+}
+
+.composite:focus-within {
+  border-color: var(--mantine-color-indigo-6);
+  box-shadow: 0 0 0 1px var(--mantine-color-indigo-6);
+}
+
+.composite[data-disabled='true'] {
+  background: var(--mantine-color-gray-0);
+  border-color: var(--mantine-color-gray-3);
+}
+
+/* Picker target slot. Inherits the parent's height; ChevronDown sits at
+ * the trailing edge with spacing matched to Mantine's sm input padding. */
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-sm);
+  background: var(--mantine-color-gray-0);
+  color: var(--mantine-color-text);
+  border-right: 1px solid var(--mantine-color-gray-3);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 100ms ease;
+}
+
+.picker:hover {
+  background: var(--mantine-color-gray-1);
+}
+
+.picker:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Bare input: strip Mantine's own border + radius so only the composite
+ * outline is visible. We target the .mantine-Input-input slot via the
+ * `input` className the parent passes down. */
+.bareInput {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: 36px;
+  height: 36px;
+}
+
+.bareInput:focus {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+}
+
+/* Glued-siblings variant. Two separate components touching at a shared
+ * border. The picker keeps its right radius zeroed; the input keeps
+ * its left radius zeroed. The picker provides the seam border so we
+ * don't double up. */
+.pickerSibling {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-sm);
+  height: 36px;
+  background: var(--mantine-color-gray-0);
+  color: var(--mantine-color-text);
+  border: 1px solid var(--mantine-color-gray-4);
+  border-right: 0;
+  border-top-left-radius: var(--mantine-radius-sm);
+  border-bottom-left-radius: var(--mantine-radius-sm);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 100ms ease, border-color 100ms ease;
+}
+
+.pickerSibling:hover {
+  background: var(--mantine-color-gray-1);
+  border-color: var(--mantine-color-gray-5);
+}
+
+.pickerSibling:focus-visible {
+  outline: 0;
+  border-color: var(--mantine-color-indigo-6);
+  box-shadow: -1px 0 0 0 var(--mantine-color-indigo-6);
+}
+
+.inputSibling {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}

@@ -226,7 +226,7 @@ import TextInput from '@/components/TextInput'
 ```
 
 ### `SourcedInput`
-Input paired with an optional source picker rendered to its left. Use when a credential field can be backed by different providers (manual entry, Vault, AWS Secrets Manager) and the user needs to switch per-field. When `sources` is empty/single, only the input renders.
+Input paired with an optional credential source picker (Manual / Vault KV / AWS Secrets Manager / AWS IAM Role). The picker shows a lucide icon (FileText / KeyRound / Cloud / ShieldCheck — see `SOURCE_ICONS` in `pages/Roles/Configure/utils/secretsCodec.js`) and label per source. When `sources` is empty/single, only the input renders.
 ```jsx
 import SourcedInput from '@/components/SourcedInput'
 
@@ -237,14 +237,11 @@ import SourcedInput from '@/components/SourcedInput'
   value={value}
   onChange={setValue}
   source={source}
-  sources={[
-    { value: 'manual-input', label: 'Manual' },
-    { value: 'aws-secrets-manager', label: 'AWS Secrets Manager' },
-  ]}
+  sources={['manual-input', 'aws-secrets-manager']}
   onSourceChange={setSource}
 />
 ```
-Supports `type="text" | "password" | "textarea"`. Uses the wrapped `TextInput` / `PasswordInput` / `Textarea` internally.
+Supports `type="text" | "password" | "textarea"`. Renders descriptions through `MarkdownText` so inline links work. The picker layout is currently under A/B evaluation (`SourcedInputVariantContext` in `components/SourcedInput/variantContext.js`) — once the design is locked the context goes away and the chosen variant becomes the default. Textarea inputs always render the picker stacked above instead of inline (multi-line + horizontal picker looks broken).
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
