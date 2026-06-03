@@ -174,6 +174,13 @@ func (c *Client) Down(ctx context.Context) (TunnelDownResponse, error) {
 	return out, err
 }
 
+// RefreshConnections corresponds to POST /v1/connections/refresh.
+func (c *Client) RefreshConnections(ctx context.Context) (RefreshConnectionsResponse, error) {
+	var out RefreshConnectionsResponse
+	err := c.do(ctx, http.MethodPost, "/v1/connections/refresh", nil, &out)
+	return out, err
+}
+
 // ----------------------------------------------------------------------
 // internals
 // ----------------------------------------------------------------------

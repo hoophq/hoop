@@ -66,6 +66,37 @@ func TestService_DownWhenIdleIsNoOp(t *testing.T) {
 	}
 }
 
+// TestService_RefreshWhenDownIsNoOp verifies that a refresh against a
+// down tunnel reports Running=false and does not error — the periodic
+// loop relies on this to tick harmlessly while logged out.
+func TestService_RefreshWhenDownIsNoOp(t *testing.T) {
+	svc := newTestService(t, daemonconfig.Config{
+		APIURL: "https://gw.example.com",
+		Token:  "tok-123",
+	})
+
+	resp, err := svc.RefreshConnections(context.Background())
+	if err != nil {
+		t.Fatalf("RefreshConnections() err = %v, want nil", err)
+	}
+	if resp.Running {
+		t.Errorf("Running = true, want false (tunnel is down)")
+	}
+	if resp.Count != 0 {
+		t.Errorf("Count = %d, want 0", resp.Count)
+	}
+}
+
+// TestManager_RefreshWhenIdleIsNoOp verifies the Manager-level guard:
+// Refresh against an idle manager returns nil without touching the
+// gateway (no panic, no fetch).
+func TestManager_RefreshWhenIdleIsNoOp(t *testing.T) {
+	svc := newTestService(t, daemonconfig.Config{})
+	if err := svc.mgr.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() on idle manager err = %v, want nil", err)
+	}
+}
+
 // TestService_DownStaysLoggedIn verifies the lifecycle/auth separation:
 // taking the tunnel down must NOT clear the token. The user remains
 // logged in and can bring the tunnel back up without re-authenticating.

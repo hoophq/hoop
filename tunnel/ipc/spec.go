@@ -247,6 +247,18 @@ type TunnelDownResponse struct {
 	AlreadyDown bool `json:"already_down"`
 }
 
+// RefreshConnectionsResponse is returned by POST
+// /v1/connections/refresh. The refresh is synchronous (the daemon
+// re-fetches and reconciles before responding).
+type RefreshConnectionsResponse struct {
+	// Running is false when the tunnel was down at refresh time (the
+	// call was a no-op — there is nothing to refresh against).
+	Running bool `json:"running"`
+	// Count is the number of active connections after the refresh.
+	// Zero when the tunnel is down.
+	Count int `json:"count"`
+}
+
 // ----------------------------------------------------------------------
 // Errors
 // ----------------------------------------------------------------------

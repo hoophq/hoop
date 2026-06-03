@@ -42,6 +42,9 @@ type fakeService struct {
 	downResp      TunnelDownResponse
 	downErr       error
 	downHits      int
+	refreshResp   RefreshConnectionsResponse
+	refreshErr    error
+	refreshHits   int
 }
 
 func (f *fakeService) Status(context.Context) (StatusResponse, error) {
@@ -113,6 +116,13 @@ func (f *fakeService) Down(context.Context) (TunnelDownResponse, error) {
 	defer f.mu.Unlock()
 	f.downHits++
 	return f.downResp, f.downErr
+}
+
+func (f *fakeService) RefreshConnections(context.Context) (RefreshConnectionsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshHits++
+	return f.refreshResp, f.refreshErr
 }
 
 // newTestServer builds a Server backed by fakeService and a fresh
@@ -467,6 +477,41 @@ func TestServer_TunnelDownAlreadyDown(t *testing.T) {
 	}
 	if !resp.AlreadyDown {
 		t.Errorf("already_down = false, want true")
+	}
+}
+
+func TestServer_ConnectionsRefreshReturns200(t *testing.T) {
+	svc := &fakeService{refreshResp: RefreshConnectionsResponse{Running: true, Count: 3}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/connections/refresh", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	if svc.refreshHits != 1 {
+		t.Errorf("RefreshConnections called %d times, want 1", svc.refreshHits)
+	}
+	var resp RefreshConnectionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Running || resp.Count != 3 {
+		t.Errorf("resp = %+v, want running=true count=3", resp)
+	}
+}
+
+func TestServer_ConnectionsRefreshWhenDown(t *testing.T) {
+	svc := &fakeService{refreshResp: RefreshConnectionsResponse{Running: false, Count: 0}}
+	srv, tok := newTestServer(t, svc)
+	rec := doReq(t, srv, tok, http.MethodPost, "/v1/connections/refresh", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var resp RefreshConnectionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Running {
+		t.Errorf("running = true, want false (tunnel down)")
 	}
 }
 

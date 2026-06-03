@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/hoophq/hoop/common/version"
 
@@ -220,23 +221,25 @@ func (s *daemonService) Connections(context.Context) ([]ipc.Connection, error) {
 		return []ipc.Connection{}, nil
 	}
 
-	names := snap.Allocator.Names()
-	sort.Strings(names)
-	out := make([]ipc.Connection, 0, len(names))
-	for _, name := range names {
-		ip, ok := snap.Allocator.LookupName(name)
+	// Snapshot.Connections holds only the currently-active connections
+	// (a refresh hides ones deleted on the gateway). Sort by name for
+	// stable output.
+	conns := snap.Connections
+	sort.Slice(conns, func(i, j int) bool { return conns[i].Name < conns[j].Name })
+	out := make([]ipc.Connection, 0, len(conns))
+	for _, c := range conns {
+		ip, ok := snap.Allocator.LookupName(c.Name)
 		if !ok {
 			continue
 		}
-		subType := snap.SubTypeByName[name]
-		port, _ := portmap.CanonicalPort(subType)
+		port, _ := portmap.CanonicalPort(c.SubType)
 		conn := ipc.Connection{
-			Name:         name,
-			SubType:      subType,
+			Name:         c.Name,
+			SubType:      c.SubType,
 			VirtualIP:    ip.String(),
 			ExpectedPort: port,
 		}
-		if ipv4, ok := snap.Allocator.LookupNameV4(name); ok {
+		if ipv4, ok := snap.Allocator.LookupNameV4(c.Name); ok {
 			conn.VirtualIPV4 = ipv4.String()
 		}
 		out = append(out, conn)
@@ -473,5 +476,64 @@ func (s *daemonService) Down(context.Context) (ipc.TunnelDownResponse, error) {
 		s.onTunnelDown()
 	}
 	return ipc.TunnelDownResponse{AlreadyDown: false}, nil
+}
+
+// RefreshConnections re-fetches the connection list and reconciles it
+// into the live tunnel. No-op when the tunnel is down. A fetch failure
+// is recorded in lastError and returned so the UI can surface it, but
+// it does NOT tear the tunnel down — existing flows and the
+// last-known-good connection set keep working.
+func (s *daemonService) RefreshConnections(ctx context.Context) (ipc.RefreshConnectionsResponse, error) {
+	if s.mgr.State() != tunnelmgr.StateUp {
+		return ipc.RefreshConnectionsResponse{Running: false, Count: 0}, nil
+	}
+	if err := s.mgr.Refresh(ctx); err != nil {
+		s.SetLastError("refresh connections: " + err.Error())
+		return ipc.RefreshConnectionsResponse{}, fmt.Errorf("refresh connections: %w", err)
+	}
+	s.SetLastError("")
+	count := len(s.mgr.Snapshot().Connections)
+	return ipc.RefreshConnectionsResponse{Running: true, Count: count}, nil
+}
+
+// StartAutoRefresh launches the background connection-list refresh loop.
+// It ticks every `interval` and, when the tunnel is up, re-fetches and
+// reconciles the connection list so connections created or deleted on
+// the gateway show up without a manual `hsh tunnel refresh`. While the
+// tunnel is down the tick is a cheap no-op (RefreshConnections returns
+// early), so the loop can run for the whole daemon lifetime regardless
+// of login state.
+//
+// interval <= 0 disables auto-refresh entirely (the loop never starts);
+// the manual /v1/connections/refresh endpoint still works. The loop
+// exits when ctx is cancelled (daemon shutdown).
+//
+// logf is the daemon's logger (the service has none of its own); the
+// per-refresh result is already logged by tunnelmgr, so this only logs
+// loop lifecycle and tick errors.
+func (s *daemonService) StartAutoRefresh(ctx context.Context, interval time.Duration, logf func(string, ...any)) {
+	if interval <= 0 {
+		logf("auto-refresh disabled (interval=%v)", interval)
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		logf("auto-refresh started (every %v)", interval)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// RefreshConnections no-ops when the tunnel is down and
+				// records its own lastError on fetch failure, so a
+				// transient gateway blip just logs and retries next tick
+				// — it never tears the tunnel down.
+				if _, err := s.RefreshConnections(ctx); err != nil {
+					logf("auto-refresh tick failed: %v", err)
+				}
+			}
+		}
+	}()
 }
 

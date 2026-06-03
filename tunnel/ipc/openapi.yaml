@@ -169,6 +169,17 @@ components:
           type: boolean
           description: True when the tunnel was already idle before this call (no-op).
 
+    RefreshConnectionsResponse:
+      type: object
+      required: [running, count]
+      properties:
+        running:
+          type: boolean
+          description: False when the tunnel was down at refresh time (no-op).
+        count:
+          type: integer
+          description: Number of active connections after the refresh (0 when down).
+
     ErrorResponse:
       type: object
       required: [error]
@@ -372,5 +383,24 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TunnelDownResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/connections/refresh:
+    post:
+      summary: Re-fetch and reconcile the connection list now.
+      description: |
+        On-demand counterpart to the daemon's periodic auto-refresh.
+        Re-fetches the connection list from the gateway and reconciles
+        it into the live tunnel: connections created on the gateway
+        become routable, deleted ones are hidden (their IP stays
+        reserved), all without disturbing in-flight flows. Synchronous.
+        A no-op (running=false) when the tunnel is down.
+      responses:
+        "200":
+          description: Refresh completed (or no-op when down).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefreshConnectionsResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "500": { $ref: "#/components/responses/InternalError" }

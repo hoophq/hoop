@@ -92,6 +92,14 @@ type Service interface {
 	// succeeds with AlreadyDown=true. The user stays logged in and can
 	// bring the tunnel back Up without re-authenticating.
 	Down(ctx context.Context) (TunnelDownResponse, error)
+
+	// RefreshConnections re-fetches the connection list from the gateway
+	// and reconciles it into the live tunnel (new connections become
+	// routable, deleted ones are hidden) without disturbing in-flight
+	// flows. It is the on-demand counterpart to the daemon's periodic
+	// auto-refresh. A no-op success when the tunnel is down. Returns the
+	// post-refresh active connection count.
+	RefreshConnections(ctx context.Context) (RefreshConnectionsResponse, error)
 }
 
 // ErrNotImplemented is the canonical sentinel a Service implementation
@@ -237,6 +245,7 @@ func (s *Server) buildHandler() http.Handler {
 	mux.HandleFunc("POST /v1/reconnect", s.handleReconnect)
 	mux.HandleFunc("POST /v1/tunnel/up", s.handleTunnelUp)
 	mux.HandleFunc("POST /v1/tunnel/down", s.handleTunnelDown)
+	mux.HandleFunc("POST /v1/connections/refresh", s.handleConnectionsRefresh)
 
 	// Any other path returns a JSON 404 instead of the default text body
 	// so clients can parse the response uniformly.
@@ -394,6 +403,15 @@ func (s *Server) handleTunnelUp(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTunnelDown(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.opts.Service.Down(r.Context())
+	if err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleConnectionsRefresh(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.opts.Service.RefreshConnections(r.Context())
 	if err != nil {
 		s.writeServiceError(w, err)
 		return
