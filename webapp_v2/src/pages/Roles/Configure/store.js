@@ -5,7 +5,13 @@ import { jiraTemplatesService } from '@/services/jiraTemplates'
 import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
 import { userGroupsService } from '@/services/userGroups'
-import { sourceFromEncodedValue, PLACEHOLDER_KEY_RE } from './utils/secretsCodec'
+import {
+  decodeSecretValue,
+  isSecretReference,
+  PLACEHOLDER_KEY_RE,
+  sourceFromEncodedValue,
+} from './utils/secretsCodec'
+import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 
 // Page-local store for Configure Role. The staged-secrets contract is
 // the only non-obvious bit:
@@ -423,6 +429,49 @@ export const useConfigureRoleStore = create((set, get) => ({
   // would not reflect the just-picked Secrets Manager provider).
   clearStagedSecrets: () =>
     set({ stagedSecrets: {}, renames: {}, fieldSources: {} }),
+
+  // Switches the credentials connection method and stages deletes for
+  // any persisted provider reference that doesn't belong to the new
+  // method. Without the deletes, save() would only send the user's
+  // newly-typed values and the surviving references (e.g. `_aws:...`)
+  // would re-trigger deriveConnectionMethod() on next load — pinning
+  // the picker back to the old method even though the user explicitly
+  // switched away.
+  //
+  // Compatibility table (mirrors deriveConnectionMethod):
+  //   MANUAL          → wipe every reference prefix
+  //   SECRETS_MANAGER → wipe `_aws_iam_rds:` only; other refs are valid
+  //   AWS_IAM         → wipe `_aws:` / `_vaultkv*:`; keep `_aws_iam_rds:`
+  //                     (the form will (re)stamp it on save)
+  switchConnectionMethod: (newMethod) => {
+    set((state) => {
+      const stagedSecrets = {}
+      const secrets = state.connection?.secret || {}
+      for (const [key, encoded] of Object.entries(secrets)) {
+        if (!encoded || !isSecretReference(encoded)) continue
+        const plain = decodeSecretValue(encoded)
+        const isIamRef = plain.startsWith('_aws_iam_rds:')
+        let shouldDelete = false
+        switch (newMethod) {
+          case CONNECTION_METHODS.MANUAL:
+            shouldDelete = true
+            break
+          case CONNECTION_METHODS.SECRETS_MANAGER:
+            shouldDelete = isIamRef
+            break
+          case CONNECTION_METHODS.AWS_IAM:
+            shouldDelete = !isIamRef
+            break
+          default:
+            shouldDelete = false
+        }
+        if (shouldDelete) {
+          stagedSecrets[key] = { action: 'delete' }
+        }
+      }
+      return { stagedSecrets, renames: {}, fieldSources: {} }
+    })
+  },
 
   hasPendingChanges: () => {
     const state = get()
