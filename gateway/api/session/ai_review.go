@@ -107,6 +107,14 @@ func sendSlackMessage(requester AIReviewRequester, connection *models.Connection
 		log.With("sid", rev.SessionID).Errorf("failed fetching plugin connection for slack review message: %v", err)
 		return err
 	}
+	if pluginConfig == nil {
+		log.With("sid", rev.SessionID).Infof("no plugin connection found for slack review message, skipping")
+		return nil
+	}
+	if len(pluginConfig.Config) == 0 {
+		log.With("sid", rev.SessionID).Infof("plugin connection for slack review message has empty config, skipping")
+		return nil
+	}
 
 	sreq := &slackModel.MessageReviewRequest{
 		Name:           requester.UserName,
