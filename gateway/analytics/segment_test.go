@@ -149,10 +149,10 @@ func TestSessionUsageProperties(t *testing.T) {
 		assertProp(t, props, "origin", "cli")
 	})
 
-	t.Run("empty origin falls back to unknown", func(t *testing.T) {
+	t.Run("empty origin is emitted as an empty string", func(t *testing.T) {
 		props := sessionUsageProperties(usageData())
 
-		assertProp(t, props, "origin", "unknown")
+		assertProp(t, props, "origin", "")
 	})
 
 	t.Run("session with EndSession set", func(t *testing.T) {
