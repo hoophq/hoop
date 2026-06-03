@@ -126,12 +126,17 @@ export default function PredefinedFields({
         const isAwsIamScoped = isAwsIam && (fieldKeyLower === 'user' || fieldKeyLower === 'pass')
         const source = isAwsIamScoped ? SOURCES.AWS_IAM_ROLE : detectedSource
 
-        // Plaintext round-trip: backend returned an inline value (not
-        // stripped, not a reference). Render an editable field with the
-        // value visible. Staged changes win — once the user has typed,
-        // we show their staged value via SecretField's editing state.
+        // Round-tripped plaintext OR external reference: the backend
+        // returned a value we can render in an editable input — either
+        // because the connection shape rounds-trips inline values
+        // (shouldRoundTripSecrets in gateway/api/connections/secrets.go)
+        // or because the value carries a provider prefix that
+        // stripInlineSecrets preserves on its own. References are
+        // location info, not secret material, so showing them editable
+        // beats the Set/Replace cycle. Only inline-but-stripped values
+        // (encodedValue === '') fall through to the SecretField gate.
         const isRoundTrippedPlain =
-          !forceNewState && encodedValue && !isReference && !staged
+          !forceNewState && encodedValue && !staged
         if (isRoundTrippedPlain) {
           const decodedValue = decodeForDisplay(encodedValue)
           return (
