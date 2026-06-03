@@ -100,6 +100,8 @@
             is-bigquery? (= (:subtype conn-data) "bigquery")
             connection-method @(rf/subscribe [:connection-setup/connection-method])
             federation-selected? (and is-bigquery? (= connection-method "iam_federation"))
+            ;; a federation row already exists on this connection
+            federation-configured? (some? @(rf/subscribe [:federation/data]))
 
             handle-save (fn []
                           (let [{:keys [type subtype]} conn-data
@@ -140,7 +142,8 @@
                                     (when (every? not-empty [current-env-key current-env-value])
                                       (rf/dispatch [:connection-setup/add-env-row])))
 
-                                  (when federation-selected?
+                                  (cond
+                                    federation-selected?
                                     ;; mirror the federation form into the static
                                     ;; fallback secret before the connection update
                                     (let [fed-form @(rf/subscribe [:federation/form])]
@@ -150,7 +153,12 @@
                                       (rf/dispatch [:connection-setup/update-metadata-credentials
                                                     "CLOUDSDK_CORE_PROJECT"
                                                     (get-in fed-form [:extra_config :project_id])])
-                                      (rf/dispatch [:federation/save connection-name])))
+                                      (rf/dispatch [:federation/save connection-name]))
+
+                                    ;; switched away from IAM federation — drop the
+                                    ;; stored config so it doesn't re-select on reload
+                                    (and is-bigquery? federation-configured?)
+                                    (rf/dispatch [:federation/delete connection-name]))
 
                                   (rf/dispatch [:resources->update-role-connection
                                                 {:name connection-name

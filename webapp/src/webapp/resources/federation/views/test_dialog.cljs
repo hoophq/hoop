@@ -1,7 +1,7 @@
 (ns webapp.resources.federation.views.test-dialog
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Text]]
-   ["lucide-react" :refer [CheckCircle Info XCircle]]
+   ["lucide-react" :refer [CheckCircle Info X XCircle]]
    [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -78,11 +78,17 @@
             run-test #(rf/dispatch [:federation/test @email conn-data])]
 
         [:> Box {:class "space-y-5 p-1"}
-         [:> Box {:class "space-y-1"}
-          [:> Heading {:size "5" :weight "bold" :class "text-[--gray-12]"}
-           "Test as user"]
-          [:> Text {:size "2" :class "text-[--gray-11]"}
-           "Run the federation hook as a specific Hoop user and inspect what the session would receive."]]
+         [:> Flex {:justify "between" :align "start" :gap "3"}
+          [:> Box {:class "space-y-1"}
+           [:> Heading {:size "5" :weight "bold" :class "text-[--gray-12]"}
+            "Test as user"]
+           [:> Text {:size "2" :class "text-[--gray-11]"}
+            "Run the federation hook as a specific Hoop user and inspect what the session would receive."]]
+          [:> Box {:class "cursor-pointer text-[--gray-10] hover:text-[--gray-12] flex-shrink-0"
+                   :role "button"
+                   :aria-label "Close"
+                   :on-click close-modal}
+           [:> X {:size 18}]]]
 
          (if success?
            [test-success-display test-result (:token_ttl_seconds form) @email]
@@ -115,16 +121,10 @@
 
          [:> Flex {:justify "end" :gap "2"}
           (if success?
-            [:<>
-             [:> Button {:variant "soft"
-                         :color "gray"
-                         :type "button"
-                         :on-click #(rf/dispatch [:federation/reset-test])}
-              "Run again"]
-             [:> Button {:variant "solid"
-                         :type "button"
-                         :on-click close-modal}
-              "Done"]]
+            [:> Button {:variant "solid"
+                        :type "button"
+                        :on-click close-modal}
+             "Done"]
 
             [:<>
              [:> Button {:variant "soft"
