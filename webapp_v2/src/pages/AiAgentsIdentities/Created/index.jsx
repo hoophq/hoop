@@ -81,7 +81,7 @@ export default function AiAgentsIdentitiesCreated() {
                 {"Learn more about Hoop's MCP."}
               </Anchor>
             </Text>
-            <CodeSnippet code={buildMcpSnippet(apiUrl, rawKey)} />
+            <CodeSnippet code={buildMcpSnippet(apiUrl, rawKey)} variant="gray" />
           </Stack>
 
           <Stack gap="xs">
@@ -92,7 +92,7 @@ export default function AiAgentsIdentitiesCreated() {
                 Learn how to install our CLI.
               </Anchor>
             </Text>
-            <CodeSnippet code={buildCliSnippet(apiUrl, rawKey)} />
+            <CodeSnippet code={buildCliSnippet(apiUrl, rawKey)} variant="gray" />
           </Stack>
 
           <Flex justify="center">

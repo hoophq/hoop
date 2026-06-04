@@ -40,11 +40,12 @@ import { Zap } from 'lucide-react'
 `action` is optional — omit when the user has no permission to create.
 
 ### `CodeSnippet`
-Scrollable code block with copy-to-clipboard button.
+Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
 ```jsx
 import CodeSnippet from '@/components/CodeSnippet'
 
 <CodeSnippet code="docker run ..." />
+<CodeSnippet code={mcpConfigJson} variant="gray" />
 ```
 
 ### `Table`
