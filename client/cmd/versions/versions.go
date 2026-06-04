@@ -112,7 +112,7 @@ var useCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Active hoop version is now %s\n", target)
-		fmt.Printf("Symlink: %s -> %s\n", layout.BinLink, layout.VersionBinary(target))
+		fmt.Printf("Active CLI: %s\n", layout.BinLink)
 		return nil
 	},
 }
@@ -206,7 +206,7 @@ var removeCmd = &cobra.Command{
 			return fmt.Errorf("version %s is not installed", target)
 		}
 		if store.Active == target && !removeForceFlag {
-			return fmt.Errorf("version %s is currently active; pass --force to remove it (this will unlink %s)", target, layout.BinLink)
+			return fmt.Errorf("version %s is currently active; pass --force to remove it (this will remove %s)", target, layout.BinLink)
 		}
 
 		if err := os.RemoveAll(layout.VersionDir(target)); err != nil {
@@ -214,11 +214,12 @@ var removeCmd = &cobra.Command{
 		}
 		store.Remove(target)
 		if store.Active == "" {
-			// SetActive cleared it because we just removed the active one;
-			// also unlink the symlink so we don't leave a dangling link.
+			// Removing the active version cleared store.Active; also drop
+			// the bin path (symlink on Unix, copy on Windows) so we don't
+			// leave a dangling link or a stale copy behind.
 			if _, err := os.Lstat(layout.BinLink); err == nil {
 				if err := os.Remove(layout.BinLink); err != nil {
-					return fmt.Errorf("failed removing dangling symlink %s: %w", layout.BinLink, err)
+					return fmt.Errorf("failed removing active CLI path %s: %w", layout.BinLink, err)
 				}
 			}
 		}

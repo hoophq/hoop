@@ -37,6 +37,10 @@ func NewAdHocExec(rawEnvVarList map[string]any, args []string, payload []byte, s
 	return &noopProxy{connectionType: "terminal-exec"}, nil
 }
 
+func NewAdHocDBExec(driver string, payload []byte, stdout, stderr io.Writer, opts map[string]string) (Proxy, error) {
+	return &noopProxy{connectionType: "db-exec"}, nil
+}
+
 func NewConsole(rawEnvVarList map[string]any, args []string, stdout io.WriteCloser, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "terminal-console"}, nil
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
@@ -29,6 +30,21 @@ import (
 )
 
 var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code"}
+
+// noExpirySentinel is the expire_at value stored for credentials that should
+// not expire — the human "Open in Native Client" flow issues these when the
+// caller omits access_duration_seconds, matching the machine-identity flow in
+// gateway/services/credentials.go.
+const noExpirySentinel = "9999-12-31T00:00:00Z"
+
+func noExpiryTime() time.Time {
+	t, _ := time.Parse(time.RFC3339, noExpirySentinel)
+	return t
+}
+
+func isPersistentExpireAt(t time.Time) bool {
+	return t.Equal(noExpiryTime())
+}
 
 // CreateConnectionCredentials
 //
@@ -93,7 +109,28 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	// Create session for audit trail
+	// Check if connection requires review/JIT approval
+	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
+
+	// Determine the audit status of the credential-issuance session.
+	// Persistent credentials (no review, no access_duration_seconds) mint a
+	// Done bookkeeping row immediately: this session is not bound to any TCP
+	// connection and would otherwise stay Open forever — per-connection audit
+	// rows are created by the proxy stack on each actual TCP connect. Bounded
+	// and review-required flows keep Open because they have a defined event
+	// that closes them (CloseExpiredCredentialSessions for bounded credentials,
+	// the review/connect flow for review-required ones). Mirrors the
+	// machine-identity pattern in gateway/services/credentials.go.
+	sessionStatus := openapi.SessionStatusOpen
+	if !requiresReview && req.AccessDurationSec <= 0 {
+		sessionStatus = openapi.SessionStatusDone
+	}
+
+	// Create session for audit trail. The origin recorded here is inherited by
+	// the per-connection session the proxy stack creates on each TCP connect
+	// (via the credential-session-id link), so a native client connecting with
+	// webapp-minted credentials is attributed to `webapp` rather than the
+	// generic `cli` the proxy would otherwise stamp.
 	sid := uuid.NewString()
 	newSession := models.Session{
 		ID:                sid,
@@ -106,12 +143,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 		ConnectionSubtype: conn.SubType.String,
 		ConnectionTags:    conn.ConnectionTags,
 		Verb:              proto.ClientVerbConnect,
-		Status:            string(openapi.SessionStatusOpen),
+		Status:            string(sessionStatus),
+		Origin:            proto.SessionOriginFromUserAgent(apiutils.NormalizeUserAgent(c.Request.Header.Values)),
 		CreatedAt:         time.Now().UTC(),
 	}
-
-	// Check if connection requires review/JIT approval
-	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
 
 	// Persist session
 	if err := models.UpsertSession(newSession); err != nil {
@@ -122,8 +157,14 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 	events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
 
-	// If review/JIT is required, create review record and return 202
+	// If review/JIT is required, create review record and return 202.
+	// Review-required connections always need a bounded access window — the
+	// configure-session step in the UI is responsible for supplying it.
 	if requiresReview {
+		if req.AccessDurationSec <= 0 {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
+			return
+		}
 		reviewID, err := createConnectionCredentialsReview(ctx, conn, accessRule, sid, req.AccessDurationSec)
 		if err != nil {
 			log.Errorf("failed creating review, err=%v", err)
@@ -132,6 +173,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		}
 
 		// Return 202 with session_id and review_id, NO credentials
+		reviewExpireAt := time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
 		c.JSON(202, &openapi.ConnectionCredentialsResponse{
 			ConnectionName:    conn.Name,
 			ConnectionType:    conn.Type,
@@ -140,15 +182,22 @@ func CreateConnectionCredentials(c *gin.Context) {
 			HasReview:         true,
 			ReviewID:          reviewID,
 			CreatedAt:         time.Now().UTC(),
-			ExpireAt:          time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second),
+			ExpireAt:          &reviewExpireAt,
 		})
 		return
 	}
 
-	expireAt := time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
-	if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
-		c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
-		return
+	// Non-review connections: if no duration is provided, issue a persistent
+	// credential (no expiration) — mirrors the machine-identity flow.
+	var expireAt time.Time
+	if req.AccessDurationSec > 0 {
+		expireAt = time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
+		if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
+			return
+		}
+	} else {
+		expireAt = noExpiryTime()
 	}
 
 	connType := proto.ConnectionType(conn.SubType.String)
@@ -732,6 +781,11 @@ func buildConnectionCredentialsResponse(
 	reviewID string) *openapi.ConnectionCredentialsResponse {
 	const dummyString = "hoop"
 
+	var expireAt *time.Time
+	if !isPersistentExpireAt(cred.ExpireAt) {
+		t := cred.ExpireAt
+		expireAt = &t
+	}
 	base := openapi.ConnectionCredentialsResponse{
 		ID:                cred.ID,
 		ConnectionType:    conn.Type,
@@ -741,7 +795,7 @@ func buildConnectionCredentialsResponse(
 		HasReview:         hasReview,
 		ReviewID:          reviewID,
 		CreatedAt:         cred.CreatedAt,
-		ExpireAt:          cred.ExpireAt,
+		ExpireAt:          expireAt,
 	}
 
 	connectionType := toConnectionType(cred.ConnectionType, conn.SubType.String)

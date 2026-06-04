@@ -51,10 +51,10 @@
       truncated]]))
 
 (defn- live-badge []
-  [:> Tooltip {:content "Machine session is currently running"}
+  [:> Tooltip {:content "Session is currently running"}
    [:> Badge {:color "green" :variant "soft" :size "2"
               :class "animate-pulse"
-              :aria-label "Live machine session"}
+              :aria-label "Live session"}
     [:> Flex {:gap "1" :align "center"}
      [:span {:class "inline-block w-2 h-2 rounded-full bg-[--green-9]"
              :aria-hidden true}]
@@ -66,9 +66,11 @@
         correlation-id (:correlation_id session)
         has-workflow? (and correlation-id
                            (not (string/blank? correlation-id)))
-        machine? (= (:identity_type session) "machine")
+        ;; live tail is available for interactive connect-verb sessions
+        ;; (postgres/ssh/tcp/http-proxy/…) regardless of identity type
+        connect? (= (:verb session) "connect")
         open? (= (:status session) "open")
-        live? (and machine? open?)]
+        live? (and connect? open?)]
     [:> Grid
      {:columns "4"
       :gap "4"

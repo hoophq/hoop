@@ -9034,7 +9034,7 @@ const docTemplate = `{
         },
         "/sessions/{session_id}/stream": {
             "get": {
-                "description": "Streams audit events for a machine session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
+                "description": "Streams audit events for an open session in real-time via SSE. Each event is published as it is appended to the WAL. No catch-up is sent for events that occurred before the subscription.",
                 "produces": [
                     "text/event-stream"
                 ],
@@ -11438,7 +11438,7 @@ const docTemplate = `{
                     "example": "2025-08-25T12:00:00Z"
                 },
                 "expire_at": {
-                    "description": "When the database access connection expires",
+                    "description": "When the database access connection expires. Null when the credential\nhas no expiration (persistent native-client credentials issued without\naccess_duration_seconds).",
                     "type": "string",
                     "example": "2025-08-25T13:00:00Z"
                 },
@@ -11513,11 +11513,11 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "fallback_policy": {
-                    "description": "FallbackPolicy controls behavior when resolution fails.",
+                    "description": "FallbackPolicy controls behavior when resolution fails. \"deny\" aborts\nthe session; \"static\" skips federation and lets the session run on the\nconnection's existing static credentials.",
                     "type": "string",
                     "enum": [
                         "deny",
-                        "readonly"
+                        "static"
                     ],
                     "example": "deny"
                 },
@@ -11548,11 +11548,6 @@ const docTemplate = `{
                     "description": "IdentityTargetTemplate is the principal template the source attribute\nsubstitutes into (defaults to \"{user.email}\").",
                     "type": "string",
                     "example": "{user.email}"
-                },
-                "readonly_principal": {
-                    "description": "ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as\nthe impersonation target on the fallback path.",
-                    "type": "string",
-                    "example": "hoop-readonly@example.com"
                 },
                 "token_ttl_seconds": {
                     "description": "TokenTTLSeconds caps the lifetime of generated credentials (default\n3600, max 43200). Built-in providers may clamp lower based on cloud\nAPI limits.",

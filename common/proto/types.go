@@ -169,6 +169,72 @@ func (s *streamWriter) SendSessionClose(errMsg string) error {
 	})
 }
 
+// chunkedWriter wraps an io.Writer and splits each Write call into sub-writes no
+// larger than maxChunkSize. It lets byte-stream protocols (e.g. the HTTP proxy)
+// emit arbitrarily large payloads without producing a single gRPC message that
+// exceeds the transport receive limit (common/grpc.MaxRecvMsgSize), which would
+// otherwise be rejected with a ResourceExhausted error.
+//
+// It must NOT be used for message-framed protocols (Postgres, MySQL, MongoDB,
+// MSSQL): splitting one protocol message across packets would corrupt the
+// gateway's per-message audit recording, query parsing and DLP/guardrails, all
+// of which assume one packet equals one complete protocol message.
+//
+// The wrapper transparently forwards the underlying writer's Close and
+// SendSessionClose behaviors so wrapping a streamWriter does not disable the
+// session-close error reporting libhoop relies on for guardrail violations.
+type chunkedWriter struct {
+	w            io.Writer
+	maxChunkSize int
+}
+
+// NewChunkedWriter returns an io.WriteCloser that caps each underlying Write at
+// maxChunkSize bytes. A non-positive maxChunkSize disables chunking (writes pass
+// through unchanged).
+func NewChunkedWriter(w io.Writer, maxChunkSize int) io.WriteCloser {
+	return &chunkedWriter{w: w, maxChunkSize: maxChunkSize}
+}
+
+func (c *chunkedWriter) Write(p []byte) (int, error) {
+	if c.maxChunkSize <= 0 || len(p) <= c.maxChunkSize {
+		return c.w.Write(p)
+	}
+	written := 0
+	for len(p) > 0 {
+		n := len(p)
+		if n > c.maxChunkSize {
+			n = c.maxChunkSize
+		}
+		nw, err := c.w.Write(p[:n])
+		written += nw
+		if err != nil {
+			return written, err
+		}
+		if nw < n {
+			return written, io.ErrShortWrite
+		}
+		p = p[n:]
+	}
+	return written, nil
+}
+
+func (c *chunkedWriter) Close() error {
+	if wc, ok := c.w.(io.Closer); ok {
+		return wc.Close()
+	}
+	return nil
+}
+
+// SendSessionClose forwards to the underlying writer when it implements the
+// SessionCloser contract, preserving libhoop's ability to report guardrail
+// errors (e.g. on WebSocket streams) through the stream.
+func (c *chunkedWriter) SendSessionClose(errMsg string) error {
+	if sc, ok := c.w.(SessionCloser); ok {
+		return sc.SendSessionClose(errMsg)
+	}
+	return nil
+}
+
 func GobEncode(data any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(data)

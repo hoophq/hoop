@@ -183,6 +183,23 @@
         (dissoc :env-current-key :env-current-value)
         (dissoc :config-current-name :config-current-content))))
 
+(defn inject-federation-fallback-secret
+  "Emits the federation SA JSON + project as the role's static secret
+  (GOOGLE_APPLICATION_CREDENTIALS + CLOUDSDK_CORE_PROJECT), used as the
+  fallback when per-user federation can't mint credentials."
+  [role federation-form]
+  (if (= (:connection-method role) "iam_federation")
+    (let [sa-json (:admin_credentials_json federation-form)
+          project-id (get-in federation-form [:extra_config :project_id])]
+      (-> role
+          (update :configuration-files
+                  (fn [files]
+                    (conj (vec (remove #(= (:key %) "GOOGLE_APPLICATION_CREDENTIALS") files))
+                          {:key "GOOGLE_APPLICATION_CREDENTIALS" :value sa-json})))
+          (assoc-in [:metadata-credentials "CLOUDSDK_CORE_PROJECT"]
+                    {:value project-id :source "manual-input"})))
+    role))
+
 (defn process-payload
   "Process the entire resource setup form into API payload"
   [db]
@@ -190,6 +207,7 @@
         resource-type (get-in db [:resource-setup :type])
         resource-subtype (get-in db [:resource-setup :subtype])
         agent-id (get-in db [:resource-setup :agent-id])
+        federation-form (get-in db [:resources/federation :form])
         raw-roles (get-in db [:resource-setup :roles] [])
         ;; The connections metadata catalog (loaded from
         ;; /data/connections-metadata.json) is the source of truth for each
@@ -200,8 +218,11 @@
         ;; this, the agent receives an empty CmdList and exec fails.
         resource-metadata (get-in db [:connections :metadata :data :connections] [])
 
-        ;; Finalize roles by adding any uncommitted current values
-        roles (mapv finalize-role-current-values raw-roles)
+        roles (mapv (fn [role]
+                      (-> role
+                          finalize-role-current-values
+                          (inject-federation-fallback-secret federation-form)))
+                    raw-roles)
 
         ;; Process all roles, injecting the command from the metadata
         ;; catalog for each role's subtype.

@@ -14,6 +14,14 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
+// httpProxyResponseChunkSize bounds the size of each gRPC packet emitted for an
+// HTTP proxy response. libhoop fully buffers a response and writes it to the
+// client stream in a single Write; without chunking, a large response (e.g. a
+// big ClickHouse result) becomes one oversized gRPC message and is rejected with
+// a ResourceExhausted error. The value must stay safely below
+// common/grpc.MaxRecvMsgSize.
+const httpProxyResponseChunkSize = 1024 * 1024 * 4 // 4 MiB
+
 func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
@@ -95,7 +103,11 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.kubernetesInsecureSkipVerify)
 	}
 
-	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
+	// Wrap the stream writer so an oversized buffered response is split into
+	// multiple sub-limit gRPC packets instead of a single message that exceeds
+	// MaxRecvMsgSize. The client reassembles the byte stream in order.
+	chunkedClient := pb.NewChunkedWriter(httpStreamClient, httpProxyResponseChunkSize)
+	httpProxy, err := libhoop.NewHttpProxy(context.Background(), chunkedClient, connenv.httpProxyHeaders)
 	if err != nil {
 		log.Infof("failed connecting to %v, err=%v", connenv.host, err)
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed connecting to internal service, reason=%v", err))

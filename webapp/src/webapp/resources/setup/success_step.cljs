@@ -101,9 +101,8 @@
                       :title "Test Connection on Web Terminal"
                       :description "Start using your resource immediately in your browser"
                       :on-click (fn []
-                                  (js/localStorage.setItem "selected-connection" {:name (:name first-role)})
                                   (rf/dispatch-sync [:database-schema->clear-schema])
-                                  (rf/dispatch [:navigate :editor-plugin-panel]))}]
+                                  (rf/dispatch [:navigate :editor-plugin {:role (:name first-role)}]))}]
 
         (not single-role?)
         [action-card {:icon Monitor
@@ -112,7 +111,7 @@
                       :on-click (fn []
                                   (rf/dispatch-sync [:primary-connection/clear-selected])
                                   (rf/dispatch-sync [:database-schema->clear-schema])
-                                  (rf/dispatch [:navigate :editor-plugin-panel]))}])]
+                                  (rf/dispatch [:navigate :editor-plugin]))}])]
 
      ;; Footer action — only the onboarding "Go Home" remains
      (when (and onboarding? (not single-role?))

@@ -23,15 +23,21 @@
      (.submit form)
      (.remove form))))
 
-;; Get native client access for a connection
+;; Get native client access for a connection.
+;; access-duration-minutes is optional: when nil, the credential is issued
+;; without an expiration (persistent native-client credential, machine-identity
+;; style). The configure-session step in the UI still drives this value for
+;; review-required connections.
 (rf/reg-event-fx
  :native-client-access->request-access
  (fn [{:keys [db]} [_ connection-name-or-id access-duration-minutes]]
-   (let [access-duration-seconds (constants/minutes->seconds access-duration-minutes)]
+   (let [body (if access-duration-minutes
+                {:access_duration_seconds (constants/minutes->seconds access-duration-minutes)}
+                {})]
      {:db (update-in db [:native-client-access :requesting-connections] conj connection-name-or-id)
       :fx [[:dispatch [:fetch {:method "POST"
                                :uri (str "/connections/" connection-name-or-id "/credentials")
-                               :body {:access_duration_seconds access-duration-seconds}
+                               :body body
                                :on-success #(rf/dispatch [:native-client-access->request-success connection-name-or-id %])
                                :on-failure #(rf/dispatch [:native-client-access->request-failure connection-name-or-id %])}]]]})))
 
@@ -94,24 +100,50 @@
                              :on-failure #(rf/dispatch [:native-client-access->agent-status-check-failure % connection-name])}]]]}))
 
 ;; Handle agent status check success
+;;
+;; Non-review connections skip the configure-session step entirely: the modal
+;; opens and we immediately request a persistent credential (no expiration),
+;; mirroring the machine-identity flow. Review-required connections (OSS
+;; reviewers or JIT access rule) still go through the configure-session step
+;; because they need a bounded access window.
 (rf/reg-event-fx
  :native-client-access->agent-status-check-success
  (fn [{:keys [db]} [_ response connection-name]]
    (let [is-online? (= (:status response) "online")
-         is-admin? (get-in db [:users->current-user :data :admin?])]
+         is-admin? (get-in db [:users->current-user :data :admin?])
+         requires-review? (or (:jit_access_duration_sec response)
+                              (seq (:reviewers response)))
+         existing-session (get-in db [:native-client-access :sessions connection-name])
+         has-valid-session? (constants/native-client-access-valid? existing-session)
+         skip-configure? (and is-online?
+                              (not requires-review?)
+                              (not has-valid-session?))]
      {:db (assoc-in db [:native-client-access :checking-agent?] false)
-      :fx [(if is-online?
-             ;; Agent is online - proceed with normal flow, passing full response for JIT info
-             [:dispatch [:modal->open {:content [native-client-access-main/main response]
-                                       :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)
-                                       :maxWidth "1100px"}]]
-             ;; Agent is offline - show error dialog
-             (let [error-message (get-in constants/error-messages
-                                         [:agent-offline (if is-admin? :admin :non-admin)])]
-               [:dispatch [:modal->open {:content [native-client-access-main/not-available-dialog
+      :fx (cond
+            (not is-online?)
+            ;; Agent is offline - show error dialog
+            (let [error-message (get-in constants/error-messages
+                                        [:agent-offline (if is-admin? :admin :non-admin)])]
+              [[:dispatch [:modal->open {:content [native-client-access-main/not-available-dialog
                                                    {:error-message error-message
                                                     :user-is-admin? is-admin?}]
-                                         :maxWidth "446px"}]]))]})))
+                                         :maxWidth "446px"}]]])
+
+            skip-configure?
+            ;; Non-review flow: open the modal and immediately request a
+            ;; persistent credential. The modal will render a loading state
+            ;; until the credential arrives, then switch to the established view.
+            [[:dispatch [:modal->open {:content [native-client-access-main/main response]
+                                       :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)
+                                       :maxWidth "1100px"}]]
+             [:dispatch [:native-client-access->request-access connection-name nil]]]
+
+            :else
+            ;; Review-required (or reopening with an existing session): proceed
+            ;; with the normal modal flow that shows configure-session-view.
+            [[:dispatch [:modal->open {:content [native-client-access-main/main response]
+                                       :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)
+                                       :maxWidth "1100px"}]]])})))
 
 ;; Handle agent status check failure
 (rf/reg-event-fx

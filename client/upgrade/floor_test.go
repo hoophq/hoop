@@ -66,6 +66,75 @@ func TestValidateInstallableVersion(t *testing.T) {
 	}
 }
 
+func TestValidateInstallableVersionWindowsFloor(t *testing.T) {
+	// Sanity: the Windows floor must be valid, patch-level semver.
+	if !strings.HasPrefix(MinInstallableVersionWindows, "v") {
+		t.Fatalf("MinInstallableVersionWindows must be semver-prefixed, got %q", MinInstallableVersionWindows)
+	}
+
+	cases := []struct {
+		in   string
+		goos string
+		want error // nil means must pass; otherwise must wrap this sentinel
+	}{
+		// Windows: the floor is MinInstallableVersionWindows (1.86.1).
+		{"1.86.1", "windows", nil},
+		{"1.86.2", "windows", nil},
+		{"1.87.0", "windows", nil},
+		{"2.0.0", "windows", nil},
+
+		// Windows, below the Windows floor: ErrBelowWindowsFloor — even
+		// for versions that would pass the general (Unix) floor.
+		{"1.86.0", "windows", ErrBelowWindowsFloor},
+		{"1.85.9", "windows", ErrBelowWindowsFloor},
+		{"1.74.0", "windows", ErrBelowWindowsFloor},
+		{"1.50.0", "windows", ErrBelowWindowsFloor},
+
+		// Non-Windows keeps the general floor unchanged.
+		{"1.74.0", "linux", nil},
+		{"1.74.0", "darwin", nil},
+		{"1.85.0", "linux", nil},
+		{"1.73.0", "linux", ErrBelowFloor},
+
+		// Invalid/unknown handling is OS-independent.
+		{"unknown", "windows", ErrUnknownGatewayVersion},
+		{"", "windows", ErrUnknownGatewayVersion},
+		{"banana", "windows", ErrInvalidVersion},
+		{"1.2.3.4", "windows", ErrInvalidVersion},
+	}
+	for _, tc := range cases {
+		err := validateInstallableVersion(tc.in, tc.goos)
+		switch {
+		case tc.want == nil:
+			if err != nil {
+				t.Errorf("validateInstallableVersion(%q, %q): want nil, got %v", tc.in, tc.goos, err)
+			}
+		default:
+			if err == nil {
+				t.Errorf("validateInstallableVersion(%q, %q): want error wrapping %v, got nil", tc.in, tc.goos, tc.want)
+				continue
+			}
+			if !errors.Is(err, tc.want) {
+				t.Errorf("validateInstallableVersion(%q, %q): want errors.Is(%v), got %v", tc.in, tc.goos, tc.want, err)
+			}
+		}
+	}
+}
+
+func TestValidateInstallableVersionWindowsFloorMessage(t *testing.T) {
+	err := validateInstallableVersion("1.80.0", "windows")
+	if !errors.Is(err, ErrBelowWindowsFloor) {
+		t.Fatalf("expected ErrBelowWindowsFloor, got %v", err)
+	}
+	winFloor := MinInstallableVersionWindows[1:] // "1.86.1"
+	if !strings.Contains(err.Error(), winFloor) {
+		t.Errorf("message should mention the Windows floor (%s): %v", winFloor, err)
+	}
+	if !strings.Contains(err.Error(), "1.80.0") {
+		t.Errorf("message should mention the rejected version 1.80.0: %v", err)
+	}
+}
+
 func TestValidateInstallableVersionBelowFloorMessage(t *testing.T) {
 	err := ValidateInstallableVersion("1.50.0")
 	if err == nil {

@@ -232,6 +232,7 @@ func RunExec(c *gin.Context) {
 		Status:               string(openapi.SessionStatusOpen),
 		SessionBatchID:       req.SessionBatchID,
 		ExitCode:             nil,
+		Origin:               proto.SessionOriginRunbooks,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}

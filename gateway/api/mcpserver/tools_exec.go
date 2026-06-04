@@ -102,6 +102,7 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 		IdentityType:         "user",
 		SessionBatchID:       nil,
 		CorrelationID:        nil,
+		Origin:               pb.SessionOriginMCP,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
@@ -180,13 +181,13 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 		if aiAccessRule == nil {
 			return nil, nil, fmt.Errorf("ai analyzer requested review without resolving access request rule")
 		}
-		review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, sessionID, conn.Name,
+		review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, sessionID, conn,
 			sessionapi.AIReviewRequester{
-				UserID:       sc.UserID,
-				UserEmail:    sc.UserEmail,
-				UserName:     sc.UserName,
-				UserSlackID:  sc.SlackID,
-				ConnectionID: conn.ID,
+				UserID:      sc.UserID,
+				UserEmail:   sc.UserEmail,
+				UserName:    sc.UserName,
+				UserSlackID: sc.SlackID,
+				UserGroups:  sc.UserGroups,
 			},
 			aiAccessRule, args.Input, args.EnvVars, args.Args)
 		if err != nil {

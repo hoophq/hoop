@@ -17,6 +17,10 @@
   z-index: 202;
 }
 
+.rt-TooltipContent {
+  z-index: 202;
+}
+
 .radix-themes {
   --cursor-button: pointer;
   --cursor-checkbox: default;

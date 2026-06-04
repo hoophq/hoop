@@ -30,7 +30,7 @@
         {:on-submit (fn [e]
                       (.preventDefault e)
                       (let [connection  (merge current-connection-config
-                                               {:config (map str/trim (str/split @slack-channels-value #","))})
+                                               {:config (remove empty? (map str/trim (str/split @slack-channels-value #",")))})
                             dissoced-connections (filter #(not= (:id %)
                                                                 (:id connection))
                                                          (:connections plugin))
@@ -46,7 +46,6 @@
         [forms/input {:value @slack-channels-value
                       :id "slack-channels"
                       :name "slack-channels"
-                      :required true
                       :on-change #(reset! slack-channels-value (-> % .-target .-value))
                       :placeholder "C039AQNN5DF, C031T9LDGAH"}]
         [:footer

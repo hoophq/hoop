@@ -229,16 +229,16 @@
          script-size (:script_size session)
          has-large-event? (and event-size (> event-size size-threshold))
          has-large-input? (and script-size (> script-size size-threshold))
-         live-machine? (and (= "machine" (:identity_type session))
+         live-connect? (and (= "connect" (:verb session))
                             (= "open" (:status session)))
          event-stream (cond
                         (= "exec" (:verb session))
                         "event_stream=base64"
 
-                        ;; Live machine session: keep raw wire frames so the
+                        ;; Live connect session: keep raw wire frames so the
                         ;; client-side decoder used by session-live-tail can
                         ;; render historical and streamed events uniformly.
-                        live-machine?
+                        live-connect?
                         ""
 
                         (= "postgres" (:connection_subtype session))
@@ -591,11 +591,11 @@
    [db [_]]
    (assoc-in db [:audit->session-logs] {:status :error :data nil})))
 
-;; ─── Server-Sent Events for live machine sessions ──────────────────────────
+;; ─── Server-Sent Events for live connect sessions ──────────────────────────
 ;;
-;; Machine sessions (identity_type=machine) with status=open stream their
-;; audit events in real time via GET /sessions/<id>/stream (SSE). We open the
-;; stream when the session-details modal is rendered for a live machine
+;; Interactive connect-verb sessions with status=open stream their audit
+;; events in real time via GET /sessions/<id>/stream (SSE). We open the
+;; stream when the session-details modal is rendered for a live connect
 ;; session and close it on unmount / when the backend signals session_end.
 
 (rf/reg-fx

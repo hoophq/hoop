@@ -2069,11 +2069,10 @@ type ConnectionFederationConfig struct {
 	// IdentityTargetTemplate is the principal template the source attribute
 	// substitutes into (defaults to "{user.email}").
 	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
-	// FallbackPolicy controls behavior when resolution fails.
-	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
-	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
-	// the impersonation target on the fallback path.
-	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// FallbackPolicy controls behavior when resolution fails. "deny" aborts
+	// the session; "static" skips federation and lets the session run on the
+	// connection's existing static credentials.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,static" example:"deny"`
 	// TokenTTLSeconds caps the lifetime of generated credentials (default
 	// 3600, max 43200). Built-in providers may clamp lower based on cloud
 	// API limits.
@@ -2324,8 +2323,10 @@ type ConnectionCredentialsResponse struct {
 	HasReview bool `json:"has_review" example:"false"`
 	// The review ID if review is required
 	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
-	// When the database access connection expires
-	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the database access connection expires. Null when the credential
+	// has no expiration (persistent native-client credentials issued without
+	// access_duration_seconds).
+	ExpireAt *time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 }
