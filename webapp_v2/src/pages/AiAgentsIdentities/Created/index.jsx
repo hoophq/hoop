@@ -14,6 +14,7 @@ function buildMcpSnippet(apiUrl, key) {
   const config = {
     mcpServers: {
       hoop: {
+        type: 'http',
         url: `${apiUrl}/api/mcp`,
         headers: {
           Authorization: `Bearer ${key}`,
