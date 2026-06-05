@@ -28,6 +28,8 @@ import RulepackDetail from '@/pages/Rulepacks/Detail'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
+import DataMasking from '@/pages/Features/DataMasking'
+import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 
 /**
  * Routing strategy:
@@ -311,6 +313,44 @@ function Router() {
             <Layout>
               <PageLayout>
                 <EventRoutingDetail />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Live Data Masking — migrated from ClojureScript */}
+      <Route
+        path="/features/data-masking"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <DataMasking />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/data-masking/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/data-masking/edit/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <DataMaskingForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

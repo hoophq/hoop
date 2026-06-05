@@ -56,7 +56,7 @@ export const DISCOVER_ITEMS = [
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true },
   { label: 'Jira Templates', path: '/jira-templates', icon: Layers, adminOnly: true },
   { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true },
-  { label: 'AI Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
+  { label: 'Live Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
   { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true },
   {
     label: 'Rulepacks',

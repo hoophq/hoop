@@ -4,7 +4,6 @@ import Alert from '@/components/Alert'
 import { useUserStore } from '@/stores/useUserStore'
 
 const SALES_URL = 'https://hoop.dev/meet'
-const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 /**
  * Free-license callout shown on gated feature pages.
@@ -13,23 +12,20 @@ const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
  * - message:  Body copy describing the limit for this feature.
  * - variant:  'info' (default — blue exploration callout) or 'limit' (red wall).
  *
- * Mirrors `webapp.shared-ui.free-license-banner` from the legacy CLJS app:
- * if analytics tracking is enabled, opens Intercom; otherwise opens the sales
- * page in a new tab.
+ * Mirrors `webapp.shared-ui.free-license-banner` from the legacy CLJS app. The
+ * "Contact Sales" action delegates to the store's `requestDemo`, which opens
+ * Intercom (booting it on demand) when analytics tracking is enabled, otherwise
+ * falls back to the sales page.
  */
 export default function FreeLicenseCallout({ message, variant = 'info' }) {
-  const analyticsTracking = useUserStore((state) => state.analyticsTracking)
+  const requestDemo = useUserStore((state) => state.requestDemo)
   const limit = variant === 'limit'
   const color = limit ? 'red' : 'blue'
   const Icon = limit ? AlertCircle : Info
 
   const handleClick = (event) => {
     event.preventDefault()
-    if (analyticsTracking && window.Intercom) {
-      window.Intercom('showNewMessage', INTERCOM_MESSAGE)
-      return
-    }
-    window.open(SALES_URL, '_blank', 'noopener,noreferrer')
+    requestDemo()
   }
 
   return (

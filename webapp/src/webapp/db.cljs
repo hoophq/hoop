@@ -4,9 +4,6 @@
 
 (def default-db
   {:agents {:status :loading, :data []}
-   :ai-data-masking {:list {:status :idle :data []}
-                     :active-rule {:status :idle :data nil}
-                     :submitting? false}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}

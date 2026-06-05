@@ -29,7 +29,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request' },
   { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails' },
-  { id: 'data-masking', label: 'AI Data Masking', description: 'Configure AI data masking', icon: VenetianMask, path: '/features/data-masking' },
+  { id: 'data-masking', label: 'Live Data Masking', description: 'Configure live data masking', icon: VenetianMask, path: '/features/data-masking' },
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control' },
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents' },

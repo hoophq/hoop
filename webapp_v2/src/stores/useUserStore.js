@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
+const SALES_URL = 'https://hoop.dev/meet'
+const UPGRADE_INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 function loadIntercomScript() {
   if (document.getElementById('intercom-script')) return
@@ -25,6 +27,7 @@ export const useUserStore = create((set, get) => ({
   analyticsMode: 'anonymous',
   disableClipboard: false,
   gatewayVersion: null,
+  redactProvider: null,
   featureFlags: {},
   loading: false,
 
@@ -36,14 +39,15 @@ export const useUserStore = create((set, get) => ({
     const analyticsMode = serverInfo?.analytics_mode || 'anonymous'
     const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
     const featureFlags = serverInfo?.feature_flags || {}
-    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, featureFlags })
+    const redactProvider = serverInfo?.redact_provider || null
+    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, redactProvider, featureFlags })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, analyticsMode: 'anonymous', disableClipboard: false, gatewayVersion: null, featureFlags: {} })
+    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, analyticsMode: 'anonymous', disableClipboard: false, gatewayVersion: null, redactProvider: null, featureFlags: {} })
   },
 
   initIntercom: (user) => {
@@ -76,5 +80,19 @@ export const useUserStore = create((set, get) => ({
     analyticsIdentify(user, analyticsMode).catch((err) => {
       console.warn('[analytics] identify failed:', err)
     })
+  },
+
+  // Open the Intercom messenger (booting it on demand — a within-SPA navigation
+  // may have skipped initIntercom), or fall back to the sales page.
+  requestDemo: () => {
+    const { analyticsTracking, user } = get()
+    if (analyticsTracking) {
+      if (!window.Intercom) get().initIntercom(user)
+      if (window.Intercom) {
+        window.Intercom('showNewMessage', UPGRADE_INTERCOM_MESSAGE)
+        return
+      }
+    }
+    window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   },
 }))

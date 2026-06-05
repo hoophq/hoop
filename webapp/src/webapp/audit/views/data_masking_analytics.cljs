@@ -37,7 +37,7 @@
      :last-error (or (:last_error info) "")}))
 
 (defn- rdp-analysis-status-badge
-  "Compact RDP PII analysis status badge for the AI Data Masking title row.
+  "Compact RDP PII analysis status badge for the Live Data Masking title row.
    Returns nil when the status is empty (analysis disabled / non-RDP session).
    When :on-retry is provided and the analysis has failed a Retry button is
    rendered so the user can requeue the job without DB access."
@@ -81,7 +81,7 @@
                   :color "var(--violet-9)"}]]
    [:> Callout.Text {:class "text-gray-12"}
     [:> Text {:as "p" :size "2" :weight "bold" :class "mb-2"}
-     "Unlock AI-Powered Data Masking"]
+     "Unlock Live Data Masking"]
     [:> Text {:as "p" :size "2" :class "mb-2"}
      "Redact sensitive fields on the fly to reduce exposure risk and keep your data pipelines compliant."]
     [:> Flex {:direction "column" :gap "2"}
@@ -91,12 +91,12 @@
                            (.preventDefault e)
                            (rf/dispatch [:close-modal])
                            (rf/dispatch [:navigate :ai-data-masking]))}
-      "Configure it on AI Data Masking"
+      "Configure it on Live Data Masking"
       [:> ArrowUpRight {:size 16}]]
      [:> Link {:href (get-in config/docs-url [:features :ai-datamasking])
                :target "_blank"
                :class "text-primary-10 flex items-center gap-1 w-fit no-underline font-medium"}
-      "Go to AI Data Masking Docs"
+      "Go to Live Data Masking Docs"
       [:> ArrowUpRight {:size 16}]]]]])
 
 (defn- build-analytics-report [session-report session]
@@ -134,7 +134,7 @@
                                      (str (count redacted-types) " (" first-type " + " count-less-1 " more)")
                                      (str (count redacted-types) " (" first-type ")")))
                                  "0")
-        display-title (or title "AI Data Masking")]
+        display-title (or title "Live Data Masking")]
     [:> (.-Root Accordion) {:type "single"
                             :collapsible true
                             :class "w-full p-3 bg-[--violet-2] rounded-md"}
@@ -192,7 +192,7 @@
 (defn- rdp-analysis-tracker
   "Reagent component that fetches the RDP PII analysis status for a session and
    polls every rdp-analysis-poll-interval-ms while the job is still running.
-   Renders the compact rdp-analysis-status-badge inside the AI Data Masking
+   Renders the compact rdp-analysis-status-badge inside the Live Data Masking
    title row so the user can see the status without opening the player. The
    poll loop is stopped automatically on a terminal status and on unmount.
    When the analysis is in a permanently-failed state, a Retry button is
@@ -203,7 +203,7 @@
         poll-timer (r/atom nil)
         ;; Tracks the previous polled status so we can fire a one-shot side
         ;; effect (refresh the parent's session report) when the analysis
-        ;; transitions into a terminal state. Without this the AI Data Masking
+        ;; transitions into a terminal state. Without this the Live Data Masking
         ;; "Data Categories" / "Volume of Data" numbers stay stale until the
         ;; user closes and reopens the session details modal.
         prev-status (r/atom "")
@@ -303,7 +303,7 @@
       free-license?
       [data-masking-analytics
        analytics-report
-       {:title "Enable AI-Powered Data Masking"
+       {:title "Enable Live Data Masking"
         :hide-summary? true
         :subtitle [:> Text {:size "2" :class "font-normal"}
                    "We detected sensitive data that could protected with automated data masking. "
@@ -313,7 +313,7 @@
                                          (.preventDefault e)
                                          (rf/dispatch [:close-modal])
                                          (rf/dispatch [:navigate :ai-data-masking]))}
-                    "Configure it on AI Data Masking"
+                    "Configure it on Live Data Masking"
                     [:> ArrowUpRight {:size 14}]]]}]
 
       :else
