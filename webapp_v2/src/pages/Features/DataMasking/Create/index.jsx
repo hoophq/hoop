@@ -253,7 +253,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
         title="Delete Live Data Masking rule?"
       >
         <Stack gap="lg">
-          <Text size="sm" c="dimmed">
+          <Text size="sm">
             This action will permanently delete this Live Data Masking rule and cannot
             be undone. Are you sure you want to proceed?
           </Text>
