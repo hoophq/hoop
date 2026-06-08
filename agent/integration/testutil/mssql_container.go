@@ -163,16 +163,37 @@ func (c *MSSQLContainer) createDatabase(t T) {
 	}
 }
 
-// ConnectionCount opens a sidecar admin connection and returns the number
-// of sessions connected to the test database, excluding the sidecar's own
-// session. Used by concurrency tests to assert how many upstream
-// connections the agent established.
+// countSessionsOn returns the number of sessions on the test database
+// visible to the given admin connection, excluding that connection's own
+// session (@@SPID). Filtering on DB_ID keeps system sessions for other
+// databases out of the count.
+//
+// The admin connection must be a single, pinned *sql.DB (MaxOpenConns=1):
+// SQL Server does not reap a session the instant its TCP connection closes,
+// so a fresh admin connection per poll would race its own
+// just-disconnected predecessor and intermittently count it. Reusing one
+// pinned connection keeps @@SPID stable and self-exclusion exact.
+func (c *MSSQLContainer) countSessionsOn(ctx context.Context, db *sql.DB) (int, error) {
+	var count int
+	row := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM sys.dm_exec_sessions
+		WHERE database_id = DB_ID(@p1) AND session_id <> @@SPID`, c.Database)
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// ConnectionCount opens a single pinned sidecar admin connection and returns
+// the number of sessions connected to the test database, excluding the
+// sidecar's own session. Used by concurrency tests to assert how many
+// upstream connections the agent established.
 func (c *MSSQLContainer) ConnectionCount(t T) int {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	db, err := sql.Open("sqlserver", c.adminConnString(c.Database))
+	db, err := c.openPinnedAdmin()
 	if err != nil {
 		t.Fatalf("mssqlstat: failed to open admin connection: %v", err)
 	}
@@ -181,29 +202,53 @@ func (c *MSSQLContainer) ConnectionCount(t T) int {
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatalf("mssqlstat: admin ping failed: %v", err)
 	}
-
-	// @@SPID is this admin session's own id; exclude it so the count
-	// reflects only agent-driven sessions. Filtering on DB_ID keeps
-	// system sessions for other databases out of the count.
-	var count int
-	row := db.QueryRowContext(ctx, `
-		SELECT count(*) FROM sys.dm_exec_sessions
-		WHERE database_id = DB_ID(@p1) AND session_id <> @@SPID`, c.Database)
-	if err := row.Scan(&count); err != nil {
+	count, err := c.countSessionsOn(ctx, db)
+	if err != nil {
 		t.Fatalf("mssqlstat: failed to count sessions: %v", err)
 	}
 	return count
 }
 
-// WaitForConnectionCount polls ConnectionCount until it equals want or the
-// timeout elapses. SQL Server reaps sessions on close but not instantly,
-// so teardown assertions need a poll rather than a single snapshot.
+// openPinnedAdmin returns an admin *sql.DB pinned to exactly one underlying
+// connection so its @@SPID stays stable across queries.
+func (c *MSSQLContainer) openPinnedAdmin() (*sql.DB, error) {
+	db, err := sql.Open("sqlserver", c.adminConnString(c.Database))
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	return db, nil
+}
+
+// WaitForConnectionCount polls until the session count on the test database
+// equals want or the timeout elapses. It holds a single pinned admin
+// connection for the entire poll: opening a new admin connection per
+// iteration would race SQL Server's lazy session reaping and count the
+// previous iteration's just-closed admin session, so the poll could never
+// observe 0. SQL Server also reaps the agent's session lazily after its TCP
+// connection drops mid-query, which is why a poll (not a single snapshot) is
+// needed.
 func (c *MSSQLContainer) WaitForConnectionCount(t T, want int, timeout time.Duration) {
 	t.Helper()
+
+	db, err := c.openPinnedAdmin()
+	if err != nil {
+		t.Fatalf("mssqlstat: failed to open admin connection: %v", err)
+	}
+	defer db.Close()
+
 	deadline := time.Now().Add(timeout)
 	var last int
 	for time.Now().Before(deadline) {
-		last = c.ConnectionCount(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		count, qErr := c.countSessionsOn(ctx, db)
+		cancel()
+		if qErr != nil {
+			t.Fatalf("mssqlstat: failed to count sessions: %v", qErr)
+		}
+		last = count
 		if last == want {
 			return
 		}
