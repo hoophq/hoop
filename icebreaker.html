@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0c14" />
+  <title>Hoop Icebreaker — Explain what Hoop does for…</title>
+  <style>
+    :root {
+      --bg: #0c0c14;
+      --bg-soft: #15151f;
+      --card: #1b1b27;
+      --accent: #7c5cff;
+      --accent-2: #00e0c6;
+      --text: #f4f4fa;
+      --muted: #9a9ab0;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
+        radial-gradient(900px 500px at 100% 100%, rgba(0, 224, 198, 0.10), transparent 55%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(20px, 5vw, 48px);
+      padding-top: max(env(safe-area-inset-top), 20px);
+      padding-bottom: max(env(safe-area-inset-bottom), 20px);
+      text-align: center;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 560px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: clamp(20px, 4vh, 36px);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .brand .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--accent-2);
+      box-shadow: 0 0 12px var(--accent-2);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(22px, 6vw, 30px);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    h1 .grad {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .card {
+      width: 100%;
+      background: linear-gradient(180deg, var(--card), var(--bg-soft));
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: clamp(28px, 7vw, 44px) clamp(20px, 6vw, 36px);
+      min-height: clamp(160px, 26vh, 220px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card .label {
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .topic {
+      font-size: clamp(26px, 8vw, 40px);
+      font-weight: 800;
+      line-height: 1.2;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    .topic.swap { opacity: 0; transform: translateY(8px); }
+
+    .topic.placeholder {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: clamp(18px, 5vw, 24px);
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: clamp(17px, 4.5vw, 19px);
+      font-weight: 700;
+      color: #0c0c14;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      padding: 18px 30px;
+      border-radius: 999px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 14px 34px rgba(124, 92, 255, 0.35);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+      touch-action: manipulation;
+    }
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: scale(0.97); box-shadow: 0 8px 22px rgba(124, 92, 255, 0.3); }
+
+    .meta {
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+    .hint {
+      font-size: 13px;
+      color: var(--muted);
+      max-width: 440px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="brand"><span class="dot"></span> Hoop · Team Icebreaker</div>
+
+    <h1>Explain what Hoop does for:<br /><span class="grad">…tap to get your audience</span></h1>
+
+    <section class="card" aria-live="polite">
+      <span class="label">Your audience</span>
+      <div id="topic" class="topic placeholder">Tap the button to begin</div>
+    </section>
+
+    <button id="generate" type="button">🎲 Give me an audience</button>
+
+    <div id="meta" class="meta"></div>
+
+    <p class="hint">You have <strong>5–10 minutes</strong>. Come up with a creative 1–2 line
+      explanation of what Hoop does, tailored to your audience. Have fun with it. 🚀</p>
+  </main>
+
+  <script>
+    const AUDIENCES = [
+      "8-year-old children",
+      "your grandparents",
+      "superheroes saving the world",
+      "talking animals in a forest",
+      "medieval knights",
+      "pirates searching for treasure",
+      "aliens who just landed on Earth",
+      "a toddler who only says “why?”",
+      "cats (who are deeply unimpressed)",
+      "a Shakespearean theatre troupe",
+      "cavemen who just discovered fire",
+      "reality TV contestants",
+      "wizards at a magic school",
+      "ancient Roman senators",
+      "astronauts on the space station",
+      "a jury in a courtroom",
+      "conspiracy theorists",
+      "dinosaurs (before the meteor)",
+      "an over-the-top fitness instructor",
+      "your dog",
+      "a film-noir detective",
+      "robots learning to feel emotions",
+      "vikings raiding a village",
+      "a kindergarten show-and-tell",
+      "time travelers from the year 3000",
+      "a cult of houseplant enthusiasts",
+      "mermaids under the sea",
+      "a stand-up comedy audience",
+      "ghosts haunting a mansion",
+      "sentient kitchen appliances",
+      "a samurai dojo",
+      "influencers on a livestream",
+      "a wise old monk on a mountaintop",
+      "bees in a hive",
+      "a jazz band mid-improvisation",
+      "Greek gods on Mount Olympus",
+      "someone on a very nervous first date",
+      "gnomes living in a garden",
+      "a pizza delivery guy in a hurry",
+      "sheep counting themselves to sleep",
+      "a medieval blacksmith",
+      "penguins in Antarctica",
+      "zombies in the apocalypse",
+      "a royal court with a king and queen",
+      "surfers chasing the perfect wave",
+      "a library full of whispering books",
+      "cowboys around a campfire",
+      "a spaceship crew facing a black hole",
+      "office plants gossiping after hours",
+      "your future self, 50 years from now"
+    ];
+
+    const topicEl = document.getElementById("topic");
+    const metaEl = document.getElementById("meta");
+    const btn = document.getElementById("generate");
+
+    // Fisher–Yates shuffle for a fresh deck.
+    function shuffle(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    // Draw without repeats until the deck is empty, then reshuffle.
+    // Guarantees distinct audiences for a full round (one per teammate),
+    // while never breaking if you keep tapping past the group size.
+    let deck = shuffle(AUDIENCES);
+    let drawn = 0;
+
+    function nextAudience() {
+      if (deck.length === 0) {
+        deck = shuffle(AUDIENCES);
+      }
+      drawn++;
+      return deck.pop();
+    }
+
+    function reveal() {
+      const audience = nextAudience();
+      topicEl.classList.add("swap");
+      setTimeout(() => {
+        topicEl.classList.remove("placeholder");
+        topicEl.textContent = audience;
+        topicEl.classList.remove("swap");
+        const total = AUDIENCES.length;
+        const position = ((drawn - 1) % total) + 1;
+        metaEl.textContent = `Audience ${position} of ${total} this round`;
+      }, 180);
+
+      btn.textContent = "🎲 Next audience";
+    }
+
+    btn.addEventListener("click", reveal);
+  </script>
+</body>
+</html>
