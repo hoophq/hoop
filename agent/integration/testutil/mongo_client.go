@@ -235,14 +235,24 @@ func readMongoMessage(r io.Reader) ([]byte, error) {
 // agent emits for this connection back into the driver's net.Conn. The
 // proxy already emits whole messages, so raw streaming is fine here — the
 // driver reassembles by length prefix.
+//
+// It also subscribes to session-close notifications from the demux. When the
+// agent tears down this session, every bridged connection's bridgeConn is
+// closed so the driver receives an EOF and any blocked operation returns.
 func (p *PipedMongoClient) inboundPump(c *mongoBridgeConn) {
 	if p.demux == nil {
 		return
 	}
 	ch := p.demux.Channel(c.connID)
+	closeCh := p.demux.SessionCloseChan(p.sessionID)
 	for {
 		select {
 		case <-p.ctx.Done():
+			return
+		case <-closeCh:
+			// Agent tore down the session. Close the bridge so the driver
+			// receives an EOF on this connection.
+			_ = c.bridgeConn.Close()
 			return
 		case pkt, ok := <-ch:
 			if !ok {

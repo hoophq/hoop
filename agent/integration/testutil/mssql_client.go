@@ -243,14 +243,25 @@ const minMSSQLPacketSize = 512
 // inboundPump copies the payloads of MSSQLConnectionWrite packets the agent
 // emits for this connection (PRELOGIN reply, login ack, token streams)
 // back into the driver's net.Conn.
+//
+// It also subscribes to session-close notifications from the demux. When the
+// agent tears down this session, the demux signals the close channel and the
+// pump closes bridgeConn, giving the driver an EOF so any blocked query
+// returns rather than hanging until the test timeout.
 func (p *PipedMSSQLClient) inboundPump(ctx context.Context) {
 	if p.demux == nil {
 		return
 	}
 	ch := p.demux.Channel(p.connID)
+	closeCh := p.demux.SessionCloseChan(p.sessionID)
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-closeCh:
+			// Agent tore down the session. Close the bridge so the driver
+			// receives an EOF and any blocked query returns.
+			_ = p.bridgeConn.Close()
 			return
 		case pkt, ok := <-ch:
 			if !ok {
