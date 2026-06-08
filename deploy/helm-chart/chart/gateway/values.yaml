@@ -118,6 +118,15 @@ podAnnotations: {}
 ##
 deploymentAnnotations: {}
 
+# -- Pod-level security context for the gateway Pod
+# (e.g. fsGroup, runAsNonRoot, runAsUser, seccompProfile)
+podSecurityContext: {}
+
+# -- Container-level security context for the gateway and default-agent
+# containers (e.g. allowPrivilegeEscalation, capabilities,
+# readOnlyRootFilesystem, runAsNonRoot, seccompProfile)
+securityContext: {}
+
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:
   POSTGRES_DB_URI: ''
