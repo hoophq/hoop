@@ -126,12 +126,16 @@ type Api struct {
 // @scope.profile
 // @scope.email
 // @scope.openid
-func (a *Api) StartAPI() {
-	if os.Getenv("PORT") == "" {
-		os.Setenv("PORT", "8009")
-	}
+// BuildEngine constructs the fully-wired gin engine the gateway serves:
+// security/CORS middleware, the static UI handler, the well-known/SSM/RDP
+// groups, the /api route group with its Sentry middleware and the complete
+// API route tree, and the registered request validators.
+//
+// It performs no network I/O, so StartAPI and the integration/smoke tests
+// share the exact same handler — tests exercise the production middleware
+// chain and validators rather than a stripped-down router.
+func (a *Api) BuildEngine() *gin.Engine {
 	zaplogger := log.NewDefaultLogger(nil)
-	defer zaplogger.Sync()
 	route := gin.New()
 	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
 	if os.Getenv("GIN_MODE") == "debug" {
@@ -173,6 +177,21 @@ func (a *Api) StartAPI() {
 
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
+
+	return route
+}
+
+func (a *Api) StartAPI() {
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8009")
+	}
+	route := a.BuildEngine()
+	// BuildEngine always assigns a.logger; guard the defer so a future
+	// refactor that changes that contract fails loudly elsewhere rather than
+	// nil-panicking here during shutdown.
+	if a.logger != nil {
+		defer a.logger.Sync()
+	}
 
 	if a.TLSConfig != nil {
 		server := http.Server{
