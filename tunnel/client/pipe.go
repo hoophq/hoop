@@ -170,7 +170,17 @@ func runPipe(ctx context.Context, transport pb.ClientTransport, local io.ReadWri
 	log.With("connection", opts.ConnectionName, "session", sessionID, "type", connType).
 		Debugf("tunnel pipe established")
 
-	return pumpBytes(ctx, transport, local, sessionID)
+	// Protocol-aware piping: for Postgres we speak the PG wire protocol to
+	// the agent (pbagent.PGConnectionWrite) so the agent injects the real
+	// upstream credentials via libhoop. The user may authenticate with any
+	// user/password (e.g. hoop/hoop) — it is discarded by the agent. All
+	// other tunnelable types still use the transparent raw-TCP pump.
+	switch pb.ConnectionType(connType) {
+	case pb.ConnectionTypePostgres:
+		return pumpPostgres(ctx, transport, local, sessionID)
+	default:
+		return pumpBytes(ctx, transport, local, sessionID)
+	}
 }
 
 // awaitSessionOpen reads packets from the transport until either a

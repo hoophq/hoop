@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
-	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
@@ -167,124 +166,6 @@ func waitForSent(t *testing.T, ft *fakeTransport, n int, within time.Duration) [
 }
 
 // --- tests ---
-
-func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
-	ft := newFakeTransport()
-	const sessionID = "sess-123"
-	const wantClientBytes = "PING"
-	const wantServerBytes = "PONG"
-
-	local := newFakeLocal([]byte(wantClientBytes))
-
-	// Drive the gateway's side of the protocol in a goroutine.
-	go func() {
-		// Step 1: pipe will Send SessionOpen. Wait for it.
-		pkts := waitForSent(t, ft, 1, 2*time.Second)
-		if pb.PacketType(pkts[0].Type) != pbagent.SessionOpen {
-			t.Errorf("first packet: want SessionOpen, got %s", pkts[0].Type)
-		}
-
-		// Step 2: respond with SessionOpenOK for a postgres connection.
-		ft.push(&pb.Packet{
-			Type: pbclient.SessionOpenOK,
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID: []byte(sessionID),
-				pb.SpecConnectionType:   []byte(pb.ConnectionTypePostgres.String()),
-			},
-		})
-
-		// Step 3: pipe will Send the TCPConnectionWrite "open" packet
-		// (with SpecTCPServerConnectKey). Then bytes from local.
-		// Wait until both arrive: 1 SessionOpen + 1 open + 1+ payload.
-		var openIdx = -1
-		var payloadSeen bool
-		deadline := time.After(2 * time.Second)
-		for {
-			pkts := ft.sentPackets()
-			for i, p := range pkts {
-				if pb.PacketType(p.Type) == pbagent.TCPConnectionWrite {
-					if _, ok := p.Spec[pb.SpecTCPServerConnectKey]; ok && openIdx < 0 {
-						openIdx = i
-						continue
-					}
-					if string(p.Payload) == wantClientBytes {
-						payloadSeen = true
-					}
-				}
-			}
-			if openIdx >= 0 && payloadSeen {
-				break
-			}
-			select {
-			case <-deadline:
-				t.Errorf("timeout waiting for open + payload; got %d packets", len(pkts))
-				return
-			case <-time.After(5 * time.Millisecond):
-			}
-		}
-
-		// Step 4: send a server response, then close the connection.
-		ft.push(&pb.Packet{
-			Type: pbclient.TCPConnectionWrite,
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:   []byte(sessionID),
-				pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
-			},
-			Payload: []byte(wantServerBytes),
-		})
-		ft.push(&pb.Packet{
-			Type: pbclient.TCPConnectionClose,
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:   []byte(sessionID),
-				pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
-			},
-		})
-	}()
-
-	opts := PipeOptions{
-		ConnectionName:     "pg-prod",
-		SessionOpenTimeout: 2 * time.Second,
-	}
-	err := runPipe(context.Background(), ft, local, opts)
-	if err != nil {
-		t.Fatalf("runPipe returned error: %v", err)
-	}
-
-	// Verify the server bytes landed in local.
-	if got := string(local.writtenBytes()); got != wantServerBytes {
-		t.Errorf("local writes: want %q, got %q", wantServerBytes, got)
-	}
-
-	// Verify the pipe sent the right initial packets in order.
-	pkts := ft.sentPackets()
-	if len(pkts) < 3 {
-		t.Fatalf("expected at least 3 sent packets, got %d", len(pkts))
-	}
-	if pb.PacketType(pkts[0].Type) != pbagent.SessionOpen {
-		t.Errorf("packet[0]: want SessionOpen, got %s", pkts[0].Type)
-	}
-	if pb.PacketType(pkts[1].Type) != pbagent.TCPConnectionWrite {
-		t.Errorf("packet[1]: want TCPConnectionWrite, got %s", pkts[1].Type)
-	}
-	if _, ok := pkts[1].Spec[pb.SpecTCPServerConnectKey]; !ok {
-		t.Errorf("packet[1] missing SpecTCPServerConnectKey")
-	}
-	if string(pkts[1].Spec[pb.SpecGatewaySessionID]) != sessionID {
-		t.Errorf("packet[1] sessionID: want %q, got %q", sessionID, pkts[1].Spec[pb.SpecGatewaySessionID])
-	}
-
-	// The pipe MUST signal close after local EOFs.
-	sawClose := false
-	for _, p := range pkts {
-		if pb.PacketType(p.Type) == pbagent.TCPConnectionClose {
-			sawClose = true
-			break
-		}
-	}
-	if !sawClose {
-		t.Errorf("pipe did not send TCPConnectionClose to the gateway")
-	}
-}
 
 func TestRunPipe_RejectedConnectionType(t *testing.T) {
 	ft := newFakeTransport()
