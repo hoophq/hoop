@@ -285,8 +285,14 @@ func getCanvasDimensions(session *models.Session) (int, int) {
 	return w, h
 }
 
-// compositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer at (dstX, dstY).
-func compositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) {
+// CompositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer at (dstX, dstY).
+//
+// Contract: framebuffer must be RGBA (4 bytes/pixel, top-down) with
+// len >= fbWidth*fbHeight*4, and patch must be RGBA with len >= patchW*patchH*4
+// (as produced by rle.ToRGBA / rle.DecompressToRGBA). Out-of-bounds regions are
+// clipped. The function does no locking: callers sharing the framebuffer across
+// goroutines must synchronize externally.
+func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) {
 	for row := 0; row < patchH; row++ {
 		fbY := dstY + row
 		if fbY < 0 || fbY >= fbHeight {
@@ -311,10 +317,15 @@ func compositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, pa
 	}
 }
 
-// sampleFramebuffer extracts every 64th scanline from the framebuffer for fast hashing.
+// SampleFramebuffer extracts every 64th scanline from the framebuffer for fast hashing.
 // This captures enough visual information to detect meaningful screen changes while
 // avoiding the cost of hashing the entire framebuffer (which can be 8MB+ for 2048x1083).
-func sampleFramebuffer(fb []byte, width, height int) []byte {
+//
+// Contract: fb must be RGBA (4 bytes/pixel, top-down) with len >= width*height*4.
+// The returned slice aliases freshly allocated memory and is safe to retain.
+// The function does no locking: callers sharing fb across goroutines must
+// synchronize externally.
+func SampleFramebuffer(fb []byte, width, height int) []byte {
 	stride := width * 4
 	var sample []byte
 	for y := 0; y < height; y += 64 {
@@ -328,9 +339,27 @@ func sampleFramebuffer(fb []byte, width, height int) []byte {
 	return sample
 }
 
-// analyzeSnapshot runs OCR + Presidio on the full framebuffer and returns detections.
+// SnapshotResult is the outcome of analyzing a single framebuffer snapshot,
+// including per-stage timings so callers (job worker, realtime analyzer,
+// rdpbench) can report where the time is spent.
+type SnapshotResult struct {
+	Detections []models.RDPEntityDetection
+	Counts     map[string]int64
+
+	// Stage timings and OCR stats.
+	OCRDuration      time.Duration
+	PresidioDuration time.Duration
+	OCRWords         int
+	OCRTextLen       int
+}
+
+// AnalyzeFramebuffer runs OCR + Presidio on the full framebuffer and returns detections.
 // The params control score threshold and entity denylist filtering.
-func analyzeSnapshot(
+//
+// This is the single analysis entrypoint shared by the async job worker, the
+// realtime analyzer, and the rdpbench benchmarking tool — keep it free of any
+// job/session lifecycle concerns.
+func AnalyzeFramebuffer(
 	ctx context.Context,
 	framebuffer []byte,
 	fbWidth, fbHeight int,
@@ -339,18 +368,26 @@ func analyzeSnapshot(
 	timestamp float64,
 	presidio *PresidioClient,
 	params AnalysisParams,
-) ([]models.RDPEntityDetection, map[string]int64, error) {
+) (*SnapshotResult, error) {
+	res := &SnapshotResult{}
+
+	ocrStart := time.Now()
 	ocrResult, err := ocr.ExtractWords(ctx, framebuffer, fbWidth, fbHeight)
+	res.OCRDuration = time.Since(ocrStart)
 	if err != nil {
-		return nil, nil, fmt.Errorf("OCR failed: %w", err)
+		return res, fmt.Errorf("OCR failed: %w", err)
 	}
+	res.OCRWords = len(ocrResult.Words)
+	res.OCRTextLen = len(ocrResult.Text)
 	if ocrResult.Text == "" || len(ocrResult.Words) == 0 {
-		return nil, nil, nil
+		return res, nil
 	}
 
+	presidioStart := time.Now()
 	results, err := presidio.Analyze(ctx, ocrResult.Text, params.ScoreThreshold)
+	res.PresidioDuration = time.Since(presidioStart)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Presidio failed: %w", err)
+		return res, fmt.Errorf("Presidio failed: %w", err)
 	}
 
 	// Filter out denied entity types
@@ -389,7 +426,9 @@ func analyzeSnapshot(
 		}
 	}
 
-	return detections, counts, nil
+	res.Detections = detections
+	res.Counts = counts
+	return res, nil
 }
 
 // processJob does the actual analysis work for a single job.
@@ -504,7 +543,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 		}
 
 		// Composite the patch onto the full framebuffer
-		compositeBitmap(framebuffer, fbWidth, fbHeight, rgba, patchW, patchH, int(bmpEvent.X), int(bmpEvent.Y))
+		CompositeBitmap(framebuffer, fbWidth, fbHeight, rgba, patchW, patchH, int(bmpEvent.X), int(bmpEvent.Y))
 		fbDirty = true
 		lastEventTimestamp = timestamp
 		bitmapsComposited++
@@ -521,7 +560,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 		// Quick framebuffer dedup: sample a few scanlines and hash them.
 		// This avoids expensive OCR+Presidio calls when only minor changes
 		// happened (cursor blink, clock tick, etc.)
-		fbSample := sampleFramebuffer(framebuffer, fbWidth, fbHeight)
+		fbSample := SampleFramebuffer(framebuffer, fbWidth, fbHeight)
 		fbHash := sha256.Sum256(fbSample)
 		if fbHash == prevFBHash {
 			continue
@@ -531,7 +570,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 		// Text dedup: hash the full framebuffer is too expensive, so we still
 		// dedup based on OCR text output. We run OCR and if the text is identical
 		// to the previous snapshot, skip the Presidio call.
-		detections, counts, analyzeErr := analyzeSnapshot(
+		snapResult, analyzeErr := AnalyzeFramebuffer(
 			ctx, framebuffer, fbWidth, fbHeight,
 			job.SessionID, currentFrameIndex, timestamp, presidio, params,
 		)
@@ -553,6 +592,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 
 		snapshotsRun++
 
+		detections, counts := snapResult.Detections, snapResult.Counts
 		if len(detections) == 0 && len(counts) == 0 {
 			continue
 		}
@@ -580,7 +620,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 
 	// Final snapshot: if the framebuffer was modified after the last snapshot, analyze it
 	if fbDirty {
-		detections, counts, analyzeErr := analyzeSnapshot(
+		snapResult, analyzeErr := AnalyzeFramebuffer(
 			ctx, framebuffer, fbWidth, fbHeight,
 			job.SessionID, frameIndex-1, lastEventTimestamp, presidio, params,
 		)
@@ -591,12 +631,12 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 			}
 			// Non-Presidio errors are silently ignored on the final snapshot,
 			// matching the per-snapshot loop above.
-		} else if len(detections) > 0 || len(counts) > 0 {
+		} else if len(snapResult.Detections) > 0 || len(snapResult.Counts) > 0 {
 			snapshotsRun++
-			for infoType, count := range counts {
+			for infoType, count := range snapResult.Counts {
 				aggregatedCounts[infoType] += count
 			}
-			allDetections = append(allDetections, detections...)
+			allDetections = append(allDetections, snapResult.Detections...)
 		}
 	}
 
