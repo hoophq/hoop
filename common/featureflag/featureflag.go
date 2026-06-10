@@ -91,7 +91,7 @@ var catalog = map[string]Flag{
 	},
 	"experimental.mobile_admin": {
 		Name:        "experimental.mobile_admin",
-		Description: "Enable the Mobile Admin PWA at /m: approve reviews, inspect sessions, and manage agents and users from a phone.",
+		Description: "Enable the Mobile Admin PWA at /m: approve reviews, inspect sessions, and manage agents and users from a phone. Admins browsing on a mobile viewport are routed to it automatically.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},

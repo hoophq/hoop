@@ -330,7 +330,8 @@ function Router() {
       />
 
       {/* Mobile Admin PWA — own shell (bottom tabs), never loads the CLJS bundle.
-          Gated by the experimental.mobile_admin feature flag, admin-only. */}
+          Gated by the experimental.mobile_admin feature flag, admin-only.
+          Admins on mobile viewports are sent here automatically (see ProtectedRoute). */}
       <Route
         path="/m"
         element={

@@ -348,6 +348,14 @@ const showLoader = useMinDelay(loading, 500)
 if (showLoader) return <PageLoader />
 ```
 
+### `useIsMobileViewport()`
+Returns `true` on phone-sized viewports (`max-width: 768px` — complement of the desktop breakpoint in `layout/Layout.jsx`). Reads matchMedia synchronously on first render and stays reactive to resizes. Used by `ProtectedRoute` to send mobile admins to `/m`.
+```jsx
+import { useIsMobileViewport } from '@/hooks/useIsMobileViewport'
+
+const isMobile = useIsMobileViewport()
+```
+
 ---
 
 ## Stores (`src/stores/`)

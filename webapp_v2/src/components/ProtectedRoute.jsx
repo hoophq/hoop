@@ -5,17 +5,21 @@ import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
+import { useIsMobileViewport } from '@/hooks/useIsMobileViewport'
+import { MOBILE_ADMIN_FLAG } from '@/layout/MobileLayout/constants'
 import PageLoader from '@/components/PageLoader'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, isAdmin, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
+  const { user, isAdmin, setUser, setLoading, setServerInfo, setFeatureFlags, isFeatureFlagEnabled, initIntercom, initAnalytics } = useUserStore()
+  const isMobileViewport = useIsMobileViewport()
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
 
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
+  const isMobileRoute = location.pathname === '/m' || location.pathname.startsWith('/m/')
 
   useEffect(() => {
     // Run only once per component instance — prevents StrictMode double-fire
@@ -112,6 +116,15 @@ function ProtectedRoute({ children, adminOnly = false }) {
 
   if (adminOnly && !isAdmin) {
     return <Navigate to="/" replace />
+  }
+
+  // Mobile viewports get the mobile admin app — desktop routes are not usable
+  // on a phone. Only admins are redirected (/m is admin-only, so anyone else
+  // would bounce straight back) and only while experimental.mobile_admin is
+  // enabled. Onboarding is exempt: an org without connections must finish it
+  // before /m has anything to show.
+  if (isMobileViewport && isAdmin && isFeatureFlagEnabled(MOBILE_ADMIN_FLAG) && !isMobileRoute && !isOnboardingRoute) {
+    return <Navigate to="/m" replace />
   }
 
   return children
