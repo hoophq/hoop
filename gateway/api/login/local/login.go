@@ -22,10 +22,10 @@ const defaultTokenExpiration = time.Hour * 12
 //	@Description	Generate a new access token  to interact with the API that expires in 12 hours.
 //	@Tags			Authentication
 //	@Produce		json
-//	@Success		200
+//	@Success		200				{object}	openapi.LocalAuthLoginResponse
 //	@Param			Token			header		string	false	"The access token generated after a successful login"
 //	@Failure		400,401,404,500	{object}	openapi.HTTPError
-//	@Router			/localauth/login [get]
+//	@Router			/localauth/login [post]
 func Login(c *gin.Context) {
 	var user openapi.LocalUserRequest
 	if err := c.BindJSON(&user); err != nil {
@@ -66,7 +66,9 @@ func Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Token")
 	c.Header("Token", tokenString)
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	// The token is also returned in the body: intermediaries (tunnels, proxies)
+	// may strip custom response headers, and bodies survive them.
+	c.JSON(http.StatusOK, openapi.LocalAuthLoginResponse{Status: "ok", Token: tokenString})
 }
 
 func generateNewAccessToken(subject, email string) (string, error) {

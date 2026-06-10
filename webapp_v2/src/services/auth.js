@@ -24,8 +24,12 @@ export const authService = {
       password
     });
 
-    // Token comes in response headers
-    const token = response.headers.token || response.headers.Token;
+    // Prefer the token in the body — intermediaries (tunnels, proxies) may
+    // strip custom headers. Header kept as fallback for older gateways.
+    const token = response.data?.token || response.headers.token || response.headers.Token;
+    if (!token) {
+      throw new Error('Login response did not include an access token');
+    }
     return { token, user: response.data };
   },
 
@@ -37,7 +41,10 @@ export const authService = {
       name
     });
 
-    const token = response.headers.token || response.headers.Token;
+    const token = response.data?.token || response.headers.token || response.headers.Token;
+    if (!token) {
+      throw new Error('Register response did not include an access token');
+    }
     return { token, user: response.data };
   },
 

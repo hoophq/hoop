@@ -3981,7 +3981,7 @@ const docTemplate = `{
             }
         },
         "/localauth/login": {
-            "get": {
+            "post": {
                 "description": "Generate a new access token  to interact with the API that expires in 12 hours.",
                 "produces": [
                     "application/json"
@@ -4000,7 +4000,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.LocalAuthLoginResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -4063,7 +4066,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.LocalAuthRegisterResponse"
                         }
                     },
                     "400": {
@@ -12808,6 +12811,32 @@ const docTemplate = `{
                         "OK"
                     ],
                     "example": "OK"
+                }
+            }
+        },
+        "openapi.LocalAuthLoginResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "token": {
+                    "description": "The access token to interact with the API. Also returned in the ` + "`" + `Token` + "`" + ` response header",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.LocalAuthRegisterResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "User created successfully"
+                },
+                "token": {
+                    "description": "The access token to interact with the API. Also returned in the ` + "`" + `Token` + "`" + ` response header",
+                    "type": "string"
                 }
             }
         },

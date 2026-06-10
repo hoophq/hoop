@@ -26,6 +26,18 @@ type Login struct {
 	URL string `json:"login_url"`
 }
 
+type LocalAuthLoginResponse struct {
+	Status string `json:"status" example:"ok"`
+	// The access token to interact with the API. Also returned in the `Token` response header
+	Token string `json:"token"`
+}
+
+type LocalAuthRegisterResponse struct {
+	Message string `json:"message" example:"User created successfully"`
+	// The access token to interact with the API. Also returned in the `Token` response header
+	Token string `json:"token"`
+}
+
 type SignupRequest struct {
 	// Organization ID
 	OrgID string `json:"org_id" format:"uuid" readonly:"true"`
