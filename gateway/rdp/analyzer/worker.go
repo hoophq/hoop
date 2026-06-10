@@ -189,6 +189,13 @@ type AnalysisParams struct {
 	ScoreThreshold   float64  // Minimum Presidio score (env: RDP_PII_SCORE_THRESHOLD, default 0.9)
 	EntityDenylist   []string // Entity types to exclude (env: RDP_PII_ENTITY_DENYLIST, default "DATE_TIME,NRP")
 	SnapshotInterval float64  // Seconds between snapshots (env: RDP_PII_SNAPSHOT_INTERVAL, default 0.25)
+	// BandPadding is the vertical padding (pixels) applied around dirty
+	// rects when accumulating bands AND as the overlap between parallel OCR
+	// chunks. The two uses share one value on purpose: the chunk overlap
+	// must be at least the band padding policy so a text line owned by a
+	// chunk is always fully visible in its OCR window. Values <= 0 fall
+	// back to DefaultBandPadding.
+	BandPadding int
 }
 
 // DefaultAnalysisParams returns the analysis parameters from appconfig (env vars).
@@ -238,6 +245,7 @@ func DefaultAnalysisParams() AnalysisParams {
 		ScoreThreshold:   cfg.RDPPIIScoreThreshold(),
 		EntityDenylist:   cfg.RDPPIIEntityDenylist(),
 		SnapshotInterval: cfg.RDPPIISnapshotInterval(),
+		BandPadding:      DefaultBandPadding,
 	}
 }
 
@@ -351,6 +359,8 @@ type SnapshotResult struct {
 	PresidioDuration time.Duration
 	OCRWords         int
 	OCRTextLen       int
+	// Bands is the number of dirty bands OCR'd (0 for full-frame analysis).
+	Bands int
 }
 
 // AnalyzeFramebuffer runs OCR + Presidio on the full framebuffer and returns detections.
@@ -383,8 +393,27 @@ func AnalyzeFramebuffer(
 		return res, nil
 	}
 
+	return analyzeText(ctx, res, ocrResult.Text, ocrResult.Words, sessionID, frameIndex, timestamp, presidio, params)
+}
+
+// analyzeText runs the post-OCR stage shared by AnalyzeFramebuffer and
+// AnalyzeFramebufferBands: Presidio analysis, denylist filtering, and mapping
+// entity character ranges back to pixel bounding boxes. Word coordinates must
+// already be in full-screen space and text must be the words joined by single
+// spaces (so Presidio character offsets line up with word ranges).
+func analyzeText(
+	ctx context.Context,
+	res *SnapshotResult,
+	text string,
+	words []ocr.Word,
+	sessionID string,
+	frameIndex int,
+	timestamp float64,
+	presidio *PresidioClient,
+	params AnalysisParams,
+) (*SnapshotResult, error) {
 	presidioStart := time.Now()
-	results, err := presidio.Analyze(ctx, ocrResult.Text, params.ScoreThreshold)
+	results, err := presidio.Analyze(ctx, text, params.ScoreThreshold)
 	res.PresidioDuration = time.Since(presidioStart)
 	if err != nil {
 		return res, fmt.Errorf("Presidio failed: %w", err)
@@ -405,7 +434,7 @@ func AnalyzeFramebuffer(
 
 	var detections []models.RDPEntityDetection
 	if len(results) > 0 {
-		wordRanges := buildWordRanges(ocrResult.Words)
+		wordRanges := buildWordRanges(words)
 		for _, result := range results {
 			bbox := mapEntityToPixelBBox(result, wordRanges)
 			if bbox == nil {

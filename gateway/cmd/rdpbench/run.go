@@ -28,6 +28,8 @@ type benchConfig struct {
 	dumpDir        string
 	verbose        bool
 	killOnDetected bool
+	bandsOCR       bool // OCR only dirty bands instead of the full frame
+	bandPad        int  // vertical padding around dirty rects (bands mode)
 }
 
 // runBench replays a fixture through the PII detection pipeline.
@@ -42,6 +44,8 @@ func runBench(args []string) error {
 	speed := fs.Float64("speed", 1.0, "realtime pace speed multiplier (2.0 = replay twice as fast)")
 	dumpDir := fs.String("dump", "", "optional directory to dump analyzed snapshots as PNG")
 	kill := fs.Bool("kill", false, "stop the replay at the first detection (simulates the kill switch)")
+	ocrMode := fs.String("ocr", "full", "OCR strategy: 'full' (whole frame every snapshot) or 'bands' (only dirty horizontal bands)")
+	bandPad := fs.Int("band-pad", analyzer.DefaultBandPadding, "vertical padding in pixels around dirty rects (bands mode)")
 	verbose := fs.Bool("v", false, "log every analyzed snapshot")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -58,6 +62,12 @@ func runBench(args []string) error {
 	}
 	if *score < 0 || *score > 1 {
 		return fmt.Errorf("-score must be between 0 and 1")
+	}
+	if *ocrMode != "full" && *ocrMode != "bands" {
+		return fmt.Errorf("invalid -ocr %q: must be 'full' or 'bands'", *ocrMode)
+	}
+	if *bandPad <= 0 {
+		return fmt.Errorf("-band-pad must be > 0 (it must cover at least one text line height)")
 	}
 
 	fixture, err := loadFixture(*input)
@@ -98,11 +108,14 @@ func runBench(args []string) error {
 			ScoreThreshold:   *score,
 			EntityDenylist:   denied,
 			SnapshotInterval: *interval,
+			BandPadding:      *bandPad,
 		},
 		speed:          *speed,
 		dumpDir:        *dumpDir,
 		verbose:        *verbose,
 		killOnDetected: *kill,
+		bandsOCR:       *ocrMode == "bands",
+		bandPad:        *bandPad,
 	}
 
 	if cfg.dumpDir != "" {
@@ -120,8 +133,8 @@ func runBench(args []string) error {
 	sessionDuration := frames[len(frames)-1].Timestamp - frames[0].Timestamp
 	fmt.Printf("fixture: session=%s canvas=%dx%d bitmaps=%d session-duration=%.1fs\n",
 		fixture.SessionID, fixture.CanvasWidth, fixture.CanvasHeight, len(frames), sessionDuration)
-	fmt.Printf("params:  pace=%s interval=%.2fs score=%.2f denylist=%v speed=%.1fx\n\n",
-		*pace, *interval, *score, denied, *speed)
+	fmt.Printf("params:  pace=%s ocr=%s interval=%.2fs score=%.2f denylist=%v speed=%.1fx\n\n",
+		*pace, *ocrMode, *interval, *score, denied, *speed)
 
 	switch *pace {
 	case "fast":
@@ -243,22 +256,33 @@ func decodeAndComposite(fb []byte, w, h int, ev frameEvent, report *benchReport)
 	return nil
 }
 
-// analyzeAndRecord runs AnalyzeFramebuffer on fb and records the outcome.
-// Returns true when PII was detected.
+// analyzeAndRecord runs the analysis on fb and records the outcome.
+// When bands is non-nil, only those dirty bands are OCR'd; otherwise the
+// full frame is analyzed. Returns true when PII was detected.
 func analyzeAndRecord(
 	ctx context.Context,
 	cfg *benchConfig,
 	report *benchReport,
 	fb []byte,
+	bands []analyzer.YBand,
 	frameIndex int,
 	sessionTime float64,
 	snapshotStart time.Time,
 	worstLagBase time.Time,
 ) (bool, error) {
-	res, err := analyzer.AnalyzeFramebuffer(
-		ctx, fb, cfg.fixture.CanvasWidth, cfg.fixture.CanvasHeight,
-		cfg.fixture.SessionID, frameIndex, sessionTime, cfg.presidio, cfg.params,
-	)
+	var res *analyzer.SnapshotResult
+	var err error
+	if bands != nil {
+		res, err = analyzer.AnalyzeFramebufferBands(
+			ctx, fb, cfg.fixture.CanvasWidth, cfg.fixture.CanvasHeight, bands,
+			cfg.fixture.SessionID, frameIndex, sessionTime, cfg.presidio, cfg.params,
+		)
+	} else {
+		res, err = analyzer.AnalyzeFramebuffer(
+			ctx, fb, cfg.fixture.CanvasWidth, cfg.fixture.CanvasHeight,
+			cfg.fixture.SessionID, frameIndex, sessionTime, cfg.presidio, cfg.params,
+		)
+	}
 	analyzeDur := time.Since(snapshotStart)
 	if err != nil {
 		report.mu.Lock()
@@ -295,13 +319,34 @@ func analyzeAndRecord(
 		dumpSnapshot(cfg, fb, snapshotN)
 	}
 	if cfg.verbose {
-		fmt.Printf("snapshot %3d t=%6.2fs ocr=%s presidio=%s words=%d entities=%d\n",
+		fmt.Printf("snapshot %3d t=%6.2fs ocr=%s presidio=%s words=%d entities=%d bands=%d\n",
 			snapshotN, sessionTime,
 			res.OCRDuration.Round(time.Millisecond), res.PresidioDuration.Round(time.Millisecond),
-			res.OCRWords, len(res.Detections))
+			res.OCRWords, len(res.Detections), res.Bands)
 	}
 
 	return detected, nil
+}
+
+// snapshotBands decides what a snapshot should analyze. In bands mode it
+// returns the accumulated dirty bands (copied; the accumulator is reset) and
+// signals skip when nothing was painted since the previous snapshot. In full
+// mode it returns nil bands and uses the sampled-framebuffer hash for change
+// detection.
+func snapshotBands(cfg *benchConfig, dirty *analyzer.DirtyBands, fb []byte, w, h int, prevFBHash *[32]byte) ([]analyzer.YBand, bool) {
+	if cfg.bandsOCR {
+		bands := dirty.TakeAndReset()
+		if bands == nil {
+			return nil, true
+		}
+		return bands, false
+	}
+	fbHash := sha256.Sum256(analyzer.SampleFramebuffer(fb, w, h))
+	if fbHash == *prevFBHash {
+		return nil, true
+	}
+	*prevFBHash = fbHash
+	return nil, false
 }
 
 // runFastPace replays all events as fast as possible. This measures pure
@@ -316,6 +361,7 @@ func runFastPace(cfg *benchConfig) error {
 	baseTS := cfg.frames[0].Timestamp
 	lastSnapshotTime := -cfg.params.SnapshotInterval
 	var prevFBHash [32]byte
+	dirty := analyzer.NewDirtyBands(h, cfg.bandPad)
 	fbDirty := false
 	wallStart := time.Now()
 
@@ -324,6 +370,7 @@ func runFastPace(cfg *benchConfig) error {
 			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 			continue
 		}
+		dirty.AddRect(int(ev.Bitmap.Y), int(ev.Bitmap.Height))
 		fbDirty = true
 
 		sessionTime := ev.Timestamp - baseTS
@@ -333,14 +380,13 @@ func runFastPace(cfg *benchConfig) error {
 		lastSnapshotTime = ev.Timestamp
 		fbDirty = false
 
-		fbHash := sha256.Sum256(analyzer.SampleFramebuffer(fb, w, h))
-		if fbHash == prevFBHash {
+		bands, skip := snapshotBands(cfg, dirty, fb, w, h, &prevFBHash)
+		if skip {
 			report.addDedupSkip()
 			continue
 		}
-		prevFBHash = fbHash
 
-		detected, err := analyzeAndRecord(ctx, cfg, report, fb, ev.Index, sessionTime, time.Now(), time.Time{})
+		detected, err := analyzeAndRecord(ctx, cfg, report, fb, bands, ev.Index, sessionTime, time.Now(), time.Time{})
 		if err != nil {
 			return err
 		}
@@ -353,9 +399,12 @@ func runFastPace(cfg *benchConfig) error {
 
 	if fbDirty {
 		lastTS := cfg.frames[len(cfg.frames)-1].Timestamp - baseTS
-		if _, err := analyzeAndRecord(ctx, cfg, report, fb,
-			cfg.frames[len(cfg.frames)-1].Index, lastTS, time.Now(), time.Time{}); err != nil {
-			return err
+		bands, skip := snapshotBands(cfg, dirty, fb, w, h, &prevFBHash)
+		if !skip {
+			if _, err := analyzeAndRecord(ctx, cfg, report, fb, bands,
+				cfg.frames[len(cfg.frames)-1].Index, lastTS, time.Now(), time.Time{}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -375,7 +424,9 @@ func runRealtimePace(cfg *benchConfig) error {
 
 	w, h := cfg.fixture.CanvasWidth, cfg.fixture.CanvasHeight
 	fb := make([]byte, w*h*4)
+	// fbMu guards fb and the dirty-band accumulator (same write source).
 	var fbMu sync.Mutex
+	dirty := analyzer.NewDirtyBands(h, cfg.bandPad)
 	report := &benchReport{}
 
 	baseTS := cfg.frames[0].Timestamp
@@ -396,6 +447,9 @@ func runRealtimePace(cfg *benchConfig) error {
 			}
 			fbMu.Lock()
 			err := decodeAndComposite(fb, w, h, ev, report)
+			if err == nil {
+				dirty.AddRect(int(ev.Bitmap.Y), int(ev.Bitmap.Height))
+			}
 			fbMu.Unlock()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: %v\n", err)
@@ -423,18 +477,17 @@ func runRealtimePace(cfg *benchConfig) error {
 
 		snapshotStart := time.Now()
 		fbMu.Lock()
-		fbHash := sha256.Sum256(analyzer.SampleFramebuffer(fb, w, h))
-		if fbHash == prevFBHash {
+		bands, skip := snapshotBands(cfg, dirty, fb, w, h, &prevFBHash)
+		if skip {
 			fbMu.Unlock()
 			report.addDedupSkip()
 			continue
 		}
-		prevFBHash = fbHash
 		copy(snapshotCopy, fb)
 		fbMu.Unlock()
 
 		sessionTime := snapshotStart.Sub(wallStart).Seconds() * cfg.speed
-		detected, err := analyzeAndRecord(ctx, cfg, report, snapshotCopy, 0, sessionTime, snapshotStart, prevSnapshotWall)
+		detected, err := analyzeAndRecord(ctx, cfg, report, snapshotCopy, bands, 0, sessionTime, snapshotStart, prevSnapshotWall)
 		if err != nil {
 			return err
 		}
