@@ -378,6 +378,8 @@ useAuthStore.getState().token
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 | `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
+| `sessions.js` | GET `/sessions` (filters + `limit`/`offset`), GET `/sessions/:id`, POST `/sessions/:id/kill` |
+| `reviews.js` | PUT `/reviews/:id` (approve/reject/revoke) |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
 

@@ -89,6 +89,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.mobile_admin": {
+		Name:        "experimental.mobile_admin",
+		Description: "Enable the Mobile Admin PWA at /m: approve reviews, inspect sessions, and manage agents and users from a phone.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.

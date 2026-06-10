@@ -29,6 +29,18 @@ import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 
+// Mobile Admin PWA (flag-gated, admin-only)
+import MobileLayout from '@/layout/MobileLayout'
+import MobileGate from '@/layout/MobileLayout/MobileGate'
+import MobileHome from '@/pages/Mobile/Home'
+import MobileReviews from '@/pages/Mobile/Reviews'
+import MobileReviewDetail from '@/pages/Mobile/Reviews/Detail'
+import MobileSessions from '@/pages/Mobile/Sessions'
+import MobileSessionDetail from '@/pages/Mobile/Sessions/Detail'
+import MobileAgents from '@/pages/Mobile/Agents'
+import MobileUsers from '@/pages/Mobile/Users'
+import MobileUserDetail from '@/pages/Mobile/Users/Detail'
+
 /**
  * Routing strategy:
  *
@@ -316,6 +328,28 @@ function Router() {
           </ProtectedRoute>
         }
       />
+
+      {/* Mobile Admin PWA — own shell (bottom tabs), never loads the CLJS bundle.
+          Gated by the experimental.mobile_admin feature flag, admin-only. */}
+      <Route
+        path="/m"
+        element={
+          <ProtectedRoute adminOnly>
+            <MobileGate>
+              <MobileLayout />
+            </MobileGate>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<MobileHome />} />
+        <Route path="reviews" element={<MobileReviews />} />
+        <Route path="reviews/:sessionId" element={<MobileReviewDetail />} />
+        <Route path="sessions" element={<MobileSessions />} />
+        <Route path="sessions/:sessionId" element={<MobileSessionDetail />} />
+        <Route path="agents" element={<MobileAgents />} />
+        <Route path="users" element={<MobileUsers />} />
+        <Route path="users/:userId" element={<MobileUserDetail />} />
+      </Route>
 
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
       <Route

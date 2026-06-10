@@ -77,6 +77,7 @@ Gateway backend (port 8009)
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |
+| `/m` + `/m/*` (Mobile Admin PWA) | React | Done — flag-gated (`experimental.mobile_admin`), admin-only, own shell (`layout/MobileLayout`), never loads the CLJS bundle |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
