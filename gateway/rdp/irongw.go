@@ -308,6 +308,18 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// pipe all data between WebSocket and TLS connection
 	// We also record all traffic for session recording
 
+	// Realtime PII guard (hold-and-release): when enabled, server->client
+	// bytes are held until OCR+Presidio analysis clears them; on detection
+	// the held frames are dropped and the session is terminated.
+	gate := newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
+		sessionErrMu.Lock()
+		sessionErr = err
+		sessionErrMu.Unlock()
+	})
+	if gate != nil {
+		defer gate.Close()
+	}
+
 	// Use a done channel to signal when the websocket read goroutine exits
 	done := make(chan struct{})
 
@@ -355,6 +367,13 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 		// Record server -> client traffic (bitmap updates, etc.)
 		recorder.RecordOutput(buffer[:n])
+
+		if gate != nil {
+			// Hold-and-release: the gate forwards to the websocket from its
+			// analysis goroutine once the frames are cleared.
+			gate.Ingest(buffer[:n])
+			continue
+		}
 
 		err = ws.WriteMessage(websocket.BinaryMessage, buffer[:n])
 		if err != nil {

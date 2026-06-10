@@ -54,6 +54,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.rdp_pii_guard": {
+		Name:        "experimental.rdp_pii_guard",
+		Description: "Block RDP frames until realtime PII analysis clears them and kill the session on detection (hold-and-release). Requires Presidio analyzer URL and tesseract OCR.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.event_routing": {
 		Name:        "experimental.event_routing",
 		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
