@@ -5,6 +5,7 @@
    ["react-select/creatable" :default CreatableSelect]
    ["@radix-ui/themes" :refer [Text Tooltip]]
    [clojure.string :as cs]
+   [goog.object :as gobj]
    [reagent.core :as r]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
@@ -144,11 +145,11 @@
                         (if input-value
                           (case (.-key event)
                             "Enter" (do
-                                      (on-change (conj (js->clj value) {"label" input-value "value" input-value}))
+                                      (on-change (conj (js->clj value) {"label" input-value "value" input-value "id" (str (random-uuid))}))
                                       (on-input-change "")
                                       (.preventDefault event))
                             "Tab" (do
-                                    (on-change (conj (js->clj value) {"label" input-value "value" input-value}))
+                                    (on-change (conj (js->clj value) {"label" input-value "value" input-value "id" (str (random-uuid))}))
                                     (on-input-change "")
                                     (.preventDefault event))
                             nil)
@@ -169,6 +170,9 @@
        :menuIsOpen false
        :isDisabled disabled?
        :required required?
+       :getOptionValue (fn [option]
+                         (or (gobj/get option "id")
+                             (gobj/get option "value")))
        :onChange (fn [value]
                    (on-change (js->clj value)))
        :onInputChange on-input-change
