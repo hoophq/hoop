@@ -146,8 +146,12 @@ const (
 	// that are OCR'd in parallel, bounding the worst-case OCR latency by
 	// the chunk cost instead of the full canvas cost.
 	maxChunkRows = 256
-	// maxOCRConcurrency caps the number of concurrent tesseract processes.
-	maxOCRConcurrency = 4
+	// DefaultMaxOCRConcurrency is the default cap on concurrent tesseract
+	// processes. Each tesseract run is effectively single-threaded, so one
+	// process per core is the sweet spot; the cap bounds memory and process
+	// churn on large machines. Override per-deployment via
+	// AnalysisParams.MaxOCRConcurrency.
+	DefaultMaxOCRConcurrency = 8
 )
 
 // ocrChunk is a band slice prepared for one OCR invocation. The window is
@@ -247,9 +251,12 @@ func AnalyzeFramebufferBands(
 	chunks := splitBands(bands, maxChunkRows, chunkPad)
 	chunkWords := make([][]ocr.Word, len(chunks))
 
-	concurrency := maxOCRConcurrency
-	if n := runtime.NumCPU(); n < concurrency {
-		concurrency = n
+	concurrency := params.MaxOCRConcurrency
+	if concurrency <= 0 {
+		concurrency = DefaultMaxOCRConcurrency
+		if n := runtime.NumCPU(); n < concurrency {
+			concurrency = n
+		}
 	}
 
 	ocrStart := time.Now()

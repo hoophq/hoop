@@ -196,6 +196,12 @@ type AnalysisParams struct {
 	// chunk is always fully visible in its OCR window. Values <= 0 fall
 	// back to DefaultBandPadding.
 	BandPadding int
+	// MaxOCRConcurrency caps the number of concurrent tesseract processes
+	// for chunked band analysis. Values <= 0 fall back to
+	// min(DefaultMaxOCRConcurrency, NumCPU). Deployments with CPU quotas
+	// (cgroups) should set this explicitly: NumCPU overstates usable
+	// compute under container limits.
+	MaxOCRConcurrency int
 }
 
 // DefaultAnalysisParams returns the analysis parameters from appconfig (env vars).
