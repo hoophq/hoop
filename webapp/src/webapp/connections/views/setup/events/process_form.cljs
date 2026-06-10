@@ -649,7 +649,7 @@
                 (str/join " " (:command connection)))
      :command-args (if (empty? (:command connection))
                      []
-                     (mapv #(hash-map "value" % "label" %) (:command connection)))
+                     (mapv #(hash-map "value" % "label" % "id" (str (random-uuid))) (:command connection)))
      :configuration-files (or normalized-config-files
                               (when (or (= connection-type "custom")
                                         (= connection-type "database"))
