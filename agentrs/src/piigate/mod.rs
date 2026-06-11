@@ -38,6 +38,7 @@
 
 pub mod analyze;
 pub mod bands;
+pub mod capabilities;
 pub mod canvas;
 pub mod config;
 pub mod framing;
