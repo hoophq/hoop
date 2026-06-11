@@ -1,0 +1,32 @@
+# RapidOCR (ONNXRuntime CUDA EP) variant of the OCR PoC — see
+# server_rapidocr.py. Compares the same PP-OCR model family against the
+# PaddleOCR GPU server using a much lighter runtime stack.
+#
+# Build & run on a CUDA host (requires nvidia-container-toolkit):
+#   docker build -f Dockerfile.rapidocr -t ocr-poc-rapid .
+#   docker run -d --name ocr-poc-rapid --gpus all -p 8870:8868 ocr-poc-rapid
+#   curl http://localhost:8870/healthz   # -> {"status":"ok","device":"onnxruntime-cuda"}
+#
+# The server refuses to start if CUDAExecutionProvider is unavailable, so a
+# misconfigured GPU cannot silently produce CPU benchmark numbers.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+# libgl1/libxcb1/libsm6/libxext6: rapidocr depends on regular opencv-python
+# (not headless), whose native module links these even for imdecode-only use.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/lib/apt/lists/*
+
+# onnxruntime-gpu >=1.19 targets CUDA 12 + cuDNN 9 (both in the base image).
+RUN pip3 install --no-cache-dir \
+    "rapidocr>=3.1,<4" \
+    "onnxruntime-gpu>=1.19" \
+    fastapi \
+    uvicorn \
+    opencv-python-headless
+
+COPY server_rapidocr.py /app/server_rapidocr.py
+ENV RAPIDOCR_USE_CUDA=1
+EXPOSE 8868
+CMD ["python3", "-m", "uvicorn", "server_rapidocr:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8868"]
