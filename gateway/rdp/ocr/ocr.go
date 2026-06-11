@@ -1,14 +1,21 @@
-// Package ocr provides text extraction from bitmap images using Tesseract OCR.
+// Package ocr provides text extraction from bitmap images.
 //
-// Tesseract is invoked as a subprocess to avoid CGO/libtesseract-dev build dependencies.
-// Images are encoded as uncompressed 24bpp BMP and written to a temp file
-// (NOT stdin: leptonica's in-memory/stdin BMP reader measured ~7x slower
-// than its file reader). BMP encoding is a plain pixel copy (no deflate pass
-// like PNG) and leptonica's file-based BMP reader is its fastest decode path
-// — measured ~10% faster than PNG and ~2.3x faster than PNM end-to-end on
-// real RDP screenshots. Color is preserved on purpose: pre-converting to
-// grayscale doubles tesseract's processing time on subpixel-antialiased
-// (ClearType) text.
+// Two engines are supported, selected by RDP_OCR_SERVER_URL (see engine.go):
+//
+//   - HTTP OCR sidecar (RapidOCR/PaddleOCR, scripts/dev/ocr-poc): measured
+//     ~10x faster than tesseract per band state on CPU and ~23x on GPU; the
+//     sidecar decides CPU vs GPU on its side.
+//
+//   - Local tesseract subprocess (default fallback): invoked as a
+//     subprocess to avoid CGO/libtesseract-dev build dependencies. Images
+//     are encoded as uncompressed 24bpp BMP and written to a temp file (NOT
+//     stdin: leptonica's in-memory/stdin BMP reader measured ~7x slower
+//     than its file reader). BMP encoding is a plain pixel copy (no deflate
+//     pass like PNG) and leptonica's file-based BMP reader is its fastest
+//     decode path — measured ~10% faster than PNG and ~2.3x faster than PNM
+//     end-to-end on real RDP screenshots. Color is preserved on purpose:
+//     pre-converting to grayscale doubles tesseract's processing time on
+//     subpixel-antialiased (ClearType) text.
 package ocr
 
 import (
@@ -69,10 +76,14 @@ func ExtractText(ctx context.Context, rgba []byte, width, height int) (string, e
 	return result.Text, nil
 }
 
-// ExtractWords runs Tesseract OCR on RGBA pixel data and returns structured word-level results.
+// ExtractWords runs OCR on RGBA pixel data and returns structured word-level
+// results, using the configured engine: the local tesseract subprocess by
+// default, or an HTTP OCR sidecar when RDP_OCR_SERVER_URL is set (see
+// engine.go).
 //
-// Each word includes its bounding box in the original (pre-upscale) image coordinate space.
-// The reconstructed text is the words joined by spaces, suitable for passing to Presidio.
+// Each word includes its bounding box in the original image coordinate
+// space. The reconstructed text is the words joined by spaces, suitable for
+// passing to Presidio.
 func ExtractWords(ctx context.Context, rgba []byte, width, height int) (*ExtractResult, error) {
 	if len(rgba) == 0 {
 		return &ExtractResult{}, nil
@@ -91,38 +102,7 @@ func ExtractWords(ctx context.Context, rgba []byte, width, height int) (*Extract
 		return nil, fmt.Errorf("ocr: RGBA data too short: got %d, expected %d", len(rgba), expectedLen)
 	}
 
-	// Upscale 2x if image is small (improves accuracy on small fonts)
-	upscaled := false
-	if width < minWidthForUpscale {
-		rgba = nearestNeighbor2xRGBA(rgba, width, height)
-		width *= 2
-		height *= 2
-		upscaled = true
-	}
-
-	// Encode as uncompressed 24bpp BMP: header plus raw BGR rows.
-	bmp := encodeBMP(rgba, width, height)
-
-	// Run tesseract with TSV output for word-level bounding boxes
-	tsvOutput, err := runTesseractTSV(ctx, bmp)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse TSV output into words
-	words := parseTSV(tsvOutput, upscaled)
-
-	// Reconstruct full text from words
-	var textParts []string
-	for _, w := range words {
-		textParts = append(textParts, w.Text)
-	}
-
-	return &ExtractResult{
-		Text:     strings.Join(textParts, " "),
-		Words:    words,
-		Upscaled: upscaled,
-	}, nil
+	return getEngine().extract(ctx, rgba, width, height)
 }
 
 // runTesseractTSV invokes tesseract with TSV output to get word-level bounding boxes.
@@ -294,8 +274,11 @@ func encodeBMP(rgba []byte, width, height int) []byte {
 	return out
 }
 
-// IsAvailable checks whether the tesseract binary is available in PATH.
+// IsAvailable reports whether an OCR engine is CONFIGURED: an HTTP OCR
+// server URL is set (RDP_OCR_SERVER_URL), or the tesseract binary is in
+// PATH. It is not a health check — an unreachable OCR server still counts
+// as available and surfaces as per-request errors instead (loudly logged;
+// the PII gate fails open on them).
 func IsAvailable() bool {
-	_, err := exec.LookPath("tesseract")
-	return err == nil
+	return getEngine().available()
 }

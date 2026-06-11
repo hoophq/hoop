@@ -24,5 +24,9 @@ RUN pip install --no-cache-dir \
 RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=False, lang='en', show_log=False, use_gpu=False)"
 
 COPY server.py /app/server.py
+# Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes,
+# each with its own model instance (the gateway analyzer issues up to 8
+# concurrent chunk requests). Override at `docker run -e WEB_CONCURRENCY=N`.
+ENV WEB_CONCURRENCY=4
 EXPOSE 8868
 CMD ["python", "-m", "uvicorn", "server:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8868"]

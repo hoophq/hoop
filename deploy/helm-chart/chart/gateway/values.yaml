@@ -138,12 +138,18 @@ config:
   # Async RDP session-replay PII analysis. Workers run OCR + Presidio over
   # recorded RDP bitmap frames so the webapp can highlight PII on top of the
   # replay. Defaults to 0 (disabled). Set RDP_ANALYSIS_WORKERS >= 1 and ensure
-  # MSPRESIDIO_ANALYZER_URL is reachable and tesseract is installed in the
-  # gateway image to enable.
+  # MSPRESIDIO_ANALYZER_URL is reachable and an OCR engine is available
+  # (RDP_OCR_SERVER_URL or tesseract installed in the gateway image).
   # RDP_ANALYSIS_WORKERS: '0'
   # RDP_PII_SNAPSHOT_INTERVAL: '0.25'
   # RDP_PII_SCORE_THRESHOLD: '0.9'
   # RDP_PII_ENTITY_DENYLIST: 'DATE_TIME,NRP'
+  #
+  # Optional OCR sidecar (RapidOCR/PaddleOCR HTTP server) used instead of the
+  # local tesseract subprocess for RDP PII analysis — measured ~10x faster
+  # per frame on CPU and ~23x on GPU. The sidecar decides CPU vs GPU on its
+  # side; the gateway contract is identical. Leave unset to use tesseract.
+  # RDP_OCR_SERVER_URL: 'http://ocr-sidecar:8868'
 
   ## SPIFFE / JWT-SVID authentication
   ## When HOOP_SPIFFE_MODE=enforce, the gateway validates agent JWT-SVIDs

@@ -43,7 +43,8 @@ func resolveWorkerCount() int {
 
 // IsEnabled reports whether the RDP PII analysis pipeline is currently active.
 // It is enabled only when Presidio is configured and the worker pool is running
-// (analyzerURL is set, RDP_ANALYSIS_WORKERS resolves to > 0, and tesseract is in PATH).
+// (analyzerURL is set, RDP_ANALYSIS_WORKERS resolves to > 0, and an OCR engine
+// is available: RDP_OCR_SERVER_URL or tesseract in PATH).
 //
 // Callers should gate any work that depends on the pipeline (e.g. enqueueing
 // analysis jobs on session close) to avoid leaving sessions stuck in 'pending'.
@@ -73,7 +74,7 @@ type wordRange struct {
 // StartWorkerPool launches the RDP analysis worker pool.
 // It reads the worker count from RDP_ANALYSIS_WORKERS env var.
 // Workers are started only if analyzerURL is non-empty (Presidio is configured),
-// RDP_ANALYSIS_WORKERS resolves to a positive count, and tesseract is in PATH.
+// RDP_ANALYSIS_WORKERS resolves to a positive count, and an OCR engine is available.
 //
 // Call this once at gateway boot. The pool runs until ctx is cancelled.
 func StartWorkerPool(ctx context.Context, analyzerURL string) {
@@ -89,7 +90,7 @@ func StartWorkerPool(ctx context.Context, analyzerURL string) {
 	}
 
 	if !ocr.IsAvailable() {
-		log.Warnf("rdp-analyzer: tesseract not found in PATH, skipping worker pool startup")
+		log.Warnf("rdp-analyzer: no OCR engine available (set RDP_OCR_SERVER_URL or install tesseract), skipping worker pool startup")
 		return
 	}
 
@@ -196,7 +197,7 @@ type AnalysisParams struct {
 	// chunk is always fully visible in its OCR window. Values <= 0 fall
 	// back to DefaultBandPadding.
 	BandPadding int
-	// MaxOCRConcurrency caps the number of concurrent tesseract processes
+	// MaxOCRConcurrency caps the number of concurrent OCR executions
 	// for chunked band analysis. Values <= 0 fall back to
 	// min(DefaultMaxOCRConcurrency, NumCPU). Deployments with CPU quotas
 	// (cgroups) should set this explicitly: NumCPU overstates usable

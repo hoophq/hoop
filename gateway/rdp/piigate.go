@@ -546,7 +546,7 @@ func (c *shadowCanvas) grow(width, height int) {
 // newSessionPIIGate builds a PIIGate wired to a live IronRDP session: it
 // forwards cleared bytes to the websocket and, on detection, persists the
 // violation and terminates the broker session. Returns nil when the guard is
-// not enabled for the org or its prerequisites (Presidio, tesseract) are
+// not enabled for the org or its prerequisites (Presidio, an OCR engine) are
 // missing — callers fall back to direct forwarding.
 func newSessionPIIGate(
 	orgID, sessionID string,
@@ -558,10 +558,10 @@ func newSessionPIIGate(
 		return nil
 	}
 	// Unlike the async job pipeline (analyzer.IsEnabled), the gate does not
-	// depend on the worker pool: it only needs Presidio and tesseract.
+	// depend on the worker pool: it only needs Presidio and an OCR engine.
 	analyzerURL := appconfig.Get().MSPresidioAnalyzerURL()
 	if analyzerURL == "" || !ocr.IsAvailable() {
-		log.With("sid", sessionID).Warnf("piigate: %s is on but presidio/tesseract are unavailable, session runs UNGUARDED", PIIGateFlagName)
+		log.With("sid", sessionID).Warnf("piigate: %s is on but presidio/OCR engine are unavailable, session runs UNGUARDED", PIIGateFlagName)
 		return nil
 	}
 
@@ -669,7 +669,7 @@ func (g *PIIGate) Close() {
 	g.tail = nil
 	g.mu.Unlock()
 
-	// Cancel any in-flight analysis (kills a hung tesseract subprocess via
+	// Cancel any in-flight analysis (kills a hung OCR subprocess/request via
 	// CommandContext) and unblock the loop if it is waiting, then wait for
 	// it to exit before releasing the parser.
 	g.cancel()

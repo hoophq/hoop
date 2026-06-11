@@ -27,7 +27,7 @@ import (
 func runOCRBench(args []string) error {
 	fs := flag.NewFlagSet("ocrbench", flag.ExitOnError)
 	input := fs.String("i", "recording.json", "input fixture file (from 'rdpbench fetch')")
-	engine := fs.String("engine", "tesseract", "OCR engine: 'tesseract' (local subprocess) or 'http' (PoC server, see scripts/dev/ocr-poc)")
+	engine := fs.String("engine", "tesseract", "OCR engine: 'tesseract' (the gateway ocr package — honors RDP_OCR_SERVER_URL, falling back to the local tesseract subprocess) or 'http' (direct PoC server access, bypassing the gateway package)")
 	url := fs.String("url", "http://127.0.0.1:8868", "http engine: OCR server base URL")
 	bandPad := fs.Int("band-pad", analyzer.DefaultBandPadding, "vertical padding in pixels around dirty rects")
 	samples := fs.Int("n", 300, "number of band states to sample (evenly spaced; 0 = all)")

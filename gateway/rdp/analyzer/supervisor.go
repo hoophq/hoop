@@ -39,7 +39,7 @@ func RunSupervisor(parentCtx context.Context, analyzerURL, orgID string) {
 		return
 	}
 	if !ocr.IsAvailable() {
-		log.Warnf("rdp-analyzer: tesseract not found in PATH, supervisor disabled")
+		log.Warnf("rdp-analyzer: no OCR engine available (set RDP_OCR_SERVER_URL or install tesseract), supervisor disabled")
 		return
 	}
 	if resolveWorkerCount() == 0 {
