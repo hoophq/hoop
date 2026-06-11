@@ -330,38 +330,28 @@ func Post(c *gin.Context) {
 	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
 
 	// TODO: refactor to use response from openapi package
-	client, err := clientexec.New(&clientexec.Options{
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	outcome, err := services.Exec(timeoutCtx, services.ExecOptions{
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      sid,
 		ConnectionName: conn.Name,
 		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:      userAgent,
+		Script:         req.Script,
+		EnvVars:        req.EnvVars,
+		ClientArgs:     req.ClientArgs,
 	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client: %v", err)
-		return
-	}
-
-	log.Infof("started runexec method for connection %v", conn.Name)
-	respCh := make(chan *clientexec.Response)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		select {
-		case respCh <- client.Run([]byte(req.Script), req.EnvVars, req.ClientArgs...):
-		default:
-		}
-	}()
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
-	defer cancelFn()
-	select {
-	case outcome := <-respCh:
+	switch {
+	case err == nil:
 		log.Infof("runexec response, %v", outcome)
 		outcome.AIAnalysis = ToOpenApiSessionAIAnalysis(analyzeRes)
 		c.JSON(http.StatusOK, outcome)
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		log.Infof("runexec timeout (50s), it will return async")
 		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sid))
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client: %v", err)
 	}
 }
 

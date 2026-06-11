@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,8 +10,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
-	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -211,33 +212,27 @@ print(JSON.stringify(result));`
 
 func runSchemaExec(orgID, connectionName, script, token string) (string, bool, error) {
 	sessionID := uuid.NewString()
-	client, err := clientexec.New(&clientexec.Options{
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), schemaTimeout)
+	defer cancelFn()
+	resp, err := services.Exec(timeoutCtx, services.ExecOptions{
 		OrgID:          orgID,
 		SessionID:      sessionID,
 		ConnectionName: connectionName,
 		BearerToken:    token,
 		UserAgent:      "mcp.schema",
 		Verb:           pb.ClientVerbPlainExec,
+		Script:         script,
 	})
-	if err != nil {
-		return "", false, fmt.Errorf("failed creating exec client: %w", err)
-	}
-	respCh := make(chan *clientexec.Response, 1)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		respCh <- client.Run([]byte(script), nil)
-	}()
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), schemaTimeout)
-	defer cancelFn()
-	select {
-	case resp := <-respCh:
+	switch {
+	case err == nil:
 		if resp.ExitCode != 0 && resp.ExitCode != -2 {
 			log.With("sid", sessionID).Warnf("schema exec non-zero exit, %v", resp.String())
 			return "", false, fmt.Errorf("schema query failed: %s", resp.Output)
 		}
 		return resp.Output, false, nil
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		return "", true, nil
+	default:
+		return "", false, fmt.Errorf("failed creating exec client: %w", err)
 	}
 }

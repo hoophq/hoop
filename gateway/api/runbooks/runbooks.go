@@ -201,19 +201,6 @@ func RunExec(c *gin.Context) {
 		userAgent = "webapp.runbook.exec"
 	}
 
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		SessionID:      sessionID,
-		ConnectionName: connectionName,
-		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
-		UserAgent:      userAgent,
-		Origin:         proto.ConnectionOriginClientAPIRunbooks,
-	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution: %v", err)
-		return
-	}
-
 	newSession := models.Session{
 		ID:                   sessionID,
 		OrgID:                ctx.GetOrgID(),
@@ -294,25 +281,28 @@ func RunExec(c *gin.Context) {
 	log.Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		runbook.CommitSHA[:8], req.FileName, connectionName, strings.TrimSpace(params))
 
-	respCh := make(chan *clientexec.Response)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		select {
-		case respCh <- client.Run(runbook.InputFile, runbook.EnvVars, req.ClientArgs...):
-		default:
-		}
-	}()
-
 	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
 	defer cancelFn()
-	select {
-	case outcome := <-respCh:
+	outcome, err := services.Exec(timeoutCtx, services.ExecOptions{
+		OrgID:          ctx.GetOrgID(),
+		SessionID:      sessionID,
+		ConnectionName: connectionName,
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
+		UserAgent:      userAgent,
+		Origin:         proto.ConnectionOriginClientAPIRunbooks,
+		Script:         string(runbook.InputFile),
+		EnvVars:        runbook.EnvVars,
+		ClientArgs:     req.ClientArgs,
+	})
+	switch {
+	case err == nil:
 		log.Infof("runbook exec response, %v", outcome)
 		c.JSON(http.StatusOK, outcome)
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		log.Infof("runbook exec timeout (50s), it will return async")
 		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sessionID))
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution: %v", err)
 	}
 }
 
