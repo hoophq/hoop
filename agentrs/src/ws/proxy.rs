@@ -110,6 +110,8 @@ pub async fn start_rdp_proxy_session(
                 .unwrap_or_else(|_| "127.0.0.1:0".parse().unwrap()),
         )
         .client_stream_leftover_bytes(bytes::BytesMut::from(first_rdp_data.as_slice()))
+        .guard(session_info.guard.clone())
+        .session_id(session_info.sid.to_string())
         .build();
 
     // Run the proxy

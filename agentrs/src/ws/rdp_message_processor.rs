@@ -167,6 +167,22 @@ impl MessageProcessor {
             .context("Missing client_address")?
             .clone();
 
+        // Resolve the PII guard from gateway policy (metadata) + agent env
+        // (endpoints). Fail CLOSED on a delegation mismatch: if the gateway
+        // delegated guarding (and therefore suppressed its own gate) but the
+        // agent cannot build the guard, refuse the session rather than run it
+        // unguarded — that would be a silent enforcement bypass.
+        let guard = match crate::piigate::config::GuardConfig::resolve(
+            &message.metadata,
+            &sid.to_string(),
+        ) {
+            Ok(guard) => guard,
+            Err(e) => {
+                error!("> Refusing session {sid}: {e:#}");
+                return Err(e);
+            }
+        };
+
         let session_info = SessionInfo {
             sid: sid,
             target_address,
@@ -174,6 +190,7 @@ impl MessageProcessor {
             password,
             proxy_user,
             client_address,
+            guard,
             sender: self.ws_sender.clone(),
         };
 
@@ -232,10 +249,12 @@ impl MessageProcessor {
         // Get or create RDP data channel for this session
         let (tx, rx) = self.get_or_create_session_channel(sid).await;
 
-        // Start RDP proxy if not already running
-        if !self.is_proxy_running(sid).await {
-            self.start_rdp_proxy(sid, session_info, rx).await?;
-        }
+        // Start the RDP proxy exactly once per session. The check and the
+        // spawn happen under a single write lock on active_proxies so two
+        // concurrent data messages for the same SID cannot both spawn a proxy
+        // (the websocket receive loop is serial today, but the guard now
+        // depends on a single proxy/gate per session).
+        self.start_rdp_proxy_once(sid, session_info, rx).await;
 
         // Forward RDP data to proxy
         tx.send(rdp_data.to_vec())
@@ -261,17 +280,19 @@ impl MessageProcessor {
         }
     }
 
-    async fn is_proxy_running(&self, sid: Uuid) -> bool {
-        let proxies = self.active_proxies.read().await;
-        proxies.contains_key(&sid)
-    }
-
-    async fn start_rdp_proxy(
+    async fn start_rdp_proxy_once(
         &self,
         sid: Uuid,
         session_info: SessionInfo,
         rdp_data_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
-    ) -> anyhow::Result<()> {
+    ) {
+        // Hold the write lock across the check and the insert so the spawn is
+        // atomic with respect to other data messages for the same SID.
+        let mut proxies = self.active_proxies.write().await;
+        if proxies.contains_key(&sid) {
+            return;
+        }
+
         let config = self.config_manager.conf.clone();
         let ws_sender = self.ws_sender.clone();
         let active_proxies = self.active_proxies.clone();
@@ -291,12 +312,8 @@ impl MessageProcessor {
             info!("> Cleaned up RDP proxy task for session {}", sid);
         });
 
-        // Store the proxy task
-        let mut proxies = self.active_proxies.write().await;
         proxies.insert(sid, proxy_task);
         debug!("> Started RDP proxy task for session {}", sid);
-
-        Ok(())
     }
 
     async fn handle_ping(&self, data: Vec<u8>) -> anyhow::Result<()> {

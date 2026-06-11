@@ -41,6 +41,18 @@ pub struct BandAnalyzer {
     pub params: AnalysisParams,
 }
 
+impl BandAnalyzer {
+    /// Builds the production analyzer from a resolved guard config (gateway
+    /// policy + agent-local endpoints).
+    pub fn from_config(cfg: &super::config::GuardConfig) -> anyhow::Result<Self> {
+        Ok(Self {
+            ocr: OcrClient::new(&cfg.ocr_url)?,
+            presidio: PresidioClient::new(&cfg.presidio_url)?,
+            params: cfg.params.clone(),
+        })
+    }
+}
+
 #[async_trait]
 impl Analyzer for BandAnalyzer {
     async fn analyze(

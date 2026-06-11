@@ -13,12 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
@@ -162,29 +164,10 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		return
 	}
 
-	var serverCertChain [][]byte
-	session, err := broker.CreateRDPSession(
-		nil,
-		*connectionModel,
-		peerAddr,
-		broker.ProtocolRDP,
-		extractedCreds,
-		dba.ID,
-		dba.ExpireAt,
-		ctxDuration,
-	)
-
-	if err != nil {
-		log.Errorf("Failed to create session: %v", err)
-		return
-	}
-
-	if session == nil {
-		log.Errorf("CreateSession returned nil session")
-		return
-	}
-
-	// Get user context for session recording
+	// Resolve the org/user context BEFORE creating the session: the org ID
+	// decides whether the agent-side PII guard is enabled, and that decision
+	// must be carried in the SessionStarted message the broker sends to the
+	// agent on session creation.
 	var recorderOrgID, recorderUserID, recorderUserName, recorderUserEmail string
 	if isMachineCredential {
 		recorderOrgID = dba.OrgID
@@ -200,6 +183,42 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		recorderUserID = userCtx.UserID
 		recorderUserName = userCtx.UserName
 		recorderUserEmail = userCtx.UserEmail
+	}
+
+	// When the flag is on, the agent runs the PII gate (analysis happens
+	// where the plaintext already flows, inside the customer network) and the
+	// gateway suppresses its own gate — a single enforcement point. The
+	// analysis policy rides along; the agent supplies Presidio/OCR endpoints
+	// from its own env.
+	agentGuard := broker.RDPGuardConfig{Enabled: featureflag.IsEnabled(recorderOrgID, PIIGateFlagName)}
+	if agentGuard.Enabled {
+		params := analyzer.DefaultAnalysisParams()
+		agentGuard.ScoreThreshold = params.ScoreThreshold
+		agentGuard.EntityDenylist = params.EntityDenylist
+		agentGuard.BandPadding = params.BandPadding
+	}
+
+	var serverCertChain [][]byte
+	session, err := broker.CreateRDPSession(
+		nil,
+		*connectionModel,
+		peerAddr,
+		broker.ProtocolRDP,
+		extractedCreds,
+		dba.ID,
+		dba.ExpireAt,
+		ctxDuration,
+		agentGuard,
+	)
+
+	if err != nil {
+		log.Errorf("Failed to create session: %v", err)
+		return
+	}
+
+	if session == nil {
+		log.Errorf("CreateSession returned nil session")
+		return
 	}
 
 	// Initialize RDP session recorder
@@ -311,13 +330,23 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// Realtime PII guard (hold-and-release): when enabled, server->client
 	// bytes are held until OCR+Presidio analysis clears them; on detection
 	// the held frames are dropped and the session is terminated.
-	gate := newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
-		sessionErrMu.Lock()
-		sessionErr = err
-		sessionErrMu.Unlock()
-	})
-	if gate != nil {
-		defer gate.Close()
+	//
+	// When the agent runs the guard (agentGuard.Enabled), the gateway does
+	// NOT also gate: the agent already cleared/redacted every frame before it
+	// reached the gateway, so a second gate here would only double OCR cost
+	// and latency. The gateway still records — now of clean frames.
+	var gate *PIIGate
+	if !agentGuard.Enabled {
+		gate = newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
+			sessionErrMu.Lock()
+			sessionErr = err
+			sessionErrMu.Unlock()
+		})
+		if gate != nil {
+			defer gate.Close()
+		}
+	} else {
+		log.With("sid", sessionID).Infof("piigate: agent-side guard active, gateway gate suppressed")
 	}
 
 	// Use a done channel to signal when the websocket read goroutine exits

@@ -3,7 +3,9 @@ package broker
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +28,20 @@ func (h *RDPHandler) HandleData(session *Session, msg *WebSocketMessage) error {
 	return nil
 }
 
+// RDPGuardConfig carries the agent-side PII guard decision and tuning into
+// the SessionStarted metadata. When Enabled is true, the agent runs the
+// realtime hold-and-release PII gate on the server->client stream (and the
+// gateway suppresses its own gate — single enforcement point). The endpoints
+// (Presidio, OCR sidecar) are NOT sent on the wire: the agent reads those
+// from its own environment, keeping customer-network infra out of gateway
+// state. Only the enable decision and analysis policy travel here.
+type RDPGuardConfig struct {
+	Enabled        bool
+	ScoreThreshold float64
+	EntityDenylist []string
+	BandPadding    int
+}
+
 // CreateRDPSession creates a session with protocol-specific
 func CreateRDPSession(
 	connTcp ConnectionCommunicator,
@@ -36,6 +52,7 @@ func CreateRDPSession(
 	credentialID string,
 	expireAt time.Time,
 	ctxDuration time.Duration,
+	guard RDPGuardConfig,
 ) (*Session, error) {
 
 	sessionID := uuid.New()
@@ -82,17 +99,33 @@ func CreateRDPSession(
 	address := fmt.Sprintf("%s:%s", host, port)
 
 	// Send session info to agent using new message format
+	metadata := map[string]string{
+		"protocol":       protocol,
+		"client_address": clientAddr,
+		"username":       secrets["envvar:USER"],
+		"password":       secrets["envvar:PASS"],
+		"target_address": address,
+		"proxy_user":     extractedCreds, // Use the extracted credentials as proxy_user
+	}
+	// Agent-side PII guard: only signal "guard this session" plus analysis
+	// policy. The agent supplies Presidio/OCR endpoints from its own env.
+	// Absent keys mean "no guard" — an older agent simply ignores them.
+	if guard.Enabled {
+		metadata["pii_guard"] = "enabled"
+		metadata["pii_score_threshold"] = strconv.FormatFloat(guard.ScoreThreshold, 'f', -1, 64)
+		metadata["pii_band_padding"] = strconv.Itoa(guard.BandPadding)
+		if len(guard.EntityDenylist) > 0 {
+			// JSON array, not a comma-join: entity names are an external
+			// (Presidio) vocabulary and must not rely on being comma-free.
+			if denylist, err := json.Marshal(guard.EntityDenylist); err == nil {
+				metadata["pii_entity_denylist"] = string(denylist)
+			}
+		}
+	}
 	msg := &WebSocketMessage{
-		Type: MessageTypeSessionStarted,
-		Metadata: map[string]string{
-			"protocol":       protocol,
-			"client_address": clientAddr,
-			"username":       secrets["envvar:USER"],
-			"password":       secrets["envvar:PASS"],
-			"target_address": address,
-			"proxy_user":     extractedCreds, // Use the extracted credentials as proxy_user
-		},
-		Payload: []byte{}, // Empty payload since session ID is in header
+		Type:     MessageTypeSessionStarted,
+		Metadata: metadata,
+		Payload:  []byte{}, // Empty payload since session ID is in header
 	}
 
 	framedData, err := EncodeWebSocketMessage(sessionID, msg)

@@ -39,6 +39,7 @@
 pub mod analyze;
 pub mod bands;
 pub mod canvas;
+pub mod config;
 pub mod framing;
 pub mod ocr;
 pub mod presidio;
