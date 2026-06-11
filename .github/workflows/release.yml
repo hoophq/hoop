@@ -652,6 +652,75 @@ jobs:
           docker manifest push hoophq/hoop:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoop:latest
 
+  # Agent image with a bundled OCR engine for the realtime RDP PII guard
+  # (see Dockerfile.agent-ocr). Built FROM the just-published hoop image, so
+  # it depends on the gateway multiarch publish. CPU flavor is multiarch;
+  # the GPU flavor (-gpu tag) is amd64-only (CUDA).
+  docker-publish-hoopagent-ocr:
+    runs-on: ubuntu-latest
+    name: Publish Agent OCR Image (CPU)
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-multiarch
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (CPU, multiarch)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-ocr
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoop:${{ env.GIT_TAG }}
+          tags: |
+            hoophq/hoop-agent-ocr:${{ env.GIT_TAG }}
+            hoophq/hoop-agent-ocr:latest
+
+  docker-publish-hoopagent-ocr-gpu:
+    runs-on: ubuntu-latest
+    name: Publish Agent OCR Image (GPU)
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-multiarch
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (GPU, amd64-only)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-ocr-gpu
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoop:${{ env.GIT_TAG }}
+          tags: |
+            hoophq/hoop-agent-ocr:${{ env.GIT_TAG }}-gpu
+
 
   docker-publish-hoopagent-arm64:
     runs-on: GitHub-Linux-Arm-Runner
