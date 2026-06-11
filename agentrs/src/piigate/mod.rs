@@ -44,6 +44,7 @@ pub mod framing;
 pub mod ocr;
 pub mod presidio;
 pub mod report;
+pub mod rewrite;
 #[cfg(test)]
 pub mod testpdu;
 
@@ -80,11 +81,41 @@ const FORWARD_CHUNK_BYTES: usize = 256 << 10;
 /// we CAN frame; this path carries no decodable pixels).
 const MAX_UNFRAMEABLE_TAIL: usize = 128 * 1024;
 
-/// Terminal gate events. The session owner must terminate the session on
-/// either: the gate stops forwarding permanently once one is emitted.
+/// What the gate does when PII is detected in a cleared batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GatePolicy {
+    /// Drop the held frames and terminate the session (the original PoC
+    /// behavior). A Detection event is emitted and forwarding stops.
+    #[default]
+    Kill,
+    /// Blank the detected regions in the batch's pixels and forward the
+    /// rewritten frames; the session continues. A Detection event is still
+    /// emitted (for audit), but the gate keeps running.
+    Redact,
+    /// Blank the detected regions AND terminate after forwarding the
+    /// redacted batch — strictest: the client never sees the PII and the
+    /// session is killed, leaving a clean recording as evidence.
+    RedactAndKill,
+}
+
+impl GatePolicy {
+    fn redacts(self) -> bool {
+        matches!(self, GatePolicy::Redact | GatePolicy::RedactAndKill)
+    }
+    fn kills_after_detection(self) -> bool {
+        matches!(self, GatePolicy::Kill | GatePolicy::RedactAndKill)
+    }
+}
+
+/// Terminal gate events. For Kill/RedactAndKill the session owner must
+/// terminate on a Detection; for Redact the Detection is informational and
+/// the gate keeps running. Overload always terminates.
 #[derive(Debug)]
 pub enum GateEvent {
-    /// PII was detected; the held frames that contained it were dropped.
+    /// PII was detected. Under Kill/RedactAndKill the held frames were
+    /// dropped (Kill) or the redacted batch was forwarded then forwarding
+    /// stops (RedactAndKill); under Redact the batch was forwarded with the
+    /// PII blanked and the gate continues.
     Detection(SnapshotResult),
     /// The held backlog exceeded [`MAX_HELD_BYTES`]; the backlog was dropped
     /// (fail-closed).
@@ -123,6 +154,7 @@ struct GateShared {
     /// future is dropped, aborting its HTTP requests) and unblocks the task.
     cancel: CancellationToken,
     events: mpsc::UnboundedSender<GateEvent>,
+    policy: GatePolicy,
 }
 
 /// The hold-and-release valve. Create with [`PiiGate::spawn`]; feed
@@ -144,6 +176,7 @@ impl PiiGate {
         sink: W,
         events: mpsc::UnboundedSender<GateEvent>,
         band_padding: usize,
+        policy: GatePolicy,
     ) -> Self
     where
         W: AsyncWrite + Unpin + Send + 'static,
@@ -162,6 +195,7 @@ impl PiiGate {
             notify: Notify::new(),
             cancel: CancellationToken::new(),
             events,
+            policy,
         });
 
         let task = tokio::spawn(analysis_loop(
@@ -419,35 +453,92 @@ where
                 warn!(sid = %shared.session_id, "piigate: analysis failed, failing open: {e:#}");
             }
             Ok(res) if res.is_detection() => {
-                // Terminal-state transition under the lock: if an overload
-                // (or close) already terminated the gate while this analysis
-                // was in flight, the session is going down anyway — do not
-                // emit a second terminal event.
-                let already_down = {
-                    let mut st = shared.state.lock();
-                    let already = st.killed || st.closed;
-                    st.killed = true;
-                    st.queue.clear();
-                    st.queued_bytes = 0;
-                    st.tail.clear();
-                    already
-                };
-                if already_down {
-                    return false;
-                }
-                warn!(
-                    sid = %shared.session_id,
-                    "piigate: PII detected ({:?}), dropping held batch and terminating session",
-                    res.counts
-                );
-                let _ = shared.events.send(GateEvent::Detection(res));
-                return false;
+                return on_detection(shared, sink, canvas, &bands, batch, res).await;
             }
             Ok(_) => {}
         }
     }
 
     forward_batch(shared, sink, batch).await
+}
+
+/// Handles a detection according to the gate policy. Returns false when the
+/// analysis loop must exit (Kill / RedactAndKill, or a forward failure),
+/// true when it should keep running (Redact).
+async fn on_detection<W>(
+    shared: &GateShared,
+    sink: &mut W,
+    canvas: &ShadowCanvas,
+    bands: &[bands::YBand],
+    batch: &[GatePdu],
+    res: SnapshotResult,
+) -> bool
+where
+    W: AsyncWrite + Unpin,
+{
+    let policy = shared.policy;
+
+    if policy.redacts() {
+        // Hold-and-rewrite: the batch's bitmap-bearing PDUs are dropped and
+        // replaced by repainting the analyzed bands from the shadow canvas
+        // with the detected bboxes blanked — the PII pixels are never
+        // delivered. Non-bitmap PDUs in the batch (e.g. pointer updates)
+        // carry no analyzed pixels and must still pass through, in order:
+        // forward them first, then the redacted repaint.
+        let mut passthrough: Vec<u8> = Vec::new();
+        for p in batch {
+            if p.patches.is_empty() {
+                passthrough.extend_from_slice(&p.data);
+            }
+        }
+        let wire = rewrite::redact_bands(&canvas.fb, canvas.w, canvas.h, bands, &res.detections);
+        warn!(
+            sid = %shared.session_id,
+            "piigate: PII detected ({:?}), redacting {} region(s) and forwarding",
+            res.counts, res.detections.len()
+        );
+        if !passthrough.is_empty() && !forward_bytes(shared, sink, &passthrough).await {
+            return false;
+        }
+        if !forward_bytes(shared, sink, &wire).await {
+            return false;
+        }
+        let _ = shared.events.send(GateEvent::Detection(res));
+
+        if policy.kills_after_detection() {
+            // RedactAndKill: the redacted batch is delivered, now stop.
+            let mut st = shared.state.lock();
+            st.killed = true;
+            st.queue.clear();
+            st.queued_bytes = 0;
+            st.tail.clear();
+            return false;
+        }
+        return true; // Redact: keep guarding.
+    }
+
+    // Kill: drop the held batch and terminate. Terminal-state transition
+    // under the lock — if an overload (or close) already terminated the gate
+    // while this analysis was in flight, do not emit a second terminal event.
+    let already_down = {
+        let mut st = shared.state.lock();
+        let already = st.killed || st.closed;
+        st.killed = true;
+        st.queue.clear();
+        st.queued_bytes = 0;
+        st.tail.clear();
+        already
+    };
+    if already_down {
+        return false;
+    }
+    warn!(
+        sid = %shared.session_id,
+        "piigate: PII detected ({:?}), dropping held batch and terminating session",
+        res.counts
+    );
+    let _ = shared.events.send(GateEvent::Detection(res));
+    false
 }
 
 /// Delivers cleared PDUs downstream, coalescing them into bounded chunks
@@ -469,6 +560,24 @@ where
         chunk.extend_from_slice(&p.data);
     }
     flush(shared, sink, &mut chunk).await
+}
+
+/// Forwards a raw byte buffer downstream (used for redacted/rewritten PDUs,
+/// which are synthesized rather than copied from a GatePdu). Same cancellation
+/// and failure semantics as the batch path.
+async fn forward_bytes<W>(shared: &GateShared, sink: &mut W, mut bytes: &[u8]) -> bool
+where
+    W: AsyncWrite + Unpin,
+{
+    while !bytes.is_empty() {
+        let n = bytes.len().min(FORWARD_CHUNK_BYTES);
+        let mut chunk = bytes[..n].to_vec();
+        if !flush(shared, sink, &mut chunk).await {
+            return false;
+        }
+        bytes = &bytes[n..];
+    }
+    true
 }
 
 async fn flush<W>(shared: &GateShared, sink: &mut W, chunk: &mut Vec<u8>) -> bool

@@ -40,6 +40,9 @@ type RDPGuardConfig struct {
 	ScoreThreshold float64
 	EntityDenylist []string
 	BandPadding    int
+	// Policy is "kill", "redact", or "redact_and_kill" (agent default kill
+	// when empty/unrecognized).
+	Policy string
 }
 
 // CreateRDPSession creates a session with protocol-specific
@@ -115,6 +118,9 @@ func CreateRDPSession(
 		metadata["pii_guard"] = "enabled"
 		metadata["pii_score_threshold"] = strconv.FormatFloat(guard.ScoreThreshold, 'f', -1, 64)
 		metadata["pii_band_padding"] = strconv.Itoa(guard.BandPadding)
+		if guard.Policy != "" {
+			metadata["pii_policy"] = guard.Policy
+		}
 		if len(guard.EntityDenylist) > 0 {
 			// JSON array, not a comma-join: entity names are an external
 			// (Presidio) vocabulary and must not rely on being comma-free.

@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -196,6 +197,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		agentGuard.ScoreThreshold = params.ScoreThreshold
 		agentGuard.EntityDenylist = params.EntityDenylist
 		agentGuard.BandPadding = params.BandPadding
+		agentGuard.Policy = appconfig.Get().RDPPIIGuardPolicy()
 	}
 
 	var serverCertChain [][]byte

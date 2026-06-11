@@ -145,6 +145,10 @@ config:
   # RDP_PII_SCORE_THRESHOLD: '0.9'
   # RDP_PII_ENTITY_DENYLIST: 'DATE_TIME,NRP'
   #
+  # Realtime agent-side PII guard action on detection: kill (default), redact
+  # (blank the PII region and continue the session), or redact_and_kill.
+  # RDP_PII_GUARD_POLICY: 'kill'
+  #
   # Optional OCR sidecar (RapidOCR/PaddleOCR HTTP server) used instead of the
   # local tesseract subprocess for RDP PII analysis — measured ~10x faster
   # per frame on CPU and ~23x on GPU. The sidecar decides CPU vs GPU on its

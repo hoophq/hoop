@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use tracing::warn;
 
 use super::presidio::AnalysisParams;
+use super::GatePolicy;
 
 /// Env var for the Presidio analyzer base URL (shared with the Go agent's
 /// DLP override convention).
@@ -28,6 +29,10 @@ pub struct GuardConfig {
     pub presidio_url: String,
     pub ocr_url: String,
     pub params: AnalysisParams,
+    /// What to do on detection (kill / redact / redact+kill). Sent by the
+    /// gateway; defaults to kill (preserve the original behavior) when absent
+    /// or unrecognized.
+    pub policy: GatePolicy,
 }
 
 /// Whether the gateway asked this session to be guarded by the agent.
@@ -90,7 +95,17 @@ impl GuardConfig {
             }
         }
 
-        Ok(Some(Self { presidio_url, ocr_url, params }))
+        let policy = match metadata.get("pii_policy").map(String::as_str) {
+            Some("redact") => GatePolicy::Redact,
+            Some("redact_and_kill") => GatePolicy::RedactAndKill,
+            Some("kill") | None => GatePolicy::Kill,
+            Some(other) => {
+                warn!(%sid, "piigate: unknown pii_policy {other:?}, defaulting to kill");
+                GatePolicy::Kill
+            }
+        };
+
+        Ok(Some(Self { presidio_url, ocr_url, params, policy }))
     }
 }
 
@@ -182,6 +197,25 @@ mod tests {
             assert_eq!(cfg.params.score_threshold, 0.75);
             assert_eq!(cfg.params.band_padding, 30);
             assert_eq!(cfg.params.entity_denylist, vec!["DATE_TIME", "NRP"]);
+        });
+    }
+
+    #[test]
+    fn parses_policy_or_defaults_to_kill() {
+        with_endpoints(Some("http://p"), Some("http://o"), || {
+            let resolve = |policy: Option<&str>| {
+                let mut pairs = vec![("pii_guard", "enabled")];
+                if let Some(p) = policy {
+                    pairs.push(("pii_policy", p));
+                }
+                GuardConfig::resolve(&md(&pairs), "sid").unwrap().unwrap().policy
+            };
+            assert_eq!(resolve(None), GatePolicy::Kill);
+            assert_eq!(resolve(Some("kill")), GatePolicy::Kill);
+            assert_eq!(resolve(Some("redact")), GatePolicy::Redact);
+            assert_eq!(resolve(Some("redact_and_kill")), GatePolicy::RedactAndKill);
+            // Unknown value falls back to kill (fail-safe, not fail-open).
+            assert_eq!(resolve(Some("bogus")), GatePolicy::Kill);
         });
     }
 

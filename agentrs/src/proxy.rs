@@ -105,6 +105,7 @@ where
             client_wr,
             events_tx,
             guard.params.band_padding,
+            guard.policy,
         ));
         info!(sid = %self.session_id, "piigate: realtime PII guard active (agent-side, hold-and-release)");
 

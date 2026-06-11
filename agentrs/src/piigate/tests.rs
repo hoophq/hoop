@@ -21,7 +21,7 @@ use super::canvas::ShadowCanvas;
 use super::framing::{pdu_size, FastPathParser};
 use super::presidio::{EntityDetection, SnapshotResult};
 use super::testpdu::*;
-use super::{GateEvent, PiiGate, MAX_HELD_BYTES};
+use super::{GateEvent, GatePolicy, PiiGate, MAX_HELD_BYTES};
 
 // --- Test harness -----------------------------------------------------------
 
@@ -83,6 +83,10 @@ struct Harness {
 }
 
 fn new_test_gate(analyzer: Arc<dyn Analyzer>) -> Harness {
+    new_test_gate_with_policy(analyzer, GatePolicy::Kill)
+}
+
+fn new_test_gate_with_policy(analyzer: Arc<dyn Analyzer>, policy: GatePolicy) -> Harness {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let events = EventLog::default();
     let log = events.clone();
@@ -95,7 +99,7 @@ fn new_test_gate(analyzer: Arc<dyn Analyzer>) -> Harness {
         }
     });
     let sink = TestSink::default();
-    let gate = PiiGate::spawn("sid-test", analyzer, sink.clone(), tx, 0);
+    let gate = PiiGate::spawn("sid-test", analyzer, sink.clone(), tx, 0, policy);
     Harness { gate, sink, events }
 }
 
@@ -547,7 +551,7 @@ async fn close_cancels_stalled_write() {
     let sink = BlockingSink {
         entered: entered.clone(),
     };
-    let gate = PiiGate::spawn("sid-test", analyzer, sink, tx, 0);
+    let gate = PiiGate::spawn("sid-test", analyzer, sink, tx, 0, GatePolicy::Kill);
 
     // A non-bitmap PDU goes straight to forward, where the sink stalls.
     gate.ingest(&tpkt_pdu(&[0x01, 0x02]));
@@ -734,5 +738,99 @@ async fn fragmented_update_held_until_reassembly() {
         }
     });
     assert!(!leaked, "LEAK: fragments without Last rendered the signature");
+    h.gate.close().await;
+}
+
+// --- Redact-mode tests ------------------------------------------------------
+//
+// The leak oracle proves the same zero-leak property under redaction: the
+// client renders the BLANKED region, never the PII pixels. The signature
+// detector reports the planted magenta rect's bbox so the gate knows what to
+// blank.
+
+/// Redact mode: a PII region is painted; the gate detects it, forwards a
+/// REWRITTEN frame with the region blanked, and the SESSION CONTINUES. The
+/// oracle must never render magenta; the gate stays alive.
+#[tokio::test]
+async fn redact_blanks_pii_and_continues() {
+    let (det, _) = SignatureDetector::new(40, 40, 8, 8);
+    let h = new_test_gate_with_policy(det, GatePolicy::Redact);
+
+    h.gate.ingest(&fast_path_bitmap_pdu(&[TestRect::new(40, 40, 8, 8, MAGENTA)]));
+
+    // A detection event fires (for audit) but the gate is NOT killed.
+    wait_for("redact detection", || h.events.detections() == 1).await;
+    assert!(!h.gate.killed(), "redact mode must keep the session alive");
+
+    // The forwarded bytes must render the region blanked (black), never
+    // magenta — for every client-renderable state.
+    wait_for("redacted frame forwarded", || !h.sink.bytes().is_empty()).await;
+    let mut leaked = false;
+    let mut saw_black = false;
+    let mut oracle = ClientOracle::new();
+    oracle.consume(&h.sink.bytes(), |fb, w, hgt| {
+        if any_magenta_pixel(fb) {
+            leaked = true;
+        }
+        if rect_is_color(fb, w, hgt, 40, 40, 8, 8, [0, 0, 0]) {
+            saw_black = true;
+        }
+    });
+    assert!(!leaked, "LEAK: redact mode delivered PII pixels");
+    assert!(saw_black, "redacted region must render as black");
+
+    // The session keeps guarding: a subsequent clean frame still flows.
+    h.gate.ingest(&fast_path_bitmap_pdu(&[TestRect::new(0, 0, 16, 16, WHITE)]));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(!h.gate.killed(), "gate must still be alive after a clean repaint");
+    h.gate.close().await;
+}
+
+/// RedactAndKill: the PII region is blanked AND delivered, then the session
+/// terminates. The oracle never sees magenta; the gate ends killed.
+#[tokio::test]
+async fn redact_and_kill_blanks_then_terminates() {
+    let (det, _) = SignatureDetector::new(40, 40, 8, 8);
+    let h = new_test_gate_with_policy(det, GatePolicy::RedactAndKill);
+
+    h.gate.ingest(&fast_path_bitmap_pdu(&[TestRect::new(40, 40, 8, 8, MAGENTA)]));
+
+    wait_for("detection", || h.events.detections() == 1).await;
+    wait_for("gate killed", || h.gate.killed()).await;
+
+    let mut leaked = false;
+    let mut saw_black = false;
+    let mut oracle = ClientOracle::new();
+    oracle.consume(&h.sink.bytes(), |fb, w, hgt| {
+        if any_magenta_pixel(fb) {
+            leaked = true;
+        }
+        if rect_is_color(fb, w, hgt, 40, 40, 8, 8, [0, 0, 0]) {
+            saw_black = true;
+        }
+    });
+    assert!(!leaked, "LEAK: redact+kill delivered PII pixels");
+    assert!(saw_black, "redacted region must render as black before termination");
+
+    // Killed: a later ingest is dropped.
+    h.gate.ingest(&fast_path_bitmap_pdu(&[TestRect::new(0, 0, 8, 8, WHITE)]));
+    let after = h.sink.bytes().len();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(h.sink.bytes().len(), after, "post-kill ingest must not forward");
+    h.gate.close().await;
+}
+
+/// Redact mode with a clean batch behaves exactly like the release path: no
+/// detection, original bytes forwarded unchanged (no needless rewrite).
+#[tokio::test]
+async fn redact_mode_clean_batch_forwards_original() {
+    let (det, _) = SignatureDetector::new(40, 40, 8, 8);
+    let h = new_test_gate_with_policy(det, GatePolicy::Redact);
+
+    let clean = fast_path_bitmap_pdu(&[TestRect::new(0, 0, 16, 16, WHITE)]);
+    h.gate.ingest(&clean);
+
+    wait_for("clean batch forwarded", || h.sink.bytes() == clean).await;
+    assert_eq!(h.events.detections(), 0);
     h.gate.close().await;
 }
