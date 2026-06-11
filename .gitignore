@@ -73,3 +73,6 @@ webapp/resources/public/data/connections-metadata.json
 # WASM build output
 gateway/rdp/wasm/target/
 __pycache__/
+
+# Local RDP benchmark fixture (may contain sensitive screen content); never commit
+/recording.json

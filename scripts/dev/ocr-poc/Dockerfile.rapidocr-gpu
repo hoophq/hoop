@@ -1,0 +1,39 @@
+# RapidOCR OCR PoC — GPU flavor (see server_rapidocr.py).
+#
+# CUDA base + onnxruntime-gpu. The device is detected at runtime: the
+# server uses the GPU when one is visible and REFUSES TO START otherwise
+# (set OCR_ALLOW_CPU_FALLBACK=1 to deliberately run degraded on CPU) — a
+# GPU image silently running on CPU would quietly miss latency targets.
+#
+# Build & run on a CUDA host (requires nvidia-container-toolkit).
+# Host port 8870 (vs 8868 in the CPU flavor) only avoids a collision when
+# both flavors run on the same box during benchmarking:
+#   docker build -f Dockerfile.rapidocr-gpu -t ocr-poc-rapid-gpu .
+#   docker run -d --name ocr-poc-rapid-gpu --gpus all -p 8870:8868 ocr-poc-rapid-gpu
+#   curl http://localhost:8870/healthz  # -> {"status":"ok","device":"onnxruntime-cuda"}
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+# libgl1/libxcb1/libsm6/libxext6: rapidocr depends on regular opencv-python
+# (not headless), whose native module links these even for imdecode-only use.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/lib/apt/lists/*
+
+# onnxruntime-gpu 1.19+ targets CUDA 12 + cuDNN 9 (both in the base image).
+# Bounded pins: open-ended ranges make benchmark numbers non-reproducible.
+RUN pip3 install --no-cache-dir \
+    "rapidocr>=3.1,<4" \
+    "onnxruntime-gpu>=1.19,<2" \
+    "fastapi>=0.115,<1" \
+    "uvicorn>=0.30,<1"
+
+COPY device_policy.py server_rapidocr.py /app/
+# Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes, each
+# with its own model instance on the GPU (the gateway analyzer issues up to
+# 8 concurrent chunk requests). 4 matches the benchmarked configuration —
+# each worker holds its own copy of the models in VRAM, so tune to the GPU
+# memory budget with `docker run -e WEB_CONCURRENCY=N`.
+ENV WEB_CONCURRENCY=4
+EXPOSE 8868
+CMD ["python3", "-m", "uvicorn", "server_rapidocr:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8868"]
