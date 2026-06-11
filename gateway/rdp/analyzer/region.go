@@ -105,6 +105,31 @@ func (d *DirtyBands) Bands() []YBand { return d.bands }
 // Empty reports whether no dirty area has been recorded since the last Reset.
 func (d *DirtyBands) Empty() bool { return len(d.bands) == 0 }
 
+// Intersects reports whether a rect's vertical extent, padded with the same
+// policy as AddRect, overlaps any accumulated band. It answers "would this
+// rect repaint (or touch the text lines of) rows already dirtied since the
+// last Reset" — the conflict test used to split hold-and-release batches so
+// no intermediate screen state escapes analysis.
+func (d *DirtyBands) Intersects(y, height int) bool {
+	if height <= 0 {
+		return false
+	}
+	y0 := y - d.pad
+	y1 := y + height + d.pad
+	if y0 < 0 {
+		y0 = 0
+	}
+	if y1 > d.canvasHeight {
+		y1 = d.canvasHeight
+	}
+	for _, b := range d.bands {
+		if y0 < b.Y1 && b.Y0 < y1 {
+			return true
+		}
+	}
+	return false
+}
+
 // CoveredRows returns the total number of framebuffer rows covered by the
 // current bands — useful to decide between band analysis and a full-frame
 // pass when most of the screen is dirty anyway.

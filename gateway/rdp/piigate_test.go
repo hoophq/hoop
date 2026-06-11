@@ -3,8 +3,10 @@ package rdp
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +22,189 @@ func tpktPDU(payload []byte) []byte {
 	total := 4 + len(payload)
 	out := []byte{0x03, 0x00, byte(total >> 8), byte(total & 0xff)}
 	return append(out, payload...)
+}
+
+// testRect describes one solid-color bitmap rectangle for synthesized PDUs.
+type testRect struct {
+	x, y, w, h int
+	bgr        [3]byte
+}
+
+var (
+	white   = [3]byte{0xff, 0xff, 0xff}
+	magenta = [3]byte{0xff, 0x00, 0xff} // BGR: composites to RGBA (255, 0, 255)
+)
+
+// bitmapUpdatePayload builds a TS_UPDATE_BITMAP payload (updateType, nrect,
+// TS_BITMAP_DATA...) with one uncompressed 24bpp rectangle per testRect.
+func bitmapUpdatePayload(t *testing.T, rects ...testRect) []byte {
+	t.Helper()
+	upd := new(bytes.Buffer)
+	_ = binary.Write(upd, binary.LittleEndian, uint16(0x0001))     // updateType = BITMAP
+	_ = binary.Write(upd, binary.LittleEndian, uint16(len(rects))) // numberRectangles
+	for _, r := range rects {
+		if r.w <= 0 || r.h <= 0 || r.w*r.h*3 > 0xffff {
+			t.Fatalf("invalid test rect %+v", r)
+		}
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.x))       // destLeft
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.y))       // destTop
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.x+r.w-1)) // destRight (inclusive)
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.y+r.h-1)) // destBottom (inclusive)
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.w))       // width
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.h))       // height
+		_ = binary.Write(upd, binary.LittleEndian, uint16(24))        // bitsPerPixel
+		_ = binary.Write(upd, binary.LittleEndian, uint16(0))         // compressionFlags: uncompressed
+		_ = binary.Write(upd, binary.LittleEndian, uint16(r.w*r.h*3)) // bitmapLength
+		upd.Write(bytes.Repeat(r.bgr[:], r.w*r.h))                    // raw BGR rows
+	}
+	return upd.Bytes()
+}
+
+// fastPathPDU wraps an update payload chunk into one Fast-Path PDU with the
+// given fragmentation bits (0x0 Single, 0x1 Last, 0x2 First, 0x3 Next).
+func fastPathPDU(t *testing.T, frag byte, payload []byte) []byte {
+	t.Helper()
+	pdu := new(bytes.Buffer)
+	// updateHeader: updateCode=1 (bitmap) in bits[0..4], fragmentation in
+	// bits[4..6], no compression in bits[6..8].
+	pdu.WriteByte(0x01 | frag<<4)
+	_ = binary.Write(pdu, binary.LittleEndian, uint16(len(payload)))
+	pdu.Write(payload)
+
+	total := 1 + 2 + pdu.Len() // fp header byte + 2-byte PER length + update PDU
+	if total > 0x3fff {
+		t.Fatalf("test PDU too large for PER length: %d", total)
+	}
+	out := []byte{0x00, 0x80 | byte(total>>8), byte(total & 0xff)}
+	return append(out, pdu.Bytes()...)
+}
+
+// fastPathBitmapPDU synthesizes a complete (unfragmented) Fast-Path update
+// PDU — the exact wire format the WASM parser frames and decodes. Multiple
+// rects in one call form a single (atomic) PDU.
+func fastPathBitmapPDU(t *testing.T, rects ...testRect) []byte {
+	t.Helper()
+	return fastPathPDU(t, 0x0, bitmapUpdatePayload(t, rects...))
+}
+
+// fragmentedFastPathBitmapPDU splits one bitmap update across n Fast-Path
+// fragments (First, Next..., Last). The parser — like a real client — only
+// reassembles and yields bitmaps when the Last fragment arrives.
+func fragmentedFastPathBitmapPDU(t *testing.T, n int, rects ...testRect) [][]byte {
+	t.Helper()
+	payload := bitmapUpdatePayload(t, rects...)
+	if n < 2 || len(payload) < n {
+		t.Fatalf("cannot split %d payload bytes into %d fragments", len(payload), n)
+	}
+	chunk := (len(payload) + n - 1) / n
+	var out [][]byte
+	for i := 0; i < n; i++ {
+		lo, hi := i*chunk, (i+1)*chunk
+		if hi > len(payload) {
+			hi = len(payload)
+		}
+		frag := byte(0x3) // Next
+		switch {
+		case i == 0:
+			frag = 0x2 // First
+		case i == n-1:
+			frag = 0x1 // Last
+		}
+		out = append(out, fastPathPDU(t, frag, payload[lo:hi]))
+	}
+	return out
+}
+
+// clientOracle reconstructs what an RDP client would render from the bytes
+// the gate forwarded: it frames PDUs exactly like the gate, composites each
+// PDU atomically onto its own shadow canvas, and invokes onState after every
+// PDU — i.e. for every intermediate screen state a client could display.
+type clientOracle struct {
+	t       *testing.T
+	parser  *parser.Parser
+	canvas  shadowCanvas
+	tail    []byte
+	onState func(fb []byte, w, h int)
+}
+
+func newClientOracle(t *testing.T, onState func(fb []byte, w, h int)) *clientOracle {
+	t.Helper()
+	p, err := parser.NewParser(context.Background())
+	if err != nil {
+		t.Fatalf("oracle parser: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	return &clientOracle{t: t, parser: p, canvas: shadowCanvas{sessionID: "oracle"}, onState: onState}
+}
+
+// consume replays forwarded bytes, checking every per-PDU client state.
+func (o *clientOracle) consume(data []byte) {
+	o.t.Helper()
+	o.tail = append(o.tail, data...)
+	for len(o.tail) > 0 {
+		size, err := o.parser.GetPduSize(o.tail)
+		if err != nil {
+			o.t.Fatalf("oracle framing: %v", err)
+		}
+		if size == 0 || int(size) > len(o.tail) {
+			break
+		}
+		res, err := o.parser.Parse(o.tail[:size])
+		if err == nil {
+			for _, bmp := range res.Bitmaps {
+				if d := o.parser.GetBitmapData(bmp); len(d) > 0 && bmp.Width > 0 && bmp.Height > 0 {
+					o.canvas.composite(bmp, d)
+				}
+			}
+		}
+		o.tail = o.tail[size:]
+		o.onState(o.canvas.fb, o.canvas.w, o.canvas.h)
+	}
+}
+
+// rectIsColor reports whether every pixel of the rect matches the BGR color.
+func rectIsColor(fb []byte, fbW, fbH, x, y, w, h int, bgr [3]byte) bool {
+	if x+w > fbW || y+h > fbH {
+		return false
+	}
+	for row := y; row < y+h; row++ {
+		for col := x; col < x+w; col++ {
+			p := (row*fbW + col) * 4
+			if fb[p] != bgr[2] || fb[p+1] != bgr[1] || fb[p+2] != bgr[0] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// anyMagentaPixel reports whether any rendered pixel is the signature color.
+func anyMagentaPixel(fb []byte) bool {
+	for p := 0; p+3 < len(fb); p += 4 {
+		if fb[p] == 0xff && fb[p+1] == 0x00 && fb[p+2] == 0xff {
+			return true
+		}
+	}
+	return false
+}
+
+// signatureDetector is a perfect detector for the planted magenta signature
+// rect: it fires iff the FULL rect is visible in the analyzed framebuffer.
+// It stands in for OCR+Presidio so tests prove pipeline properties (what is
+// analyzed and what escapes) independently of detection accuracy.
+func signatureDetector(calls *atomic.Int32, x, y, w, h int) analyzeFunc {
+	return func(_ context.Context, fb []byte, fbW, fbH int, _ []analyzer.YBand, sid string, _ int, _ float64, _ *analyzer.PresidioClient, _ analyzer.AnalysisParams) (*analyzer.SnapshotResult, error) {
+		if calls != nil {
+			calls.Add(1)
+		}
+		if rectIsColor(fb, fbW, fbH, x, y, w, h, magenta) {
+			return &analyzer.SnapshotResult{
+				Counts:     map[string]int64{"TEST_SIGNATURE": 1},
+				Detections: []models.RDPEntityDetection{{SessionID: sid, EntityType: "TEST_SIGNATURE", Score: 1}},
+			}, nil
+		}
+		return &analyzer.SnapshotResult{}, nil
+	}
 }
 
 // gateHarness collects forwarded bytes and detections from a gate under test.
@@ -153,34 +338,12 @@ func TestPIIGate_PreservesOrderAcrossBatches(t *testing.T) {
 	waitFor(t, "all pdus forwarded in order", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
 }
 
-// ingestSyntheticBitmap simulates a composited bitmap region so the analysis
-// path runs without needing a real Fast-Path bitmap PDU. It manipulates the
-// gate under its own lock exactly like ingestPDULocked does.
-func ingestSyntheticBitmap(gate *PIIGate, y, height int) {
-	gate.mu.Lock()
-	defer gate.mu.Unlock()
-	// 24bpp raw white patch, 64px wide.
-	const w = 64
-	data := bytes.Repeat([]byte{0xff}, w*height*3)
-	gate.compositeLocked(parser.BitmapRect{
-		X: 0, Y: uint16(y), Width: w, Height: uint16(height), BitsPerPixel: 24, Compressed: false,
-	}, data)
-}
-
 func TestPIIGate_KillsOnDetection(t *testing.T) {
 	h := &gateHarness{}
-	gate := newTestGate(t, h, func(_ context.Context, _ []byte, _, _ int, bands []analyzer.YBand, sid string, _ int, _ float64, _ *analyzer.PresidioClient, _ analyzer.AnalysisParams) (*analyzer.SnapshotResult, error) {
-		if len(bands) == 0 {
-			return &analyzer.SnapshotResult{}, nil
-		}
-		return &analyzer.SnapshotResult{
-			Counts:     map[string]int64{"EMAIL_ADDRESS": 1},
-			Detections: []models.RDPEntityDetection{{SessionID: sid, EntityType: "EMAIL_ADDRESS", Score: 1}},
-		}, nil
-	})
+	gate := newTestGate(t, h, signatureDetector(nil, 40, 40, 8, 8))
 
-	// A PDU plus a dirty region: the analysis must detect and kill.
-	ingestSyntheticBitmap(gate, 10, 20)
+	// A signature bitmap plus a trailing PDU: analysis must detect and kill.
+	gate.Ingest(fastPathBitmapPDU(t, testRect{40, 40, 8, 8, magenta}))
 	gate.Ingest(tpktPDU([]byte{0xaa, 0xbb}))
 
 	waitFor(t, "detection callback", func() bool { return h.detections() == 1 })
@@ -204,26 +367,23 @@ func TestPIIGate_KillsOnDetection(t *testing.T) {
 
 func TestPIIGate_CleanAnalysisForwards(t *testing.T) {
 	h := &gateHarness{}
-	var analyzed int
-	var analyzedMu sync.Mutex
+	var analyzed atomic.Int32
 	gate := newTestGate(t, h, func(_ context.Context, fb []byte, fbW, fbH int, bands []analyzer.YBand, _ string, _ int, _ float64, _ *analyzer.PresidioClient, _ analyzer.AnalysisParams) (*analyzer.SnapshotResult, error) {
-		analyzedMu.Lock()
-		analyzed++
-		analyzedMu.Unlock()
+		analyzed.Add(1)
 		if len(fb) < fbW*fbH*4 {
 			return nil, fmt.Errorf("short framebuffer in analysis: %d for %dx%d", len(fb), fbW, fbH)
 		}
 		return &analyzer.SnapshotResult{Bands: len(bands)}, nil
 	})
 
-	ingestSyntheticBitmap(gate, 0, 32)
-	pdu := tpktPDU([]byte{0x01, 0x02})
-	gate.Ingest(pdu)
+	bmpPDU := fastPathBitmapPDU(t, testRect{0, 0, 64, 32, white})
+	tailPDU := tpktPDU([]byte{0x01, 0x02})
+	gate.Ingest(bmpPDU)
+	gate.Ingest(tailPDU)
 
-	waitFor(t, "clean batch forwarded", func() bool { return bytes.Equal(h.forwardedBytes(), pdu) })
-	analyzedMu.Lock()
-	defer analyzedMu.Unlock()
-	if analyzed == 0 {
+	want := append(append([]byte(nil), bmpPDU...), tailPDU...)
+	waitFor(t, "clean batch forwarded", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
+	if analyzed.Load() == 0 {
 		t.Errorf("analysis must run when bands are dirty")
 	}
 }
@@ -234,11 +394,13 @@ func TestPIIGate_AnalysisErrorFailsOpen(t *testing.T) {
 		return nil, fmt.Errorf("presidio is down")
 	})
 
-	ingestSyntheticBitmap(gate, 0, 16)
-	pdu := tpktPDU([]byte{0x42})
-	gate.Ingest(pdu)
+	bmpPDU := fastPathBitmapPDU(t, testRect{0, 0, 32, 16, white})
+	tailPDU := tpktPDU([]byte{0x42})
+	gate.Ingest(bmpPDU)
+	gate.Ingest(tailPDU)
 
-	waitFor(t, "fail-open forward", func() bool { return bytes.Equal(h.forwardedBytes(), pdu) })
+	want := append(append([]byte(nil), bmpPDU...), tailPDU...)
+	waitFor(t, "fail-open forward", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
 	if h.detections() != 0 {
 		t.Errorf("no detection expected on analyzer error")
 	}
@@ -274,7 +436,7 @@ func TestPIIGate_PseudoTPKTGarbageIsForwardedFramed(t *testing.T) {
 
 func TestPIIGate_BacklogOverflowFailsClosed(t *testing.T) {
 	h := &gateHarness{}
-	// A stuck analyzer: blocks until the test ends, so held bytes accumulate.
+	// A stuck analyzer: blocks until the test ends, so queued bytes accumulate.
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
 	gate := newTestGate(t, h, func(ctx context.Context, _ []byte, _, _ int, _ []analyzer.YBand, _ string, _ int, _ float64, _ *analyzer.PresidioClient, _ analyzer.AnalysisParams) (*analyzer.SnapshotResult, error) {
@@ -286,7 +448,7 @@ func TestPIIGate_BacklogOverflowFailsClosed(t *testing.T) {
 	})
 
 	// Get the analyzer stuck on a first dirty batch.
-	ingestSyntheticBitmap(gate, 0, 16)
+	gate.Ingest(fastPathBitmapPDU(t, testRect{0, 0, 32, 16, white}))
 	gate.Ingest(tpktPDU([]byte{0x01}))
 
 	// Flood past the cap while analysis is stuck. Each pseudo-TPKT PDU is
@@ -342,7 +504,7 @@ func TestPIIGate_CloseCancelsInFlightAnalysis(t *testing.T) {
 	})
 
 	// Get the analyzer stuck on a dirty batch.
-	ingestSyntheticBitmap(gate, 0, 16)
+	gate.Ingest(fastPathBitmapPDU(t, testRect{0, 0, 32, 16, white}))
 	gate.Ingest(tpktPDU([]byte{0x01}))
 
 	// Wait until the loop is provably inside the stuck analysis, then Close
@@ -390,29 +552,216 @@ func TestPIIGate_CloseIsIdempotentAndUnblocks(t *testing.T) {
 	}
 }
 
-func TestPIIGate_GrowCanvasPreservesContent(t *testing.T) {
+func TestShadowCanvas_GrowPreservesContent(t *testing.T) {
+	c := shadowCanvas{sessionID: "t"}
+	red := bytes.Repeat([]byte{0x00, 0x00, 0xff}, 4) // BGR 2x2
+
+	if !c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 2, Height: 2, BitsPerPixel: 24}, red) {
+		t.Fatal("first composite failed")
+	}
+	if c.w != 2 || c.h != 2 {
+		t.Fatalf("canvas: got %dx%d, want 2x2", c.w, c.h)
+	}
+	if !c.composite(parser.BitmapRect{X: 30, Y: 30, Width: 2, Height: 2, BitsPerPixel: 24}, red) {
+		t.Fatal("second composite failed")
+	}
+	if c.w != 32 || c.h != 32 {
+		t.Errorf("grown canvas: got %dx%d, want 32x32", c.w, c.h)
+	}
+	if c.fb[0] != 0xff {
+		t.Errorf("pixel (0,0) red channel after grow: got %d, want 255", c.fb[0])
+	}
+	if c.composite(parser.BitmapRect{X: maxCanvasDim - 1, Y: 0, Width: 2, Height: 2, BitsPerPixel: 24}, red) {
+		t.Errorf("oversized extent must be rejected")
+	}
+}
+
+// --- Adversarial leak tests -------------------------------------------------
+//
+// These prove the zero-leak pipeline property with a perfect detector
+// (signatureDetector) and the client oracle: no per-PDU client-renderable
+// state may ever show content the detector would have flagged.
+
+// TestPIIGate_FlashAttackNeverLeaks: PII painted and overwritten within the
+// SAME ingest burst (faster than one analysis window). The overwrite must
+// seal the batch, forcing the PII state to be analyzed — and killed — before
+// either PDU is forwarded.
+func TestPIIGate_FlashAttackNeverLeaks(t *testing.T) {
 	h := &gateHarness{}
-	gate := newTestGate(t, h, nil)
+	gate := newTestGate(t, h, signatureDetector(nil, 40, 40, 8, 8))
 
-	// Paint a red 2x2 patch at origin on a small canvas.
-	red := []byte{0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0xff} // BGR x4
-	gate.mu.Lock()
-	gate.compositeLocked(parser.BitmapRect{X: 0, Y: 0, Width: 2, Height: 2, BitsPerPixel: 24}, red)
-	if gate.fbW != 2 || gate.fbH != 2 {
-		gate.mu.Unlock()
-		t.Fatalf("canvas: got %dx%d, want 2x2", gate.fbW, gate.fbH)
-	}
-	// Extend the canvas with a patch further out.
-	gate.compositeLocked(parser.BitmapRect{X: 30, Y: 30, Width: 2, Height: 2, BitsPerPixel: 24}, red)
-	fbW, fbH := gate.fbW, gate.fbH
-	// Original pixel (0,0) must still be red (RGBA: R=255).
-	r := gate.fb[0]
-	gate.mu.Unlock()
+	flash := fastPathBitmapPDU(t, testRect{40, 40, 8, 8, magenta})
+	cover := fastPathBitmapPDU(t, testRect{40, 40, 8, 8, white})
+	gate.Ingest(append(append([]byte(nil), flash...), cover...))
 
-	if fbW != 32 || fbH != 32 {
-		t.Errorf("grown canvas: got %dx%d, want 32x32", fbW, fbH)
+	waitFor(t, "flash detection", func() bool { return h.detections() == 1 })
+	if !gate.Killed() {
+		t.Error("gate must be killed by the flashed signature")
 	}
-	if r != 0xff {
-		t.Errorf("pixel (0,0) red channel after grow: got %d, want 255", r)
+
+	leaked := false
+	oracle := newClientOracle(t, func(fb []byte, _, _ int) {
+		if anyMagentaPixel(fb) {
+			leaked = true
+		}
+	})
+	oracle.consume(h.forwardedBytes())
+	if leaked {
+		t.Fatal("LEAK: signature pixels reached a client-renderable state")
+	}
+	if got := h.forwardedBytes(); len(got) != 0 {
+		t.Errorf("flash batch must be dropped entirely, got %d forwarded bytes", len(got))
+	}
+}
+
+// TestPIIGate_OverwriteSplitsAndAnalyzesEachState: every repaint of the same
+// region within one ingest burst forces its own batch, so every intermediate
+// state is analyzed — one analysis per overwrite generation.
+func TestPIIGate_OverwriteSplitsAndAnalyzesEachState(t *testing.T) {
+	h := &gateHarness{}
+	var calls atomic.Int32
+	gate := newTestGate(t, h, signatureDetector(&calls, 40, 40, 8, 8))
+
+	var burst, want []byte
+	for i := 0; i < 5; i++ {
+		pdu := fastPathBitmapPDU(t, testRect{40, 40, 8, 8, white})
+		burst = append(burst, pdu...)
+		want = append(want, pdu...)
+	}
+	gate.Ingest(burst)
+
+	waitFor(t, "all clean repaints forwarded in order", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
+	if got := calls.Load(); got != 5 {
+		t.Errorf("each overwrite generation must be analyzed: got %d analyses, want 5", got)
+	}
+	if h.detections() != 0 {
+		t.Errorf("clean repaints must not detect")
+	}
+}
+
+// TestPIIGate_CrossBatchAssemblyKilledOnCompletion: PII assembled from two
+// halves delivered in separate batches. Each forwarded state is analyzed;
+// the detector fires on the batch that completes the signature, which is
+// dropped — the client never sees the assembled PII.
+func TestPIIGate_CrossBatchAssemblyKilledOnCompletion(t *testing.T) {
+	h := &gateHarness{}
+	gate := newTestGate(t, h, signatureDetector(nil, 40, 40, 8, 8))
+
+	left := fastPathBitmapPDU(t, testRect{40, 40, 4, 8, magenta})
+	gate.Ingest(left)
+	waitFor(t, "clean left half forwarded", func() bool { return bytes.Equal(h.forwardedBytes(), left) })
+
+	right := fastPathBitmapPDU(t, testRect{44, 40, 4, 8, magenta})
+	gate.Ingest(right)
+	waitFor(t, "detection on completion", func() bool { return h.detections() == 1 })
+
+	if !bytes.Equal(h.forwardedBytes(), left) {
+		t.Errorf("completing batch must be dropped: forwarded %d bytes, want only the left half (%d)", len(h.forwardedBytes()), len(left))
+	}
+
+	assembled := false
+	oracle := newClientOracle(t, func(fb []byte, w, hgt int) {
+		if rectIsColor(fb, w, hgt, 40, 40, 8, 8, magenta) {
+			assembled = true
+		}
+	})
+	oracle.consume(h.forwardedBytes())
+	if assembled {
+		t.Fatal("LEAK: full signature visible in a client-renderable state")
+	}
+}
+
+// TestPIIGate_IntraPDUOverwriteIsAtomic documents the granularity floor: a
+// PDU is the smallest forwardable unit, so patches overwriting each other
+// WITHIN one PDU are analyzed at the PDU-final state only. The client
+// composites the PDU atomically, so the oracle never renders the overwritten
+// intermediate either.
+func TestPIIGate_IntraPDUOverwriteIsAtomic(t *testing.T) {
+	h := &gateHarness{}
+	gate := newTestGate(t, h, signatureDetector(nil, 40, 40, 8, 8))
+
+	pdu := fastPathBitmapPDU(t,
+		testRect{40, 40, 8, 8, magenta},
+		testRect{40, 40, 8, 8, white},
+	)
+	gate.Ingest(pdu)
+
+	waitFor(t, "atomic pdu forwarded", func() bool { return bytes.Equal(h.forwardedBytes(), pdu) })
+	if h.detections() != 0 {
+		t.Errorf("PDU-final state is clean: no detection expected")
+	}
+
+	leaked := false
+	oracle := newClientOracle(t, func(fb []byte, _, _ int) {
+		if anyMagentaPixel(fb) {
+			leaked = true
+		}
+	})
+	oracle.consume(h.forwardedBytes())
+	if leaked {
+		t.Fatal("oracle rendered the intra-PDU intermediate state: PDU atomicity broken")
+	}
+}
+
+// TestPIIGate_NonConflictingPDUsShareOneBatch: updates to disjoint padded
+// bands within one ingest burst coalesce into a single analyzed batch — the
+// splitting rule must not degrade into per-PDU analysis for normal traffic.
+func TestPIIGate_NonConflictingPDUsShareOneBatch(t *testing.T) {
+	h := &gateHarness{}
+	var calls atomic.Int32
+	gate := newTestGate(t, h, signatureDetector(&calls, 40, 40, 8, 8))
+
+	// Default band padding is 24: y=0,h=8 -> [0,32); y=300,h=8 -> [276,332).
+	top := fastPathBitmapPDU(t, testRect{0, 0, 32, 8, white})
+	bottom := fastPathBitmapPDU(t, testRect{0, 300, 32, 8, white})
+	want := append(append([]byte(nil), top...), bottom...)
+	gate.Ingest(want)
+
+	waitFor(t, "batch forwarded", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
+	if got := calls.Load(); got != 1 {
+		t.Errorf("disjoint bands must share one analysis: got %d, want 1", got)
+	}
+}
+
+// TestPIIGate_FragmentedUpdateHeldUntilReassembly: a bitmap update split
+// across Fast-Path fragments only becomes renderable when the Last fragment
+// arrives — which is exactly when the parser yields its bitmaps and the gate
+// analyzes it. First/Next fragments may flow through earlier (they carry no
+// renderable pixels on their own); the Last fragment of a PII-bearing update
+// must never be forwarded.
+func TestPIIGate_FragmentedUpdateHeldUntilReassembly(t *testing.T) {
+	h := &gateHarness{}
+	gate := newTestGate(t, h, signatureDetector(nil, 40, 40, 8, 8))
+
+	frags := fragmentedFastPathBitmapPDU(t, 3, testRect{40, 40, 8, 8, magenta})
+
+	// First and Next fragments: no bitmaps yet, forwarded as plain bytes.
+	gate.Ingest(frags[0])
+	gate.Ingest(frags[1])
+	clean := append(append([]byte(nil), frags[0]...), frags[1]...)
+	waitFor(t, "non-final fragments forwarded", func() bool { return bytes.Equal(h.forwardedBytes(), clean) })
+	if h.detections() != 0 {
+		t.Fatalf("no detection expected before reassembly")
+	}
+
+	// Last fragment: the parser reassembles, the gate composites + analyzes
+	// the full update, detects the signature and kills.
+	gate.Ingest(frags[2])
+	waitFor(t, "detection on reassembled update", func() bool { return h.detections() == 1 })
+	if !bytes.Equal(h.forwardedBytes(), clean) {
+		t.Errorf("Last fragment must be dropped: %d forwarded bytes, want %d", len(h.forwardedBytes()), len(clean))
+	}
+
+	// Leak oracle: the forwarded fragments alone must not be renderable —
+	// without the Last fragment a client cannot composite the signature.
+	leaked := false
+	oracle := newClientOracle(t, func(fb []byte, _, _ int) {
+		if anyMagentaPixel(fb) {
+			leaked = true
+		}
+	})
+	oracle.consume(h.forwardedBytes())
+	if leaked {
+		t.Fatal("LEAK: fragments without Last rendered the signature")
 	}
 }

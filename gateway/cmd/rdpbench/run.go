@@ -28,8 +28,11 @@ type benchConfig struct {
 	dumpDir        string
 	verbose        bool
 	killOnDetected bool
-	bandsOCR       bool // OCR only dirty bands instead of the full frame
-	bandPad        int  // vertical padding around dirty rects (bands mode)
+	bandsOCR       bool   // OCR only dirty bands instead of the full frame
+	bandPad        int    // vertical padding around dirty rects (bands mode)
+	conflictMode   string // gate pace: batch-seal rule ('band' or 'rect')
+	verdictCache   bool   // gate pace: content-hash verdict cache skips seals on known states
+	captureStates  bool   // gate pace: capture pre-overwrite states instead of sealing; analyze all states in one pass
 }
 
 // runBench replays a fixture through the PII detection pipeline.
@@ -37,7 +40,7 @@ func runBench(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	input := fs.String("i", "recording.json", "input fixture file (from 'rdpbench fetch')")
 	presidioURL := fs.String("presidio", envOr("MSPRESIDIO_ANALYZER_URL", "http://127.0.0.1:5002"), "presidio analyzer base URL")
-	pace := fs.String("pace", "fast", "replay pacing: 'fast' (as fast as possible) or 'realtime' (original timing)")
+	pace := fs.String("pace", "fast", "replay pacing: 'fast' (max throughput), 'realtime' (original timing, async analyzer) or 'gate' (original timing through the hold-and-release PIIGate batching rule)")
 	interval := fs.Float64("interval", 0.25, "snapshot interval in seconds of session time")
 	score := fs.Float64("score", 0.9, "presidio minimum score threshold")
 	denylist := fs.String("denylist", "DATE_TIME,NRP", "comma-separated entity types to ignore")
@@ -46,6 +49,9 @@ func runBench(args []string) error {
 	kill := fs.Bool("kill", false, "stop the replay at the first detection (simulates the kill switch)")
 	ocrMode := fs.String("ocr", "full", "OCR strategy: 'full' (whole frame every snapshot) or 'bands' (only dirty horizontal bands)")
 	bandPad := fs.Int("band-pad", analyzer.DefaultBandPadding, "vertical padding in pixels around dirty rects (bands mode)")
+	conflictMode := fs.String("conflict", "band", "gate pace batch-seal rule: 'band' (padded dirty bands, strictest) or 'rect' (exact pixel overwrite only)")
+	verdictCache := fs.Bool("verdict-cache", false, "gate pace: skip seals when the intermediate state's content hash has a known verdict from a previous analysis")
+	captureStates := fs.Bool("capture", false, "gate pace: never seal — capture pre-overwrite band states and analyze final+captured states in one parallel pass per batch")
 	verbose := fs.Bool("v", false, "log every analyzed snapshot")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -116,6 +122,9 @@ func runBench(args []string) error {
 		killOnDetected: *kill,
 		bandsOCR:       *ocrMode == "bands",
 		bandPad:        *bandPad,
+		conflictMode:   *conflictMode,
+		verdictCache:   *verdictCache,
+		captureStates:  *captureStates,
 	}
 
 	if cfg.dumpDir != "" {
@@ -141,8 +150,16 @@ func runBench(args []string) error {
 		return runFastPace(cfg)
 	case "realtime":
 		return runRealtimePace(cfg)
+	case "gate":
+		if !cfg.bandsOCR {
+			return fmt.Errorf("-pace gate requires -ocr bands (the gate analyzes dirty bands)")
+		}
+		if cfg.conflictMode != "band" && cfg.conflictMode != "rect" {
+			return fmt.Errorf("invalid -conflict %q: must be 'band' or 'rect'", cfg.conflictMode)
+		}
+		return runGatePace(cfg)
 	default:
-		return fmt.Errorf("invalid -pace %q: must be 'fast' or 'realtime'", *pace)
+		return fmt.Errorf("invalid -pace %q: must be 'fast', 'realtime' or 'gate'", *pace)
 	}
 }
 
@@ -264,6 +281,7 @@ func analyzeAndRecord(
 	cfg *benchConfig,
 	report *benchReport,
 	fb []byte,
+	fbW, fbH int,
 	bands []analyzer.YBand,
 	frameIndex int,
 	sessionTime float64,
@@ -274,12 +292,12 @@ func analyzeAndRecord(
 	var err error
 	if bands != nil {
 		res, err = analyzer.AnalyzeFramebufferBands(
-			ctx, fb, cfg.fixture.CanvasWidth, cfg.fixture.CanvasHeight, bands,
+			ctx, fb, fbW, fbH, bands,
 			cfg.fixture.SessionID, frameIndex, sessionTime, cfg.presidio, cfg.params,
 		)
 	} else {
 		res, err = analyzer.AnalyzeFramebuffer(
-			ctx, fb, cfg.fixture.CanvasWidth, cfg.fixture.CanvasHeight,
+			ctx, fb, fbW, fbH,
 			cfg.fixture.SessionID, frameIndex, sessionTime, cfg.presidio, cfg.params,
 		)
 	}
@@ -315,7 +333,7 @@ func analyzeAndRecord(
 	}
 	report.mu.Unlock()
 
-	if cfg.dumpDir != "" {
+	if cfg.dumpDir != "" && fbW == cfg.fixture.CanvasWidth && fbH == cfg.fixture.CanvasHeight {
 		dumpSnapshot(cfg, fb, snapshotN)
 	}
 	if cfg.verbose {
@@ -386,7 +404,7 @@ func runFastPace(cfg *benchConfig) error {
 			continue
 		}
 
-		detected, err := analyzeAndRecord(ctx, cfg, report, fb, bands, ev.Index, sessionTime, time.Now(), time.Time{})
+		detected, err := analyzeAndRecord(ctx, cfg, report, fb, w, h, bands, ev.Index, sessionTime, time.Now(), time.Time{})
 		if err != nil {
 			return err
 		}
@@ -401,7 +419,7 @@ func runFastPace(cfg *benchConfig) error {
 		lastTS := cfg.frames[len(cfg.frames)-1].Timestamp - baseTS
 		bands, skip := snapshotBands(cfg, dirty, fb, w, h, &prevFBHash)
 		if !skip {
-			if _, err := analyzeAndRecord(ctx, cfg, report, fb, bands,
+			if _, err := analyzeAndRecord(ctx, cfg, report, fb, w, h, bands,
 				cfg.frames[len(cfg.frames)-1].Index, lastTS, time.Now(), time.Time{}); err != nil {
 				return err
 			}
@@ -487,7 +505,7 @@ func runRealtimePace(cfg *benchConfig) error {
 		fbMu.Unlock()
 
 		sessionTime := snapshotStart.Sub(wallStart).Seconds() * cfg.speed
-		detected, err := analyzeAndRecord(ctx, cfg, report, snapshotCopy, bands, 0, sessionTime, snapshotStart, prevSnapshotWall)
+		detected, err := analyzeAndRecord(ctx, cfg, report, snapshotCopy, w, h, bands, 0, sessionTime, snapshotStart, prevSnapshotWall)
 		if err != nil {
 			return err
 		}

@@ -33,8 +33,10 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `usage: rdpbench <command> [flags]
 
 commands:
-  fetch   export a session recording from the database into a fixture file
-  run     replay a fixture through the PII detection pipeline and report stats
+  fetch     export a session recording from the database into a fixture file
+  run       replay a fixture through the PII detection pipeline and report stats
+  ocrbench  measure per-band-state OCR latency for an engine (tesseract or
+            the HTTP PoC server in scripts/dev/ocr-poc)
 
 Run 'rdpbench <command> -h' for command flags.
 `)
@@ -51,6 +53,8 @@ func main() {
 		err = runFetch(os.Args[2:])
 	case "run":
 		err = runBench(os.Args[2:])
+	case "ocrbench":
+		err = runOCRBench(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:

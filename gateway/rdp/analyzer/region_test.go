@@ -27,6 +27,35 @@ func TestDirtyBands_AddRect_PaddingAndClamping(t *testing.T) {
 	}
 }
 
+func TestDirtyBands_Intersects(t *testing.T) {
+	d := NewDirtyBands(1000, 10)
+	d.AddRect(100, 50) // band [90, 160)
+
+	cases := []struct {
+		name      string
+		y, height int
+		want      bool
+	}{
+		{"inside", 120, 10, true},
+		{"overlap via own padding above", 161, 10, true}, // padded to [151, 181)
+		{"overlap via own padding below", 75, 10, true},  // padded to [65, 95)
+		{"clear above", 0, 50, false},                    // padded to [0, 70)
+		{"clear below", 180, 50, false},                  // padded to [170, 240)
+		{"zero height", 120, 0, false},
+		{"negative height", 120, -5, false},
+	}
+	for _, tc := range cases {
+		if got := d.Intersects(tc.y, tc.height); got != tc.want {
+			t.Errorf("%s: Intersects(%d, %d) = %v, want %v", tc.name, tc.y, tc.height, got, tc.want)
+		}
+	}
+
+	d.Reset()
+	if d.Intersects(100, 50) {
+		t.Error("after Reset, nothing must intersect")
+	}
+}
+
 func TestDirtyBands_MergeOverlappingAndAdjacent(t *testing.T) {
 	d := NewDirtyBands(1000, 5)
 
