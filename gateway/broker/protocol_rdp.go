@@ -75,6 +75,7 @@ func CreateRDPSession(
 		ID:                  sessionID,
 		ClientCommunicator:  connTcp,
 		AgentCommunicator:   client,
+		Connection:          connectionInfo,
 		CredentialID:        credentialID,
 		clientAddr:          clientAddr,
 		dataChannel:         dataChannel,

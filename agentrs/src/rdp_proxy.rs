@@ -33,6 +33,9 @@ pub struct RdpProxy<C, S> {
     guard: Option<crate::piigate::config::GuardConfig>,
     #[builder(default = String::new())]
     session_id: String,
+    /// Reports guard violations to the gateway. None = no reporting.
+    #[builder(default)]
+    report: Option<crate::proxy::ViolationReporter>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +95,7 @@ where
         client_stream_leftover_bytes,
         guard,
         session_id,
+        report,
     } = proxy;
 
     let tls_config = config
@@ -205,6 +209,7 @@ where
         .transport_b(server_stream)
         .session_id(session_id)
         .guard(guard)
+        .report(report)
         .build()
         .forward()
         .await

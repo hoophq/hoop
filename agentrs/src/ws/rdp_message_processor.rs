@@ -87,6 +87,14 @@ impl MessageProcessor {
                     );
                     self.handle_rdp_data(sid, &message.payload).await
                 }
+                MessageType::GuardrailsViolation => {
+                    // Agent -> gateway only; never expected inbound.
+                    info!(
+                        "> Ignoring unexpected inbound guardrails_violation for session: {}",
+                        sid
+                    );
+                    Ok(())
+                }
                 MessageType::Unknown => {
                     info!(
                         "> Unknown message type: {:#?} for session: {}",

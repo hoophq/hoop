@@ -31,7 +31,9 @@ pub struct AnalyzerResult {
 
 /// One detection with its on-screen bounding box (full framebuffer pixel
 /// coordinates). Mirrors `models.RDPEntityDetection` — this is what gets
-/// reported to the gateway for persistence.
+/// reported to the gateway for persistence. The JSON field names match the
+/// gateway's RDPEntityDetection json tags so the gateway can deserialize the
+/// violation report directly.
 #[derive(Debug, Clone, Serialize)]
 pub struct EntityDetection {
     pub entity_type: String,

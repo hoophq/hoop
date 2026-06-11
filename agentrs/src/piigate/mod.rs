@@ -43,6 +43,7 @@ pub mod config;
 pub mod framing;
 pub mod ocr;
 pub mod presidio;
+pub mod report;
 #[cfg(test)]
 pub mod testpdu;
 

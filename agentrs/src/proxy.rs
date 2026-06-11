@@ -8,7 +8,15 @@ use tracing::{info, warn};
 use typed_builder::TypedBuilder;
 
 use crate::piigate::config::GuardConfig;
+use crate::piigate::report::ViolationReport;
 use crate::piigate::{analyze::BandAnalyzer, GateEvent, PiiGate};
+
+/// Reports a guard violation upstream (to the gateway). Boxed so proxy.rs
+/// stays decoupled from the websocket layer; the future is awaited before
+/// the session tears down so the report is sent while the connection is
+/// still open.
+pub type ViolationReporter =
+    Box<dyn Fn(ViolationReport) -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
 
 #[derive(TypedBuilder)]
 pub struct Proxy<A, B> {
@@ -22,6 +30,10 @@ pub struct Proxy<A, B> {
     guard: Option<GuardConfig>,
     #[builder(default = String::new())]
     session_id: String,
+    /// Sends guard violations to the gateway. None = no reporting (the
+    /// session is still torn down on a terminal event).
+    #[builder(default)]
+    report: Option<ViolationReporter>,
 }
 
 // Forwards traffic between the client (a) and the target RDP server (b). With
@@ -34,7 +46,10 @@ where
 {
     pub async fn forward(mut self) -> anyhow::Result<()> {
         match self.guard.take() {
-            Some(guard) => self.forward_guarded(guard).await,
+            Some(guard) => {
+                let report = self.report.take();
+                self.forward_guarded(guard, report).await
+            }
             None => self.forward_transparent().await,
         }
     }
@@ -65,7 +80,11 @@ where
     ///
     /// On detection or overload the gate emits a terminal event; we tear the
     /// whole proxy down so the held (PII-bearing) frames are never delivered.
-    async fn forward_guarded(self, guard: GuardConfig) -> anyhow::Result<()> {
+    async fn forward_guarded(
+        self,
+        guard: GuardConfig,
+        report: Option<ViolationReporter>,
+    ) -> anyhow::Result<()> {
         let (mut client_rd, client_wr) = tokio::io::split(self.transport_a);
         let (mut server_rd, mut server_wr) = tokio::io::split(self.transport_b);
 
@@ -120,19 +139,36 @@ where
         };
 
         // Terminal gate events: a detection/overload kills the session. The
-        // gate has already dropped the offending frames.
+        // gate has already dropped the offending frames; we report the
+        // violation upstream (entity metadata only — no pixels or OCR text)
+        // before tearing down, while the gateway websocket is still open.
+        //
+        // Delivery is best-effort: the report shares the session websocket
+        // with response traffic and the gateway's live-session lookup, so a
+        // websocket failure or a racing session close can still drop it.
+        // Enforcement already happened at the agent — this is audit evidence,
+        // not part of the enforcement path.
         let session_id = self.session_id.clone();
         let watch = async {
             if let Some(ev) = events_rx.recv().await {
-                match ev {
-                    GateEvent::Detection(res) => warn!(
-                        sid = %session_id,
-                        "piigate: PII detected ({:?}), terminating session", res.counts
-                    ),
-                    GateEvent::Overload { dropped_bytes } => warn!(
-                        sid = %session_id,
-                        "piigate: analysis backlog overflow ({dropped_bytes} bytes), terminating session"
-                    ),
+                let report_payload = match &ev {
+                    GateEvent::Detection(res) => {
+                        warn!(
+                            sid = %session_id,
+                            "piigate: PII detected ({:?}), terminating session", res.counts
+                        );
+                        ViolationReport::detection(res)
+                    }
+                    GateEvent::Overload { dropped_bytes } => {
+                        warn!(
+                            sid = %session_id,
+                            "piigate: analysis backlog overflow ({dropped_bytes} bytes), terminating session"
+                        );
+                        ViolationReport::overload(*dropped_bytes)
+                    }
+                };
+                if let Some(report) = &report {
+                    report(report_payload).await;
                 }
             }
         };

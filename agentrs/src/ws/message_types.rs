@@ -6,17 +6,23 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub enum MessageType {
     SessionStarted,
     Data,
+    /// Agent -> gateway: a PII guard violation (detection or overload). The
+    /// payload carries entity metadata for persistence/audit; no pixels or
+    /// recognized text are ever sent.
+    GuardrailsViolation,
     Unknown,
 }
 
 // Message types str
 pub const MESSAGE_TYPE_SESSION_STARTED: &str = "session_started";
 pub const MESSAGE_TYPE_DATA: &str = "data";
+pub const MESSAGE_TYPE_GUARDRAILS_VIOLATION: &str = "guardrails_violation";
 impl ToString for MessageType {
     fn to_string(&self) -> String {
         match self {
             MessageType::SessionStarted => MESSAGE_TYPE_SESSION_STARTED.to_string(),
             MessageType::Data => MESSAGE_TYPE_DATA.to_string(),
+            MessageType::GuardrailsViolation => MESSAGE_TYPE_GUARDRAILS_VIOLATION.to_string(),
             MessageType::Unknown => "unknown".to_string(),
         }
     }
@@ -29,6 +35,7 @@ impl FromStr for MessageType {
         match s {
             "session_started" => Ok(MessageType::SessionStarted),
             "data" => Ok(MessageType::Data),
+            "guardrails_violation" => Ok(MessageType::GuardrailsViolation),
             _ => Err(format!("Unknown message type: {}", s)),
         }
     }

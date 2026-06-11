@@ -25,6 +25,11 @@ type WebSocketMessage struct {
 const (
 	MessageTypeSessionStarted = "session_started"
 	MessageTypeData           = "data"
+	// MessageTypeGuardrailsViolation is sent by the agent (agentrs) when its
+	// PII guard detects a violation or fails closed. The payload carries
+	// entity metadata only (types, scores, bounding boxes) — no pixels or
+	// recognized text.
+	MessageTypeGuardrailsViolation = "guardrails_violation"
 )
 
 const HeaderSize = 20 // 16 bytes for UUID + 4 bytes for length

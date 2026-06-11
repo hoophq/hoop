@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -100,6 +101,76 @@ func HandleConnection(c *gin.Context) {
 	}
 }
 
+// agentGuardrailsViolation mirrors the Rust agent's ViolationReport
+// (agentrs/src/piigate/report.rs). Entity metadata only — no pixels/text.
+type agentGuardrailsViolation struct {
+	Kind        string   `json:"kind"` // "detection" | "overload"
+	EntityTypes []string `json:"entity_types"`
+	Detections  []struct {
+		EntityType string  `json:"entity_type"`
+		Score      float64 `json:"score"`
+		X          int     `json:"x"`
+		Y          int     `json:"y"`
+		Width      int     `json:"width"`
+		Height     int     `json:"height"`
+	} `json:"detections"`
+	DroppedBytes int `json:"dropped_bytes"`
+}
+
+// persistAgentGuardrailsViolation records an agent-reported PII guard
+// violation as session guardrails info plus per-entity detection rows —
+// mirroring the gateway-side gate's persistPIIViolation. Best-effort and
+// non-transactional: enforcement already happened at the agent, partial
+// evidence beats none.
+func persistAgentGuardrailsViolation(s *broker.Session, payload []byte) {
+	orgID := s.Connection.OrgID
+	sessionID := s.ID.String()
+
+	var report agentGuardrailsViolation
+	if err := json.Unmarshal(payload, &report); err != nil {
+		log.With("sid", sessionID).Warnf("piigate: failed to decode agent guardrails violation: %v", err)
+		return
+	}
+
+	// An overload (fail-closed on analysis backlog) is a different cause than
+	// a PII detection — don't mislabel it as one in the audit record.
+	ruleType := "pii_detection"
+	if report.Kind == "overload" {
+		ruleType = "pii_guard_overload"
+	}
+	info := []models.SessionGuardRailsInfo{{
+		RuleName:     "rdp_pii_guard",
+		Rule:         models.SessionGuardRailMatchedRule{Type: ruleType},
+		Direction:    "server_to_client",
+		MatchedWords: report.EntityTypes,
+	}}
+	if data, err := json.Marshal(info); err != nil {
+		log.With("sid", sessionID).Warnf("piigate: failed to marshal agent guardrails info: %v", err)
+	} else if err := models.UpdateSessionGuardRailsInfo(orgID, sessionID, data); err != nil {
+		log.With("sid", sessionID).Warnf("piigate: failed to persist agent guardrails info: %v", err)
+	}
+
+	if len(report.Detections) > 0 {
+		detections := make([]models.RDPEntityDetection, 0, len(report.Detections))
+		for _, d := range report.Detections {
+			detections = append(detections, models.RDPEntityDetection{
+				SessionID:  sessionID,
+				EntityType: d.EntityType,
+				Score:      d.Score,
+				X:          d.X,
+				Y:          d.Y,
+				Width:      d.Width,
+				Height:     d.Height,
+			})
+		}
+		if err := models.BulkInsertRDPEntityDetections(detections); err != nil {
+			log.With("sid", sessionID).Warnf("piigate: failed to persist agent entity detections: %v", err)
+		}
+	}
+
+	log.With("sid", sessionID).Infof("piigate: agent-side PII guard violation persisted (kind=%s, entities=%v)", report.Kind, report.EntityTypes)
+}
+
 func handleWebSocketMessage(data []byte) {
 	// 1) Try CONTROL frame first (JSON-like)
 	if sid, msg, err := broker.DecodeWebSocketMessage(data); err == nil {
@@ -121,6 +192,11 @@ func handleWebSocketMessage(data []byte) {
 		case broker.MessageTypeData:
 			// Some agents might send data via control envelope. Let handler decide.
 			_ = handler.HandleData(s, msg)
+		case broker.MessageTypeGuardrailsViolation:
+			// Agent-side PII guard reported a violation: persist the entity
+			// metadata for audit. Enforcement (session teardown) already
+			// happened at the agent — this is best-effort evidence.
+			persistAgentGuardrailsViolation(s, msg.Payload)
 		default:
 			log.Infof("Unhandled control message type=%q for SID=%s", msg.Type, sid)
 		}

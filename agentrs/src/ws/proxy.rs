@@ -1,17 +1,61 @@
 use crate::conf::Conf;
+use crate::piigate::report::ViolationReport;
+use crate::proxy::ViolationReporter;
 use crate::rdp_proxy::RdpProxy;
 use crate::session::Header;
+use crate::ws::message::WebSocketMessage;
+use crate::ws::message_types::MessageType;
 use crate::ws::session::SessionInfo;
 use crate::ws::stream::ChannelWebSocketStream;
 use crate::ws::types::WsWriter;
 use anyhow::Context;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tracing::{debug, error, info, instrument};
+use uuid::Uuid;
 
 use futures::SinkExt;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
+
+/// Builds a reporter closure that ships a guard violation to the gateway as
+/// a `guardrails_violation` control message over the session websocket. The
+/// report body is the JSON-serialized ViolationReport (entity metadata only,
+/// no pixels/text). Send failures are logged, not propagated — the session
+/// is being torn down regardless.
+fn build_violation_reporter(sid: Uuid, ws_sender: WsWriter) -> ViolationReporter {
+    Box::new(move |report: ViolationReport| {
+        let ws_sender = ws_sender.clone();
+        Box::pin(async move {
+            let payload = match serde_json::to_vec(&report) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("> Failed to serialize guardrails violation for {sid}: {e}");
+                    return;
+                }
+            };
+            let msg = WebSocketMessage::new(
+                MessageType::GuardrailsViolation,
+                HashMap::new(),
+                payload,
+            );
+            let framed = match msg.encode_with_header(sid) {
+                Ok(f) => f,
+                Err(e) => {
+                    error!("> Failed to encode guardrails violation for {sid}: {e}");
+                    return;
+                }
+            };
+            let mut sender = ws_sender.lock().await;
+            if let Err(e) = sender.send(Message::Binary(framed.into())).await {
+                error!("> Failed to send guardrails violation for {sid}: {e}");
+            } else {
+                debug!("> Sent guardrails violation for session {sid}");
+            }
+        })
+    })
+}
 
 // Start a persistent RDP proxy session
 pub async fn start_rdp_proxy_session(
@@ -94,6 +138,13 @@ pub async fn start_rdp_proxy_session(
         }
     });
 
+    // When the session is guarded, build a reporter that ships violation
+    // metadata to the gateway over the same websocket. Only built when a
+    // guard is present (an unguarded session never reports).
+    let report = session_info.guard.as_ref().map(|_| {
+        build_violation_reporter(session_info.sid, ws_sender.clone())
+    });
+
     // Create RDP proxy with extracted credentials
     let proxy = RdpProxy::builder()
         .server_target(server_target)
@@ -112,6 +163,7 @@ pub async fn start_rdp_proxy_session(
         .client_stream_leftover_bytes(bytes::BytesMut::from(first_rdp_data.as_slice()))
         .guard(session_info.guard.clone())
         .session_id(session_info.sid.to_string())
+        .report(report)
         .build();
 
     // Run the proxy
