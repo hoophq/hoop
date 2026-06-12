@@ -398,9 +398,16 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		var guardRailRulesJsonData json.RawMessage
+		fmt.Println(": =---------------------------------------------")
+		fmt.Println("Client Verb: ", pctx.ClientVerb)
+		fmt.Println("InfoTypes: ", pb.ClientVerbPlainExec)
+		fmt.Println(": =---------------------------------------------")
 		if pctx.ClientVerb != pb.ClientVerbPlainExec {
 			var err error
 			guardRailRulesJsonData, err = getGuardRailsRulesForConnection(&pctx)
+			fmt.Println(": =---------------------------------------------")
+			fmt.Printf("GuardRailRulesJsonData: %s\n", string(guardRailRulesJsonData))
+			fmt.Println(": =---------------------------------------------")
 
 			if err != nil {
 				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf(err.Error())

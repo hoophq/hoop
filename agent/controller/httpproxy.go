@@ -90,6 +90,9 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	connenv.httpProxyHeaders["dlp_masking_character"] = "#"
 	connenv.httpProxyHeaders["mspresidio_anonymizer_url"] = connParams.DlpPresidioAnonymizerURL
 	connenv.httpProxyHeaders["mspresidio_analyzer_url"] = connParams.DlpPresidioAnalyzerURL
+	fmt.Println("============================gr==================================================")
+	fmt.Printf("GuardRailRules: %s\n", guardRailRules)
+	fmt.Println("==============================================================================")
 	connenv.httpProxyHeaders["guard_rail_rules"] = guardRailRules
 	connenv.httpProxyHeaders["data_masking_entity_data"] = dataMaskingEntityTypesData
 

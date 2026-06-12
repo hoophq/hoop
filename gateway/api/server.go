@@ -27,6 +27,7 @@ import (
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
+	apidlpanalyze "github.com/hoophq/hoop/gateway/api/dlpanalyze"
 	apieventrouting "github.com/hoophq/hoop/gateway/api/eventrouting"
 	apifeatureflags "github.com/hoophq/hoop/gateway/api/featureflags"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
@@ -1004,6 +1005,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apidatamasking.Delete)
+
+	r.POST("/dlp/analyze",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apidlpanalyze.Post)
 
 	// feature flags
 	r.GET("/feature-flags",
