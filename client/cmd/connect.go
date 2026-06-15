@@ -277,6 +277,23 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 						"uri":  fmt.Sprintf("mongodb://noop:noop@%s:%s/?directConnection=true", srv.Host().Host, srv.Host().Port),
 					})
 				}
+			case pb.ConnectionTypeOracleDB:
+				srv := proxy.NewOracleServer(c.proxyPort, c.client)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(connectionType, pkt)
+				fmt.Println()
+				fmt.Println("--------------------oracle-credentials----------------------")
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
+				fmt.Println("------------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+				if jsonMode {
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop", "password": "noop"})
+				}
 			case pb.ConnectionTypeTCP:
 				tcp := proxy.NewTCPServer(c.proxyPort, c.client, pbagent.TCPConnectionWrite)
 				if err := tcp.Serve(string(sessionID)); err != nil {
@@ -471,6 +488,19 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			srvObj := c.connStore.Get(string(sessionID))
 			srv, ok := srvObj.(*proxy.MongoDBServer)
+			if !ok {
+				return
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			_, err := srv.PacketWriteClient(connectionID, pkt)
+			if err != nil {
+				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+				c.processGracefulExit(errMsg)
+			}
+		case pbclient.OracleConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			srvObj := c.connStore.Get(string(sessionID))
+			srv, ok := srvObj.(*proxy.OracleServer)
 			if !ok {
 				return
 			}
