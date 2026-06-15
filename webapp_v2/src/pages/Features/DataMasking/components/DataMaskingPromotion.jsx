@@ -2,8 +2,7 @@ import { Combine, FolderLock, SlidersHorizontal } from 'lucide-react'
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { docsUrl } from '@/utils/docsUrl'
 
-// Mirrors `webapp.features.promotion/ai-data-masking-promotion`. The empty-state
-// behavior is gated by the gateway's DLP `redact_provider`:
+// Empty-state behavior is gated by the gateway's DLP `redact_provider`:
 //   - mspresidio → "Configure" CTA into the create flow.
 //   - gcp / unset → docs link + deprecated-provider warning, no create path.
 const FEATURE_ITEMS = [

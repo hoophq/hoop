@@ -12,14 +12,12 @@ function chunk(arr, size) {
 }
 
 /**
- * Resource-role (connection) multi-select with infinite-scroll pagination and
- * server-side search — the React port of CLJS `connections-select`. Options are
- * loaded a page at a time via `usePaginatedConnections`; labels for already
- * selected ids that are not on the current page are resolved on demand through
- * the `?connection_ids=` filter, so edit-mode chips show names without ever
- * loading the full connection list.
+ * Resource-role (connection) multi-select with paginated options + server search.
+ * Labels for already-selected ids are resolved via `?connection_ids=`, so chips
+ * show names without loading the full connection list.
  *
- * Props: value (ids[]), onChange (ids) => void, label, placeholder, required.
+ * Usage:
+ *   <ConnectionsMultiSelect value={form.connectionIds} onChange={setIds} />
  */
 export default function ConnectionsMultiSelect({
   value = [],

@@ -7,16 +7,16 @@ import TextInput from '@/components/TextInput'
 import classes from './AsyncValueFilter.module.css'
 
 /**
- * Single-value filter dropdown backed by a paginated, server-searched option
- * source — the async counterpart of `ValueFilter` (which filters a fully loaded
- * array client-side). Presentational/controlled: the caller supplies the option
- * page via a hook like `usePaginatedConnections` and reacts to `onSearchChange`,
- * `onLoadMore`, and `onOpen` (lazy first load). Infinite scroll uses Mantine's
- * `useIntersection` sentinel. `onSelect` receives the chosen option's label.
+ * Single-value filter dropdown over a paginated, server-searched option source —
+ * the async counterpart of `ValueFilter`. `onSelect` receives the option label.
  *
- * Props: icon, label, placeholder, selected (label|null), onSelect, onClear,
- * options ([{value,label}]), loading, hasMore, onLoadMore, searchValue,
- * onSearchChange, onOpen.
+ * Usage:
+ *   <AsyncValueFilter
+ *     icon={Shapes} label="Resource Role"
+ *     selected={selected} onSelect={setSelected} onClear={() => setSelected(null)}
+ *     options={options} loading={loading} hasMore={hasMore} onLoadMore={loadMore}
+ *     searchValue={search} onSearchChange={setSearch} onOpen={ensureLoaded}
+ *   />
  */
 export default function AsyncValueFilter({
   icon,

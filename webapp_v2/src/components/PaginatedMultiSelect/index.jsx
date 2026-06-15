@@ -15,21 +15,17 @@ import { Check } from 'lucide-react'
 import classes from './PaginatedMultiSelect.module.css'
 
 /**
- * Generic multi-select backed by a paginated, server-searched option source.
- * Presentational and fully controlled — it never fetches; the caller feeds
- * `options` / `loading` / `hasMore` and reacts to `onSearchChange` / `onLoadMore`.
- * Infinite scroll uses Mantine's `useIntersection` (a sentinel at the list bottom).
+ * Multi-select over a paginated, server-searched option source (infinite scroll).
+ * Controlled — the caller owns fetching; `selectedOptions` supplies labels for
+ * values off the current page (a `null` label renders a loading skeleton).
  *
- * Props:
- * - value:           selected ids (string[])
- * - onChange:        (ids) => void
- * - options:         currently loaded [{ value, label }]
- * - selectedOptions: [{ value, label }] resolving labels for `value` so chips
- *                    render even when the selection is not on the current page
- *                    (a `null` label renders a loading skeleton)
- * - loading, hasMore, onLoadMore
- * - searchValue, onSearchChange
- * - onDropdownOpen:  fired when the dropdown opens (e.g. to lazy-load page 1)
+ * Usage:
+ *   <PaginatedMultiSelect
+ *     value={ids} onChange={setIds}
+ *     options={options} selectedOptions={selectedOptions}
+ *     loading={loading} hasMore={hasMore} onLoadMore={loadMore}
+ *     searchValue={search} onSearchChange={setSearch}
+ *   />
  */
 export default function PaginatedMultiSelect({
   label,

@@ -1,6 +1,4 @@
 // Constants and transforms for Live Data Masking rules.
-// Ported from webapp/src/webapp/ai_data_masking/helpers.cljs and
-// webapp/src/webapp/connections/dlp_info_types.cljs (presidio-options).
 
 // Preset categories: key -> { text, values[] }
 export const PRESET_DEFINITIONS = {

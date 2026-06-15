@@ -94,7 +94,6 @@ export default function DataMasking() {
     return <PageLoader h={300} />
   }
 
-  // Empty org → promotion panel only (no header/list).
   if (list.length === 0) {
     return (
       <FullBleed>

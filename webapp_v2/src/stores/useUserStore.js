@@ -2,8 +2,6 @@ import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
-const SALES_URL = 'https://hoop.dev/meet'
-const UPGRADE_INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 function loadIntercomScript() {
   if (document.getElementById('intercom-script')) return
@@ -80,19 +78,5 @@ export const useUserStore = create((set, get) => ({
     analyticsIdentify(user, analyticsMode).catch((err) => {
       console.warn('[analytics] identify failed:', err)
     })
-  },
-
-  // Open the Intercom messenger (booting it on demand — a within-SPA navigation
-  // may have skipped initIntercom), or fall back to the sales page.
-  requestDemo: () => {
-    const { analyticsTracking, user } = get()
-    if (analyticsTracking) {
-      if (!window.Intercom) get().initIntercom(user)
-      if (window.Intercom) {
-        window.Intercom('showNewMessage', UPGRADE_INTERCOM_MESSAGE)
-        return
-      }
-    }
-    window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   },
 }))

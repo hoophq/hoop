@@ -3,24 +3,19 @@ import { ArrowUpRight } from 'lucide-react'
 import Button from '@/components/Button'
 
 /**
- * Generic feature promotion panel — a React port of the CLJS
- * `webapp.features.promotion/feature-promotion`. Fills a feature page when the
- * feature is available but empty (`mode="empty-state"`) or gated behind a plan
- * upgrade (`mode="upgrade-plan"`). Split layout: marketing copy + feature
- * highlights on the left, an illustration on the right.
+ * Split promotion panel (copy + highlights left, illustration right) shown when a
+ * feature is empty (`mode="empty-state"`) or gated (`mode="upgrade-plan"`).
+ * `image` is a filename under /images/illustrations/.
  *
- * Props:
- * - featureName       Feature label, e.g. "Live Data Masking".
- * - mode              'empty-state' (default) | 'upgrade-plan'. Only changes the
- *                     default primary-button text when `primaryText` is omitted.
- * - image             Filename under /images/illustrations/; omitted → placeholder.
- * - description       Short paragraph under the heading.
- * - featureItems      [{ icon: ReactNode, title, description }] highlight cards.
- * - onPrimaryClick    Primary button handler (button hidden when absent).
- * - primaryText       Primary button label (defaults from `mode`/`featureName`).
- * - extraInformation  Secondary note (e.g. deprecated-provider warning).
- * - docsHref          External docs URL — renders a docs link button when set.
- * - docsText          Docs link button label.
+ * Usage:
+ *   <FeaturePromotion
+ *     featureName="Live Data Masking"
+ *     image="data-masking-promotion.png"
+ *     description="..."
+ *     featureItems={[{ icon: <FolderLock />, title: '...', description: '...' }]}
+ *     onPrimaryClick={goCreate}
+ *     primaryText="Configure"
+ *   />
  */
 export default function FeaturePromotion({
   featureName,
