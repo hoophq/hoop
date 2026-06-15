@@ -1,6 +1,17 @@
 package pgtypes
 
-const DefaultBufferSize = 1 << 24
+const (
+	// DefaultBufferSize is the maximum frame size of a single decoded Postgres
+	// packet (16 MiB). This is the default cap applied when the
+	// experimental.pg_large_query feature flag is disabled.
+	DefaultBufferSize = 1 << 24
+	// LargeBufferSize is the maximum frame size of a single decoded Postgres
+	// packet (32 MiB) when the experimental.pg_large_query feature flag is
+	// enabled. It MUST stay below common/grpc.MaxRecvMsgSize so that an encoded
+	// packet still fits within a single gRPC message, leaving headroom for the
+	// packet envelope and spec metadata.
+	LargeBufferSize = 1 << 25
+)
 
 type PacketType byte
 

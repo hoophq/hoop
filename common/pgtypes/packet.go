@@ -67,7 +67,19 @@ func (p *Packet) IsFrontendSSLRequest() bool {
 	return false
 }
 
+// Decode reads a single typed Postgres packet using the default maximum frame
+// size (DefaultBufferSize).
 func Decode(data io.Reader) (*Packet, error) {
+	return DecodeWithMaxSize(data, DefaultBufferSize)
+}
+
+// DecodeWithMaxSize reads a single typed Postgres packet, rejecting any packet
+// whose frame length exceeds maxSize bytes. A non-positive maxSize falls back to
+// DefaultBufferSize so callers can never accidentally reject all packets.
+func DecodeWithMaxSize(data io.Reader, maxSize int) (*Packet, error) {
+	if maxSize <= 0 {
+		maxSize = DefaultBufferSize
+	}
 	typ := make([]byte, 1)
 	_, err := data.Read(typ)
 	if err != nil {
@@ -80,8 +92,8 @@ func Decode(data io.Reader) (*Packet, error) {
 			return nil, err
 		}
 		pktLen := pkt.HeaderLength() - 4 // length includes itself.
-		if pktLen > DefaultBufferSize || pktLen < 0 {
-			return nil, fmt.Errorf("max size (%v) reached", DefaultBufferSize)
+		if pktLen > maxSize || pktLen < 0 {
+			return nil, fmt.Errorf("max size (%v) reached", maxSize)
 		}
 		pkt.frame = make([]byte, pktLen)
 		_, err := io.ReadFull(data, pkt.frame)
@@ -95,8 +107,8 @@ func Decode(data io.Reader) (*Packet, error) {
 		return nil, err
 	}
 	pktLen := pkt.HeaderLength() - 4 // length includes itself.
-	if pktLen > DefaultBufferSize || pktLen < 0 {
-		return nil, fmt.Errorf("max size (%v) reached", DefaultBufferSize)
+	if pktLen > maxSize || pktLen < 0 {
+		return nil, fmt.Errorf("max size (%v) reached", maxSize)
 	}
 	pkt.frame = make([]byte, pktLen)
 	if _, err := io.ReadFull(data, pkt.frame); err != nil {

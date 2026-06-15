@@ -89,6 +89,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.pg_large_query": {
+		Name:        "experimental.pg_large_query",
+		Description: "Allow Postgres protocol messages larger than 16 MiB (up to 32 MiB) through hoop connect, e.g. a single very large SQL statement. Increases peak memory and session-recording size per large query across client, gateway and agent. All three components must run a build that registers this flag.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentClient, ComponentAgent},
+	},
 }
 
 // All returns every registered flag, sorted by name.
