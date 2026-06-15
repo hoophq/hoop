@@ -108,7 +108,7 @@ func TestNotifyOpenChannels_EmptyMessage(t *testing.T) {
 	stub := &stderrStubChannel{}
 	channels.Store("1", stub)
 
-	notifyOpenChannels(channels, "")
+	notifyOpenChannels(channels.Range, "")
 
 	if stub.Buffer.Len() != 0 {
 		t.Errorf("expected no writes for empty message, got %q", stub.Buffer.String())
@@ -122,7 +122,7 @@ func TestNotifyOpenChannels_WritesToEveryChannel(t *testing.T) {
 	channels.Store("1", a)
 	channels.Store("2", b)
 
-	notifyOpenChannels(channels, "cannot connect to target server")
+	notifyOpenChannels(channels.Range, "cannot connect to target server")
 
 	for label, ch := range map[string]*stderrStubChannel{"a": a, "b": b} {
 		got := ch.Buffer.String()
@@ -153,5 +153,5 @@ func TestNotifyOpenChannels_StderrErrorIgnored(t *testing.T) {
 	channels := &sync.Map{}
 	channels.Store("1", &stderrStubChannel{failWrite: true})
 
-	notifyOpenChannels(channels, "cannot connect to target server")
+	notifyOpenChannels(channels.Range, "cannot connect to target server")
 }
