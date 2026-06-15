@@ -7,6 +7,7 @@ import (
 	"libhoop"
 	"strings"
 
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -14,6 +15,13 @@ import (
 
 func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	// Native Oracle access is gated behind a feature flag. When it is off, refuse
+	// to open the proxy session instead of starting the TNS handshake.
+	if !featureflagstate.IsEnabled("beta.oracle_native") {
+		log.Infof("session=%s - oracle native access disabled by feature flag, closing session", sessionID)
+		a.sendClientSessionClose(sessionID, "oracle native access is not enabled for this organization")
+		return
+	}
 	streamClient := pb.NewStreamWriter(a.client, pbclient.OracleConnectionWrite, pkt.Spec)
 	connParams := a.connectionParams(sessionID)
 	if connParams == nil {
@@ -33,6 +41,16 @@ func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
 	clientObj := a.connStore.Get(clientConnectionIDKey)
 	if serverWriter, ok := clientObj.(io.WriteCloser); ok {
 		if _, err := serverWriter.Write(pkt.Payload); err != nil {
+			// An input guardrail violation surfaces here as a typed error. Close
+			// the session preserving the structured guardrails info (and the
+			// human-readable rule message) the same way the other protocols do,
+			// instead of the generic "fail to write packet".
+			if isGuardrailsError(err) {
+				log.Infof("session=%v - oracle guardrails validation failed, closing session: %v", sessionID, err)
+				a.sendClientSessionCloseFromError(sessionID, err)
+				_ = serverWriter.Close()
+				return
+			}
 			log.Errorf("failed sending packet, err=%v", err)
 			a.sendClientSessionClose(sessionID, "fail to write packet")
 			_ = serverWriter.Close()

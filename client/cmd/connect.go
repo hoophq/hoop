@@ -278,6 +278,9 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 					})
 				}
 			case pb.ConnectionTypeOracleDB:
+				if !clientconfig.IsFeatureEnabled(config, "beta.oracle_native") {
+					c.processGracefulExit(fmt.Errorf("oracle native access is not enabled for your organization"))
+				}
 				srv := proxy.NewOracleServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
 					c.processGracefulExit(err)
