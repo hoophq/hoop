@@ -18,6 +18,7 @@ const (
 	MySQLConnectionWrite     = "AgentMySQLConnectionWrite"
 	MSSQLConnectionWrite     = "AgentMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "AgentMongoDBConnectionWrite"
+	OracleConnectionWrite    = "AgentOracleConnectionWrite"
 	SSHConnectionWrite       = "AgentSSHConnectionWrite"
 	SSMConnectionWrite       = "AgentSSMConnectionWrite"
 	HttpProxyConnectionWrite = "AgentHttpProxyConnectionWrite"

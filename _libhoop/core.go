@@ -24,6 +24,7 @@ type DBCore interface {
 	Postgres() (Proxy, error)
 	MSSQL() (Proxy, error)
 	MongoDB() (Proxy, error)
+	Oracle() (Proxy, error)
 }
 
 type License interface {

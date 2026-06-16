@@ -89,6 +89,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"beta.oracle_native": {
+		Name:        "beta.oracle_native",
+		Description: "Enable native Oracle (TNS) database access so clients like sqlplus/DBeaver connect through hoop's local proxy. When disabled, Oracle connections cannot open a native proxy session.",
+		Default:     false,
+		Stability:   StabilityBeta,
+		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
+	},
 }
 
 // All returns every registered flag, sorted by name.
