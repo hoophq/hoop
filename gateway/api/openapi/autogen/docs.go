@@ -15200,6 +15200,48 @@ const docTemplate = `{
                     "description": "The listen address to run the SSH server proxy",
                     "type": "string",
                     "example": "0.0.0.0:12222"
+                },
+                "trusted_cas": {
+                    "description": "TrustedCAs is the list of trusted SSH CA public keys in authorized_keys\nformat. When non-empty, the server accepts certificate authentication.\nUserMapping is required when TrustedCAs is set.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "ssh-ed25519 AAAA..."
+                    ]
+                },
+                "user_mapping": {
+                    "description": "UserMapping is required when TrustedCAs is configured. It defines how\nthe certificate is matched against a Hoop user.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SSHUserMapping"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.SSHUserMapping": {
+            "type": "object",
+            "properties": {
+                "cert_attr": {
+                    "description": "CertAttribute is the certificate field used for the lookup.\n\"principal\" checks all ValidPrincipals; the first match wins.\n\"key_id\" uses the certificate's KeyId field.",
+                    "type": "string",
+                    "enum": [
+                        "principal",
+                        "key_id"
+                    ],
+                    "example": "principal"
+                },
+                "user_attr": {
+                    "description": "UserAttribute is the Hoop user table column matched against the cert value.",
+                    "type": "string",
+                    "enum": [
+                        "email",
+                        "subject",
+                        "user_id"
+                    ],
+                    "example": "email"
                 }
             }
         },
