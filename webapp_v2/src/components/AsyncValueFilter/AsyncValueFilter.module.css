@@ -7,11 +7,3 @@
   background-color: var(--mantine-color-gray-1);
 }
 
-/* `overflow` has no Mantine prop; max-height is set via the `mah` prop. */
-.scroll {
-  overflow-y: auto;
-}
-
-.sentinel {
-  height: 1px;
-}

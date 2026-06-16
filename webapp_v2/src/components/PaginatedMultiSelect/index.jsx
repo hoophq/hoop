@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Combobox,
@@ -51,10 +51,20 @@ export default function PaginatedMultiSelect({
   // Capture the scroll container as state (not a ref) so useIntersection re-runs
   // with a real `root` once the element mounts.
   const [viewport, setViewport] = useState(null)
-  const { ref: sentinelRef, entry } = useIntersection({ root: viewport, threshold: 1 })
+  const { ref: sentinelRef, entry } = useIntersection({
+    root: viewport,
+    rootMargin: '200px',
+  })
 
+  // Load one page per sentinel entry (rising edge only). Firing on every render
+  // where it stays intersecting would load several pages at once.
+  const wasIntersecting = useRef(false)
   useEffect(() => {
-    if (entry?.isIntersecting && hasMore && !loading) onLoadMore?.()
+    const isIntersecting = entry?.isIntersecting ?? false
+    if (isIntersecting && !wasIntersecting.current && hasMore && !loading) {
+      onLoadMore?.()
+    }
+    wasIntersecting.current = isIntersecting
   }, [entry?.isIntersecting, hasMore, loading, onLoadMore])
 
   const selectedSet = useMemo(() => new Set(value), [value])

@@ -10,7 +10,16 @@ const BORDER = '1px solid var(--mantine-color-default-border)'
 
 function ConnectionsPanel({ connections, onConfigureConnection }) {
   return (
-    <Box px="lg" py="md" style={{ borderTop: BORDER }} bg="white">
+    <Box
+      px="lg"
+      py="md"
+      bg="white"
+      style={{
+        borderTop: BORDER,
+        borderBottomLeftRadius: 'var(--mantine-radius-md)',
+        borderBottomRightRadius: 'var(--mantine-radius-md)',
+      }}
+    >
       <Group align="flex-start" gap="xl" wrap="nowrap">
         <Stack gap={2} w={220} style={{ flexShrink: 0 }}>
           <Text fw={500}>Connected Resources</Text>

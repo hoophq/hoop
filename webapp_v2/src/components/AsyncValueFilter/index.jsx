@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Box, Flex, Group, Loader, Popover, Stack, Text } from '@mantine/core'
-import { useIntersection } from '@mantine/hooks'
+import { useRef, useState } from 'react'
+import { Box, Flex, Group, Loader, Popover, ScrollArea, Stack, Text } from '@mantine/core'
 import { Check, Search, X } from 'lucide-react'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
@@ -35,12 +34,16 @@ export default function AsyncValueFilter({
 }) {
   const Icon = icon
   const [open, setOpen] = useState(false)
-  const [viewport, setViewport] = useState(null)
-  const { ref: sentinelRef, entry } = useIntersection({ root: viewport, threshold: 1 })
+  const viewportRef = useRef(null)
 
-  useEffect(() => {
-    if (entry?.isIntersecting && hasMore && !loading) onLoadMore?.()
-  }, [entry?.isIntersecting, hasMore, loading, onLoadMore])
+  const handleScrollPositionChange = () => {
+    if (!hasMore || loading) return
+    const el = viewportRef.current
+    if (!el) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) {
+      onLoadMore?.()
+    }
+  }
 
   const hasSelected = typeof selected === 'string' && selected.trim() !== ''
 
@@ -109,7 +112,12 @@ export default function AsyncValueFilter({
             leftSection={<Search size={14} />}
             size="xs"
           />
-          <Box ref={setViewport} className={classes.scroll} mah={288}>
+          <ScrollArea
+            h={288}
+            type="auto"
+            viewportRef={viewportRef}
+            onScrollPositionChange={handleScrollPositionChange}
+          >
             {options.length > 0 ? (
               <Stack gap={0}>
                 {options.map((option) => (
@@ -148,8 +156,7 @@ export default function AsyncValueFilter({
                 <Loader size="xs" />
               </Group>
             )}
-            <div ref={sentinelRef} className={classes.sentinel} />
-          </Box>
+          </ScrollArea>
         </Stack>
       </Popover.Dropdown>
     </Popover>

@@ -319,7 +319,6 @@ function Router() {
         }
       />
 
-      {/* Live Data Masking — migrated from ClojureScript */}
       <Route
         path="/features/data-masking"
         element={
