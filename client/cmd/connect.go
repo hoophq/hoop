@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/client/proxy"
+	clientupgrade "github.com/hoophq/hoop/client/upgrade"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
@@ -609,21 +610,44 @@ func (c *connect) printHeader(connectionType pb.ConnectionType, pkt *pb.Packet) 
 }
 
 func printVersionMismatchWarning(agentVersion string) {
-	cliVersion := version.Get().Version
+	printVersionMismatchWarningTo(os.Stderr, version.Get().Version, agentVersion)
+}
+
+// printVersionMismatchWarningTo renders the CLI/agent version-mismatch
+// warning to w. The writer and cliVersion are parameters so unit tests can
+// drive it deterministically; the exported caller wires in os.Stderr and the
+// build-stamped version.
+func printVersionMismatchWarningTo(w io.Writer, cliVersion, agentVersion string) {
+	if os.Getenv(clientupgrade.DisableVersionCheckEnv) == "true" {
+		return
+	}
 	if agentVersion == "" || cliVersion == "" || cliVersion == "unknown" || agentVersion == cliVersion {
 		return
 	}
+
+	// Prefer the exact agent version via the OS-agnostic version manager.
+	// If the agent predates the version manager (or reports an unmanageable
+	// version), fall back to the docs rather than printing an install command
+	// that would fail with a floor error.
+	target := clientupgrade.NormalizeVersion(agentVersion)
+	action := "For installation options, visit: https://hoop.dev/docs/clients/cli-versions"
+	if clientupgrade.ValidateInstallableVersion(target) == nil {
+		action = fmt.Sprintf(
+			"Install and activate the matching version with the hoop CLI version manager:\n"+
+				"  hoop versions install %s --use\n\n"+
+				"For more options, visit: https://hoop.dev/docs/clients/cli-versions",
+			target)
+	}
+
 	msg := styles.ClientErrorSimple(fmt.Sprintf(
 		"⚠️  VERSION MISMATCH DETECTED! ⚠️\n"+
 			"Your CLI version (%s) does not match the agent version (%s).\n"+
 			"This WILL cause unexpected behavior.\n\n"+
-			"Please update your CLI to match the agent version:\n"+
-			"  brew tap hoophq/brew https://github.com/hoophq/brew.git\n"+
-			"  brew install hoop@%s\n\n"+
-			"For more installation options, visit: https://hoop.dev/docs/clients/cli#installation",
-		cliVersion, agentVersion, agentVersion))
+			"%s\n\n"+
+			"(set %s=true to silence this warning)",
+		cliVersion, agentVersion, action, clientupgrade.DisableVersionCheckEnv))
 
-	_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", msg)
+	_, _ = fmt.Fprintf(w, "\n%s\n\n", msg)
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {
