@@ -491,6 +491,20 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.TestFederationConfig)
 
+	// gcp_oauth consent flow. Unlike the admin-only config endpoints above,
+	// authorize/disconnect are available to any authenticated user because
+	// each user manages their own per-connection Google credential. The
+	// callback is unauthenticated (Google calls it directly) and is secured by
+	// the single-use, TTL-bounded state row created at authorize time.
+	r.GET("/connections/:nameOrID/federation/oauth/authorize",
+		r.AuthMiddleware,
+		apiconnections.AuthorizeFederationOAuth)
+	r.DELETE("/connections/:nameOrID/federation/oauth",
+		r.AuthMiddleware,
+		apiconnections.DisconnectFederationOAuth)
+	r.GET("/federation/oauth/callback",
+		apiconnections.FederationOAuthCallback)
+
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,

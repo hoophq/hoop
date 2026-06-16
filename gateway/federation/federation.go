@@ -83,10 +83,21 @@ type ResolveRequest struct {
 	// from it.
 	Config *models.ConnectionFederationConfig
 
-	// AdminCredentialsPlain is the decrypted admin credential blob (the GCP
-	// service-account JSON for gcp_iam). The caller is responsible for
-	// zeroing this when no longer needed.
+	// AdminCredentialsPlain is the decrypted admin credential blob. Its shape
+	// is provider-specific: the GCP service-account JSON for gcp_iam, or the
+	// OAuth client config (client_id/client_secret JSON) for gcp_oauth. The
+	// caller is responsible for zeroing this when no longer needed.
 	AdminCredentialsPlain []byte
+
+	// UserCredentialsPlain is the decrypted PER-USER credential blob, loaded by
+	// the federation service from the per-user credential store keyed by
+	// (connection, user). Providers that mint tokens from a user-supplied
+	// credential read it here: gcp_oauth uses it for the Google refresh token.
+	// Empty for providers that have no per-user credential (e.g. gcp_iam) or
+	// when the user has not completed a required consent flow — resolvers must
+	// treat empty as an actionable "not connected" condition. The caller is
+	// responsible for zeroing this when no longer needed.
+	UserCredentialsPlain []byte
 
 	// ResolvedPrincipal is the target principal computed by the identity
 	// mapping engine (e.g. "user@acme.com"). Passed explicitly rather than
