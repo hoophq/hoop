@@ -20,7 +20,8 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/clientproto"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/sshproto"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"golang.org/x/crypto/ssh"
 )
@@ -41,7 +42,7 @@ type ServerConfig struct {
 	// UserMapping specifies which certificate attribute (principal or key_id) is
 	// matched against which user table column (email, subject, user_id).
 	// Required when TrustedCAs is non-empty.
-	UserMapping UserMapping
+	UserMapping sshcertproxy.UserMapping
 }
 
 // proxyServer is the external-facing singleton. It holds exactly one active
@@ -49,7 +50,7 @@ type ServerConfig struct {
 // Start() time based on TrustedCAs configuration.
 type proxyServer struct {
 	pwdServer  *passwordServer
-	certServer *certServer
+	certServer *sshcertproxy.Server
 }
 
 // GetServerInstance returns the singleton proxy server instance.
@@ -77,11 +78,7 @@ func (s *proxyServer) Start(cfg ServerConfig) error {
 	}
 
 	if len(cfg.TrustedCAs) > 0 {
-		certChecker, err := buildCertChecker(cfg.TrustedCAs)
-		if err != nil {
-			return fmt.Errorf("failed building cert checker, reason=%v", err)
-		}
-		srv, err := runCertServer(cfg.ListenAddress, hostKey, certChecker, cfg.UserMapping)
+		srv, err := sshcertproxy.Run(cfg.ListenAddress, hostKey, cfg.TrustedCAs, cfg.UserMapping)
 		if err != nil {
 			return err
 		}
@@ -107,16 +104,19 @@ func (s *proxyServer) RevokeByCredentialID(credentialID string) {
 	}
 }
 
-// Stop cancels all active connections and closes the listener.
+// Stop cancels all active connections, closes the listener, and resets the
+// server state so that Start can be called again on the same instance.
 func (s *proxyServer) Stop() error {
 	instanceStore.Delete(instanceKey)
+	var err error
 	if s.pwdServer != nil {
-		return s.pwdServer.stop()
+		err = s.pwdServer.stop()
+		s.pwdServer = nil
+	} else if s.certServer != nil {
+		err = s.certServer.Stop()
+		s.certServer = nil
 	}
-	if s.certServer != nil {
-		return s.certServer.stop()
-	}
-	return nil
+	return err
 }
 
 func parseHostsKey(privateKeyB64Enc string) (ssh.Signer, error) {
@@ -230,7 +230,8 @@ type passwordConnection struct {
 	credentialID string
 	ctx          context.Context
 	cancelFn     func(msg string, a ...any)
-	proto        *clientproto.Session
+	grpcClient   pb.ClientTransport
+	handler      sshcertproxy.ChannelHandler
 	newChannelCh <-chan ssh.NewChannel
 	sshConn      *ssh.ServerConn
 }
@@ -363,14 +364,13 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 		timeoutCancelFn()
 	}
 
-	proto := clientproto.New(sid, connID, client, ctx, wrappedCancelFn)
 	c := &passwordConnection{
 		id:           connID,
 		sid:          sid,
 		credentialID: credentialID,
 		ctx:          ctx,
 		cancelFn:     wrappedCancelFn,
-		proto:        proto,
+		grpcClient:   client,
 		sshConn:      sshConn,
 		newChannelCh: clientNewCh,
 	}
@@ -385,7 +385,14 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 }
 
 func (c *passwordConnection) handle() {
-	c.proto.Open()
+	handler, err := sshproto.OpenSession(c.sid, c.id, c.grpcClient, c.ctx, c.cancelFn)
+	if err != nil {
+		c.cancelFn("failed opening session: %v", err)
+		_, _ = c.grpcClient.Close()
+		_ = c.sshConn.Close()
+		return
+	}
+	c.handler = handler
 	go c.acceptChannels()
 
 	<-c.ctx.Done()
@@ -395,7 +402,7 @@ func (c *passwordConnection) handle() {
 	hasUserError := false
 	if ctxErr != nil {
 		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
-			notifyOpenChannels(c.proto.RangeChannels, msg)
+			notifyOpenChannels(c.handler.RangeChannels, msg)
 			hasUserError = true
 		}
 	}
@@ -403,7 +410,7 @@ func (c *passwordConnection) handle() {
 	if !hasUserError {
 		flushDone := make(chan struct{})
 		go func() {
-			c.proto.Wait()
+			c.handler.Wait()
 			close(flushDone)
 		}()
 		select {
@@ -413,16 +420,13 @@ func (c *passwordConnection) handle() {
 		}
 	}
 
-	if err := c.proto.SendClose(); err != nil {
+	if err := c.handler.SendClose(); err != nil {
 		log.With("sid", c.sid, "conn", c.id).Warnf("failed sending session close packet, err=%v", err)
-		return
-	}
-
-	if !hasUserError {
+	} else if !hasUserError {
 		time.Sleep(time.Second * 2)
 	}
+	_ = c.handler.Close()
 	_ = c.sshConn.Close()
-	_, _ = c.proto.GRPCClient().Close()
 }
 
 func (c *passwordConnection) acceptChannels() {
@@ -443,7 +447,7 @@ func (c *passwordConnection) acceptChannels() {
 }
 
 func (c *passwordConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
-	if err := c.proto.AcceptAndServeChannel(newCh, channelID); err != nil {
+	if err := c.handler.AcceptAndServe(newCh, channelID); err != nil {
 		c.cancelFn("failed handling channel, err=%v", err)
 	}
 }

@@ -1,4 +1,4 @@
-package sshproxy
+package sshcertproxy
 
 import (
 	"bytes"
@@ -18,8 +18,7 @@ type UserMapping struct {
 }
 
 // certSession holds per-connection certificate state, established at handshake
-// time and consulted on every channel-open and channel request. A nil
-// certSession means the connection used password authentication.
+// time and consulted on every channel-open and channel request.
 //
 // Extensions enforced at the gateway proxy layer:
 //   - permit-pty               → pty-req channel request
@@ -30,10 +29,6 @@ type UserMapping struct {
 // Critical options enforced at the gateway proxy layer:
 //   - force-command            → exec/shell/subsystem channel requests
 //   - source-address           → enforced by ssh.CertChecker.Authenticate at handshake time
-//
-// permit-user-rc has no corresponding SSH protocol message; it controls
-// server-side execution of ~/.ssh/rc and is enforced by the target SSH server,
-// not by the proxy layer.
 type certSession struct {
 	cert         *ssh.Certificate
 	matchedValue string // the cert attribute value (principal or key_id) that resolved the user

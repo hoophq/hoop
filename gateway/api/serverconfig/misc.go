@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
 )
 
@@ -156,6 +157,7 @@ func UpdateServerMisc(c *gin.Context) {
 
 	sshInstance := sshproxy.GetServerInstance()
 	sshConf, state := parseSSHConfigState(currentSrvConf, newState)
+	fmt.Printf("sshConf: %+v, state: %s\n", sshConf, state)
 	switch state {
 	case instanceStateStart:
 		if sshConf.HostsKey == "" {
@@ -174,6 +176,7 @@ func UpdateServerMisc(c *gin.Context) {
 			ListenAddress: sshConf.ListenAddress,
 			HostsKey:      sshConf.HostsKey,
 			TrustedCAs:    sshConf.TrustedCAs,
+			UserMapping:   modelSSHUserMappingToProxy(sshConf.UserMapping),
 		})
 	case instanceStateStop:
 		err = sshInstance.Stop()
@@ -484,6 +487,16 @@ func modelSSHToOpenAPI(m *models.SSHServerConfig) *openapi.SSHServerConfig {
 		}
 	}
 	return out
+}
+
+func modelSSHUserMappingToProxy(m *models.SSHUserMapping) sshcertproxy.UserMapping {
+	if m == nil {
+		return sshcertproxy.UserMapping{}
+	}
+	return sshcertproxy.UserMapping{
+		CertAttr: m.CertAttribute,
+		UserAttr: m.UserAttribute,
+	}
 }
 
 func newEd25519PrivateKey() (privateKey []byte, err error) {

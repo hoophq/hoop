@@ -1,4 +1,4 @@
-package sshproxy
+package sshcertproxy
 
 import (
 	"context"
@@ -17,11 +17,13 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/clientproto"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/pgproto"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/sshproto"
 	"golang.org/x/crypto/ssh"
 )
 
-type certServer struct {
+// Server is the certificate-based SSH proxy server.
+type Server struct {
 	listenAddress       string
 	connectionStore     sync.Map
 	pendingCertSessions sync.Map
@@ -31,7 +33,20 @@ type certServer struct {
 	userMapping         UserMapping
 }
 
-func (s *certServer) stop() error {
+// Run starts the certificate-based SSH proxy server. trustedCAs is the list of
+// trusted SSH CA public keys in authorized_keys format. The server accepts
+// connections authenticated by certificates signed by those CAs, and resolves
+// users via userMapping.
+func Run(listenAddr string, hostKey ssh.Signer, trustedCAs []string, userMapping UserMapping) (*Server, error) {
+	certChecker, err := buildCertChecker(trustedCAs)
+	if err != nil {
+		return nil, fmt.Errorf("failed building cert checker: %w", err)
+	}
+	return runCertServer(listenAddr, hostKey, certChecker, userMapping)
+}
+
+// Stop cancels all active connections and closes the listener.
+func (s *Server) Stop() error {
 	s.connectionStore.Range(func(key, value any) bool {
 		if conn, ok := value.(*certConnection); ok {
 			conn.cancelFn("proxy server is shutting down")
@@ -45,7 +60,7 @@ func (s *certServer) stop() error {
 	return nil
 }
 
-func runCertServer(listenAddr string, hostKey ssh.Signer, certChecker *ssh.CertChecker, userMapping UserMapping) (*certServer, error) {
+func runCertServer(listenAddr string, hostKey ssh.Signer, certChecker *ssh.CertChecker, userMapping UserMapping) (*Server, error) {
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
@@ -53,7 +68,7 @@ func runCertServer(listenAddr string, hostKey ssh.Signer, certChecker *ssh.CertC
 
 	log.Infof("starting ssh cert server at %v", listenAddr)
 
-	server := &certServer{
+	server := &Server{
 		listenAddress: listenAddr,
 		listener:      lis,
 		hostKey:       hostKey,
@@ -109,14 +124,14 @@ type certConnection struct {
 	sid          string
 	ctx          context.Context
 	cancelFn     func(msg string, a ...any)
-	proto        *clientproto.Session
-	certGrpcOnce sync.Once
+	handler      ChannelHandler
+	handlerOnce  sync.Once
 	certSession  *certSession
 	newChannelCh <-chan ssh.NewChannel
 	sshConn      *ssh.ServerConn
 }
 
-func newCertConnection(sid, connID string, conn net.Conn, server *certServer) (*certConnection, error) {
+func newCertConnection(sid, connID string, conn net.Conn, server *Server) (*certConnection, error) {
 	sshCfg := &ssh.ServerConfig{
 		PublicKeyCallback: func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			cert, ok := key.(*ssh.Certificate)
@@ -211,17 +226,17 @@ func (c *certConnection) handle() {
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh cert connection closed, reason=%v", ctxErr)
 
 	hasUserError := false
-	if ctxErr != nil && c.proto != nil {
+	if ctxErr != nil && c.handler != nil {
 		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
-			notifyOpenChannels(c.proto.RangeChannels, msg)
+			notifyOpenChannels(c.handler.RangeChannels, msg)
 			hasUserError = true
 		}
 	}
 
-	if !hasUserError && c.proto != nil {
+	if !hasUserError && c.handler != nil {
 		flushDone := make(chan struct{})
 		go func() {
-			c.proto.Wait()
+			c.handler.Wait()
 			close(flushDone)
 		}()
 		select {
@@ -231,13 +246,13 @@ func (c *certConnection) handle() {
 		}
 	}
 
-	if c.proto != nil {
-		if err := c.proto.SendClose(); err != nil {
+	if c.handler != nil {
+		if err := c.handler.SendClose(); err != nil {
 			log.With("sid", c.sid, "conn", c.id).Warnf("failed sending session close packet, err=%v", err)
 		} else if !hasUserError {
 			time.Sleep(time.Second * 2)
 		}
-		_, _ = c.proto.GRPCClient().Close()
+		_ = c.handler.Close()
 	}
 	_ = c.sshConn.Close()
 }
@@ -254,20 +269,18 @@ func (c *certConnection) acceptChannels() {
 		channelID++
 		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
 			Infof("received new cert channel, type=%v", newCh.ChannelType())
-		go c.handleChannel(newCh, channelID)
+		go func() {
+			reason, err := c.validateChannel(newCh, channelID)
+			if err != nil {
+				_ = newCh.Reject(reason, err.Error())
+				return
+			}
+			if err := c.handler.AcceptAndServe(newCh, channelID); err != nil {
+				c.cancelFn("cert: failed handling channel, err=%v", err)
+			}
+		}()
 	}
 	c.cancelFn("ssh client disconnected")
-}
-
-func (c *certConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
-	reason, err := c.validateChannel(newCh, channelID)
-	if err != nil {
-		_ = newCh.Reject(reason, err.Error())
-		return
-	}
-	if err := c.proto.AcceptAndServeChannel(newCh, channelID); err != nil {
-		c.cancelFn("cert: failed handling channel, err=%v", err)
-	}
 }
 
 // validateChannel enforces cert-auth constraints and establishes the
@@ -299,7 +312,8 @@ func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16)
 	}
 	connectionName := dest.ConnectedHost
 
-	if _, err := models.GetConnectionByOrgAndName(c.certSession.orgID, connectionName); err != nil {
+	dbConn, err := models.GetConnectionByOrgAndName(c.certSession.orgID, connectionName)
+	if err != nil {
 		if err == models.ErrNotFound {
 			log.With("conn", c.id, "sid", c.sid, "ch", channelID).
 				Infof("cert port-forward: connection %q not found (org=%s matched=%s)",
@@ -311,12 +325,14 @@ func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16)
 		return ssh.ConnectionFailed, fmt.Errorf("hoop: failed looking up connection %q", connectionName)
 	}
 
-	log.Infof("cert auth: received direct-tcpip for connection %q (matched=%s)", connectionName, c.certSession.matchedValue)
+	connType := pb.ToConnectionType(dbConn.Type, dbConn.SubType.String)
+	log.Infof("cert auth: received direct-tcpip for connection %q type=%s (matched=%s)",
+		connectionName, connType, c.certSession.matchedValue)
 
 	// Establish the session-level gRPC connection on the first direct-tcpip
 	// channel. sync.Once ensures this runs exactly once per SSH connection;
 	// subsequent channels reuse the same gRPC session.
-	c.certGrpcOnce.Do(func() {
+	c.handlerOnce.Do(func() {
 		grpcOpts := []*grpc.ClientOptions{
 			grpc.WithOption(grpc.OptionConnectionName, connectionName),
 			grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
@@ -336,8 +352,23 @@ func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16)
 			c.cancelFn("cert auth: failed to connect to grpc for connection %q: %v", connectionName, connErr)
 			return
 		}
-		c.proto = clientproto.New(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
-		c.proto.Open()
+		var handler ChannelHandler
+		var openErr error
+		switch connType {
+		case pb.ConnectionTypePostgres:
+			handler, openErr = pgproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
+		case pb.ConnectionTypeSSH:
+			handler, openErr = sshproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
+		default:
+			c.cancelFn("cert auth: unsupported connection type %q for connection %q", connType, connectionName)
+			_, _ = grpcClient.Close()
+		}
+		if openErr != nil {
+			c.cancelFn("cert auth: session open failed for connection %q: %v", connectionName, openErr)
+			_, _ = grpcClient.Close()
+			return
+		}
+		c.handler = handler
 	})
 
 	select {
@@ -349,6 +380,6 @@ func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16)
 
 	log.With("conn", c.id, "sid", c.sid, "ch", channelID).
 		Infof("cert port-forward: connection=%q matched=%s conntype=%s",
-			connectionName, c.certSession.matchedValue, c.proto.ConnectionType())
+			connectionName, c.certSession.matchedValue, connType)
 	return 0, nil
 }

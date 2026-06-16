@@ -30,6 +30,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
 	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
@@ -233,7 +234,7 @@ func Run() {
 				TrustedCAs:    sshc.TrustedCAs,
 			}
 			if sshc.UserMapping != nil {
-				sshServerConfig.UserMapping = sshproxy.UserMapping{
+				sshServerConfig.UserMapping = sshcertproxy.UserMapping{
 					CertAttr: sshc.UserMapping.CertAttribute,
 					UserAttr: sshc.UserMapping.UserAttribute,
 				}
