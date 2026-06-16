@@ -121,8 +121,8 @@ func (r *Resolver) Resolve(ctx context.Context, req federation.ResolveRequest) (
 	if len(req.UserCredentialsPlain) == 0 {
 		return nil, fmt.Errorf(
 			"user %q has not connected a Google account for this connection: complete the OAuth consent flow "+
-				"(GET /api/connections/{connection}/federation/oauth/authorize) and try again",
-			req.UserEmail,
+				"(GET /api/connections/{connection}/federation/oauth/authorize) and try again: %w",
+			req.UserEmail, federation.ErrUserNotConnected,
 		)
 	}
 

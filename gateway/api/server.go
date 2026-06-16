@@ -499,6 +499,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/connections/:nameOrID/federation/oauth/authorize",
 		r.AuthMiddleware,
 		apiconnections.AuthorizeFederationOAuth)
+	r.GET("/connections/:nameOrID/federation/oauth",
+		r.AuthMiddleware,
+		apiconnections.GetFederationOAuthStatus)
 	r.DELETE("/connections/:nameOrID/federation/oauth",
 		r.AuthMiddleware,
 		apiconnections.DisconnectFederationOAuth)

@@ -21,6 +21,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/federation"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -523,6 +524,16 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 			return nil
 		default:
 			// deny is the secure default for any unrecognized policy too.
+			// When the failure is specifically "the user has not connected a
+			// per-user account" (e.g. gcp_oauth consent not completed), tag the
+			// message with a stable, machine-readable code and the connection
+			// name so clients can render an actionable "connect your account"
+			// affordance instead of a raw error string.
+			if errors.Is(resolveErr, federation.ErrUserNotConnected) {
+				return status.Errorf(codes.FailedPrecondition,
+					"federation failed [code=oauth_not_connected connection=%s]: %v",
+					pctx.ConnectionName, resolveErr)
+			}
 			return status.Errorf(codes.FailedPrecondition, "federation failed: %v", resolveErr)
 		}
 	}

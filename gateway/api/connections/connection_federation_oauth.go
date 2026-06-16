@@ -160,7 +160,7 @@ func AuthorizeFederationOAuth(c *gin.Context) {
 // FederationOAuthCallback
 //
 //	@Summary				Google OAuth callback for connection federation
-//	@Description.markdown	api-federation-oauth-callback
+//	@Description			Google's OAuth redirect target. Validates the state issued by the authorize endpoint, exchanges the authorization code for a refresh token, stores it for the user/connection, and redirects the browser back to the application with federation_oauth=success|error. This endpoint is unauthenticated but state-validated, and is not called directly by clients.
 //	@Tags					Federation
 //	@Param					state	query	string	false	"OAuth state (issued by the authorize endpoint)"
 //	@Param					code	query	string	false	"OAuth authorization code"
@@ -310,6 +310,69 @@ func DisconnectFederationOAuth(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// GetFederationOAuthStatus
+//
+//	@Summary		Report the user's per-user federation connection status
+//	@Description	Reports, for the authenticated user, whether they have connected a per-user account (e.g. their Google account for gcp_oauth) to a connection. Clients use this to decide whether to prompt the user to connect before running. Access is scoped to connections the user is allowed to run.
+//	@Tags			Federation
+//	@Produce		json
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Success		200			{object}	openapi.FederationOAuthStatusResponse
+//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/federation/oauth [get]
+func GetFederationOAuthStatus(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	// GetConnectionByNameOrID is access-control aware: a user who is not
+	// entitled to run this connection gets no row (nil), which we surface as a
+	// 404. This keeps the status endpoint scoped to connections the user can
+	// actually run and avoids leaking the existence of others.
+	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
+		return
+	}
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
+	cfg, err := models.GetConnectionFederationConfig(models.DB, ctx.GetOrgID(), conn.ID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			// No federation configured: report an empty provider so the client
+			// knows there is nothing to connect.
+			c.JSON(http.StatusOK, openapi.FederationOAuthStatusResponse{})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching federation config: %v", err)
+		return
+	}
+
+	provider := ""
+	if cfg.BuiltinProvider != nil {
+		provider = *cfg.BuiltinProvider
+	}
+	resp := openapi.FederationOAuthStatusResponse{Provider: provider}
+
+	// Only gcp_oauth has a per-user credential to report on. Other providers
+	// (e.g. gcp_iam) are never "connected" per user.
+	if provider == models.FederationProviderGCPOAuth {
+		cred, cerr := models.GetFederationUserCredential(models.DB, ctx.GetOrgID(), conn.ID, ctx.GetUserID())
+		switch {
+		case cerr == nil:
+			resp.Connected = true
+			resp.GoogleEmail = cred.GoogleEmail
+		case errors.Is(cerr, models.ErrNotFound):
+			// not connected yet — leave Connected false
+		default:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, cerr, "failed fetching user federation credential: %v", cerr)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // federationOAuthConfig builds the oauth2.Config used by both the authorize

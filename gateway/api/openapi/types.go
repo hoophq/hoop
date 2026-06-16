@@ -2201,6 +2201,22 @@ type FederationOAuthAuthorizeResponse struct {
 	URL string `json:"url" example:"https://accounts.google.com/o/oauth2/auth?client_id=...&state=..."`
 }
 
+// FederationOAuthStatusResponse reports, for the authenticated user, whether
+// they have connected a per-user account for a federated connection. Clients
+// use it to decide whether to prompt the user to connect before running.
+type FederationOAuthStatusResponse struct {
+	// Provider is the connection's configured federation provider
+	// (e.g. "gcp_oauth", "gcp_iam"), or empty when the connection has no
+	// federation configured. Only gcp_oauth requires a per-user connection.
+	Provider string `json:"provider" example:"gcp_oauth"`
+	// Connected is true when the user has a stored credential for this
+	// connection. Always false for providers that are not per-user.
+	Connected bool `json:"connected" example:"false"`
+	// GoogleEmail is the consented Google identity, present only when
+	// Connected is true for gcp_oauth.
+	GoogleEmail string `json:"google_email,omitempty" example:"alice@example.com"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`

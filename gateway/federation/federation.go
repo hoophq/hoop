@@ -16,11 +16,22 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/hoophq/hoop/gateway/models"
 )
+
+// ErrUserNotConnected signals that a per-user federation provider has no stored
+// credential for the calling user — i.e. the user has not completed the
+// provider's consent flow (e.g. gcp_oauth's Google authorization). The
+// session-open path detects this via errors.Is and tags the precondition error
+// with a stable, machine-readable code so clients can render a "connect your
+// account" action instead of surfacing a raw error string. Resolvers should
+// wrap it (fmt.Errorf("...: %w", federation.ErrUserNotConnected)) so the
+// human-readable context is preserved alongside the sentinel.
+var ErrUserNotConnected = errors.New("user has not connected an account for this connection")
 
 // Result is the resolved per-session output of a federation provider. Callers
 // must merge EnvVars into the connection's secret map (base64-encoding values)

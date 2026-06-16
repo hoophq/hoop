@@ -46,3 +46,8 @@
  :federation/test-result
  (fn [db _]
    (get-in db [:resources/federation :test-result])))
+
+(rf/reg-sub
+ :federation/oauth-status
+ (fn [db [_ connection-name]]
+   (get-in db [:resources/federation :oauth-status connection-name])))
