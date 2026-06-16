@@ -117,6 +117,12 @@ type connect struct {
 	connectionName string
 	loader         *spinner.Spinner
 	jsonMode       bool
+	// apiURL, token and tlsCA mirror the resolved client config so the
+	// session-open error path can call the gateway's HTTP API (e.g. to fetch
+	// the gcp_oauth consent URL) without re-reading the config from disk.
+	apiURL string
+	token  string
+	tlsCA  string
 }
 
 func runConnect(args []string, clientEnvVars map[string]string, durationFlagChanged bool) {
@@ -558,6 +564,14 @@ func (c *connect) processGracefulExit(err error) {
 	if c.loader != nil {
 		c.loader.Stop()
 	}
+	// A federated connection can refuse the session because the user has not
+	// connected their per-user account yet (gcp_oauth consent). The gateway
+	// tags that error with a stable marker; turn it into an actionable
+	// "connect your account" prompt with a clickable consent link instead of a
+	// raw rpc error. This never returns when it matches.
+	if connectionName, ok := parseFederationOAuthNotConnected(err.Error()); ok {
+		printFederationOAuthConsentAndExit(c.apiURL, c.token, c.tlsCA, c.jsonMode, connectionName, err)
+	}
 	for _, obj := range c.connStore.List() {
 		switch v := obj.(type) {
 		case *proxy.Terminal:
@@ -665,6 +679,9 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		connectionName: args[0],
 		loader:         loader,
 		jsonMode:       outputFlag == "json",
+		apiURL:         config.ApiURL,
+		token:          config.Token,
+		tlsCA:          config.TlsCA(),
 	}
 	grpcClientOptions := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
