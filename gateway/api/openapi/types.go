@@ -207,6 +207,58 @@ type APIKeyResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+type AIAgentStatusType string
+
+const (
+	AIAgentStatusActive  AIAgentStatusType = "active"
+	AIAgentStatusRevoked AIAgentStatusType = "revoked"
+)
+
+type AIAgentCreateRequest struct {
+	// Human-readable name for the AI Agent
+	Name string `json:"name" binding:"required" example:"claude-ops"`
+	// Groups to assign to this AI Agent
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type AIAgentCreateResponse struct {
+	AIAgentResponse
+	// The generated AI Agent key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
+}
+
+type AIAgentUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"claude-prod"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type AIAgentResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"ai-agent"`
+	// Masked version of the AI Agent key for identification
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
+	// Current status of the AI Agent
+	Status AIAgentStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this AI Agent
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this agent
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this agent
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
 // agent plus a set of groups that feed into RBAC on authentication.
 //

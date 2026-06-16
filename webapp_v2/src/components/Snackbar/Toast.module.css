@@ -1,0 +1,116 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  width: 364px;
+  padding: var(--mantine-spacing-md);
+  background-color: white;
+  border-radius: var(--mantine-radius-lg);
+  outline: 1px solid rgba(0, 0, 0, 0.05);
+  outline-offset: -1px;
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-sm);
+}
+
+.body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.iconWrapper {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.iconSuccess {
+  color: var(--mantine-color-green-9);
+}
+
+.iconError {
+  color: var(--mantine-color-red-9);
+}
+
+.iconInfo {
+  color: var(--mantine-color-sky-9);
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.title,
+.description {
+  margin: 0;
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-text);
+}
+
+.detailsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  margin-top: var(--mantine-spacing-xs);
+  cursor: pointer;
+  user-select: none;
+  color: var(--mantine-color-text);
+}
+
+.detailsToggleLabel {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+}
+
+.dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--mantine-color-text);
+}
+
+.detailsPanel {
+  margin: var(--mantine-spacing-sm) calc(-1 * var(--mantine-spacing-md))
+    calc(-1 * var(--mantine-spacing-md));
+  padding: var(--mantine-spacing-sm);
+  background-color: var(--mantine-color-text);
+  border-bottom-left-radius: var(--mantine-radius-lg);
+  border-bottom-right-radius: var(--mantine-radius-lg);
+}
+
+.detailsCode {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.4;
+}
+
+.detailsLine {
+  white-space: nowrap;
+}
+
+.detailsKey {
+  color: var(--mantine-color-amber-9);
+}
+
+.detailsValue {
+  color: var(--mantine-color-sky-9);
+}
+
+.detailsSep {
+  color: var(--mantine-color-gray-0);
+}

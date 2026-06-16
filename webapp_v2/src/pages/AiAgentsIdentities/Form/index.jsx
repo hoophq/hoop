@@ -7,8 +7,11 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import MultiSelect from '@/components/MultiSelect'
-import { apiKeysService } from '@/services/apiKeys'
+import { aiAgentsService } from '@/services/aiAgents'
 import { usersService } from '@/services/users'
+
+const LIST_PATH = '/ai-agents-identities'
+const CREATED_PATH = '/ai-agents-identities/created'
 
 function SectionRow({ title, description, children }) {
   return (
@@ -26,7 +29,7 @@ function SectionRow({ title, description, children }) {
   )
 }
 
-export default function ApiKeysForm() {
+export default function AiAgentsIdentitiesForm() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = Boolean(id)
@@ -42,16 +45,16 @@ export default function ApiKeysForm() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [groupsRes, keyRes] = await Promise.all([
+        const [groupsRes, agentRes] = await Promise.all([
           usersService.listGroups(),
-          isEdit ? apiKeysService.get(id) : Promise.resolve(null),
+          isEdit ? aiAgentsService.get(id) : Promise.resolve(null),
         ])
         const groupData = groupsRes.data ?? []
         setAvailableGroups(groupData.map((g) => ({ value: g, label: g })))
-        if (keyRes) {
-          const key = keyRes.data
-          setName(key.name ?? '')
-          setGroups(key.groups ?? [])
+        if (agentRes) {
+          const agent = agentRes.data
+          setName(agent.name ?? '')
+          setGroups(agent.groups ?? [])
         }
       } catch {
         showSnackbar({ level: 'error', text: 'Failed to load data.' })
@@ -70,15 +73,18 @@ export default function ApiKeysForm() {
     setSaving(true)
     try {
       if (isEdit) {
-        await apiKeysService.update(id, { name, groups })
-        showSnackbar({ level: 'success', text: 'API key updated.' })
-        navigate('/settings/api-keys')
+        await aiAgentsService.update(id, { name, groups })
+        showSnackbar({ level: 'success', text: 'AI Agent updated.' })
+        navigate(LIST_PATH)
       } else {
-        const res = await apiKeysService.create({ name, groups })
-        navigate('/settings/api-keys/created', { state: { key: res.data } })
+        const res = await aiAgentsService.create({ name, groups })
+        navigate(CREATED_PATH, { state: { agent: res.data } })
       }
     } catch {
-      showSnackbar({ level: 'error', text: `Failed to ${isEdit ? 'update' : 'create'} API key.` })
+      showSnackbar({
+        level: 'error',
+        text: `Failed to ${isEdit ? 'update' : 'create'} AI Agent.`,
+      })
     } finally {
       setSaving(false)
     }
@@ -93,7 +99,7 @@ export default function ApiKeysForm() {
           variant="transparent"
           color="gray"
           leftSection={<ArrowLeft size={16} />}
-          onClick={() => navigate('/settings/api-keys')}
+          onClick={() => navigate(LIST_PATH)}
           px={0}
           w="fit-content"
           mb="xl"
@@ -103,7 +109,9 @@ export default function ApiKeysForm() {
       </Box>
 
       <Group justify="space-between" align="center" mb="xxxlAlt">
-        <Title order={1}>{isEdit ? 'Configure API Key' : 'Create new API Key'}</Title>
+        <Title order={1}>
+          {isEdit ? 'Configure AI Agent Identity' : 'Create new AI Agent Identity'}
+        </Title>
         <Button onClick={handleSubmit} loading={saving}>
           Save
         </Button>
@@ -111,12 +119,12 @@ export default function ApiKeysForm() {
 
       <Stack gap="xxlAlt">
         <SectionRow
-          title="Basic info"
-          description="Give this API key a name so you can identify it later."
+          title="Set basic information"
+          description="Used to identify this AI Agent and its actions across Hoop."
         >
           <TextInput
             label="Name"
-            placeholder="e.g. ci-pipeline-key"
+            placeholder="e.g. AI Agent SRE"
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
             required
@@ -124,12 +132,12 @@ export default function ApiKeysForm() {
         </SectionRow>
 
         <SectionRow
-          title="Groups"
-          description="Assign user groups to restrict what this API key can access."
+          title="Groups configuration"
+          description="Select which groups this AI Agent will belong to."
         >
           <MultiSelect
             label="Groups"
-            placeholder="Select groups…"
+            placeholder="Select one or more groups"
             data={availableGroups}
             value={groups}
             onChange={setGroups}

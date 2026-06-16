@@ -10,8 +10,11 @@ import Table from '@/components/Table'
 import ActionMenu from '@/components/ActionMenu'
 import Modal from '@/components/Modal'
 import Tooltip from '@/components/Tooltip'
-import { apiKeysService } from '@/services/apiKeys'
+import { aiAgentsService } from '@/services/aiAgents'
 import { truncateKey } from '@/utils/maskedKey'
+
+const LIST_PATH = '/ai-agents-identities'
+const NEW_PATH = '/ai-agents-identities/new'
 
 function formatDate(dateStr) {
   if (!dateStr) return '—'
@@ -22,49 +25,49 @@ function formatDate(dateStr) {
   })
 }
 
-export default function ApiKeys() {
+export default function AiAgentsIdentities() {
   const navigate = useNavigate()
-  const [keys, setKeys] = useState([])
+  const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [confirmRevoke, setConfirmRevoke] = useState(null)
 
   const showLoader = useMinDelay(loading)
 
-  async function fetchKeys() {
+  async function fetchAgents() {
     try {
-      const res = await apiKeysService.list()
-      setKeys(res.data ?? [])
+      const res = await aiAgentsService.list()
+      setAgents(res.data ?? [])
     } catch {
-      setError('Failed to load API keys.')
+      setError('Failed to load AI agents.')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchKeys()
+    fetchAgents()
   }, [])
 
-  async function handleRevoke(key) {
+  async function handleRevoke(agent) {
     try {
-      await apiKeysService.revoke(key.id)
-      showSnackbar({ level: 'success', text: 'API key deactivated.' })
-      fetchKeys()
+      await aiAgentsService.revoke(agent.id)
+      showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
+      fetchAgents()
     } catch {
-      showSnackbar({ level: 'error', text: 'Failed to deactivate key.' })
+      showSnackbar({ level: 'error', text: 'Failed to deactivate AI Agent.' })
     } finally {
       setConfirmRevoke(null)
     }
   }
 
-  async function handleActivate(key) {
+  async function handleReactivate(agent) {
     try {
-      await apiKeysService.reactivate(key.id)
-      showSnackbar({ level: 'success', text: 'API key activated.' })
-      fetchKeys()
+      await aiAgentsService.reactivate(agent.id)
+      showSnackbar({ level: 'success', text: 'AI Agent reactivated.' })
+      fetchAgents()
     } catch {
-      showSnackbar({ level: 'error', text: 'Failed to activate key.' })
+      showSnackbar({ level: 'error', text: 'Failed to reactivate AI Agent.' })
     }
   }
 
@@ -75,19 +78,19 @@ export default function ApiKeys() {
     <Stack gap="xl">
       <Group justify="space-between" align="flex-start">
         <Stack gap="xs">
-          <Title order={1}>API Keys</Title>
+          <Title order={1}>AI Agents Identities</Title>
           <Text c="dimmed" size="lg">
-            Create and manage API Keys
+            Create scoped, auditable identities for your AI agents.
           </Text>
         </Stack>
-        <Button onClick={() => navigate('/settings/api-keys/new')}>Create new API key</Button>
+        <Button onClick={() => navigate(NEW_PATH)}>Create new AI Agent</Button>
       </Group>
 
-      {keys.length === 0 ? (
+      {agents.length === 0 ? (
         <EmptyState
-          title="No API keys yet"
-          description="Create an API key to authenticate programmatic access to Hoop."
-          action={{ label: 'Create new API key', onClick: () => navigate('/settings/api-keys/new') }}
+          title="No AI agents yet"
+          description="Create an AI Agent identity to give programmatic, auditable access to Hoop from your AI tools."
+          action={{ label: 'Create new AI Agent', onClick: () => navigate(NEW_PATH) }}
         />
       ) : (
         <Table>
@@ -102,17 +105,17 @@ export default function ApiKeys() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {keys.map((key) => {
-              const isRevoked = key.status === 'revoked'
+            {agents.map((agent) => {
+              const isRevoked = agent.status === 'revoked'
               return (
-                <Table.Tr key={key.id}>
+                <Table.Tr key={agent.id}>
                   <Table.Td>
                     {isRevoked ? (
                       <Tooltip label="Deactivated key" position="top">
                         <Group gap="xs" wrap="nowrap">
                           <Unplug size={14} color="var(--mantine-color-gray-7)" />
                           <Text size="sm" c="gray.7" ff="monospace">
-                            {truncateKey(key.masked_key)}
+                            {truncateKey(agent.masked_key)}
                           </Text>
                         </Group>
                       </Tooltip>
@@ -120,25 +123,27 @@ export default function ApiKeys() {
                       <Group gap="xs" wrap="nowrap">
                         <KeyRound size={14} color="var(--mantine-color-gray-8)" />
                         <Text size="sm" ff="monospace">
-                          {truncateKey(key.masked_key)}
+                          {truncateKey(agent.masked_key)}
                         </Text>
                       </Group>
                     )}
                   </Table.Td>
-                  <Table.Td>{key.name ?? '—'}</Table.Td>
-                  <Table.Td>{formatDate(key.created_at)}</Table.Td>
-                  <Table.Td>{key.created_by ?? '—'}</Table.Td>
-                  <Table.Td>{formatDate(key.last_used_at)}</Table.Td>
+                  <Table.Td>{agent.name ?? '—'}</Table.Td>
+                  <Table.Td>{formatDate(agent.created_at)}</Table.Td>
+                  <Table.Td>{agent.created_by ?? '—'}</Table.Td>
+                  <Table.Td>{formatDate(agent.last_used_at)}</Table.Td>
                   <Table.Td>
                     <ActionMenu>
-                      <ActionMenu.Item onClick={() => navigate(`/settings/api-keys/${key.id}/configure`)}>
+                      <ActionMenu.Item onClick={() => navigate(`${LIST_PATH}/${agent.id}/configure`)}>
                         Configure
                       </ActionMenu.Item>
                       {isRevoked ? (
-                        <ActionMenu.Item onClick={() => handleActivate(key)}>Activate</ActionMenu.Item>
+                        <ActionMenu.Item onClick={() => handleReactivate(agent)}>
+                          Reactivate AI Agent
+                        </ActionMenu.Item>
                       ) : (
-                        <ActionMenu.Item danger onClick={() => setConfirmRevoke(key)}>
-                          Deactivate
+                        <ActionMenu.Item danger onClick={() => setConfirmRevoke(agent)}>
+                          Deactivate AI Agent
                         </ActionMenu.Item>
                       )}
                     </ActionMenu>
@@ -153,11 +158,11 @@ export default function ApiKeys() {
       <Modal
         opened={Boolean(confirmRevoke)}
         onClose={() => setConfirmRevoke(null)}
-        title="Deactivate API key"
+        title="Deactivate AI Agent"
       >
         <Stack gap="md">
           <Text size="sm">
-            Are you sure you want to deactivate &apos;<strong>{confirmRevoke?.name}</strong>&apos;? You can reactivate it later.
+            {`Are you sure you want to deactivate '${confirmRevoke?.name ?? ''}'? You can reactivate it later.`}
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" color="gray" onClick={() => setConfirmRevoke(null)}>

@@ -21,6 +21,7 @@ import (
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
+	aiagents "github.com/hoophq/hoop/gateway/api/aiagents"
 	apikeys "github.com/hoophq/hoop/gateway/api/apikeys"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
@@ -363,6 +364,40 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventReactivateApiKey),
 		apikeys.Reactivate)
+
+	r.GET("/ai-agents",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		aiagents.List)
+	r.GET("/ai-agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		aiagents.Get)
+	r.POST("/ai-agents",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateAIAgent),
+		aiagents.Create)
+	r.PUT("/ai-agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateAIAgent),
+		aiagents.Update)
+	r.DELETE("/ai-agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventRevokeAIAgent),
+		aiagents.Revoke)
+	r.POST("/ai-agents/:nameOrID/reactivate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventReactivateAIAgent),
+		aiagents.Reactivate)
+
 	r.GET("/spiffe-mappings",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
