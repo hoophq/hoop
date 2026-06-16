@@ -3,8 +3,7 @@ package audit
 import (
 	"bytes"
 	"fmt"
-
-	oracletypes "libhoop/agent/oracle/types"
+	"unicode"
 
 	"github.com/hoophq/hoop/common/mongotypes"
 )
@@ -22,11 +21,41 @@ const minOracleTextRunLen = 4
 // precise OPI/SQL parsing. Returns nil when the payload carries no text (e.g.
 // binary handshake/auth packets), so those frames produce no audit entry.
 func decodeOracleClientQuery(payload []byte) []byte {
-	text := oracletypes.ExtractText(payload, minOracleTextRunLen)
+	text := extractPrintableText(payload, minOracleTextRunLen)
 	if text == "" {
 		return nil
 	}
 	return []byte(text)
+}
+
+// extractPrintableText scans b and returns a single string built from all
+// contiguous runs of printable ASCII bytes whose length is >= minLen, separated
+// by spaces. It is a local copy of libhoop's oracletypes.ExtractText: the
+// gateway must not import a libhoop internal package (it only exists in the full
+// build, not the OSS _libhoop stub), and this helper depends on nothing but the
+// standard library.
+func extractPrintableText(b []byte, minLen int) string {
+	out := make([]byte, 0, len(b)/2)
+	run := make([]byte, 0, 64)
+
+	flush := func() {
+		if len(run) >= minLen {
+			if len(out) > 0 {
+				out = append(out, ' ')
+			}
+			out = append(out, run...)
+		}
+		run = run[:0]
+	}
+	for _, ch := range b {
+		if ch >= 0x20 && ch < 0x7F && unicode.IsPrint(rune(ch)) {
+			run = append(run, ch)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return string(out)
 }
 
 // decodeMySQLCommandQuery try to decode a packet to see if it's a COMM_QUERY type
