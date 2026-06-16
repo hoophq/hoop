@@ -67,9 +67,8 @@ function ProtectedRoute({ children, adminOnly = false }) {
         // Skip if already on onboarding routes to avoid a redirect loop.
         if (currentUser.is_admin && !isOnboardingRoute) {
           try {
-            const data = await connectionsService.getConnections()
-            const list = Array.isArray(data) ? data : (data?.items ?? data?.data ?? [])
-            if (list.length === 0) {
+            const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
+            if ((pages?.total ?? 0) === 0) {
               setRedirectTo('/onboarding/setup')
               return
             }

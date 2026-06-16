@@ -7,7 +7,8 @@ import classes from './AsyncValueFilter.module.css'
 
 /**
  * Single-value filter dropdown over a paginated, server-searched option source —
- * the async counterpart of `ValueFilter`. `onSelect` receives the option label.
+ * the async counterpart of `ValueFilter`. `selected` is the chosen option
+ * (`{ value, label }`) or null; `onSelect` receives the full option.
  *
  * Usage:
  *   <AsyncValueFilter
@@ -45,7 +46,7 @@ export default function AsyncValueFilter({
     }
   }
 
-  const hasSelected = typeof selected === 'string' && selected.trim() !== ''
+  const hasSelected = selected != null
 
   const close = () => {
     setOpen(false)
@@ -85,7 +86,7 @@ export default function AsyncValueFilter({
             ) : null
           }
         >
-          {hasSelected ? selected : label}
+          {hasSelected ? selected.label : label}
         </Button>
       </Popover.Target>
       <Popover.Dropdown p="xs">
@@ -129,14 +130,14 @@ export default function AsyncValueFilter({
                     py="xs"
                     className={classes.row}
                     onClick={() => {
-                      onSelect(option.label)
+                      onSelect(option)
                       close()
                     }}
                   >
                     <Text size="sm" lineClamp={1}>
                       {option.label}
                     </Text>
-                    {option.label === selected && <Check size={14} />}
+                    {option.value === selected?.value && <Check size={14} />}
                   </Flex>
                 ))}
               </Stack>

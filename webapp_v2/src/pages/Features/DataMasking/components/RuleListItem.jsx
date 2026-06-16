@@ -1,14 +1,15 @@
-import { useState } from 'react'
-import { Box, Flex, Group, Image, Stack, Text } from '@mantine/core'
+import { useEffect, useRef, useState } from 'react'
+import { Box, Flex, Group, Image, Loader, Stack, Text } from '@mantine/core'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
+import { connectionsService } from '@/services/connections'
 import { getConnectionIcon } from '@/utils/connectionIcons'
 import { ruleEntityBadges } from '../helpers'
 
 const BORDER = '1px solid var(--mantine-color-default-border)'
 
-function ConnectionsPanel({ connections, onConfigureConnection }) {
+function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
   return (
     <Box
       px="lg"
@@ -31,7 +32,11 @@ function ConnectionsPanel({ connections, onConfigureConnection }) {
           flex={1}
           style={{ border: BORDER, borderRadius: 'var(--mantine-radius-md)' }}
         >
-          {connections.length === 0 ? (
+          {loading ? (
+            <Flex p="md" align="center" justify="center">
+              <Loader size="sm" />
+            </Flex>
+          ) : connections.length === 0 ? (
             <Flex p="md" align="center" justify="center">
               <Text size="sm" c="dimmed">
                 No connections found for this rule
@@ -80,15 +85,28 @@ function ConnectionsPanel({ connections, onConfigureConnection }) {
 
 export default function RuleListItem({
   rule,
-  connections,
   isFirst,
   isLast,
   onConfigure,
   onConfigureConnection,
 }) {
   const [showConnections, setShowConnections] = useState(false)
+  const [connections, setConnections] = useState(null)
+  const fetchingRef = useRef(false)
   const badges = ruleEntityBadges(rule)
   const hasConnections = (rule.connection_ids ?? []).length > 0
+
+  useEffect(() => {
+    if (!showConnections || connections !== null || fetchingRef.current) return
+    fetchingRef.current = true
+    connectionsService
+      .getConnectionsByIds(rule.connection_ids ?? [])
+      .then((rows) => setConnections(rows ?? []))
+      .catch(() => setConnections([]))
+      .finally(() => {
+        fetchingRef.current = false
+      })
+  }, [showConnections, connections, rule.connection_ids])
 
   return (
     <Box
@@ -149,7 +167,8 @@ export default function RuleListItem({
       </Flex>
       {showConnections && (
         <ConnectionsPanel
-          connections={connections}
+          connections={connections ?? []}
+          loading={connections === null}
           onConfigureConnection={onConfigureConnection}
         />
       )}

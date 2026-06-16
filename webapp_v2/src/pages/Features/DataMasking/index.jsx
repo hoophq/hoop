@@ -27,10 +27,8 @@ export default function DataMasking() {
 
   const list = useDataMaskingStore((s) => s.list)
   const listStatus = useDataMaskingStore((s) => s.listStatus)
-  const connections = useDataMaskingStore((s) => s.connections)
   const attributes = useDataMaskingStore((s) => s.attributes)
   const fetchList = useDataMaskingStore((s) => s.fetchList)
-  const fetchConnections = useDataMaskingStore((s) => s.fetchConnections)
   const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
@@ -39,29 +37,12 @@ export default function DataMasking() {
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)
 
-  // Paginated source for the filter dropdown. The full `connections` load above
-  // is still used for rule matching + name resolution.
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
 
   useEffect(() => {
     fetchList()
-    fetchConnections()
     fetchAttributes()
-  }, [fetchList, fetchConnections, fetchAttributes])
-
-  const connectionsById = useMemo(() => {
-    const map = new Map()
-    for (const c of connections) map.set(c.id, c)
-    return map
-  }, [connections])
-
-  const resolveConnections = useMemo(
-    () => (rule) =>
-      (rule.connection_ids ?? [])
-        .map((id) => connectionsById.get(id))
-        .filter(Boolean),
-    [connectionsById],
-  )
+  }, [fetchList, fetchAttributes])
 
   const attributeFilterValues = useMemo(
     () => uniqueSorted(attributes.map((a) => a.name)),
@@ -72,7 +53,7 @@ export default function DataMasking() {
     let rules = list
     if (selectedRole) {
       rules = rules.filter((rule) =>
-        resolveConnections(rule).some((c) => c.name === selectedRole),
+        (rule.connection_ids ?? []).includes(selectedRole.value),
       )
     }
     if (selectedAttribute) {
@@ -81,7 +62,7 @@ export default function DataMasking() {
       )
     }
     return rules
-  }, [list, selectedRole, selectedAttribute, resolveConnections])
+  }, [list, selectedRole, selectedAttribute])
 
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
@@ -164,7 +145,6 @@ export default function DataMasking() {
             <RuleListItem
               key={rule.id}
               rule={rule}
-              connections={resolveConnections(rule)}
               isFirst={idx === 0}
               isLast={idx === filteredRules.length - 1}
               onConfigure={(id) =>

@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { dataMaskingService } from '@/services/dataMasking'
-import { connectionsService } from '@/services/connections'
 import { attributesService } from '@/services/attributes'
 
 export const useDataMaskingStore = create((set) => ({
@@ -9,9 +8,6 @@ export const useDataMaskingStore = create((set) => ({
 
   active: null,
   activeStatus: 'idle',
-
-  connections: [],
-  connectionsStatus: 'idle',
 
   attributes: [],
   attributesStatus: 'idle',
@@ -39,16 +35,6 @@ export const useDataMaskingStore = create((set) => ({
   },
 
   clearActive: () => set({ active: null, activeStatus: 'idle' }),
-
-  fetchConnections: async () => {
-    set({ connectionsStatus: 'loading' })
-    try {
-      const data = await connectionsService.getConnections()
-      set({ connections: data ?? [], connectionsStatus: 'success' })
-    } catch {
-      set({ connectionsStatus: 'error' })
-    }
-  },
 
   fetchAttributes: async () => {
     set({ attributesStatus: 'loading' })
