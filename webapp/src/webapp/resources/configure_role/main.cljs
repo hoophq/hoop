@@ -90,6 +90,7 @@
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:jira-templates->get-all])
     (rf/dispatch [:connections->load-metadata])
+    (rf/dispatch [:federation/consume-oauth-return])
 
     (fn []
       (let [conn-data (:data @connection)
@@ -147,9 +148,15 @@
                                     ;; mirror the federation form into the static
                                     ;; fallback secret before the connection update
                                     (let [fed-form @(rf/subscribe [:federation/form])]
-                                      (rf/dispatch [:connection-setup/update-config-file-by-key
-                                                    "GOOGLE_APPLICATION_CREDENTIALS"
-                                                    (:admin_credentials_json fed-form)])
+                                      ;; Only gcp_iam stores a service-account key that
+                                      ;; doubles as the connection's static
+                                      ;; GOOGLE_APPLICATION_CREDENTIALS fallback. gcp_oauth's
+                                      ;; admin credential is the OAuth client JSON, which must
+                                      ;; never be written as a GCP credentials file.
+                                      (when (= (:builtin_provider fed-form) "gcp_iam")
+                                        (rf/dispatch [:connection-setup/update-config-file-by-key
+                                                      "GOOGLE_APPLICATION_CREDENTIALS"
+                                                      (:admin_credentials_json fed-form)]))
                                       (rf/dispatch [:connection-setup/update-metadata-credentials
                                                     "CLOUDSDK_CORE_PROJECT"
                                                     (get-in fed-form [:extra_config :project_id])])

@@ -16,11 +16,17 @@ const (
 	FederationHookSourceBuiltin = "builtin"
 )
 
-// Built-in federation providers. Only gcp_iam ships in v1; the constant exists
-// so other providers can be added without touching call sites that switch on
-// the value.
+// Built-in federation providers. The constant set exists so call sites that
+// switch on the value stay in sync as providers are added.
+//
+//   - gcp_iam   impersonates a per-user GCP service account using an admin SA
+//     key (one credential per connection).
+//   - gcp_oauth mints tokens from a per-user OAuth refresh token obtained via
+//     Google's consent flow (zero service accounts; the identity in GCP audit
+//     logs is the user's real Google account).
 const (
-	FederationProviderGCPIAM = "gcp_iam"
+	FederationProviderGCPIAM   = "gcp_iam"
+	FederationProviderGCPOAuth = "gcp_oauth"
 )
 
 // Fallback policies for federation resolution failures. The semantics are

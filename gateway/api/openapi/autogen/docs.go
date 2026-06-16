@@ -2759,6 +2759,139 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/federation/oauth": {
+            "get": {
+                "description": "Reports, for the authenticated user, whether they have connected a per-user account (e.g. their Google account for gcp_oauth) to a connection. Clients use this to decide whether to prompt the user to connect before running. Access is scoped to connections the user is allowed to run.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Report the user's per-user federation connection status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationOAuthStatusResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the authenticated user's stored Google refresh token for a gcp_oauth-federated connection. Subsequent sessions fail until the user re-consents.",
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Disconnect a user's Google account from a connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrID}/federation/oauth/authorize": {
+            "get": {
+                "description": "Returns the Google consent URL for the authenticated user to connect their Google account to a gcp_oauth-federated connection. The browser should be redirected to the returned URL; Google redirects back to the gateway callback, which stores the resulting refresh token.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Start the Google OAuth consent flow for a connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "URL to return the browser to after consent (must match the API hostname)",
+                        "name": "redirect",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationOAuthAuthorizeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -3352,6 +3485,40 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
+                    }
+                }
+            }
+        },
+        "/federation/oauth/callback": {
+            "get": {
+                "description": "Google's OAuth redirect target. Validates the state issued by the authorize endpoint, exchanges the authorization code for a refresh token, stores it for the user/connection, and redirects the browser back to the application with federation_oauth=success|error. This endpoint is unauthenticated but state-validated, and is not called directly by clients.",
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Google OAuth callback for connection federation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth state (issued by the authorize endpoint)",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth authorization code",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth error returned by Google",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect back to the application with federation_oauth=success|error"
                     }
                 }
             }
@@ -11486,14 +11653,15 @@ const docTemplate = `{
             ],
             "properties": {
                 "admin_credentials_json": {
-                    "description": "AdminCredentialsJSON is the plaintext admin credential blob (for\nbuiltin/gcp_iam: the admin service account JSON). Write-only — never\nreturned on GET. Required on the initial POST when HookSource=builtin;\noptional on PUT (omitting it leaves the stored value unchanged).",
+                    "description": "AdminCredentialsJSON is the plaintext admin credential blob. Its shape is\nprovider-specific: for gcp_iam it is the admin service-account JSON; for\ngcp_oauth it is the OAuth client config JSON ({\"client_id\":\"...\",\n\"client_secret\":\"...\"}). Write-only — never returned on GET. Required on\nthe initial POST when HookSource=builtin; optional on PUT (omitting it\nleaves the stored value unchanged).",
                     "type": "string"
                 },
                 "builtin_provider": {
-                    "description": "BuiltinProvider is required when HookSource=builtin. Only \"gcp_iam\"\nships today.",
+                    "description": "BuiltinProvider is required when HookSource=builtin. \"gcp_iam\"\nimpersonates a per-user service account via an admin SA key; \"gcp_oauth\"\nmints tokens from a per-user Google OAuth refresh token (no service\naccounts).",
                     "type": "string",
                     "enum": [
-                        "gcp_iam"
+                        "gcp_iam",
+                        "gcp_oauth"
                     ],
                     "example": "gcp_iam"
                 },
@@ -12582,6 +12750,36 @@ const docTemplate = `{
                 "FeatureStatusEnabled",
                 "FeatureStatusDisabled"
             ]
+        },
+        "openapi.FederationOAuthAuthorizeResponse": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "description": "URL is the Google OAuth consent URL to redirect the user's browser to.",
+                    "type": "string",
+                    "example": "https://accounts.google.com/o/oauth2/auth?client_id=...\u0026state=..."
+                }
+            }
+        },
+        "openapi.FederationOAuthStatusResponse": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "description": "Connected is true when the user has a stored credential for this\nconnection. Always false for providers that are not per-user.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "google_email": {
+                    "description": "GoogleEmail is the consented Google identity, present only when\nConnected is true for gcp_oauth.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "provider": {
+                    "description": "Provider is the connection's configured federation provider\n(e.g. \"gcp_oauth\", \"gcp_iam\"), or empty when the connection has no\nfederation configured. Only gcp_oauth requires a per-user connection.",
+                    "type": "string",
+                    "example": "gcp_oauth"
+                }
+            }
         },
         "openapi.FederationTestConnection": {
             "type": "object",

@@ -23,7 +23,10 @@
    [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.components.skip-link :as skip-link]
+   [webapp.resources.federation.events]
+   [webapp.resources.federation.subs]
    [webapp.webclient.components.execution-requirements-callout :as mandatory-metadata-callout]
+   [webapp.webclient.components.federation-connect-callout :as federation-connect-callout]
    [webapp.features.promotion :as promotion]
    [webapp.formatters :as formatters]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
@@ -302,6 +305,16 @@
             show-info-banner? (and current-connection
                                    (not @banner-dismissed?)
                                    (or mandatory-metadata-fields needs-jira-template?))
+            ;; Per-user federation (gcp_oauth): prompt the user to connect their
+            ;; Google account proactively when status says they haven't, or
+            ;; reactively when a run was blocked with the stable backend marker.
+            oauth-status @(rf/subscribe [:federation/oauth-status (:name current-connection)])
+            oauth-not-connected? (and (= "gcp_oauth" (:provider oauth-status))
+                                      (not (:connected oauth-status)))
+            run-oauth-error? (and (= :failure (:status @script-response))
+                                  (cs/includes? (str (:data @script-response)) "oauth_not_connected"))
+            show-federation-connect? (and current-connection
+                                          (or oauth-not-connected? run-oauth-error?))
             panel-content (fn [active-panel]
                             (case active-panel
                               :metadata {:title "Metadata"
@@ -373,6 +386,14 @@
                   (when show-info-banner?
                     [mandatory-metadata-callout/main
                      {:on-dismiss #(rf/dispatch [:primary-connection/dismiss-execution-requirements-callout])}])
+
+                  (when show-federation-connect?
+                    [federation-connect-callout/main
+                     (cond-> {:connection-name (:name current-connection)}
+                       run-oauth-error?
+                       (assoc :title "Connect your Google account to run"
+                              :description (str "This run was blocked because your Google account "
+                                                "isn't connected to this resource. Connect it, then run again.")))])
 
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))
@@ -449,7 +470,9 @@
       (rf/dispatch [:primary-connection/initialize-with-persistence])
       (rf/dispatch [:plugins->get-my-plugins])
       (rf/dispatch [:jira-templates->get-all])
-      (rf/dispatch [:jira-integration->get]))
+      (rf/dispatch [:jira-integration->get])
+      ;; Surface the gcp_oauth consent outcome when Google redirects back here.
+      (rf/dispatch [:federation/consume-oauth-return]))
 
     :component-will-unmount
     (fn []

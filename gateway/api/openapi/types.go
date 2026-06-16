@@ -2052,13 +2052,17 @@ type ConnectionFederationConfig struct {
 	// built-in resolver category ships today; the field is preserved so new
 	// sources can be added without breaking existing configurations.
 	HookSource string `json:"hook_source" enums:"builtin" example:"builtin" binding:"required"`
-	// BuiltinProvider is required when HookSource=builtin. Only "gcp_iam"
-	// ships today.
-	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam" example:"gcp_iam"`
-	// AdminCredentialsJSON is the plaintext admin credential blob (for
-	// builtin/gcp_iam: the admin service account JSON). Write-only — never
-	// returned on GET. Required on the initial POST when HookSource=builtin;
-	// optional on PUT (omitting it leaves the stored value unchanged).
+	// BuiltinProvider is required when HookSource=builtin. "gcp_iam"
+	// impersonates a per-user service account via an admin SA key; "gcp_oauth"
+	// mints tokens from a per-user Google OAuth refresh token (no service
+	// accounts).
+	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam,gcp_oauth" example:"gcp_iam"`
+	// AdminCredentialsJSON is the plaintext admin credential blob. Its shape is
+	// provider-specific: for gcp_iam it is the admin service-account JSON; for
+	// gcp_oauth it is the OAuth client config JSON ({"client_id":"...",
+	// "client_secret":"..."}). Write-only — never returned on GET. Required on
+	// the initial POST when HookSource=builtin; optional on PUT (omitting it
+	// leaves the stored value unchanged).
 	AdminCredentialsJSON string `json:"admin_credentials_json,omitempty"`
 	// HasAdminCredentials is server-set on GET responses to let the UI know
 	// whether a credential is stored without exposing its value.
@@ -2186,6 +2190,31 @@ type FederationTestResponse struct {
 	// Populated for federation-resolve failures; probe-side failures are
 	// reported via ProbeStatus + ProbeOutput.
 	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
+}
+
+// FederationOAuthAuthorizeResponse is returned by the gcp_oauth consent
+// authorize endpoint. The client should redirect the browser to URL; after the
+// user approves, Google redirects back to the gateway callback which stores the
+// resulting refresh token.
+type FederationOAuthAuthorizeResponse struct {
+	// URL is the Google OAuth consent URL to redirect the user's browser to.
+	URL string `json:"url" example:"https://accounts.google.com/o/oauth2/auth?client_id=...&state=..."`
+}
+
+// FederationOAuthStatusResponse reports, for the authenticated user, whether
+// they have connected a per-user account for a federated connection. Clients
+// use it to decide whether to prompt the user to connect before running.
+type FederationOAuthStatusResponse struct {
+	// Provider is the connection's configured federation provider
+	// (e.g. "gcp_oauth", "gcp_iam"), or empty when the connection has no
+	// federation configured. Only gcp_oauth requires a per-user connection.
+	Provider string `json:"provider" example:"gcp_oauth"`
+	// Connected is true when the user has a stored credential for this
+	// connection. Always false for providers that are not per-user.
+	Connected bool `json:"connected" example:"false"`
+	// GoogleEmail is the consented Google identity, present only when
+	// Connected is true for gcp_oauth.
+	GoogleEmail string `json:"google_email,omitempty" example:"alice@example.com"`
 }
 
 type ServerMiscConfig struct {
