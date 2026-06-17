@@ -21,6 +21,9 @@ pub enum ViolationKind {
     Detection,
     /// Analysis backlog overflow (fail-closed).
     Overload,
+    /// Analysis (OCR/Presidio) failed, so the frame could not be verified;
+    /// the session was terminated fail-closed (no entity metadata available).
+    AnalysisError,
 }
 
 /// The violation report payload sent to the gateway in the
@@ -47,6 +50,17 @@ impl ViolationReport {
             kind: ViolationKind::Detection,
             entity_types,
             detections: res.detections.clone(),
+            dropped_bytes: 0,
+        }
+    }
+
+    /// Builds an analysis-error report (fail-closed; no entity metadata,
+    /// since the analyzer could not produce a result).
+    pub fn analysis_error() -> Self {
+        Self {
+            kind: ViolationKind::AnalysisError,
+            entity_types: Vec::new(),
+            detections: Vec::new(),
             dropped_bytes: 0,
         }
     }

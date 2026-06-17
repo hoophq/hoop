@@ -104,7 +104,7 @@ func HandleConnection(c *gin.Context) {
 // agentGuardrailsViolation mirrors the Rust agent's ViolationReport
 // (agentrs/src/piigate/report.rs). Entity metadata only — no pixels/text.
 type agentGuardrailsViolation struct {
-	Kind        string   `json:"kind"` // "detection" | "overload"
+	Kind        string   `json:"kind"` // "detection" | "overload" | "analysis_error"
 	EntityTypes []string `json:"entity_types"`
 	Detections  []struct {
 		EntityType string  `json:"entity_type"`
@@ -132,11 +132,16 @@ func persistAgentGuardrailsViolation(s *broker.Session, payload []byte) {
 		return
 	}
 
-	// An overload (fail-closed on analysis backlog) is a different cause than
-	// a PII detection — don't mislabel it as one in the audit record.
+	// Distinguish the fail-closed causes from a real PII detection in the
+	// audit record: an overload (analysis backlog) and an analysis error
+	// (OCR/Presidio failure or timeout) both terminate the session without
+	// confirmed entities, and must not be mislabeled as a detection.
 	ruleType := "pii_detection"
-	if report.Kind == "overload" {
+	switch report.Kind {
+	case "overload":
 		ruleType = "pii_guard_overload"
+	case "analysis_error":
+		ruleType = "pii_guard_analysis_error"
 	}
 	info := []models.SessionGuardRailsInfo{{
 		RuleName:     "rdp_pii_guard",

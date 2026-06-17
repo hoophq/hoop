@@ -27,6 +27,7 @@ Run locally without Docker (CPU):
     .venv/bin/uvicorn server_rapidocr:app --host 0.0.0.0 --port 8869
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -74,13 +75,11 @@ def healthz():
     return {"status": "ok", "device": DEVICE}
 
 
-@app.post("/ocr")
-async def ocr(request: Request):
-    body = await request.body()
-    img = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if img is None:
-        return Response(status_code=400, content="undecodable image")
-
+def _run_ocr(img) -> dict:
+    """Synchronous inference + box extraction. Runs in a thread executor so it
+    never blocks the event loop (RapidOCR/ONNXRuntime is blocking CPU work);
+    otherwise a single in-flight inference stalls the whole worker and the
+    agent's concurrent chunk requests queue until they time out."""
     start = time.perf_counter()
     result = ENGINE(img)
     duration_ms = (time.perf_counter() - start) * 1000.0
@@ -102,6 +101,17 @@ async def ocr(request: Request):
                 }
             )
     return {"duration_ms": duration_ms, "words": words}
+
+
+@app.post("/ocr")
+async def ocr(request: Request):
+    body = await request.body()
+    img = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return Response(status_code=400, content="undecodable image")
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _run_ocr, img)
 
 
 def warmup() -> None:

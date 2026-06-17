@@ -139,10 +139,19 @@ where
             }
         };
 
-        // Terminal gate events: a detection/overload kills the session. The
-        // gate has already dropped the offending frames; we report the
-        // violation upstream (entity metadata only — no pixels or OCR text)
-        // before tearing down, while the gateway websocket is still open.
+        // Gate events: every detection/overload is reported upstream (entity
+        // metadata only — no pixels or OCR text) while the gateway websocket
+        // is still open. Whether an event ALSO terminates the session depends
+        // on policy:
+        //
+        //   - Kill / RedactAndKill: a detection is terminal. The gate has
+        //     already dropped (Kill) or forwarded-then-stopped (RedactAndKill)
+        //     the batch; this arm completes so the session tears down.
+        //   - Redact: a detection is informational. The gate blanked the PII
+        //     and KEEPS RUNNING, so this arm must NOT tear the session down —
+        //     it reports and waits for the next event. The session ends only
+        //     when the client/server stream closes (c2s/s2c).
+        //   - Overload: always terminal (fail-closed backlog drop).
         //
         // Delivery is best-effort: the report shares the session websocket
         // with response traffic and the gateway's live-session lookup, so a
@@ -150,36 +159,62 @@ where
         // Enforcement already happened at the agent — this is audit evidence,
         // not part of the enforcement path.
         let session_id = self.session_id.clone();
+        let policy = guard.policy;
         let watch = async {
-            if let Some(ev) = events_rx.recv().await {
+            while let Some(ev) = events_rx.recv().await {
+                let terminal;
                 let report_payload = match &ev {
                     GateEvent::Detection(res) => {
-                        warn!(
-                            sid = %session_id,
-                            "piigate: PII detected ({:?}), terminating session", res.counts
-                        );
+                        terminal = policy.kills_after_detection();
+                        if terminal {
+                            warn!(
+                                sid = %session_id,
+                                "piigate: PII detected ({:?}), terminating session", res.counts
+                            );
+                        } else {
+                            warn!(
+                                sid = %session_id,
+                                "piigate: PII detected ({:?}), redacted in place, session continues",
+                                res.counts
+                            );
+                        }
                         ViolationReport::detection(res)
                     }
                     GateEvent::Overload { dropped_bytes } => {
+                        terminal = true;
                         warn!(
                             sid = %session_id,
                             "piigate: analysis backlog overflow ({dropped_bytes} bytes), terminating session"
                         );
                         ViolationReport::overload(*dropped_bytes)
                     }
+                    GateEvent::AnalysisError => {
+                        terminal = true;
+                        warn!(
+                            sid = %session_id,
+                            "piigate: analysis failed, failing closed, terminating session"
+                        );
+                        ViolationReport::analysis_error()
+                    }
                 };
                 if let Some(report) = &report {
                     report(report_payload).await;
                 }
+                if terminal {
+                    return;
+                }
+                // Non-terminal (Redact detection): keep guarding and reporting.
             }
         };
 
-        // Run until any arm finishes: client gone, server gone, or a terminal
-        // gate event. Then tear the session down explicitly (don't rely on
-        // drop timing for security-sensitive teardown): close the gate first
-        // — it drops held bytes, cancels in-flight analysis, and closes the
-        // client write half it owns — then shut the server write half so the
-        // upstream RDP server connection is released promptly.
+        // Run until any arm finishes: client gone, server gone, or a TERMINAL
+        // gate event (kill/redact_and_kill detection, or overload). A plain
+        // Redact detection does not complete `watch`, so the session keeps
+        // running. Then tear the session down explicitly (don't rely on drop
+        // timing for security-sensitive teardown): close the gate first — it
+        // drops held bytes, cancels in-flight analysis, and closes the client
+        // write half it owns — then shut the server write half so the upstream
+        // RDP server connection is released promptly.
         tokio::select! {
             _ = c2s => {}
             _ = s2c => {}

@@ -65,6 +65,7 @@ impl AsyncWrite for TestSink {
 struct EventLog {
     detections: Arc<AtomicI32>,
     overloads: Arc<AtomicI32>,
+    analysis_errors: Arc<AtomicI32>,
 }
 
 impl EventLog {
@@ -73,6 +74,9 @@ impl EventLog {
     }
     fn overloads(&self) -> i32 {
         self.overloads.load(Ordering::SeqCst)
+    }
+    fn analysis_errors(&self) -> i32 {
+        self.analysis_errors.load(Ordering::SeqCst)
     }
 }
 
@@ -95,6 +99,7 @@ fn new_test_gate_with_policy(analyzer: Arc<dyn Analyzer>, policy: GatePolicy) ->
             match ev {
                 GateEvent::Detection(_) => log.detections.fetch_add(1, Ordering::SeqCst),
                 GateEvent::Overload { .. } => log.overloads.fetch_add(1, Ordering::SeqCst),
+                GateEvent::AnalysisError => log.analysis_errors.fetch_add(1, Ordering::SeqCst),
             };
         }
     });
@@ -226,7 +231,7 @@ impl Analyzer for CountingNopAnalyzer {
     }
 }
 
-/// An analyzer that always errors (the fail-open path).
+/// An analyzer that always errors (the fail-closed path).
 struct FailingAnalyzer;
 
 #[async_trait]
@@ -413,17 +418,33 @@ async fn clean_analysis_forwards() {
 }
 
 #[tokio::test]
-async fn analysis_error_fails_open() {
+async fn analysis_error_fails_closed() {
+    // An analyzer error (OCR/Presidio failure or timeout) must NOT forward the
+    // unverified batch — that would leak PII exactly when the engine is
+    // overloaded. The gate drops the held batch, emits AnalysisError, and
+    // terminates (fail-closed), regardless of policy.
     let h = new_test_gate(Arc::new(FailingAnalyzer));
 
     let bmp_pdu = fast_path_bitmap_pdu(&[TestRect::new(0, 0, 32, 16, WHITE)]);
-    let tail_pdu = tpkt_pdu(&[0x42]);
     h.gate.ingest(&bmp_pdu);
-    h.gate.ingest(&tail_pdu);
 
-    let want = [bmp_pdu, tail_pdu].concat();
-    wait_for("fail-open forward", || h.sink.bytes() == want).await;
-    assert_eq!(h.events.detections(), 0, "no detection expected on analyzer error");
+    wait_for("analysis error terminates gate", || h.gate.killed()).await;
+    assert_eq!(
+        h.events.analysis_errors(),
+        1,
+        "an AnalysisError event must be emitted on analyzer failure"
+    );
+    assert_eq!(h.events.detections(), 0, "an analyzer error is not a detection");
+    assert!(
+        h.sink.bytes().is_empty(),
+        "the unverified bitmap batch must never be forwarded (fail-closed)"
+    );
+
+    // Post-termination ingest is dropped, not forwarded.
+    let after = h.sink.bytes().len();
+    h.gate.ingest(&tpkt_pdu(&[0x42]));
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(h.sink.bytes().len(), after, "post-kill ingest must not forward");
     h.gate.close().await;
 }
 

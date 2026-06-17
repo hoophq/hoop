@@ -28,10 +28,12 @@
 //!   batch, partially-applied states mix already-analyzed old content with
 //!   new content — but only across non-intersecting padded bands (same-band
 //!   mixing seals the batch), so no unanalyzed text line is ever composed.
-//! - Analysis errors and unframeable data fail OPEN (forwarded, loudly
-//!   logged): availability wins over enforcement there. Backlog overflow
-//!   (analyzer slower than the stream) fails CLOSED: the session is killed
-//!   rather than letting unanalyzed frames through (see [`MAX_HELD_BYTES`]).
+//! - Analysis errors (OCR/Presidio failure or timeout) fail CLOSED: the held
+//!   batch is dropped and the session terminated, since an unverified frame
+//!   must never be delivered and there is nothing to redact without an OCR
+//!   result. Unframeable data (which carries no decodable pixels) fails OPEN.
+//!   Backlog overflow (analyzer slower than the stream) also fails CLOSED
+//!   (see [`MAX_HELD_BYTES`]).
 //! - Detection accuracy is bounded by OCR + Presidio: the pipeline
 //!   guarantees every state is INSPECTED, not that the detector is
 //!   infallible.
@@ -103,7 +105,13 @@ impl GatePolicy {
     fn redacts(self) -> bool {
         matches!(self, GatePolicy::Redact | GatePolicy::RedactAndKill)
     }
-    fn kills_after_detection(self) -> bool {
+    /// Whether a PII detection terminates the session under this policy.
+    ///
+    /// Kill and RedactAndKill stop the session on detection; plain Redact
+    /// keeps it running (the detection is forwarded blanked, and the
+    /// `Detection` event is informational/audit only — the session owner must
+    /// NOT tear down on it).
+    pub fn kills_after_detection(self) -> bool {
         matches!(self, GatePolicy::Kill | GatePolicy::RedactAndKill)
     }
 }
@@ -121,6 +129,11 @@ pub enum GateEvent {
     /// The held backlog exceeded [`MAX_HELD_BYTES`]; the backlog was dropped
     /// (fail-closed).
     Overload { dropped_bytes: usize },
+    /// Analysis (OCR/Presidio) failed, so the batch could not be verified
+    /// clean. The held batch was dropped and the gate terminated (fail-closed)
+    /// — always terminal regardless of policy, since there is no verified
+    /// frame to deliver and nothing to redact.
+    AnalysisError,
 }
 
 /// One framed PDU awaiting analysis clearance: the exact wire bytes to
@@ -449,12 +462,35 @@ where
         };
         match res {
             Err(e) => {
-                // Fail open: forwarding beats freezing the session on an
-                // analyzer hiccup (see module doc).
-                warn!(sid = %shared.session_id, "piigate: analysis failed, failing open: {e:#}");
+                // Fail CLOSED: an analyzer error (OCR timeout, sidecar
+                // unavailable, Presidio failure) means we could NOT verify
+                // this batch is free of PII. Forwarding it would leak exactly
+                // when the engine is overloaded — the worst failure mode for a
+                // guard. We have no OCR result to redact from either, so the
+                // only safe action is to drop the held batch and terminate the
+                // session. The gateway suppressed its own gate on the strength
+                // of this delegation, so a silent forward here would be an
+                // enforcement bypass.
+                warn!(
+                    sid = %shared.session_id,
+                    "piigate: analysis failed, failing closed (dropping batch, terminating): {e:#}"
+                );
+                let already_down = {
+                    let mut st = shared.state.lock();
+                    let already = st.killed || st.closed;
+                    st.killed = true;
+                    st.queue.clear();
+                    st.queued_bytes = 0;
+                    st.tail.clear();
+                    already
+                };
+                if !already_down {
+                    let _ = shared.events.send(GateEvent::AnalysisError);
+                }
+                return false;
             }
             Ok(res) if res.is_detection() => {
-                return on_detection(shared, sink, canvas, &bands, batch, res).await;
+                return on_detection(shared, sink, canvas, batch, res).await;
             }
             Ok(_) => {}
         }
@@ -470,7 +506,6 @@ async fn on_detection<W>(
     shared: &GateShared,
     sink: &mut W,
     canvas: &ShadowCanvas,
-    bands: &[bands::YBand],
     batch: &[GatePdu],
     res: SnapshotResult,
 ) -> bool
@@ -480,26 +515,99 @@ where
     let policy = shared.policy;
 
     if policy.redacts() {
-        // Hold-and-rewrite: the batch's bitmap-bearing PDUs are dropped and
-        // replaced by repainting the analyzed bands from the shadow canvas
-        // with the detected bboxes blanked — the PII pixels are never
-        // delivered. Non-bitmap PDUs in the batch (e.g. pointer updates)
-        // carry no analyzed pixels and must still pass through, in order:
-        // forward them first, then the redacted repaint.
-        let mut passthrough: Vec<u8> = Vec::new();
-        for p in batch {
-            if p.patches.is_empty() {
-                passthrough.extend_from_slice(&p.data);
-            }
-        }
-        let wire = rewrite::redact_bands(&canvas.fb, canvas.w, canvas.h, bands, &res.detections);
+        // Hold-and-rewrite, SELECTIVELY. For each held PDU:
+        //   - A PDU whose bitmap patches do NOT overlap any detection is
+        //     forwarded UNMODIFIED — this preserves the legitimate screen
+        //     content (and the server's compression) and is the common case.
+        //   - A PDU with a patch overlapping a detection is dropped and the
+        //     overlapped regions are repainted from the shadow canvas with the
+        //     PII bboxes blanked, in the negotiated color depth. The PII pixels
+        //     are never delivered; everything else in the region is preserved.
+        //   - A PDU carrying no patches (non-bitmap update, e.g. pointer) is
+        //     forwarded unmodified.
+        //
+        // Repainting ONLY the PII-overlapping regions (not whole bands) keeps
+        // the rewrite small: dropping every bitmap and re-emitting whole bands
+        // floods the client link and can blank legitimate content.
+        let dets: Vec<rewrite::Rect> = res
+            .detections
+            .iter()
+            .map(|d| rewrite::Rect { x: d.x, y: d.y, w: d.width, h: d.height })
+            .collect();
+        // Negotiated depth: the incoming bitmaps' bpp. A mismatched depth is
+        // rejected by the client. Default to 32 (the IronRDP web client's
+        // preferred pref_bits_per_pix) if the batch carried no decodable bpp.
+        let bpp = batch
+            .iter()
+            .flat_map(|p| p.patches.iter())
+            .map(|patch| patch.bits_per_pixel)
+            .find(|&b| b == 16 || b == 24 || b == 32)
+            .unwrap_or(32);
+
         warn!(
             sid = %shared.session_id,
             "piigate: PII detected ({:?}), redacting {} region(s) and forwarding",
             res.counts, res.detections.len()
         );
-        if !passthrough.is_empty() && !forward_bytes(shared, sink, &passthrough).await {
-            return false;
+
+        let mut wire: Vec<u8> = Vec::new();
+        for p in batch {
+            if p.patches.is_empty() {
+                // Non-bitmap PDU (or buffering fragment): pass through in order.
+                wire.extend_from_slice(&p.data);
+                continue;
+            }
+            let overlaps = p.patches.iter().any(|patch| {
+                let pr = rewrite::Rect {
+                    x: patch.x,
+                    y: patch.y,
+                    w: patch.width,
+                    h: patch.height,
+                };
+                dets.iter().any(|d| pr.overlaps(d))
+            });
+            if !overlaps {
+                // No PII in this bitmap: forward it exactly as received.
+                wire.extend_from_slice(&p.data);
+                continue;
+            }
+            // PII-overlapping bitmap: drop the original and repaint each of its
+            // patch regions from the canvas with the PII blanked.
+            for patch in &p.patches {
+                let region = rewrite::Rect {
+                    x: patch.x,
+                    y: patch.y,
+                    w: patch.width,
+                    h: patch.height,
+                };
+                wire.extend_from_slice(&rewrite::redact_region(
+                    &canvas.fb,
+                    canvas.w,
+                    canvas.h,
+                    region,
+                    &res.detections,
+                    bpp,
+                ));
+            }
+        }
+        // Cover PII that is ALREADY on the client from prior frames. RDP sends
+        // deltas: a multi-keystroke secret (e.g. an email typed character by
+        // character) is forwarded in pieces BEFORE it becomes a complete,
+        // detectable entity. By the time it is detected, only the latest delta
+        // is in this batch — the earlier pixels are already on screen. OCR runs
+        // on the full-width band from the shadow canvas, so the detection bbox
+        // spans the WHOLE entity; repaint that entire bbox as black so the
+        // already-delivered portion is blanked too, not just the current delta.
+        for d in &res.detections {
+            let region = rewrite::Rect { x: d.x, y: d.y, w: d.width, h: d.height };
+            wire.extend_from_slice(&rewrite::redact_region(
+                &canvas.fb,
+                canvas.w,
+                canvas.h,
+                region,
+                std::slice::from_ref(d),
+                bpp,
+            ));
         }
         if !forward_bytes(shared, sink, &wire).await {
             return false;
