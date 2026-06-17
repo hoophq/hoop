@@ -1,0 +1,11 @@
+# Keep build contexts lean and reproducible. Build artifacts and local-only
+# trees must never enter an image build context.
+**/target/
+dist/
+agentrs/target/
+gateway/rdp/wasm/target/
+**/node_modules/
+webapp/.shadow-cljs/
+webapp_v2/dist/
+.git/
+*.log

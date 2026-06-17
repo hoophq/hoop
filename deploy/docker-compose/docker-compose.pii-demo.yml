@@ -1,0 +1,117 @@
+# Local end-to-end simulation of the RDP PII-guard demo topology.
+#
+# Mirrors what the CEO runs against demo.hoop.dev, but fully local and built
+# from the current branch (no released images):
+#
+#   - gateway : hoophq/hoop:local           (built via Dockerfile.localbuild)
+#   - agent   : hoophq/hoop-agent-ocr:local (built via Dockerfile.agent-ocr)
+#               -> bundles the RapidOCR engine on loopback AND runs the
+#                  agentrs PII gate. The agent (not the gateway) calls Presidio
+#                  + OCR, so PII analysis stays at the agent boundary.
+#   - presidio-analyzer : the PII analyzer the AGENT calls.
+#   - db      : postgres state store for the gateway.
+#
+# The guard decision (enable + policy) is pushed by the gateway via the
+# SessionStarted metadata; the agent supplies its own OCR/Presidio endpoints.
+#
+# Prereqs (build the images first):
+#   docker build --platform linux/arm64 -f Dockerfile.localbuild \
+#       -t hoophq/hoop:local .
+#   docker build --platform linux/arm64 -f Dockerfile.agent-ocr \
+#       --build-arg HOOP_IMAGE=hoophq/hoop:local -t hoophq/hoop-agent-ocr:local .
+#
+# Bring up:
+#   docker compose -f deploy/docker-compose/docker-compose.pii-demo.yml up
+#
+# Then enable the feature flag (see scripts/dev/enable-pii-guard.sh) and
+# restart the gateway so it re-warms the flag cache.
+
+name: hoop-pii-demo
+
+services:
+  db:
+    image: postgres:17.6
+    attach: false
+    networks: [hoopdev]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hoopdb
+      PGUSER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  gateway:
+    image: hoophq/hoop:local
+    tty: true
+    environment:
+      - GIN_MODE=release
+      - ORG_MULTI_TENANT=false
+      - AUTH_METHOD=local
+      - JWT_SECRET_KEY=local-dev-secret-do-not-use-in-prod
+      - API_URL=http://localhost:8009
+      - GRPC_URL=http://gateway:8010
+      - ADMIN_USERNAME=admin
+      - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+      # The gateway delegates the guard to the agent; it does NOT need OCR /
+      # Presidio endpoints itself. It only sets the guard POLICY that gets
+      # pushed to the agent. Use 'redact' for the live-redaction demo.
+      - RDP_PII_GUARD_POLICY=redact
+    command: ["hoop", "start", "gateway"]
+    ports:
+      - "8009:8009"
+      - "8010:8010"
+      - "15432:15432"
+      - "13389:13389"
+    networks: [hoopdev]
+    depends_on:
+      db:
+        condition: "service_healthy"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          PROTO=http; [ -n "$$TLS_KEY" ] && PROTO=https
+          curl -k -f $$PROTO://127.0.0.1:8009/api/healthz || exit 1
+      interval: "2s"
+      timeout: "30s"
+      retries: 15
+      start_period: "30s"
+
+  agent:
+    image: hoophq/hoop-agent-ocr:local
+    # Chatty at boot (OCR engine load, agentrs TLS gen). Watch with
+    # `docker compose ... logs -f agent` when debugging the gate.
+    networks: [hoopdev]
+    environment:
+      # The agent authenticates with an agent KEY/DSN (the production way the
+      # CEO's local agent connects to demo.hoop.dev) -- it does NOT touch the
+      # gateway's database. The matching key_hash is registered on the gateway
+      # by scripts/dev/run-pii-demo.sh before this service is (re)started.
+      - HOOP_GATEWAY_URL=ws://gateway:8009
+      - HOOP_TLS_SKIP_VERIFY=true
+      # AGENT_SECRET is supplied by the .env file that
+      # scripts/dev/run-pii-demo.sh writes next to this compose file.
+      - HOOP_KEY=grpc://default:${AGENT_SECRET:-unset}@gateway:8010?mode=standard
+      # The agent owns PII analysis. OCR is bundled (RDP_OCR_SERVER_URL is baked
+      # into the image at 127.0.0.1:18868); it only needs the Presidio endpoint.
+      - MSPRESIDIO_ANALYZER_URL=http://presidio-analyzer:3000
+    # Reach the external RDP target (192.168.55.120:3389) on the host LAN.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      gateway:
+        condition: "service_healthy"
+    command: ["hoop", "start", "agent"]
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:2.2.360
+    attach: false
+    networks: [hoopdev]
+
+networks:
+  hoopdev:
