@@ -437,9 +437,20 @@ func TestPIIGate_PseudoTPKTGarbageIsForwardedFramed(t *testing.T) {
 func TestPIIGate_BacklogOverflowFailsClosed(t *testing.T) {
 	h := &gateHarness{}
 	// A stuck analyzer: blocks until the test ends, so queued bytes accumulate.
+	// `entered` signals (once) when the analysis loop has actually reached the
+	// analyzer and is about to block — i.e. the first batch has been drained
+	// off the queue. We MUST flood only after this, otherwise the run loop's
+	// takePending() can drain the flood into the same stuck batch (resetting
+	// queuedBytes to 0) and the overflow never triggers. That race made this
+	// test flaky; gating the flood on `entered` makes it deterministic.
 	block := make(chan struct{})
+	entered := make(chan struct{})
+	var enteredOnce sync.Once
 	t.Cleanup(func() { close(block) })
 	gate := newTestGate(t, h, func(ctx context.Context, _ []byte, _, _ int, _ []analyzer.YBand, _ string, _ int, _ float64, _ *analyzer.PresidioClient, _ analyzer.AnalysisParams) (*analyzer.SnapshotResult, error) {
+		// Edge-triggered close (via Once) is robust even if a future edit
+		// causes more than one analysis before the wait below.
+		enteredOnce.Do(func() { close(entered) })
 		select {
 		case <-block:
 		case <-ctx.Done():
@@ -447,9 +458,17 @@ func TestPIIGate_BacklogOverflowFailsClosed(t *testing.T) {
 		return &analyzer.SnapshotResult{}, nil
 	})
 
-	// Get the analyzer stuck on a first dirty batch.
+	// Get the analyzer stuck on a first dirty batch, and WAIT until it is
+	// confirmed blocking before flooding. The analyzer is only reached after
+	// takePending() has drained the first batch off the queue, so once we
+	// observe `entered` the flood can no longer be merged into that batch.
 	gate.Ingest(fastPathBitmapPDU(t, testRect{0, 0, 32, 16, white}))
 	gate.Ingest(tpktPDU([]byte{0x01}))
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for analyzer to start (first batch not drained)")
+	}
 
 	// Flood past the cap while analysis is stuck. Each pseudo-TPKT PDU is
 	// 64KiB; push > maxHeldBytes worth.
