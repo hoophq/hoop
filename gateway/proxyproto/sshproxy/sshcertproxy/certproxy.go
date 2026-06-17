@@ -475,6 +475,25 @@ loop:
 			case "exec":
 				execReq = req
 				break loop
+			case "subsystem", "shell":
+				msg := fmt.Sprintf("request type %q is not supported; specify a connection name: ssh -p <port> <user>@<host> <connection-name>", req.Type)
+				if req.Type == "subsystem" {
+					var subsysReq struct{ Subsystem string }
+					_ = ssh.Unmarshal(req.Payload, &subsysReq)
+					msg = fmt.Sprintf("subsystem %q is not supported; for file transfers use scp legacy mode (add -O flag): scp -O ...", subsysReq.Subsystem)
+				}
+				log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+					Infof("rejected %q on session channel: not supported by cert auth", req.Type)
+				// Reply true to suppress the generic "request failed on channel N"
+				// message from the SSH client; our stderr message reaches the user instead.
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+				_, _ = io.WriteString(clientCh.Stderr(), "hoop: "+msg+"\r\n")
+				exitPayload := ssh.Marshal(struct{ ExitStatus uint32 }{1})
+				_, _ = clientCh.SendRequest("exit-status", false, exitPayload)
+				_ = clientCh.Close()
+				return nil
 			default:
 				log.With("sid", c.sid, "conn", c.id, "ch", channelID).
 					Infof("rejected unexpected pre-exec request type %q on session channel", req.Type)
