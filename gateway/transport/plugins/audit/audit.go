@@ -289,6 +289,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if decJSONPayload != nil {
 			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
+	case pbagent.OracleConnectionWrite:
+		// native Oracle clients (sqlplus, DBeaver, …) stream raw TNS bytes; log
+		// the printable text (SQL and text fields) extracted from each packet.
+		if queryText := decodeOracleClientQuery(pkt.Payload); queryText != nil {
+			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, queryText, eventMetadata)
+		}
 	case pbclient.WriteStdout, pbclient.WriteStderr:
 		err := p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {

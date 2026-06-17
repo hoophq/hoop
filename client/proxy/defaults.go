@@ -19,6 +19,7 @@ const (
 	defaultTCPPort       = "8999"
 	defaultSSHPort       = "2222"
 	defaultHttpProxyPort = "8081"
+	defaultOraclePort    = "15211"
 )
 
 var defaultListenAddrValue string

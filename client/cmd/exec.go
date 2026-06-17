@@ -361,6 +361,14 @@ func runExecSession(sessionID string) {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {
+		// A federated connection can refuse the session because the user has
+		// not connected their per-user account (gcp_oauth consent). Surface an
+		// actionable consent link instead of the raw error body. The connection
+		// name is recovered from the stable marker embedded in the error.
+		if connectionName, ok := parseFederationOAuthNotConnected(string(body)); ok {
+			printFederationOAuthConsentAndExit(config.ApiURL, config.Token, config.TlsCA(), jsonMode,
+				connectionName, fmt.Errorf("%s", string(body)))
+		}
 		fatalErr(jsonMode, "failed executing session: %s", string(body))
 	}
 

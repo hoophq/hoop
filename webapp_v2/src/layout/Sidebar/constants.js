@@ -19,7 +19,8 @@ import {
   WandSparkles,
   Layers,
   KeyRound,
-  Webhook
+  Webhook,
+  Bot
 } from 'lucide-react';
 import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
@@ -43,6 +44,7 @@ export const MAIN_ITEMS = [
 ]
 
 export const DISCOVER_ITEMS = [
+  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true },
   { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true },
   { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true },
   {

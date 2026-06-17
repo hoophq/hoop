@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
@@ -225,6 +226,10 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	// MongoDB Protocol
 	case pbagent.MongoDBConnectionWrite:
 		a.processMongoDBProtocol(pkt)
+
+	// Oracle Protocol
+	case pbagent.OracleConnectionWrite:
+		a.processOracleProtocol(pkt)
 
 	// raw tcp
 	case pbagent.TCPConnectionWrite:

@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/client/proxy"
+	clientupgrade "github.com/hoophq/hoop/client/upgrade"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
@@ -116,6 +117,12 @@ type connect struct {
 	connectionName string
 	loader         *spinner.Spinner
 	jsonMode       bool
+	// apiURL, token and tlsCA mirror the resolved client config so the
+	// session-open error path can call the gateway's HTTP API (e.g. to fetch
+	// the gcp_oauth consent URL) without re-reading the config from disk.
+	apiURL string
+	token  string
+	tlsCA  string
 }
 
 func runConnect(args []string, clientEnvVars map[string]string, durationFlagChanged bool) {
@@ -275,6 +282,26 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 						"port": srv.Host().Port,
 						"uri":  fmt.Sprintf("mongodb://noop:noop@%s:%s/?directConnection=true", srv.Host().Host, srv.Host().Port),
 					})
+				}
+			case pb.ConnectionTypeOracleDB:
+				if !clientconfig.IsFeatureEnabled(config, "beta.oracle_native") {
+					c.processGracefulExit(fmt.Errorf("oracle native access is not enabled for your organization"))
+				}
+				srv := proxy.NewOracleServer(c.proxyPort, c.client)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(connectionType, pkt)
+				fmt.Println()
+				fmt.Println("--------------------oracle-credentials----------------------")
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
+				fmt.Println("------------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+				if jsonMode {
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop", "password": "noop"})
 				}
 			case pb.ConnectionTypeTCP:
 				tcp := proxy.NewTCPServer(c.proxyPort, c.client, pbagent.TCPConnectionWrite)
@@ -479,6 +506,19 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
 				c.processGracefulExit(errMsg)
 			}
+		case pbclient.OracleConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			srvObj := c.connStore.Get(string(sessionID))
+			srv, ok := srvObj.(*proxy.OracleServer)
+			if !ok {
+				return
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			_, err := srv.PacketWriteClient(connectionID, pkt)
+			if err != nil {
+				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+				c.processGracefulExit(errMsg)
+			}
 		case pbclient.HttpProxyConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
@@ -557,6 +597,14 @@ func (c *connect) processGracefulExit(err error) {
 	if c.loader != nil {
 		c.loader.Stop()
 	}
+	// A federated connection can refuse the session because the user has not
+	// connected their per-user account yet (gcp_oauth consent). The gateway
+	// tags that error with a stable marker; turn it into an actionable
+	// "connect your account" prompt with a clickable consent link instead of a
+	// raw rpc error. This never returns when it matches.
+	if connectionName, ok := parseFederationOAuthNotConnected(err.Error()); ok {
+		printFederationOAuthConsentAndExit(c.apiURL, c.token, c.tlsCA, c.jsonMode, connectionName, err)
+	}
 	for _, obj := range c.connStore.List() {
 		switch v := obj.(type) {
 		case *proxy.Terminal:
@@ -609,21 +657,44 @@ func (c *connect) printHeader(connectionType pb.ConnectionType, pkt *pb.Packet) 
 }
 
 func printVersionMismatchWarning(agentVersion string) {
-	cliVersion := version.Get().Version
+	printVersionMismatchWarningTo(os.Stderr, version.Get().Version, agentVersion)
+}
+
+// printVersionMismatchWarningTo renders the CLI/agent version-mismatch
+// warning to w. The writer and cliVersion are parameters so unit tests can
+// drive it deterministically; the exported caller wires in os.Stderr and the
+// build-stamped version.
+func printVersionMismatchWarningTo(w io.Writer, cliVersion, agentVersion string) {
+	if os.Getenv(clientupgrade.DisableVersionCheckEnv) == "true" {
+		return
+	}
 	if agentVersion == "" || cliVersion == "" || cliVersion == "unknown" || agentVersion == cliVersion {
 		return
 	}
+
+	// Prefer the exact agent version via the OS-agnostic version manager.
+	// If the agent predates the version manager (or reports an unmanageable
+	// version), fall back to the docs rather than printing an install command
+	// that would fail with a floor error.
+	target := clientupgrade.NormalizeVersion(agentVersion)
+	action := "For installation options, visit: https://hoop.dev/docs/clients/cli-versions"
+	if clientupgrade.ValidateInstallableVersion(target) == nil {
+		action = fmt.Sprintf(
+			"Install and activate the matching version with the hoop CLI version manager:\n"+
+				"  hoop versions install %s --use\n\n"+
+				"For more options, visit: https://hoop.dev/docs/clients/cli-versions",
+			target)
+	}
+
 	msg := styles.ClientErrorSimple(fmt.Sprintf(
 		"⚠️  VERSION MISMATCH DETECTED! ⚠️\n"+
 			"Your CLI version (%s) does not match the agent version (%s).\n"+
 			"This WILL cause unexpected behavior.\n\n"+
-			"Please update your CLI to match the agent version:\n"+
-			"  brew tap hoophq/brew https://github.com/hoophq/brew.git\n"+
-			"  brew install hoop@%s\n\n"+
-			"For more installation options, visit: https://hoop.dev/docs/clients/cli#installation",
-		cliVersion, agentVersion, agentVersion))
+			"%s\n\n"+
+			"(set %s=true to silence this warning)",
+		cliVersion, agentVersion, action, clientupgrade.DisableVersionCheckEnv))
 
-	_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", msg)
+	_, _ = fmt.Fprintf(w, "\n%s\n\n", msg)
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {
@@ -641,6 +712,9 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		connectionName: args[0],
 		loader:         loader,
 		jsonMode:       outputFlag == "json",
+		apiURL:         config.ApiURL,
+		token:          config.Token,
+		tlsCA:          config.TlsCA(),
 	}
 	grpcClientOptions := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),

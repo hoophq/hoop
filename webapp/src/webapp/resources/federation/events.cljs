@@ -17,7 +17,7 @@
 (defn- build-config [form]
   {:enabled (boolean (:enabled form))
    :hook_source "builtin"
-   :builtin_provider "gcp_iam"
+   :builtin_provider (or (:builtin_provider form) "gcp_iam")
    :extra_config {:project_id (get-in form [:extra_config :project_id])}
    :identity_source_attribute (:identity_source_attribute form)
    :identity_target_template (:identity_target_template form)
@@ -41,19 +41,24 @@
 (rf/reg-event-fx
  :federation/load-success
  (fn [{:keys [db]} [_ response]]
-   ;; The GET never echoes admin credentials back, but the same SA JSON is
-   ;; stored as the connection's static GOOGLE_APPLICATION_CREDENTIALS secret —
-   ;; recover it from connection-setup so the operator sees their credentials.
-   (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])
-         sa-json (some (fn [{:keys [key value]}]
-                         (when (= key "GOOGLE_APPLICATION_CREDENTIALS")
-                           (if (map? value) (:value value) value)))
-                       config-files)
+   ;; The GET never echoes admin credentials back. For gcp_iam the same SA JSON
+   ;; is also stored as the connection's static GOOGLE_APPLICATION_CREDENTIALS
+   ;; secret, so we recover it from connection-setup to show the operator their
+   ;; credentials. gcp_oauth stores OAuth client credentials that are never
+   ;; mirrored into a static secret, so there is nothing to recover — the field
+   ;; stays masked until the operator chooses to replace it.
+   (let [provider (or (:builtin_provider response) "gcp_iam")
+         config-files (get-in db [:connection-setup :credentials :configuration-files] [])
+         sa-json (when (= provider "gcp_iam")
+                   (some (fn [{:keys [key value]}]
+                           (when (= key "GOOGLE_APPLICATION_CREDENTIALS")
+                             (if (map? value) (:value value) value)))
+                         config-files))
          form {:enabled (if (contains? response :enabled)
                           (boolean (:enabled response))
                           true)
                :hook_source (or (:hook_source response) "builtin")
-               :builtin_provider (or (:builtin_provider response) "gcp_iam")
+               :builtin_provider provider
                :admin_credentials_json (or sa-json "")
                :extra_config {:project_id (get-in response [:extra_config :project_id] "")}
                :identity_source_attribute (or (:identity_source_attribute response) "$.user.email")
@@ -165,6 +170,105 @@
                                            :save-status :idle
                                            :mapping-editor-open? false
                                            :form default-form})))
+
+;; gcp_oauth per-user consent flow. Each user connects their own Google
+;; account to a connection: the gateway returns a Google consent URL, the
+;; browser is sent there, and Google redirects back to the gateway callback
+;; (which stores the refresh token) and then back to this page with a
+;; ?federation_oauth=success|error outcome that :federation/handle-oauth-outcome
+;; turns into a snackbar.
+(rf/reg-event-fx
+ :federation/oauth-connect
+ (fn [_ [_ connection-name]]
+   (let [redirect (.. js/window -location -href)]
+     {:fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/connections/" connection-name "/federation/oauth/authorize")
+                               :query-params {:redirect redirect}
+                               :on-success (fn [response]
+                                             (when-let [authorize-url (:url response)]
+                                               (set! js/window.location.href authorize-url)))
+                               :on-failure (fn [error]
+                                             (rf/dispatch [:show-snackbar {:level :error
+                                                                           :text "Failed to start Google authorization"
+                                                                           :details error}]))}]]]})))
+
+(rf/reg-event-fx
+ :federation/oauth-disconnect
+ (fn [_ [_ connection-name]]
+   {:fx [[:dispatch [:fetch {:method "DELETE"
+                             :uri (str "/connections/" connection-name "/federation/oauth")
+                             :on-success (fn [_]
+                                           (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text "Google account disconnected"}]))
+                             :on-failure (fn [error]
+                                           (if (= 404 (:status error))
+                                             (rf/dispatch [:show-snackbar {:level :info
+                                                                           :text "No Google account was connected"}])
+                                             (rf/dispatch [:show-snackbar {:level :error
+                                                                           :text "Failed to disconnect Google account"
+                                                                           :details error}])))}]]]}))
+
+;; Per-user OAuth connection status, keyed by connection name. Lets end-user
+;; surfaces (the webclient) know whether the signed-in user has connected their
+;; Google account to a gcp_oauth connection so they can be prompted before
+;; running. The status endpoint is access-scoped and gcp_oauth-gated on the
+;; backend; for non-federated or non-oauth connections it returns provider="".
+(rf/reg-event-fx
+ :federation/oauth-status
+ (fn [_ [_ connection-name]]
+   (when-not (str/blank? connection-name)
+     {:fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/connections/" connection-name "/federation/oauth")
+                               :on-success (fn [response]
+                                             (rf/dispatch [:federation/set-oauth-status connection-name response]))
+                               ;; A 404 means the connection isn't visible/federated for
+                               ;; this user; treat it as "nothing to connect".
+                               :on-failure (fn [_]
+                                             (rf/dispatch [:federation/set-oauth-status connection-name nil]))}]]]})))
+
+(rf/reg-event-db
+ :federation/set-oauth-status
+ (fn [db [_ connection-name status]]
+   (assoc-in db [:resources/federation :oauth-status connection-name]
+             {:provider (:provider status)
+              :connected (boolean (:connected status))
+              :google_email (:google_email status)})))
+
+;; Reads the ?federation_oauth=success|error&reason=... the OAuth callback
+;; appends when redirecting the browser back to the app. Shows the outcome as a
+;; snackbar, refreshes the connection's status (so a freshly-connected account
+;; clears any "connect" prompt), then strips the params so a refresh doesn't
+;; replay the toast. Safe to dispatch on any page mount: it is a no-op when the
+;; params are absent.
+(rf/reg-event-fx
+ :federation/consume-oauth-return
+ (fn [_ _]
+   (let [params (js/URLSearchParams. (.. js/window -location -search))
+         outcome (.get params "federation_oauth")]
+     (if (str/blank? outcome)
+       {}
+       (let [reason (.get params "reason")
+             role (.get params "role")
+             url (js/URL. (.. js/window -location -href))]
+         (.delete (.-searchParams url) "federation_oauth")
+         (.delete (.-searchParams url) "reason")
+         (.replaceState js/history nil "" (.toString url))
+         {:fx (cond-> [[:dispatch [:federation/handle-oauth-outcome outcome reason]]]
+                (and (= outcome "success") (not (str/blank? role)))
+                (conj [:dispatch [:federation/oauth-status role]]))})))))
+
+(rf/reg-event-fx
+ :federation/handle-oauth-outcome
+ (fn [_ [_ outcome reason]]
+   {:fx [[:dispatch
+          (case outcome
+            "success" [:show-snackbar {:level :success
+                                       :text "Google account connected"}]
+            "error" [:show-snackbar {:level :error
+                                     :text (str "Google authorization failed"
+                                                (when-not (str/blank? reason)
+                                                  (str ": " (str/replace reason "_" " "))))}]
+            [:show-snackbar {:level :info :text "Google authorization finished"}])]]}))
 
 (rf/reg-event-fx
  :federation/test
