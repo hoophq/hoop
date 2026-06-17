@@ -2,16 +2,25 @@ package pgproto
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"golang.org/x/crypto/ssh"
 )
+
+// pgChannel holds a single port-forward channel and the BackendKeyData the
+// server sent for it, used to route CancelRequest messages to the right channel.
+type pgChannel struct {
+	ch             ssh.Channel
+	backendKeyData *pgtypes.BackendKeyData
+}
 
 // Handler is the PostgreSQL protocol handler for a single proxy connection.
 // It owns the gRPC transport and channel registry, including the read loop.
@@ -19,7 +28,7 @@ type Handler struct {
 	sid        string
 	connID     string
 	grpcClient pb.ClientTransport
-	channels   sync.Map // pgConnID string → ssh.Channel
+	channels   sync.Map // pgConnID string → *pgChannel
 	channelWg  sync.WaitGroup
 	ctx        context.Context
 	cancelFn   func(msg string, a ...any)
@@ -122,31 +131,52 @@ func (h *Handler) AcceptAndServe(newCh ssh.NewChannel, channelID uint16) error {
 	// Unique connection ID per channel so the agent creates separate Postgres
 	// connections for each port-forward channel on this SSH session.
 	pgConnID := fmt.Sprintf("%s-ch%d", h.connID, channelID)
-	h.channels.Store(pgConnID, clientCh)
+	pgChan := &pgChannel{ch: clientCh}
+	h.channels.Store(pgConnID, pgChan)
+
+	w := pb.NewStreamWriter(h.grpcClient, pbagent.PGConnectionWrite, map[string][]byte{
+		pb.SpecGatewaySessionID:   []byte(h.sid),
+		pb.SpecClientConnectionID: []byte(pgConnID),
+	})
 
 	// Forward raw bytes from the SSH channel to the agent via PG packets.
 	// The first packet triggers the agent to open a new Postgres connection.
 	h.channelWg.Go(func() {
-		defer h.channels.Delete(pgConnID)
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := clientCh.Read(buf)
-			if n > 0 {
-				if err := h.grpcClient.Send(&pb.Packet{
-					Type:    pbagent.PGConnectionWrite,
-					Payload: buf[:n],
-					Spec: map[string][]byte{
-						string(pb.SpecGatewaySessionID):   []byte(h.sid),
-						string(pb.SpecClientConnectionID): []byte(pgConnID),
-					},
-				}); err != nil {
-					h.cancelFn("pg: failed forwarding data to agent, err=%v", err)
-					return
-				}
+		defer func() {
+			h.channels.Delete(pgConnID)
+			// Notify the agent to close its Postgres server connection for this channel.
+			_ = h.grpcClient.Send(&pb.Packet{
+				Type: pbagent.TCPConnectionClose,
+				Spec: map[string][]byte{
+					pb.SpecGatewaySessionID:   []byte(h.sid),
+					pb.SpecClientConnectionID: []byte(pgConnID),
+				},
+			})
+		}()
+		// A cancel request is sent by a second connection; the response must
+		// reach the connection identified by the backend PID.
+		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-CANCELING-REQUESTS
+		written, err := pgtypes.CopyBuffer(w, clientCh, func(pid uint32) bool {
+			targetConnID, targetChan := h.findChannelByPID(pid)
+			if targetChan != nil {
+				// Swap: responses for this connection ID should now reach the
+				// query connection's SSH channel.
+				h.channels.Store(pgConnID, targetChan)
+				log.With("sid", h.sid, "conn", pgConnID).
+					Infof("pg: cancel request for pid=%v, swapped to conn=%s", pid, targetConnID)
+				// Give the cancel time to propagate, then close the cancel channel.
+				go func() {
+					time.Sleep(4 * time.Second)
+					_ = clientCh.Close()
+				}()
+				return true
 			}
-			if readErr != nil {
-				break
-			}
+			log.With("sid", h.sid, "conn", pgConnID).
+				Infof("pg: cancel request for pid=%v, no matching connection found", pid)
+			return false
+		})
+		if err != nil {
+			h.cancelFn("pg: failed copying buffer for channel %v, written=%v, err=%v", channelID, written, err)
 		}
 	})
 
@@ -164,7 +194,17 @@ func (h *Handler) AcceptAndServe(newCh ssh.NewChannel, channelID uint16) error {
 }
 
 // RangeChannels calls fn for each registered channel, same semantics as sync.Map.Range.
-func (h *Handler) RangeChannels(fn func(key, value any) bool) { h.channels.Range(fn) }
+// The value passed to fn is always an ssh.Channel (unwrapped from the internal pgChannel),
+// so callers such as notifyOpenChannels can use value.(ssh.Channel) safely.
+func (h *Handler) RangeChannels(fn func(key, value any) bool) {
+	h.channels.Range(func(k, v any) bool {
+		pgChan, ok := v.(*pgChannel)
+		if !ok || pgChan == nil {
+			return true
+		}
+		return fn(k, pgChan.ch)
+	})
+}
 
 // Wait blocks until all channel goroutines complete.
 func (h *Handler) Wait() { h.channelWg.Wait() }
@@ -186,12 +226,44 @@ func (h *Handler) Close() error {
 func (h *Handler) dispatchPacket(pkt *pb.Packet) {
 	chanKey := string(pkt.Spec[pb.SpecClientConnectionID])
 	obj, _ := h.channels.Load(chanKey)
-	clientCh, ok := obj.(ssh.Channel)
-	if !ok {
+	pgChan, ok := obj.(*pgChannel)
+	if !ok || pgChan == nil {
 		log.With("sid", h.sid, "conn", h.connID).Warnf("dropping PG data for unknown channel %q", chanKey)
 		return
 	}
-	if _, err := clientCh.Write(pkt.Payload); err != nil {
+
+	// Capture BackendKeyData (type 'K') so we can route CancelRequest messages.
+	// The packet is exactly 13 bytes: 1 type + 4 length + 4 PID + 4 secret.
+	if len(pkt.Payload) >= 13 && pgtypes.PacketType(pkt.Payload[0]) == pgtypes.ServerBackendKeyData {
+		pgPid := binary.BigEndian.Uint32(pkt.Payload[5:9])
+		pgSecret := binary.BigEndian.Uint32(pkt.Payload[9:13])
+		log.With("sid", h.sid, "conn", chanKey).
+			Infof("pg: backend process started, pid=%v", pgPid)
+		pgChan.backendKeyData = &pgtypes.BackendKeyData{Pid: pgPid, SecretKey: pgSecret}
+		h.channels.Store(chanKey, pgChan)
+	}
+
+	if _, err := pgChan.ch.Write(pkt.Payload); err != nil {
 		h.cancelFn("failed writing PG data to channel, err=%v", err)
 	}
+}
+
+// findChannelByPID returns the connection ID and pgChannel whose BackendKeyData
+// matches pid. Returns empty string and nil if no match is found.
+func (h *Handler) findChannelByPID(pid uint32) (string, *pgChannel) {
+	var foundID string
+	var foundChan *pgChannel
+	h.channels.Range(func(k, v any) bool {
+		ch, ok := v.(*pgChannel)
+		if !ok || ch == nil || ch.backendKeyData == nil {
+			return true
+		}
+		if ch.backendKeyData.Pid == pid {
+			foundID = k.(string)
+			foundChan = ch
+			return false
+		}
+		return true
+	})
+	return foundID, foundChan
 }
