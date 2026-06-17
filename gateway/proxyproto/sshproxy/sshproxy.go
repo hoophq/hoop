@@ -77,7 +77,6 @@ func (s *proxyServer) Start(cfg ServerConfig) error {
 		return fmt.Errorf("failed parsing hosts key, reason=%v", err)
 	}
 
-	var err error
 	if len(cfg.TrustedCAs) > 0 {
 		s.certServer, err = sshcertproxy.Run(cfg.ListenAddress, hostKey, cfg.TrustedCAs, cfg.UserMapping)
 	} else {
