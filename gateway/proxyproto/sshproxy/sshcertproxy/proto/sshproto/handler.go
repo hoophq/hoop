@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,6 +151,124 @@ func (h *Handler) AcceptAndServe(newCh ssh.NewChannel, channelID uint16) error {
 		return fmt.Errorf("failed writing open channel to stream, err=%v", err)
 	}
 
+	h.startForwarding(clientCh, clientRequests, channelID)
+	return nil
+}
+
+// ServeSession serves an already-accepted SSH session channel. preRequests are
+// requests that were already received and replied to by the caller (e.g. pty-req
+// pre-approved because the cert has permit-pty); they are forwarded to the agent
+// with WantReply=false. execRequest is the exec from the client (used only to
+// reply back); its reply is tied to the upstream session request. upstreamCommand
+// is the command to execute on the upstream SSH server.
+//
+// When upstreamCommand is empty, stdin from the SSH channel is collected with a
+// short deadline: if the client closes the write side (e.g. piped input via
+// echo ... | ssh), the collected content is used as the exec command — identical
+// to passing it as args. If the deadline expires first (interactive/empty stdin),
+// a shell is started and subsequent stdin is forwarded as data.
+func (h *Handler) ServeSession(
+	clientCh ssh.Channel,
+	clientRequests <-chan *ssh.Request,
+	channelID uint16,
+	preRequests []*ssh.Request,
+	execRequest *ssh.Request,
+	upstreamCommand string,
+) error {
+	h.channels.Store(fmt.Sprintf("%v", channelID), clientCh)
+
+	openChData := (sshtypes.OpenChannel{
+		ChannelID:   channelID,
+		ChannelType: "session",
+	}).Encode()
+	if _, err := h.streamW.Write(openChData); err != nil {
+		return fmt.Errorf("failed writing open channel to stream, err=%v", err)
+	}
+
+	// Forward pre-collected requests. WantReply=false because the caller already
+	// sent a positive reply to the client for each of them.
+	for _, req := range preRequests {
+		data := (sshtypes.SSHRequest{
+			ChannelID:   channelID,
+			RequestType: req.Type,
+			WantReply:   false,
+			Payload:     req.Payload,
+		}).Encode()
+		if _, err := h.streamW.Write(data); err != nil {
+			return fmt.Errorf("failed forwarding pre-exec request %q: %w", req.Type, err)
+		}
+	}
+
+	// When no explicit command was given, try to collect piped stdin. A single
+	// goroutine owns all reads from clientCh and feeds a pipe so that
+	// startForwarding can safely consume whatever is left regardless of which
+	// path is taken below.
+	var stdinR io.Reader = clientCh
+	if upstreamCommand == "" {
+		pr, pw := io.Pipe()
+		collectedCh := make(chan []byte, 1)
+
+		go func() {
+			var buf [32 * 1024]byte
+			var collected []byte
+			for {
+				n, err := clientCh.Read(buf[:])
+				if n > 0 {
+					collected = append(collected, buf[:n]...)
+					if _, werr := pw.Write(buf[:n]); werr != nil {
+						// pr was closed — exec path consumed the data; stop.
+						return
+					}
+				}
+				if err != nil {
+					collectedCh <- collected
+					pw.Close()
+					return
+				}
+			}
+		}()
+
+		select {
+		case data := <-collectedCh:
+			// clientCh EOF (pipe exhausted) — use content as exec command.
+			upstreamCommand = strings.TrimRight(string(data), "\r\n")
+			pr.Close() // goroutine already exited; safe to close
+			stdinR = clientCh // clientCh is at EOF; startForwarding sees EOF immediately
+		case <-time.After(100 * time.Millisecond):
+			// No EOF yet — interactive/empty stdin. Feed startForwarding via pipe.
+			stdinR = pr
+		}
+	}
+
+	// Reply to the client immediately (same pattern as client/proxy/ssh.go).
+	// The SSH client will not send stdin until it receives the exec reply.
+	if execRequest.WantReply {
+		_ = execRequest.Reply(true, nil)
+	}
+
+	upstreamReq := sshtypes.SSHRequest{
+		ChannelID: channelID,
+		WantReply: false, // we already replied to the client; no need for upstream to reply back
+	}
+	if upstreamCommand != "" {
+		upstreamReq.RequestType = "exec"
+		upstreamReq.Payload = ssh.Marshal(struct{ Command string }{upstreamCommand})
+	} else {
+		upstreamReq.RequestType = "shell"
+	}
+	if _, err := h.streamW.Write(upstreamReq.Encode()); err != nil {
+		return fmt.Errorf("failed forwarding %s request: %w", upstreamReq.RequestType, err)
+	}
+
+	h.startForwarding(stdinR, clientRequests, channelID)
+	return nil
+}
+
+// startForwarding launches goroutines that copy data and requests between
+// the stdin reader / clientCh and the agent for the lifetime of the channel.
+// stdinR is the source of client stdin data; it may be the ssh.Channel itself
+// or a pipe fed by a pre-reading goroutine.
+func (h *Handler) startForwarding(stdinR io.Reader, clientRequests <-chan *ssh.Request, channelID uint16) {
 	// Copy data from client to agent. We don't close clientCh here because
 	// the client may still be waiting to receive data (e.g., git clone sends a command
 	// then waits for the response). The channel will be closed when we receive
@@ -157,7 +276,7 @@ func (h *Handler) AcceptAndServe(newCh ssh.NewChannel, channelID uint16) error {
 	h.channelWg.Go(func() {
 		buf := make([]byte, 32*1024)
 		for {
-			n, readErr := clientCh.Read(buf)
+			n, readErr := stdinR.Read(buf)
 			if n > 0 {
 				log.With("sid", h.sid, "conn", h.connID, "ch", channelID).
 					Debugf("read %d bytes from client, forwarding to agent", n)
@@ -235,7 +354,6 @@ func (h *Handler) AcceptAndServe(newCh ssh.NewChannel, channelID uint16) error {
 		}
 		log.With("ch", channelID, "conn", h.connID).Debugf("done processing ssh client requests")
 	})
-	return nil
 }
 
 // RangeChannels calls fn for each registered channel, same semantics as sync.Map.Range.

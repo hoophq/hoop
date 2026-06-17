@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,8 +18,10 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/mysqlproto"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/pgproto"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/sshproto"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/termproto"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -275,6 +278,12 @@ func (c *certConnection) acceptChannels() {
 				_ = newCh.Reject(reason, err.Error())
 				return
 			}
+			if newCh.ChannelType() == "session" {
+				if err := c.serveSessionChannel(newCh, channelID); err != nil {
+					c.cancelFn("cert: failed serving session channel %v, err=%v", channelID, err)
+				}
+				return
+			}
 			if err := c.handler.AcceptAndServe(newCh, channelID); err != nil {
 				c.cancelFn("cert: failed handling channel, err=%v", err)
 			}
@@ -284,15 +293,25 @@ func (c *certConnection) acceptChannels() {
 }
 
 // validateChannel enforces cert-auth constraints and establishes the
-// session-level gRPC connection on the first call. Returns a rejection reason
-// and error when the channel must be refused; both are zero on success.
+// session-level gRPC connection on the first call (direct-tcpip only). Returns
+// a rejection reason and error when the channel must be refused; both are zero
+// on success.
 func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16) (ssh.RejectionReason, error) {
-	if newCh.ChannelType() != "direct-tcpip" {
+	fmt.Printf("EXTENSIONS: %#v\n", c.certSession.cert.Extensions)
+	switch newCh.ChannelType() {
+	case "session":
+		if !c.certSession.allowPTY() {
+			log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+				Infof("rejected session channel: cert lacks permit-pty (matched=%s)", c.certSession.matchedValue)
+			return ssh.Prohibited, fmt.Errorf("hoop: cert does not permit pty/exec sessions")
+		}
+		return 0, nil
+	case "direct-tcpip":
+	default:
 		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
-			Infof("rejected %q channel: cert auth only supports port-forwarding (matched=%s)",
+			Infof("rejected %q channel: not supported by cert auth (matched=%s)",
 				newCh.ChannelType(), c.certSession.matchedValue)
-		return ssh.Prohibited,
-			fmt.Errorf("hoop: certificate authentication only supports port-forwarding; use ssh -L to connect")
+		return ssh.Prohibited, fmt.Errorf("hoop: channel type %q is not supported", newCh.ChannelType())
 	}
 
 	if !c.certSession.allowPortForwarding() {
@@ -357,6 +376,8 @@ func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16)
 		switch connType {
 		case pb.ConnectionTypePostgres:
 			handler, openErr = pgproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
+		case pb.ConnectionTypeMySQL:
+			handler, openErr = mysqlproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
 		case pb.ConnectionTypeSSH:
 			handler, openErr = sshproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
 		default:
@@ -382,4 +403,190 @@ func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16)
 		Infof("cert port-forward: connection=%q matched=%s conntype=%s",
 			connectionName, c.certSession.matchedValue, connType)
 	return 0, nil
+}
+
+// serveSessionChannel handles a "session" channel. It reads channel requests
+// until an exec is received — the exec payload is the target connection name.
+// Any pty-req that arrives before exec is pre-approved (cert already has
+// permit-pty) and buffered so it can be forwarded to the agent once the gRPC
+// connection is established. The target connection must be of type ssh.
+func (c *certConnection) serveSessionChannel(newCh ssh.NewChannel, channelID uint16) error {
+	clientCh, clientRequests, err := newCh.Accept()
+	if err != nil {
+		return fmt.Errorf("failed accepting session channel: %w", err)
+	}
+
+	// Collect pre-exec requests (e.g. pty-req) and wait for the exec request
+	// that carries the connection name. We cannot forward them to the agent yet
+	// because the gRPC connection is not established until we know the connection.
+	var preExecRequests []*ssh.Request
+	var execReq *ssh.Request
+	timeout := time.NewTimer(30 * time.Second)
+	defer timeout.Stop()
+loop:
+	for {
+		select {
+		case req, ok := <-clientRequests:
+			if !ok {
+				_ = clientCh.Close()
+				return fmt.Errorf("session channel %v closed before exec request was received", channelID)
+			}
+			switch req.Type {
+			case "pty-req":
+				// Pre-approve: the cert already has permit-pty (checked by
+				// validateChannel). Buffer the payload to forward to the agent
+				// once the gRPC connection is established.
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+				preExecRequests = append(preExecRequests, req)
+			case "exec":
+				execReq = req
+				break loop
+			default:
+				log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+					Infof("rejected unexpected pre-exec request type %q on session channel", req.Type)
+				if req.WantReply {
+					_ = req.Reply(false, nil)
+				}
+			}
+		case <-timeout.C:
+			_ = clientCh.Close()
+			return fmt.Errorf("timed out waiting for exec request on session channel %v", channelID)
+		case <-c.ctx.Done():
+			_ = clientCh.Close()
+			return nil
+		}
+	}
+
+	// rejectExec writes msg to the channel's stderr, sends exit-status 1, and
+	// closes the channel. Replying true to exec (rather than false) suppresses
+	// OpenSSH's generic "exec request failed on channel N" and lets the caller's
+	// message reach the user instead.
+	rejectExec := func(msg string) {
+		if execReq.WantReply {
+			_ = execReq.Reply(true, nil)
+		}
+		_, _ = io.WriteString(clientCh.Stderr(), "hoop: "+msg+"\r\n")
+		exitPayload := ssh.Marshal(struct{ ExitStatus uint32 }{1})
+		_, _ = clientCh.SendRequest("exit-status", false, exitPayload)
+		_ = clientCh.Close()
+	}
+
+	// Parse the exec payload (SSH wire-encoded string). The format is:
+	// "<connection-name> [command...]" — the first token is the Hoop connection
+	// name used for routing; everything after the first space is the optional
+	// command to execute on the upstream SSH server.
+	var execCmd struct{ Command string }
+	if err := ssh.Unmarshal(execReq.Payload, &execCmd); err != nil || execCmd.Command == "" {
+		rejectExec("invalid exec payload")
+		return fmt.Errorf("invalid exec payload on session channel %v", channelID)
+	}
+	var connectionName, upstreamCommand string
+	if idx := strings.IndexByte(execCmd.Command, ' '); idx >= 0 {
+		connectionName = execCmd.Command[:idx]
+		upstreamCommand = execCmd.Command[idx+1:]
+	} else {
+		connectionName = execCmd.Command
+	}
+
+	// Verify the target connection exists and is of type ssh.
+	dbConn, err := models.GetConnectionByOrgAndName(c.certSession.orgID, connectionName)
+	if err != nil {
+		if err == models.ErrNotFound {
+			log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+				Infof("cert session: connection %q not found (org=%s matched=%s)",
+					connectionName, c.certSession.orgID, c.certSession.matchedValue)
+			rejectExec(fmt.Sprintf("connection %q not found", connectionName))
+			return fmt.Errorf("connection %q not found", connectionName)
+		}
+		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+			Warnf("cert session: failed looking up connection %q: %v", connectionName, err)
+		rejectExec(fmt.Sprintf("failed looking up connection %q", connectionName))
+		return fmt.Errorf("failed looking up connection %q: %w", connectionName, err)
+	}
+	connType := pb.ToConnectionType(dbConn.Type, dbConn.SubType.String)
+	switch connType {
+	case pb.ConnectionTypeSSH, pb.ConnectionTypeCommandLine:
+		// supported
+	default:
+		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+			Infof("cert session: connection %q type %s does not support pty/exec (matched=%s)",
+				connectionName, connType, c.certSession.matchedValue)
+		rejectExec(fmt.Sprintf("connection %q (type=%s) does not support pty/exec sessions; must be type ssh or custom",
+			connectionName, connType))
+		return fmt.Errorf("connection %q (type=%s) does not support pty/exec sessions",
+			connectionName, connType)
+	}
+
+	// Verb for command-line connections:
+	//   - PTY + no args  → connect  (interactive terminal)
+	//   - PTY + args     → exec     (args sent as stdin input)
+	//   - no PTY         → exec     (empty stdin, command runs one-shot)
+	isPTY := len(preExecRequests) > 0
+	verb := pb.ClientVerbConnect
+	if connType == pb.ConnectionTypeCommandLine && (!isPTY || upstreamCommand != "") {
+		verb = pb.ClientVerbExec
+	}
+
+	// Establish the session-level gRPC connection (once per SSH connection).
+	c.handlerOnce.Do(func() {
+		grpcOpts := []*grpc.ClientOptions{
+			grpc.WithOption(grpc.OptionConnectionName, connectionName),
+			grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+			grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, c.certSession.userSubject),
+			grpc.WithOption("origin", pb.ConnectionOriginClient),
+			grpc.WithOption("verb", verb),
+			grpc.WithOption("session-id", c.sid),
+		}
+		grpcClient, connErr := grpc.Connect(grpc.ClientConfig{
+			ServerAddress: grpc.LocalhostAddr,
+			UserAgent:     "ssh/grpc",
+			Insecure:      appconfig.Get().GatewayUseTLS() == false,
+			TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+			TLSSkipVerify: true,
+		}, grpcOpts...)
+		if connErr != nil {
+			c.cancelFn("cert auth: failed connecting to grpc for connection %q: %v", connectionName, connErr)
+			return
+		}
+		var handler ChannelHandler
+		var openErr error
+		switch connType {
+		case pb.ConnectionTypeSSH:
+			handler, openErr = sshproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
+		case pb.ConnectionTypeCommandLine:
+			handler, openErr = termproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
+		}
+		if openErr != nil {
+			c.cancelFn("cert auth: session open failed for connection %q: %v", connectionName, openErr)
+			_, _ = grpcClient.Close()
+			return
+		}
+		c.handler = handler
+	})
+
+	select {
+	case <-c.ctx.Done():
+		cause := context.Cause(c.ctx)
+		msg := translateUpstreamError(cause.Error())
+		if msg == "" {
+			msg = "connection setup failed"
+		}
+		rejectExec(msg)
+		return nil
+	default:
+	}
+
+	sessHandler, ok := c.handler.(SessionHandler)
+	if !ok || sessHandler == nil {
+		rejectExec("session handler not initialized")
+		return fmt.Errorf("session handler not initialized for connection %q", connectionName)
+	}
+
+	log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+		Infof("cert session: serving pty/exec for connection=%q matched=%s conntype=%s",
+			connectionName, c.certSession.matchedValue, connType)
+
+	return sessHandler.ServeSession(clientCh, clientRequests, channelID, preExecRequests, execReq, upstreamCommand)
 }

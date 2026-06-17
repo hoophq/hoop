@@ -43,6 +43,13 @@ func (s *certSession) allowPortForwarding() bool {
 	return ok
 }
 
+// allowPTY reports whether PTY and exec sessions are permitted.
+// The permit-pty extension must be present.
+func (s *certSession) allowPTY() bool {
+	_, ok := s.cert.Extensions["permit-pty"]
+	return ok
+}
+
 // lookupUserByCert finds the Hoop user that matches the certificate using the
 // provided UserMapping. For CertAttr "principal", all ValidPrincipals are
 // tried in order and the first match wins. For "key_id", the certificate's
