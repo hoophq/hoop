@@ -27,6 +27,27 @@
       [:> Text {:size "2" :class "text-[--gray-11]"}
        "When turned on, users list might be outdated until users sign up."]]]))
 
+(defn- force-groups-sync-toggle
+  "Toggle that makes the identity provider the source of truth for group membership.
+   `enabled?` is the current value; `on-change` receives the new boolean."
+  [enabled? on-change]
+  [:> Grid {:columns "7" :gap "7"}
+   [:> Box {:grid-column "span 2 / span 2"}
+    [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+     "Force Groups Sync"]
+    [:> Text {:size "3" :class "text-[--gray-11]"}
+     "Overwrite a user's groups from the identity provider on every login."]]
+
+   [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5"}
+    [:> Flex {:align "center" :gap "3"}
+     [:> Switch {:checked (boolean enabled?)
+                 :onCheckedChange on-change}]
+     [:> Text {:size "3" :weight "medium"}
+      (if enabled? "On" "Off")]]
+
+    [:> Text {:size "2" :class "text-[--gray-11]"}
+     "When on, each login replaces the user's groups with whatever the identity provider sends, so a token with no groups clears them. When off (default), groups are only updated when the identity provider includes them."]]])
+
 (defn- oidc-form []
   (let [config (rf/subscribe [:authentication->provider-config])]
     [:> Box {:class "space-y-radix-9"}
@@ -132,6 +153,10 @@
        [:> Text {:size "2" :class "text-[--gray-11]" :style {:margin-top "4px"}}
         "If not explicitly set, the system defaults to groups."]]]
 
+     [force-groups-sync-toggle
+      (:force-groups-sync @config)
+      #(rf/dispatch [:authentication->update-config-field :force-groups-sync %])]
+
      [local-auth-toggle]]))
 
 (defn- saml-form []
@@ -174,6 +199,10 @@
                                    :groups-claim (-> % .-target .-value)])}]
        [:> Text {:size "2" :class "text-[--gray-11]" :style {:margin-top "4px"}}
         "If not explicitly set, the system defaults to groups."]]]
+
+     [force-groups-sync-toggle
+      (:force-groups-sync @saml-config)
+      #(rf/dispatch [:authentication->update-saml-config-field :force-groups-sync %])]
 
      [local-auth-toggle]]))
 

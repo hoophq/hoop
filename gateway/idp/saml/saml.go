@@ -38,11 +38,13 @@ type Provider struct {
 type Options struct {
 	IdpMetadataURL string
 	GroupsClaim    string
+	ForceGroupsSync bool
 }
 
 type ServiceProvider struct {
 	*saml2.SAMLServiceProvider
-	GroupsClaim string
+	GroupsClaim     string
+	ForceGroupsSync bool
 }
 
 // New retrieves the singleton instance of the SAML provider.
@@ -152,6 +154,7 @@ func (p *Provider) ServiceProvider() *ServiceProvider {
 	return &ServiceProvider{
 		SAMLServiceProvider: p.samlServiceProvider,
 		GroupsClaim:         p.GroupsClaim,
+		ForceGroupsSync:     p.ForceGroupsSync,
 	}
 }
 

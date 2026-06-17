@@ -2236,6 +2236,10 @@ type ServerAuthOidcConfig struct {
 	Audience string `json:"audience" example:"hoop-audience"`
 	// Specifies the claim identifier used to configure group propagation.
 	GroupsClaim string `json:"groups_claim" example:"groups"`
+	// When enabled, the identity provider is the source of truth for group membership:
+	// a login whose token omits the groups claim clears the user's groups. When disabled
+	// (default), groups are only updated when present in the token.
+	ForceGroupsSync bool `json:"force_groups_sync" default:"false"`
 }
 
 type ServerAuthSamlConfig struct {
@@ -2243,6 +2247,10 @@ type ServerAuthSamlConfig struct {
 	IdpMetadataURL string `json:"idp_metadata_url" example:"https://auth.domain.tld/saml/metadata" binding:"required"`
 	// Specifies the claim identifier used to configure group propagation.
 	GroupsClaim string `json:"groups_claim" default:"groups"`
+	// When enabled, the identity provider is the source of truth for group membership:
+	// an assertion that omits the groups attribute clears the user's groups. When disabled
+	// (default), groups are only updated when present in the assertion.
+	ForceGroupsSync bool `json:"force_groups_sync" default:"false"`
 }
 
 type ProviderType string

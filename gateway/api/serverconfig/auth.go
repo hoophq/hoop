@@ -157,20 +157,22 @@ func UpdateAuthConfig(c *gin.Context) {
 	existentConfig.OidcConfig = nil
 	if req.OidcConfig != nil {
 		existentConfig.OidcConfig = &models.ServerAuthOidcConfig{
-			IssuerURL:    req.OidcConfig.IssuerURL,
-			ClientID:     req.OidcConfig.ClientID,
-			ClientSecret: req.OidcConfig.ClientSecret,
-			Scopes:       req.OidcConfig.Scopes,
-			Audience:     req.OidcConfig.Audience,
-			GroupsClaim:  req.OidcConfig.GroupsClaim,
+			IssuerURL:       req.OidcConfig.IssuerURL,
+			ClientID:        req.OidcConfig.ClientID,
+			ClientSecret:    req.OidcConfig.ClientSecret,
+			Scopes:          req.OidcConfig.Scopes,
+			Audience:        req.OidcConfig.Audience,
+			GroupsClaim:     req.OidcConfig.GroupsClaim,
+			ForceGroupsSync: req.OidcConfig.ForceGroupsSync,
 		}
 	}
 
 	existentConfig.SamlConfig = nil
 	if req.SamlConfig != nil {
 		existentConfig.SamlConfig = &models.ServerAuthSamlConfig{
-			IdpMetadataURL: req.SamlConfig.IdpMetadataURL,
-			GroupsClaim:    req.SamlConfig.GroupsClaim,
+			IdpMetadataURL:  req.SamlConfig.IdpMetadataURL,
+			GroupsClaim:     req.SamlConfig.GroupsClaim,
+			ForceGroupsSync: req.SamlConfig.ForceGroupsSync,
 		}
 	}
 
@@ -192,17 +194,19 @@ func UpdateAuthConfig(c *gin.Context) {
 	switch req.AuthMethod {
 	case openapi.ProviderTypeOIDC:
 		_, err = oidcprovider.New(oidcprovider.Options{
-			IssuerURL:    req.OidcConfig.IssuerURL,
-			ClientID:     req.OidcConfig.ClientID,
-			ClientSecret: req.OidcConfig.ClientSecret,
-			Audience:     req.OidcConfig.Audience,
-			GroupsClaim:  req.OidcConfig.GroupsClaim,
-			CustomScopes: strings.Join(req.OidcConfig.Scopes, ","),
+			IssuerURL:       req.OidcConfig.IssuerURL,
+			ClientID:        req.OidcConfig.ClientID,
+			ClientSecret:    req.OidcConfig.ClientSecret,
+			Audience:        req.OidcConfig.Audience,
+			GroupsClaim:     req.OidcConfig.GroupsClaim,
+			ForceGroupsSync: req.OidcConfig.ForceGroupsSync,
+			CustomScopes:    strings.Join(req.OidcConfig.Scopes, ","),
 		})
 	case openapi.ProviderTypeSAML:
 		_, err = samlprovider.New(samlprovider.Options{
-			IdpMetadataURL: req.SamlConfig.IdpMetadataURL,
-			GroupsClaim:    req.SamlConfig.GroupsClaim,
+			IdpMetadataURL:  req.SamlConfig.IdpMetadataURL,
+			GroupsClaim:     req.SamlConfig.GroupsClaim,
+			ForceGroupsSync: req.SamlConfig.ForceGroupsSync,
 		})
 	case openapi.ProviderTypeLocal: // noop
 		err = nil
@@ -340,19 +344,21 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 	var oidcConfig *openapi.ServerAuthOidcConfig
 	if cfg.OidcConfig != nil {
 		oidcConfig = &openapi.ServerAuthOidcConfig{
-			IssuerURL:    cfg.OidcConfig.IssuerURL,
-			ClientID:     cfg.OidcConfig.ClientID,
-			ClientSecret: cfg.OidcConfig.ClientSecret,
-			Scopes:       cfg.OidcConfig.Scopes,
-			Audience:     cfg.OidcConfig.Audience,
-			GroupsClaim:  cfg.OidcConfig.GroupsClaim,
+			IssuerURL:       cfg.OidcConfig.IssuerURL,
+			ClientID:        cfg.OidcConfig.ClientID,
+			ClientSecret:    cfg.OidcConfig.ClientSecret,
+			Scopes:          cfg.OidcConfig.Scopes,
+			Audience:        cfg.OidcConfig.Audience,
+			GroupsClaim:     cfg.OidcConfig.GroupsClaim,
+			ForceGroupsSync: cfg.OidcConfig.ForceGroupsSync,
 		}
 	}
 	var samlConfig *openapi.ServerAuthSamlConfig
 	if cfg.SamlConfig != nil {
 		samlConfig = &openapi.ServerAuthSamlConfig{
-			IdpMetadataURL: cfg.SamlConfig.IdpMetadataURL,
-			GroupsClaim:    cfg.SamlConfig.GroupsClaim,
+			IdpMetadataURL:  cfg.SamlConfig.IdpMetadataURL,
+			GroupsClaim:     cfg.SamlConfig.GroupsClaim,
+			ForceGroupsSync: cfg.SamlConfig.ForceGroupsSync,
 		}
 	}
 	return &openapi.ServerAuthConfig{

@@ -15882,6 +15882,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "hoop-client-secret"
                 },
+                "force_groups_sync": {
+                    "description": "When enabled, the identity provider is the source of truth for group membership:\na login whose token omits the groups claim clears the user's groups. When disabled\n(default), groups are only updated when present in the token.",
+                    "type": "boolean",
+                    "default": false
+                },
                 "groups_claim": {
                     "description": "Specifies the claim identifier used to configure group propagation.",
                     "type": "string",
@@ -15912,6 +15917,11 @@ const docTemplate = `{
                 "idp_metadata_url"
             ],
             "properties": {
+                "force_groups_sync": {
+                    "description": "When enabled, the identity provider is the source of truth for group membership:\nan assertion that omits the groups attribute clears the user's groups. When disabled\n(default), groups are only updated when present in the assertion.",
+                    "type": "boolean",
+                    "default": false
+                },
                 "groups_claim": {
                     "description": "Specifies the claim identifier used to configure group propagation.",
                     "type": "string",

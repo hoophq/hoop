@@ -31,9 +31,11 @@
                                           :custom-scopes (:scopes (:oidc_config data))
                                           :audience (:audience (:oidc_config data))
                                           :groups-claim (:groups_claim (:oidc_config data))
+                                          :force-groups-sync (boolean (:force_groups_sync (:oidc_config data)))
                                           :issuer-url (:issuer_url (:oidc_config data))}))
                          (assoc :saml-config {:idp-metadata-url (:idp_metadata_url (:saml_config data))
-                                              :groups-claim (:groups_claim (:saml_config data))})
+                                              :groups-claim (:groups_claim (:saml_config data))
+                                              :force-groups-sync (boolean (:force_groups_sync (:saml_config data)))})
                          (assoc :advanced {:admin-role (:admin_role_name data)
                                            :auditor-role (:auditor_role_name data)
                                            :api-key {:secret (:api_key data)
@@ -138,11 +140,13 @@
                                        :client_secret (get-in ui-config [:config :client-secret])
                                        :audience (get-in ui-config [:config :audience])
                                        :groups_claim (or (get-in ui-config [:config :groups-claim]) "groups")
+                                       :force_groups_sync (boolean (get-in ui-config [:config :force-groups-sync]))
                                        :issuer_url (get-in ui-config [:config :issuer-url])
                                        :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
                        :saml_config (when (and is-idp? (= protocol "saml"))
                                       {:idp_metadata_url (get-in ui-config [:saml-config :idp-metadata-url])
-                                       :groups_claim (or (get-in ui-config [:saml-config :groups-claim]) "groups")})}
+                                       :groups_claim (or (get-in ui-config [:saml-config :groups-claim]) "groups")
+                                       :force_groups_sync (boolean (get-in ui-config [:saml-config :force-groups-sync]))})}
          ;; Only include rollout_api_key if a new one was generated
          api-payload (if newly-generated?
                        (assoc base-payload :rollout_api_key (get-in ui-config [:advanced :api-key :secret]))

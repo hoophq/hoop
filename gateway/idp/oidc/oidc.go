@@ -37,12 +37,13 @@ type Provider struct {
 }
 
 type Options struct {
-	IssuerURL                string
-	ClientID                 string
-	ClientSecret             string
-	Audience                 string
-	CustomScopes             string
-	GroupsClaim              string
+	IssuerURL    string
+	ClientID     string
+	ClientSecret string
+	Audience     string
+	CustomScopes string
+	GroupsClaim  string
+	ForceGroupsSync          bool
 	mustValidateWithUserInfo bool
 	mustFetchGsuiteGroups    bool
 }
@@ -496,7 +497,16 @@ func (p *Provider) parseUserInfo(idTokenClaims map[string]any) (u idptypes.Provi
 			}
 			u.Groups = append(u.Groups, groupName)
 		}
-	case nil: // noop
+	case nil:
+		// The groups claim is absent from the token. Only treat this as "user has no
+		// groups" (and sync to clear stale groups) when the provider is configured to
+		// force group sync. Otherwise keep the legacy behavior and leave the existing
+		// groups untouched. Gsuite delivers groups out-of-band via the Admin API
+		// (fetchGsuiteGroups), where an absent claim is expected, so it is excluded
+		// regardless of the flag — the dedicated path governs groups there.
+		if p.ForceGroupsSync && !p.mustFetchGsuiteGroups {
+			u.MustSyncGroups = true
+		}
 	default:
 		log.Errorf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
 	}

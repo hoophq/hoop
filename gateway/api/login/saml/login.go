@@ -316,6 +316,7 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 	uinfo = idptypes.ProviderUserInfo{
 		Subject: assertionInfo.NameID,
 		Email:   assertionInfo.NameID,
+		MustSyncGroups: saml.ServiceProvider().ForceGroupsSync,
 	}
 	var firstName string
 	var lastName string

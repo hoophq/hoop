@@ -34,11 +34,13 @@ type ServerAuthOidcConfig struct {
 	Scopes       pq.StringArray `json:"scopes"`
 	Audience     string         `json:"audience"`
 	GroupsClaim  string         `json:"groups_claim"`
+	ForceGroupsSync bool `json:"force_groups_sync"`
 }
 
 type ServerAuthSamlConfig struct {
 	IdpMetadataURL string `json:"idp_metadata_url"`
 	GroupsClaim    string `json:"groups_claim"`
+	ForceGroupsSync bool `json:"force_groups_sync"`
 }
 
 type ServerMcpAuthConfig struct {

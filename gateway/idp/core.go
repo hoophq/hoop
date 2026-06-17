@@ -280,9 +280,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oid = *newc.OidcConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,forcegroupssync=%v,license-data=%v,mcp=%v",
 			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), oid.IssuerURL, oid.ClientID, oid.ClientSecret,
-			oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData), mcpConfigFingerprint(newc.McpAuthConfig))
+			oid.Audience, oid.Scopes, oid.GroupsClaim, oid.ForceGroupsSync, string(newc.OrgLicenseData), mcpConfigFingerprint(newc.McpAuthConfig))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -294,9 +294,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldOidc = *oldc.OidcConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,forcegroupssync=%v,license-data=%v,mcp=%v",
 			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldOidc.IssuerURL, oldOidc.ClientID, oldOidc.ClientSecret,
-			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData), mcpConfigFingerprint(oldc.McpAuthConfig))
+			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, oldOidc.ForceGroupsSync, string(oldc.OrgLicenseData), mcpConfigFingerprint(oldc.McpAuthConfig))
 
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeSAML:
@@ -309,8 +309,8 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			saml = *newc.SamlConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v,license-data=%v",
-			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, toStr(newc.SharedSigningKey),
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,forcegroupssync=%v,shared-signing-key=%v,license-data=%v",
+			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, saml.ForceGroupsSync, toStr(newc.SharedSigningKey),
 			string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
@@ -323,8 +323,8 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldSaml = *oldc.SamlConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v,license-data=%v",
-			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, toStr(oldc.SharedSigningKey),
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,forcegroupssync=%v,shared-signing-key=%v,license-data=%v",
+			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, oldSaml.ForceGroupsSync, toStr(oldc.SharedSigningKey),
 			string(oldc.OrgLicenseData))
 
 		return newConfigStr != oldConfigStr
@@ -480,6 +480,7 @@ func NewOidcProviderOptions(serverAuthConfig *models.ServerAuthConfig) (opts oid
 		opts.ClientSecret = serverAuthConfig.OidcConfig.ClientSecret
 		opts.Audience = serverAuthConfig.OidcConfig.Audience
 		opts.GroupsClaim = serverAuthConfig.OidcConfig.GroupsClaim
+		opts.ForceGroupsSync = serverAuthConfig.OidcConfig.ForceGroupsSync
 		if len(serverAuthConfig.OidcConfig.Scopes) > 0 {
 			opts.CustomScopes = strings.Join(serverAuthConfig.OidcConfig.Scopes, ",")
 		}
@@ -529,8 +530,9 @@ func newSamlProvider(serverAuthConfig *models.ServerAuthConfig) (*samlprovider.P
 		return nil, fmt.Errorf("SAML configuration is not set in the database")
 	}
 	return samlprovider.New(samlprovider.Options{
-		IdpMetadataURL: serverAuthConfig.SamlConfig.IdpMetadataURL,
-		GroupsClaim:    serverAuthConfig.SamlConfig.GroupsClaim,
+		IdpMetadataURL:  serverAuthConfig.SamlConfig.IdpMetadataURL,
+		GroupsClaim:     serverAuthConfig.SamlConfig.GroupsClaim,
+		ForceGroupsSync: serverAuthConfig.SamlConfig.ForceGroupsSync,
 	})
 }
 
