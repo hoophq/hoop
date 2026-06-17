@@ -25,6 +25,7 @@ import (
 	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/externaljwt"
 	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
+	_ "github.com/hoophq/hoop/gateway/federation/gcpoauth"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"

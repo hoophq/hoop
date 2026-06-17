@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // File and directory names under $HOME/.hoop used by the version manager.
@@ -19,9 +20,15 @@ const (
 	homeDirName       = ".hoop"
 	binDirName        = "bin"
 	versionsDirName   = "versions"
-	binaryName        = "hoop"
 	versionsStoreFile = "versions.toml"
 )
+
+// binaryName is the hoop executable filename on the host OS. On Windows
+// the Go toolchain appends a .exe suffix at build time, so the release
+// tarball contains hoop.exe and both the per-version install path and the
+// active-version file must use that same name — otherwise os.Stat checks
+// and PATH resolution would look for a file that doesn't exist.
+var binaryName = executableName(runtime.GOOS == "windows")
 
 // Layout resolves the absolute paths the version manager works with.
 // All fields are absolute paths. Layout does not create any directories;

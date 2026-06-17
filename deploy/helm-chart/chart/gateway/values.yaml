@@ -118,6 +118,15 @@ podAnnotations: {}
 ##
 deploymentAnnotations: {}
 
+# -- Pod-level security context for the gateway Pod
+# (e.g. fsGroup, runAsNonRoot, runAsUser, seccompProfile)
+podSecurityContext: {}
+
+# -- Container-level security context for the gateway and default-agent
+# containers (e.g. allowPrivilegeEscalation, capabilities,
+# readOnlyRootFilesystem, runAsNonRoot, seccompProfile)
+securityContext: {}
+
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:
   POSTGRES_DB_URI: ''
@@ -299,6 +308,88 @@ gatewayApi:
     # - name: hoopgateway
     #   namespace: infra
     #   sectionName: http
+
+# -- Gateway API resources for gRPC (gateway.networking.k8s.io/v1)
+# Requires the Gateway API CRDs to be installed in your cluster.
+# For Istio: install with `istioctl install` or the Istio Helm chart.
+# For other implementations: https://gateway-api.sigs.k8s.io/guides/
+gatewayApiGrpc:
+  # -- Enable Gateway API resources for gRPC (GRPCRoute + optional Gateway)
+  enabled: false
+
+  # -- Create a Gateway resource.
+  # Set to false to attach the GRPCRoute to a pre-existing Gateway.
+  createGateway: true
+
+  # -- Gateway resource configuration
+  gateway:
+    # -- Gateway resource name (also used as the default parentRef for the GRPCRoute)
+    name: hoopgateway-grpc
+    # -- Annotations to add to the Gateway
+    annotations: {}
+    # -- GatewayClass name (e.g. istio, nginx, cilium)
+    gatewayClassName: istio
+    # -- Listeners define the addresses and ports for incoming gRPC traffic.
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.Listener
+    listeners:
+    - name: grpc
+      # hostname: grpc.yourdomain.org
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    # -- Requested addresses for the Gateway (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayAddress
+    # addresses:
+    # - type: IPAddress
+    #   value: 1.2.3.4
+    # - type: Hostname
+    #   value: grpc.yourdomain.org
+
+    # -- Infrastructure-level parameters passed to the underlying Gateway implementation (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayInfrastructure
+    # infrastructure:
+    #   labels:
+    #     environment: production
+    #   annotations:
+    #     networking.example.com/service-type: Internal
+    #   parametersRef:
+    #     group: example.com
+    #     kind: Config
+    #     name: my-config
+
+    # -- Backend TLS configuration applied to all backends via this Gateway (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GatewayBackendTLS
+    # backendTLS:
+    #   clientCertificateRef:
+    #     name: my-client-cert
+
+  # -- GRPCRoute resource configuration
+  grpcRoute:
+    # -- GRPCRoute resource name
+    name: hoopgateway-grpc-route
+    # -- Annotations to add to the GRPCRoute
+    annotations: {}
+    # -- Hostnames the route applies to; should match listener hostname(s) above
+    # hostnames:
+    # - grpc.yourdomain.org
+
+    # -- GRPCRoute rules. Specify the full list of match/backendRef/filter rules.
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.GRPCRouteRule
+    # rules:
+    # - backendRefs:
+    #   - name: hoopgateway
+    #     port: 8010
+
+    # -- Parent references for this GRPCRoute (optional).
+    # Refer to: https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.ParentReference
+    # parentRefs:
+    # - name: hoopgateway-grpc
+    # - name: hoopgateway-grpc
+    #   namespace: infra
+    #   sectionName: grpc
 
 # --- Expose proxy protocols direct access
 proxyService:

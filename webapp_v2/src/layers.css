@@ -1,11 +1,5 @@
 @layer mantine, app;
 
-/* Reserve the scrollbar gutter so Mantine's modal scroll-lock can't shift the
-   page content underneath when the Spotlight (cmd+K) opens. */
-html {
-  scrollbar-gutter: stable;
-}
-
 /* Increase input border contrast: gray.4 (subtle) → gray.6 (hovered border / slate7).
    Declared outside @layer so it wins over the mantine-layer default. */
 [data-mantine-color-scheme='light'] .mantine-Input-wrapper[data-variant='default'] {

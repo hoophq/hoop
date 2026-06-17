@@ -6,13 +6,15 @@
    [webapp.resources.helpers :as helpers]
    [webapp.connections.views.setup.connection-method :as connection-method]))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :resource-setup->initialize-state
- (fn [db [_ initial-data]]
-   (if initial-data
-     (assoc db :resource-setup initial-data)
-     (assoc db :resource-setup {:current-step :resource-name
-                                :roles []}))))
+ (fn [{:keys [db]} [_ initial-data]]
+   {:db (if initial-data
+          (assoc db :resource-setup initial-data)
+          (assoc db :resource-setup {:current-step :resource-name
+                                     :roles []}))
+    ;; the federation form is shared singleton state, reset it too
+    :fx [[:dispatch [:federation/clear]]]}))
 
 (rf/reg-event-fx
  :resource-setup->initialize-from-catalog
@@ -25,7 +27,7 @@
                                           :name ""
                                           :agent-id nil
                                           :roles []})
-    :fx []}))
+    :fx [[:dispatch [:federation/clear]]]}))
 
 (rf/reg-event-db
  :resource-setup->set-resource-name

@@ -28,6 +28,7 @@ func (c *core) MySQL() (Proxy, error)    { return &noopProxy{connectionType: "my
 func (c *core) MSSQL() (Proxy, error)    { return &noopProxy{connectionType: "mssql"}, nil }
 func (c *core) MongoDB() (Proxy, error)  { return &noopProxy{connectionType: "mongodb"}, nil }
 func (c *core) Postgres() (Proxy, error) { return &noopProxy{connectionType: "postgres"}, nil }
+func (c *core) Oracle() (Proxy, error)   { return &noopProxy{connectionType: "oracle"}, nil }
 
 func (c *core) SSM() (Proxy, error) {
 	return &noopProxy{connectionType: "aws-ssm"}, nil
@@ -35,6 +36,10 @@ func (c *core) SSM() (Proxy, error) {
 
 func NewAdHocExec(rawEnvVarList map[string]any, args []string, payload []byte, stdout, stderr io.WriteCloser, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "terminal-exec"}, nil
+}
+
+func NewAdHocDBExec(driver string, payload []byte, stdout, stderr io.Writer, opts map[string]string) (Proxy, error) {
+	return &noopProxy{connectionType: "db-exec"}, nil
 }
 
 func NewConsole(rawEnvVarList map[string]any, args []string, stdout io.WriteCloser, opts map[string]string) (Proxy, error) {

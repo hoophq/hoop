@@ -57,16 +57,23 @@ var catalog = map[string]Flag{
 	"experimental.event_routing": {
 		Name:        "experimental.event_routing",
 		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
-		Default:     false,
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
 	"experimental.agent_async_ssh": {
 		Name:        "experimental.agent_async_ssh",
 		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
-		Default:     false,
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
+	},
+	"experimental.hoop_tunnel": {
+		Name:        "experimental.hoop_tunnel",
+		Description: "Enable Hoop Tunnel: WebSocket-based virtual network exposing authorized connections as *.hoop hostnames on the user's machine. Gates all tunnel-related code paths across gateway, agent, and client.",
+		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
 	},
 	"experimental.rulepacks": {
 		Name:        "experimental.rulepacks",
@@ -75,12 +82,19 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.iam_federation": {
-		Name:        "experimental.iam_federation",
-		Description: "Resolve per-session cloud credentials by impersonating the calling user's IAM principal (GCP IAM v1) so cloud audit logs attribute queries to the human, not the shared admin SA. When enabled, federation config on a connection is consulted at SessionOpen and short-lived credentials are injected as env vars before the agent runs the command.",
+	"experimental.db_exec_driver": {
+		Name:        "experimental.db_exec_driver",
+		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
 		Default:     false,
 		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway},
+		Components:  []Component{ComponentAgent},
+	},
+	"beta.oracle_native": {
+		Name:        "beta.oracle_native",
+		Description: "Enable native Oracle (TNS) database access so clients like sqlplus/DBeaver connect through hoop's local proxy. When disabled, Oracle connections cannot open a native proxy session.",
+		Default:     false,
+		Stability:   StabilityBeta,
+		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
 	},
 }
 

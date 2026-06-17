@@ -183,6 +183,28 @@
         (dissoc :env-current-key :env-current-value)
         (dissoc :config-current-name :config-current-content))))
 
+(defn inject-federation-fallback-secret
+  "Emits the federation project as the role's static secret
+  (CLOUDSDK_CORE_PROJECT). For gcp_iam it also emits the service-account key as
+  GOOGLE_APPLICATION_CREDENTIALS, the fallback used when per-user federation
+  can't mint credentials. gcp_oauth's admin credential is the OAuth client JSON
+  (client_id + client_secret), which must never be written as a GCP credentials
+  file, so no GOOGLE_APPLICATION_CREDENTIALS fallback is emitted for it."
+  [role federation-form]
+  (if (= (:connection-method role) "iam_federation")
+    (let [provider (or (:builtin_provider federation-form) "gcp_iam")
+          sa-json (:admin_credentials_json federation-form)
+          project-id (get-in federation-form [:extra_config :project_id])
+          with-project (assoc-in role [:metadata-credentials "CLOUDSDK_CORE_PROJECT"]
+                                 {:value project-id :source "manual-input"})]
+      (if (= provider "gcp_iam")
+        (update with-project :configuration-files
+                (fn [files]
+                  (conj (vec (remove #(= (:key %) "GOOGLE_APPLICATION_CREDENTIALS") files))
+                        {:key "GOOGLE_APPLICATION_CREDENTIALS" :value sa-json})))
+        with-project))
+    role))
+
 (defn process-payload
   "Process the entire resource setup form into API payload"
   [db]
@@ -190,6 +212,7 @@
         resource-type (get-in db [:resource-setup :type])
         resource-subtype (get-in db [:resource-setup :subtype])
         agent-id (get-in db [:resource-setup :agent-id])
+        federation-form (get-in db [:resources/federation :form])
         raw-roles (get-in db [:resource-setup :roles] [])
         ;; The connections metadata catalog (loaded from
         ;; /data/connections-metadata.json) is the source of truth for each
@@ -200,8 +223,11 @@
         ;; this, the agent receives an empty CmdList and exec fails.
         resource-metadata (get-in db [:connections :metadata :data :connections] [])
 
-        ;; Finalize roles by adding any uncommitted current values
-        roles (mapv finalize-role-current-values raw-roles)
+        roles (mapv (fn [role]
+                      (-> role
+                          finalize-role-current-values
+                          (inject-federation-fallback-secret federation-form)))
+                    raw-roles)
 
         ;; Process all roles, injecting the command from the metadata
         ;; catalog for each role's subtype.

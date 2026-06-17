@@ -4,7 +4,7 @@ import { Copy, Check } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import classes from './CodeSnippet.module.css'
 
-function CodeSnippet({ code }) {
+function CodeSnippet({ code, variant = 'black' }) {
   const [hovered, setHovered] = useState(false)
   const disableClipboard = useUserStore(s => s.disableClipboard)
 
@@ -12,6 +12,7 @@ function CodeSnippet({ code }) {
     <Box
       pos="relative"
       className={classes.root}
+      data-variant={variant}
       p="sm"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

@@ -14,25 +14,25 @@ func TestResolveIdentity_HappyPaths(t *testing.T) {
 		want     string
 	}{
 		{
-			name:     "default mapping passes user email through unchanged",
+			name:     "default mapping resolves to the email local part",
 			src:      "",
 			template: "",
 			ctx:      IdentityContext{UserEmail: "alice@acme.com"},
-			want:     "alice@acme.com",
+			want:     "alice",
 		},
 		{
 			name:     "explicit defaults match implicit defaults",
 			src:      "$.user.email",
 			template: "{user.email}",
 			ctx:      IdentityContext{UserEmail: "bob@acme.com"},
-			want:     "bob@acme.com",
+			want:     "bob",
 		},
 		{
 			name:     "literal prefix in template renders verbatim",
 			src:      "$.user.email",
 			template: "data-team-{user.email}",
 			ctx:      IdentityContext{UserEmail: "carol@acme.com"},
-			want:     "data-team-carol@acme.com",
+			want:     "data-team-carol",
 		},
 		{
 			name:     "user.id source feeds id-only templates",
@@ -42,30 +42,30 @@ func TestResolveIdentity_HappyPaths(t *testing.T) {
 			want:     "sa-abc-123@proj.iam.gserviceaccount.com",
 		},
 		{
-			name:     "user.email_local extracts the local part for SA email composition",
+			name:     "user.email extracts the local part for SA email composition",
 			src:      "$.user.email",
-			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			template: "{user.email}@proj.iam.gserviceaccount.com",
 			ctx:      IdentityContext{UserEmail: "matheusmachadoufsc@gmail.com"},
 			want:     "matheusmachadoufsc@proj.iam.gserviceaccount.com",
 		},
 		{
-			name:     "user.email_local preserves dots and plus signs verbatim (sanitization is caller's job)",
+			name:     "user.email preserves dots and plus signs verbatim (sanitization is caller's job)",
 			src:      "$.user.email",
-			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			template: "{user.email}@proj.iam.gserviceaccount.com",
 			ctx:      IdentityContext{UserEmail: "first.last+work@example.com"},
 			want:     "first.last+work@proj.iam.gserviceaccount.com",
 		},
 		{
-			name:     "user.email_local splits on the LAST @ so emails with quoted @ collapse safely",
+			name:     "user.email splits on the LAST @ so emails with quoted @ collapse safely",
 			src:      "$.user.email",
-			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			template: "{user.email}@proj.iam.gserviceaccount.com",
 			ctx:      IdentityContext{UserEmail: "weird@subdomain@example.com"},
 			want:     "weird@subdomain@proj.iam.gserviceaccount.com",
 		},
 		{
-			name:     "user.email_local with no @ passes the value through unchanged",
+			name:     "user.email with no @ passes the value through unchanged",
 			src:      "$.user.email",
-			template: "{user.email_local}@proj.iam.gserviceaccount.com",
+			template: "{user.email}@proj.iam.gserviceaccount.com",
 			ctx:      IdentityContext{UserEmail: "already-a-handle"},
 			want:     "already-a-handle@proj.iam.gserviceaccount.com",
 		},
@@ -113,11 +113,11 @@ func TestResolveIdentity_ErrorPaths(t *testing.T) {
 			wantErrSubs: "unknown placeholder",
 		},
 		{
-			name:        "unknown placeholder error advertises user.email_local as supported",
+			name:        "unknown placeholder error advertises user.email as supported",
 			src:         "$.user.email",
 			template:    "{user.handle}@proj.iam.gserviceaccount.com",
 			ctx:         IdentityContext{UserEmail: "x@y.com"},
-			wantErrSubs: "{user.email_local}",
+			wantErrSubs: "{user.email}",
 		},
 	}
 	for _, tc := range cases {

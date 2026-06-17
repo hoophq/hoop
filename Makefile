@@ -66,8 +66,7 @@ run-dev-spiffe-agent:
 run-dev-spiffe: run-dev-spiffe-agent
 
 build-dev-client:
-	mkdir -p ${HOME}/.hoop/dev
-	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/dev/hoop github.com/hoophq/hoop/client
+	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
@@ -89,7 +88,7 @@ test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 test-integration: libhoop-map generate-wasm
-	env CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./agent/integration/...
+	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
 generate-openapi-docs: libhoop-map
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
@@ -131,6 +130,65 @@ build-tar-files:
 
 build-go: build-empty-folder
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+
+# Hoop Tunnel daemon (hsh-tunneld).
+#
+# hsh-tunneld is the privileged tunnel daemon shipped with the `hsh` CLI
+# (which lives in the separate hoophq/hsh repo). The `hsh` build downloads
+# hsh-tunneld from the hoop GitHub Release and bundles it with the bun-built
+# `hsh` binary into a per-platform archive.
+#
+# Output layout (intentionally distinct from build-go's ${GOOS}_${GOARCH}/
+# folder): each invocation writes one flat per-target file under
+# ${DIST_FOLDER}/release-binaries/ so the release workflow can collect them
+# verbatim and attach them to a GitHub Release without unpacking. Windows
+# binaries are suffixed `.exe`.
+HSH_TUNNELD_EXE := $(if $(filter $(GOOS),windows),hsh-tunneld-${GOOS}-${GOARCH}.exe,hsh-tunneld-${GOOS}-${GOARCH})
+
+build-hsh-tunneld:
+	mkdir -p ${DIST_FOLDER}/release-binaries
+	cd tunnel && env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} \
+		go build -ldflags ${LDFLAGS} \
+		-o ../${DIST_FOLDER}/release-binaries/${HSH_TUNNELD_EXE} \
+		./cmd/hsh-tunneld
+
+# Build hsh-tunneld for every supported target. Used by the release
+# workflow and convenient for local cross-build verification.
+build-hsh-tunneld-all:
+	GOOS=linux   GOARCH=amd64 $(MAKE) build-hsh-tunneld
+	GOOS=linux   GOARCH=arm64 $(MAKE) build-hsh-tunneld
+	GOOS=darwin  GOARCH=amd64 $(MAKE) build-hsh-tunneld
+	GOOS=darwin  GOARCH=arm64 $(MAKE) build-hsh-tunneld
+	GOOS=windows GOARCH=amd64 $(MAKE) build-hsh-tunneld
+	GOOS=windows GOARCH=arm64 $(MAKE) build-hsh-tunneld
+
+# Stage the user-facing install/uninstall scripts (RD-226) into the
+# release-binaries directory so they get uploaded as Release assets
+# alongside the daemon binaries. Each per-platform archive consumer
+# (RD-227's hsh bundle, the brew formula, the linux tarball builder)
+# pulls them from there.
+#
+# Lives in this Makefile target (rather than the workflow file
+# itself) so a local `make build-release-checksums` produces the same
+# `dist/release-binaries/` tree that the workflow uploads.
+stage-release-scripts:
+	mkdir -p ${DIST_FOLDER}/release-binaries
+	cp tunnel/dist/scripts/install.sh   ${DIST_FOLDER}/release-binaries/install.sh
+	cp tunnel/dist/scripts/uninstall.sh ${DIST_FOLDER}/release-binaries/uninstall.sh
+	chmod 0755 ${DIST_FOLDER}/release-binaries/install.sh
+	chmod 0755 ${DIST_FOLDER}/release-binaries/uninstall.sh
+
+# SHA256SUMS over the release binaries + install scripts, ready to
+# attach to a GitHub Release. Generated in
+# `dist/release-binaries/SHA256SUMS` so consumers can verify with
+# `sha256sum -c SHA256SUMS` after downloading.
+#
+# We include the scripts in the checksum file because RD-227's
+# build-time download pipeline verifies *every* file it pulls from
+# the hoop release against this SHA256SUMS — leaving scripts out
+# would create a hole in the trust chain.
+build-release-checksums: stage-release-scripts
+	cd ${DIST_FOLDER}/release-binaries && sha256sum hsh-tunneld-* install.sh uninstall.sh > SHA256SUMS
 
 build-webapp:
 	mkdir -p ${DIST_FOLDER}
@@ -204,4 +262,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

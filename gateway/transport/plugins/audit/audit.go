@@ -91,6 +91,19 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
 		}
 
+		// Native clients connect through a protocol proxy, which stamps the
+		// generic ConnectionOriginClient regardless of how the credential was
+		// minted. When the connection is credential-backed, inherit the origin
+		// recorded on the issuing credential session (e.g. webapp) so the proxy
+		// session is attributed to the surface that granted access; otherwise
+		// fall back to the transport origin.
+		sessionOrigin := pb.SessionOriginFromClientOrigin(pctx.ClientOrigin)
+		if pctx.CredentialSessionID != "" {
+			if credSession, err := models.GetSessionByID(pctx.OrgID, pctx.CredentialSessionID); err == nil && credSession.Origin != "" {
+				sessionOrigin = credSession.Origin
+			}
+		}
+
 		sessionIdentityType := identityTypeUser
 		var machineIdentityID *string
 		if isMachine {
@@ -119,6 +132,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ExitCode:             nil,
 			IdentityType:         sessionIdentityType,
 			MachineIdentityID:    machineIdentityID,
+			Origin:               sessionOrigin,
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
@@ -138,10 +152,8 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
 
-	if isMachine {
-		if err := p.startMachineFlushTicker(pctx); err != nil {
-			return fmt.Errorf("failed starting machine flush ticker, reason=%v", err)
-		}
+	if err := p.startFlushTicker(pctx); err != nil {
+		return fmt.Errorf("failed starting flush ticker, reason=%v", err)
 	}
 
 	p.mu = sync.RWMutex{}
@@ -204,13 +216,20 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 						return nil, plugintypes.InternalErr("ai analyzer requested review without resolving access request rule",
 							fmt.Errorf("aiAccessRule is nil for sid=%s", pctx.SID))
 					}
-					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, pctx.ConnectionName,
+					ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
+					ctx.WithUserInfo(pctx.UserName, pctx.UserEmail, "active", "", pctx.UserGroups)
+
+					conn, err := models.GetBareConnectionByNameOrID(ctx, pctx.ConnectionName, models.DB)
+					if err != nil {
+						return nil, plugintypes.InternalErr("failed retrieving connection for ai-driven review", err)
+					}
+					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, conn,
 						sessionapi.AIReviewRequester{
-							UserID:       pctx.UserID,
-							UserEmail:    pctx.UserEmail,
-							UserName:     pctx.UserName,
-							UserSlackID:  pctx.UserSlackID,
-							ConnectionID: pctx.ConnectionID,
+							UserID:      pctx.UserID,
+							UserEmail:   pctx.UserEmail,
+							UserName:    pctx.UserName,
+							UserSlackID: pctx.UserSlackID,
+							UserGroups:  pctx.UserGroups,
 						},
 						aiAccessRule, string(pkt.Payload), nil, nil)
 					if err != nil {
@@ -270,6 +289,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if decJSONPayload != nil {
 			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
+	case pbagent.OracleConnectionWrite:
+		// native Oracle clients (sqlplus, DBeaver, …) stream raw TNS bytes; log
+		// the printable text (SQL and text fields) extracted from each packet.
+		if queryText := decodeOracleClientQuery(pkt.Payload); queryText != nil {
+			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, queryText, eventMetadata)
+		}
 	case pbclient.WriteStdout, pbclient.WriteStderr:
 		err := p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {
@@ -316,17 +341,11 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 	go func() {
 		defer memorySessionStore.Del(pctx.SID)
 
-		if pctx.IdentityType == identityTypeMachine {
-			if cerr := p.closeMachineSession(pctx, err); cerr != nil {
-				log.With("sid", pctx.SID).Warnf("failed closing machine session: %v", cerr)
-			}
-			eventbroker.Default.Remove(pctx.SID)
-		} else {
-			if err := p.writeOnClose(pctx, err); err != nil {
-				log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-					Warnf("failed closing session, reason=%v", err)
-			}
+		if cerr := p.closeSessionWAL(pctx, err); cerr != nil {
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Warnf("failed closing session, reason=%v", cerr)
 		}
+		eventbroker.Default.Remove(pctx.SID)
 
 		trackClient := analytics.New()
 		defer trackClient.Close()

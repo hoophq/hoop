@@ -101,7 +101,6 @@ type federationFile struct {
 	IdentitySourceAttribute string         `yaml:"identity_source_attribute"`
 	IdentityTargetTemplate  string         `yaml:"identity_target_template"`
 	FallbackPolicy          string         `yaml:"fallback_policy"`
-	ReadonlyPrincipal       string         `yaml:"readonly_principal"`
 	TokenTTLSeconds         int            `yaml:"token_ttl_seconds"`
 	ExtraConfig             map[string]any `yaml:"extra_config"`
 }
@@ -357,13 +356,10 @@ func parseFederationFile(filePath string) (*federationFile, error) {
 		return nil, fmt.Errorf("builtin_provider is required (e.g. gcp_iam)")
 	}
 	switch ff.FallbackPolicy {
-	case "", "deny", "readonly":
+	case "", "deny", "static":
 	default:
-		return nil, fmt.Errorf("fallback_policy must be one of: deny, readonly (got %q)",
+		return nil, fmt.Errorf("fallback_policy must be one of: deny, static (got %q)",
 			ff.FallbackPolicy)
-	}
-	if ff.FallbackPolicy == "readonly" && ff.ReadonlyPrincipal == "" {
-		return nil, fmt.Errorf("readonly_principal is required when fallback_policy=readonly")
 	}
 	return &ff, nil
 }
@@ -381,9 +377,6 @@ func federationBodyFromFile(ff *federationFile) map[string]any {
 	}
 	if ff.FallbackPolicy != "" {
 		body["fallback_policy"] = ff.FallbackPolicy
-	}
-	if ff.ReadonlyPrincipal != "" {
-		body["readonly_principal"] = ff.ReadonlyPrincipal
 	}
 	if ff.TokenTTLSeconds > 0 {
 		body["token_ttl_seconds"] = ff.TokenTTLSeconds
@@ -493,7 +486,6 @@ func printFederationConfigTable(conn string, m map[string]any) {
 	fmt.Printf("Identity Source:        %s\n", str(m["identity_source_attribute"]))
 	fmt.Printf("Identity Template:      %s\n", str(m["identity_target_template"]))
 	fmt.Printf("Fallback Policy:        %s\n", str(m["fallback_policy"]))
-	fmt.Printf("Readonly Principal:     %s\n", str(m["readonly_principal"]))
 	fmt.Printf("Token TTL Seconds:      %s\n", str(m["token_ttl_seconds"]))
 	fmt.Printf("Has Admin Credentials:  %s\n", yesNo(m["has_admin_credentials"]))
 	fmt.Printf("Extra Config:           %s\n", extraConfig)

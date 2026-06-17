@@ -64,7 +64,7 @@ func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
 	}
-	if aiAnalyzerRule == nil {
+	if aiAnalyzerRule == nil || script == "" {
 		return nil, nil, nil
 	}
 
@@ -174,6 +174,12 @@ func Post(c *gin.Context) {
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	// Attribute the session to the calling surface via the User-Client/User-Agent
+	// header: the webapp (CLJS) sends "webapp.core", the CLI sends "hoopcli", and
+	// everything else is treated as a raw API consumer. Once webapp_v2 (React)
+	// issues its own session calls it must send the same header to keep being
+	// attributed as `webapp`.
+	sessionOrigin := proto.SessionOriginFromUserAgent(userAgent)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.editor.exec"
 	}
@@ -198,6 +204,7 @@ func Post(c *gin.Context) {
 		IdentityType:         "user",
 		SessionBatchID:       req.SessionBatchID,
 		CorrelationID:        req.CorrelationID,
+		Origin:               sessionOrigin,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
@@ -286,13 +293,13 @@ func Post(c *gin.Context) {
 				"failed creating ai-driven review")
 			return
 		}
-		review, err := CreateReviewFromAIAnalysis(orgID, sid, conn.Name,
+		review, err := CreateReviewFromAIAnalysis(orgID, sid, conn,
 			AIReviewRequester{
-				UserID:       ctx.UserID,
-				UserEmail:    ctx.UserEmail,
-				UserName:     ctx.UserName,
-				UserSlackID:  ctx.SlackID,
-				ConnectionID: conn.ID,
+				UserID:      ctx.UserID,
+				UserEmail:   ctx.UserEmail,
+				UserName:    ctx.UserName,
+				UserSlackID: ctx.SlackID,
+				UserGroups:  ctx.UserGroups,
 			},
 			aiAccessRule, req.Script, req.EnvVars, req.ClientArgs)
 		if err != nil {

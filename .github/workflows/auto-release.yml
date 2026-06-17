@@ -124,9 +124,49 @@ jobs:
             echo "::error::Release $NEXT already exists. Another run may have created it; investigate before retrying."
             exit 1
           fi
+          # Create the release with GitHub's auto-generated changelog (the PRs
+          # merged since $PREVIOUS). The tag push (made with the PAT) triggers
+          # release.yml, which builds and uploads every artifact linked below.
           gh release create "$NEXT" \
             --title "$NEXT" \
             --target "$SHA" \
             --generate-notes \
             --notes-start-tag "$PREVIOUS"
+
+          # Append a curated Assets section to the auto-generated changelog so the
+          # release page links straight to the published binaries, image, charts
+          # and gateway bundles. These are stable, predictable URLs; the files go
+          # live a few minutes later once release.yml finishes publishing to
+          # S3 (releases.hoop.dev) and Docker Hub.
+          CHANGELOG=$(gh release view "$NEXT" --json body --jq '.body')
+          ASSETS=$(cat <<EOF
+          ## Assets
+
+          - [hoop-darwin-arm64](https://releases.hoop.dev/release/${NEXT}/hoop_${NEXT}_Darwin_arm64.tar.gz)
+          - [hoop-darwin-amd64](https://releases.hoop.dev/release/${NEXT}/hoop_${NEXT}_Darwin_x86_64.tar.gz)
+          - [hoop-linux-arm64](https://releases.hoop.dev/release/${NEXT}/hoop_${NEXT}_Linux_arm64.tar.gz)
+          - [hoop-linux-amd64](https://releases.hoop.dev/release/${NEXT}/hoop_${NEXT}_Linux_x86_64.tar.gz)
+          - [hoop-windows-arm64](https://releases.hoop.dev/release/${NEXT}/hoop_${NEXT}_Windows_arm64.tar.gz)
+          - [hoop-windows-amd64](https://releases.hoop.dev/release/${NEXT}/hoop_${NEXT}_Windows_x86_64.tar.gz)
+          - [checksums.txt](https://releases.hoop.dev/release/${NEXT}/checksums.txt)
+
+          ## Docker Images
+
+          - [hoophq/hoop:latest](https://hub.docker.com/r/hoophq/hoop)
+          - [hoophq/hoop:${NEXT}](https://hub.docker.com/r/hoophq/hoop)
+
+          ## Helm Chart
+
+          - [hoop-chart-${NEXT}](https://releases.hoop.dev/release/${NEXT}/hoop-chart-${NEXT}.tgz)
+          - [hoopagent-chart-${NEXT}](https://releases.hoop.dev/release/${NEXT}/hoopagent-chart-${NEXT}.tgz)
+
+          ## Bundles
+
+          - [hoop-gateway-bundle-amd64](https://releases.hoop.dev/release/${NEXT}/hoopgateway_${NEXT}-Linux_amd64.tar.gz)
+          - [hoop-gateway-bundle-arm64](https://releases.hoop.dev/release/${NEXT}/hoopgateway_${NEXT}-Linux_arm64.tar.gz)
+          EOF
+          )
+
+          gh release edit "$NEXT" --notes "$(printf '%s\n\n%s\n' "$CHANGELOG" "$ASSETS")"
+
           echo "Created release $NEXT (previous: $PREVIOUS) — release.yml will now build and publish artifacts."

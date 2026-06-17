@@ -7,6 +7,7 @@ import ClojureApp from '@/components/ClojureApp'
 // React pages (migrated from ClojureScript)
 import Login from '@/pages/Auth/Login'
 import Signup from '@/pages/Auth/Signup'
+import Setup from '@/pages/Auth/Setup'
 import Register from '@/pages/Auth/Register'
 import AuthCallback from '@/pages/Auth/Callback'
 import SignupCallback from '@/pages/Auth/SignupCallback'
@@ -27,6 +28,9 @@ import RulepackDetail from '@/pages/Rulepacks/Detail'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
+import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
+import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
+import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 
 /**
  * Routing strategy:
@@ -52,6 +56,7 @@ function Router() {
       {/* Public Auth Routes — no Layout, no auth required */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/setup" element={<Setup />} />
       <Route path="/register" element={<Register />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
@@ -309,6 +314,56 @@ function Router() {
             <Layout>
               <PageLayout>
                 <EventRoutingDetail />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* AI Agents Identities */}
+      <Route
+        path="/ai-agents-identities"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentities />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-agents-identities/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentitiesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-agents-identities/created"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentitiesCreated />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-agents-identities/:id/configure"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentitiesForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

@@ -16,11 +16,22 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/hoophq/hoop/gateway/models"
 )
+
+// ErrUserNotConnected signals that a per-user federation provider has no stored
+// credential for the calling user — i.e. the user has not completed the
+// provider's consent flow (e.g. gcp_oauth's Google authorization). The
+// session-open path detects this via errors.Is and tags the precondition error
+// with a stable, machine-readable code so clients can render a "connect your
+// account" action instead of surfacing a raw error string. Resolvers should
+// wrap it (fmt.Errorf("...: %w", federation.ErrUserNotConnected)) so the
+// human-readable context is preserved alongside the sentinel.
+var ErrUserNotConnected = errors.New("user has not connected an account for this connection")
 
 // Result is the resolved per-session output of a federation provider. Callers
 // must merge EnvVars into the connection's secret map (base64-encoding values)
@@ -83,10 +94,21 @@ type ResolveRequest struct {
 	// from it.
 	Config *models.ConnectionFederationConfig
 
-	// AdminCredentialsPlain is the decrypted admin credential blob (the GCP
-	// service-account JSON for gcp_iam). The caller is responsible for
-	// zeroing this when no longer needed.
+	// AdminCredentialsPlain is the decrypted admin credential blob. Its shape
+	// is provider-specific: the GCP service-account JSON for gcp_iam, or the
+	// OAuth client config (client_id/client_secret JSON) for gcp_oauth. The
+	// caller is responsible for zeroing this when no longer needed.
 	AdminCredentialsPlain []byte
+
+	// UserCredentialsPlain is the decrypted PER-USER credential blob, loaded by
+	// the federation service from the per-user credential store keyed by
+	// (connection, user). Providers that mint tokens from a user-supplied
+	// credential read it here: gcp_oauth uses it for the Google refresh token.
+	// Empty for providers that have no per-user credential (e.g. gcp_iam) or
+	// when the user has not completed a required consent flow — resolvers must
+	// treat empty as an actionable "not connected" condition. The caller is
+	// responsible for zeroing this when no longer needed.
+	UserCredentialsPlain []byte
 
 	// ResolvedPrincipal is the target principal computed by the identity
 	// mapping engine (e.g. "user@acme.com"). Passed explicitly rather than

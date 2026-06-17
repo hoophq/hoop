@@ -627,13 +627,102 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
+		sess.writeBufferedResponse(w, resp, responseChan, connectionID)
+	}
+}
+
+// writeBufferedResponse forwards a regular (non-SSE, non-WebSocket) HTTP response
+// to the client.
+//
+// The agent may split a large response across multiple HttpProxyConnectionWrite
+// packets (each capped below the gRPC max message size), so the body is not
+// guaranteed to arrive whole in the first packet. The agent writes the response
+// as a single contiguous byte stream, so every packet after the first is raw
+// body continuation. libhoop always sets Content-Length to the exact body size
+// for buffered responses, so we use it to know when the body is complete.
+//
+// A response that fits in one packet completes immediately (the first packet
+// holds the whole body), preserving the previous single-packet behavior.
+func (sess *httpProxySession) writeBufferedResponse(
+	w http.ResponseWriter,
+	resp *http.Response,
+	responseChan chan []byte,
+	connectionID string,
+) {
+	log := log.With("sid", sess.sid, "conn", connectionID)
+
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
 		}
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	flusher, _ := w.(http.Flusher)
+
+	// Body bytes carried by the first packet (resp.Body reads it after the
+	// headers). A premature EOF here is expected when Content-Length is larger
+	// than what arrived in the first packet, so the error is ignored and the
+	// remainder is reassembled from responseChan below.
+	firstBody, _ := io.ReadAll(resp.Body)
+	bodyWritten := int64(len(firstBody))
+	if len(firstBody) > 0 {
+		if _, err := w.Write(firstBody); err != nil {
+			log.Warnf("failed writing response body: %v", err)
+			return
+		}
+	}
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	// Unknown length (Content-Length absent) or body already complete: nothing
+	// more to reassemble. The unknown-length case mirrors the prior single-packet
+	// behavior and avoids blocking on a stream that has no completion signal.
+	if resp.ContentLength < 0 || bodyWritten >= resp.ContentLength {
+		return
+	}
+
+	// Reassemble the remaining body from subsequent packets until Content-Length
+	// is satisfied. The agent does not send a per-response close for keep-alive
+	// connections, so Content-Length (not channel closure) is the authoritative
+	// completion signal; channel closure and the idle timeout are safety nets.
+	const idleTimeout = 60 * time.Second
+	idleTimer := time.NewTimer(idleTimeout)
+	defer idleTimer.Stop()
+
+	for bodyWritten < resp.ContentLength {
+		select {
+		case <-sess.ctx.Done():
+			return
+		case <-idleTimer.C:
+			log.Warnf("response reassembly aborted: idle timeout (%v) exceeded, written=%d/%d",
+				idleTimeout, bodyWritten, resp.ContentLength)
+			return
+		case data, ok := <-responseChan:
+			if !ok {
+				log.Warnf("response reassembly ended early: channel closed, written=%d/%d",
+					bodyWritten, resp.ContentLength)
+				return
+			}
+			if len(data) > 0 {
+				if _, err := w.Write(data); err != nil {
+					log.Warnf("failed writing response body chunk: %v", err)
+					return
+				}
+				bodyWritten += int64(len(data))
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(idleTimeout)
+		}
 	}
 }
 
