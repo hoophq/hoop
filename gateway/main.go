@@ -16,14 +16,15 @@ import (
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
-	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/services"
 
-	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/externaljwt"
+	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
@@ -32,7 +33,6 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
-	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
@@ -213,7 +213,7 @@ func Run() {
 	}
 
 	bootstrap.Phase("Starting proxies")
-	if serverConfig != nil {
+	if serverConfig != nil && !isOrgMultiTenant {
 		pgc := serverConfig.PostgresServerConfig
 		if pgc != nil && pgc.ListenAddress != "" {
 			step := bootstrap.Step("Postgres proxy")
