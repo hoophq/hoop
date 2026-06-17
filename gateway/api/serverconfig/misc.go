@@ -157,7 +157,6 @@ func UpdateServerMisc(c *gin.Context) {
 
 	sshInstance := sshproxy.GetServerInstance()
 	sshConf, state := parseSSHConfigState(currentSrvConf, newState)
-	fmt.Printf("sshConf: %+v, state: %s\n", sshConf, state)
 	switch state {
 	case instanceStateStart:
 		if sshConf.HostsKey == "" {
