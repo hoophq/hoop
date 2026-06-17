@@ -77,18 +77,14 @@ func (s *proxyServer) Start(cfg ServerConfig) error {
 		return fmt.Errorf("failed parsing hosts key, reason=%v", err)
 	}
 
+	var err error
 	if len(cfg.TrustedCAs) > 0 {
-		srv, err := sshcertproxy.Run(cfg.ListenAddress, hostKey, cfg.TrustedCAs, cfg.UserMapping)
-		if err != nil {
-			return err
-		}
-		s.certServer = srv
+		s.certServer, err = sshcertproxy.Run(cfg.ListenAddress, hostKey, cfg.TrustedCAs, cfg.UserMapping)
 	} else {
-		srv, err := runPasswordServer(cfg.ListenAddress, hostKey)
-		if err != nil {
-			return err
-		}
-		s.pwdServer = srv
+		s.pwdServer, err = runPasswordServer(cfg.ListenAddress, hostKey)
+	}
+	if err != nil {
+		return err
 	}
 
 	instanceStore.Store(instanceKey, s)
