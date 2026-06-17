@@ -119,7 +119,7 @@ func (s *proxyServer) Stop() error {
 	return err
 }
 
-func parseHostsKey(privateKeyB64Enc string) (ssh.Signer, error) {
+func parseHostsKey(privateKeyB64Enc string) (hostsKey ssh.Signer, err error) {
 	privateKeyPemBytes, err := base64.StdEncoding.DecodeString(privateKeyB64Enc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
@@ -128,7 +128,7 @@ func parseHostsKey(privateKeyB64Enc string) (ssh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
 	}
-	hostsKey, err := ssh.NewSignerFromKey(privateKey)
+	hostsKey, err = ssh.NewSignerFromKey(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hosts key signer: %v", err)
 	}
@@ -161,7 +161,7 @@ func (s *passwordServer) stop() error {
 		return true
 	})
 	if s.listener != nil {
-		log.Infof("stopping ssh password server at %v", s.listener.Addr().String())
+		log.Infof("stopping ssh server proxy at %v", s.listener.Addr().String())
 		_ = s.listener.Close()
 	}
 	return nil
@@ -173,7 +173,7 @@ func runPasswordServer(listenAddr string, hostKey ssh.Signer) (*passwordServer, 
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
 
-	log.Infof("starting ssh password server at %v", listenAddr)
+	log.Infof("starting ssh server proxy at %v", listenAddr)
 
 	server := &passwordServer{
 		listenAddress: listenAddr,
@@ -186,18 +186,20 @@ func runPasswordServer(listenAddr string, hostKey ssh.Signer) (*passwordServer, 
 		connectionCounter := 0
 		for {
 			connectionCounter++
-			connectionID := strconv.Itoa(connectionCounter)
 
+			connectionID := strconv.Itoa(connectionCounter)
+			// accepts a new standard TCP connection
 			netConn, err := lis.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
-					log.Info("password ssh proxy listener closed")
+					log.Info("proxy server listener closed, stopping accepting new connections")
 					return
 				}
 				log.With("conn", connectionID).Warnf("failed obtaining tcp connection, err=%v", err)
 				break
 			}
 
+			// creates a new SSH connection instance
 			sessionID := uuid.NewString()
 			conn, err := newPasswordConnection(sessionID, connectionID, netConn, server)
 			if err != nil {
@@ -213,10 +215,15 @@ func runPasswordServer(listenAddr string, hostKey ssh.Signer) (*passwordServer, 
 				continue
 			}
 
+			// store the connection instance
 			server.connectionStore.Store(sessionID, conn)
+
 			go func() {
-				defer server.connectionStore.Delete(sessionID)
-				conn.handle()
+				// handle the SSH connection
+				conn.handleConnection()
+
+				// remove the connection from the store once done
+				server.connectionStore.Delete(sessionID)
 			}()
 		}
 	}()
@@ -225,15 +232,15 @@ func runPasswordServer(listenAddr string, hostKey ssh.Signer) (*passwordServer, 
 }
 
 type passwordConnection struct {
-	id           string
-	sid          string
-	credentialID string
-	ctx          context.Context
-	cancelFn     func(msg string, a ...any)
-	grpcClient   pb.ClientTransport
-	handler      sshcertproxy.ChannelHandler
-	newChannelCh <-chan ssh.NewChannel
-	sshConn      *ssh.ServerConn
+	id                  string
+	sid                 string
+	credentialID        string
+	ctx                 context.Context
+	cancelFn            func(msg string, a ...any)
+	grpcClient          pb.ClientTransport
+	handler             sshcertproxy.ChannelHandler
+	clientNewSshChannel <-chan ssh.NewChannel
+	sshConn             *ssh.ServerConn
 }
 
 func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordServer) (*passwordConnection, error) {
@@ -242,23 +249,28 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 			log.With("sid", sid).Infof("ssh connection attempt, user=%v, remote-addr=%v, local-addr=%v",
 				c.User(), c.RemoteAddr(), c.LocalAddr())
 
+			// Hash the received password (secret access key)
 			secretKeyHash, err := keys.Hash256Key(string(password))
 			if err != nil {
 				return nil, fmt.Errorf("failed hashing secret key: %v", err)
 			}
 
+			// Retrieve the connection credentials using the hashed secret key
 			dba, err := models.GetValidConnectionCredentialsBySecretKey([]string{pb.ConnectionTypeSSH.String()}, secretKeyHash)
 			if err != nil {
+				// Differentiate between not found and other errors
 				if err == models.ErrNotFound {
 					return nil, fmt.Errorf("invalid secret access key credentials")
 				}
 				return nil, fmt.Errorf("failed obtaining secret access key, reason=%v", err)
 			}
 
+			// Check if the credentials have expired
 			if dba.ExpireAt.Before(time.Now().UTC()) {
 				return nil, fmt.Errorf("invalid secret access key credentials")
 			}
 
+			// Session duration remaining based on the expiration time
 			ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
 			log.Infof("obtained access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
 				dba.ID, dba.UserSubject, dba.ConnectionName, sid,
@@ -280,6 +292,8 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 			return &ssh.Permissions{Extensions: extensions}, nil
 		},
 	}
+	// the encryption key to be used we use a single hosts key
+	// used for the SSH handshake and related to the known_hosts file
 	sshCfg.AddHostKey(server.hostKey)
 
 	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, sshCfg)
@@ -289,8 +303,11 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 		}
 		return nil, fmt.Errorf("failed establishing SSH connection: %v", err)
 	}
+
+	// discard all global out-of-band requests
 	go ssh.DiscardRequests(sshReq)
 
+	// validate permissions after authentication
 	if sshConn.Permissions == nil {
 		return nil, fmt.Errorf("missing ssh permissions after authentication")
 	}
@@ -344,12 +361,14 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", credentialSessionID))
 	}
 
+	// connect to the gateway gRPC server
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
-		Token:         "",
+		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "ssh/grpc",
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
 		TLSSkipVerify: true,
 	}, grpcOpts...)
 	if err != nil {
@@ -365,14 +384,14 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 	}
 
 	c := &passwordConnection{
-		id:           connID,
-		sid:          sid,
-		credentialID: credentialID,
-		ctx:          ctx,
-		cancelFn:     wrappedCancelFn,
-		grpcClient:   client,
-		sshConn:      sshConn,
-		newChannelCh: clientNewCh,
+		id:                  connID,
+		sid:                 sid,
+		credentialID:        credentialID,
+		ctx:                 ctx,
+		cancelFn:            wrappedCancelFn,
+		grpcClient:          client,
+		sshConn:             sshConn,
+		clientNewSshChannel: clientNewCh,
 	}
 
 	if !isMachineCredential {
@@ -384,7 +403,7 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 	return c, nil
 }
 
-func (c *passwordConnection) handle() {
+func (c *passwordConnection) handleConnection() {
 	handler, err := sshproto.OpenSession(c.sid, c.id, c.grpcClient, c.ctx, c.cancelFn)
 	if err != nil {
 		c.cancelFn("failed opening session: %v", err)
@@ -393,12 +412,28 @@ func (c *passwordConnection) handle() {
 		return
 	}
 	c.handler = handler
-	go c.acceptChannels()
+	go c.handleServerWrite()
 
 	<-c.ctx.Done()
 	ctxErr := context.Cause(c.ctx)
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
 
+	// Surface the cancellation cause to the user's terminal before
+	// we tear the SSH connection down. Without this, the user sees
+	// only `Connection closed by remote host` and has to ask an
+	// admin to read the gateway logs to find out what went wrong.
+	//
+	// translateUpstreamError sanitizes the raw libhoop / agent text
+	// into a fixed-vocabulary message so we don't leak internal
+	// addresses, library jargon, or stack traces to end users; it
+	// also returns an empty string for benign causes (e.g. the user
+	// disconnected themselves) so we don't write noise.
+	//
+	// A non-empty message means we're tearing the session down for a
+	// real error — there's no point waiting on the normal flush and
+	// grace period below because the user already knows it's over.
+	// We close the channels inside notifyOpenChannels and skip
+	// straight to closing the SSH transport.
 	hasUserError := false
 	if ctxErr != nil {
 		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
@@ -429,7 +464,7 @@ func (c *passwordConnection) handle() {
 	_ = c.sshConn.Close()
 }
 
-func (c *passwordConnection) acceptChannels() {
+func (c *passwordConnection) handleServerWrite() {
 	select {
 	case <-c.ctx.Done():
 		return
@@ -437,12 +472,17 @@ func (c *passwordConnection) acceptChannels() {
 	}
 
 	channelID := uint16(0)
-	for newCh := range c.newChannelCh {
+	for newCh := range c.clientNewSshChannel {
 		channelID++
 		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
 			Infof("received new channel, type=%v", newCh.ChannelType())
 		go c.handleChannel(newCh, channelID)
 	}
+	// The SSH client disconnected (clientNewSshChannel was closed).
+	// Cancel the context so handleConnection proceeds to close the gRPC stream
+	// and the SSH TCP connection. Without this, handleConnection blocks forever
+	// at <-c.ctx.Done() and c.sshConn.Close() is never called, causing the
+	// client-side ProxyCommand to hang waiting for the TCP FIN.
 	c.cancelFn("ssh client disconnected")
 }
 
