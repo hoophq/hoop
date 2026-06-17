@@ -1,11 +1,15 @@
-# Keep build contexts lean and reproducible. Build artifacts and local-only
-# trees must never enter an image build context.
+# Keep Docker build contexts lean by excluding large build artifacts that are
+# NOT copied by any Dockerfile.
+#
+# IMPORTANT: do NOT exclude `dist/` — the production Dockerfile and
+# Dockerfile.dev do `COPY dist/binaries/ /tmp/` (CI builds the release binaries
+# there). Excluding it breaks every published image build. `rootfs/` and the
+# source trees must also stay in context.
+#
+# Rust target dirs are the main offender (multi-GB); node_modules and VCS/log
+# noise are excluded too. Dockerfile.localbuild re-runs `npm install` in its
+# webapp stage, so omitting node_modules from the context is correct.
 **/target/
-dist/
-agentrs/target/
-gateway/rdp/wasm/target/
 **/node_modules/
-webapp/.shadow-cljs/
-webapp_v2/dist/
 .git/
 *.log
