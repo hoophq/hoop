@@ -372,7 +372,7 @@ func validateFederationRequest(req openapi.ConnectionFederationConfig) error {
 		// Whitelist the known providers; the DB CHECK is open but we want
 		// the API to reject typos early.
 		switch req.BuiltinProvider {
-		case models.FederationProviderGCPIAM:
+		case models.FederationProviderGCPIAM, models.FederationProviderGCPOAuth:
 		default:
 			return errBadRequest("unknown builtin_provider %q", req.BuiltinProvider)
 		}

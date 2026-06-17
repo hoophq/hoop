@@ -184,20 +184,25 @@
         (dissoc :config-current-name :config-current-content))))
 
 (defn inject-federation-fallback-secret
-  "Emits the federation SA JSON + project as the role's static secret
-  (GOOGLE_APPLICATION_CREDENTIALS + CLOUDSDK_CORE_PROJECT), used as the
-  fallback when per-user federation can't mint credentials."
+  "Emits the federation project as the role's static secret
+  (CLOUDSDK_CORE_PROJECT). For gcp_iam it also emits the service-account key as
+  GOOGLE_APPLICATION_CREDENTIALS, the fallback used when per-user federation
+  can't mint credentials. gcp_oauth's admin credential is the OAuth client JSON
+  (client_id + client_secret), which must never be written as a GCP credentials
+  file, so no GOOGLE_APPLICATION_CREDENTIALS fallback is emitted for it."
   [role federation-form]
   (if (= (:connection-method role) "iam_federation")
-    (let [sa-json (:admin_credentials_json federation-form)
-          project-id (get-in federation-form [:extra_config :project_id])]
-      (-> role
-          (update :configuration-files
-                  (fn [files]
-                    (conj (vec (remove #(= (:key %) "GOOGLE_APPLICATION_CREDENTIALS") files))
-                          {:key "GOOGLE_APPLICATION_CREDENTIALS" :value sa-json})))
-          (assoc-in [:metadata-credentials "CLOUDSDK_CORE_PROJECT"]
-                    {:value project-id :source "manual-input"})))
+    (let [provider (or (:builtin_provider federation-form) "gcp_iam")
+          sa-json (:admin_credentials_json federation-form)
+          project-id (get-in federation-form [:extra_config :project_id])
+          with-project (assoc-in role [:metadata-credentials "CLOUDSDK_CORE_PROJECT"]
+                                 {:value project-id :source "manual-input"})]
+      (if (= provider "gcp_iam")
+        (update with-project :configuration-files
+                (fn [files]
+                  (conj (vec (remove #(= (:key %) "GOOGLE_APPLICATION_CREDENTIALS") files))
+                        {:key "GOOGLE_APPLICATION_CREDENTIALS" :value sa-json})))
+        with-project))
     role))
 
 (defn process-payload
