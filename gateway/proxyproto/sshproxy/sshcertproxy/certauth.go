@@ -69,12 +69,16 @@ func lookupUserByCert(cert *ssh.Certificate, m UserMapping) (*models.User, strin
 	default: // "principal"
 		for _, p := range cert.ValidPrincipals {
 			user, err := lookupUserByAttr(m.UserAttr, p)
-			if err != nil || user == nil {
+			if err != nil {
+				return nil, "", fmt.Errorf("user lookup by principal=%q failed: %w", p, err)
+			}
+			if user == nil {
 				continue
 			}
 			return user, p, nil
 		}
-		return nil, "", fmt.Errorf("no user found matching any principal, user-attr=%q", m.UserAttr)
+		return nil, "", fmt.Errorf("no valid principal match, user-attr%q, valid-principals=%v",
+			m.UserAttr, cert.ValidPrincipals)
 	}
 }
 

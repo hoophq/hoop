@@ -134,6 +134,39 @@ type certConnection struct {
 	sshConn      *ssh.ServerConn
 }
 
+// sendErrorToClient delivers msg to the SSH client by accepting the first
+// session channel it opens, writing to stderr, and sending exit-status 1.
+// It always closes sshConn before returning. Used for hard failures that occur
+// after the SSH handshake (user not found, inactive user, expired cert) so the
+// client sees a diagnostic instead of a silent "Connection closed" message.
+func sendErrorToClient(sshConn *ssh.ServerConn, clientNewCh <-chan ssh.NewChannel, msg string) {
+	defer sshConn.Close()
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	select {
+	case newCh, ok := <-clientNewCh:
+		if !ok {
+			return
+		}
+		if newCh.ChannelType() != "session" {
+			_ = newCh.Reject(ssh.Prohibited, "hoop: "+msg)
+			return
+		}
+		ch, reqs, err := newCh.Accept()
+		if err != nil {
+			return
+		}
+		go ssh.DiscardRequests(reqs)
+		_, _ = io.WriteString(ch.Stderr(), "hoop: "+msg+"\r\n")
+		exitPayload := ssh.Marshal(struct{ ExitStatus uint32 }{1})
+		_, _ = ch.SendRequest("exit-status", false, exitPayload)
+		_ = ch.Close()
+	case <-timer.C:
+	}
+}
+
 func newCertConnection(sid, connID string, conn net.Conn, server *Server) (*certConnection, error) {
 	sshCfg := &ssh.ServerConfig{
 		PublicKeyCallback: func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -155,7 +188,7 @@ func newCertConnection(sid, connID string, conn net.Conn, server *Server) (*cert
 				c.User(), cert.KeyId, cert.Serial, cert.ValidPrincipals)
 
 			server.pendingCertSessions.Store(string(c.SessionID()), &certSession{cert: cert})
-			return &ssh.Permissions{Extensions: map[string]string{"hoop-auth-method": "cert"}}, nil
+			return nil, nil
 		},
 	}
 	sshCfg.AddHostKey(server.hostKey)
@@ -169,21 +202,20 @@ func newCertConnection(sid, connID string, conn net.Conn, server *Server) (*cert
 	}
 	go ssh.DiscardRequests(sshReq)
 
-	if sshConn.Permissions == nil {
-		return nil, fmt.Errorf("missing ssh permissions after authentication")
-	}
-
 	sessAny, ok := server.pendingCertSessions.LoadAndDelete(string(sshConn.SessionID()))
 	if !ok {
+		sendErrorToClient(sshConn, clientNewCh, "internal error, missing cert state after handshake")
 		return nil, fmt.Errorf("missing cert session state after handshake (sid=%s)", sid)
 	}
 	sess := sessAny.(*certSession)
 
 	user, matchedValue, err := lookupUserByCert(sess.cert, server.userMapping)
 	if err != nil {
+		sendErrorToClient(sshConn, clientNewCh, "unable to authenticate, certificate attribute does not match any user")
 		return nil, fmt.Errorf("cert auth user lookup failed: %w", err)
 	}
 	if user.Status != "active" {
+		sendErrorToClient(sshConn, clientNewCh, fmt.Sprintf("user is not active (status=%q)", user.Status))
 		return nil, fmt.Errorf("user %q is not active (status=%s)", matchedValue, user.Status)
 	}
 	sess.matchedValue = matchedValue
@@ -195,6 +227,7 @@ func newCertConnection(sid, connID string, conn net.Conn, server *Server) (*cert
 		expiry := time.Unix(int64(sess.cert.ValidBefore), 0)
 		ctxDuration = time.Until(expiry)
 		if ctxDuration <= 0 {
+			sendErrorToClient(sshConn, clientNewCh, "certificate has already expired")
 			return nil, fmt.Errorf("certificate has already expired (matched=%s)", matchedValue)
 		}
 	}
@@ -297,7 +330,6 @@ func (c *certConnection) acceptChannels() {
 // a rejection reason and error when the channel must be refused; both are zero
 // on success.
 func (c *certConnection) validateChannel(newCh ssh.NewChannel, channelID uint16) (ssh.RejectionReason, error) {
-	fmt.Printf("EXTENSIONS: %#v\n", c.certSession.cert.Extensions)
 	switch newCh.ChannelType() {
 	case "session":
 		if !c.certSession.allowPTY() {
