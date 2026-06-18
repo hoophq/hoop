@@ -140,11 +140,10 @@ func TestMySQL_SessionCloseRace(t *testing.T) {
 // address so its first upstream dial blocks, the other at a real MariaDB.
 // It asserts the fast session is unaffected by the slow one.
 //
-// Skipped: the agent's async-dispatch flag (experimental.agent_async_ssh)
-// only covers SSH packets — MySQL packets are still processed
-// synchronously, so the slow session's blocking dial holds up the recv
-// loop and the fast session queues behind it. Unskip when async dispatch
-// is extended to MySQL.
+// Skipped: the agent's async dispatch only covers SSH packets — MySQL
+// packets are still processed synchronously, so the slow session's
+// blocking dial holds up the recv loop and the fast session queues
+// behind it. Unskip when async dispatch is extended to MySQL.
 func TestMySQL_ParallelSessions_OneHangs(t *testing.T) {
 	t.Skip("MySQL packets are dispatched synchronously (async flag is SSH-only); " +
 		"a slow upstream dial blocks the recv loop. Unskip when async dispatch covers MySQL.")
