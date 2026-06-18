@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -82,33 +83,20 @@ print(JSON.stringify(result));`
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	client, err := clientexec.New(&clientexec.Options{
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	outcome, err := services.Exec(timeoutCtx, services.ExecOptions{
 		OrgID:                     ctx.GetOrgID(),
 		ConnectionName:            conn.Name,
 		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType, conn.Command),
 		BearerToken:               apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:                 userAgent,
 		// it sets the execution to perform plain executions
-		Verb: pb.ClientVerbPlainExec,
+		Verb:   pb.ClientVerbPlainExec,
+		Script: script,
 	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
-		return
-	}
-
-	respCh := make(chan *clientexec.Response)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		select {
-		case respCh <- client.Run([]byte(script), nil):
-		default:
-		}
-	}()
-
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
-	defer cancelFn()
-	select {
-	case outcome := <-respCh:
+	switch {
+	case err == nil:
 		if outcome.ExitCode != 0 {
 			errMsg := fmt.Errorf("command failed: %s", outcome.Output)
 			httputils.AbortWithErr(c, http.StatusInternalServerError, errMsg, "%v", errMsg)
@@ -140,10 +128,11 @@ print(JSON.stringify(result));`
 			}
 		}
 		c.JSON(http.StatusOK, openapi.ConnectionDatabaseListResponse{Databases: databases})
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		log.Infof("runexec timeout (50s), it will return async")
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 	}
 }
 
@@ -227,32 +216,19 @@ func ListTables(c *gin.Context) {
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	client, err := clientexec.New(&clientexec.Options{
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancelFn()
+	outcome, err := services.Exec(timeoutCtx, services.ExecOptions{
 		OrgID:                     ctx.GetOrgID(),
 		ConnectionName:            conn.Name,
 		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType, conn.Command),
 		BearerToken:               apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:                 userAgent,
 		Verb:                      pb.ClientVerbPlainExec,
+		Script:                    script,
 	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
-		return
-	}
-
-	respCh := make(chan *clientexec.Response)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		select {
-		case respCh <- client.Run([]byte(script), nil):
-		default:
-		}
-	}()
-
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
-	defer cancelFn()
-	select {
-	case outcome := <-respCh:
+	switch {
+	case err == nil:
 		if outcome.ExitCode != 0 {
 			log.Warnf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to list tables: %s", outcome.Output)})
@@ -288,8 +264,7 @@ func ListTables(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, tables)
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		log.Warnf("timeout (30s) obtaining tables for database '%s' using connection '%s'", dbName, conn.Name)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message":    fmt.Sprintf("Request timed out (30s) while fetching tables for database '%s'", dbName),
@@ -297,6 +272,8 @@ func ListTables(c *gin.Context) {
 			"database":   dbName,
 			"timeout":    "30s",
 		})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 	}
 }
 
@@ -395,31 +372,18 @@ func GetTableColumns(c *gin.Context) {
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	client, err := clientexec.New(&clientexec.Options{
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancelFn()
+	outcome, err := services.Exec(timeoutCtx, services.ExecOptions{
 		OrgID:          ctx.GetOrgID(),
 		ConnectionName: conn.Name,
 		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:      userAgent,
 		Verb:           pb.ClientVerbPlainExec,
+		Script:         script,
 	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
-		return
-	}
-
-	respCh := make(chan *clientexec.Response)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		select {
-		case respCh <- client.Run([]byte(script), nil):
-		default:
-		}
-	}()
-
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
-	defer cancelFn()
-	select {
-	case outcome := <-respCh:
+	switch {
+	case err == nil:
 		if outcome.ExitCode != 0 {
 			log.Warnf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to get columns: %s", outcome.Output)})
@@ -440,8 +404,7 @@ func GetTableColumns(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, response)
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		log.Warnf("timeout (30s) obtaining columns for table '%s' in database '%s' using connection '%s'", tableName, dbName, conn.Name)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message":    fmt.Sprintf("Request timed out (30s) while fetching columns for table '%s'", tableName),
@@ -450,5 +413,7 @@ func GetTableColumns(c *gin.Context) {
 			"table":      tableName,
 			"timeout":    "30s",
 		})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 	}
 }

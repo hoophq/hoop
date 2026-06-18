@@ -2,6 +2,7 @@ package eventrouting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,9 +10,9 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	commonRunbooks "github.com/hoophq/hoop/common/runbooks"
-	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 const dispatchExecTimeout = 60 * time.Second
@@ -70,19 +71,6 @@ func processDispatch(pCtx context.Context, d *models.EventDispatch) error {
 	}
 
 	sessionID := uuid.NewString()
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:                  sub.OrgID,
-		SessionID:              sessionID,
-		ConnectionName:         conn.Name,
-		UserAgent:              "eventrouting.dispatcher",
-		Origin:                 pb.ConnectionOriginClientAPI,
-		Verb:                   pb.ClientVerbExec,
-		ImpersonateUserSubject: sub.CreatedByUserID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed creating exec client: %w", err)
-	}
-	defer client.Close()
 
 	hookID := uuid.NewString()
 	_ = models.SetDispatchSessionID(models.DB, d.ID, hookID)
@@ -96,30 +84,36 @@ func processDispatch(pCtx context.Context, d *models.EventDispatch) error {
 		"impersonate", sub.CreatedByUserID,
 	).Infof("event-routing: executing runbook via connection %q", conn.Name)
 
-	respCh := make(chan *clientexec.Response, 1)
-	go func() {
-		respCh <- client.Run(file.InputFile, nil)
-	}()
-
 	timeoutCtx, cancel := context.WithTimeout(pCtx, dispatchExecTimeout)
 	defer cancel()
 
-	select {
-	case resp := <-respCh:
-		if resp.HasReview {
-			return fmt.Errorf("dispatch blocked by review (review_uri=%s)", resp.Output)
+	resp, err := services.Exec(timeoutCtx, services.ExecOptions{
+		OrgID:                  sub.OrgID,
+		SessionID:              sessionID,
+		ConnectionName:         conn.Name,
+		UserAgent:              "eventrouting.dispatcher",
+		Origin:                 pb.ConnectionOriginClientAPI,
+		Verb:                   pb.ClientVerbExec,
+		ImpersonateUserSubject: sub.CreatedByUserID,
+		Script:                 string(file.InputFile),
+	})
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("dispatch exec timed out after %s", dispatchExecTimeout)
 		}
-		if resp.ExitCode != 0 {
-			return fmt.Errorf("runbook exited with code %d: %s", resp.ExitCode, truncate(resp.Output, 500))
-		}
-		log.With("dispatch_id", d.ID, "sid", sessionID).
-			Infof("event-routing: runbook finished, exit=%d, truncated=%v, duration_ms=%d",
-				resp.ExitCode, resp.Truncated, resp.ExecutionTimeMili)
-		return nil
-	case <-timeoutCtx.Done():
-		client.Close()
-		return fmt.Errorf("dispatch exec timed out after %s", dispatchExecTimeout)
+		return fmt.Errorf("failed creating exec client: %w", err)
 	}
+
+	if resp.HasReview {
+		return fmt.Errorf("dispatch blocked by review (review_uri=%s)", resp.Output)
+	}
+	if resp.ExitCode != 0 {
+		return fmt.Errorf("runbook exited with code %d: %s", resp.ExitCode, truncate(resp.Output, 500))
+	}
+	log.With("dispatch_id", d.ID, "sid", sessionID).
+		Infof("event-routing: runbook finished, exit=%d, truncated=%v, duration_ms=%d",
+			resp.ExitCode, resp.Truncated, resp.ExecutionTimeMili)
+	return nil
 }
 
 func truncate(s string, n int) string {

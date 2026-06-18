@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
-	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -600,27 +599,24 @@ printjson(db.runCommand({ping:1}));`, nil
 }
 
 func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Connection) error {
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		ConnectionName: conn.Name,
-		BearerToken:    bearerToken,
-		UserAgent:      "webapp.editor.testconnection",
-		Verb:           pb.ClientVerbPlainExec,
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed creating client: %w", err)
-	}
-
-	defer client.Close()
-
 	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
 	command, err := getScriptsForTestConnection(&currentConnectionType)
 	if err != nil {
 		return err
 	}
 
-	outcome := client.Run([]byte(command), nil)
+	outcome, err := services.Exec(context.Background(), services.ExecOptions{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    bearerToken,
+		UserAgent:      "webapp.editor.testconnection",
+		Verb:           pb.ClientVerbPlainExec,
+		Script:         command,
+	})
+	if err != nil {
+		return fmt.Errorf("failed creating client: %w", err)
+	}
+
 	if outcome.ExitCode != 0 {
 		return fmt.Errorf("failed issuing test command, output=%v", outcome.Output)
 	}

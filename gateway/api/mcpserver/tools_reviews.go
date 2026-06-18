@@ -12,8 +12,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
-	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -152,23 +152,6 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 		return errResult(err.Error()), nil, nil
 	}
 
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          sc.GetOrgID(),
-		SessionID:      session.ID,
-		ConnectionName: session.Connection,
-		BearerToken:    token,
-		UserAgent:      fmt.Sprintf("mcp.reviews_execute/%s", sc.UserEmail),
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating exec client: %w", err)
-	}
-
-	respCh := make(chan *clientexec.Response, 1)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		respCh <- client.Run([]byte(session.BlobInput), review.InputEnvVars, review.InputClientArgs...)
-	}()
-
 	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancelFn()
 
@@ -179,8 +162,18 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 		}
 	}()
 
-	select {
-	case resp := <-respCh:
+	resp, err := services.Exec(timeoutCtx, services.ExecOptions{
+		OrgID:          sc.GetOrgID(),
+		SessionID:      session.ID,
+		ConnectionName: session.Connection,
+		BearerToken:    token,
+		UserAgent:      fmt.Sprintf("mcp.reviews_execute/%s", sc.UserEmail),
+		Script:         string(session.BlobInput),
+		EnvVars:        review.InputEnvVars,
+		ClientArgs:     review.InputClientArgs,
+	})
+	switch {
+	case err == nil:
 		env := map[string]any{
 			"session_id":        resp.SessionID,
 			"output":            resp.Output,
@@ -195,8 +188,7 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 			env["status"] = "completed"
 		}
 		return jsonResult(env)
-	case <-timeoutCtx.Done():
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		reviewStatus = models.ReviewStatusUnknown
 		return jsonResult(map[string]any{
 			"session_id": session.ID,
@@ -204,6 +196,8 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 			"message":    "execution still running after 50s; poll sessions_get with session_id",
 			"next_step":  "poll sessions_get with session_id",
 		})
+	default:
+		return nil, nil, fmt.Errorf("failed creating exec client: %w", err)
 	}
 }
 

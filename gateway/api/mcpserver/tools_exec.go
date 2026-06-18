@@ -213,33 +213,24 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 	}
 	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, sc.GetOrgID(), sc.GetUserID(), sessionID)
 
-	client, err := clientexec.New(&clientexec.Options{
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), execTimeout)
+	defer cancelFn()
+
+	resp, err := services.Exec(timeoutCtx, services.ExecOptions{
 		OrgID:          sc.GetOrgID(),
 		SessionID:      sessionID,
 		ConnectionName: conn.Name,
 		BearerToken:    token,
 		UserAgent:      fmt.Sprintf("mcp.exec/%s", sc.UserEmail),
 		Origin:         pb.ConnectionOriginClientAPI,
+		Script:         args.Input,
+		EnvVars:        args.EnvVars,
+		ClientArgs:     args.Args,
 	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating exec client: %w", err)
-	}
-
-	respCh := make(chan *clientexec.Response, 1)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		respCh <- client.Run([]byte(args.Input), args.EnvVars, args.Args...)
-	}()
-
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), execTimeout)
-	defer cancelFn()
-
-	select {
-	case resp := <-respCh:
+	switch {
+	case err == nil:
 		return execResponseToEnvelope(resp, sessionID)
-	case <-timeoutCtx.Done():
-		// Force the goroutine to unblock; its result will be persisted async.
-		client.Close()
+	case errors.Is(err, context.DeadlineExceeded):
 		log.With("sid", sessionID).Infof("mcp exec timeout (%s), returning status=running", execTimeout)
 		return jsonResult(map[string]any{
 			"status":     "running",
@@ -247,6 +238,8 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 			"message":    fmt.Sprintf("execution still running after %s; poll sessions_get with session_id", execTimeout),
 			"next_step":  "poll sessions_get with session_id",
 		})
+	default:
+		return nil, nil, fmt.Errorf("failed creating exec client: %w", err)
 	}
 }
 

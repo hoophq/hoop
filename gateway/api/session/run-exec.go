@@ -2,6 +2,7 @@ package sessionapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -113,27 +115,6 @@ func RunReviewedExec(c *gin.Context) {
 		userAgent = "webapp.review.exec"
 	}
 
-	// TODO: refactor to use response from openapi package
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		SessionID:      session.ID,
-		ConnectionName: session.Connection,
-		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
-		UserAgent:      userAgent,
-	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client: %v", err)
-		return
-	}
-
-	respCh := make(chan *clientexec.Response)
-	go func() {
-		defer func() { close(respCh); client.Close() }()
-		select {
-		case respCh <- client.Run([]byte(session.BlobInput), review.InputEnvVars, review.InputClientArgs...):
-		default:
-		}
-	}()
 	log := log.With("sid", session.ID)
 	log.Infof("review apiexec, reviewid=%v, connection=%v, owner=%v, input-lenght=%v",
 		review.ID, review.ConnectionName, review.OwnerEmail, len(session.BlobInput))
@@ -146,20 +127,30 @@ func RunReviewedExec(c *gin.Context) {
 			log.Warnf("failed updating review to status=%v, err=%v", review.Status, err)
 		}
 	}()
-	select {
-	case resp := <-respCh:
+
+	// TODO: refactor to use response from openapi package
+	resp, err := services.Exec(timeoutCtx, services.ExecOptions{
+		OrgID:          ctx.GetOrgID(),
+		SessionID:      session.ID,
+		ConnectionName: session.Connection,
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
+		UserAgent:      userAgent,
+		Script:         string(session.BlobInput),
+		EnvVars:        review.InputEnvVars,
+		ClientArgs:     review.InputClientArgs,
+	})
+	switch {
+	case err == nil:
 		log.Infof("review exec response, %v", resp)
 		c.JSON(http.StatusOK, resp)
-	case <-timeoutCtx.Done():
+	case errors.Is(err, context.DeadlineExceeded):
 		log.Infof("review exec timeout (50s), it will return async")
-		// closing the client will force the goroutine to end
-		// and the result will return async
-		client.Close()
-
 		// we do not know the status of this in the future.
 		// replaces the current "PROCESSING" status
 		reviewStatus = models.ReviewStatusUnknown
 		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(session.ID))
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client: %v", err)
 	}
 }
 
