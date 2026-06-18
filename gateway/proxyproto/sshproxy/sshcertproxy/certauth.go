@@ -23,8 +23,6 @@ type UserMapping struct {
 // Extensions enforced at the gateway proxy layer:
 //   - permit-pty               → pty-req channel request
 //   - permit-port-forwarding   → direct-tcpip channel open
-//   - permit-agent-forwarding  → auth-agent-req@openssh.com channel request
-//   - permit-X11-forwarding    → x11-req channel request
 //
 // Critical options enforced at the gateway proxy layer:
 //   - force-command            → exec/shell/subsystem channel requests
