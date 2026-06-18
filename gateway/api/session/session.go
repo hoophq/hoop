@@ -20,8 +20,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
-	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -68,18 +68,18 @@ func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*
 		return nil, nil, nil
 	}
 
-	analyzerRes, err := apiai.AnalyzeSession(ctx, orgID, script, aiAnalyzerRule.CustomPrompt)
+	analyzerRes, err := aianalyzer.AnalyzeSession(ctx, orgID, script, aiAnalyzerRule.CustomPrompt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
 
 	var levelKey models.RiskLevelKey
 	switch analyzerRes.RiskLevel {
-	case apiai.RiskLevelHigh:
+	case aianalyzer.RiskLevelHigh:
 		levelKey = models.RiskLevelKeyHigh
-	case apiai.RiskLevelMedium:
+	case aianalyzer.RiskLevelMedium:
 		levelKey = models.RiskLevelKeyMedium
-	case apiai.RiskLevelLow:
+	case aianalyzer.RiskLevelLow:
 		levelKey = models.RiskLevelKeyLow
 	}
 	tier := aiAnalyzerRule.RiskEvaluation.Tier(levelKey)
