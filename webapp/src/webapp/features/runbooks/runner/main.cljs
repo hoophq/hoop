@@ -12,6 +12,8 @@
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
    [webapp.webclient.components.execution-requirements-callout :as mandatory-metadata-callout]
    [webapp.components.notification-badge :refer [notification-badge]]
+   [webapp.features.ai-session-analyzer.views.ai-analyzer-card :refer [ai-analyzer-card]]
+   [webapp.features.ai-session-analyzer.views.ai-block-card :refer [ai-block-card]]
    [webapp.features.promotion :as promotion]
    [webapp.features.runbooks.runner.views.connections-dialog :as connections-dialog]
    [webapp.features.runbooks.runner.views.form :as runbook-form]
@@ -144,6 +146,8 @@
         banner-dismissed? (rf/subscribe [:runbooks/execution-requirements-callout-dismissed?])
         parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
+        role-has-rule? (rf/subscribe [:ai-session-analyzer/role-has-rule?])
+        runbooks-exec (rf/subscribe [:runbooks->exec])
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
@@ -155,6 +159,9 @@
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]
 
     (rf/dispatch [:editor-plugin->clear-script])
+    ;; Reset analyzer coverage so it reflects the runbook connection, not whatever
+    ;; the Web Terminal left behind; connection-loaded re-fetches it when applicable.
+    (rf/dispatch [:ai-session-analyzer/clear-role-rule])
     (rf/dispatch [:runbooks/load-persisted-connection])
     (rf/dispatch [:jira-integration->get])
     (rf/dispatch [:runbooks/initialize-from-query-params])
@@ -204,7 +211,16 @@
                 [:> Box {:class "h-full"}
                  [connections-dialog/connections-dialog]
                  [runbook-form/main {:runbook @selected-template
-                                     :selected-connection @runbooks-connection}]]]
+                                     :selected-connection @runbooks-connection}]]
+
+                (when @role-has-rule?
+                  (cond
+                    (= :loading (:status @runbooks-exec))
+                    [ai-analyzer-card]
+
+                    (= "block_execution" (get-in @runbooks-exec [:data :ai_analysis :action]))
+                    [ai-block-card {:title (get-in @runbooks-exec [:data :ai_analysis :title])
+                                    :explanation (get-in @runbooks-exec [:data :ai_analysis :explanation])}]))]
                [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
                 [log-area/main
                  (discover-connection-type @runbooks-connection)
