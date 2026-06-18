@@ -4,10 +4,11 @@
   This mirrors webapp.resources.setup.events.mcp-oauth (the create flow) but
   reads/writes the edit flow's single-connection state under [:connection-setup]
   instead of the create flow's [:resource-setup :roles N]. The obtained access
-  token is frozen into the connection's Authorization header, stored as an
-  'AUTHORIZATION' entry in [:connection-setup :credentials :environment-variables]
-  (process-form adds the HEADER_ prefix on save, and load strips it back), so it
-  round-trips exactly like a manually-added header.
+  token is frozen into the connection's Authorization header, stored under
+  [:connection-setup :network-credentials :HEADER_AUTHORIZATION] (NOT in the
+  editable headers list) so it is managed by the Authorize widget rather than
+  shown as a plain HTTP header row. process-form emits it on save, and the edit
+  form moves any loaded AUTHORIZATION header into this slot on init.
 
   The popup driver itself (:mcp-oauth/run-popup) is shared and lives in the
   create-flow namespace; it is a global re-frame fx, so we just dispatch it with
@@ -26,9 +27,6 @@
 
 (defn- unwrap [v]
   (if (map? v) (:value v "") (or v "")))
-
-(defn- authorization-header? [{:keys [key]}]
-  (= "authorization" (str/lower-case (or key ""))))
 
 ;; ---------------------------------------------------------------------------
 ;; State + optional client credential fields
@@ -116,21 +114,15 @@
    (let [auth-header (:authorization_header response)]
      (if (str/blank? auth-header)
        {:fx [[:dispatch [:mcp-oauth/edit-authorize-failure {:message "No token returned"}]]]}
-       (let [env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
-             without-auth (filterv (complement authorization-header?) env-vars)
-             updated (conj without-auth {:key "AUTHORIZATION" :value auth-header})]
-         {:db (-> db
-                  (assoc-in [:connection-setup :credentials :environment-variables] updated)
-                  (assoc-in mcp-edit-path (merge (get-in db mcp-edit-path {})
-                                                 {:status :success :error nil})))
-          :fx [[:dispatch [:show-snackbar {:level :success
-                                           :text "MCP connection authorized"}]]]})))))
+       {:db (assoc-in db mcp-edit-path (merge (get-in db mcp-edit-path {})
+                                              {:status :success :error nil}))
+        :fx [[:dispatch [:connection-setup/update-network-credentials "HEADER_AUTHORIZATION" auth-header]]
+             [:dispatch [:show-snackbar {:level :success
+                                         :text "MCP connection authorized"}]]]}))))
 
 (rf/reg-event-db
  :mcp-oauth/edit-clear
  (fn [db _]
-   (let [env-vars (get-in db [:connection-setup :credentials :environment-variables] [])]
-     (-> db
-         (assoc-in [:connection-setup :credentials :environment-variables]
-                   (filterv (complement authorization-header?) env-vars))
-         (assoc-in mcp-edit-path {:status :idle})))))
+   (-> db
+       (update-in [:connection-setup :network-credentials] dissoc :HEADER_AUTHORIZATION)
+       (assoc-in mcp-edit-path {:status :idle}))))

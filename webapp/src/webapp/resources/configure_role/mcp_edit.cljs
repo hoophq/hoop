@@ -8,17 +8,14 @@
    ["lucide-react" :refer [Check ShieldCheck]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
    [webapp.connections.views.setup.connection-method :as connection-method]))
 
-(defn- authorized? [env-vars]
-  (boolean
-   (some (fn [{:keys [key value]}]
-           (and (= "authorization" (cs/lower-case (or key "")))
-                (not (cs/blank? (str value)))))
-         env-vars)))
+(defn- authorization-header? [{:keys [key]}]
+  (= "authorization" (cs/lower-case (or key ""))))
 
 (defn mcp-edit-form []
   (let [credentials (rf/subscribe [:connection-setup/network-credentials])
@@ -26,20 +23,36 @@
         env-vars (rf/subscribe [:connection-setup/environment-variables])
         mcp-state (rf/subscribe [:mcp-oauth/edit-state])]
     (fn []
-      (let [show-selector? (= @connection-method "secrets-manager")
-            remote-url-value (if (map? (:remote_url @credentials))
-                               (:value (:remote_url @credentials))
-                               (or (:remote_url @credentials) ""))
-            insecure-value (let [raw-insecure (:insecure @credentials)]
-                             (cond
-                               (boolean? raw-insecure) raw-insecure
-                               (map? raw-insecure) (boolean (:value raw-insecure))
-                               (string? raw-insecure) (= raw-insecure "true")
-                               :else false))
-            authed? (authorized? @env-vars)
-            status (:status @mcp-state :idle)
-            busy? (contains? #{:authorizing :pending} status)]
-        [:form
+      (r/with-let [initialized? (atom false)]
+        ;; Move any Authorization header loaded from the saved connection out of
+        ;; the editable headers list into network-credentials, so the MCP token
+        ;; is managed by the Authorize widget below rather than shown as a plain
+        ;; HTTP header row (mirrors claude-code's X_API_KEY). We only flip the
+        ;; init flag once the header actually appears: the connection loads
+        ;; asynchronously, so the header is often absent on the first render and
+        ;; we must keep checking on later renders until it is present.
+        (when-not @initialized?
+          (when-let [auth-env (some #(when (authorization-header? %) %) @env-vars)]
+            (reset! initialized? true)
+            (when (cs/blank? (str (:HEADER_AUTHORIZATION @credentials)))
+              (rf/dispatch [:connection-setup/update-network-credentials
+                            "HEADER_AUTHORIZATION" (:value auth-env)]))
+            (rf/dispatch [:connection-setup/set-env-vars
+                          (filterv (complement authorization-header?) @env-vars)])))
+        (let [show-selector? (= @connection-method "secrets-manager")
+              remote-url-value (if (map? (:remote_url @credentials))
+                                 (:value (:remote_url @credentials))
+                                 (or (:remote_url @credentials) ""))
+              insecure-value (let [raw-insecure (:insecure @credentials)]
+                               (cond
+                                 (boolean? raw-insecure) raw-insecure
+                                 (map? raw-insecure) (boolean (:value raw-insecure))
+                                 (string? raw-insecure) (= raw-insecure "true")
+                                 :else false))
+              authed? (not (cs/blank? (str (:HEADER_AUTHORIZATION @credentials))))
+              status (:status @mcp-state :idle)
+              busy? (contains? #{:authorizing :pending} status)]
+          [:form
          {:id "credentials-form"
           :on-submit (fn [e] (.preventDefault e))}
          [:> Box {:class "space-y-radix-6"}
@@ -50,7 +63,7 @@
 
            [forms/input
             {:label "MCP Server URL"
-             :placeholder "e.g. https://mcp.figma.com/mcp"
+             :placeholder "e.g. https://mcp.linear.app"
              :required true
              :value remote-url-value
              :on-change #(rf/dispatch [:connection-setup/update-network-credentials
@@ -119,4 +132,4 @@
             [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
              "Skip SSL certificate verification for HTTPS connections."]]]
 
-          [agent-selector/main]]]))))
+          [agent-selector/main]]])))))

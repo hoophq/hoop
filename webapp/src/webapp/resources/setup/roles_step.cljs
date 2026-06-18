@@ -302,7 +302,7 @@
     [:> Box {:class "space-y-6"}
      ;; Server URL
      [forms/input {:label "MCP Server URL"
-                   :placeholder "e.g. https://mcp.figma.com/mcp"
+                   :placeholder "e.g. https://mcp.linear.app"
                    :value remote-url-value
                    :required true
                    :type "text"
