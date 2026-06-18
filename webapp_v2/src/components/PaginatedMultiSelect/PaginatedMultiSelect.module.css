@@ -1,13 +1,3 @@
-/* Scroll container for the option list — `overflow` has no Mantine prop, so it
-   lives here; the max-height is set via the `mah` prop at the call site. */
-.viewport {
-  overflow-y: auto;
-}
-
-.sentinel {
-  height: 1px;
-}
-
 .pill {
   background-color: var(--mantine-color-gray-5);
   color: var(--mantine-color-text);

@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import {
-  Box,
   Combobox,
   Group,
   Loader,
   Pill,
   PillsInput,
+  ScrollArea,
   Skeleton,
   Text,
   useCombobox,
 } from '@mantine/core'
-import { useIntersection } from '@mantine/hooks'
-import { Check } from 'lucide-react'
 import classes from './PaginatedMultiSelect.module.css'
 
 /**
@@ -48,24 +46,16 @@ export default function PaginatedMultiSelect({
     onDropdownClose: () => combobox.resetSelectedOption(),
   })
 
-  // Capture the scroll container as state (not a ref) so useIntersection re-runs
-  // with a real `root` once the element mounts.
-  const [viewport, setViewport] = useState(null)
-  const { ref: sentinelRef, entry } = useIntersection({
-    root: viewport,
-    rootMargin: '200px',
-  })
+  const viewportRef = useRef(null)
 
-  // Load one page per sentinel entry (rising edge only). Firing on every render
-  // where it stays intersecting would load several pages at once.
-  const wasIntersecting = useRef(false)
-  useEffect(() => {
-    const isIntersecting = entry?.isIntersecting ?? false
-    if (isIntersecting && !wasIntersecting.current && hasMore && !loading) {
+  const handleScrollPositionChange = () => {
+    if (!hasMore || loading) return
+    const el = viewportRef.current
+    if (!el) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) {
       onLoadMore?.()
     }
-    wasIntersecting.current = isIntersecting
-  }, [entry?.isIntersecting, hasMore, loading, onLoadMore])
+  }
 
   const selectedSet = useMemo(() => new Set(value), [value])
 
@@ -79,16 +69,18 @@ export default function PaginatedMultiSelect({
     return [...byValue.values()]
   }, [options, selectedOptions])
 
-  const labelByValue = useMemo(() => {
-    const map = new Map(mergedOptions.map((o) => [o.value, o.label]))
-    return map
-  }, [mergedOptions])
+  const labelByValue = useMemo(
+    () => new Map(mergedOptions.map((o) => [o.value, o.label])),
+    [mergedOptions],
+  )
 
   const handleValueToggle = (val) => {
     const next = selectedSet.has(val)
       ? value.filter((v) => v !== val)
       : [...value, val]
     onChange?.(next)
+    // Clear the search on select — matches Mantine's default MultiSelect.
+    onSearchChange?.('')
   }
 
   const handleValueRemove = (val) => onChange?.(value.filter((v) => v !== val))
@@ -117,20 +109,15 @@ export default function PaginatedMultiSelect({
     )
   })
 
-  // Skip pending (null-label) selections in the dropdown so it has no empty rows.
-  const optionNodes = mergedOptions.filter((o) => o.label != null).map((o) => {
-    const checked = selectedSet.has(o.value)
-    return (
-      <Combobox.Option value={o.value} key={o.value} active={checked}>
-        <Group justify="space-between" gap="sm" wrap="nowrap">
-          <span>{o.label}</span>
-          {checked && <Check size={16} />}
-        </Group>
+  const optionNodes = mergedOptions
+    .filter((o) => o.label != null && !selectedSet.has(o.value))
+    .map((o) => (
+      <Combobox.Option value={o.value} key={o.value}>
+        {o.label}
       </Combobox.Option>
-    )
-  })
+    ))
 
-  const isEmpty = optionNodes.length === 0 && !loading
+  const isEmpty = optionNodes.length === 0 && !loading && !hasMore
 
   return (
     <Combobox store={combobox} onOptionSubmit={handleValueToggle} disabled={disabled}>
@@ -167,12 +154,13 @@ export default function PaginatedMultiSelect({
 
       <Combobox.Dropdown>
         <Combobox.Options>
-          <Box ref={setViewport} className={classes.viewport} mah={240}>
-            {isEmpty ? (
-              <Combobox.Empty>Nothing found</Combobox.Empty>
-            ) : (
-              optionNodes
-            )}
+          <ScrollArea.Autosize
+            mah={240}
+            type="auto"
+            viewportRef={viewportRef}
+            onScrollPositionChange={handleScrollPositionChange}
+          >
+            {isEmpty ? <Combobox.Empty>Nothing found</Combobox.Empty> : optionNodes}
             {loading && (
               <Group justify="center" py="xs">
                 <Loader size="xs" />
@@ -181,8 +169,7 @@ export default function PaginatedMultiSelect({
                 </Text>
               </Group>
             )}
-            <div ref={sentinelRef} className={classes.sentinel} />
-          </Box>
+          </ScrollArea.Autosize>
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
