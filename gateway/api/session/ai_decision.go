@@ -14,48 +14,33 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-// AIDecision is what the analyzer verdict resolves to for a synchronous session
-// execution (an exec or a runbook run).
-//
-// This is the whole-session counterpart to aianalyzer.Outcome (allow/warn/block),
-// which decides per-request handling for native HTTP proxy traffic. An exec/runbook
-// session is asynchronous and reviewable, so require_access_request maps to a real
-// review here rather than degrading to a warning.
+// AIDecision is the analyzer verdict resolved for a synchronous session run (exec
+// or runbook). Unlike aianalyzer.Outcome (per-request HTTP proxy handling), these
+// runs are async and reviewable, so require_access_request maps to a real review
+// instead of a warning.
 type AIDecision int
 
 const (
-	// AIDecisionProceed means the caller should continue: persist the session
-	// (services.CreateSession persists session.AIAnalysis) and run it, then attach
-	// the analysis to its final/timeout response via ToOpenApiSessionAIAnalysis.
+	// AIDecisionProceed: caller persists and runs the session, with analysis attached.
 	AIDecisionProceed AIDecision = iota
-	// AIDecisionBlocked means the run was blocked by the analyzer. The caller must
-	// write the returned response and stop.
+	// AIDecisionBlocked: blocked by the analyzer; caller writes the response and stops.
 	AIDecisionBlocked
-	// AIDecisionReview means the run requires an access request. The caller must
-	// write the returned response with status 202 and stop.
+	// AIDecisionReview: requires an access request; caller writes the 202 response and stops.
 	AIDecisionReview
 )
 
-// ApplyAIAnalysisDecision resolves an AI analyzer verdict into a session-execution
-// decision and applies its side effects. It is shared by the Web Terminal/API exec
-// handler (Post) and the runbook exec handler so the block / require-access-request /
-// allow behavior stays identical across both surfaces.
+// ApplyAIAnalysisDecision resolves an analyzer verdict into a session decision and
+// applies its side effects. Shared by the exec handler (Post) and the runbook handler.
 //
-//   - analysis == nil                  -> (AIDecisionProceed, nil, nil) (no rule / empty script)
-//   - action == allow_execution        -> sets session.AIAnalysis; (AIDecisionProceed, nil, nil)
-//   - action == block_execution        -> marks the session done, persists it, emits the
-//     full session lifecycle (start+end) events, tracks the finished session, and returns
-//     a blocked response; (AIDecisionBlocked, response, nil)
-//   - action == require_access_request -> persists the session, creates a one-time review,
-//     emits the session start event, and returns a 202 review response; (AIDecisionReview, response, nil)
+//   - analysis == nil / allow_execution -> AIDecisionProceed (analysis attached on allow)
+//   - block_execution        -> marks the session done, persists it, emits start+end
+//     events, tracks usage, returns a blocked response (AIDecisionBlocked)
+//   - require_access_request -> persists the session, creates a one-time review, emits
+//     the start event, returns a 202 review response (AIDecisionReview)
 //
-// On AIDecisionProceed the caller owns persisting and running the session. The session
-// pointer is mutated in place (AIAnalysis is always attached; status/exit/end are set on
-// block) so the caller's subsequent persistence carries the analysis.
-//
-// inputEnvVars and inputClientArgs are only consumed by the review path: they are stored
-// on the one-time review so the session can be re-executed verbatim once approved. The
-// script reviewed is session.BlobInput, which both callers already populate.
+// On Proceed the caller owns persistence and execution; the session is mutated in place.
+// inputEnvVars/inputClientArgs are used only by the review path, to re-run the session
+// verbatim once approved (the reviewed script is session.BlobInput).
 func ApplyAIAnalysisDecision(
 	ctx *storagev2.Context,
 	session *models.Session,
@@ -82,9 +67,8 @@ func ApplyAIAnalysisDecision(
 			return AIDecisionProceed, nil, fmt.Errorf("failed updating blocked session: %w", err)
 		}
 
-		// AI-blocked sessions never reach the normal create/run path, so we publish the
-		// full session lifecycle (started + closed) here to keep downstream event
-		// consumers consistent.
+		// Blocked sessions skip the normal create/run path, so emit the full
+		// lifecycle (start+end) here to keep event consumers consistent.
 		events.DeriveFromSessionStart(ctx.OrgID, session, conn)
 		events.DeriveFromSessionEnd(ctx.OrgID, session)
 
@@ -109,10 +93,8 @@ func ApplyAIAnalysisDecision(
 		if err != nil {
 			return AIDecisionProceed, nil, fmt.Errorf("invalid org id: %w", err)
 		}
-		// Persist the session row (status stays open) so the pending review references a
-		// real session and its ai_analysis is recorded. The session executes after the
-		// review is approved, at which point the agent and downstream consumers (e.g.
-		// analyzer metrics) expect the row to exist.
+		// Persist the session (status stays open) so the review references a real row;
+		// it executes after approval, when downstream consumers expect the row to exist.
 		if err := models.UpsertSession(*session); err != nil {
 			return AIDecisionProceed, nil, fmt.Errorf("failed persisting session for ai review: %w", err)
 		}

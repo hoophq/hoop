@@ -7,11 +7,9 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-// TestApplyAIAnalysisDecision_NonEnforcingPaths covers the branches that do not touch the
-// database, events, or analytics: a nil analysis (no rule / empty script) and an
-// allow_execution verdict. The block_execution and require_access_request branches write
-// sessions, emit lifecycle events, and create reviews, which require a live datastore and
-// are exercised by integration tests rather than here.
+// TestApplyAIAnalysisDecision_NonEnforcingPaths covers the branches with no DB/events/
+// analytics side effects: nil analysis and allow_execution. The block and review branches
+// need a live datastore and are covered by integration tests.
 func TestApplyAIAnalysisDecision_NonEnforcingPaths(t *testing.T) {
 	ctx := storagev2.NewContext("user-id", "org-id")
 	conn := &models.Connection{Name: "pgdemo"}
