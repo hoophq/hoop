@@ -51,9 +51,7 @@ export const DISCOVER_ITEMS = [
     label: 'Event Routing',
     path: '/features/event-routing',
     icon: Webhook,
-    adminOnly: true,
-    featureFlag: 'experimental.event_routing',
-    badge: { text: 'BETA', color: 'indigo' }
+    adminOnly: true
   },
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true },
   { label: 'Jira Templates', path: '/jira-templates', icon: Layers, adminOnly: true },

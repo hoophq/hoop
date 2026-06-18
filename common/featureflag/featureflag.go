@@ -54,27 +54,6 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.event_routing": {
-		Name:        "experimental.event_routing",
-		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway},
-	},
-	"experimental.agent_async_ssh": {
-		Name:        "experimental.agent_async_ssh",
-		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentAgent},
-	},
-	"experimental.hoop_tunnel": {
-		Name:        "experimental.hoop_tunnel",
-		Description: "Enable Hoop Tunnel: WebSocket-based virtual network exposing authorized connections as *.hoop hostnames on the user's machine. Gates all tunnel-related code paths across gateway, agent, and client.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
-	},
 	"experimental.rulepacks": {
 		Name:        "experimental.rulepacks",
 		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",

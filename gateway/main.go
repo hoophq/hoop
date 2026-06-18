@@ -279,7 +279,7 @@ func Run() {
 	// unconditionally — per-org gating then happens on the enqueue side
 	// inside RDPSessionRecorder.
 	go analyzer.RunSupervisor(context.Background(), appconfig.Get().MSPresidioAnalyzerURL(), defaultOrgID)
-	go eventrouting.RunSupervisor(context.Background(), defaultOrgID)
+	go eventrouting.RunSupervisor(context.Background())
 
 	bootstrap.Phase("Starting API")
 	grpcStep := bootstrap.Step("gRPC gateway")
