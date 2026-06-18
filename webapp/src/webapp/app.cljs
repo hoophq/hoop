@@ -37,6 +37,8 @@
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
+   [webapp.resources.setup.events.mcp-oauth]
+   [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.setup.guardrails-suggestions.events]
    [webapp.resources.setup.guardrails-suggestions.subs]
    [webapp.resources.main :as resources-main]

@@ -741,7 +741,7 @@ func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn 
 
 func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
 	switch conn.SubType.String {
-	case "grafana", "kibana", "kubernetes-token":
+	case "grafana", "kibana", "kubernetes-token", "mcp":
 		return proto.ConnectionTypeHttpProxy
 	case "git", "github":
 		return proto.ConnectionTypeSSH
