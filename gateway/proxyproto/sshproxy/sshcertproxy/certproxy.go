@@ -558,25 +558,33 @@ loop:
 	}
 	connType := pb.ToConnectionType(dbConn.Type, dbConn.SubType.String)
 	switch connType {
-	case pb.ConnectionTypeSSH, pb.ConnectionTypeCommandLine:
+	case pb.ConnectionTypeSSH, pb.ConnectionTypeCommandLine,
+		pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL:
 		// supported
 	default:
 		log.With("sid", c.sid, "conn", c.id, "ch", channelID).
 			Infof("cert session: connection %q type %s does not support pty/exec (matched=%s)",
 				connectionName, connType, c.certSession.matchedValue)
-		rejectExec(fmt.Sprintf("connection %q (type=%s) does not support pty/exec sessions; must be type ssh or custom",
+		rejectExec(fmt.Sprintf("connection %q (type=%s) does not support pty/exec sessions; must be type ssh, custom, or database (postgres/mysql)",
 			connectionName, connType))
 		return fmt.Errorf("connection %q (type=%s) does not support pty/exec sessions",
 			connectionName, connType)
 	}
 
-	// Verb for command-line connections:
-	//   - PTY + no args  → connect  (interactive terminal)
-	//   - PTY + args     → exec     (args sent as stdin input)
-	//   - no PTY         → exec     (empty stdin, command runs one-shot)
+	// Verb selection:
+	//   - SSH                          → connect (always; SSH proxy manages its own exec)
+	//   - CommandLine, PTY + no args   → connect (interactive terminal)
+	//   - CommandLine, PTY + args      → exec    (args sent as stdin input)
+	//   - CommandLine, no PTY          → exec    (one-shot)
+	//   - Postgres / MySQL             → exec    (always; database connections are exec-based)
 	isPTY := len(preExecRequests) > 0
 	verb := pb.ClientVerbConnect
-	if connType == pb.ConnectionTypeCommandLine && (!isPTY || upstreamCommand != "") {
+	switch connType {
+	case pb.ConnectionTypeCommandLine:
+		if !isPTY || upstreamCommand != "" {
+			verb = pb.ClientVerbExec
+		}
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL:
 		verb = pb.ClientVerbExec
 	}
 
@@ -606,7 +614,7 @@ loop:
 		switch connType {
 		case pb.ConnectionTypeSSH:
 			handler, openErr = sshproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
-		case pb.ConnectionTypeCommandLine:
+		case pb.ConnectionTypeCommandLine, pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL:
 			handler, openErr = termproto.OpenSession(c.sid, c.id, grpcClient, c.ctx, c.cancelFn)
 		}
 		if openErr != nil {
