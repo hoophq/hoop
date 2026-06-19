@@ -90,7 +90,7 @@ test-enterprise: libhoop-map generate-wasm
 test-integration: libhoop-map generate-wasm
 	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
-generate-openapi-docs:
+generate-openapi-docs: libhoop-map
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
 
