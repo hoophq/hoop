@@ -70,7 +70,7 @@ func AnalyzeHTTPRequest(ctx context.Context, orgID uuid.UUID, connectionName, me
 		return nil, fmt.Errorf("failed analyzing http request: %w", err)
 	}
 
-	tier := rule.RiskEvaluation.Tier(riskLevelKey(res.RiskLevel))
+	tier := rule.RiskEvaluation.Tier(RiskLevelKey(res.RiskLevel))
 	return &HTTPDecision{
 		Outcome:     outcomeForAction(tier.Action),
 		RiskLevel:   res.RiskLevel,
@@ -88,17 +88,6 @@ func outcomeForAction(action models.RiskEvaluationAction) Outcome {
 		return OutcomeWarn
 	default:
 		return OutcomeAllow
-	}
-}
-
-func riskLevelKey(level RiskLevel) models.RiskLevelKey {
-	switch level {
-	case RiskLevelHigh:
-		return models.RiskLevelKeyHigh
-	case RiskLevelMedium:
-		return models.RiskLevelKeyMedium
-	default:
-		return models.RiskLevelKeyLow
 	}
 }
 
