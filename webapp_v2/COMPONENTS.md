@@ -312,6 +312,87 @@ Props: `icon` (lucide component), `label` (string), `values` (string[]), `select
 
 ---
 
+### `AsyncValueFilter`
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+```jsx
+import AsyncValueFilter from '@/components/AsyncValueFilter'
+import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import { Shapes } from 'lucide-react'
+
+const roles = usePaginatedConnections({ pageSize: 50 })
+
+<AsyncValueFilter
+  icon={Shapes}
+  label="Resource Role"
+  placeholder="Search resource roles"
+  selected={selectedRole}
+  onSelect={setSelectedRole}
+  onClear={() => setSelectedRole(null)}
+  options={roles.options}
+  loading={roles.loading}
+  hasMore={roles.hasMore}
+  onLoadMore={roles.loadMore}
+  searchValue={roles.searchValue}
+  onSearchChange={roles.setSearch}
+  onOpen={roles.ensureLoaded}
+/>
+```
+Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+
+---
+
+### `PaginatedMultiSelect`
+Generic multi-select for a **paginated, server-searched** option source — built on Mantine `Combobox`/`PillsInput` with infinite scroll (`useIntersection`). Presentational/controlled (no fetching). `selectedOptions` supplies labels for already-selected values so chips render correctly even when the selection is not on the current page. For connections, use the `ConnectionsMultiSelect` wrapper below rather than wiring this directly.
+Props: `label`, `placeholder`, `required`, `disabled`, `value` (ids[]), `onChange(ids)`, `options`, `selectedOptions`, `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onDropdownOpen()`.
+
+---
+
+### `ConnectionsMultiSelect`
+Resource-role (connection) multi-select with infinite-scroll pagination + server search. Composes `usePaginatedConnections` + `PaginatedMultiSelect` and resolves labels for already-selected ids on demand via `?connection_ids=` (so edit-mode chips show names without loading every connection). This is the React port of CLJS `connections-select` — use it anywhere a feature needs a connection picker.
+```jsx
+import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
+
+<ConnectionsMultiSelect
+  value={form.connectionIds}
+  onChange={(ids) => setField({ connectionIds: ids })}
+/>
+```
+Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`.
+
+---
+
+### `FeaturePromotion`
+Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, and future Access Control / Guardrails / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
+```jsx
+import FeaturePromotion from '@/components/FeaturePromotion'
+import { FolderLock } from 'lucide-react'
+
+<FeaturePromotion
+  featureName="Live Data Masking"
+  mode="empty-state"
+  image="data-masking-promotion.png"
+  description="Zero-config DLP policies…"
+  featureItems={[{ icon: <FolderLock size={20} />, title: '…', description: '…' }]}
+  onPrimaryClick={goCreate}
+  primaryText="Configure Live Data Masking"
+  // OR the docs/deprecation path:
+  // docsHref={docsUrl.features.aiDatamasking} docsText="Go to docs" extraInformation="…"
+/>
+```
+Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+
+---
+
+### `FullBleed` (`src/layout/FullBleed/`)
+Lets a page render edge-to-edge and exactly one viewport tall **inside** the padded `PageLayout` — cancels the page padding (single-sourced from `PageLayout`'s `PAGE_PADDING`) and fills the `AppShell.Main` height. Use for hero/promotion panels.
+```jsx
+import FullBleed from '@/layout/FullBleed'
+
+<FullBleed><FeaturePromotion … /></FullBleed>
+```
+
+---
+
 ## Page Patterns
 
 ### Settings `SectionRow`
@@ -349,6 +430,15 @@ const showLoader = useMinDelay(loading, 500)
 if (showLoader) return <PageLoader />
 ```
 
+### `usePaginatedConnections({ pageSize = 50 })`
+Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
+```jsx
+const roles = usePaginatedConnections({ pageSize: 50 })
+// roles.options, roles.loading, roles.hasMore, roles.searchValue
+// roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
+```
+Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+
 ---
 
 ## Stores (`src/stores/`)
@@ -375,7 +465,7 @@ useAuthStore.getState().token
 | `api.js` | Base Axios instance — adds Bearer token, handles 401 logout |
 | `auth.js` | Login, register, OAuth, user info, server info |
 | `agents.js` | CRUD `/agents` and `/agents/:id` |
-| `connections.js` | GET `/connections` list |
+| `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 | `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |

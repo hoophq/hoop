@@ -2,9 +2,9 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Callout Flex Heading Link
                                Text]]
-   ["lucide-react" :refer [ArrowUpRight Combine Database FastForward FileLock2
-                           FolderLock Laptop ListCheck ListTodo Lock MonitorCheck
-                           SearchCode Settings2 ShieldCheck SlidersHorizontal
+   ["lucide-react" :refer [ArrowUpRight Database FastForward FileLock2
+                           Laptop ListCheck ListTodo Lock MonitorCheck
+                           SearchCode Settings2 ShieldCheck
                            Sparkles TextSearch UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -253,40 +253,6 @@
                      :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
     :primary-text "Get Started"}])
-
-(defn ai-data-masking-promotion
-  "Specific component for AI Data Masking"
-  [{:keys [mode redact-provider]}]
-  [feature-promotion
-   (merge
-    {:feature-name "AI Data Masking"
-     :mode mode
-     :image "data-masking-promotion.png"
-     :description "Zero-config DLP policies that automatically mask sensitive data in real-time at the protocol layer."
-     :feature-items [{:icon [:> FolderLock {:size 20}]
-                      :title "No Configuration Required"
-                      :description "Automatically masks sensitive data in the data stream of any connection where AI Data Masking is enabled."}
-                     {:icon [:> Combine {:size 20}]
-                      :title "Real-Time Protection"
-                      :description "Sensitive data is masked in real-time, ensuring that no unprotected data is exposed during access sessions."}
-                     {:icon [:> SlidersHorizontal {:size 20}]
-                      :title "Customizable Setup"
-                      :description "Easily add or remove fields to tailor the masking setup to your specific needs."}]}
-    (case redact-provider
-      "mspresidio"
-      {:on-primary-click (if (= mode :empty-state)
-                           #(rf/dispatch [:navigate :create-ai-data-masking])
-                           request-demo)
-       :primary-text (if (= mode :empty-state)
-                       "Configure AI Data Masking"
-                       "Request demo")}
-      "gcp"
-      {:link-button-href [:features :ai-datamasking]
-       :link-button-text "Go to AI Data Masking Docs"
-       :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}
-      {:link-button-href [:features :ai-datamasking]
-       :link-button-text "Go to AI Data Masking Docs"
-       :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}))])
 
 (defn access-request-promotion
   "Specific component for Access Request"

@@ -77,6 +77,9 @@ Gateway backend (port 8009)
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |
+| `/features/data-masking` | React | Done |
+| `/features/data-masking/new` | React | Done |
+| `/features/data-masking/edit/:id` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -104,7 +107,6 @@ Gateway backend (port 8009)
 /features/access-control/*
 /features/access-request/*
 /features/runbooks/*
-/features/data-masking/*
 /features/ai-session-analyzer/*
 /guardrails/*
 /jira-templates/*
@@ -149,6 +151,8 @@ Gateway backend (port 8009)
 | api | `services/api.js` | Base instance + auth interceptor + 401 handler |
 | auth | `services/auth.js` | `/publicserverinfo`, `/localauth/login`, `/userinfo`, `/serverinfo` |
 | agents | `services/agents.js` | CRUD `/agents`, `/agents/:id` |
+| dataMasking | `services/dataMasking.js` | CRUD `/datamasking-rules`, `/datamasking-rules/:id` |
+| connections | `services/connections.js` | `getConnections()` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` (`page`/`page_size`/`search`/`connection_ids` → `{pages,data}`) for infinite-scroll dropdowns |
 | search | `services/search.js` | `/search?term=` |
 
 ### Dev Ports
@@ -190,6 +194,22 @@ Steps to migrate a page:
 3. Build page components using Mantine only
 4. Add route in `Router.jsx` above the `/*` catch-all
 5. Sidebar link in `layout/Sidebar.jsx` is already there — just confirm `to` path matches
+
+### Reusable building blocks (don't re-derive these per migration)
+
+Several CLJS patterns recur across feature pages and already have shared React
+equivalents. **Reach for these before writing a new one** (full props in `COMPONENTS.md`):
+
+| CLJS pattern | React building block | Use it for |
+|--------------|----------------------|------------|
+| `features/promotion` (`*-promotion`) | `components/FeaturePromotion` + `layout/FullBleed` | Empty/gated feature pages (split marketing panel + illustration). |
+| `resource-role-filter` / `attribute-filter` (full list) | `components/ValueFilter` | Single-value table/list filter over a fully loaded array. |
+| `resource-role-filter` (paginated) | `components/AsyncValueFilter` | Single-value filter over a paginated, server-searched source. |
+| `components/multiselect` `paginated` | `components/PaginatedMultiSelect` | Generic multi-select over a paginated, server-searched source. |
+| `components/connections-select` | `components/ConnectionsMultiSelect` | Resource-role (connection) picker with infinite scroll + search. |
+| `:connections->pagination` slice | `hooks/usePaginatedConnections` | Paginated connection option source (data layer for the two above). |
+
+Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bottom) — no bespoke component. The full `/connections` load stays only where a page must resolve every `connection_ids → name` (e.g. list displays); dropdowns paginate.
 
 ---
 

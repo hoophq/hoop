@@ -371,9 +371,14 @@
                                                "Search roles")
                                  :value @search-name
                                  :onChange (fn [e]
-                                             (let [value (-> e .-target .-value)
+                                             (let [input (.-target e)
+                                                   caret-start (.-selectionStart input)
+                                                   caret-end (.-selectionEnd input)
+                                                   value (.-value input)
                                                    trimmed (cs/trim value)]
                                                (reset! search-name value)
+                                               (r/flush)
+                                               (.setSelectionRange input caret-start caret-end)
                                                (when @search-debounce-timer
                                                  (js/clearTimeout @search-debounce-timer))
                                                (when (or (cs/blank? trimmed) (> (count trimmed) 2))

@@ -1,0 +1,9 @@
+.row {
+  cursor: pointer;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.row:hover {
+  background-color: var(--mantine-color-gray-1);
+}
+

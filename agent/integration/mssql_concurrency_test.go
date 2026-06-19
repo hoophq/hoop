@@ -21,8 +21,8 @@ import (
 // proxy's bytes.Buffer would trip the detector.
 //
 // Why the work is driven sequentially, not concurrently: the agent's recv
-// loop dispatches packets synchronously (only SSH has async dispatch, behind
-// experimental.agent_async_ssh). Driving all sessions' drivers at once would
+// loop dispatches packets synchronously (only SSH has async dispatch).
+// Driving all sessions' drivers at once would
 // have each session's handshake contend for the single recv loop, so under
 // load one session can starve past the driver timeout — the same limitation
 // TestPG_ParallelSessions_OneHangs and the MySQL equivalent document with

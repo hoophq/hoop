@@ -76,7 +76,7 @@
       (when single-role?
         [action-card {:icon ShieldCheck
                       :title "Configure additional features"
-                      :description "Advanced protections like AI Data Masking, Runbooks and more"
+                      :description "Advanced protections like Live Data Masking, Runbooks and more"
                       :on-click (fn []
                                   (rf/dispatch-sync [:plugins->get-my-plugins])
                                   (rf/dispatch [:navigate :configure-role {} :connection-name (:name first-role)]))}])

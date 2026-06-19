@@ -520,6 +520,22 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	return &conn, nil
 }
 
+// GetConnectionByOrgAndName retrieves a connection by org and name without
+// access-control enforcement. Returns ErrNotFound when no matching row exists.
+func GetConnectionByOrgAndName(orgID, name string) (*Connection, error) {
+	var conn Connection
+	err := DB.Table(tableConnections).
+		Where("org_id = ? AND name = ?", orgID, name).
+		First(&conn).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &conn, nil
+}
+
 // GetConnectionByName retrieves a connection by name only.
 // It doesn't validate user access through access control, if you need it then use GetConnectionByNameOrID
 func GetConnectionByName(db *gorm.DB, name string) (*Connection, error) {
