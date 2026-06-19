@@ -22,6 +22,12 @@ const (
 	ComponentClient  Component = "client"
 )
 
+// Flag name constants. Prefer these over string literals at call sites so the
+// compiler catches typos and renames stay in sync with the catalog.
+const (
+	FlagHTTPSessionAnalyzer = "experimental.http_session_analyzer"
+)
+
 type Flag struct {
 	Name        string
 	Description string
@@ -75,9 +81,9 @@ var catalog = map[string]Flag{
 		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
 	},
-	"experimental.http_session_analyzer": {
-		Name:        "experimental.http_session_analyzer",
-		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code). Each request is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
+	FlagHTTPSessionAnalyzer: {
+		Name:        FlagHTTPSessionAnalyzer,
+		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code), for both the credential-token proxy and `hoop connect`. Each request is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},

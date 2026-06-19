@@ -41,9 +41,6 @@ const (
 	proxyTokenHeader = "Authorization"
 	proxyTokenCookie = "hoop_proxy_token"
 
-	// featureFlagHTTPSessionAnalyzer gates per-request AI risk analysis for
-	// native HTTP resources. Must match the catalog entry in common/featureflag.
-	featureFlagHTTPSessionAnalyzer = "experimental.http_session_analyzer"
 	// analyzerTimeout bounds the per-request AI analysis call so a slow/hung
 	// provider cannot hold a proxied request open indefinitely.
 	analyzerTimeout = 25 * time.Second
@@ -579,6 +576,10 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 				pb.SpecGatewaySessionID:   []byte(sess.sid),
 				pb.SpecClientConnectionID: []byte(connectionID),
 				pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
+				// This path frames and analyzes requests itself (see
+				// analyzeRequestBlocked); mark it so the transport-level
+				// connect-path analyzer skips it and we don't double-analyze.
+				pb.SpecHttpProxyServerKey: []byte("1"),
 			},
 		})
 		sendErr <- err
@@ -640,7 +641,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 
 		// Check if this is a WebSocket upgrade response
 		if resp.StatusCode == http.StatusSwitchingProtocols {
-			if sess.orgID != "" && featureflag.IsEnabled(sess.orgID, featureFlagHTTPSessionAnalyzer) {
+			if sess.orgID != "" && featureflag.IsEnabled(sess.orgID, featureflag.FlagHTTPSessionAnalyzer) {
 				log.With("sid", sess.sid, "conn", sess.connectionName).
 					Infof("ai analyzer: websocket upgrade established; only the upgrade request was analyzed, post-upgrade frames are not inspected")
 			}
@@ -671,7 +672,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 // it would take the whole HTTP resource down. Such failures are logged loudly
 // and the request is allowed through.
 func (sess *httpProxySession) analyzeRequestBlocked(w http.ResponseWriter, r *http.Request, body []byte) bool {
-	if sess.orgID == "" || !featureflag.IsEnabled(sess.orgID, featureFlagHTTPSessionAnalyzer) {
+	if sess.orgID == "" || !featureflag.IsEnabled(sess.orgID, featureflag.FlagHTTPSessionAnalyzer) {
 		return false
 	}
 	orgID, err := uuid.Parse(sess.orgID)
@@ -989,6 +990,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 					Spec: map[string][]byte{
 						pb.SpecGatewaySessionID:   []byte(sess.sid),
 						pb.SpecClientConnectionID: []byte(connectionID),
+						pb.SpecHttpProxyServerKey: []byte("1"),
 					},
 				}); err != nil {
 					log.Errorf("failed to send buffered data: %v", err)
@@ -1027,6 +1029,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 					Spec: map[string][]byte{
 						pb.SpecGatewaySessionID:   []byte(sess.sid),
 						pb.SpecClientConnectionID: []byte(connectionID),
+						pb.SpecHttpProxyServerKey: []byte("1"),
 					},
 				}); err != nil {
 					log.Warnf("websocket failed to send data to agent: %v", err)

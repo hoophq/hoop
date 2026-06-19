@@ -29,6 +29,11 @@ const (
 	SpecAwsSSMEc2InstanceId      string = "aws.ssm.ec2.instance_id"
 	SpecHttpProxyBaseUrl         string = "httpproxy.base_url"
 	SpecHttpProxyRequestIDs      string = "httpproxy.request_id"
+	// SpecHttpProxyServerKey marks HttpProxyConnectionWrite packets emitted by
+	// the gateway HTTP proxy server. That path frames and analyzes each request
+	// itself (gateway/proxyproto/httpproxy), so the transport-level connect-path
+	// analyzer uses this marker to skip them and avoid double analysis.
+	SpecHttpProxyServerKey string = "httpproxy.server"
 
 	// DEPRECATED: spec items deprecated
 	SpecAgentDlpProvider             string = "agent.dlp_provider"
@@ -36,7 +41,7 @@ const (
 	SpecAgentMSPresidioAnonymizerURL string = "agent.mspresidio_anonymizer_url"
 	SpecAgentGCPRawCredentialsKey    string = "agent.gcp_credentials"
 
-	SpecFeatureFlagsKey    string = "feature-flags"
+	SpecFeatureFlagsKey     string = "feature-flags"
 	SpecTCPServerConnectKey string = "tcp.server_connect"
 	SpecReviewDataKey       string = "review.data"
 	SpecGatewayReviewID     string = "review.id"

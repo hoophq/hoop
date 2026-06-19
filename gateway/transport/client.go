@@ -151,6 +151,8 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 
 func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
+	// Free any per-connection HTTP analyzer state when this session's stream ends.
+	defer httpAnalyzer.dropSession(pctx.SID)
 	recvCh := grpc.NewStreamRecv(stream.Context(), stream)
 	for {
 		var dstream *grpc.DataStream
@@ -190,6 +192,22 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(pctx.SID)
 		shouldProcessClientPacket := true
+
+		// Per-request AI analysis for the `hoop connect` HTTP proxy path. The
+		// client-side local proxy streams raw bytes here, so this is where a
+		// connect-mode request is inspected (the credential-token proxy server
+		// analyzes earlier, in handleRequest, and marks its packets to be
+		// skipped). A blocked request gets a 403 sent back to the client and is
+		// not forwarded to the agent; the session stays alive.
+		if pb.PacketType(pkt.Type) == pbagent.HttpProxyConnectionWrite {
+			drop, clientPkt := analyzeHTTPProxyConnect(pctx, pkt)
+			if clientPkt != nil {
+				_ = stream.Send(clientPkt)
+			}
+			if drop {
+				continue
+			}
+		}
 
 		// Review check
 		connectResponse, err := accessrequestinterceptor.OnReceive(pctx, pkt)
