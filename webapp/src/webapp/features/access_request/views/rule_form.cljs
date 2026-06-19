@@ -47,7 +47,8 @@
   (helpers/can-open-web-terminal? resource-role))
 
 (defn- jit-eligible? [resource-role]
-  (or (helpers/can-access-native-client? resource-role)
+  ;; Eligibility is capability-based, not gated on the Postgres proxy.
+  (or (helpers/can-access-native-client? resource-role true)
       (helpers/can-hoop-cli? resource-role)))
 
 (defn- eligible-for-type? [access-type resource-role]

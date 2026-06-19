@@ -16285,6 +16285,10 @@ const docTemplate = `{
                     ],
                     "example": "INFO"
                 },
+                "postgres_proxy_enabled": {
+                    "description": "Report if the Postgres proxy server has a listen address configured.\nWhen false, the native-client credentials flow is unavailable for\nPostgres connections and clients should fall back to the Hoop CLI.",
+                    "type": "boolean"
+                },
                 "redact_provider": {
                     "description": "Redact Provider used by the server",
                     "type": "string",

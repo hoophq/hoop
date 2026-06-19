@@ -59,6 +59,12 @@ func Get(c *gin.Context) {
 		return
 	}
 
+	miscConf, err := models.GetServerMiscConfig()
+	if err != nil && err != models.ErrNotFound {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading server misc config")
+		return
+	}
+
 	appc := appconfig.Get()
 	apiHostname := appc.ApiHostname()
 	l, licenseVerifyErr := defaultOSSLicense(), ""
@@ -93,6 +99,10 @@ func Get(c *gin.Context) {
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
 	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
+	// Mirrors isConnectionTypeConfigured in the credentials handler.
+	serverInfoData.PostgresProxyEnabled = miscConf != nil &&
+		miscConf.PostgresServerConfig != nil &&
+		miscConf.PostgresServerConfig.ListenAddress != ""
 	serverInfoData.FeatureFlags = featureflag.SnapshotForOrg(ctx.OrgID)
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,

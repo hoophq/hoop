@@ -1309,6 +1309,8 @@ type ServerInfo struct {
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
 	// Report if SSH_CLIENT_HOST_KEY is set
 	HasSSHClientHostKey bool `json:"has_ssh_client_host_key"`
+	// Report if the Postgres proxy server has a listen address configured
+	PostgresProxyEnabled bool `json:"postgres_proxy_enabled"`
 	// API_URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
