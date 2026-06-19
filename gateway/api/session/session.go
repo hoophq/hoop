@@ -72,16 +72,7 @@ func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*
 		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
 
-	var levelKey models.RiskLevelKey
-	switch analyzerRes.RiskLevel {
-	case aianalyzer.RiskLevelHigh:
-		levelKey = models.RiskLevelKeyHigh
-	case aianalyzer.RiskLevelMedium:
-		levelKey = models.RiskLevelKeyMedium
-	case aianalyzer.RiskLevelLow:
-		levelKey = models.RiskLevelKeyLow
-	}
-	tier := aiAnalyzerRule.RiskEvaluation.Tier(levelKey)
+	tier := aiAnalyzerRule.RiskEvaluation.Tier(aianalyzer.RiskLevelKey(analyzerRes.RiskLevel))
 
 	analysis := &models.SessionAIAnalysis{
 		RiskLevel:   string(analyzerRes.RiskLevel),

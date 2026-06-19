@@ -37,8 +37,8 @@ func TestRiskLevelKey(t *testing.T) {
 		{RiskLevel("bogus"), models.RiskLevelKeyLow},
 	}
 	for _, tc := range cases {
-		if got := riskLevelKey(tc.level); got != tc.want {
-			t.Errorf("riskLevelKey(%q) = %q, want %q", tc.level, got, tc.want)
+		if got := RiskLevelKey(tc.level); got != tc.want {
+			t.Errorf("RiskLevelKey(%q) = %q, want %q", tc.level, got, tc.want)
 		}
 	}
 }

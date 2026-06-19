@@ -25,6 +25,17 @@ const (
 	RiskLevelHigh   RiskLevel = "high"
 )
 
+func RiskLevelKey(level RiskLevel) models.RiskLevelKey {
+	switch level {
+	case RiskLevelHigh:
+		return models.RiskLevelKeyHigh
+	case RiskLevelMedium:
+		return models.RiskLevelKeyMedium
+	default:
+		return models.RiskLevelKeyLow
+	}
+}
+
 // SessionAnalysisResult holds the outcome of an AI analysis.
 type SessionAnalysisResult struct {
 	RiskLevel   RiskLevel
