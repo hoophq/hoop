@@ -29,7 +29,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code", "mcp"}
 
 // noExpirySentinel is the expire_at value stored for credentials that should
 // not expire — the human "Open in Native Client" flow issues these when the
@@ -731,7 +731,7 @@ func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn 
 		sshproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeRDP:
 		broker.RevokeByCredentialID(cred.ID)
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
 		// SSM has no persistent session store; proxies reject new connections
@@ -741,7 +741,7 @@ func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn 
 
 func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
 	switch conn.SubType.String {
-	case "grafana", "kibana", "kubernetes-token", "mcp":
+	case "grafana", "kibana", "kubernetes-token":
 		return proto.ConnectionTypeHttpProxy
 	case "git", "github":
 		return proto.ConnectionTypeSSH
@@ -922,7 +922,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -1073,6 +1073,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("httpproxy", keySize)
 	case proto.ConnectionTypeClaudeCode:
 		return keys.GenerateSecureRandomKey("claude-code", keySize)
+	case proto.ConnectionTypeMcp:
+		return keys.GenerateSecureRandomKey("mcp", keySize)
 	case proto.ConnectionTypeKubernetes:
 		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:
