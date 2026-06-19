@@ -1,4 +1,9 @@
-package apiai
+// Package aianalyzer holds the provider-agnostic AI session risk classifier
+// used by the gateway. It depends only on the AI client abstraction
+// (gateway/aiclients) and the data layer (gateway/models) so it can be reused
+// from any layer — including the protocol proxies — without creating import
+// cycles through the API/service packages.
+package aianalyzer
 
 import (
 	"context"
@@ -19,6 +24,17 @@ const (
 	RiskLevelMedium RiskLevel = "medium"
 	RiskLevelHigh   RiskLevel = "high"
 )
+
+func RiskLevelKey(level RiskLevel) models.RiskLevelKey {
+	switch level {
+	case RiskLevelHigh:
+		return models.RiskLevelKeyHigh
+	case RiskLevelMedium:
+		return models.RiskLevelKeyMedium
+	default:
+		return models.RiskLevelKeyLow
+	}
+}
 
 // SessionAnalysisResult holds the outcome of an AI analysis.
 type SessionAnalysisResult struct {

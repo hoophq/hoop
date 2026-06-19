@@ -25,6 +25,7 @@ export const useUserStore = create((set, get) => ({
   analyticsMode: 'anonymous',
   disableClipboard: false,
   gatewayVersion: null,
+  redactProvider: null,
   featureFlags: {},
   apiUrl: null,
   loading: false,
@@ -37,15 +38,16 @@ export const useUserStore = create((set, get) => ({
     const analyticsMode = serverInfo?.analytics_mode || 'anonymous'
     const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
     const featureFlags = serverInfo?.feature_flags || {}
+    const redactProvider = serverInfo?.redact_provider || null
     const apiUrl = serverInfo?.api_url || null
-    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, featureFlags, apiUrl })
+    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, featureFlags, redactProvider, apiUrl })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, analyticsMode: 'anonymous', disableClipboard: false, gatewayVersion: null, featureFlags: {}, apiUrl: null })
+    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, analyticsMode: 'anonymous', disableClipboard: false, gatewayVersion: null, featureFlags: {}, redactProvider: null, apiUrl: null })
   },
 
   initIntercom: (user) => {

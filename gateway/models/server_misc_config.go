@@ -25,9 +25,18 @@ type PostgresServerConfig struct {
 	ListenAddress string `json:"listen_address"`
 }
 
+// SSHUserMapping configures how a certificate attribute is matched against a
+// Hoop user attribute to authenticate certificate-based SSH connections.
+type SSHUserMapping struct {
+	CertAttribute string `json:"cert_attr"` // "principal" or "key_id"
+	UserAttribute string `json:"user_attr"` // "email", "subject", or "user_id"
+}
+
 type SSHServerConfig struct {
-	ListenAddress string `json:"listen_address"`
-	HostsKey      string `json:"hosts_key"`
+	ListenAddress string          `json:"listen_address"`
+	HostsKey      string          `json:"hosts_key"`
+	TrustedCAs    []string        `json:"trusted_cas,omitempty"`
+	UserMapping   *SSHUserMapping `json:"user_mapping,omitempty"`
 }
 
 func GetServerMiscConfig() (*ServerMiscConfig, error) {

@@ -54,27 +54,6 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.event_routing": {
-		Name:        "experimental.event_routing",
-		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway},
-	},
-	"experimental.agent_async_ssh": {
-		Name:        "experimental.agent_async_ssh",
-		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentAgent},
-	},
-	"experimental.hoop_tunnel": {
-		Name:        "experimental.hoop_tunnel",
-		Description: "Enable Hoop Tunnel: WebSocket-based virtual network exposing authorized connections as *.hoop hostnames on the user's machine. Gates all tunnel-related code paths across gateway, agent, and client.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
-	},
 	"experimental.rulepacks": {
 		Name:        "experimental.rulepacks",
 		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",
@@ -95,6 +74,13 @@ var catalog = map[string]Flag{
 		Default:     false,
 		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
+	},
+	"experimental.http_session_analyzer": {
+		Name:        "experimental.http_session_analyzer",
+		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code). Each request is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
 	},
 }
 

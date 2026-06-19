@@ -104,6 +104,32 @@ func GetUserByEmail(email string) (*User, error) {
 	return user, nil
 }
 
+func GetUserBySubject(subject string) (*User, error) {
+	var user *User
+	err := DB.Where("subject = ?", subject).
+		Order("CASE WHEN status = 'active' THEN 0 WHEN status = 'invited' THEN 1 ELSE 2 END, id").
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
+func GetUserByID(id string) (*User, error) {
+	var user *User
+	err := DB.Where("id = ?", id).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
 func ListUsersByEmail(email string) ([]User, error) {
 	var users []User
 	err := DB.Where("email = ?", email).Find(&users).Error

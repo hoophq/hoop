@@ -2282,11 +2282,30 @@ type ServerMiscConfig struct {
 	HttpProxyServerConfig *HttpProxyServerConfig `json:"http_proxy_server_config"`
 }
 
+// SSHUserMapping configures which certificate attribute is matched against
+// which Hoop user attribute to authorize certificate-based SSH connections.
+// Required when trusted_cas is set.
+type SSHUserMapping struct {
+	// CertAttribute is the certificate field used for the lookup.
+	// "principal" checks all ValidPrincipals; the first match wins.
+	// "key_id" uses the certificate's KeyId field.
+	CertAttribute string `json:"cert_attr" enums:"principal,key_id" example:"principal"`
+	// UserAttribute is the Hoop user table column matched against the cert value.
+	UserAttribute string `json:"user_attr" enums:"email,subject,user_id" example:"email"`
+}
+
 type SSHServerConfig struct {
 	// The listen address to run the SSH server proxy
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222"`
 	// The hosts key used for SSH connections
 	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
+	// TrustedCAs is the list of trusted SSH CA public keys in authorized_keys
+	// format. When non-empty, the server accepts certificate authentication.
+	// UserMapping is required when TrustedCAs is set.
+	TrustedCAs []string `json:"trusted_cas,omitempty" example:"ssh-ed25519 AAAA..."`
+	// UserMapping is required when TrustedCAs is configured. It defines how
+	// the certificate is matched against a Hoop user.
+	UserMapping *SSHUserMapping `json:"user_mapping,omitempty"`
 }
 
 type RDPServerConfig struct {

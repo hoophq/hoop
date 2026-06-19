@@ -288,18 +288,17 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// SSH connection writes and the SessionClose that ends them can be
-		// dispatched concurrently when the async flag is enabled, so a
-		// slow upstream on one session does not stall packet processing
-		// for other sessions on this agent. processSSHProtocol uses the
-		// session RW lock, per-connection write mutex, and singleflight
-		// group on the Agent to keep concurrent handlers correct.
+		// SSH connection writes and the SessionClose that ends them are
+		// dispatched concurrently so a slow upstream on one session does
+		// not stall packet processing for other sessions on this agent.
+		// processSSHProtocol uses the session RW lock, per-connection
+		// write mutex, and singleflight group on the Agent to keep
+		// concurrent handlers correct.
 		//
 		// SessionClose is included so the recv loop is not blocked when
 		// it has to wait for an in-flight SSH handler to drain before
 		// running session cleanup.
-		if featureflagstate.IsEnabled("experimental.agent_async_ssh") &&
-			(pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose) {
+		if pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose {
 			go a.processPacket(pkt)
 			continue
 		}

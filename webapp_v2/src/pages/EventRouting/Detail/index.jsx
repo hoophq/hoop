@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Navigate, useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import { Box, Card, Group, Stack, Text, Title } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
 import { notifications } from "@mantine/notifications"
@@ -22,13 +22,10 @@ import Code from "@/components/Code"
 import Modal from "@/components/Modal"
 import PageLoader from "@/components/PageLoader"
 import Tooltip from "@/components/Tooltip"
-import { useUserStore } from "@/stores/useUserStore"
 import { useEventRoutingStore } from "../store"
 import StatusBadge from "../components/StatusBadge"
 import DispatchBadge from "../components/DispatchBadge"
 import ReplayDispatchModal from "../components/ReplayDispatchModal"
-
-const FEATURE_FLAG = "experimental.event_routing"
 
 function SectionHeader({ title, subtitle }) {
   return (
@@ -276,8 +273,6 @@ function DispatchHistory({ subId }) {
 export default function EventRoutingDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
-  const flagEnabled = isFeatureFlagEnabled(FEATURE_FLAG)
 
   const subscriptions = useEventRoutingStore((s) => s.subscriptions)
   const dispatches = useEventRoutingStore((s) => s.dispatches)
@@ -289,10 +284,10 @@ export default function EventRoutingDetail() {
   const sub = subscriptions.data.find((s) => s.id === id) || null
 
   useEffect(() => {
-    if (flagEnabled && subscriptions.status === "idle") {
+    if (subscriptions.status === "idle") {
       fetchAll()
     }
-  }, [flagEnabled, subscriptions.status, fetchAll])
+  }, [subscriptions.status, fetchAll])
 
   useEffect(() => {
     if (id) fetchDispatches(id)
@@ -301,9 +296,6 @@ export default function EventRoutingDetail() {
   const [deleteOpened, deleteControls] = useDisclosure(false)
   const [deleting, setDeleting] = useState(false)
 
-  if (!flagEnabled) {
-    return <Navigate to="/" replace />
-  }
   if (subscriptions.status === "loading" || subscriptions.status === "idle") {
     return <PageLoader h={400} />
   }

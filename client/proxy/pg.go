@@ -152,42 +152,21 @@ func (p *PGServer) lookupConnectionByPid(pid uint32) *pgConnection {
 	return nil
 }
 
-func (p *PGServer) copyPGBuffer(dst io.Writer, src *pgConnection) (written int64, err error) {
-	closedConn := false
-	for {
-		pkt, err := pgtypes.Decode(src.client)
-		if err != nil {
-			if err == io.EOF || closedConn {
-				break
-			}
-			return 0, fmt.Errorf("fail to decode typed packet, err=%v", err)
+func (p *PGServer) copyPGBuffer(dst io.Writer, src *pgConnection) (int64, error) {
+	// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-CANCELING-REQUESTS
+	return pgtypes.CopyBuffer(dst, src.client, func(pid uint32) bool {
+		pidsConn := p.lookupConnectionByPid(pid)
+		if pidsConn != nil {
+			// swap the cancel connection with the pid's connection so that
+			// any response addressed to this connection ID reaches the right client
+			p.connectionStore.Set(src.id, pidsConn)
+			// give some time for the cancel message to propagate, then close
+			go func() {
+				time.Sleep(time.Second * 4)
+				_ = src.client.Close()
+			}()
 		}
-		// A cancel request is sent by a second connection
-		// the response must be received by the pid's connection.
-		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-CANCELING-REQUESTS
-		if pkt.IsCancelRequest() {
-			frame := pkt.Frame()
-			pid := binary.BigEndian.Uint32(frame[4:8])
-			pidsConn := p.lookupConnectionByPid(pid)
-			if pidsConn != nil {
-				// swap the cancel connection with the pid's connection
-				p.connectionStore.Set(src.id, pidsConn)
-				// this isn't ideal, give some time to the cancel message to propagate
-				// and close the cancel connection
-				go func() {
-					time.Sleep(time.Second * 4)
-					closedConn = true
-					_ = src.client.Close()
-				}()
-			}
-			log.Infof("conn=%s | pid=%v | swapped=%v - cancel request received by the client", src.id, pid, pidsConn != nil)
-		}
-		writtenSize, err := dst.Write(pkt.Encode())
-		if err != nil {
-			return 0, fmt.Errorf("fail to write typed packet, err=%v", err)
-		}
-		log.Debugf("%s, copied %v byte(s) from connection %v", pkt.Type(), writtenSize, src.id)
-		written += int64(writtenSize)
-	}
-	return written, err
+		log.Infof("conn=%s | pid=%v | swapped=%v - cancel request received by the client", src.id, pid, pidsConn != nil)
+		return pidsConn != nil
+	})
 }
