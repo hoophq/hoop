@@ -99,7 +99,6 @@ func Get(c *gin.Context) {
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
 	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
-	// Mirrors isConnectionTypeConfigured in the credentials handler.
 	serverInfoData.PostgresProxyEnabled = miscConf != nil &&
 		miscConf.PostgresServerConfig != nil &&
 		miscConf.PostgresServerConfig.ListenAddress != ""

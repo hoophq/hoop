@@ -109,9 +109,7 @@
            (custom-native-subtypes subtype))))
 
 (defn can-access-native-client?
-  "Check if a role/connection can access native client based on subtype and access mode.
-   Postgres native client requires the gateway Postgres proxy to be enabled; other
-   native subtypes ignore `postgres-proxy-enabled?`."
+  "Check if a role/connection can access native client based on subtype and access mode"
   [{:keys [access_mode_connect subtype] :as role} postgres-proxy-enabled?]
   (and (= "enabled" access_mode_connect)
        (native-subtype? role)
