@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -16,12 +17,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -37,6 +40,13 @@ const (
 	// NOTE in the future we might want to support custom headers as well
 	proxyTokenHeader = "Authorization"
 	proxyTokenCookie = "hoop_proxy_token"
+
+	// featureFlagHTTPSessionAnalyzer gates per-request AI risk analysis for
+	// native HTTP resources. Must match the catalog entry in common/featureflag.
+	featureFlagHTTPSessionAnalyzer = "experimental.http_session_analyzer"
+	// analyzerTimeout bounds the per-request AI analysis call so a slow/hung
+	// provider cannot hold a proxied request open indefinitely.
+	analyzerTimeout = 25 * time.Second
 )
 
 var instanceStore sync.Map
@@ -51,13 +61,16 @@ type HttpProxyServer struct {
 }
 
 type httpProxySession struct {
-	sid           string
-	ctx           context.Context
-	cancelFn      func(msg string, a ...any)
-	streamClient  pb.ClientTransport
-	responseStore sync.Map    // stores response channels per connectionID
-	closed        atomic.Bool // fast-fail flag to avoid mutex contention on session close
-	connCounter   atomic.Int64
+	sid            string
+	orgID          string // owning org, used to gate and run the AI session analyzer
+	connectionName string
+	userSubject    string
+	ctx            context.Context
+	cancelFn       func(msg string, a ...any)
+	streamClient   pb.ClientTransport
+	responseStore  sync.Map    // stores response channels per connectionID
+	closed         atomic.Bool // fast-fail flag to avoid mutex contention on session close
+	connCounter    atomic.Int64
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -356,8 +369,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		fmt.Errorf("http proxy connection access expired"))
 
 	session := &httpProxySession{
-		sid: sid,
-		ctx: ctx,
+		sid:            sid,
+		orgID:          dba.OrgID,
+		connectionName: dba.ConnectionName,
+		userSubject:    dba.UserSubject,
+		ctx:            ctx,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
@@ -506,6 +522,15 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 	defer r.Body.Close()
 
+	// Per-request AI risk analysis. handleRequest is invoked once per connection
+	// (a new connectionID each time), and post-WebSocket-upgrade frames are
+	// pumped elsewhere, so this only ever sees a connection's initiating request
+	// — for a WebSocket that is the upgrade request, giving allow/deny at connect
+	// time without inspecting the stream that follows.
+	if sess.analyzeRequestBlocked(w, r, body) {
+		return
+	}
+
 	// Determine proxy base URL from request (use Host header, not listenAddr)
 	// This ensures redirects go to the correct host (e.g., dev.hoop.dev instead of 0.0.0.0)
 	// Check X-Forwarded-Proto for requests behind reverse proxy
@@ -615,6 +640,10 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 
 		// Check if this is a WebSocket upgrade response
 		if resp.StatusCode == http.StatusSwitchingProtocols {
+			if sess.orgID != "" && featureflag.IsEnabled(sess.orgID, featureFlagHTTPSessionAnalyzer) {
+				log.With("sid", sess.sid, "conn", sess.connectionName).
+					Infof("ai analyzer: websocket upgrade established; only the upgrade request was analyzed, post-upgrade frames are not inspected")
+			}
 			sess.handleWebSocketUpgraded(w, response, responseChan, connectionID)
 			return
 		}
@@ -629,6 +658,71 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 
 		sess.writeBufferedResponse(w, resp, responseChan, connectionID)
 	}
+}
+
+// analyzeRequestBlocked runs the AI session analyzer on a single proxied HTTP
+// request when the feature is enabled for the session's org. It returns true
+// when the request was blocked — in that case a 403 has already been written to
+// w and the caller must stop processing. The session itself is left intact so
+// other requests on the same credential keep working.
+//
+// Failures to analyze (provider/LLM/infra errors) fail open: an analyzer outage
+// is an infrastructure problem, not a risk signal, and blocking every request on
+// it would take the whole HTTP resource down. Such failures are logged loudly
+// and the request is allowed through.
+func (sess *httpProxySession) analyzeRequestBlocked(w http.ResponseWriter, r *http.Request, body []byte) bool {
+	if sess.orgID == "" || !featureflag.IsEnabled(sess.orgID, featureFlagHTTPSessionAnalyzer) {
+		return false
+	}
+	orgID, err := uuid.Parse(sess.orgID)
+	if err != nil {
+		log.With("sid", sess.sid).Warnf("ai analyzer: invalid org id %q, skipping analysis: %v", sess.orgID, err)
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(sess.ctx, analyzerTimeout)
+	defer cancel()
+
+	decision, err := aianalyzer.AnalyzeHTTPRequest(ctx, orgID, sess.connectionName, r.Method, r.URL.RequestURI(), body)
+	if err != nil {
+		log.With("sid", sess.sid, "conn", sess.connectionName, "method", r.Method, "path", r.URL.Path).
+			Errorf("ai analyzer: failed analyzing request, allowing through: %v", err)
+		return false
+	}
+	if decision == nil {
+		// No analyzer rule configured for this connection — feature is opt-in.
+		return false
+	}
+
+	logger := log.With("sid", sess.sid, "org", sess.orgID, "conn", sess.connectionName,
+		"user", sess.userSubject, "method", r.Method, "path", r.URL.Path,
+		"rule", decision.RuleName, "risk", string(decision.RiskLevel), "title", decision.Title)
+
+	switch decision.Outcome {
+	case aianalyzer.OutcomeBlock:
+		logger.Warnf("ai analyzer blocked request: %s", decision.Explanation)
+		writeAnalyzerForbidden(w, decision)
+		return true
+	case aianalyzer.OutcomeWarn:
+		logger.Warnf("ai analyzer flagged request (allowed): %s", decision.Explanation)
+		return false
+	default:
+		return false
+	}
+}
+
+// writeAnalyzerForbidden writes the 403 response returned to the client when the
+// analyzer blocks a single request.
+func writeAnalyzerForbidden(w http.ResponseWriter, d *aianalyzer.HTTPDecision) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("server", "httpproxy-hoopgateway")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error":       "request blocked by hoop ai session analyzer",
+		"risk_level":  string(d.RiskLevel),
+		"title":       d.Title,
+		"explanation": d.Explanation,
+	})
 }
 
 // writeBufferedResponse forwards a regular (non-SSE, non-WebSocket) HTTP response
