@@ -272,7 +272,7 @@ function Router() {
         }
       />
 
-      {/* Event Routing (gated by experimental.event_routing flag inside the page) */}
+      {/* Event Routing */}
       <Route
         path="/features/event-routing"
         element={

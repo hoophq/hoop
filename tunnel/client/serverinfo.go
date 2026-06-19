@@ -22,8 +22,8 @@ type ServerInfo struct {
 	// "use.hoop.dev:8443" or "grpcs://use.hoop.dev:8443".
 	GrpcURL string `json:"grpc_url"`
 
-	// FeatureFlags is a map of feature flag name → enabled. The tunnel
-	// uses this to check experimental.hoop_tunnel before proceeding.
+	// FeatureFlags is a map of feature flag name → enabled, as reported by
+	// the gateway's /api/serverinfo response.
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
 
