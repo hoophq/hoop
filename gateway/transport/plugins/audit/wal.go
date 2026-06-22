@@ -44,12 +44,51 @@ type walLogRWMutex struct {
 
 	// incremental-flush / streaming state
 	lastFlushedIndex uint64
-	bytesFlushed     int64         // cumulative encoded bytes appended to blob_stream (→ event_size)
-	bytesRead        int64         // cumulative raw WAL bytes read; enforces the DefaultMaxRead cap
-	truncated        bool          // set once bytesRead exceeds the cap; halts further flushing
-	closed           bool          // set when the WAL is closed; guards a late ticker flush
-	metrics          SessionMetric // cumulative DLP metrics across flushes, persisted to the session JSONB at close
+	bytesFlushed     int64           // cumulative encoded bytes appended to blob_stream (→ event_size)
+	bytesRead        int64           // cumulative raw WAL bytes read; enforces the DefaultMaxRead cap
+	truncated        bool            // set once bytesRead exceeds the cap; halts further flushing
+	closed           bool            // set when the WAL is closed; guards a late ticker flush
+	metrics          SessionMetric   // cumulative DLP + AI analyzer metrics across flushes, persisted to the session JSONB at close
+	aiDedup          *aiVerdictDedup // cross-window dedup state for the sticky per-request AI verdict
 	flushCancel      context.CancelFunc
+}
+
+// aiVerdictDedup tracks, per proxy connection, the last AI analyzer verdict
+// already counted, so the verdict — which is sticky on the shared response spec
+// and repeats across every response chunk — is folded exactly once per request.
+//
+// Seq is the libhoop per-connection monotonic request counter (the normal
+// path). lastContent is a defensive fallback for verdicts without a sequence:
+// it collapses consecutive identical verdicts on a connection.
+type aiVerdictDedup struct {
+	lastSeq     map[string]uint64
+	lastContent map[string]string
+}
+
+func newAIVerdictDedup() *aiVerdictDedup {
+	return &aiVerdictDedup{
+		lastSeq:     map[string]uint64{},
+		lastContent: map[string]string{},
+	}
+}
+
+// seen reports whether a verdict identified by (connID, seq) — or, when seq is
+// absent, by its raw encoded bytes — has already been counted, recording it as
+// the latest seen for that connection when it has not.
+func (d *aiVerdictDedup) seen(connID string, seq uint64, encoded []byte) bool {
+	if seq > 0 {
+		if seq <= d.lastSeq[connID] {
+			return true
+		}
+		d.lastSeq[connID] = seq
+		return false
+	}
+	content := string(encoded)
+	if d.lastContent[connID] == content {
+		return true
+	}
+	d.lastContent[connID] = content
+	return false
 }
 
 func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
@@ -69,7 +108,12 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
-	p.walSessionStore.Set(pctx.SID, &walLogRWMutex{log: walog, folderName: walFolder, metrics: newSessionMetric()})
+	p.walSessionStore.Set(pctx.SID, &walLogRWMutex{
+		log:        walog,
+		folderName: walFolder,
+		metrics:    newSessionMetric(),
+		aiDedup:    newAIVerdictDedup(),
+	})
 	return nil
 }
 
@@ -182,6 +226,7 @@ func (p *auditPlugin) flushSession(walogm *walLogRWMutex, pctx plugintypes.Conte
 			return derr
 		}
 		p.encodeEventEntry(&encoded, ev, header.StartDate, protoConnType, &windowMetrics)
+		accumulateAIAnalyzerVerdict(ev, &windowMetrics, walogm.aiDedup)
 		walogm.bytesRead += int64(len(data))
 		if walogm.bytesRead > sessionwal.DefaultMaxRead {
 			capReached = true
@@ -382,6 +427,31 @@ func accumulateMaskingMetrics(ev *eventlogv1.EventLog, metrics *SessionMetric) {
 			metrics.addInfoType(ts.InfoType, redactPerInfoType)
 		}
 	}
+}
+
+// accumulateAIAnalyzerVerdict folds a per-request AI session analyzer verdict
+// from an event's metadata into the running metrics. The verdict is sticky on
+// the shared response spec and repeats across every response chunk, so dedup
+// ensures each analyzed request is counted exactly once.
+func accumulateAIAnalyzerVerdict(ev *eventlogv1.EventLog, metrics *SessionMetric, dedup *aiVerdictDedup) {
+	enc := ev.GetMetadata(spectypes.AIAnalyzerInfoKey)
+	if len(enc) == 0 {
+		return
+	}
+	verdict, err := spectypes.DecodeAIAnalyzerVerdict(enc)
+	if err != nil {
+		log.Warnf("failed decoding ai analyzer verdict, reason=%v", err)
+		return
+	}
+	if verdict.Seq == 0 {
+		log.With("conn", verdict.ConnID).Debugf("ai analyzer verdict missing sequence; deduping by content")
+	}
+	if dedup != nil && dedup.seen(verdict.ConnID, verdict.Seq, enc) {
+		return
+	}
+	metrics.ensureAIAnalyzer().foldVerdict(
+		verdict.Outcome, verdict.RiskLevel, verdict.Title, verdict.Explanation, verdict.RuleName,
+	)
 }
 
 func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, protoConnType pb.ConnectionType) []byte {

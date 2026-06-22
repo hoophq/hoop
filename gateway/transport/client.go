@@ -12,7 +12,9 @@ import (
 
 	"libhoop/redactor"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -35,6 +37,7 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 // federationResolveTimeout caps the SessionOpen-time blocking call to the
@@ -327,6 +330,69 @@ func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	return analyzerMetricsRulesJsonData, nil
 }
 
+// getAISessionAnalyzerParams resolves the per-connection AI session analyzer
+// configuration shipped to the agent so its HTTP proxy can classify and enforce
+// requests inline.
+//
+// It returns (nil, nil) — analysis disabled — when:
+//   - the experimental.http_session_analyzer flag is off for the org,
+//   - the connection is not an HTTP-family type (the agent only enforces
+//     analysis in the HTTP proxy path; DB/exec analysis runs gateway-side),
+//   - the connection has no analyzer rule (the feature is opt-in), or
+//   - no AI provider is configured for the org (can't analyze without one).
+func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyzerParams, error) {
+	if !featureflag.IsEnabled(pctx.OrgID, "experimental.http_session_analyzer") {
+		return nil, nil
+	}
+	switch pctx.ProtoConnectionType() {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
+	default:
+		return nil, nil
+	}
+
+	orgID, err := uuid.Parse(pctx.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid org id %q: %w", pctx.OrgID, err)
+	}
+
+	rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, pctx.ConnectionName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed obtaining ai session analyzer rule: %w", err)
+	}
+
+	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("ai session analyzer rule %q is configured but no ai provider is set; skipping analysis", rule.Name)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed obtaining ai provider: %w", err)
+	}
+
+	params := &pb.AISessionAnalyzerParams{
+		RuleName:         rule.Name,
+		Provider:         provider.Provider,
+		Model:            provider.Model,
+		LowRiskAction:    string(rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action),
+		MediumRiskAction: string(rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action),
+		HighRiskAction:   string(rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action),
+	}
+	if provider.ApiUrl != nil {
+		params.APIURL = *provider.ApiUrl
+	}
+	if provider.ApiKey != nil {
+		params.APIKey = *provider.ApiKey
+	}
+	if rule.CustomPrompt != nil {
+		params.CustomPrompt = *rule.CustomPrompt
+	}
+	return params, nil
+}
+
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
@@ -409,6 +475,15 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			}
 		}
 
+		// Resolve the AI session analyzer config for HTTP-family connections.
+		// Fail-open: a resolution glitch must never break the session, so on
+		// error we log and ship no analyzer config (analysis is skipped).
+		aiAnalyzerParams, err := getAISessionAnalyzerParams(&pctx)
+		if err != nil {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("failed resolving ai session analyzer params, skipping analysis: %v", err)
+		}
+
 		clientArgs := clientArgsDecode(pkt.Spec)
 
 		// Federation resolution. Runs when a federation row exists for the
@@ -444,6 +519,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			DataMaskingEntityTypesData: entityTypesJsonData,
 			GuardRailRules:             guardRailRulesJsonData,
 			AnalyzerMetricsRules:       analyzerMetricsRulesJsonData,
+			AISessionAnalyzer:          aiAnalyzerParams,
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)

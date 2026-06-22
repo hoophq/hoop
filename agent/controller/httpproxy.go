@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"libhoop"
+	libhoopaianalyzer "libhoop/aianalyzer"
 	redactortypes "libhoop/redactor/types"
 	"strings"
 
@@ -103,11 +104,26 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.kubernetesInsecureSkipVerify)
 	}
 
+	// Build the per-connection AI session analyzer from the gateway-resolved
+	// config (opt-in). The engine lives in common/aianalyzer (shared with the
+	// gateway's exec path); the agent wraps it in an adapter that satisfies
+	// libhoop's injected Analyzer contract. When no config is present, or it is
+	// invalid, the proxy receives a nil analyzer and skips analysis (fail-open).
+	var analyzer libhoopaianalyzer.Analyzer
+	if cfg := connParams.AISessionAnalyzer; cfg != nil {
+		a, aerr := newHTTPAnalyzer(cfg, clientConnectionID)
+		if aerr != nil {
+			log.Warnf("failed building ai session analyzer, forwarding requests without analysis: %v", aerr)
+		} else {
+			analyzer = a
+		}
+	}
+
 	// Wrap the stream writer so an oversized buffered response is split into
 	// multiple sub-limit gRPC packets instead of a single message that exceeds
 	// MaxRecvMsgSize. The client reassembles the byte stream in order.
 	chunkedClient := pb.NewChunkedWriter(httpStreamClient, httpProxyResponseChunkSize)
-	httpProxy, err := libhoop.NewHttpProxy(context.Background(), chunkedClient, connenv.httpProxyHeaders)
+	httpProxy, err := libhoop.NewHttpProxy(context.Background(), chunkedClient, analyzer, connenv.httpProxyHeaders)
 	if err != nil {
 		log.Infof("failed connecting to %v, err=%v", connenv.host, err)
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed connecting to internal service, reason=%v", err))

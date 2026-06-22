@@ -52,6 +52,28 @@ type (
 		DataMaskingEntityTypesData json.RawMessage
 		GuardRailRules             json.RawMessage
 		AnalyzerMetricsRules       json.RawMessage
+
+		// AISessionAnalyzer carries the per-connection AI risk analyzer
+		// configuration resolved by the gateway. It is nil when the connection
+		// has no analyzer rule or the org has no AI provider configured, in
+		// which case the agent skips analysis entirely.
+		AISessionAnalyzer *AISessionAnalyzerParams
+	}
+
+	// AISessionAnalyzerParams is the resolved AI session analyzer configuration
+	// shipped from the gateway to the agent so the agent's HTTP proxy can
+	// classify and enforce requests inline. The risk-tier actions are resolved
+	// strings (allow_execution / block_execution / require_access_request).
+	AISessionAnalyzerParams struct {
+		RuleName         string
+		Provider         string
+		APIURL           string
+		APIKey           string
+		Model            string
+		CustomPrompt     string
+		LowRiskAction    string
+		MediumRiskAction string
+		HighRiskAction   string
 	}
 
 	// TODO: remove it later, kept for compatibility issues
@@ -233,6 +255,16 @@ func (c *chunkedWriter) SendSessionClose(errMsg string) error {
 		return sc.SendSessionClose(errMsg)
 	}
 	return nil
+}
+
+// AddSpecVal forwards spec metadata to the underlying writer when it supports
+// it. libhoop attaches per-request metadata (e.g. the AI session analyzer
+// verdict) through this contract, so without forwarding it the metadata would
+// never reach the gateway on the response packets.
+func (c *chunkedWriter) AddSpecVal(key string, val []byte) {
+	if sw, ok := c.w.(interface{ AddSpecVal(string, []byte) }); ok {
+		sw.AddSpecVal(key, val)
+	}
 }
 
 func GobEncode(data any) ([]byte, error) {

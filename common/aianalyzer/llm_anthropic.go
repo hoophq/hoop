@@ -1,4 +1,4 @@
-package aiclients
+package aianalyzer
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-
-	"github.com/hoophq/hoop/gateway/models"
 )
 
 // anthropicJSONOutputToolName is the synthetic tool name used to implement
@@ -20,13 +18,13 @@ type anthropicClient struct {
 }
 
 // newAnthropicClient constructs a client for the "anthropic" provider.
-func newAnthropicClient(p *models.AIProvider) (*anthropicClient, error) {
-	if p.ApiKey == nil {
+func newAnthropicClient(p ProviderConfig) (*anthropicClient, error) {
+	if p.APIKey == nil {
 		return nil, fmt.Errorf("anthropic: api_key is required")
 	}
-	opts := []option.RequestOption{option.WithAPIKey(*p.ApiKey)}
-	if p.ApiUrl != nil && *p.ApiUrl != "" {
-		opts = append(opts, option.WithBaseURL(*p.ApiUrl))
+	opts := []option.RequestOption{option.WithAPIKey(*p.APIKey)}
+	if p.APIURL != nil && *p.APIURL != "" {
+		opts = append(opts, option.WithBaseURL(*p.APIURL))
 	}
 	return &anthropicClient{
 		client: anthropic.NewClient(opts...),

@@ -1,4 +1,4 @@
-package aiclients
+package aianalyzer
 
 import (
 	"context"
@@ -6,11 +6,7 @@ import (
 
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-
-	"github.com/hoophq/hoop/gateway/models"
 )
-
-const defaultMaxTokens = 4096
 
 type openaiClient struct {
 	client openai.Client
@@ -18,15 +14,15 @@ type openaiClient struct {
 }
 
 // newOpenAIClient constructs a client for "openai", "azure-openai", and "custom" providers.
-// When ApiUrl is set it overrides the default OpenAI base URL, which is required for
+// When APIURL is set it overrides the default OpenAI base URL, which is required for
 // Azure OpenAI deployments and self-hosted / compatible endpoints.
-func newOpenAIClient(p *models.AIProvider) (*openaiClient, error) {
-	if p.ApiKey == nil {
+func newOpenAIClient(p ProviderConfig) (*openaiClient, error) {
+	if p.APIKey == nil {
 		return nil, fmt.Errorf("openai: api_key is required")
 	}
-	opts := []option.RequestOption{option.WithAPIKey(*p.ApiKey)}
-	if p.ApiUrl != nil && *p.ApiUrl != "" {
-		opts = append(opts, option.WithBaseURL(*p.ApiUrl))
+	opts := []option.RequestOption{option.WithAPIKey(*p.APIKey)}
+	if p.APIURL != nil && *p.APIURL != "" {
+		opts = append(opts, option.WithBaseURL(*p.APIURL))
 	}
 	return &openaiClient{
 		client: openai.NewClient(opts...),

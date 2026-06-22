@@ -1,30 +1,44 @@
-// Package aianalyzer holds the provider-agnostic AI session risk classifier
-// used by the gateway. It depends only on the AI client abstraction
-// (gateway/aiclients) and the data layer (gateway/models) so it can be reused
-// from any layer — including the protocol proxies — without creating import
-// cycles through the API/service packages.
+// Package aianalyzer is the gateway-side façade over the shared AI session risk
+// classifier that lives in github.com/hoophq/hoop/common/aianalyzer.
+//
+// The engine (system prompt, tool schema, provider clients, classification)
+// lives in common so it ships in both the OSS and enterprise builds and is
+// shared with the agent's HTTP proxy (which injects it into libhoop) without
+// duplication. This package keeps the gateway's exec-path entrypoint
+// (AnalyzeSession), loading the org's AI provider from the data layer
+// (gateway/models) and delegating the actual classification to the engine.
+// Risk-tier → action mapping stays in the data layer (models).
 package aianalyzer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/gateway/aiclients"
+
+	laia "github.com/hoophq/hoop/common/aianalyzer"
 	"github.com/hoophq/hoop/gateway/models"
 )
 
-// RiskLevel represents the assessed risk of a session command or query.
-type RiskLevel string
+// RiskLevel re-exports the engine's risk level so existing gateway callers keep
+// their type without importing libhoop directly.
+type RiskLevel = laia.RiskLevel
 
 const (
-	RiskLevelLow    RiskLevel = "low"
-	RiskLevelMedium RiskLevel = "medium"
-	RiskLevelHigh   RiskLevel = "high"
+	RiskLevelLow    = laia.RiskLevelLow
+	RiskLevelMedium = laia.RiskLevelMedium
+	RiskLevelHigh   = laia.RiskLevelHigh
 )
 
+// SessionAnalysisResult re-exports the engine's classification result.
+type SessionAnalysisResult = laia.Result
+
+// SessionAnalyzerSystemPrompt is the default classifier prompt. It is surfaced
+// in the admin UI as the editable default and is owned by the engine.
+const SessionAnalyzerSystemPrompt = laia.SystemPrompt
+
+// RiskLevelKey maps the engine's risk level to the data-layer key used by the
+// risk-evaluation tier configuration.
 func RiskLevelKey(level RiskLevel) models.RiskLevelKey {
 	switch level {
 	case RiskLevelHigh:
@@ -36,131 +50,31 @@ func RiskLevelKey(level RiskLevel) models.RiskLevelKey {
 	}
 }
 
-// SessionAnalysisResult holds the outcome of an AI analysis.
-type SessionAnalysisResult struct {
-	RiskLevel   RiskLevel
-	Title       string
-	Explanation string
-}
-
-const SessionAnalyzerSystemPrompt = `You are a security-focused execution risk classifier for commands, scripts, and database queries.
-
-Goal: choose exactly ONE tool to call:
-- LowRiskAISessionAnalyzer
-- MediumRiskAISessionAnalyzer
-- HighRiskAISessionAnalyzer
-
-Classify the user's input by its likely impact if executed in a real DB/VM environment.
-
-Risk rubric:
-- High Risk: destructive/irreversible actions, privilege escalation, data exfiltration, credential access, disabling security, ransomware-like behavior, wiping disks, dropping tables, mass deletes/updates without constraints, remote code execution, persistence, network scanning/exploitation.
-- Medium Risk: potentially expensive/unstable actions (locks, long scans), broad reads of sensitive data, schema changes with rollback risk, writes that are reversible but risky, commands that could disrupt service if misused.
-- Low Risk: read-only, scoped, clearly non-destructive, routine diagnostics, safe formatting/linting, harmless queries with tight filters/limits.
-
-Output rules (strict):
-1) You MUST call exactly one tool. Do not produce normal text.
-2) When uncertain, choose the higher risk.
-3) Populate tool arguments:
-   - title: <= 4 words, no punctuation if possible.
-   - explanation: <= 30 words, concise and specific.
-4) Do not mention policies. Do not mention tool names in the text fields.`
-
-// riskToolSchema is shared by all three risk classifier tools.
-var riskToolSchema = aiclients.ToolInputSchema{
-	Properties: map[string]aiclients.ToolProperty{
-		"title": {
-			Type:        "string",
-			Description: "Short label (max 4 words) summarizing the main concern or reassurance.",
-		},
-		"explanation": {
-			Type:        "string",
-			Description: "In <= 30 words, explain the risk level concretely.",
-		},
-	},
-	Required: []string{"title", "explanation"},
-}
-
-var sessionAnalyzerTools = []aiclients.Tool{
-	{
-		Name:        "LowRiskAISessionAnalyzer",
-		Description: "Select when the input is safe to execute: non-destructive, scoped, and low operational/security impact.",
-		InputSchema: riskToolSchema,
-	},
-	{
-		Name:        "MediumRiskAISessionAnalyzer",
-		Description: "Select when the input could cause performance issues, service disruption, sensitive exposure, or risky-but-not-clearly-destructive changes.",
-		InputSchema: riskToolSchema,
-	},
-	{
-		Name:        "HighRiskAISessionAnalyzer",
-		Description: "Select when the input is destructive, irreversible, escalates privileges, exfiltrates data, disables defenses, or resembles exploit/persistence behavior.",
-		InputSchema: riskToolSchema,
-	},
-}
-
-// AnalyzeSession sends the given command/query to the configured AI provider
-// and returns a risk classification with a short title and explanation.
+// AnalyzeSession loads the org's configured AI provider and classifies the
+// given command/query/script, returning a risk level with a short title and
+// explanation.
 //
-// The model is expected to call exactly one of the three risk tools; the tool
-// name is mapped to RiskLevelLow / RiskLevelMedium / RiskLevelHigh.
-//
-// customPrompt, when non-empty, is appended to the default system prompt so
-// the tool-calling contract (LowRisk/MediumRisk/HighRisk) is preserved.
+// customPrompt, when non-nil and non-empty, is prepended to the default system
+// prompt while preserving the tool-calling contract.
 func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string, customPrompt *string) (*SessionAnalysisResult, error) {
 	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
 	if err != nil || provider == nil {
 		return nil, fmt.Errorf("session analyzer: failed to load ai provider: %w", err)
 	}
 
-	client, err := aiclients.NewClient(*provider)
+	client, err := laia.NewLLMClient(laia.ProviderConfig{
+		Provider: provider.Provider,
+		APIURL:   provider.ApiUrl,
+		APIKey:   provider.ApiKey,
+		Model:    provider.Model,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("session analyzer: failed to create ai client: %w", err)
 	}
 
-	systemPrompt := SessionAnalyzerSystemPrompt
-	if customPrompt != nil && strings.TrimSpace(*customPrompt) != "" {
-		systemPrompt = strings.TrimSpace(*customPrompt) + "\n\n" + SessionAnalyzerSystemPrompt
+	var prompt string
+	if customPrompt != nil {
+		prompt = *customPrompt
 	}
-
-	resp, err := client.Chat(ctx, aiclients.ChatRequest{
-		SystemPrompt: systemPrompt,
-		Messages: []aiclients.Message{
-			{Role: aiclients.RoleUser, Content: content},
-		},
-		Tools:      sessionAnalyzerTools,
-		ToolChoice: aiclients.ToolChoiceAuto,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("session analyzer: chat request failed: %w", err)
-	}
-	if len(resp.ToolCalls) == 0 {
-		return nil, fmt.Errorf("session analyzer: model did not call a risk tool")
-	}
-
-	tc := resp.ToolCalls[0]
-	var args struct {
-		Title       string `json:"title"`
-		Explanation string `json:"explanation"`
-	}
-	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
-		return nil, fmt.Errorf("session analyzer: failed to parse tool arguments: %w", err)
-	}
-
-	var level RiskLevel
-	switch tc.Name {
-	case "LowRiskAISessionAnalyzer":
-		level = RiskLevelLow
-	case "MediumRiskAISessionAnalyzer":
-		level = RiskLevelMedium
-	case "HighRiskAISessionAnalyzer":
-		level = RiskLevelHigh
-	default:
-		return nil, fmt.Errorf("session analyzer: unexpected tool call %q", tc.Name)
-	}
-
-	return &SessionAnalysisResult{
-		RiskLevel:   level,
-		Title:       args.Title,
-		Explanation: args.Explanation,
-	}, nil
+	return laia.Analyze(ctx, client, content, prompt)
 }
