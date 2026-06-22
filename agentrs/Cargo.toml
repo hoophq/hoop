@@ -44,10 +44,16 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 
 ironrdp-connector = { version = "0.5.0" }
+ironrdp-async = { version = "0.5.0" }
 ironrdp-acceptor = { version = "0.5.0" }
 ironrdp-pdu = { version = "0.5.0", features = ["std"] }
 ironrdp-core = { version = "0.1.0", features = ["std"] }
 ironrdp-tokio = "0.5.0"
+ironrdp-graphics = "0.4.1"
+
+# PII gate: HTTP clients for the OCR sidecar and Presidio analyzer.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-util = { version = "0.7", default-features = false }
 rustls = "0.22.0"
 rcgen = "0.12.0"
 
@@ -60,3 +66,7 @@ tap = "1.0.0"
 tracing = "0.1.0"
 tracing-subscriber = "0.3.0"
 toml = "0.8.0"
+
+[[example]]
+name = "rdp_caps_probe"
+path = "examples/rdp_caps_probe.rs"

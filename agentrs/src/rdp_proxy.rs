@@ -27,6 +27,15 @@ pub struct RdpProxy<C, S> {
     server_stream: S,
     #[allow(dead_code)]
     client_stream_leftover_bytes: bytes::BytesMut,
+    /// Agent-side PII guard for the post-CredSSP forwarding stage. None = no
+    /// guard (transparent forwarding).
+    #[builder(default)]
+    guard: Option<crate::piigate::config::GuardConfig>,
+    #[builder(default = String::new())]
+    session_id: String,
+    /// Reports guard violations to the gateway. None = no reporting.
+    #[builder(default)]
+    report: Option<crate::proxy::ViolationReporter>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +93,9 @@ where
         username,
         password,
         client_stream_leftover_bytes,
+        guard,
+        session_id,
+        report,
     } = proxy;
 
     let tls_config = config
@@ -195,6 +207,9 @@ where
     Proxy::builder()
         .transport_a(client_stream)
         .transport_b(server_stream)
+        .session_id(session_id)
+        .guard(guard)
+        .report(report)
         .build()
         .forward()
         .await

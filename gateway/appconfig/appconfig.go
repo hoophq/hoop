@@ -66,6 +66,7 @@ type Config struct {
 	rdpPIISnapshotInterval float64
 	rdpPIIScoreThreshold   float64
 	rdpPIIEntityDenylist   []string
+	rdpPIIGuardPolicy      string
 
 	eventRoutingWorkers int
 
@@ -214,6 +215,19 @@ func Load() error {
 	} else {
 		rdpPIIEntityDenylist = []string{"DATE_TIME", "NRP"}
 	}
+	// What the agent-side guard does on detection: kill (default, preserve
+	// the original behavior), redact (blank the PII and continue), or
+	// redact_and_kill. Gateway-wide default; a per-connection override is a
+	// future enhancement.
+	rdpPIIGuardPolicy := "kill"
+	switch v := os.Getenv("RDP_PII_GUARD_POLICY"); v {
+	case "kill", "redact", "redact_and_kill":
+		rdpPIIGuardPolicy = v
+	case "":
+		// keep default
+	default:
+		return fmt.Errorf("invalid RDP_PII_GUARD_POLICY %q (want kill|redact|redact_and_kill)", v)
+	}
 
 	eventRoutingWorkers := 3
 	if v := os.Getenv("EVENT_ROUTING_WORKERS"); v != "" {
@@ -266,6 +280,7 @@ func Load() error {
 		rdpPIISnapshotInterval:          rdpPIISnapshotInterval,
 		rdpPIIScoreThreshold:            rdpPIIScoreThreshold,
 		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
+		rdpPIIGuardPolicy:               rdpPIIGuardPolicy,
 		eventRoutingWorkers:             eventRoutingWorkers,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
@@ -435,6 +450,7 @@ func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWS
 func (c Config) RDPPIISnapshotInterval() float64       { return c.rdpPIISnapshotInterval }
 func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThreshold }
 func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
+func (c Config) RDPPIIGuardPolicy() string             { return c.rdpPIIGuardPolicy }
 func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWorkers }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {

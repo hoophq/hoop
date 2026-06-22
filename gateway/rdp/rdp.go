@@ -193,6 +193,9 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		dba.ID,
 		dba.ExpireAt,
 		ctxDuration,
+		// Native :3389 proxy path: the agent-side PII guard is wired only on
+		// the IronRDP browser path for the PoC (see irongw.go).
+		broker.RDPGuardConfig{},
 	)
 
 	if err != nil {
