@@ -215,11 +215,18 @@ func Load() error {
 	} else {
 		rdpPIIEntityDenylist = []string{"DATE_TIME", "NRP"}
 	}
-	// What the agent-side guard does on detection: kill (default, preserve
-	// the original behavior), redact (blank the PII and continue), or
-	// redact_and_kill. Gateway-wide default; a per-connection override is a
-	// future enhancement.
-	rdpPIIGuardPolicy := "kill"
+	// What the agent-side guard does on detection: redact (default: blank the
+	// PII region and keep the session alive), kill (drop the batch and
+	// terminate), or redact_and_kill. Gateway-wide default; a per-connection
+	// override is a future enhancement.
+	//
+	// The default is redact, not kill: killing the session on the first
+	// detected entity (e.g. an EMAIL_ADDRESS rendered anywhere on the desktop)
+	// makes the guard unusable as a default — the user gets a black screen with
+	// no feedback within seconds. Redact keeps the session usable while still
+	// preventing PII from reaching the client. Operators who want hard
+	// termination must opt in explicitly with kill/redact_and_kill.
+	rdpPIIGuardPolicy := "redact"
 	switch v := os.Getenv("RDP_PII_GUARD_POLICY"); v {
 	case "kill", "redact", "redact_and_kill":
 		rdpPIIGuardPolicy = v
