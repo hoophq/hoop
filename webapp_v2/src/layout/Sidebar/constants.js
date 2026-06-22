@@ -32,7 +32,6 @@ export const MAIN_ITEMS = [
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false },
   { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false },
-  { label: 'Provisioning', path: '/provisioning', icon: Boxes, adminOnly: true },
   {
     label: 'Search',
     icon: Search,
@@ -58,6 +57,7 @@ export const DISCOVER_ITEMS = [
   { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true },
   { label: 'Live Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
   { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true },
+  { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true },
   {
     label: 'Rulepacks',
     path: '/rulepacks',
