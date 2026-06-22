@@ -3,7 +3,7 @@
    ["@radix-ui/themes" :refer [Badge Box Button Checkbox Flex Heading
                                 Table Tabs Text TextField Tooltip]]
    ["lucide-react" :refer [AlertCircle Check ChevronRight Database
-                            Key Pencil Plus Rocket Search Upload
+                            Key Pencil Rocket Search Upload
                             UserCog X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -264,7 +264,7 @@
 (defn- inventory-header [{:keys [total-resources ready-count on-open-bulk-import]}]
   [:> Flex {:align "center" :justify "between" :mb "6"}
    [:> Flex {:direction "column" :gap "2"}
-    [:> Heading {:size "8"} "Resource Catalog"]
+    [:> Heading {:size "8"} "Provisioning Hub"]
     [:> Flex {:align "center" :gap "3"}
      [:> Text {:size "2" :color "gray"}
       "Track and provision every database resource connected to Hoop."]
@@ -274,7 +274,7 @@
      [:> Text {:size "2" :color "green"} (str ready-count " complete")]]]
    [:> Flex {:gap "2"}
     [:> Button {:size "3" :on-click on-open-bulk-import}
-     [:> Plus {:size 16}] " Add to Inventory"]]])
+     [:> Upload {:size 16}] " Import Resources"]]])
 
 (defn- inventory-tabs [{:keys [active-tab counts on-change]}]
   [:> Tabs.Root {:value         (name active-tab)

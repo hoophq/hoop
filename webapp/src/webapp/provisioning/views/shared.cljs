@@ -151,7 +151,7 @@
    (when detail
      [:> Text {:size "1" :color "gray"} detail])
    (when on-remove
-     [:> Button {:variant "ghost" :size "1" :color "gray"
+     [:> Button {:variant "soft" :size "1" :color "red"
                  :on-click (fn [e]
                              (.stopPropagation e)
                              (on-remove))}
