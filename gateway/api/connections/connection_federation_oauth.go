@@ -78,6 +78,119 @@ func federationOAuthRedirectURI() string {
 	return appconfig.Get().FullApiURL() + federationOAuthCallbackPath
 }
 
+// Sentinel errors returned by BuildFederationConsentURL so callers can map a
+// known condition to the right transport-level status (HTTP code, MCP
+// envelope) without string matching.
+var (
+	// ErrFederationNoUser indicates the consent flow was started without an
+	// authenticated user (no user id/email on the request context).
+	ErrFederationNoUser = errors.New("an authenticated user is required to start the consent flow")
+	// ErrFederationConnectionNotFound indicates the connection does not exist
+	// or is not visible to the calling user.
+	ErrFederationConnectionNotFound = errors.New("connection not found")
+	// ErrFederationNotConfigured indicates the connection has no federation
+	// configuration, so there is nothing to consent to.
+	ErrFederationNotConfigured = errors.New("federation not configured for this connection")
+	// ErrFederationNotGCPOAuth indicates the connection is federated with a
+	// provider other than gcp_oauth, which has no per-user consent flow.
+	ErrFederationNotGCPOAuth = errors.New("the OAuth consent flow is only available for gcp_oauth federation")
+)
+
+// BuildFederationConsentURL mints the Google OAuth consent URL the authenticated
+// user must visit to connect their Google account to a gcp_oauth-federated
+// connection. It performs the same connection lookup (access-control aware via
+// ctx), gcp_oauth guard, and single-use state creation as the
+// AuthorizeFederationOAuth HTTP handler, and is shared by that handler and the
+// in-process MCP exec path so both mint identical URLs without a self-HTTP
+// round trip.
+//
+// redirectBack is the URL the browser returns to after consent; pass "" (e.g.
+// from non-browser MCP callers) to default to the app root. Errors are the
+// sentinels above for known conditions, or a wrapped error for unexpected
+// failures, so callers can map them to the appropriate status.
+func BuildFederationConsentURL(ctx *storagev2.Context, nameOrID, redirectBack string) (string, error) {
+	if ctx.GetUserID() == "" || ctx.UserEmail == "" {
+		return "", ErrFederationNoUser
+	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return "", fmt.Errorf("failed fetching connection: %w", err)
+	}
+	if conn == nil {
+		return "", ErrFederationConnectionNotFound
+	}
+
+	cfg, err := models.GetConnectionFederationConfig(models.DB, ctx.GetOrgID(), conn.ID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return "", ErrFederationNotConfigured
+		}
+		return "", fmt.Errorf("failed fetching federation config: %w", err)
+	}
+	if cfg.BuiltinProvider == nil || *cfg.BuiltinProvider != models.FederationProviderGCPOAuth {
+		return "", ErrFederationNotGCPOAuth
+	}
+
+	clientCfg, err := decodeFederationOAuthClient(cfg.AdminCredentialsEncrypted)
+	if err != nil {
+		return "", fmt.Errorf("failed loading oauth client config: %w", err)
+	}
+
+	if redirectBack == "" {
+		redirectBack = appconfig.Get().FullApiURL() + "/"
+	}
+
+	state := &models.FederationOAuthState{
+		ID:           uuid.NewString(),
+		OrgID:        ctx.GetOrgID(),
+		ConnectionID: conn.ID,
+		UserID:       ctx.GetUserID(),
+		UserEmail:    ctx.UserEmail,
+		RedirectURL:  redirectBack,
+	}
+	if err := models.CreateFederationOAuthState(models.DB, state); err != nil {
+		return "", fmt.Errorf("failed creating oauth state: %w", err)
+	}
+
+	conf := federationOAuthConfig(clientCfg, scopesFromConfig(cfg.ExtraConfig))
+	// AccessTypeOffline + prompt=consent forces Google to return a refresh
+	// token on every consent, even for a returning user. Without both, a
+	// second authorization returns only an access token and we would have no
+	// refresh token to persist.
+	return conf.AuthCodeURL(state.ID,
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "consent"),
+	), nil
+}
+
+// FederationConsentRequired reports whether running connectionID as userID
+// would be denied because the connection is federated with a per-user provider
+// (gcp_oauth) for which the user has not yet connected their account. When it
+// returns true the caller should surface the consent flow
+// (BuildFederationConsentURL) instead of opening a session and incurring its
+// side effects (audit rows, AI analysis, Jira tickets). A connection with no
+// federation config, or a non-gcp_oauth provider, never requires consent.
+func FederationConsentRequired(orgID, connectionID, userID string) (bool, error) {
+	cfg, err := models.GetConnectionFederationConfig(models.DB, orgID, connectionID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if cfg.BuiltinProvider == nil || *cfg.BuiltinProvider != models.FederationProviderGCPOAuth {
+		return false, nil
+	}
+	if _, err := models.GetFederationUserCredential(models.DB, orgID, connectionID, userID); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
 // AuthorizeFederationOAuth
 //
 //	@Summary		Start the Google OAuth consent flow for a connection
@@ -91,40 +204,6 @@ func federationOAuthRedirectURI() string {
 //	@Router			/connections/{nameOrID}/federation/oauth/authorize [get]
 func AuthorizeFederationOAuth(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	if ctx.GetUserID() == "" || ctx.UserEmail == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "an authenticated user is required to start the consent flow"})
-		return
-	}
-
-	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
-		return
-	}
-	if conn == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
-		return
-	}
-
-	cfg, err := models.GetConnectionFederationConfig(models.DB, ctx.GetOrgID(), conn.ID)
-	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "federation not configured for this connection"})
-			return
-		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching federation config: %v", err)
-		return
-	}
-	if cfg.BuiltinProvider == nil || *cfg.BuiltinProvider != models.FederationProviderGCPOAuth {
-		c.JSON(http.StatusConflict, gin.H{"message": "the OAuth consent flow is only available for gcp_oauth federation"})
-		return
-	}
-
-	clientCfg, err := decodeFederationOAuthClient(cfg.AdminCredentialsEncrypted)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading oauth client config: %v", err)
-		return
-	}
 
 	redirectBack, err := parseFederationRedirect(c)
 	if err != nil {
@@ -132,29 +211,21 @@ func AuthorizeFederationOAuth(c *gin.Context) {
 		return
 	}
 
-	state := &models.FederationOAuthState{
-		ID:           uuid.NewString(),
-		OrgID:        ctx.GetOrgID(),
-		ConnectionID: conn.ID,
-		UserID:       ctx.GetUserID(),
-		UserEmail:    ctx.UserEmail,
-		RedirectURL:  redirectBack,
+	authURL, err := BuildFederationConsentURL(ctx, c.Param("nameOrID"), redirectBack)
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, openapi.FederationOAuthAuthorizeResponse{URL: authURL})
+	case errors.Is(err, ErrFederationNoUser):
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+	case errors.Is(err, ErrFederationConnectionNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	case errors.Is(err, ErrFederationNotConfigured):
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	case errors.Is(err, ErrFederationNotGCPOAuth):
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "%v", err)
 	}
-	if err := models.CreateFederationOAuthState(models.DB, state); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating oauth state: %v", err)
-		return
-	}
-
-	conf := federationOAuthConfig(clientCfg, scopesFromConfig(cfg.ExtraConfig))
-	// AccessTypeOffline + prompt=consent forces Google to return a refresh
-	// token on every consent, even for a returning user. Without both, a
-	// second authorization returns only an access token and we would have no
-	// refresh token to persist.
-	authURL := conf.AuthCodeURL(state.ID,
-		oauth2.AccessTypeOffline,
-		oauth2.SetAuthURLParam("prompt", "consent"),
-	)
-	c.JSON(http.StatusOK, openapi.FederationOAuthAuthorizeResponse{URL: authURL})
 }
 
 // FederationOAuthCallback

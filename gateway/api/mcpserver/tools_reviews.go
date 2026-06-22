@@ -181,6 +181,13 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 
 	select {
 	case resp := <-respCh:
+		// Session-open federation gate: the user must connect their per-user
+		// account (gcp_oauth) before this approved query can run. Keep the
+		// review APPROVED (not EXECUTED) so it can be retried after consent.
+		if oauthEnv, ok := federationConsentEnvelopeFromResponse(sc, resp); ok {
+			reviewStatus = models.ReviewStatusApproved
+			return jsonResult(oauthEnv)
+		}
 		env := map[string]any{
 			"session_id":        resp.SessionID,
 			"output":            resp.Output,
