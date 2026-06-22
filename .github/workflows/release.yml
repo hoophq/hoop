@@ -884,3 +884,36 @@ jobs:
         run: |
           git tag "$GIT_TAG" 2>/dev/null || true
           git push origin "$GIT_TAG"
+
+  # Create a Linear release once the version has actually shipped. This job runs
+  # only after `publish-release` succeeds, so a Linear release is never created
+  # for a version that failed to publish.
+  #
+  # The official Linear action (command defaults to `sync`) scans the commits
+  # that landed since the previous release for Linear issue identifiers (e.g.
+  # ENG-123) in the squash-merge subjects/bodies, creates a release named after
+  # the semver tag in the configured pipeline, attaches those issues, and marks
+  # it complete. fetch-depth: 0 is required so the action can walk history back
+  # to the previous release commit to determine the scan range.
+  #
+  # Requires the `LINEAR_ACCESS_KEY` repository secret (a Linear pipeline access
+  # key generated from Linear's release settings).
+  publish-linear-release:
+    runs-on: ubuntu-latest
+    name: Publish Linear Release
+    needs:
+      - publish-release
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Create Linear Release
+        uses: linear/linear-release-action@v0
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+          version: ${{ env.GIT_TAG }}
