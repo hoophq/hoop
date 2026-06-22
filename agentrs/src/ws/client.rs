@@ -1,6 +1,9 @@
 use crate::{
     conf, tls,
     ws::{
+        control::CONTROL_SENTINEL_SID,
+        message::WebSocketMessage,
+        message_types::MessageType,
         rdp_message_processor::MessageProcessor,
         types::{ChannelMap, ProxyMap, SessionMap, WsWriter},
     },
@@ -185,12 +188,47 @@ impl WebSocket {
         return Ok((ws_stream, response));
     }
 
+    /// Sends the connection-scoped capability advertisement. Carries the
+    /// agent's `supports_pii_guard` flag (both Presidio + OCR endpoints set).
+    /// The frame is addressed with the well-known control sentinel sid, not a
+    /// session id — the gateway dispatches it by message type at the
+    /// connection level.
+    async fn send_capabilities(ws_sender: &WsWriter) -> anyhow::Result<()> {
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "supports_pii_guard".to_string(),
+            crate::piigate::config::supports_pii_guard().to_string(),
+        );
+        let msg = WebSocketMessage::new(MessageType::Capabilities, metadata, Vec::new());
+        let framed = msg
+            .encode_with_header(CONTROL_SENTINEL_SID)
+            .context("encoding capabilities frame")?;
+        let mut sender = ws_sender.lock().await;
+        sender
+            .send(Message::Binary(framed.into()))
+            .await
+            .context("sending capabilities frame")?;
+        info!(
+            "> Advertised capabilities to gateway (supports_pii_guard={})",
+            crate::piigate::config::supports_pii_guard()
+        );
+        Ok(())
+    }
+
     async fn run(self) -> anyhow::Result<()> {
         let (ws_stream, _) = self.connect().await?;
         let (ws_sender, ws_receiver) = ws_stream.split();
 
         // Clone config manager and sessions for use in the async task
         let ws_sender = Arc::new(Mutex::new(ws_sender));
+
+        // Advertise capabilities as the first frame, before any session can be
+        // delegated to us. This lets the gateway decide — at session-creation
+        // time — whether it may delegate the PII guard to this agent, and fail
+        // closed with a clear error if not, instead of every guarded session
+        // dying cryptically inside GuardConfig::resolve. A connection-level
+        // failure to send is fatal for this connection (triggers reconnect).
+        Self::send_capabilities(&ws_sender).await?;
         let sessions: SessionMap = Arc::new(RwLock::new(HashMap::new()));
         // Store active RDP proxy tasks per session
         let active_proxies: ProxyMap = Arc::new(RwLock::new(HashMap::new()));

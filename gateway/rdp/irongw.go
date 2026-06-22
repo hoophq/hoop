@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -98,6 +99,29 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
 }
 
+// writeRDPClientError sends an RDP-protocol error packet to the web client so
+// it shows a connection-refused dialog instead of hanging or failing
+// cryptically mid-handshake. The RDP negotiation protocol can only carry a
+// generic failure code (not free text), so the human-readable reason is
+// logged gateway-side; the client sees a clean refusal. Best-effort: write
+// errors are logged, not surfaced.
+func writeRDPClientError(ws *websocket.Conn, cppVersion uint64, reason string) {
+	log.Infof("refusing RDP connection: %s", reason)
+	response := RDCleanPathPdu{
+		Version:           cppVersion,
+		Error:             NewRDCleanPathError(403),
+		X224ConnectionPDU: buildGenericRdpErrorPacket(),
+	}
+	pkt, err := response.Encode()
+	if err != nil {
+		log.Errorf("failed to encode RDP error packet: %v", err)
+		return
+	}
+	if err := ws.WriteMessage(websocket.BinaryMessage, pkt); err != nil {
+		log.Errorf("failed to write RDP error packet to client: %v", err)
+	}
+}
+
 func (r *IronRDPGateway) handle(c *gin.Context) {
 	// Generate unique connection id
 	connId := r.connections.Add(1)
@@ -143,20 +167,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, isMachineCredential, err := checkAndPrepareRDP(p.X224ConnectionPDU)
 	if errors.Is(err, models.ErrNotFound) {
-		response := RDCleanPathPdu{
-			Version:           cppVersion,
-			Error:             NewRDCleanPathError(403),
-			X224ConnectionPDU: buildGenericRdpErrorPacket(),
-		}
-		pkt, err := response.Encode()
-		if err != nil {
-			log.Errorf("failed to encode RDP error packet: %v", err)
-			return
-		}
-		err = ws.WriteMessage(websocket.BinaryMessage, pkt)
-		if err != nil {
-			log.Errorf("failed to write RDP error packet to client: %v", err)
-		}
+		writeRDPClientError(ws, cppVersion, "connection not found")
 		return
 	}
 
@@ -193,6 +204,28 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// from its own env.
 	agentGuard := broker.RDPGuardConfig{Enabled: featureflag.IsEnabled(recorderOrgID, PIIGateFlagName)}
 	if agentGuard.Enabled {
+		// Capability gate: only delegate the guard to an agent that has
+		// advertised it can honor it (Presidio + OCR endpoints configured).
+		// The agent itself fails closed in GuardConfig::resolve, but that
+		// surfaces as a cryptic mid-handshake disconnect. Checking the
+		// advertised capability here lets us refuse early with a clear,
+		// actionable error. Fail CLOSED on the unknown case (old agent, or the
+		// capability frame has not arrived yet): never run a guard-intended
+		// session unguarded.
+		capable, known := broker.AgentCapability(connectionModel.AgentName, broker.CapabilitySupportsPIIGuard)
+		if !known || !capable {
+			reason := "the agent has not advertised PII guard support yet (it may be an older agent or still connecting)"
+			if known {
+				reason = "the agent has no OCR/Presidio endpoints configured (set MSPRESIDIO_ANALYZER_URL and RDP_OCR_SERVER_URL on the agent)"
+			}
+			log.Errorf("refusing RDP session: %s is enabled but agent %q cannot honor the PII guard: %s",
+				PIIGateFlagName, connectionModel.AgentName, reason)
+			writeRDPClientError(ws, cppVersion,
+				fmt.Sprintf("Connection refused: PII guard is enabled but agent %q cannot enforce it (%s).",
+					connectionModel.AgentName, reason))
+			return
+		}
+
 		params := analyzer.DefaultAnalysisParams()
 		agentGuard.ScoreThreshold = params.ScoreThreshold
 		agentGuard.EntityDenylist = params.EntityDenylist

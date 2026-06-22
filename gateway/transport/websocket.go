@@ -63,8 +63,11 @@ func HandleConnection(c *gin.Context) {
 	}
 	defer wsConn.Close()
 
-	// Register this agent's communicator inside the broker
-	if err := broker.CreateAgent(agent.Name, wsConn); err != nil {
+	// Register this agent's communicator inside the broker. The returned
+	// instance id ties cleanup to THIS connection so a late close of a stale
+	// connection cannot evict a newer one that reused the same agent name.
+	agentInstanceID, err := broker.CreateAgent(agent.Name, wsConn)
+	if err != nil {
 		log.Errorf("failed to register agent communicator: %v", err)
 		return
 	}
@@ -89,10 +92,20 @@ func HandleConnection(c *gin.Context) {
 		if messageType != websocket.BinaryMessage {
 			continue
 		}
-		handleWebSocketMessage(data)
+		handleWebSocketMessage(agent.Name, data)
 	}
 
-	// Cleanup: close all sessions that belong to this agent ===
+	// Cleanup: remove this connection's broker state (only if it is still the
+	// live entry for this agent name) so a late close of a stale connection
+	// cannot evict a newer one that reused the same name.
+	broker.RemoveAgent(agent.Name, agentInstanceID)
+
+	// Then close sessions belonging to this agent. NOTE: this still matches by
+	// agent NAME, not connection instance, so if the same name reconnects with
+	// overlapping sessions, a stale connection's cleanup can close the newer
+	// connection's sessions. Pre-existing behavior; tracked in RD-247 to scope
+	// teardown by connection instance. The broker-entry fix above already
+	// prevents the worst case (stale eviction of the live registration).
 	for id, s := range broker.GetSessions() {
 		if s.Connection.AgentName == agent.Name {
 			log.Debugf("Closing session %s due to agent=%s disconnect", id, agent.Name)
@@ -176,9 +189,23 @@ func persistAgentGuardrailsViolation(s *broker.Session, payload []byte) {
 	log.With("sid", sessionID).Infof("piigate: agent-side PII guard violation persisted (kind=%s, entities=%v)", report.Kind, report.EntityTypes)
 }
 
-func handleWebSocketMessage(data []byte) {
+func handleWebSocketMessage(agentName string, data []byte) {
 	// 1) Try CONTROL frame first (JSON-like)
 	if sid, msg, err := broker.DecodeWebSocketMessage(data); err == nil {
+		// Connection-scoped control frames (sid == ControlSentinelSID) describe
+		// the agent connection, not a session. Dispatch them by type before any
+		// session lookup.
+		if sid == broker.ControlSentinelSID {
+			switch msg.Type {
+			case broker.MessageTypeCapabilities:
+				broker.SetAgentCapabilities(agentName, msg.Metadata)
+				log.Debugf("agent=%s advertised capabilities: %v", agentName, msg.Metadata)
+			default:
+				log.Infof("Unhandled connection-scoped control message type=%q for agent=%s", msg.Type, agentName)
+			}
+			return
+		}
+
 		s := broker.GetSession(sid)
 		if s == nil {
 			log.Infof("Control message for unknown SID=%s", sid)

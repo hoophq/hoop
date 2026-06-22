@@ -1,4 +1,5 @@
 pub mod client;
+pub mod control;
 mod message;
 mod message_types;
 mod proxy;

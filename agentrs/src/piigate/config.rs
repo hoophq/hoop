@@ -44,6 +44,17 @@ pub fn guard_requested(metadata: &HashMap<String, String>) -> bool {
     metadata.get("pii_guard").map(String::as_str) == Some("enabled")
 }
 
+/// Whether this agent is *capable* of honoring a delegated PII guard right
+/// now: it has both the Presidio analyzer and OCR sidecar endpoints
+/// configured. This is the single source of truth for capability — the same
+/// condition `resolve` requires to build a guard — and is advertised to the
+/// gateway at connect time so the gateway can fail closed with a clear,
+/// early error instead of letting every guarded session die cryptically in
+/// `resolve`.
+pub fn supports_pii_guard() -> bool {
+    env_url(PRESIDIO_ANALYZER_URL_ENV).is_some() && env_url(OCR_SERVER_URL_ENV).is_some()
+}
+
 impl GuardConfig {
     /// Resolves the guard config from the SessionStarted metadata (gateway
     /// policy) and the process environment (endpoints).
@@ -230,5 +241,46 @@ mod tests {
             assert_eq!(cfg.params.band_padding, d.band_padding);
             assert_eq!(cfg.params.entity_denylist, d.entity_denylist);
         });
+    }
+
+    #[test]
+    fn supports_pii_guard_requires_both_endpoints() {
+        // Capability advertised to the gateway must be exactly the condition
+        // `resolve` needs to build a guard: BOTH endpoints present.
+        with_endpoints(Some("http://p"), Some("http://o"), || {
+            assert!(supports_pii_guard(), "both endpoints -> capable");
+        });
+        with_endpoints(Some("http://p"), None, || {
+            assert!(!supports_pii_guard(), "missing OCR -> incapable");
+        });
+        with_endpoints(None, Some("http://o"), || {
+            assert!(!supports_pii_guard(), "missing Presidio -> incapable");
+        });
+        with_endpoints(None, None, || {
+            assert!(!supports_pii_guard(), "neither -> incapable");
+        });
+    }
+
+    #[test]
+    fn supports_pii_guard_matches_resolve_buildability() {
+        // The capability flag must never disagree with whether resolve can
+        // actually build a guard, or the gateway and agent would make
+        // contradictory decisions.
+        for (p, o) in [
+            (Some("http://p"), Some("http://o")),
+            (Some("http://p"), None),
+            (None, Some("http://o")),
+            (None, None),
+        ] {
+            with_endpoints(p, o, || {
+                let capable = supports_pii_guard();
+                let resolve_builds =
+                    GuardConfig::resolve(&md(&[("pii_guard", "enabled")]), "sid").is_ok();
+                assert_eq!(
+                    capable, resolve_builds,
+                    "capability ({capable}) must match resolve buildability ({resolve_builds}) for p={p:?} o={o:?}"
+                );
+            });
+        }
     }
 }

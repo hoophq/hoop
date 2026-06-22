@@ -95,6 +95,11 @@ impl MessageProcessor {
                     );
                     Ok(())
                 }
+                MessageType::Capabilities => {
+                    // Agent -> gateway only; never expected inbound.
+                    info!("> Ignoring unexpected inbound capabilities frame");
+                    Ok(())
+                }
                 MessageType::Unknown => {
                     info!(
                         "> Unknown message type: {:#?} for session: {}",
