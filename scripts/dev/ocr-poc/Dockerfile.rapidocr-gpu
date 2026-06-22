@@ -20,13 +20,39 @@ RUN apt-get update && \
         python3 python3-pip libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
     rm -rf /var/lib/apt/lists/*
 
-# onnxruntime-gpu 1.19+ targets CUDA 12 + cuDNN 9 (both in the base image).
-# Bounded pins: open-ended ranges make benchmark numbers non-reproducible.
+# onnxruntime-gpu must be pinned to the CUDA 12 line. 1.21+ moved to CUDA 13
+# (needs libcudart.so.13) while declaring NO nvidia/* runtime deps, so an
+# open-ended pin resolved to 1.27 and crashed at import even on this CUDA 12
+# base. 1.20.1 is the last CUDA 12 release.
+#
+# The full CUDA 12 runtime wheel set is installed explicitly and EXACT-pinned
+# (cudart, cublas, cudnn, curand, cufft, nvrtc, nvjitlink) so the engine is
+# self-contained, reproducible, and not reliant on the exact base-image library
+# set — in particular this base ships cuDNN 8 while onnxruntime 1.20 needs
+# cuDNN 9. A partial set silently falls back to CPU ("shifted to be executed
+# under CPUExecutionProvider"), which a GPU image must never do. Versions are
+# the set validated on a T4 (ldd resolves all provider deps; device=
+# onnxruntime-cuda, no CPU fallback). Keep in sync with Dockerfile.agent-ocr-gpu.
 RUN pip3 install --no-cache-dir \
-    "rapidocr>=3.1,<4" \
-    "onnxruntime-gpu>=1.19,<2" \
-    "fastapi>=0.115,<1" \
-    "uvicorn>=0.30,<1"
+    "rapidocr==3.8.4" \
+    "onnxruntime-gpu==1.20.1" \
+    "nvidia-cuda-runtime-cu12==12.9.79" \
+    "nvidia-cublas-cu12==12.9.2.10" \
+    "nvidia-cudnn-cu12==9.23.2.1" \
+    "nvidia-curand-cu12==10.3.10.19" \
+    "nvidia-cufft-cu12==11.4.1.4" \
+    "nvidia-cuda-nvrtc-cu12==12.9.86" \
+    "nvidia-nvjitlink-cu12==12.9.86" \
+    "fastapi==0.138.0" \
+    "uvicorn==0.49.0"
+# Symlink every CUDA .so into a fixed directory and put only that on the loader
+# path, instead of hardcoding the python-minor dist-packages location (a rebuild
+# trap if the base image's python changes). Without this the CUDA execution
+# provider fails to load and inference silently falls back to CPU.
+RUN mkdir -p /opt/cuda-libs && \
+    find /usr -path '*/nvidia/*/lib/*.so*' -exec ln -s {} /opt/cuda-libs/ \; && \
+    test -e /opt/cuda-libs/libcudart.so.12 && test -e /opt/cuda-libs/libcublasLt.so.12
+ENV LD_LIBRARY_PATH="/opt/cuda-libs"
 
 COPY device_policy.py server_rapidocr.py /app/
 # Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes, each
