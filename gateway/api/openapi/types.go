@@ -2217,6 +2217,58 @@ type FederationOAuthStatusResponse struct {
 	GoogleEmail string `json:"google_email,omitempty" example:"alice@example.com"`
 }
 
+// MCPOAuthAuthorizeRequest starts the OAuth login flow for an "mcp" httpproxy
+// connection. ServerURL is the MCP endpoint (the OAuth protected resource).
+// ClientID/ClientSecret are optional: when both are empty the gateway performs
+// Dynamic Client Registration (RFC 7591) against the discovered authorization
+// server.
+type MCPOAuthAuthorizeRequest struct {
+	// ServerURL is the MCP endpoint to authorize against (the OAuth resource).
+	ServerURL string `json:"server_url" binding:"required" example:"https://mcp.figma.com/mcp"`
+	// ClientID is an optional pre-registered OAuth client id. When empty the
+	// gateway registers a client dynamically.
+	ClientID string `json:"client_id,omitempty"`
+	// ClientSecret is an optional pre-registered OAuth client secret, paired
+	// with ClientID.
+	ClientSecret string `json:"client_secret,omitempty"`
+	// Scopes is an optional space-delimited scope string. When empty the
+	// scopes advertised by the authorization server are requested.
+	Scopes string `json:"scopes,omitempty" example:"openid profile"`
+}
+
+// MCPOAuthAuthorizeResponse is returned by the MCP OAuth authorize endpoint.
+// The client should open AuthorizationURL in the browser; after login the
+// provider redirects back to the gateway callback, which exchanges the code
+// for a token. The create page then redeems the token with FlowID.
+type MCPOAuthAuthorizeResponse struct {
+	// AuthorizationURL is the upstream OAuth authorization URL to open.
+	AuthorizationURL string `json:"authorization_url" example:"https://www.figma.com/oauth?client_id=...&state=..."`
+	// FlowID identifies this login flow; used to redeem the token afterwards.
+	FlowID string `json:"flow_id" example:"7c8a1234-5678-9abc-def0-123456789abc"`
+}
+
+// MCPOAuthTokenResponse carries the access token obtained by a completed MCP
+// OAuth login. AuthorizationHeader is the ready-to-use value for the
+// connection's HEADER_AUTHORIZATION configuration. The token is returned at
+// most once: the flow is consumed on read.
+type MCPOAuthTokenResponse struct {
+	// AccessToken is the OAuth access token.
+	AccessToken string `json:"access_token"`
+	// TokenType is the OAuth token type (typically "Bearer").
+	TokenType string `json:"token_type" example:"Bearer"`
+	// AuthorizationHeader is the full "<TokenType> <AccessToken>" value to set
+	// as HEADER_AUTHORIZATION on the connection.
+	AuthorizationHeader string `json:"authorization_header" example:"Bearer eyJ..."`
+	// RefreshToken is the OAuth refresh token, when the provider returned one.
+	RefreshToken string `json:"refresh_token,omitempty"`
+	// ExpiresIn is the access token lifetime in seconds, when known.
+	ExpiresIn int64 `json:"expires_in,omitempty" example:"3600"`
+	// ClientID is the OAuth client id used (relevant when registered dynamically).
+	ClientID string `json:"client_id,omitempty"`
+	// ServerURL echoes the authorized MCP endpoint.
+	ServerURL string `json:"server_url" example:"https://mcp.figma.com/mcp"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`

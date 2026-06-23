@@ -23,4 +23,4 @@
 
 (def http-proxy-subtypes
   "Set of connection subtypes that use HTTP proxy logic"
-  #{"httpproxy" "kibana" "grafana" "claude-code"})
+  #{"httpproxy" "kibana" "grafana" "claude-code" "mcp"})
