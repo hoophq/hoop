@@ -12,6 +12,9 @@ pub struct SessionInfo {
     pub password: String,
     pub proxy_user: String,
     pub client_address: String,
+    /// Agent-side PII guard config, resolved from the SessionStarted
+    /// metadata (gateway policy) and agent env (endpoints). None = unguarded.
+    pub guard: Option<crate::piigate::config::GuardConfig>,
     pub sender: Arc<
         tokio::sync::Mutex<
             SplitSink<

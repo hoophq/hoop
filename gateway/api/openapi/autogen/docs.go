@@ -4925,6 +4925,145 @@ const docTemplate = `{
                 }
             }
         },
+        "/mcp-oauth/authorize": {
+            "post": {
+                "description": "Discovers the MCP server's authorization server (RFC 9728 / RFC 8414), optionally performs Dynamic Client Registration (RFC 7591) when no client credentials are supplied, and returns the authorization URL for the admin's browser to complete an Authorization Code + PKCE login. The browser is redirected there; the upstream provider redirects back to the gateway callback, which exchanges the code for a token. Used by the connection create page.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Start the OAuth login flow for an MCP connection",
+                "parameters": [
+                    {
+                        "description": "MCP OAuth login request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MCPOAuthAuthorizeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MCPOAuthAuthorizeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/mcp-oauth/callback": {
+            "get": {
+                "description": "The upstream authorization server's redirect target. Validates the state issued by the authorize endpoint, exchanges the authorization code for an access token, stores it on the flow row, and redirects the browser back to the connection create page with mcp_oauth=success|error and the flow_id. This endpoint is unauthenticated but state-validated, and is not called directly by clients.",
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "OAuth callback for MCP connection login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth state (the flow id issued by the authorize endpoint)",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth authorization code",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth error returned by the authorization server",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect back to the application with mcp_oauth=success|error"
+                    }
+                }
+            }
+        },
+        "/mcp-oauth/token/{flowID}": {
+            "get": {
+                "description": "Returns the access token obtained by a completed MCP OAuth login so the connection create page can freeze it into the connection's HEADER_AUTHORIZATION configuration. The token is returned at most once: the flow row is deleted on read.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Retrieve the token obtained by an MCP OAuth login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The flow id returned by the authorize endpoint",
+                        "name": "flowID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MCPOAuthTokenResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "425": {
+                        "description": "Too Early",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/metrics/sessions": {
             "get": {
                 "description": "Query session metrics data with advanced filtering. Supports AND/OR logic for combining filters. Filter by resource types (connection_type), resource subtypes (connection_subtype), resources (connection_name), Presidio data types (info_type), masked/unmasked status, date ranges, session dates, and session duration.",
@@ -13497,6 +13636,84 @@ const docTemplate = `{
                 "login_url": {
                     "description": "The URL to redirect the user to the identity provider",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.MCPOAuthAuthorizeRequest": {
+            "type": "object",
+            "required": [
+                "server_url"
+            ],
+            "properties": {
+                "client_id": {
+                    "description": "ClientID is an optional pre-registered OAuth client id. When empty the\ngateway registers a client dynamically.",
+                    "type": "string"
+                },
+                "client_secret": {
+                    "description": "ClientSecret is an optional pre-registered OAuth client secret, paired\nwith ClientID.",
+                    "type": "string"
+                },
+                "scopes": {
+                    "description": "Scopes is an optional space-delimited scope string. When empty the\nscopes advertised by the authorization server are requested.",
+                    "type": "string",
+                    "example": "openid profile"
+                },
+                "server_url": {
+                    "description": "ServerURL is the MCP endpoint to authorize against (the OAuth resource).",
+                    "type": "string",
+                    "example": "https://mcp.figma.com/mcp"
+                }
+            }
+        },
+        "openapi.MCPOAuthAuthorizeResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_url": {
+                    "description": "AuthorizationURL is the upstream OAuth authorization URL to open.",
+                    "type": "string",
+                    "example": "https://www.figma.com/oauth?client_id=...\u0026state=..."
+                },
+                "flow_id": {
+                    "description": "FlowID identifies this login flow; used to redeem the token afterwards.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                }
+            }
+        },
+        "openapi.MCPOAuthTokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "description": "AccessToken is the OAuth access token.",
+                    "type": "string"
+                },
+                "authorization_header": {
+                    "description": "AuthorizationHeader is the full \"\u003cTokenType\u003e \u003cAccessToken\u003e\" value to set\nas HEADER_AUTHORIZATION on the connection.",
+                    "type": "string",
+                    "example": "Bearer eyJ..."
+                },
+                "client_id": {
+                    "description": "ClientID is the OAuth client id used (relevant when registered dynamically).",
+                    "type": "string"
+                },
+                "expires_in": {
+                    "description": "ExpiresIn is the access token lifetime in seconds, when known.",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "refresh_token": {
+                    "description": "RefreshToken is the OAuth refresh token, when the provider returned one.",
+                    "type": "string"
+                },
+                "server_url": {
+                    "description": "ServerURL echoes the authorized MCP endpoint.",
+                    "type": "string",
+                    "example": "https://mcp.figma.com/mcp"
+                },
+                "token_type": {
+                    "description": "TokenType is the OAuth token type (typically \"Bearer\").",
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },

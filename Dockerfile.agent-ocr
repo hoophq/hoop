@@ -1,0 +1,56 @@
+# Agent image with a BUNDLED OCR engine (CPU flavor).
+#
+# The realtime RDP PII guard runs in the agent (agentrs) and needs an OCR
+# engine. Rather than make operators deploy a separate sidecar per agent,
+# this image bundles a RapidOCR engine that listens on loopback inside the
+# container — screen pixels never leave the agent process boundary. The agent
+# reaches it via the baked-in RDP_OCR_SERVER_URL default.
+#
+# For GPU hosts use Dockerfile.agent-ocr-gpu (same engine, CUDA EP).
+#
+# Build (CI passes the released image tag as HOOP_IMAGE):
+#   docker build -f Dockerfile.agent-ocr \
+#     --build-arg HOOP_IMAGE=hoophq/hoop:<tag> -t hoophq/hoop-agent-ocr:<tag> .
+# Required: the released hoop base image to build on. No default —
+# an unpinned 'latest' base would make derived builds non-reproducible.
+ARG HOOP_IMAGE
+FROM ${HOOP_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python + native libs RapidOCR's opencv dependency links (imdecode only,
+# but the module still loads them). Kept minimal; no build toolchain.
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+        libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
+
+# Isolated venv so the engine's deps never collide with system python.
+# Bounded pins for reproducibility (mirrors the standalone sidecar image).
+RUN python3 -m venv /opt/ocr-venv && \
+    /opt/ocr-venv/bin/pip install --no-cache-dir \
+        "rapidocr>=3.1,<4" \
+        "onnxruntime>=1.19,<2" \
+        "fastapi>=0.115,<1" \
+        "uvicorn>=0.30,<1"
+ENV PATH="/opt/ocr-venv/bin:${PATH}"
+
+# The engine + its device policy + the loopback launcher.
+COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
+COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
+COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
+RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
+
+# The agent reaches the bundled engine on loopback by default. Operators only
+# need to set MSPRESIDIO_ANALYZER_URL to enable guarding — no extra container.
+ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
+ENV OCR_PORT=18868
+# Parallel inference workers (uvicorn forks; each holds its own models).
+ENV WEB_CONCURRENCY=4
+
+# Wrap the existing tini entrypoint: start the OCR engine, wait for health,
+# then exec the agent command. The base image already sets ENTRYPOINT to
+# tini; we prepend the engine launcher under it.
+ENTRYPOINT ["tini", "--", "/opt/ocr/entrypoint-embedded.sh"]
+CMD ["/usr/local/bin/hoop-default-agent.sh"]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -13,12 +14,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
@@ -95,6 +99,29 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
 }
 
+// writeRDPClientError sends an RDP-protocol error packet to the web client so
+// it shows a connection-refused dialog instead of hanging or failing
+// cryptically mid-handshake. The RDP negotiation protocol can only carry a
+// generic failure code (not free text), so the human-readable reason is
+// logged gateway-side; the client sees a clean refusal. Best-effort: write
+// errors are logged, not surfaced.
+func writeRDPClientError(ws *websocket.Conn, cppVersion uint64, reason string) {
+	log.Infof("refusing RDP connection: %s", reason)
+	response := RDCleanPathPdu{
+		Version:           cppVersion,
+		Error:             NewRDCleanPathError(403),
+		X224ConnectionPDU: buildGenericRdpErrorPacket(),
+	}
+	pkt, err := response.Encode()
+	if err != nil {
+		log.Errorf("failed to encode RDP error packet: %v", err)
+		return
+	}
+	if err := ws.WriteMessage(websocket.BinaryMessage, pkt); err != nil {
+		log.Errorf("failed to write RDP error packet to client: %v", err)
+	}
+}
+
 func (r *IronRDPGateway) handle(c *gin.Context) {
 	// Generate unique connection id
 	connId := r.connections.Add(1)
@@ -140,20 +167,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, isMachineCredential, err := checkAndPrepareRDP(p.X224ConnectionPDU)
 	if errors.Is(err, models.ErrNotFound) {
-		response := RDCleanPathPdu{
-			Version:           cppVersion,
-			Error:             NewRDCleanPathError(403),
-			X224ConnectionPDU: buildGenericRdpErrorPacket(),
-		}
-		pkt, err := response.Encode()
-		if err != nil {
-			log.Errorf("failed to encode RDP error packet: %v", err)
-			return
-		}
-		err = ws.WriteMessage(websocket.BinaryMessage, pkt)
-		if err != nil {
-			log.Errorf("failed to write RDP error packet to client: %v", err)
-		}
+		writeRDPClientError(ws, cppVersion, "connection not found")
 		return
 	}
 
@@ -162,29 +176,10 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		return
 	}
 
-	var serverCertChain [][]byte
-	session, err := broker.CreateRDPSession(
-		nil,
-		*connectionModel,
-		peerAddr,
-		broker.ProtocolRDP,
-		extractedCreds,
-		dba.ID,
-		dba.ExpireAt,
-		ctxDuration,
-	)
-
-	if err != nil {
-		log.Errorf("Failed to create session: %v", err)
-		return
-	}
-
-	if session == nil {
-		log.Errorf("CreateSession returned nil session")
-		return
-	}
-
-	// Get user context for session recording
+	// Resolve the org/user context BEFORE creating the session: the org ID
+	// decides whether the agent-side PII guard is enabled, and that decision
+	// must be carried in the SessionStarted message the broker sends to the
+	// agent on session creation.
 	var recorderOrgID, recorderUserID, recorderUserName, recorderUserEmail string
 	if isMachineCredential {
 		recorderOrgID = dba.OrgID
@@ -200,6 +195,65 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		recorderUserID = userCtx.UserID
 		recorderUserName = userCtx.UserName
 		recorderUserEmail = userCtx.UserEmail
+	}
+
+	// When the flag is on, the agent runs the PII gate (analysis happens
+	// where the plaintext already flows, inside the customer network) and the
+	// gateway suppresses its own gate — a single enforcement point. The
+	// analysis policy rides along; the agent supplies Presidio/OCR endpoints
+	// from its own env.
+	agentGuard := broker.RDPGuardConfig{Enabled: featureflag.IsEnabled(recorderOrgID, PIIGateFlagName)}
+	if agentGuard.Enabled {
+		// Capability gate: only delegate the guard to an agent that has
+		// advertised it can honor it (Presidio + OCR endpoints configured).
+		// The agent itself fails closed in GuardConfig::resolve, but that
+		// surfaces as a cryptic mid-handshake disconnect. Checking the
+		// advertised capability here lets us refuse early with a clear,
+		// actionable error. Fail CLOSED on the unknown case (old agent, or the
+		// capability frame has not arrived yet): never run a guard-intended
+		// session unguarded.
+		capable, known := broker.AgentCapability(connectionModel.AgentName, broker.CapabilitySupportsPIIGuard)
+		if !known || !capable {
+			reason := "the agent has not advertised PII guard support yet (it may be an older agent or still connecting)"
+			if known {
+				reason = "the agent has no OCR/Presidio endpoints configured (set MSPRESIDIO_ANALYZER_URL and RDP_OCR_SERVER_URL on the agent)"
+			}
+			log.Errorf("refusing RDP session: %s is enabled but agent %q cannot honor the PII guard: %s",
+				PIIGateFlagName, connectionModel.AgentName, reason)
+			writeRDPClientError(ws, cppVersion,
+				fmt.Sprintf("Connection refused: PII guard is enabled but agent %q cannot enforce it (%s).",
+					connectionModel.AgentName, reason))
+			return
+		}
+
+		params := analyzer.DefaultAnalysisParams()
+		agentGuard.ScoreThreshold = params.ScoreThreshold
+		agentGuard.EntityDenylist = params.EntityDenylist
+		agentGuard.BandPadding = params.BandPadding
+		agentGuard.Policy = appconfig.Get().RDPPIIGuardPolicy()
+	}
+
+	var serverCertChain [][]byte
+	session, err := broker.CreateRDPSession(
+		nil,
+		*connectionModel,
+		peerAddr,
+		broker.ProtocolRDP,
+		extractedCreds,
+		dba.ID,
+		dba.ExpireAt,
+		ctxDuration,
+		agentGuard,
+	)
+
+	if err != nil {
+		log.Errorf("Failed to create session: %v", err)
+		return
+	}
+
+	if session == nil {
+		log.Errorf("CreateSession returned nil session")
+		return
 	}
 
 	// Initialize RDP session recorder
@@ -308,6 +362,28 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// pipe all data between WebSocket and TLS connection
 	// We also record all traffic for session recording
 
+	// Realtime PII guard (hold-and-release): when enabled, server->client
+	// bytes are held until OCR+Presidio analysis clears them; on detection
+	// the held frames are dropped and the session is terminated.
+	//
+	// When the agent runs the guard (agentGuard.Enabled), the gateway does
+	// NOT also gate: the agent already cleared/redacted every frame before it
+	// reached the gateway, so a second gate here would only double OCR cost
+	// and latency. The gateway still records — now of clean frames.
+	var gate *PIIGate
+	if !agentGuard.Enabled {
+		gate = newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
+			sessionErrMu.Lock()
+			sessionErr = err
+			sessionErrMu.Unlock()
+		})
+		if gate != nil {
+			defer gate.Close()
+		}
+	} else {
+		log.With("sid", sessionID).Infof("piigate: agent-side guard active, gateway gate suppressed")
+	}
+
 	// Use a done channel to signal when the websocket read goroutine exits
 	done := make(chan struct{})
 
@@ -355,6 +431,13 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 		// Record server -> client traffic (bitmap updates, etc.)
 		recorder.RecordOutput(buffer[:n])
+
+		if gate != nil {
+			// Hold-and-release: the gate forwards to the websocket from its
+			// analysis goroutine once the frames are cleared.
+			gate.Ingest(buffer[:n])
+			continue
+		}
 
 		err = ws.WriteMessage(websocket.BinaryMessage, buffer[:n])
 		if err != nil {

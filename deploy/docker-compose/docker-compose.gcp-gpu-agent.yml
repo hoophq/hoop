@@ -1,0 +1,91 @@
+# GCP GPU agent for the realtime RDP PII guard.
+#
+# Runs on a single GCE VM with one NVIDIA T4 (nvidia-container-toolkit
+# required). Two services:
+#
+#   - agent: the bundled GPU agent image (hoophq/hoop-agent-ocr:<tag>-gpu).
+#     The OCR engine runs INSIDE this container on loopback (127.0.0.1:18868)
+#     with RDP_OCR_SERVER_URL baked in; do not expose or override it. The
+#     agent connects out to your existing gateway via HOOP_KEY (a DSN minted
+#     in the gateway UI).
+#   - presidio-analyzer: PII detection the agent calls via
+#     MSPRESIDIO_ANALYZER_URL. Only the analyzer is needed — redaction happens
+#     in the agent, so the anonymizer service is intentionally omitted.
+#
+# The GPU image REFUSES TO START without a visible GPU (device_policy.py),
+# and the entrypoint is fail-loud: if OCR is unhealthy the container exits
+# non-zero. Both are intentional so the guard never runs blind.
+#
+# Usage on the VM:
+#   docker compose -f docker-compose.gcp-gpu-agent.yml up -d
+#   docker compose -f docker-compose.gcp-gpu-agent.yml logs -f agent
+#
+# Required env (see .env alongside this file): HOOP_KEY, OCR_IMAGE_TAG.
+
+services:
+  agent:
+    image: hoophq/hoop-agent-ocr:${OCR_IMAGE_TAG}
+    restart: unless-stopped
+    # Run a STANDALONE agent that connects out to a remote gateway using
+    # HOOP_KEY. This overrides the image's default CMD (hoop-default-agent.sh),
+    # which is the all-in-one gateway+agent dev launcher: it requires
+    # POSTGRES_DB_URI, self-registers a "default" agent in that DB, and
+    # rewrites HOOP_KEY to point at a LOCAL gateway (127.0.0.1:8010). That is
+    # wrong here and crash-loops without a DB. `hoop start agent` reads HOOP_KEY
+    # from the environment directly. It is passed as the OCR supervisor
+    # entrypoint's "$@", so the bundled OCR engine still starts first.
+    command: ["hoop", "start", "agent"]
+    depends_on:
+      presidio-analyzer:
+        condition: service_healthy
+    environment:
+      # Connection DSN to the existing gateway (grpcs://name:secret@host:8010?mode=standard).
+      # Used by the Go agent (gRPC) for SSH/DB/etc.
+      - HOOP_KEY=${HOOP_KEY}
+      # Gateway HTTP/WS base URL. REQUIRED for the RDP path: `hoop start agent`
+      # only launches the Rust agent (hoop_rs / agentrs) — which runs the RDP
+      # proxy and the realtime PII guard — when this is set. agentrs appends
+      # /api/ws and maps https:// -> wss://, so this is the API endpoint
+      # (typically port 443), NOT the gRPC endpoint used in HOOP_KEY.
+      - HOOP_GATEWAY_URL=${HOOP_GATEWAY_URL}
+      # Presidio analyzer the agent calls for PII detection. The agent's
+      # supports_pii_guard capability is true only when BOTH this and the
+      # baked-in RDP_OCR_SERVER_URL are set.
+      - MSPRESIDIO_ANALYZER_URL=http://presidio-analyzer:3000
+      # OCR workers; each holds its own model copy in the T4's VRAM. 4 fits
+      # comfortably in 16GB. Tune down if you see VRAM pressure.
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
+    # Give the bundled engine GPUs via the nvidia container runtime.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # The engine takes ~30-120s to load models on first start; keep the
+    # container from being marked unhealthy too early at the orchestrator
+    # level (the entrypoint already gates on OCR health internally).
+    stop_grace_period: 30s
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:2.2.360
+    restart: unless-stopped
+    # Analyzer is internal-only; do not publish a host port. The agent reaches
+    # it over the compose network at http://presidio-analyzer:3000.
+    expose:
+      - "3000"
+    # The Presidio image is Python-based and does NOT ship curl, so the health
+    # probe uses urllib. /health returns 200 once the recognizers are loaded
+    # (~30-60s on first boot). The agent's depends_on waits for this so it
+    # never advertises PII-guard capability before the analyzer can answer.
+    healthcheck:
+      test:
+        - "CMD"
+        - "python3"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:3000/health',timeout=3).status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s

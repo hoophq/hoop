@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/gateway/models"
@@ -32,6 +33,49 @@ import (
 // wrap it (fmt.Errorf("...: %w", federation.ErrUserNotConnected)) so the
 // human-readable context is preserved alongside the sentinel.
 var ErrUserNotConnected = errors.New("user has not connected an account for this connection")
+
+// OAuthNotConnectedCode is the stable, machine-readable marker the session-open
+// path embeds in the precondition error when a per-user federation provider
+// (gcp_oauth) has no stored credential for the calling user. Clients match on
+// this code — not the human-readable text — so the detection survives wording
+// changes. The full tag is rendered as
+// "[code=oauth_not_connected connection=<name>]".
+//
+// This constant is the single source of truth for the contract shared by the
+// producer (gateway/transport/client.go), the CLI (client/cmd), and the MCP
+// server (gateway/api/mcpserver). Do not duplicate it.
+const OAuthNotConnectedCode = "code=oauth_not_connected"
+
+// FormatOAuthNotConnected renders the stable, machine-readable tag the
+// session-open path appends to the precondition error when ErrUserNotConnected
+// is hit, embedding the connection name so clients can name the resource and
+// fetch its consent URL.
+func FormatOAuthNotConnected(connectionName string) string {
+	return fmt.Sprintf("[%s connection=%s]", OAuthNotConnectedCode, connectionName)
+}
+
+// ParseOAuthNotConnected reports whether errMsg carries the
+// OAuthNotConnectedCode marker and, when present, extracts the connection name
+// from the `connection=<name>` tag. It works whether errMsg is a raw rpc error
+// string or an HTTP error body that embeds it. ok is true whenever the code is
+// present, even if the connection name could not be recovered.
+func ParseOAuthNotConnected(errMsg string) (connectionName string, ok bool) {
+	if !strings.Contains(errMsg, OAuthNotConnectedCode) {
+		return "", false
+	}
+	const marker = "connection="
+	idx := strings.Index(errMsg, marker)
+	if idx == -1 {
+		return "", true
+	}
+	rest := errMsg[idx+len(marker):]
+	// The tag is rendered as "[code=oauth_not_connected connection=<name>]";
+	// the name ends at the first space or closing bracket.
+	if end := strings.IndexAny(rest, " ]"); end != -1 {
+		return strings.TrimSpace(rest[:end]), true
+	}
+	return strings.TrimSpace(rest), true
+}
 
 // Result is the resolved per-session output of a federation provider. Callers
 // must merge EnvVars into the connection's secret map (base64-encoding values)

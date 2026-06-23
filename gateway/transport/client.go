@@ -531,8 +531,8 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 			// affordance instead of a raw error string.
 			if errors.Is(resolveErr, federation.ErrUserNotConnected) {
 				return status.Errorf(codes.FailedPrecondition,
-					"federation failed [code=oauth_not_connected connection=%s]: %v",
-					pctx.ConnectionName, resolveErr)
+					"federation failed %s: %v",
+					federation.FormatOAuthNotConnected(pctx.ConnectionName), resolveErr)
 			}
 			return status.Errorf(codes.FailedPrecondition, "federation failed: %v", resolveErr)
 		}

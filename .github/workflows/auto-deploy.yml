@@ -1,0 +1,118 @@
+name: Auto Deploy
+
+# Deploys a freshly-released version to a fixed set of environments by
+# dispatching the existing hoophq/infra "Deploy By App" workflow once per env.
+#
+# Why `workflow_run` and not `on: release`?
+# The infra deploy runs:
+#   helm upgrade --install hoop \
+#     oci://ghcr.io/hoophq/helm-charts/hoop-chart --version <v> \
+#     --set image.gw.tag=<v> --wait
+# Both the chart (oci://ghcr.io/hoophq/helm-charts) and the image
+# (hoophq/hoop:<v>) are published by release.yml ("Hoop Release"). Neither
+# exists at `release: published` time — that event fires from auto-release.yml
+# *before* release.yml has built anything. So we wait for the "Hoop Release"
+# workflow to finish successfully, which guarantees the artifacts are live.
+#
+# Canary ordering (mirrors infra's "Deploy All Instances"):
+#   - Demo environments (appdemo, hoopdemo) and the sandbox canary deploy in
+#     parallel as soon as the release succeeds.
+#   - Customer environments (tryrunops) deploy only after the sandbox deploy
+#     succeeds, so a broken release is caught on sandbox before it reaches a
+#     customer. A failing demo never blocks a customer deploy.
+# Each deploy reuses the local composite action .github/actions/deploy-app,
+# which dispatches infra's "Deploy By App" and waits for it to finish.
+on:
+  workflow_run:
+    workflows: ["Hoop Release"]
+    types: [completed]
+
+# Serialize deploys across releases. `cancel-in-progress: false` never
+# interrupts an in-flight `helm upgrade` (cancelling mid-rollout can leave a
+# release wedged). If several releases pile up while one is deploying, GitHub
+# keeps only the newest queued run, so we converge to the latest version
+# without ever racing two helm upgrades on the same namespace.
+concurrency:
+  group: auto-deploy
+  cancel-in-progress: false
+
+# The deploy jobs check out the repo to use the local composite action; the
+# cross-repo PAT (GH_TOKEN) handles the actual infra dispatch.
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    name: Resolve version
+    # Only deploy when the release build actually succeeded. release.yml only
+    # ever runs on tag pushes, so we also assert event == 'push' defensively.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve released version from tag
+        id: resolve
+        env:
+          # release.yml is triggered by the tag push, so head_branch carries
+          # the tag name, e.g. "1.94.0" (verified against historical runs).
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$HEAD_BRANCH" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Triggering run ref '$HEAD_BRANCH' is not a semver release tag; refusing to deploy."
+            exit 1
+          fi
+          echo "version=$HEAD_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $HEAD_BRANCH"
+
+  deploy-demos:
+    name: Deploy ${{ matrix.app }}
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    strategy:
+      # Independent namespaces — if one fails, still attempt the others and let
+      # each report its own status.
+      fail-fast: false
+      matrix:
+        app: [appdemo, hoopdemo]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-app
+        with:
+          version: ${{ needs.resolve-version.outputs.version }}
+          app: ${{ matrix.app }}
+          github-token: ${{ secrets.GH_TOKEN }}
+
+  deploy-canary:
+    name: Deploy sandbox (canary)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-app
+        with:
+          version: ${{ needs.resolve-version.outputs.version }}
+          app: sandbox
+          github-token: ${{ secrets.GH_TOKEN }}
+
+  deploy-customers:
+    name: Deploy ${{ matrix.app }}
+    # Gate customer environments on the sandbox canary specifically: they only
+    # deploy once sandbox has upgraded successfully. (resolve-version is also
+    # needed here to read its version output.)
+    needs: [resolve-version, deploy-canary]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [tryrunops]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-app
+        with:
+          version: ${{ needs.resolve-version.outputs.version }}
+          app: ${{ matrix.app }}
+          github-token: ${{ secrets.GH_TOKEN }}
