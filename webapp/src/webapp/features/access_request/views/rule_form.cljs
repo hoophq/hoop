@@ -46,8 +46,8 @@
 (defn- command-eligible? [resource-role]
   (helpers/can-open-web-terminal? resource-role))
 
-(defn- jit-eligible? [resource-role]
-  (or (helpers/can-access-native-client? resource-role)
+(defn- jit-eligible? [resource-role] 
+  (or (helpers/can-access-native-client? resource-role true)
       (helpers/can-hoop-cli? resource-role)))
 
 (defn- eligible-for-type? [access-type resource-role]

@@ -16502,6 +16502,10 @@ const docTemplate = `{
                     ],
                     "example": "INFO"
                 },
+                "postgres_proxy_enabled": {
+                    "description": "Report if the Postgres proxy server has a listen address configured",
+                    "type": "boolean"
+                },
                 "redact_provider": {
                     "description": "Redact Provider used by the server",
                     "type": "string",
