@@ -15,9 +15,9 @@ import (
 )
 
 // AIDecision is the analyzer verdict resolved for a synchronous session run (exec
-// or runbook). Unlike aianalyzer.Outcome (per-request HTTP proxy handling), these
-// runs are async and reviewable, so require_access_request maps to a real review
-// instead of a warning.
+// or runbook). Unlike the agent-side per-request HTTP proxy handling (libhoop's
+// analyzer outcome), these runs are async and reviewable, so
+// require_access_request maps to a real review instead of a warning.
 type AIDecision int
 
 const (

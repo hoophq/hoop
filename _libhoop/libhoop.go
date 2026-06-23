@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"libhoop/aianalyzer"
 )
 
 type core struct{}
@@ -50,6 +51,6 @@ func NewSSHProxy(ctx context.Context, clientW io.Writer, opts map[string]string)
 	return &noopProxy{connectionType: "ssh"}, nil
 }
 
-func NewHttpProxy(ctx context.Context, clientW io.Writer, opts map[string]string) (Proxy, error) {
+func NewHttpProxy(ctx context.Context, clientW io.Writer, analyzer aianalyzer.Analyzer, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "httpproxy"}, nil
 }
