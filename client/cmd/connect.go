@@ -29,6 +29,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/federation"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc/codes"
@@ -602,7 +603,7 @@ func (c *connect) processGracefulExit(err error) {
 	// tags that error with a stable marker; turn it into an actionable
 	// "connect your account" prompt with a clickable consent link instead of a
 	// raw rpc error. This never returns when it matches.
-	if connectionName, ok := parseFederationOAuthNotConnected(err.Error()); ok {
+	if connectionName, ok := federation.ParseOAuthNotConnected(err.Error()); ok {
 		printFederationOAuthConsentAndExit(c.apiURL, c.token, c.tlsCA, c.jsonMode, connectionName, err)
 	}
 	for _, obj := range c.connStore.List() {
