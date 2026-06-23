@@ -110,9 +110,11 @@
 
 (defn can-access-native-client?
   "Check if a role/connection can access native client based on subtype and access mode"
-  [{:keys [access_mode_connect] :as role}]
+  [{:keys [access_mode_connect subtype] :as role} postgres-proxy-enabled?]
   (and (= "enabled" access_mode_connect)
-       (native-subtype? role)))
+       (native-subtype? role)
+       (or (not= subtype "postgres")
+           postgres-proxy-enabled?)))
 
 (defn get-secret-prefix
   "Returns the prefix string for a given secret source or provider."

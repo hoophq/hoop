@@ -189,9 +189,16 @@
                                                         [{:key "REMOTE_URL" :value remote-url}
                                                          {:key "HEADER_X_API_KEY" :value api-key}
                                                          {:key "INSECURE" :value insecure-str}]))
-                                             (filterv #(not (str/blank? (:value %)))
-                                                      [{:key "REMOTE_URL" :value remote-url}
-                                                       {:key "INSECURE" :value insecure-str}]))
+                                             ;; MCP (and any http proxy) keeps its Authorization
+                                             ;; token in network-credentials, not the headers list,
+                                             ;; so it is not shown/edited as a plain header. Emit it
+                                             ;; here; absent for generic proxies so it filters out.
+                                             (let [auth-value (get credentials :HEADER_AUTHORIZATION)
+                                                   auth (resource-process-form/extract-value auth-value connection-method :HEADER_AUTHORIZATION secrets-provider)]
+                                               (filterv #(not (str/blank? (:value %)))
+                                                        [{:key "REMOTE_URL" :value remote-url}
+                                                         {:key "HEADER_AUTHORIZATION" :value auth}
+                                                         {:key "INSECURE" :value insecure-str}])))
 
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])
                              processed-headers (process-http-headers headers connection-method secrets-provider)]

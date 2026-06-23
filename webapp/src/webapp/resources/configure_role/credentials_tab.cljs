@@ -7,6 +7,7 @@
    [webapp.connections.views.setup.network :as network]
    [webapp.connections.views.setup.server :as server]
    [webapp.resources.configure-role.claude-code-edit :as claude-code-edit]
+   [webapp.resources.configure-role.mcp-edit :as mcp-edit]
    [webapp.resources.federation.views.setup :as federation-setup]))
 
 (defn bigquery-credentials [connection]
@@ -39,6 +40,7 @@
        "httpproxy" (let [subtype (:subtype connection)]
                      (cond
                        (= subtype "claude-code") [claude-code-edit/claude-code-edit-form]
+                       (= subtype "mcp") [mcp-edit/mcp-edit-form]
                        :else [network/http-credentials-form]))
 
        "application" (if (or (= (:subtype connection) "ssh")

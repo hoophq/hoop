@@ -508,6 +508,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/federation/oauth/callback",
 		apiconnections.FederationOAuthCallback)
 
+	// MCP connection OAuth login flow. Used by the connection create page to
+	// authorize an "mcp" httpproxy connection against a remote MCP server that
+	// protects its endpoint with OAuth (e.g. https://mcp.figma.com/mcp). The
+	// admin authorizes once; the obtained token is frozen into the connection's
+	// HEADER_AUTHORIZATION configuration. authorize/token are admin-only (only
+	// admins create connections); the callback is unauthenticated because the
+	// upstream provider redirects the browser to it directly and is secured by
+	// the single-use, TTL-bounded flow row created at authorize time.
+	r.POST("/mcp-oauth/authorize",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.StartMCPOAuth)
+	r.GET("/mcp-oauth/token/:flowID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetMCPOAuthToken)
+	r.GET("/mcp-oauth/callback",
+		apiconnections.MCPOAuthCallback)
+
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
