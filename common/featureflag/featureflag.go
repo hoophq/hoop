@@ -33,13 +33,6 @@ type Flag struct {
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
-	"experimental.nightly_flag": {
-		Name:        "experimental.nightly_flag",
-		Description: "Example flag for testing the feature flag system (no-op)",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
-	},
 	"experimental.log_exec_input": {
 		Name:        "experimental.log_exec_input",
 		Description: "Include the truncated exec input as a structured log attribute on the agent (for SIEM export). May log sensitive content.",
@@ -71,7 +64,7 @@ var catalog = map[string]Flag{
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
 		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
-		Default:     true,
+		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},

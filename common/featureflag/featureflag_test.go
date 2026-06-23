@@ -2,10 +2,26 @@ package featureflag
 
 import "testing"
 
+// testFlag is an in-catalog fixture used only by these tests to exercise the
+// flag system (Lookup/Set/SetAll/IsEnabled/SnapshotForOrg) independently of any
+// real flag's lifecycle. _test.go files are never compiled into the production
+// binary, so this fixture never ships.
+const testFlag = "experimental.test_fixture"
+
+func init() {
+	catalog[testFlag] = Flag{
+		Name:        testFlag,
+		Description: "Test-only fixture flag (never registered in production builds)",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	}
+}
+
 func TestLookup(t *testing.T) {
-	f, ok := Lookup("experimental.nightly_flag")
+	f, ok := Lookup(testFlag)
 	if !ok {
-		t.Fatal("expected experimental.nightly_flag to be in catalog")
+		t.Fatalf("expected %s to be in catalog", testFlag)
 	}
 	if f.Stability != StabilityExperimental {
 		t.Fatalf("expected stability experimental, got %s", f.Stability)
@@ -33,23 +49,22 @@ func TestIsEnabled_FallsBackToDefault(t *testing.T) {
 	// With no per-org override, IsEnabled must return the flag's catalog
 	// default. Asserted against the actual Default so the test stays correct
 	// regardless of the default's value.
-	const name = "experimental.nightly_flag"
-	f, ok := Lookup(name)
+	f, ok := Lookup(testFlag)
 	if !ok {
-		t.Fatalf("expected %s to be in catalog", name)
+		t.Fatalf("expected %s to be in catalog", testFlag)
 	}
-	if got := IsEnabled("org-no-override", name); got != f.Default {
+	if got := IsEnabled("org-no-override", testFlag); got != f.Default {
 		t.Fatalf("expected IsEnabled to fall back to default %v, got %v", f.Default, got)
 	}
 }
 
 func TestSetAndIsEnabled(t *testing.T) {
-	Set("org-test", "experimental.nightly_flag", true)
-	if !IsEnabled("org-test", "experimental.nightly_flag") {
+	Set("org-test", testFlag, true)
+	if !IsEnabled("org-test", testFlag) {
 		t.Fatal("expected flag to be enabled after Set")
 	}
-	Set("org-test", "experimental.nightly_flag", false)
-	if IsEnabled("org-test", "experimental.nightly_flag") {
+	Set("org-test", testFlag, false)
+	if IsEnabled("org-test", testFlag) {
 		t.Fatal("expected flag to be disabled after Set(false)")
 	}
 }
@@ -61,9 +76,9 @@ func TestIsEnabled_UnknownFlag(t *testing.T) {
 }
 
 func TestSnapshotForOrg(t *testing.T) {
-	Set("org-snap", "experimental.nightly_flag", true)
+	Set("org-snap", testFlag, true)
 	snap := SnapshotForOrg("org-snap")
-	if !snap["experimental.nightly_flag"] {
+	if !snap[testFlag] {
 		t.Fatal("snapshot should reflect Set value")
 	}
 
@@ -78,11 +93,11 @@ func TestSnapshotForOrg(t *testing.T) {
 
 func TestSetAll(t *testing.T) {
 	SetAll("org-all", map[string]bool{
-		"experimental.nightly_flag": true,
-		"garbage.unknown":           true,
+		testFlag:          true,
+		"garbage.unknown": true,
 	})
-	if !IsEnabled("org-all", "experimental.nightly_flag") {
-		t.Fatal("expected nightly_flag enabled via SetAll")
+	if !IsEnabled("org-all", testFlag) {
+		t.Fatal("expected fixture flag enabled via SetAll")
 	}
 	snap := SnapshotForOrg("org-all")
 	if _, found := snap["garbage.unknown"]; found {
