@@ -29,9 +29,17 @@ func TestAll(t *testing.T) {
 	}
 }
 
-func TestIsEnabled_DefaultFalse(t *testing.T) {
-	if IsEnabled("org-1", "experimental.nightly_flag") {
-		t.Fatal("expected default to be false")
+func TestIsEnabled_FallsBackToDefault(t *testing.T) {
+	// With no per-org override, IsEnabled must return the flag's catalog
+	// default. Asserted against the actual Default so the test stays correct
+	// regardless of the default's value.
+	const name = "experimental.nightly_flag"
+	f, ok := Lookup(name)
+	if !ok {
+		t.Fatalf("expected %s to be in catalog", name)
+	}
+	if got := IsEnabled("org-no-override", name); got != f.Default {
+		t.Fatalf("expected IsEnabled to fall back to default %v, got %v", f.Default, got)
 	}
 }
 
