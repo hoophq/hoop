@@ -82,6 +82,20 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.ssh_guardrails": {
+		Name:        "experimental.ssh_guardrails",
+		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio/GCP) to be configured.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
+	"experimental.ssh_input_guardrails": {
+		Name:        "experimental.ssh_input_guardrails",
+		Description: "Best-effort guardrails on interactive SSH shell stdin: each command line typed on a session shell is reconstructed and validated against input rules before the Enter that submits it is forwarded; a match blocks the command and ends the session. Reconstruction is approximate — shell history recall, tab-completion and cursor editing can bypass it — so treat it as advisory and pair it with experimental.ssh_guardrails (output rules) for defense in depth. Only interactive shells are inspected (not exec, sftp or port-forwards). Requires a DLP provider (Presidio/GCP) to be configured.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 }
 
 // All returns every registered flag, sorted by name.
