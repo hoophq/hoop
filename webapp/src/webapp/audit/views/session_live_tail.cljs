@@ -6,11 +6,13 @@
   bottom, auto-scroll, status pill that reflects the SSE connection state, and
   a filter for noisy protocol frames. For postgres sessions we decode the wire
   protocol locally so each Parse/Query frame shows as readable SQL instead of
-  binary noise."
+  binary noise. PTY connections (shell/ssh/…) render as a single live terminal
+  instead of one row per keystroke."
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex IconButton Switch
                                Text TextField Tooltip]]
    ["lucide-react" :refer [ArrowDown Database Search Terminal Zap]]
+   ["fancy-ansi/react" :refer [AnsiHtml]]
    [clojure.string :as string]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -123,7 +125,7 @@
       label]]))
 
 (defn- header
-  [{:keys [state postgres? rows-count query-count duration
+  [{:keys [state postgres? terminal? rows-count query-count duration
            only-queries? on-toggle-only-queries
            has-protocol-rows?
            search on-change-search]}]
@@ -149,15 +151,16 @@
              (if (= state :ended) "total" "elapsed"))])]
 
     [:> Flex {:align "center" :gap "3" :wrap "wrap"}
-     [:div {:class "w-56"}
-      [:> TextField.Root
-       {:size "2"
-        :placeholder "Filter events…"
-        :value search
-        :on-change #(on-change-search (.. % -target -value))
-        :aria-label "Filter live events"}
-       [:> TextField.Slot
-        [:> Search {:size 14}]]]]
+     (when-not terminal?
+       [:div {:class "w-56"}
+        [:> TextField.Root
+         {:size "2"
+          :placeholder "Filter events…"
+          :value search
+          :on-change #(on-change-search (.. % -target -value))
+          :aria-label "Filter live events"}
+         [:> TextField.Slot
+          [:> Search {:size 14}]]]])
 
      (when (and postgres? has-protocol-rows?)
        [:> Tooltip {:content "Hide protocol frames (Bind, Describe, Execute, Sync)"}
@@ -230,6 +233,12 @@
       "Waiting for the next query…"
       "Waiting for events…")]])
 
+(defn- terminal-output [text]
+  [:section {:class (str "bg-gray-900 font-mono p-radix-4 min-h-[200px] "
+                         "whitespace-pre text-gray-200 text-sm")}
+   [:> AnsiHtml {:text text
+                 :className "font-mono whitespace-pre text-sm"}]])
+
 (defn- jump-to-latest-button [on-click]
   [:> Box {:class "absolute bottom-3 right-3"}
    [:> IconButton {:size "3" :variant "solid" :color "iris"
@@ -289,6 +298,12 @@
         (let [start-date (:start_date session)
               connection-subtype (:connection_subtype session)
               postgres? (= connection-subtype "postgres")
+              ;; PTY connections (shell/ssh/…) — the set that uses the asciinema
+              ;; view once finished. Rendered as a terminal; everything else keeps
+              ;; the per-event row list.
+              terminal? (and (contains? #{"custom" "command-line" "application"}
+                                        (:type session))
+                             (not= connection-subtype "rdp"))
               ;; Derive the stream pill state. We prefer whatever the SSE
               ;; effect handler wrote, but if the session has already moved
               ;; to "done" (e.g. we re-opened a previously-live modal) we
@@ -302,6 +317,13 @@
                              :else :connecting)
               event-stream (or (:event_stream session) [])
               rows (expand-stream postgres? event-stream)
+              ;; Concatenate output frames only ("o"/"e"); the PTY echoes input
+              ;; back as output, so including "i" would duplicate every keystroke.
+              terminal-text (when terminal?
+                              (->> rows
+                                   (filter #(contains? #{"o" "e"} (:event-type %)))
+                                   (map :text)
+                                   (string/join "")))
               query-count (count (filter #(= :query (:kind %)) rows))
               has-protocol-rows? (some #(= :protocol (:kind %)) rows)
               search-term (string/lower-case @search)
@@ -322,6 +344,7 @@
           [:> Box {:class "relative"}
            [header {:state stream-state
                     :postgres? postgres?
+                    :terminal? terminal?
                     :rows-count (count rows)
                     :query-count query-count
                     :has-protocol-rows? has-protocol-rows?
@@ -338,6 +361,11 @@
             (cond
               (and (empty? rows) (= stream-state :ended))
               [empty-event-stream/main]
+
+              terminal?
+              (if (empty? terminal-text)
+                [waiting-banner false]
+                [terminal-output terminal-text])
 
               (empty? filtered)
               [waiting-banner postgres?]

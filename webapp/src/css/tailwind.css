@@ -182,3 +182,7 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+.asciinema-player .start-prompt .play-button div span svg {
+  display: inline-block;
+}
