@@ -222,9 +222,17 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		// RDP connection through any not-yet-upgraded agent, even connections
 		// that were never going to be guarded. An old agent cannot run the
 		// guard anyway, so falling back to a normal proxied session preserves
-		// pre-handshake behavior. The bounded wait inside AgentCapability still
-		// lets a freshly connected NEW agent's in-flight frame be observed, so
-		// this only falls through for agents that genuinely never advertise.
+		// pre-handshake behavior.
+		//
+		// This is a DELIBERATE availability-over-enforcement choice for the
+		// unknown case, not a race-free guarantee. AgentCapability waits up to
+		// AgentCapabilityWait for an in-flight frame, but a capable NEW agent
+		// that is slow to advertise (cold start, control-frame delay) can still
+		// be seen as unknown and run this one session unguarded. That is
+		// accepted: the alternative (fail closed) bricks every old-agent
+		// connection. NOTE: this intentionally overrides the generic
+		// "treat unknown as cannot / fail closed" guidance on
+		// broker.AgentCapability for this specific handler.
 		capable, known := broker.AgentCapability(connectionModel.AgentName, broker.CapabilitySupportsPIIGuard)
 		switch {
 		case known && !capable:
@@ -392,7 +400,15 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// reached the gateway, so a second gate here would only double OCR cost
 	// and latency. The gateway still records — now of clean frames.
 	var gate *PIIGate
-	if !agentGuard.Enabled && !forceUnguarded {
+	switch {
+	case forceUnguarded:
+		// Flag on, but the agent never advertised guard capability (old agent):
+		// neither guard runs — this is a plain passthrough. Logged distinctly so
+		// audits don't misread it as enforced.
+		log.With("sid", sessionID).Warnf("piigate: session running UNGUARDED (agent has not advertised guard capability)")
+	case agentGuard.Enabled:
+		log.With("sid", sessionID).Infof("piigate: agent-side guard active, gateway gate suppressed")
+	default:
 		gate = newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
 			sessionErrMu.Lock()
 			sessionErr = err
@@ -401,8 +417,6 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		if gate != nil {
 			defer gate.Close()
 		}
-	} else {
-		log.With("sid", sessionID).Infof("piigate: agent-side guard active, gateway gate suppressed")
 	}
 
 	// Use a done channel to signal when the websocket read goroutine exits
