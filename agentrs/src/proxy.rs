@@ -8,6 +8,7 @@ use tracing::{info, warn};
 use typed_builder::TypedBuilder;
 
 use crate::piigate::config::GuardConfig;
+use crate::piigate::metrics::LatencyAggregator;
 use crate::piigate::report::ViolationReport;
 use crate::piigate::{analyze::BandAnalyzer, GateEvent, PiiGate};
 
@@ -93,8 +94,12 @@ where
         // transparently would be a silent enforcement bypass — refuse the
         // session instead. (Endpoint presence was already validated in
         // GuardConfig::resolve; a failure here is a client-construction error.)
+        // One latency aggregator per session, shared by the analyzer
+        // (OCR/Presidio timings) and the gate (compositing/redaction/total) so
+        // a single 5s window summary covers the whole pipeline.
+        let metrics = Arc::new(LatencyAggregator::new(self.session_id.clone()));
         let analyzer = Arc::new(
-            BandAnalyzer::from_config(&guard)
+            BandAnalyzer::from_config(&guard, metrics.clone())
                 .context("piigate: failed to build analyzer for a delegated-guard session")?,
         );
 
@@ -106,6 +111,7 @@ where
             events_tx,
             guard.params.band_padding,
             guard.policy,
+            metrics,
         ));
         info!(sid = %self.session_id, "piigate: realtime PII guard active (agent-side, hold-and-release)");
 

@@ -44,6 +44,7 @@ pub mod capabilities;
 pub mod canvas;
 pub mod config;
 pub mod framing;
+pub mod metrics;
 pub mod ocr;
 pub mod presidio;
 pub mod report;
@@ -64,6 +65,7 @@ use analyze::Analyzer;
 use bands::DirtyBands;
 use canvas::{ShadowCanvas, MAX_CANVAS_DIM};
 use framing::{pdu_size, BitmapPatch, FastPathParser};
+use metrics::LatencyAggregator;
 use presidio::SnapshotResult;
 
 /// Caps the per-session backlog awaiting analysis (PDU bytes plus their
@@ -169,6 +171,10 @@ struct GateShared {
     cancel: CancellationToken,
     events: mpsc::UnboundedSender<GateEvent>,
     policy: GatePolicy,
+    /// Per-session latency aggregator, shared with the analyzer so one window
+    /// summary spans the whole pipeline (compositing here, OCR/Presidio in the
+    /// analyzer, redaction here).
+    metrics: Arc<LatencyAggregator>,
 }
 
 /// The hold-and-release valve. Create with [`PiiGate::spawn`]; feed
@@ -191,6 +197,7 @@ impl PiiGate {
         events: mpsc::UnboundedSender<GateEvent>,
         band_padding: usize,
         policy: GatePolicy,
+        metrics: Arc<LatencyAggregator>,
     ) -> Self
     where
         W: AsyncWrite + Unpin + Send + 'static,
@@ -210,6 +217,7 @@ impl PiiGate {
             cancel: CancellationToken::new(),
             events,
             policy,
+            metrics,
         });
 
         let task = tokio::spawn(analysis_loop(
@@ -349,6 +357,22 @@ fn enqueue(st: &mut GateState, pdu: GatePdu) {
 async fn analysis_loop<W>(
     shared: Arc<GateShared>,
     analyzer: Arc<dyn Analyzer>,
+    sink: W,
+    dirty: DirtyBands,
+    canvas: ShadowCanvas,
+) where
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    run_analysis_loop(&shared, &*analyzer, sink, dirty, canvas).await;
+    // Emit the final (partial) latency window on every exit path — kill,
+    // forward failure, cancellation, or normal close — so the last few
+    // seconds of measurements are never silently dropped.
+    shared.metrics.flush_final();
+}
+
+async fn run_analysis_loop<W>(
+    shared: &GateShared,
+    analyzer: &dyn Analyzer,
     mut sink: W,
     mut dirty: DirtyBands,
     mut canvas: ShadowCanvas,
@@ -372,7 +396,7 @@ async fn analysis_loop<W>(
                 }
             };
             let Some(pdus) = pdus else { break };
-            if !process_pdus(&shared, &*analyzer, &mut sink, &mut dirty, &mut canvas, pdus).await {
+            if !process_pdus(shared, analyzer, &mut sink, &mut dirty, &mut canvas, pdus).await {
                 return;
             }
         }
@@ -401,7 +425,13 @@ where
 {
     let mut i = 0;
     while i < pdus.len() {
+        // End-to-end batch timer: from compositing the first PDU through the
+        // forward/drop decision. This is the latency the gate adds to the
+        // client stream.
+        let batch_started = std::time::Instant::now();
+
         let mut j = i;
+        let composite_started = std::time::Instant::now();
         while j < pdus.len() {
             if j > i && pdu_conflicts(dirty, &pdus[j]) {
                 break;
@@ -413,12 +443,30 @@ where
             }
             j += 1;
         }
-        if !analyze_and_forward(shared, analyzer, sink, dirty, canvas, &pdus[i..j]).await {
+        shared.metrics.record_composite(composite_started.elapsed());
+
+        let outcome = analyze_and_forward(shared, analyzer, sink, dirty, canvas, &pdus[i..j]).await;
+        shared
+            .metrics
+            .record_batch(batch_started.elapsed(), outcome.forwarded_bytes, outcome.detection);
+        if !outcome.proceed {
             return false;
         }
         i = j;
     }
     true
+}
+
+/// The result of analyzing and forwarding one batch.
+struct BatchOutcome {
+    /// Whether the analysis loop should continue (false = exit: kill, forward
+    /// failure, or cancellation).
+    proceed: bool,
+    /// Bytes written downstream for this batch (0 when the batch was dropped
+    /// or the session killed without forwarding).
+    forwarded_bytes: u64,
+    /// Whether this batch contained a PII detection.
+    detection: bool,
 }
 
 /// Reports whether any of the PDU's patches would touch rows already dirtied
@@ -437,7 +485,7 @@ async fn analyze_and_forward<W>(
     dirty: &mut DirtyBands,
     canvas: &mut ShadowCanvas,
     batch: &[GatePdu],
-) -> bool
+) -> BatchOutcome
 where
     W: AsyncWrite + Unpin,
 {
@@ -458,7 +506,9 @@ where
         // HTTP requests) — a hung OCR sidecar must never wedge teardown.
         let res = tokio::select! {
             res = analyzer.analyze(&canvas.fb, canvas.w, canvas.h, &bands) => res,
-            _ = shared.cancel.cancelled() => return false,
+            _ = shared.cancel.cancelled() => {
+                return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: false };
+            }
         };
         match res {
             Err(e) => {
@@ -487,7 +537,7 @@ where
                 if !already_down {
                     let _ = shared.events.send(GateEvent::AnalysisError);
                 }
-                return false;
+                return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: false };
             }
             Ok(res) if res.is_detection() => {
                 return on_detection(shared, sink, canvas, batch, res).await;
@@ -496,7 +546,15 @@ where
         }
     }
 
-    forward_batch(shared, sink, batch).await
+    let batch_bytes: u64 = batch.iter().map(|p| p.data.len() as u64).sum();
+    let proceed = forward_batch(shared, sink, batch).await;
+    BatchOutcome {
+        proceed,
+        // On a forward failure nothing useful reached the client; count the
+        // batch as forwarded only when the write succeeded.
+        forwarded_bytes: if proceed { batch_bytes } else { 0 },
+        detection: false,
+    }
 }
 
 /// Handles a detection according to the gate policy. Returns false when the
@@ -508,13 +566,14 @@ async fn on_detection<W>(
     canvas: &ShadowCanvas,
     batch: &[GatePdu],
     res: SnapshotResult,
-) -> bool
+) -> BatchOutcome
 where
     W: AsyncWrite + Unpin,
 {
     let policy = shared.policy;
 
     if policy.redacts() {
+        let redact_started = std::time::Instant::now();
         // Hold-and-rewrite, SELECTIVELY. For each held PDU:
         //   - A PDU whose bitmap patches do NOT overlap any detection is
         //     forwarded UNMODIFIED — this preserves the legitimate screen
@@ -609,8 +668,12 @@ where
                 bpp,
             ));
         }
+        // Redaction (PDU rewrite + pixel blanking) is complete; the remaining
+        // cost is just the downstream write, timed as part of the batch total.
+        shared.metrics.record_redact(redact_started.elapsed());
+        let wire_bytes = wire.len() as u64;
         if !forward_bytes(shared, sink, &wire).await {
-            return false;
+            return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true };
         }
         let _ = shared.events.send(GateEvent::Detection(res));
 
@@ -621,9 +684,10 @@ where
             st.queue.clear();
             st.queued_bytes = 0;
             st.tail.clear();
-            return false;
+            return BatchOutcome { proceed: false, forwarded_bytes: wire_bytes, detection: true };
         }
-        return true; // Redact: keep guarding.
+        // Redact: keep guarding.
+        return BatchOutcome { proceed: true, forwarded_bytes: wire_bytes, detection: true };
     }
 
     // Kill: drop the held batch and terminate. Terminal-state transition
@@ -639,7 +703,7 @@ where
         already
     };
     if already_down {
-        return false;
+        return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true };
     }
     warn!(
         sid = %shared.session_id,
@@ -647,7 +711,8 @@ where
         res.counts
     );
     let _ = shared.events.send(GateEvent::Detection(res));
-    false
+    // Kill: the held batch was dropped, nothing forwarded.
+    BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true }
 }
 
 /// Delivers cleared PDUs downstream, coalescing them into bounded chunks

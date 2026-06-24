@@ -19,6 +19,7 @@ use super::analyze::Analyzer;
 use super::bands::YBand;
 use super::canvas::ShadowCanvas;
 use super::framing::{pdu_size, FastPathParser};
+use super::metrics::LatencyAggregator;
 use super::presidio::{EntityDetection, SnapshotResult};
 use super::testpdu::*;
 use super::{GateEvent, GatePolicy, PiiGate, MAX_HELD_BYTES};
@@ -104,7 +105,15 @@ fn new_test_gate_with_policy(analyzer: Arc<dyn Analyzer>, policy: GatePolicy) ->
         }
     });
     let sink = TestSink::default();
-    let gate = PiiGate::spawn("sid-test", analyzer, sink.clone(), tx, 0, policy);
+    let gate = PiiGate::spawn(
+        "sid-test",
+        analyzer,
+        sink.clone(),
+        tx,
+        0,
+        policy,
+        Arc::new(LatencyAggregator::new("sid-test")),
+    );
     Harness { gate, sink, events }
 }
 
@@ -572,7 +581,15 @@ async fn close_cancels_stalled_write() {
     let sink = BlockingSink {
         entered: entered.clone(),
     };
-    let gate = PiiGate::spawn("sid-test", analyzer, sink, tx, 0, GatePolicy::Kill);
+    let gate = PiiGate::spawn(
+        "sid-test",
+        analyzer,
+        sink,
+        tx,
+        0,
+        GatePolicy::Kill,
+        Arc::new(LatencyAggregator::new("sid-test")),
+    );
 
     // A non-bitmap PDU goes straight to forward, where the sink stalls.
     gate.ingest(&tpkt_pdu(&[0x01, 0x02]));
