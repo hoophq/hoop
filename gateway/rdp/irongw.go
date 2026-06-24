@@ -202,30 +202,51 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// gateway suppresses its own gate — a single enforcement point. The
 	// analysis policy rides along; the agent supplies Presidio/OCR endpoints
 	// from its own env.
+	// forceUnguarded: the flag is on but we deliberately run this session with
+	// no guard at all (neither agent nor gateway) — set for an older agent that
+	// never advertised guard capability, to avoid bricking its connections.
+	forceUnguarded := false
 	agentGuard := broker.RDPGuardConfig{Enabled: featureflag.IsEnabled(recorderOrgID, PIIGateFlagName)}
 	if agentGuard.Enabled {
-		// Capability gate: only delegate the guard to an agent that has
-		// advertised it can honor it (Presidio + OCR endpoints configured).
-		// The agent itself fails closed in GuardConfig::resolve, but that
-		// surfaces as a cryptic mid-handshake disconnect. Checking the
-		// advertised capability here lets us refuse early with a clear,
-		// actionable error. Fail CLOSED on the unknown case (old agent, or the
-		// capability frame has not arrived yet): never run a guard-intended
-		// session unguarded.
+		// Capability gate. Three cases:
+		//   - known + capable    -> delegate the guard (the intended path).
+		//   - known + incapable  -> a guard-capable agent build that explicitly
+		//     advertised it lacks the Presidio/OCR endpoints. Refuse with a
+		//     clear error: it is a misconfiguration of an agent that is supposed
+		//     to guard.
+		//   - unknown            -> the agent never advertised capability (an
+		//     OLDER agent that predates the handshake, or the frame has not
+		//     arrived yet). Run the session UNGUARDED rather than refusing.
+		//
+		// Unknown must NOT 403: enabling the flag would otherwise brick every
+		// RDP connection through any not-yet-upgraded agent, even connections
+		// that were never going to be guarded. An old agent cannot run the
+		// guard anyway, so falling back to a normal proxied session preserves
+		// pre-handshake behavior. The bounded wait inside AgentCapability still
+		// lets a freshly connected NEW agent's in-flight frame be observed, so
+		// this only falls through for agents that genuinely never advertise.
 		capable, known := broker.AgentCapability(connectionModel.AgentName, broker.CapabilitySupportsPIIGuard)
-		if !known || !capable {
-			reason := "the agent has not advertised PII guard support yet (it may be an older agent or still connecting)"
-			if known {
-				reason = "the agent has no OCR/Presidio endpoints configured (set MSPRESIDIO_ANALYZER_URL and RDP_OCR_SERVER_URL on the agent)"
-			}
-			log.Errorf("refusing RDP session: %s is enabled but agent %q cannot honor the PII guard: %s",
-				PIIGateFlagName, connectionModel.AgentName, reason)
+		switch {
+		case known && !capable:
+			log.Errorf("refusing RDP session: %s is enabled but agent %q advertised it cannot enforce the PII guard (missing MSPRESIDIO_ANALYZER_URL and/or RDP_OCR_SERVER_URL)",
+				PIIGateFlagName, connectionModel.AgentName)
 			writeRDPClientError(ws, cppVersion,
-				fmt.Sprintf("Connection refused: PII guard is enabled but agent %q cannot enforce it (%s).",
-					connectionModel.AgentName, reason))
+				fmt.Sprintf("Connection refused: PII guard is enabled but agent %q is misconfigured (missing OCR/Presidio endpoints).",
+					connectionModel.AgentName))
 			return
+		case !known:
+			// Older agent (or pre-advertisement): proxy unguarded. Suppress
+			// BOTH the agent guard and the gateway-side gate so this is a plain
+			// passthrough (pre-handshake behavior), not a fallback to the
+			// gateway gate.
+			log.With("sid", sessionID).Warnf("piigate: %s is enabled but agent %q has not advertised guard capability; running this session UNGUARDED (upgrade the agent to enable the guard)",
+				PIIGateFlagName, connectionModel.AgentName)
+			agentGuard.Enabled = false
+			forceUnguarded = true
 		}
+	}
 
+	if agentGuard.Enabled {
 		params := analyzer.DefaultAnalysisParams()
 		agentGuard.ScoreThreshold = params.ScoreThreshold
 		agentGuard.EntityDenylist = params.EntityDenylist
@@ -371,7 +392,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// reached the gateway, so a second gate here would only double OCR cost
 	// and latency. The gateway still records — now of clean frames.
 	var gate *PIIGate
-	if !agentGuard.Enabled {
+	if !agentGuard.Enabled && !forceUnguarded {
 		gate = newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
 			sessionErrMu.Lock()
 			sessionErr = err
