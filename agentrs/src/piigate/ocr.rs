@@ -93,9 +93,20 @@ struct OcrServerWord {
 
 #[derive(Debug, Deserialize)]
 struct OcrServerResponse {
-    #[allow(dead_code)]
     duration_ms: f64,
     words: Vec<OcrServerWord>,
+}
+
+/// Result of one OCR call: the recognized words plus diagnostics used by the
+/// latency aggregator to separate sidecar inference time from the wall-clock
+/// the agent observes (the gap is queueing/contention/transport).
+#[derive(Debug)]
+pub struct OcrExtract {
+    pub words: Vec<Word>,
+    /// The sidecar's self-reported inference time for this request.
+    pub server_ms: f64,
+    /// BMP bytes sent to the sidecar for this request.
+    pub request_bytes: usize,
 }
 
 /// Bounds the response body read: even a pathological full-screen of dense
@@ -135,8 +146,9 @@ impl OcrClient {
         rgba: &[u8],
         width: usize,
         height: usize,
-    ) -> anyhow::Result<Vec<Word>> {
+    ) -> anyhow::Result<OcrExtract> {
         let bmp = encode_bmp(rgba, width, height);
+        let request_bytes = bmp.len();
         let resp = self
             .client
             .post(format!("{}/ocr", self.base_url))
@@ -160,7 +172,11 @@ impl OcrClient {
         let out: OcrServerResponse =
             serde_json::from_slice(&body).context("ocr: invalid server response")?;
 
-        Ok(validate_words(out.words, width, height))
+        Ok(OcrExtract {
+            words: validate_words(out.words, width, height),
+            server_ms: out.duration_ms,
+            request_bytes,
+        })
     }
 }
 

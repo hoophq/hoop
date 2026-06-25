@@ -201,35 +201,56 @@ impl Analyzer for BandAnalyzer {
                         .await
                         .expect("piigate: OCR semaphore closed");
                     if cancel.is_cancelled() {
-                        return Ok((idx, Vec::new()));
+                        return Ok((idx, Vec::new(), 0.0, 0usize));
                     }
-                    let words = tokio::select! {
+                    let extract = tokio::select! {
                         res = ocr.extract(&crop, fb_width, win_height) => res.with_context(|| {
                             format!("OCR failed on chunk [{},{})", win.y0, win.y1)
                         })?,
-                        _ = cancel.cancelled() => return Ok((idx, Vec::new())),
+                        _ = cancel.cancelled() => return Ok((idx, Vec::new(), 0.0, 0usize)),
                     };
-                    Ok::<_, anyhow::Error>((idx, words))
+                    Ok::<_, anyhow::Error>((idx, extract.words, extract.server_ms, extract.request_bytes))
                 }));
             }
         }
 
         // Collect the OCR'd (miss) chunks. On the first error, cancel the rest
         // and propagate (the gate fails closed on an analyzer error).
+        //
+        // The chunks OCR in PARALLEL, so the per-batch number comparable to the
+        // OCR wall-clock is the SLOWEST chunk's sidecar inference time (the
+        // critical path), not the sum. If wall-clock >> max chunk inference,
+        // the gap is queueing/contention/transport, not the GPU. We also track
+        // bytes/calls/chunks to gauge payload size and cache effectiveness.
+        // Cache hits contribute nothing (no round-trip), which is the point.
         let mut first_err = None;
+        let mut server_ms_max = 0.0f64;
+        let mut request_bytes_sum = 0usize;
+        let mut ocr_calls = 0usize;
         for h in handles {
             match h.await.context("piigate: OCR task panicked")? {
-                Ok((idx, words)) => chunk_local[idx] = Some(Arc::new(words)),
+                Ok((idx, words, server_ms, request_bytes)) => {
+                    chunk_local[idx] = Some(Arc::new(words));
+                    if request_bytes > 0 {
+                        if server_ms > server_ms_max {
+                            server_ms_max = server_ms;
+                        }
+                        request_bytes_sum += request_bytes;
+                        ocr_calls += 1;
+                    }
+                }
                 Err(e) => {
                     cancel.cancel();
                     first_err = first_err.or(Some(e));
                 }
             }
         }
-        // Record OCR phase wall-clock before any early return, so a slow or
-        // failing OCR sidecar (the most likely offender) still shows up in the
-        // latency window.
+        // Record OCR phase wall-clock and the sidecar-internal breakdown before
+        // any early return, so a slow or failing OCR sidecar (the most likely
+        // offender) still shows up in the latency window.
         self.metrics.record_ocr(ocr_started.elapsed());
+        self.metrics
+            .record_ocr_detail(server_ms_max, request_bytes_sum as u64, ocr_calls, chunks.len());
         if let Some(e) = first_err {
             return Err(e);
         }
