@@ -16,6 +16,7 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 use super::bands::{split_bands, OcrChunk, YBand, DEFAULT_BAND_PADDING, MAX_CHUNK_ROWS};
+use super::metrics::LatencyAggregator;
 use super::ocr::{join_words, OcrClient, Word};
 use super::presidio::{analyze_text, AnalysisParams, PresidioClient, SnapshotResult};
 
@@ -83,17 +84,26 @@ pub struct BandAnalyzer {
     /// keeps its `&self` signature; only ever locked briefly to read a hit or
     /// publish the new snapshot, never across an OCR/Presidio await.
     cache: Mutex<OcrCache>,
+    /// Shared per-session latency aggregator. The analyzer records the two
+    /// network-bound stages (OCR, Presidio); the gate records compositing /
+    /// redaction / end-to-end into the same instance, so one window summary
+    /// covers the whole pipeline.
+    metrics: Arc<LatencyAggregator>,
 }
 
 impl BandAnalyzer {
     /// Builds the production analyzer from a resolved guard config (gateway
-    /// policy + agent-local endpoints).
-    pub fn from_config(cfg: &super::config::GuardConfig) -> anyhow::Result<Self> {
+    /// policy + agent-local endpoints), sharing `metrics` with the gate.
+    pub fn from_config(
+        cfg: &super::config::GuardConfig,
+        metrics: Arc<LatencyAggregator>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             ocr: OcrClient::new(&cfg.ocr_url)?,
             presidio: PresidioClient::new(&cfg.presidio_url)?,
             params: cfg.params.clone(),
             cache: Mutex::new(OcrCache::default()),
+            metrics,
         })
     }
 }
@@ -133,6 +143,10 @@ impl Analyzer for BandAnalyzer {
             self.params.band_padding
         };
         let chunks = split_bands(bands, MAX_CHUNK_ROWS, pad);
+
+        // Wall-clock for the whole OCR phase (cache lookups + parallel sidecar
+        // round-trips + collection), recorded into the shared latency window.
+        let ocr_started = std::time::Instant::now();
 
         let concurrency = if self.params.max_ocr_concurrency == 0 {
             8usize.min(std::thread::available_parallelism().map_or(8, |n| n.get()))
@@ -212,6 +226,10 @@ impl Analyzer for BandAnalyzer {
                 }
             }
         }
+        // Record OCR phase wall-clock before any early return, so a slow or
+        // failing OCR sidecar (the most likely offender) still shows up in the
+        // latency window.
+        self.metrics.record_ocr(ocr_started.elapsed());
         if let Some(e) = first_err {
             return Err(e);
         }
@@ -250,7 +268,10 @@ impl Analyzer for BandAnalyzer {
         // Gate-close cancellation is handled at the mod.rs boundary (the
         // whole analyze() future is dropped), which aborts this Presidio
         // request via reqwest's drop — no inner select needed here.
-        analyze_text(&self.presidio, &text, &all_words, &self.params).await
+        let presidio_started = std::time::Instant::now();
+        let res = analyze_text(&self.presidio, &text, &all_words, &self.params).await;
+        self.metrics.record_presidio(presidio_started.elapsed());
+        res
     }
 }
 
@@ -371,7 +392,7 @@ mod tests {
             },
             policy: super::super::GatePolicy::Redact,
         };
-        BandAnalyzer::from_config(&cfg).unwrap()
+        BandAnalyzer::from_config(&cfg, Arc::new(LatencyAggregator::new("test"))).unwrap()
     }
 
     // A small framebuffer: width 64, height 64, RGBA. A band covers some rows.
