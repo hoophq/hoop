@@ -113,6 +113,16 @@ struct Window {
     presidio: StageSamples,
     redact: StageSamples,
     total: StageSamples,
+
+    // OCR-internal breakdown: the sidecar's self-reported inference time
+    // (server_ms) per batch, the bytes sent, and the OCR call count. The gap
+    // between `ocr` wall-clock and `ocr_server` is queueing/contention/
+    // transport — this is what tells us whether the GPU is slow or the
+    // requests are piling up.
+    ocr_server: StageSamples, // server_ms summed per batch, stored as micros
+    ocr_bytes: u64,           // total BMP bytes sent this window
+    ocr_calls: usize,         // total OCR round-trips this window (cache misses)
+    ocr_chunks: usize,        // total chunks this window (hits + misses)
 }
 
 impl Window {
@@ -153,6 +163,31 @@ impl LatencyAggregator {
     /// Records the OCR-phase wall-clock for one batch.
     pub fn record_ocr(&self, d: Duration) {
         self.push(|w| w.ocr.push(as_micros(d)));
+    }
+
+    /// Records the OCR-internal breakdown for one batch. `server_ms_max` is the
+    /// SLOWEST chunk's sidecar-reported inference time (the parallel critical
+    /// path — directly comparable to the OCR wall-clock; a large wall-clock −
+    /// server_max gap means queueing/contention, not GPU cost). `bytes` is the
+    /// total BMP bytes sent, `calls` the OCR round-trips (cache misses), and
+    /// `chunks` the total chunks (hits + misses) so cache effectiveness is
+    /// visible.
+    pub fn record_ocr_detail(&self, server_ms_max: f64, bytes: u64, calls: usize, chunks: usize) {
+        self.push(|w| {
+            // Stored as micros to share StageSamples' percentile machinery.
+            // Coerce non-finite/negative sidecar values to 0: malformed
+            // telemetry must never poison the window, and this is best-effort
+            // diagnostics, not enforcement.
+            let server_us = if server_ms_max.is_finite() && server_ms_max > 0.0 {
+                (server_ms_max * 1000.0) as u64
+            } else {
+                0
+            };
+            w.ocr_server.push(server_us);
+            w.ocr_bytes += bytes;
+            w.ocr_calls += calls;
+            w.ocr_chunks += chunks;
+        });
     }
 
     /// Records the Presidio analyze HTTP call for one batch.
@@ -230,15 +265,20 @@ impl LatencyAggregator {
                 .map(|sum| sum.to_string())
                 .unwrap_or_else(|| "n=0".to_string())
         };
+        let ocr_kib = w.ocr_bytes / 1024;
         info!(
             sid = %self.session_id,
             window_s = elapsed.as_secs_f64(),
             batches = w.batches,
             detections = w.detections,
             forwarded_kib = (w.forwarded_bytes / 1024),
-            "piigate latency: composite[{}] ocr[{}] presidio[{}] redact[{}] total[{}]",
+            ocr_calls = w.ocr_calls,
+            ocr_chunks = w.ocr_chunks,
+            ocr_sent_kib = ocr_kib,
+            "piigate latency: composite[{}] ocr[{}] ocr_server[{}] presidio[{}] redact[{}] total[{}]",
             summarize(&mut w.composite),
             summarize(&mut w.ocr),
+            summarize(&mut w.ocr_server),
             summarize(&mut w.presidio),
             summarize(&mut w.redact),
             summarize(&mut w.total),
@@ -349,6 +389,33 @@ mod tests {
     }
 
     #[test]
+    fn ocr_detail_coerces_bad_server_ms() {
+        let agg = LatencyAggregator::new("sid");
+        agg.record_ocr_detail(f64::NAN, 100, 1, 1);
+        agg.record_ocr_detail(f64::INFINITY, 100, 1, 1);
+        agg.record_ocr_detail(-5.0, 100, 1, 1);
+        // All three are non-finite/negative -> coerced to 0 -> excluded by
+        // StageSamples::push, so no server samples, but bytes/calls/chunks
+        // still accumulate.
+        let w = agg.window.lock();
+        assert!(w.ocr_server.micros.is_empty(), "bad server_ms must not be sampled");
+        assert_eq!(w.ocr_bytes, 300);
+        assert_eq!(w.ocr_calls, 3);
+        assert_eq!(w.ocr_chunks, 3);
+    }
+
+    #[test]
+    fn ocr_detail_records_valid_server_ms() {
+        let agg = LatencyAggregator::new("sid");
+        agg.record_ocr_detail(12.5, 2048, 2, 4);
+        let w = agg.window.lock();
+        assert_eq!(w.ocr_server.micros, vec![12500]);
+        assert_eq!(w.ocr_bytes, 2048);
+        assert_eq!(w.ocr_calls, 2);
+        assert_eq!(w.ocr_chunks, 4);
+    }
+
+    #[test]
     fn zero_duration_excluded() {
         let mut s = StageSamples::default();
         s.push(0);
@@ -403,6 +470,7 @@ mod tests {
             let agg = LatencyAggregator::new("sid-log-test");
             agg.record_composite(Duration::from_micros(400));
             agg.record_ocr(Duration::from_millis(58));
+            agg.record_ocr_detail(40.0, 512 * 1024, 3, 4);
             agg.record_presidio(Duration::from_millis(12));
             agg.record_redact(Duration::from_millis(3));
             agg.record_batch(Duration::from_millis(74), 8 * 1024 * 1024, true);
@@ -415,10 +483,14 @@ mod tests {
         assert!(out.contains("batches=1"), "missing batches in: {out}");
         assert!(out.contains("detections=1"), "missing detections in: {out}");
         // Each stage rendered with its summary.
-        for stage in ["composite[", "ocr[", "presidio[", "redact[", "total["] {
+        for stage in ["composite[", "ocr[", "ocr_server[", "presidio[", "redact[", "total["] {
             assert!(out.contains(stage), "missing {stage} in: {out}");
         }
-        // OCR avg should reflect the 58ms sample.
+        // OCR wall-clock avg should reflect the 58ms sample.
         assert!(out.contains("ocr[n=1 avg=58.0ms"), "wrong ocr summary in: {out}");
+        // OCR sidecar inference (server_ms) should reflect the 40ms sample.
+        assert!(out.contains("ocr_server[n=1 avg=40.0ms"), "wrong ocr_server summary in: {out}");
+        assert!(out.contains("ocr_calls=3"), "missing ocr_calls in: {out}");
+        assert!(out.contains("ocr_chunks=4"), "missing ocr_chunks in: {out}");
     }
 }
