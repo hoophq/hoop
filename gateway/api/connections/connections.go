@@ -554,17 +554,11 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 		defaultDB = []byte(``)
 	}
 
-	// Write-only secrets: strip inline values for connection shapes
-	// where the renderer doesn't need to read them back (catalog
-	// databases). Predefined renderers in the v2 form
-	// (custom/kubernetes-token, httpproxy/claude-code, application/ssh,
-	// …) and every free-form custom round-trip values so their edit
-	// UIs can populate URL/header/host fields. See secrets.go's
-	// shouldRoundTripSecrets for the full policy and the security
-	// trade-off rationale.
-	publicEnvs := conn.Envs
+	var publicEnvs map[string]any
 	if hideRoleInfo {
 		publicEnvs = stripInlineSecrets(conn.Envs)
+	} else {
+		publicEnvs = coerceToAnyMap(conn.Envs)
 	}
 
 	return openapi.Connection{
@@ -574,7 +568,7 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 		Command:                 conn.Command,
 		Type:                    conn.Type,
 		SubType:                 conn.SubType.String,
-		Secrets:                 coerceToAnyMap(publicEnvs),
+		Secrets:                 publicEnvs,
 		DefaultDatabase:         string(defaultDB),
 		AgentId:                 conn.AgentID.String,
 		Status:                  conn.Status,

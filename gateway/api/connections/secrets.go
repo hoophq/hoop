@@ -65,17 +65,17 @@ func hasAnySecretReference(envs map[string]string) bool {
 // stripInlineSecrets returns a copy of envs where inline secret values
 // are blanked out. References and boolean toggles round-trip; the key
 // set is preserved so the UI knows which credentials exist.
-func stripInlineSecrets(envs map[string]string) map[string]string {
+func stripInlineSecrets(envs map[string]string) map[string]any {
 	if envs == nil {
 		return nil
 	}
-	out := make(map[string]string, len(envs))
+	out := make(map[string]any, len(envs))
 	for k, v := range envs {
 		if IsSecretReference(v) || isBooleanValue(v) {
 			out[k] = v
 			continue
 		}
-		out[k] = ""
+		out[k] = nil
 	}
 	return out
 }
