@@ -643,11 +643,13 @@ async fn flash_attack_never_leaks() {
     h.gate.close().await;
 }
 
-/// Every repaint of the same region within one ingest burst forces its own
-/// batch, so every intermediate state is analyzed — one analysis per
-/// overwrite generation.
+/// Byte-identical repaints of the same region carry no new content: they must
+/// still be FORWARDED (the client expects every PDU), but the gate skips
+/// re-analyzing pixels it already analyzed — RDP resends identical tiles
+/// constantly and re-OCRing them is pure waste. All five paints are the same
+/// WHITE rect, so exactly one analysis covers them.
 #[tokio::test]
-async fn overwrite_splits_and_analyzes_each_state() {
+async fn identical_repaints_forward_but_analyze_once() {
     let (det, calls) = SignatureDetector::new(40, 40, 8, 8);
     let h = new_test_gate(det);
 
@@ -657,9 +659,44 @@ async fn overwrite_splits_and_analyzes_each_state() {
     }
     h.gate.ingest(&burst);
 
-    wait_for("all clean repaints forwarded in order", || h.sink.bytes() == burst).await;
-    assert_eq!(calls.load(Ordering::SeqCst), 5, "each overwrite generation must be analyzed");
+    // Correctness preserved: every PDU is still delivered, in order.
+    wait_for("all repaints forwarded in order", || h.sink.bytes() == burst).await;
+    // Optimization: identical pixels are analyzed once, not five times.
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "identical repaints must collapse to a single analysis"
+    );
     assert_eq!(h.events.detections(), 0, "clean repaints must not detect");
+    h.gate.close().await;
+}
+
+/// Every repaint that actually CHANGES pixels still forces its own batch and is
+/// analyzed — the dirty-skip optimization must never collapse genuinely
+/// distinct screen states (that would be a leak). Alternating colors at a
+/// non-signature region change pixels every generation; each must be analyzed.
+#[tokio::test]
+async fn changed_repaints_analyze_each_state() {
+    let (det, calls) = SignatureDetector::new(40, 40, 8, 8);
+    let h = new_test_gate(det);
+
+    // Paint the same region alternating WHITE/MAGENTA away from the signature
+    // rect (signature is at 40,40; paint at 0,0) so each generation differs in
+    // pixels but never trips the detector.
+    let colors = [WHITE, MAGENTA, WHITE, MAGENTA, WHITE];
+    let mut burst = Vec::new();
+    for c in colors {
+        burst.extend_from_slice(&fast_path_bitmap_pdu(&[TestRect::new(0, 0, 8, 8, c)]));
+    }
+    h.gate.ingest(&burst);
+
+    wait_for("all changed repaints forwarded in order", || h.sink.bytes() == burst).await;
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        colors.len() as i32,
+        "each pixel-changing generation must be analyzed"
+    );
+    assert_eq!(h.events.detections(), 0, "magenta away from the signature region must not detect");
     h.gate.close().await;
 }
 
@@ -690,6 +727,38 @@ async fn cross_batch_assembly_killed_on_completion() {
         }
     });
     assert!(!assembled, "LEAK: full signature visible in a client-renderable state");
+    h.gate.close().await;
+}
+
+/// The dirty-skip optimization must not create a leak across a
+/// changed -> identical-repaint -> changed-overwrite sequence. The signature
+/// is painted (changed, analyzed -> killed) so the identical repaint never even
+/// runs; this proves an identical repaint cannot be used to "refresh" PII past
+/// the guard, and that the first changed paint is always the one analyzed.
+#[tokio::test]
+async fn identical_repaint_of_pii_is_still_caught() {
+    let (det, calls) = SignatureDetector::new(40, 40, 8, 8);
+    let h = new_test_gate(det);
+
+    // First paint of the signature: changed -> dirtied -> analyzed -> killed.
+    // A second, byte-identical paint of the same signature would be skipped by
+    // the dirty optimization — but it can never leak, because the FIRST paint
+    // already triggers detection and drops the batch.
+    let sig = fast_path_bitmap_pdu(&[TestRect::new(40, 40, 8, 8, MAGENTA)]);
+    h.gate.ingest(&[sig.clone(), sig].concat());
+
+    wait_for("signature detected on first changed paint", || h.events.detections() == 1).await;
+    assert!(h.gate.killed(), "gate must kill on the PII paint");
+    assert!(calls.load(Ordering::SeqCst) >= 1, "the changed PII paint must be analyzed");
+
+    let mut leaked = false;
+    let mut oracle = ClientOracle::new();
+    oracle.consume(&h.sink.bytes(), |fb, w, hgt| {
+        if rect_is_color(fb, w, hgt, 40, 40, 8, 8, MAGENTA) {
+            leaked = true;
+        }
+    });
+    assert!(!leaked, "LEAK: signature reached a client-renderable state");
     h.gate.close().await;
 }
 

@@ -595,6 +595,45 @@ func TestShadowCanvas_GrowPreservesContent(t *testing.T) {
 	}
 }
 
+// TestShadowCanvas_CompositeReportsChangedOnlyOnPixelChange: composite reports
+// true only when pixels actually change (or the canvas grows), so the gate
+// skips re-OCRing byte-identical RDP repaints.
+func TestShadowCanvas_CompositeReportsChangedOnlyOnPixelChange(t *testing.T) {
+	c := shadowCanvas{sessionID: "t"}
+	red := bytes.Repeat([]byte{0x00, 0x00, 0xff}, 16)  // BGR 4x4
+	blue := bytes.Repeat([]byte{0xff, 0x00, 0x00}, 16) // BGR 4x4
+
+	if !c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 4, Height: 4, BitsPerPixel: 24}, red) {
+		t.Error("first paint must report changed")
+	}
+	if c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 4, Height: 4, BitsPerPixel: 24}, red) {
+		t.Error("byte-identical repaint must report unchanged")
+	}
+	if !c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 4, Height: 4, BitsPerPixel: 24}, blue) {
+		t.Error("different color must report changed")
+	}
+	if c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 4, Height: 4, BitsPerPixel: 24}, blue) {
+		t.Error("identical blue repaint must report unchanged")
+	}
+}
+
+// TestShadowCanvas_FirstPaintOfZeroPixelsCountsAsChanged: the canvas starts
+// zeroed; a first paint whose decoded RGBA is black (0,0,0) is byte-identical
+// to the zeroed framebuffer but is NEW to the client and MUST be treated as
+// changed (so it is analyzed). The grow guard guarantees this — without it,
+// black-on-black content could reach the client unanalyzed.
+func TestShadowCanvas_FirstPaintOfZeroPixelsCountsAsChanged(t *testing.T) {
+	c := shadowCanvas{sessionID: "t"}
+	black := bytes.Repeat([]byte{0x00, 0x00, 0x00}, 16) // BGR 4x4 black
+
+	if !c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 4, Height: 4, BitsPerPixel: 24}, black) {
+		t.Error("first paint into new canvas area must be changed even if pixels are black")
+	}
+	if c.composite(parser.BitmapRect{X: 0, Y: 0, Width: 4, Height: 4, BitsPerPixel: 24}, black) {
+		t.Error("identical black repaint over existing black must be unchanged")
+	}
+}
+
 // --- Adversarial leak tests -------------------------------------------------
 //
 // These prove the zero-leak pipeline property with a perfect detector
@@ -633,10 +672,43 @@ func TestPIIGate_FlashAttackNeverLeaks(t *testing.T) {
 	}
 }
 
-// TestPIIGate_OverwriteSplitsAndAnalyzesEachState: every repaint of the same
-// region within one ingest burst forces its own batch, so every intermediate
-// state is analyzed — one analysis per overwrite generation.
-func TestPIIGate_OverwriteSplitsAndAnalyzesEachState(t *testing.T) {
+// TestPIIGate_IdenticalRepaintOfPIIIsStillCaught: the dirty-skip optimization
+// must not let an identical repaint refresh PII past the guard. The signature
+// is painted (changed -> analyzed -> killed) so the identical repaint never even
+// runs; the first changed paint is always the one analyzed, and nothing leaks.
+func TestPIIGate_IdenticalRepaintOfPIIIsStillCaught(t *testing.T) {
+	h := &gateHarness{}
+	var calls atomic.Int32
+	gate := newTestGate(t, h, signatureDetector(&calls, 40, 40, 8, 8))
+
+	sig := fastPathBitmapPDU(t, testRect{40, 40, 8, 8, magenta})
+	gate.Ingest(append(append([]byte(nil), sig...), sig...))
+
+	waitFor(t, "signature detected on first changed paint", func() bool { return h.detections() == 1 })
+	if !gate.Killed() {
+		t.Error("gate must kill on the PII paint")
+	}
+	if got := calls.Load(); got < 1 {
+		t.Errorf("the changed PII paint must be analyzed: got %d analyses", got)
+	}
+
+	leaked := false
+	oracle := newClientOracle(t, func(fb []byte, _, _ int) {
+		if anyMagentaPixel(fb) {
+			leaked = true
+		}
+	})
+	oracle.consume(h.forwardedBytes())
+	if leaked {
+		t.Fatal("LEAK: signature reached a client-renderable state")
+	}
+}
+
+// TestPIIGate_IdenticalRepaintsForwardButAnalyzeOnce: byte-identical repaints
+// of the same region carry no new content — they must still be FORWARDED (the
+// client expects every PDU), but the gate skips re-analyzing pixels it already
+// analyzed. RDP resends identical tiles constantly and re-OCRing them is waste.
+func TestPIIGate_IdenticalRepaintsForwardButAnalyzeOnce(t *testing.T) {
 	h := &gateHarness{}
 	var calls atomic.Int32
 	gate := newTestGate(t, h, signatureDetector(&calls, 40, 40, 8, 8))
@@ -649,12 +721,45 @@ func TestPIIGate_OverwriteSplitsAndAnalyzesEachState(t *testing.T) {
 	}
 	gate.Ingest(burst)
 
-	waitFor(t, "all clean repaints forwarded in order", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
-	if got := calls.Load(); got != 5 {
-		t.Errorf("each overwrite generation must be analyzed: got %d analyses, want 5", got)
+	// Correctness preserved: every PDU is still delivered, in order.
+	waitFor(t, "all repaints forwarded in order", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
+	// Optimization: identical pixels are analyzed once, not five times.
+	if got := calls.Load(); got != 1 {
+		t.Errorf("identical repaints must collapse to a single analysis: got %d, want 1", got)
 	}
 	if h.detections() != 0 {
 		t.Errorf("clean repaints must not detect")
+	}
+}
+
+// TestPIIGate_ChangedRepaintsAnalyzeEachState: every repaint that actually
+// CHANGES pixels still forces its own batch and is analyzed — the dirty-skip
+// optimization must never collapse genuinely distinct screen states (that would
+// be a leak). Alternating colors at a non-signature region change pixels every
+// generation; each must be analyzed.
+func TestPIIGate_ChangedRepaintsAnalyzeEachState(t *testing.T) {
+	h := &gateHarness{}
+	var calls atomic.Int32
+	gate := newTestGate(t, h, signatureDetector(&calls, 40, 40, 8, 8))
+
+	// Paint the same region alternating white/magenta away from the signature
+	// rect (signature at 40,40; paint at 0,0) so each generation differs in
+	// pixels but never trips the detector.
+	colors := [][3]byte{white, magenta, white, magenta, white}
+	var burst, want []byte
+	for _, c := range colors {
+		pdu := fastPathBitmapPDU(t, testRect{0, 0, 8, 8, c})
+		burst = append(burst, pdu...)
+		want = append(want, pdu...)
+	}
+	gate.Ingest(burst)
+
+	waitFor(t, "all changed repaints forwarded in order", func() bool { return bytes.Equal(h.forwardedBytes(), want) })
+	if got := calls.Load(); got != int32(len(colors)) {
+		t.Errorf("each pixel-changing generation must be analyzed: got %d, want %d", got, len(colors))
+	}
+	if h.detections() != 0 {
+		t.Errorf("magenta away from the signature region must not detect")
 	}
 }
 
