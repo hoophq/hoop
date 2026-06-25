@@ -21,6 +21,7 @@ export default function HttpProxyRenderer({
   connection,
   availableSources,
   forceNewState,
+  hideRoleInfo,
 }) {
   return (
     <Stack gap="xl">
@@ -31,11 +32,13 @@ export default function HttpProxyRenderer({
           fields={HTTPPROXY_FIELDS}
           availableSources={availableSources}
           forceNewState={forceNewState}
+          hideRoleInfo={hideRoleInfo}
         />
       </Stack>
       <HttpHeadersSection
         connection={connection}
         availableSources={availableSources}
+        hideRoleInfo={hideRoleInfo}
       />
       <AllowInsecureSslSection connection={connection} />
       <AgentSelectorSection />

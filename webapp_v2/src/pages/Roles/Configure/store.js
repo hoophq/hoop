@@ -5,6 +5,7 @@ import { jiraTemplatesService } from '@/services/jiraTemplates'
 import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
 import { userGroupsService } from '@/services/userGroups'
+import infrastructure from '@/services/infrastructure'
 import {
   decodeForDisplay,
   decodeSecretValue,
@@ -208,6 +209,10 @@ const initialState = {
   // per-key value suggestions from this list.
   connectionTagsPool: [],
   userGroupsList: [],
+  // Org-level "block reading secrets" flag (GET /orgs/hide-role-info). When
+  // true, the API masks every inline secret value (keys preserved, provider
+  // references untouched), so credential renderers switch to write-only.
+  hideRoleInfo: false,
   auxLoading: false,
 }
 
@@ -246,12 +251,13 @@ export const useConfigureRoleStore = create((set, get) => ({
   loadAuxiliaryData: async () => {
     set({ auxLoading: true })
     try {
-      const [guardrails, jiraTemplates, attributesRes, connectionTags, userGroups] = await Promise.allSettled([
+      const [guardrails, jiraTemplates, attributesRes, connectionTags, userGroups, hideRole] = await Promise.allSettled([
         guardrailsService.list(),
         jiraTemplatesService.list(),
         attributesService.list(),
         connectionTagsService.list(),
         userGroupsService.list(),
+        infrastructure.getHideRoleInfo(),
       ])
       // /guardrails and /integrations/jira/issuetemplates return bare arrays
       // (the service unwraps res.data for us). /attributes returns a
@@ -269,6 +275,10 @@ export const useConfigureRoleStore = create((set, get) => ({
           : []
       const userGroupsList =
         userGroups.status === 'fulfilled' ? userGroups.value || [] : []
+      const hideRoleInfo =
+        hideRole.status === 'fulfilled'
+          ? hideRole.value?.hide_role_info ?? false
+          : false
       set({
         guardrailsList:
           guardrails.status === 'fulfilled' ? guardrails.value || [] : [],
@@ -277,6 +287,7 @@ export const useConfigureRoleStore = create((set, get) => ({
         attributesList,
         connectionTagsPool,
         userGroupsList,
+        hideRoleInfo,
         auxLoading: false,
       })
     } catch {

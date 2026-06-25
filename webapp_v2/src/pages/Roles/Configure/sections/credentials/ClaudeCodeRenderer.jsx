@@ -59,6 +59,7 @@ export default function ClaudeCodeRenderer({
   connection,
   availableSources,
   forceNewState,
+  hideRoleInfo,
 }) {
   useLegacyApiKeyMigration(connection)
   return (
@@ -70,12 +71,14 @@ export default function ClaudeCodeRenderer({
           fields={CLAUDE_CODE_FIELDS}
           availableSources={availableSources}
           forceNewState={forceNewState}
+          hideRoleInfo={hideRoleInfo}
         />
       </Stack>
       <HttpHeadersSection
         connection={connection}
         availableSources={availableSources}
         excludeKeys={HEADERS_EXCLUDE}
+        hideRoleInfo={hideRoleInfo}
       />
       <AllowInsecureSslSection connection={connection} />
       <AgentSelectorSection />

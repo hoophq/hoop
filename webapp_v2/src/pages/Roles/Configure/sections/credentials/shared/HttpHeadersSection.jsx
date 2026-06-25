@@ -6,9 +6,11 @@ import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import SourcedInput from '@/components/SourcedInput'
+import SecretField from '../../../components/SecretField'
 import {
   decodeForDisplay,
   encodeSecretForSource,
+  isSecretReference,
   isValidHeaderKey,
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
@@ -32,9 +34,12 @@ function HeaderRow({
   value,
   source,
   availableSources,
+  writeOnly,
+  stagedAction,
   onCommitKey,
   onValueChange,
   onSourceChange,
+  onCancelReplace,
   onRemove,
 }) {
   const [draftName, setDraftName] = useState(displayName)
@@ -66,7 +71,21 @@ function HeaderRow({
         />
       </Grid.Col>
       <Grid.Col span={6}>
-        {showSourceSelect ? (
+        {writeOnly ? (
+          <SecretField
+            label="Value"
+            type="password"
+            isExisting
+            stagedAction={stagedAction}
+            stagedValue={value}
+            source={source}
+            availableSources={availableSources}
+            onSourceChange={onSourceChange}
+            onReplace={onValueChange}
+            onChangeStaged={onValueChange}
+            onCancel={onCancelReplace}
+          />
+        ) : showSourceSelect ? (
           <SourcedInput
             label="Value"
             type="password"
@@ -108,6 +127,7 @@ export default function HttpHeadersSection({
   connection,
   availableSources,
   excludeKeys = [],
+  hideRoleInfo,
 }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
@@ -187,6 +207,8 @@ export default function HttpHeadersSection({
             fieldSources[envKey] ||
             (encodedForDetection ? sourceFromEncodedValue(encodedForDetection) : null) ||
             defaultSource
+          const isPersistedReference = isSecretReference(currentSecrets[envKey] || '')
+          const writeOnly = Boolean(hideRoleInfo) && isExisting && !isPersistedReference
           return (
             <HeaderRow
               key={envKey}
@@ -195,6 +217,8 @@ export default function HttpHeadersSection({
               value={value}
               source={source}
               availableSources={availableSources}
+              writeOnly={writeOnly}
+              stagedAction={staged?.action}
               onCommitKey={(newName) => {
                 // Header names round-trip case-sensitive — don't
                 // uppercase like env vars do.
@@ -212,6 +236,7 @@ export default function HttpHeadersSection({
                 }
                 setFieldSource(envKey, nextSource)
               }}
+              onCancelReplace={() => cancelSecretChange(envKey)}
               onRemove={() => {
                 if (isExisting) deleteSecret(envKey)
                 else cancelSecretChange(envKey)
