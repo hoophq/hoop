@@ -20,10 +20,11 @@ import (
 const defaultKV2Path string = "secret/data/"
 
 type vaultProvider struct {
-	config     *vaultConfig
-	cache      memory.Store
-	kvType     secretProviderType
-	httpClient httpclient.HttpClient
+	config         *vaultConfig
+	cache          memory.Store
+	kvType         secretProviderType
+	httpClient     httpclient.HttpClient
+	reqHttpTimeout time.Duration
 }
 
 type vaultConfig struct {
@@ -79,7 +80,26 @@ func newVaultKeyValProvider(kvType secretProviderType, httpClient httpclient.Htt
 	if httpClient == nil {
 		httpClient = httpclient.NewHttpClient(config.tlsCA)
 	}
-	return &vaultProvider{config: config, cache: memory.New(), kvType: kvType, httpClient: httpClient}, nil
+
+	vaultHttpReqTimeout := time.Second * 10
+	if v := os.Getenv("VAULT_HTTP_REQ_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			log.Warnf("invalid VAULT_HTTP_REQ_TIMEOUT=%q, using default %s, reason=%v", v, vaultHttpReqTimeout, err)
+		case d <= time.Second:
+			log.Warnf("VAULT_HTTP_REQ_TIMEOUT=%q is too low (<=1s), using default %s", v, vaultHttpReqTimeout)
+		default:
+			vaultHttpReqTimeout = d
+		}
+	}
+	return &vaultProvider{
+		config:         config,
+		cache:          memory.New(),
+		kvType:         kvType,
+		httpClient:     httpClient,
+		reqHttpTimeout: vaultHttpReqTimeout,
+	}, nil
 }
 
 func loadAppRoleCredentials() (string, string, error) {
@@ -128,7 +148,11 @@ func loadDefaultVaultConfig() (*vaultConfig, error) {
 func (p *vaultProvider) SetValue(secretID string, secretsPayload map[string]string) error {
 	apiURL := urlPathForProvider("", p.config.serverAddr, secretID)
 	log.With("secretid", secretID).Debugf("creating or updating secret at %v", apiURL)
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancelFn := context.WithTimeoutCause(
+		context.Background(),
+		p.reqHttpTimeout,
+		fmt.Errorf("request timeout (%s)", p.reqHttpTimeout),
+	)
 	defer cancelFn()
 
 	secretsJsonData, err := json.Marshal(map[string]any{"data": secretsPayload})
@@ -183,7 +207,11 @@ func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {
 
 func (p *vaultProvider) GetVaultToken() (string, error) {
 	if p.config.appRoleID != "" {
-		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+		ctx, cancelFn := context.WithTimeoutCause(
+			context.Background(),
+			p.reqHttpTimeout,
+			fmt.Errorf("request timeout (%s)", p.reqHttpTimeout),
+		)
 		defer cancelFn()
 
 		appRoleLoginURI := strings.TrimSuffix(p.config.serverAddr, "/") + "/v1/auth/approle/login"
@@ -228,7 +256,11 @@ func (p *vaultProvider) GetVaultToken() (string, error) {
 func (p *vaultProvider) keyValGetRequest(secretID string) (KVGetter, error) {
 	apiURL := urlPathForProvider(p.kvType, p.config.serverAddr, secretID)
 	log.Infof("fetching key value secret at %v", apiURL)
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancelFn := context.WithTimeoutCause(
+		context.Background(),
+		p.reqHttpTimeout,
+		fmt.Errorf("request timeout (%s)", p.reqHttpTimeout),
+	)
 	defer cancelFn()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
