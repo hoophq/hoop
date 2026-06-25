@@ -3895,6 +3895,27 @@
         },
         "type": "object"
       },
+      "openapi.OrgHideRoleInfoRequest": {
+        "properties": {
+          "hide_role_info": {
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hide_role_info"
+        ],
+        "type": "object"
+      },
+      "openapi.OrgHideRoleInfoResponse": {
+        "properties": {
+          "hide_role_info": {
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "openapi.OrgInvitationRequest": {
         "properties": {
           "action": {
@@ -14376,6 +14397,98 @@
         "summary": "Feature Update",
         "tags": [
           "Features"
+        ]
+      }
+    },
+    "/orgs/hide-role-info": {
+      "get": {
+        "description": "Get whether the caller's organization blocks reading connection/role secrets (envvars) through the API",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.OrgHideRoleInfoResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Organization Hide Role Info",
+        "tags": [
+          "Server Management"
+        ]
+      },
+      "put": {
+        "description": "Toggle whether the caller's organization blocks reading connection/role secrets (envvars) through the API",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.OrgHideRoleInfoRequest"
+              }
+            }
+          },
+          "description": "The new hide role info setting",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.OrgHideRoleInfoResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Update Organization Hide Role Info",
+        "tags": [
+          "Server Management"
         ]
       }
     },

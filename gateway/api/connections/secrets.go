@@ -3,8 +3,6 @@ package apiconnections
 import (
 	"encoding/base64"
 	"strings"
-
-	"github.com/hoophq/hoop/gateway/models"
 )
 
 // Value prefixes that mark an envvar as a pointer to an external secret
@@ -64,41 +62,6 @@ func hasAnySecretReference(envs map[string]string) bool {
 	return false
 }
 
-// shouldRoundTripSecrets returns true when the connection's envvars
-// should be returned verbatim instead of going through the write-only
-// strip. Two paths:
-//
-//  1. Any env value is a provider reference — the connection runs
-//     under Secrets Manager / AWS IAM Role and stored values are
-//     pointers/config, not raw secrets. Trade-off: adding even one
-//     reference to a previously-Manual connection makes the other
-//     inline values visible on subsequent reads. The admin opted in.
-//
-//  2. The connection shape has a bespoke React renderer
-//     (application/ssh, httpproxy/*, custom/{empty|linux-vm|kubernetes-token})
-//     that needs the values to populate host/URL/header inputs.
-//
-// Everything else (catalog databases, catalog custom subtypes,
-// application/{git,github,tcp}) stays write-only.
-func shouldRoundTripSecrets(conn *models.Connection) bool {
-	if conn == nil {
-		return false
-	}
-	if hasAnySecretReference(conn.Envs) {
-		return true
-	}
-	sub := conn.SubType.String
-	switch conn.Type {
-	case "httpproxy":
-		return true
-	case "application":
-		return sub == "ssh"
-	case "custom":
-		return sub == "" || sub == "linux-vm" || sub == "kubernetes-token"
-	}
-	return false
-}
-
 // stripInlineSecrets returns a copy of envs where inline secret values
 // are blanked out. References and boolean toggles round-trip; the key
 // set is preserved so the UI knows which credentials exist.
@@ -114,6 +77,27 @@ func stripInlineSecrets(envs map[string]string) map[string]string {
 		}
 		out[k] = ""
 	}
+	return out
+}
+
+// overlaySecrets merges an incoming envvar map onto the stored one,
+// preserving existing values wherever the incoming value is empty or
+// the key is absent. It is used when an organization has hide_role_info
+// enabled: the API masks envvar values on read, so a full-replace (PUT)
+// payload arrives with blanked secrets that must never overwrite the
+// stored credentials. Non-empty incoming values still replace (or add)
+// the corresponding entry so admins can rotate a secret in place.
+// `existing` is not mutated.
+func overlaySecrets(existing map[string]string, incoming map[string]*string) map[string]string {
+	out := make(map[string]string, len(incoming))
+	for k, v := range incoming {
+		if v == nil {
+			out[k] = existing[k]
+		} else {
+			out[k] = *v
+		}
+	}
+
 	return out
 }
 

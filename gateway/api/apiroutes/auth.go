@@ -330,6 +330,7 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL str
 			WithOrgName(ctx.OrgName).
 			WithOrgLicenseData(ctx.OrgLicenseData).
 			WithOrgAnalyticsMode(ctx.OrgAnalyticsMode).
+			WithOrgHideRoleInfo(ctx.OrgHideRoleInfo).
 			WithApiURL(r.apiURL).
 			WithGrpcURL(grpcURL).
 			WithProviderType(providerType),
