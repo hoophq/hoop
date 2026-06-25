@@ -30,6 +30,7 @@ type Organization struct {
 	CreatedAt     time.Time       `gorm:"column:created_at"`
 	LicenseData   json.RawMessage `gorm:"column:license_data"`
 	AnalyticsMode string          `gorm:"column:analytics_mode"`
+	HideRoleInfo  bool            `gorm:"column:hide_role_info"`
 	TotalUsers    int64           `gorm:"column:total_users;->"`
 }
 
@@ -42,7 +43,7 @@ func ListAllOrganizations() ([]Organization, error) {
 func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 	var org Organization
 	err := DB.Raw(`
-	SELECT o.id, o.name, license_data, analytics_mode,
+	SELECT o.id, o.name, license_data, analytics_mode, hide_role_info,
 	(SELECT count(*) FROM private.users u WHERE u.org_id = o.id) AS total_users
 	FROM private.orgs o
 	WHERE (o.id::TEXT = ? OR o.name = ?)`, nameOrID, nameOrID).
@@ -61,6 +62,13 @@ func UpdateOrgAnalyticsMode(orgID, mode string) error {
 	return DB.Table("private.orgs").
 		Where("id = ?", orgID).
 		Update("analytics_mode", mode).
+		Error
+}
+
+func UpdateOrgHideRoleInfo(orgID string, hideRoleInfo bool) error {
+	return DB.Table("private.orgs").
+		Where("id = ?", orgID).
+		Update("hide_role_info", hideRoleInfo).
 		Error
 }
 

@@ -12,6 +12,7 @@ type APIContext struct {
 	OrgLicense       string           `json:"org_license"`
 	OrgLicenseData   *json.RawMessage `json:"org_license_data"`
 	OrgAnalyticsMode string           `json:"org_analytics_mode"`
+	OrgHideRoleInfo  bool             `json:"org_hide_role_info"`
 	UserID           string           `json:"user_id"`
 	UserName         string           `json:"user_name"`
 	UserEmail        string           `json:"user_email"`

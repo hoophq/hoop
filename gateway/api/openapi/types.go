@@ -1237,6 +1237,16 @@ type OrgAnalyticsModeResponse struct {
 	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 }
 
+// OrgHideRoleInfoRequest toggles whether connection/role secrets (envvars)
+// are blocked from being read back through the API for the organization.
+type OrgHideRoleInfoRequest struct {
+	HideRoleInfo *bool `json:"hide_role_info" binding:"required" example:"true"`
+}
+
+type OrgHideRoleInfoResponse struct {
+	HideRoleInfo bool `json:"hide_role_info" example:"true"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {

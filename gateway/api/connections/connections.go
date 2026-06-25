@@ -122,7 +122,7 @@ func Post(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusCreated, ToOpenApi(resp))
+	c.JSON(http.StatusCreated, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
 // Put Connection
@@ -176,7 +176,16 @@ func Put(c *gin.Context) {
 
 	// PUT keeps replace-the-whole-map semantics for legacy clients. Track the
 	// timestamp only when the resulting envs actually differ from what we had.
-	newEnvs := CoerceToMapString(req.Secrets)
+	var newEnvs map[string]string
+	// When the org blocks reading role secrets, the client receives masked
+	// envvars and cannot round-trip them. Overlay the incoming values onto
+	// the stored ones so only the fields that are not empty are updated.
+	if ctx.OrgHideRoleInfo {
+		updatedEnvs := CoerceToMapNullableString(req.Secrets)
+		newEnvs = overlaySecrets(conn.Envs, updatedEnvs)
+	} else {
+		newEnvs = CoerceToMapString(req.Secrets)
+	}
 	secretsUpdatedAt := conn.SecretsUpdatedAt
 	if !envsEqual(conn.Envs, newEnvs) {
 		now := time.Now().UTC()
@@ -233,7 +242,7 @@ func Put(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
 // Patch Connection
@@ -371,7 +380,7 @@ func Patch(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
 // DeleteConnection
@@ -471,7 +480,7 @@ func List(c *gin.Context) {
 			// it should return empty to avoid leaking sensitive content
 			// in the future we plan to know which entry is sensitive or not
 			conn.Envs = map[string]string{}
-			responseConnList[i] = ToOpenApi(&conn)
+			responseConnList[i] = ToOpenApi(&conn, ctx.OrgHideRoleInfo)
 		}
 
 		response := openapi.PaginatedResponse[openapi.Connection]{
@@ -498,7 +507,7 @@ func List(c *gin.Context) {
 		// it should return empty to avoid leaking sensitive content
 		// in the future we plan to know which entry is sensitive or not
 		conn.Envs = map[string]string{}
-		responseConnList = append(responseConnList, ToOpenApi(&conn))
+		responseConnList = append(responseConnList, ToOpenApi(&conn, ctx.OrgHideRoleInfo))
 
 	}
 	c.JSON(http.StatusOK, responseConnList)
@@ -526,7 +535,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	apiConn := ToOpenApi(conn)
+	apiConn := ToOpenApi(conn, ctx.OrgHideRoleInfo)
 	if orgID, err := uuid.Parse(ctx.OrgID); err == nil {
 		if rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit"); err == nil && rule != nil {
 			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
@@ -535,7 +544,7 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, apiConn)
 }
 
-func ToOpenApi(conn *models.Connection) openapi.Connection {
+func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 	var managedBy *string
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
@@ -554,7 +563,7 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 	// shouldRoundTripSecrets for the full policy and the security
 	// trade-off rationale.
 	publicEnvs := conn.Envs
-	if !shouldRoundTripSecrets(conn) {
+	if hideRoleInfo {
 		publicEnvs = stripInlineSecrets(conn.Envs)
 	}
 
