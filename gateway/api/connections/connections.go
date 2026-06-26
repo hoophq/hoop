@@ -298,19 +298,18 @@ func Patch(c *gin.Context) {
 		conn.SubType = sql.NullString{String: *req.SubType, Valid: *req.SubType != ""}
 	}
 	if req.Secrets != nil {
-		// PATCH on secrets uses merge semantics: keys in the request override
-		// (non-empty) or delete (empty value) the corresponding entry; keys
-		// absent from the request are preserved untouched. This is what lets
-		// the write-only UI submit only the secrets the user actually
-		// replaced or deleted, without ever needing to round-trip the
-		// existing values.
-		patch := CoerceToMapString(*req.Secrets)
-		merged, changed := mergeSecrets(conn.Envs, patch)
-		conn.Envs = merged
-		if changed {
-			now := time.Now().UTC()
-			conn.SecretsUpdatedAt = &now
+		var secrets map[string]string
+		if ctx.OrgHideRoleInfo {
+			updatedEnvs := CoerceToMapNullableString(*req.Secrets)
+			secrets = overlaySecrets(conn.Envs, updatedEnvs)
+		} else {
+			secrets = CoerceToMapString(*req.Secrets)
 		}
+
+		conn.Envs = secrets
+
+		now := time.Now().UTC()
+		conn.SecretsUpdatedAt = &now
 	}
 	if req.AgentId != nil {
 		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
