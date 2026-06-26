@@ -42,13 +42,61 @@
       :else
       final-value)))
 
+(defn- raw-credential-value
+  "Returns the plain string held by a role credential, unwrapping the
+  {:value :source} secrets-manager shape."
+  [v]
+  (cond
+    (map? v) (str (:value v ""))
+    (nil? v) ""
+    :else (str v)))
+
+(defn claude-code-vertex-remote-url
+  "Builds the Google Vertex AI host the agent proxies claude-code traffic to,
+  from the configured GCP region. A blank or \"global\" region resolves to the
+  global endpoint; any other region uses the regional endpoint."
+  [region]
+  (let [r (str/trim (or region ""))]
+    (if (or (str/blank? r) (= r "global"))
+      "https://aiplatform.googleapis.com"
+      (str "https://" r "-aiplatform.googleapis.com"))))
+
+(defn claude-code-secret-credentials
+  "Builds the credential map emitted for a claude-code role. The UI-only
+  \"provider\" marker and the inactive provider's fields are dropped so they
+  never leak into the connection secret. For the Google Vertex AI provider the
+  regional Vertex host is derived into REMOTE_URL (forced to manual-input so it
+  is never treated as a secret reference)."
+  [credentials]
+  (let [provider (raw-credential-value (get credentials "provider"))
+        insecure (get credentials "insecure" false)]
+    (if (= provider "vertex")
+      ;; The Vertex fields are entered as literal values (no source-selector),
+      ;; so they are forced to manual-input — otherwise a role configured for a
+      ;; secrets manager would prefix them as secret references.
+      {"REMOTE_URL" {:value (claude-code-vertex-remote-url
+                             (raw-credential-value (get credentials "GCP_REGION")))
+                     :source "manual-input"}
+       "GCP_SERVICE_ACCOUNT_JSON" {:value (raw-credential-value (get credentials "GCP_SERVICE_ACCOUNT_JSON"))
+                                   :source "manual-input"}
+       "GCP_PROJECT_ID" {:value (raw-credential-value (get credentials "GCP_PROJECT_ID"))
+                         :source "manual-input"}
+       "GCP_REGION" {:value (raw-credential-value (get credentials "GCP_REGION"))
+                     :source "manual-input"}
+       "insecure" insecure}
+      {"remote_url" (get credentials "remote_url")
+       "HEADER_X_API_KEY" (get credentials "HEADER_X_API_KEY")
+       "insecure" insecure})))
+
 (defn process-role-secret
   "Process role credentials into secret format with base64 encoding"
   [role]
   (let [subtype (:subtype role)
         connection-method (:connection-method role)
         secrets-provider (or (:secrets-manager-provider role) "vault-kv1")
-        credentials (:credentials role)
+        credentials (if (= subtype "claude-code")
+                      (claude-code-secret-credentials (:credentials role))
+                      (:credentials role))
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])
         config-files (or (:configuration-files role) [])
