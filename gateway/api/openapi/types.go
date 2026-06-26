@@ -2469,6 +2469,14 @@ type HttpProxyConnectionInfo struct {
 	ProxyToken string `json:"proxy_token"`
 	// The command to access the HTTP proxy instance
 	Command string `json:"command"`
+	// VertexProjectID is set only for claude-code connections federated to
+	// Google Vertex AI (experimental.claude_code_vertex). It is the GCP project
+	// `hoop claude configure` writes to ANTHROPIC_VERTEX_PROJECT_ID so Claude
+	// Code runs in Vertex mode against the hoop proxy. Empty otherwise.
+	VertexProjectID string `json:"vertex_project_id,omitempty"`
+	// VertexRegion is the GCP region (CLOUD_ML_REGION) for the Vertex-federated
+	// claude-code connection. Empty for non-Vertex connections.
+	VertexRegion string `json:"vertex_region,omitempty"`
 }
 
 type PostgresConnectionInfo struct {

@@ -10,6 +10,7 @@ import (
 	redactortypes "libhoop/redactor/types"
 	"strings"
 
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -102,6 +103,23 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		}
 		connenv.httpProxyHeaders["HEADER_AUTHORIZATION"] = connenv.kubernetesToken
 		connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.kubernetesInsecureSkipVerify)
+	}
+
+	// Google Vertex AI federation for claude-code connections: when the
+	// connection carries a service-account key and the feature is enabled,
+	// mint a short-lived OAuth bearer and inject it as the upstream
+	// Authorization header so Claude Code (running in Vertex mode) reaches
+	// Vertex as the connection's GCP identity. The bearer supersedes any
+	// static API-key header configured on the connection.
+	if connenv.gcpServiceAccountJSON != "" && featureflagstate.IsEnabled(claudeCodeVertexFlag) {
+		token, err := a.gcpVertexBearer(sessionID, connenv.gcpServiceAccountJSON)
+		if err != nil {
+			log.Infof("failed obtaining gcp vertex credentials, err=%v", err)
+			a.sendClientSessionClose(sessionID, fmt.Sprintf("failed obtaining GCP credentials: %v", err))
+			return
+		}
+		removeHeader(connenv.httpProxyHeaders, "HEADER_X_API_KEY")
+		connenv.httpProxyHeaders["HEADER_AUTHORIZATION"] = "Bearer " + token
 	}
 
 	// Build the per-connection AI session analyzer from the gateway-resolved

@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
@@ -77,6 +76,15 @@ type (
 		// it, async-dispatched goroutines could each miss the connStore
 		// cache and dial duplicate upstream SSH connections.
 		sshFlightGroup singleflight.Group
+
+		// gcpTokenSources caches one oauth2.TokenSource per session (keyed by
+		// gateway session ID) for claude-code connections that federate to
+		// Google Vertex AI. The source is built once from the connection's
+		// service-account key and reused for the life of the session so the
+		// bearer is minted lazily and auto-refreshed by the oauth2 library
+		// shortly before expiry — rather than re-minted on every proxied
+		// request. Entries are removed in sessionCleanup.
+		gcpTokenSources sync.Map
 	}
 	connEnv struct {
 		scheme             string
@@ -94,9 +102,15 @@ type (
 		connectionString   string
 		httpProxyRemoteURL string
 		httpProxyHeaders   map[string]string
-		awsRegion          string
-		awsSecretAccessKey string
-		awsAccessKeyID     string
+		// gcpServiceAccountJSON carries the GCP service-account key configured
+		// on a claude-code connection that federates to Google Vertex AI. When
+		// present (and the experimental.claude_code_vertex flag is on) the agent
+		// mints a short-lived OAuth bearer from it and injects it as the upstream
+		// Authorization header. Empty for every other connection.
+		gcpServiceAccountJSON string
+		awsRegion             string
+		awsSecretAccessKey    string
+		awsAccessKeyID        string
 
 		kubernetesClusterURL         string
 		kubernetesToken              string
@@ -440,6 +454,9 @@ func (a *Agent) sessionCleanup(sessionID string) {
 		a.connStore.Del(key)
 		a.connWriteLocks.Delete(key)
 	}
+	// Drop any cached Vertex token source so the service-account-derived
+	// credential does not outlive the session in agent memory.
+	a.gcpTokenSources.Delete(sessionID)
 }
 
 func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
@@ -738,9 +755,10 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
 		options:           envVarS.Getenv("OPTIONS"),
 		// this option is only used by mongodb at the momento
-		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
-		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
-		httpProxyHeaders:   httpProxyHeaders,
+		connectionString:      envVarS.Getenv("CONNECTION_STRING"),
+		httpProxyRemoteURL:    envVarS.Getenv("REMOTE_URL"),
+		httpProxyHeaders:      httpProxyHeaders,
+		gcpServiceAccountJSON: envVarS.Getenv("GCP_SERVICE_ACCOUNT_JSON"),
 
 		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
 		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),

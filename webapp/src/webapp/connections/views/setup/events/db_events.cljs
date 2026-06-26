@@ -533,3 +533,8 @@
  (fn [db [_ enabled?]]
    (assoc-in db [:connection-setup :claude-code-credentials :insecure] (boolean enabled?))))
 
+(rf/reg-event-db
+ :connection-setup/update-claude-code-provider
+ (fn [db [_ provider]]
+   (assoc-in db [:connection-setup :claude-code-credentials :provider] provider)))
+
