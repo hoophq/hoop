@@ -69,7 +69,12 @@ pub fn to_rgba(src: &[u8], width: usize, height: usize, bpp: usize) -> Option<Ve
 }
 
 /// Draws a decoded RGBA bitmap patch onto the framebuffer at (dst_x, dst_y).
-/// Out-of-bounds regions are clipped.
+/// Out-of-bounds regions are clipped. Returns whether any pixel actually
+/// CHANGED: RDP routinely resends byte-identical tiles (idle repaints, cursor
+/// trails, unchanged backgrounds), and a paint that changes nothing has no new
+/// content to analyze. Reporting "unchanged" lets the caller skip marking the
+/// region dirty, so it is not needlessly re-OCR'd — this is safe because the
+/// shadow canvas already holds (and already analyzed) those exact pixels.
 #[allow(clippy::too_many_arguments)] // mirrors the Go CompositeBitmap contract
 pub fn composite_bitmap(
     fb: &mut [u8],
@@ -80,7 +85,8 @@ pub fn composite_bitmap(
     patch_h: usize,
     dst_x: usize,
     dst_y: usize,
-) {
+) -> bool {
+    let mut changed = false;
     for row in 0..patch_h {
         let fb_y = dst_y + row;
         if fb_y >= fb_height {
@@ -93,11 +99,13 @@ pub fn composite_bitmap(
             }
             let si = (row * patch_w + col) * 4;
             let di = (fb_y * fb_width + fb_x) * 4;
-            if si + 4 <= patch.len() && di + 4 <= fb.len() {
+            if si + 4 <= patch.len() && di + 4 <= fb.len() && fb[di..di + 4] != patch[si..si + 4] {
                 fb[di..di + 4].copy_from_slice(&patch[si..si + 4]);
+                changed = true;
             }
         }
     }
+    changed
 }
 
 /// A growable RGBA framebuffer that mirrors the client's screen. Shared
@@ -120,9 +128,18 @@ impl ShadowCanvas {
     }
 
     /// Decodes one bitmap patch and draws it, growing the canvas if the
-    /// patch extends beyond it. Returns false when the patch cannot be
-    /// composited (oversized extent or decode failure) — fail-open for that
-    /// region.
+    /// patch extends beyond it. Returns whether the canvas CHANGED (any pixel
+    /// differs, or the canvas grew) — the caller marks the region dirty only
+    /// then, so byte-identical RDP repaints are not needlessly re-OCR'd.
+    /// Returns false when the patch cannot be composited (oversized extent or
+    /// decode failure) — fail-open for that region — and also false for a
+    /// successful but pixel-identical paint (nothing new to analyze).
+    ///
+    /// Skipping unchanged paints is safe for the guard: the shadow canvas
+    /// already holds those exact pixels, which were analyzed when they first
+    /// appeared, so there is no unanalyzed content to leak. The PDU is still
+    /// forwarded by the caller regardless of this return — only the OCR/analysis
+    /// decision is affected.
     pub fn composite(&mut self, patch: &BitmapPatch) -> bool {
         // Checked: geometry is wire-format u16 today, but a malformed or
         // future-widened extent must fail-open for the region (skip), never
@@ -165,10 +182,13 @@ impl ShadowCanvas {
             return false;
         };
 
-        if right > self.w || bottom > self.h {
+        let grew = if right > self.w || bottom > self.h {
             self.grow(right, bottom);
-        }
-        composite_bitmap(
+            true
+        } else {
+            false
+        };
+        let changed = composite_bitmap(
             &mut self.fb,
             self.w,
             self.h,
@@ -178,7 +198,9 @@ impl ShadowCanvas {
             patch.x,
             patch.y,
         );
-        true
+        // A grow always exposes new canvas area, so treat it as changed even if
+        // the painted pixels happened to match the (zeroed) new region.
+        changed || grew
     }
 
     /// Reallocates the framebuffer to cover at least (width x height),
@@ -273,6 +295,52 @@ mod tests {
 
         // Oversized extent must be rejected.
         assert!(!c.composite(&patch(MAX_CANVAS_DIM - 1, 0, 2, 2, red)));
+    }
+
+    #[test]
+    fn composite_reports_changed_only_on_pixel_change() {
+        let mut c = ShadowCanvas::new("t");
+        let red = [0x00, 0x00, 0xff]; // BGR red
+
+        // First paint of a region changes pixels (and grows the canvas).
+        assert!(c.composite(&patch(0, 0, 4, 4, red)), "first paint must report changed");
+        // Repainting the SAME region with the SAME color changes nothing.
+        assert!(
+            !c.composite(&patch(0, 0, 4, 4, red)),
+            "byte-identical repaint must report unchanged"
+        );
+        // Repainting with a different color changes pixels again.
+        let blue = [0xff, 0x00, 0x00]; // BGR blue
+        assert!(
+            c.composite(&patch(0, 0, 4, 4, blue)),
+            "different color must report changed"
+        );
+        // And again the identical (now-blue) repaint is unchanged.
+        assert!(
+            !c.composite(&patch(0, 0, 4, 4, blue)),
+            "identical blue repaint must report unchanged"
+        );
+    }
+
+    #[test]
+    fn first_paint_of_zero_pixels_counts_as_changed() {
+        // The canvas starts zeroed. A first paint whose decoded RGBA happens to
+        // be black (0,0,0) is byte-identical to the zeroed framebuffer — but it
+        // is NEW to the client and MUST be treated as changed (so it gets
+        // analyzed), which the `grew` guard guarantees. If this ever returned
+        // false, black-on-black content could reach the client unanalyzed.
+        let mut c = ShadowCanvas::new("t");
+        let black = [0x00, 0x00, 0x00]; // BGR black -> RGBA (0,0,0,255)
+        assert!(
+            c.composite(&patch(0, 0, 4, 4, black)),
+            "first paint into new canvas area must be changed even if pixels are black"
+        );
+        // A second identical black paint over the same (now-black) region is a
+        // true no-op and is correctly skipped.
+        assert!(
+            !c.composite(&patch(0, 0, 4, 4, black)),
+            "identical black repaint over existing black must be unchanged"
+        );
     }
 
     #[test]

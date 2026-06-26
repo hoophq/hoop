@@ -123,6 +123,12 @@ struct Window {
     ocr_bytes: u64,           // total BMP bytes sent this window
     ocr_calls: usize,         // total OCR round-trips this window (cache misses)
     ocr_chunks: usize,        // total chunks this window (hits + misses)
+
+    // Composite paint accounting: how many bitmap paints actually changed
+    // pixels vs total paints. RDP resends many byte-identical tiles; a low
+    // changed/total ratio means most repaints are no-ops we now skip.
+    paints_total: u64,
+    paints_changed: u64,
 }
 
 impl Window {
@@ -201,6 +207,17 @@ impl LatencyAggregator {
         self.push(|w| w.composite.push(as_micros(d)));
     }
 
+    /// Records bitmap-paint accounting for one batch: total paints vs paints
+    /// that actually changed pixels. A low changed/total ratio quantifies how
+    /// many byte-identical RDP repaints are being skipped (i.e. OCR work
+    /// avoided).
+    pub fn record_paints(&self, total: u64, changed: u64) {
+        self.push(|w| {
+            w.paints_total += total;
+            w.paints_changed += changed;
+        });
+    }
+
     /// Records the redaction (PDU rewrite + pixel blanking) for one batch.
     pub fn record_redact(&self, d: Duration) {
         self.push(|w| w.redact.push(as_micros(d)));
@@ -275,6 +292,8 @@ impl LatencyAggregator {
             ocr_calls = w.ocr_calls,
             ocr_chunks = w.ocr_chunks,
             ocr_sent_kib = ocr_kib,
+            paints_total = w.paints_total,
+            paints_changed = w.paints_changed,
             "piigate latency: composite[{}] ocr[{}] ocr_server[{}] presidio[{}] redact[{}] total[{}]",
             summarize(&mut w.composite),
             summarize(&mut w.ocr),

@@ -431,19 +431,29 @@ where
         let batch_started = std::time::Instant::now();
 
         let mut j = i;
+        let mut patches_total = 0usize;
+        let mut patches_changed = 0usize;
         let composite_started = std::time::Instant::now();
         while j < pdus.len() {
             if j > i && pdu_conflicts(dirty, &pdus[j]) {
                 break;
             }
             for p in &pdus[j].patches {
+                patches_total += 1;
+                // Only a paint that actually changed pixels (or grew the
+                // canvas) marks the region dirty — byte-identical RDP repaints
+                // carry no new content and must not trigger a re-OCR.
                 if canvas.composite(p) {
+                    patches_changed += 1;
                     dirty.add_rect(p.y, p.height);
                 }
             }
             j += 1;
         }
         shared.metrics.record_composite(composite_started.elapsed());
+        shared
+            .metrics
+            .record_paints(patches_total as u64, patches_changed as u64);
 
         let outcome = analyze_and_forward(shared, analyzer, sink, dirty, canvas, &pdus[i..j]).await;
         shared

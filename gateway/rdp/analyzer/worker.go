@@ -300,14 +300,21 @@ func getCanvasDimensions(session *models.Session) (int, int) {
 	return w, h
 }
 
-// CompositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer at (dstX, dstY).
+// CompositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer
+// at (dstX, dstY) and reports whether any pixel actually CHANGED.
+//
+// RDP routinely resends byte-identical tiles (idle repaints, unchanged
+// backgrounds); a paint that changes nothing has no new content to analyze, so
+// the realtime gate uses the return value to skip marking that region dirty.
+// Callers that don't care (full-frame analysis, rdpbench) simply ignore it.
 //
 // Contract: framebuffer must be RGBA (4 bytes/pixel, top-down) with
 // len >= fbWidth*fbHeight*4, and patch must be RGBA with len >= patchW*patchH*4
 // (as produced by rle.ToRGBA / rle.DecompressToRGBA). Out-of-bounds regions are
 // clipped. The function does no locking: callers sharing the framebuffer across
 // goroutines must synchronize externally.
-func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) {
+func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) bool {
+	changed := false
 	for row := 0; row < patchH; row++ {
 		fbY := dstY + row
 		if fbY < 0 || fbY >= fbHeight {
@@ -323,13 +330,20 @@ func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, pa
 			si := srcOff + col*4
 			di := dstOff + col*4
 			if si+3 < len(patch) && di+3 < len(framebuffer) {
-				framebuffer[di] = patch[si]
-				framebuffer[di+1] = patch[si+1]
-				framebuffer[di+2] = patch[si+2]
-				framebuffer[di+3] = patch[si+3]
+				if framebuffer[di] != patch[si] ||
+					framebuffer[di+1] != patch[si+1] ||
+					framebuffer[di+2] != patch[si+2] ||
+					framebuffer[di+3] != patch[si+3] {
+					framebuffer[di] = patch[si]
+					framebuffer[di+1] = patch[si+1]
+					framebuffer[di+2] = patch[si+2]
+					framebuffer[di+3] = patch[si+3]
+					changed = true
+				}
 			}
 		}
 	}
+	return changed
 }
 
 // SampleFramebuffer extracts every 64th scanline from the framebuffer for fast hashing.

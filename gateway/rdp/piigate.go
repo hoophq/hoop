@@ -561,8 +561,17 @@ type shadowCanvas struct {
 }
 
 // composite decodes one bitmap patch and draws it, growing the canvas if the
-// patch extends beyond it. Returns false when the patch cannot be composited
-// (oversized extent or decode failure) — fail-open for that region.
+// patch extends beyond it. Returns whether the canvas CHANGED (any pixel
+// differs, or the canvas grew) — the caller marks the region dirty only then,
+// so byte-identical RDP repaints are not needlessly re-OCR'd. Returns false
+// when the patch cannot be composited (oversized extent or decode failure) —
+// fail-open for that region — and also false for a successful pixel-identical
+// paint (nothing new to analyze).
+//
+// Skipping unchanged paints is safe for the guard: the shadow canvas already
+// holds (and already analyzed) those exact pixels, so there is no unanalyzed
+// content to leak. The PDU is still forwarded regardless of this return — only
+// the OCR/analysis decision is affected.
 func (c *shadowCanvas) composite(bmp parser.BitmapRect, data []byte) bool {
 	right, bottom := int(bmp.X)+int(bmp.Width), int(bmp.Y)+int(bmp.Height)
 	if right > maxCanvasDim || bottom > maxCanvasDim {
@@ -580,11 +589,15 @@ func (c *shadowCanvas) composite(bmp parser.BitmapRect, data []byte) bool {
 		log.With("sid", c.sessionID).Debugf("piigate: bitmap decode error: %v", err)
 		return false
 	}
+	grew := false
 	if right > c.w || bottom > c.h {
 		c.grow(right, bottom)
+		grew = true
 	}
-	analyzer.CompositeBitmap(c.fb, c.w, c.h, rgba, int(bmp.Width), int(bmp.Height), int(bmp.X), int(bmp.Y))
-	return true
+	changed := analyzer.CompositeBitmap(c.fb, c.w, c.h, rgba, int(bmp.Width), int(bmp.Height), int(bmp.X), int(bmp.Y))
+	// A grow exposes new canvas area, so treat it as changed even if the
+	// painted pixels matched the (zeroed) new region.
+	return changed || grew
 }
 
 // grow reallocates the framebuffer to cover at least (width x height),
