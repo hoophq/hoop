@@ -13,7 +13,6 @@ var secretReferencePrefixes = []string{
 	"_envjson:",
 	"_vaultkv1:",
 	"_vaultkv2:",
-	"_aws_iam_rds:",
 }
 
 // IsSecretReference reports whether a base64-encoded envvar value decodes
@@ -31,24 +30,6 @@ func IsSecretReference(encodedValue string) bool {
 		if strings.HasPrefix(plain, prefix) {
 			return true
 		}
-	}
-	return false
-}
-
-// isBooleanValue reports whether an encoded envvar value decodes to
-// "true" or "false". Boolean toggles aren't secrets and round-trip so
-// the UI can render their current state.
-func isBooleanValue(encodedValue string) bool {
-	if encodedValue == "" {
-		return false
-	}
-	decoded, err := base64.StdEncoding.DecodeString(encodedValue)
-	if err != nil {
-		return false
-	}
-	switch string(decoded) {
-	case "true", "false":
-		return true
 	}
 	return false
 }
@@ -71,7 +52,7 @@ func stripInlineSecrets(envs map[string]string) map[string]any {
 	}
 	out := make(map[string]any, len(envs))
 	for k, v := range envs {
-		if IsSecretReference(v) || isBooleanValue(v) {
+		if IsSecretReference(v) {
 			out[k] = v
 			continue
 		}
