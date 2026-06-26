@@ -1,17 +1,16 @@
-import { Group, Stack, Text } from '@mantine/core'
+import { Group, Stack } from '@mantine/core'
 import { Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import SourcedInput from '@/components/SourcedInput'
-import MarkdownText from '@/components/MarkdownText'
+import FieldLabel from './FieldLabel'
 import { sourceOptionsFor } from './util'
 
-// The "new" state of SecretField: there is no existing value (the key
-// isn't on the connection), so we render a plain editable input.
-// onRemove is optional — custom-type rows expose it; predefined fields
-// don't.
+// The "new" state of SecretField: no existing value (the key isn't on the
+// connection), so we render a plain editable input — same as the rest of
+// the form. onRemove is optional: custom-type rows expose it, predefined
+// fields don't.
 export default function NewInput({
   label,
-  description,
   required,
   placeholder,
   type,
@@ -25,17 +24,18 @@ export default function NewInput({
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
-        <Group gap={4}>
-          <Text size="sm" fw={500}>{label}</Text>
-          {required && <Text size="sm" c="red">*</Text>}
-        </Group>
+        <FieldLabel label={label} required={required} />
         {onRemove && (
-          <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove field">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            onClick={onRemove}
+            aria-label="Remove field"
+          >
             <Trash2 size={16} />
           </ActionIcon>
         )}
       </Group>
-      {description && <MarkdownText>{description}</MarkdownText>}
       <SourcedInput
         type={type}
         required={required}
