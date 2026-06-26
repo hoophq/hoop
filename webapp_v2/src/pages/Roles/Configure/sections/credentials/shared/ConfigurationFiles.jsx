@@ -88,7 +88,7 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
   )
 }
 
-export default function ConfigurationFilesSection({ connection, hideRoleInfo }) {
+export default function ConfigurationFiles({ connection, hideRoleInfo }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const renames = useConfigureRoleStore((s) => s.renames)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)

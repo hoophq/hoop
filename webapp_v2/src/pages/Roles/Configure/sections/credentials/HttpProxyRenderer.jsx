@@ -1,8 +1,8 @@
 import { Stack, Title } from '@mantine/core'
 import PredefinedFields from './shared/PredefinedFields'
-import HttpHeadersSection from './shared/HttpHeadersSection'
-import AllowInsecureSslSection from './shared/AllowInsecureSslSection'
-import AgentSelectorSection from './shared/AgentSelectorSection'
+import HttpHeaders from './shared/HttpHeaders'
+import AllowInsecureSsl from './shared/AllowInsecureSsl'
+import AgentSelector from './shared/AgentSelector'
 
 // Generic HTTP proxy renderer for the non-Claude httpproxy subtypes
 // (web-application, grafana, kibana). The catalog only carries
@@ -35,13 +35,13 @@ export default function HttpProxyRenderer({
           hideRoleInfo={hideRoleInfo}
         />
       </Stack>
-      <HttpHeadersSection
+      <HttpHeaders
         connection={connection}
         availableSources={availableSources}
         hideRoleInfo={hideRoleInfo}
       />
-      <AllowInsecureSslSection connection={connection} />
-      <AgentSelectorSection />
+      <AllowInsecureSsl connection={connection} />
+      <AgentSelector />
     </Stack>
   )
 }

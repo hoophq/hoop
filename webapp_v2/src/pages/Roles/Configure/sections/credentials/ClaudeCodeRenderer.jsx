@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { Stack, Title } from '@mantine/core'
 import PredefinedFields from './shared/PredefinedFields'
-import HttpHeadersSection from './shared/HttpHeadersSection'
-import AllowInsecureSslSection from './shared/AllowInsecureSslSection'
-import AgentSelectorSection from './shared/AgentSelectorSection'
+import HttpHeaders from './shared/HttpHeaders'
+import AllowInsecureSsl from './shared/AllowInsecureSsl'
+import AgentSelector from './shared/AgentSelector'
 import { useConfigureRoleStore } from '../../store'
 
 // Claude Code httpproxy connection. Catalog's `httpproxy/claude-code`
@@ -25,7 +25,7 @@ const CLAUDE_CODE_FIELDS = [
 ]
 
 // HEADER_X_API_KEY is rendered as a dedicated Anthropic API Key field
-// above; HttpHeadersSection hides it so it doesn't appear twice.
+// above; HttpHeaders hides it so it doesn't appear twice.
 const HEADERS_EXCLUDE = ['envvar:HEADER_X_API_KEY']
 
 const LEGACY_API_KEY = 'envvar:X_API_KEY'
@@ -74,14 +74,14 @@ export default function ClaudeCodeRenderer({
           hideRoleInfo={hideRoleInfo}
         />
       </Stack>
-      <HttpHeadersSection
+      <HttpHeaders
         connection={connection}
         availableSources={availableSources}
         excludeKeys={HEADERS_EXCLUDE}
         hideRoleInfo={hideRoleInfo}
       />
-      <AllowInsecureSslSection connection={connection} />
-      <AgentSelectorSection />
+      <AllowInsecureSsl connection={connection} />
+      <AgentSelector />
     </Stack>
   )
 }
