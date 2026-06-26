@@ -1,20 +1,37 @@
 import { useState } from 'react'
-import ReadOnlyStatus from './ReadOnlyStatus'
-import ReplacingInput from './ReplacingInput'
-import NewInput from './NewInput'
+import { Group, Stack, Text, ThemeIcon } from '@mantine/core'
+import { Check, PencilLine, Trash2 } from 'lucide-react'
+import TextInput from '@/components/TextInput'
+import Textarea from '@/components/Textarea'
+import SourcedInput from '@/components/SourcedInput'
+import ActionIcon from '@/components/ActionIcon'
+import InlineAction from './InlineAction'
+import { sourceOptionsFor, SECRET_MASK } from './util'
+import classes from './SecretField.module.css'
 
-// SecretField — write-only credential editor.
-//
-// Renders one of three mutually-exclusive states:
-//   * "set"      — an existing inline secret. The value is never shown; a
-//                  masked input offers Replace. References render their
-//                  pointer text verbatim.
-//   * "editing"  — the user clicked Replace or is staging a new value.
-//                  Restore drops the staged change.
-//   * "new"      — no existing value (key absent); a plain editable input.
-//
-// stagedAction === 'replace' | 'new' takes priority over the underlying
-// connection state.
+const RIGHT_SECTION_WIDTH = 112
+
+// Leading status icon inside the field: a check for a stored value, a
+// pencil while editing.
+function LeadingIcon({ color, children }) {
+  return (
+    <ThemeIcon size="sm" radius="xl" variant="light" color={color}>
+      {children}
+    </ThemeIcon>
+  )
+}
+
+// SecretField — write-only credential editor. One component, three
+// variations selected from its props:
+//   set      → a stored secret; the value is never shown (masked input +
+//              Replace). Provider references show their pointer text.
+//   editing  → replacing or staging a value; plaintext + Restore. The
+//              Secrets Manager source picker stays; otherwise a pencil
+//              marks the field as edited.
+//   new      → no stored value yet; a plain editable input (+ optional
+//              remove for free-form rows).
+// The Replace/Restore control is likewise one component with variants —
+// see InlineAction.
 export default function SecretField({
   label,
   required = false,
@@ -34,65 +51,163 @@ export default function SecretField({
   onRemove,
 }) {
   const [editing, setEditing] = useState(false)
+  const isTextarea = type === 'textarea'
+  const showPicker = Array.isArray(availableSources) && availableSources.length > 1
 
-  const state = (() => {
-    if (stagedAction === 'replace' || stagedAction === 'new' || editing) return 'editing'
-    if (!isExisting) return 'new'
-    return 'set'
-  })()
+  const state =
+    stagedAction === 'replace' || stagedAction === 'new' || editing
+      ? 'editing'
+      : isExisting
+        ? 'set'
+        : 'new'
+
+  if (state === 'set') {
+    const Input = isTextarea ? Textarea : TextInput
+    const maskedValue = isTextarea
+      ? [SECRET_MASK, SECRET_MASK, SECRET_MASK].join('\n')
+      : SECRET_MASK
+    return (
+      <Input
+        label={label}
+        withAsterisk={required}
+        readOnly
+        value={isReference ? referenceText : maskedValue}
+        leftSection={
+          <LeadingIcon color={isReference ? 'indigo' : 'green'}>
+            <Check size={12} />
+          </LeadingIcon>
+        }
+        rightSection={
+          <InlineAction
+            kind="replace"
+            onClick={() => {
+              setEditing(true)
+              onReplace('') // stage empty so HTML5 required validation works
+            }}
+          />
+        }
+        rightSectionWidth={RIGHT_SECTION_WIDTH}
+        rightSectionPointerEvents="auto"
+        classNames={isTextarea ? { section: classes.topSection } : undefined}
+      />
+    )
+  }
 
   if (state === 'editing') {
-    return (
-      <ReplacingInput
-        label={label}
-        required={required}
-        placeholder={placeholder}
-        type={type}
-        value={stagedValue}
-        onChange={(plain) => {
-          if (!stagedAction) onReplace(plain)
-          else onChangeStaged(plain)
-        }}
-        onCancel={() => {
+    const handleChange = (plain) =>
+      stagedAction ? onChangeStaged(plain) : onReplace(plain)
+    const restore = (
+      <InlineAction
+        kind="restore"
+        onClick={() => {
           setEditing(false)
           onCancel()
         }}
-        source={source}
-        availableSources={availableSources}
-        onSourceChange={onSourceChange}
+      />
+    )
+    const placeholderText = placeholder || 'Enter new value'
+
+    if (isTextarea) {
+      return (
+        <Textarea
+          label={label}
+          withAsterisk={required}
+          required={required}
+          autoFocus
+          autosize
+          minRows={4}
+          placeholder={placeholderText}
+          value={stagedValue}
+          onChange={(e) => handleChange(e.currentTarget.value)}
+          leftSection={
+          <LeadingIcon color="gray">
+            <PencilLine size={12} />
+          </LeadingIcon>
+        }
+          rightSection={restore}
+          rightSectionWidth={RIGHT_SECTION_WIDTH}
+          rightSectionPointerEvents="auto"
+          classNames={{ section: classes.topSection }}
+        />
+      )
+    }
+
+    if (showPicker) {
+      return (
+        <SourcedInput
+          label={label}
+          required={required}
+          type="text"
+          autoFocus
+          placeholder={placeholderText}
+          value={stagedValue}
+          onChange={handleChange}
+          source={source}
+          sources={sourceOptionsFor(availableSources)}
+          onSourceChange={onSourceChange}
+          rightSection={restore}
+          rightSectionWidth={RIGHT_SECTION_WIDTH}
+          rightSectionPointerEvents="auto"
+        />
+      )
+    }
+
+    return (
+      <TextInput
+        label={label}
+        withAsterisk={required}
+        required={required}
+        autoFocus
+        placeholder={placeholderText}
+        value={stagedValue}
+        onChange={(e) => handleChange(e.currentTarget.value)}
+        leftSection={
+          <LeadingIcon color="gray">
+            <PencilLine size={12} />
+          </LeadingIcon>
+        }
+        rightSection={restore}
+        rightSectionWidth={RIGHT_SECTION_WIDTH}
+        rightSectionPointerEvents="auto"
       />
     )
   }
 
-  if (state === 'new') {
-    return (
-      <NewInput
-        label={label}
-        required={required}
-        placeholder={placeholder}
+  // state === 'new'
+  return (
+    <Stack gap="xs">
+      <Group justify="space-between" align="center">
+        <Group gap={4}>
+          <Text size="sm" fw={500}>
+            {label}
+          </Text>
+          {required && (
+            <Text size="sm" c="red">
+              *
+            </Text>
+          )}
+        </Group>
+        {onRemove && (
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            onClick={onRemove}
+            aria-label="Remove field"
+          >
+            <Trash2 size={16} />
+          </ActionIcon>
+        )}
+      </Group>
+      <SourcedInput
         type={type}
+        required={required}
+        placeholder={placeholder || 'Enter value'}
         value={stagedValue}
         onChange={(plain) => onReplace(plain)}
-        onRemove={onRemove}
         source={source}
-        availableSources={availableSources}
+        sources={sourceOptionsFor(availableSources)}
         onSourceChange={onSourceChange}
       />
-    )
-  }
-
-  return (
-    <ReadOnlyStatus
-      label={label}
-      required={required}
-      type={type}
-      isReference={isReference}
-      referenceText={referenceText}
-      onReplace={() => {
-        setEditing(true)
-        // Start staged empty so HTML5 required validation works.
-        onReplace('')
-      }}
-    />
+    </Stack>
   )
 }
