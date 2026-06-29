@@ -40,10 +40,16 @@ func resolveWaitTimeout(seconds int) time.Duration {
 // fn is invoked once eagerly so an already-terminal state returns
 // immediately without a poll-interval delay. On timeout, fn is invoked one
 // more time so the response reflects the most recent state.
+//
+// onTick, if non-nil, is invoked with the elapsed time after every poll that
+// leaves the wait still pending. It is used to emit a heartbeat on the request
+// stream (see newWaitHeartbeat) so the long-poll HTTP connection is not torn
+// down by intermediate proxies or clients. onTick must not block.
 func waitUntil[T any](
 	ctx context.Context,
 	timeout time.Duration,
 	fn func() (T, bool, error),
+	onTick func(elapsed time.Duration),
 ) (T, bool, time.Duration, error) {
 	started := time.Now()
 
@@ -71,6 +77,9 @@ func waitUntil[T any](
 			val, done, err = fn()
 			if err != nil || done {
 				return val, false, time.Since(started), err
+			}
+			if onTick != nil {
+				onTick(time.Since(started))
 			}
 		}
 	}
