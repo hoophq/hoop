@@ -129,6 +129,17 @@ struct Window {
     // changed/total ratio means most repaints are no-ops we now skip.
     paints_total: u64,
     paints_changed: u64,
+
+    // Changed-rectangle geometry accounting (diagnostic for 2D rect-scoped
+    // OCR). For each changed patch we sum the TIGHT rect area (w*h) and the
+    // FULL-WIDTH-band area (canvas_width*h) that the current full-width band
+    // model actually OCRs. The ratio tight/fullwidth is the upper bound on the
+    // pixel-area (hence OCR cost) that horizontal scoping could save: ~1.0
+    // means RDP already sends full-width rows (scoping buys nothing); small
+    // means most changes are narrow and we are over-OCRing badly.
+    patch_tight_px: u64,
+    patch_fullwidth_px: u64,
+    patch_max_width: u32, // widest single changed patch seen this window
 }
 
 impl Window {
@@ -223,6 +234,22 @@ impl LatencyAggregator {
         self.push(|w| w.redact.push(as_micros(d)));
     }
 
+    /// Records the geometry of one changed bitmap patch: its tight area
+    /// (`width*height`) and the full-canvas-width band area
+    /// (`canvas_width*height`) that the current full-width band model OCRs for
+    /// it. Aggregated into `patch_tight_px` / `patch_fullwidth_px`; their ratio
+    /// quantifies how much horizontal (2D) rect scoping could reduce OCR pixel
+    /// area. Pure diagnostics — no effect on enforcement.
+    pub fn record_patch_geometry(&self, width: u32, height: u32, canvas_width: u32) {
+        self.push(|w| {
+            w.patch_tight_px += u64::from(width) * u64::from(height);
+            w.patch_fullwidth_px += u64::from(canvas_width) * u64::from(height);
+            if width > w.patch_max_width {
+                w.patch_max_width = width;
+            }
+        });
+    }
+
     /// Records the end-to-end batch latency (analysis start to forward/drop)
     /// plus the batch's metadata. This is the per-batch anchor: it increments
     /// the batch counter, so it must be called once per analyzed batch.
@@ -294,6 +321,16 @@ impl LatencyAggregator {
             ocr_sent_kib = ocr_kib,
             paints_total = w.paints_total,
             paints_changed = w.paints_changed,
+            patch_tight_kpx = (w.patch_tight_px / 1024),
+            patch_fullwidth_kpx = (w.patch_fullwidth_px / 1024),
+            // Fraction of full-width OCR pixel area that the tight changed
+            // rects actually cover. Small => big headroom for 2D scoping.
+            patch_tight_ratio = if w.patch_fullwidth_px > 0 {
+                (w.patch_tight_px as f64) / (w.patch_fullwidth_px as f64)
+            } else {
+                0.0
+            },
+            patch_max_width = w.patch_max_width,
             "piigate latency: composite[{}] ocr[{}] ocr_server[{}] presidio[{}] redact[{}] total[{}]",
             summarize(&mut w.composite),
             summarize(&mut w.ocr),
@@ -421,6 +458,96 @@ mod tests {
         assert_eq!(w.ocr_bytes, 300);
         assert_eq!(w.ocr_calls, 3);
         assert_eq!(w.ocr_chunks, 3);
+    }
+
+    #[test]
+    fn patch_geometry_accumulates_tight_fullwidth_and_max() {
+        let agg = LatencyAggregator::new("sid");
+        // Two narrow patches on a 1920-wide canvas.
+        agg.record_patch_geometry(200, 20, 1920); // tight 4000, full 38400
+        agg.record_patch_geometry(640, 30, 1920); // tight 19200, full 57600
+        let w = agg.window.lock();
+        assert_eq!(w.patch_tight_px, 4000 + 19200);
+        assert_eq!(w.patch_fullwidth_px, 38400 + 57600);
+        assert_eq!(w.patch_max_width, 640, "tracks the widest patch");
+        // The logged ratio = tight/fullwidth; here ~0.24 -> big scoping
+        // headroom. (Guarded against div-by-zero when fullwidth_px == 0.)
+        let ratio = (w.patch_tight_px as f64) / (w.patch_fullwidth_px as f64);
+        assert!(ratio > 0.23 && ratio < 0.25, "ratio {ratio}");
+    }
+
+    #[test]
+    fn patch_geometry_full_width_patch_ratio_is_one() {
+        // A full-canvas-width patch: tight == fullwidth, so scoping saves
+        // nothing and the ratio is 1.0 (the "RDP sends full rows" case).
+        let agg = LatencyAggregator::new("sid");
+        agg.record_patch_geometry(1920, 40, 1920);
+        let w = agg.window.lock();
+        assert_eq!(w.patch_tight_px, w.patch_fullwidth_px);
+        assert_eq!(w.patch_max_width, 1920);
+    }
+
+    // End-to-end check that the WINDOW LOG LINE actually emits the new
+    // patch-geometry fields (not just that the struct accumulates). Installs a
+    // capturing tracing layer, drives a full window, flushes, and asserts the
+    // recorded event carries the new field names with sane values. This is the
+    // "does it really show up in the agent log" test.
+    #[test]
+    fn window_log_emits_patch_geometry_fields() {
+        use std::sync::Mutex as StdMutex;
+        use tracing::field::{Field, Visit};
+        use tracing::Subscriber;
+        use tracing_subscriber::layer::{Context, Layer};
+        use tracing_subscriber::prelude::*;
+
+        #[derive(Default)]
+        struct Captured {
+            fields: std::collections::HashMap<String, String>,
+        }
+        #[derive(Clone)]
+        struct CapLayer(Arc<StdMutex<Captured>>);
+        struct V<'a>(&'a mut Captured);
+        impl Visit for V<'_> {
+            fn record_debug(&mut self, f: &Field, value: &dyn std::fmt::Debug) {
+                self.0.fields.insert(f.name().to_string(), format!("{value:?}"));
+            }
+            fn record_f64(&mut self, f: &Field, value: f64) {
+                self.0.fields.insert(f.name().to_string(), value.to_string());
+            }
+            fn record_u64(&mut self, f: &Field, value: u64) {
+                self.0.fields.insert(f.name().to_string(), value.to_string());
+            }
+        }
+        impl<S: Subscriber> Layer<S> for CapLayer {
+            fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+                let mut cap = self.0.lock().unwrap();
+                event.record(&mut V(&mut cap));
+            }
+        }
+
+        let cap = Arc::new(StdMutex::new(Captured::default()));
+        let subscriber = tracing_subscriber::registry().with(CapLayer(cap.clone()));
+
+        tracing::subscriber::with_default(subscriber, || {
+            let agg = LatencyAggregator::new("sid");
+            agg.record_batch(Duration::from_millis(5), 1024, false);
+            agg.record_patch_geometry(200, 20, 1920); // tight 4000 / full 38400
+            agg.record_patch_geometry(640, 30, 1920); // tight 19200 / full 57600
+            agg.flush_final(); // emits the window log event
+        });
+
+        let cap = cap.lock().unwrap();
+        // tight = 23200 px -> /1024 = 22 kpx; full = 96000 px -> 93 kpx.
+        assert_eq!(cap.fields.get("patch_tight_kpx").map(String::as_str), Some("22"));
+        assert_eq!(cap.fields.get("patch_fullwidth_kpx").map(String::as_str), Some("93"));
+        assert_eq!(cap.fields.get("patch_max_width").map(String::as_str), Some("640"));
+        let ratio: f64 = cap
+            .fields
+            .get("patch_tight_ratio")
+            .expect("ratio field present in log")
+            .parse()
+            .expect("ratio is numeric");
+        assert!(ratio > 0.23 && ratio < 0.25, "logged ratio {ratio}");
     }
 
     #[test]

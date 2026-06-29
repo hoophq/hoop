@@ -446,6 +446,15 @@ where
                 if canvas.composite(p) {
                     patches_changed += 1;
                     dirty.add_rect(p.y, p.height);
+                    // Diagnostic: record the changed patch's tight geometry vs
+                    // the full-canvas-width band we actually OCR for it. The
+                    // aggregated ratio tells us how much 2D (horizontal) rect
+                    // scoping could cut OCR pixel area before we build it.
+                    shared.metrics.record_patch_geometry(
+                        p.width as u32,
+                        p.height as u32,
+                        canvas.w as u32,
+                    );
                 }
             }
             j += 1;
