@@ -160,6 +160,63 @@ struct GateState {
     closed: bool,
 }
 
+/// The set of PII regions currently on the client's screen that must keep being
+/// blanked on every forwarded frame. Detections persist here across batches
+/// (OCR runs only on dirty bands, so a static secret is not re-detected every
+/// frame) and are reconciled away only when a RE-OCR of their band confirms
+/// they are gone. Owned by the single analysis task; not shared, so no lock.
+#[derive(Default)]
+struct ActivePii {
+    rects: Vec<presidio::EntityDetection>,
+}
+
+impl ActivePii {
+    /// Reconciles the active set after a batch whose CHANGED regions are
+    /// `bands` (derived from patches that actually altered pixels) and whose
+    /// fresh OCR of those regions produced `fresh`.
+    ///
+    /// The invariant: a redacted region must keep being blanked until its
+    /// PIXELS change. The shadow canvas holds the true (unredacted) screen while
+    /// the client holds the redacted version, so a byte-identical RDP repaint of
+    /// a redacted region (which `composite` reports as "unchanged", hence NOT in
+    /// `bands`) would otherwise be forwarded unredacted and re-expose the
+    /// secret. Keeping such untouched rects active prevents that.
+    ///
+    /// An active rect is DROPPED when either:
+    ///   - a changed band overlaps it (its pixels changed -> this batch re-OCR'd
+    ///     that region, so `fresh` is authoritative for it now), or
+    ///   - a fresh detection overlaps it (the same line was re-detected, possibly
+    ///     shifted by a reflow -> the fresh rect supersedes the stale one).
+    ///
+    /// The second clause prevents stale rects from accumulating when text
+    /// reflows a few pixels (zoom/scroll) so the new detection's band does not
+    /// perfectly cover the old rect's position.
+    ///
+    /// Returns the full set to blank this batch (survivors + fresh).
+    fn reconcile(
+        &mut self,
+        bands: &[bands::YBand],
+        fresh: Vec<presidio::EntityDetection>,
+    ) -> &[presidio::EntityDetection] {
+        let overlaps_band = |r: &presidio::EntityDetection| {
+            let (y0, y1) = (r.y, r.y + r.height);
+            bands.iter().any(|b| y0 < b.y1 && b.y0 < y1)
+        };
+        let overlaps_fresh = |r: &presidio::EntityDetection| {
+            fresh.iter().any(|f| {
+                r.x < f.x + f.width
+                    && f.x < r.x + r.width
+                    && r.y < f.y + f.height
+                    && f.y < r.y + r.height
+            })
+        };
+        self.rects
+            .retain(|r| !overlaps_band(r) && !overlaps_fresh(r));
+        self.rects.extend(fresh);
+        &self.rects
+    }
+}
+
 struct GateShared {
     session_id: String,
     state: Mutex<GateState>,
@@ -379,6 +436,14 @@ async fn run_analysis_loop<W>(
 ) where
     W: AsyncWrite + Unpin + Send + 'static,
 {
+    // Sticky PII set: detections persist across batches until a RE-OCR of their
+    // screen region confirms they are gone. OCR only runs on dirty bands, so a
+    // static on-screen secret stops being re-detected once its line stops
+    // changing; without persistence a later repaint (scroll, restore, RDP
+    // resend) could re-deliver it unredacted. Owned by the single analysis task
+    // alongside `dirty`/`canvas`, so no locking is needed.
+    let mut active_pii = ActivePii::default();
+
     loop {
         tokio::select! {
             _ = shared.notify.notified() => {}
@@ -396,7 +461,17 @@ async fn run_analysis_loop<W>(
                 }
             };
             let Some(pdus) = pdus else { break };
-            if !process_pdus(shared, analyzer, &mut sink, &mut dirty, &mut canvas, pdus).await {
+            if !process_pdus(
+                shared,
+                analyzer,
+                &mut sink,
+                &mut dirty,
+                &mut canvas,
+                &mut active_pii,
+                pdus,
+            )
+            .await
+            {
                 return;
             }
         }
@@ -418,6 +493,7 @@ async fn process_pdus<W>(
     sink: &mut W,
     dirty: &mut DirtyBands,
     canvas: &mut ShadowCanvas,
+    active_pii: &mut ActivePii,
     pdus: Vec<GatePdu>,
 ) -> bool
 where
@@ -464,7 +540,9 @@ where
             .metrics
             .record_paints(patches_total as u64, patches_changed as u64);
 
-        let outcome = analyze_and_forward(shared, analyzer, sink, dirty, canvas, &pdus[i..j]).await;
+        let outcome =
+            analyze_and_forward(shared, analyzer, sink, dirty, canvas, active_pii, &pdus[i..j])
+                .await;
         shared
             .metrics
             .record_batch(batch_started.elapsed(), outcome.forwarded_bytes, outcome.detection);
@@ -503,6 +581,7 @@ async fn analyze_and_forward<W>(
     sink: &mut W,
     dirty: &mut DirtyBands,
     canvas: &mut ShadowCanvas,
+    active_pii: &mut ActivePii,
     batch: &[GatePdu],
 ) -> BatchOutcome
 where
@@ -520,6 +599,8 @@ where
         })
         .collect();
 
+    // This batch's freshly-OCR'd detections (empty when no band was dirty).
+    let mut fresh = SnapshotResult::default();
     if !bands.is_empty() {
         // Cancellation drops the analysis future (aborting its in-flight
         // HTTP requests) — a hung OCR sidecar must never wedge teardown.
@@ -558,22 +639,34 @@ where
                 }
                 return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: false };
             }
-            Ok(res) if res.is_detection() => {
-                return on_detection(shared, sink, canvas, batch, res).await;
+            Ok(res) => {
+                fresh = res;
             }
-            Ok(_) => {}
         }
     }
 
-    let batch_bytes: u64 = batch.iter().map(|p| p.data.len() as u64).sum();
-    let proceed = forward_batch(shared, sink, batch).await;
-    BatchOutcome {
-        proceed,
-        // On a forward failure nothing useful reached the client; count the
-        // batch as forwarded only when the write succeeded.
-        forwarded_bytes: if proceed { batch_bytes } else { 0 },
-        detection: false,
+    // Reconcile the sticky PII set with this batch's fresh OCR: rects whose band
+    // was re-analyzed are replaced by the fresh result (so removed PII is
+    // released and persisting PII is refreshed), while rects in bands not
+    // analyzed this frame are kept. The returned slice is everything that must
+    // be blanked on THIS forwarded frame — the fix for "a static secret stops
+    // being redacted once its line stops changing".
+    let counts = fresh.counts.clone();
+    let to_blank = active_pii.reconcile(&bands, fresh.detections);
+
+    if to_blank.is_empty() {
+        // No PII anywhere on screen: forward the batch untouched.
+        let batch_bytes: u64 = batch.iter().map(|p| p.data.len() as u64).sum();
+        let proceed = forward_batch(shared, sink, batch).await;
+        return BatchOutcome {
+            proceed,
+            forwarded_bytes: if proceed { batch_bytes } else { 0 },
+            detection: false,
+        };
     }
+
+    // PII present (fresh and/or sticky): redact every active rect this frame.
+    on_detection(shared, sink, canvas, batch, to_blank, &counts).await
 }
 
 /// Handles a detection according to the gate policy. Returns false when the
@@ -584,7 +677,8 @@ async fn on_detection<W>(
     sink: &mut W,
     canvas: &ShadowCanvas,
     batch: &[GatePdu],
-    res: SnapshotResult,
+    detections: &[presidio::EntityDetection],
+    counts: &std::collections::HashMap<String, i64>,
 ) -> BatchOutcome
 where
     W: AsyncWrite + Unpin,
@@ -607,8 +701,7 @@ where
         // Repainting ONLY the PII-overlapping regions (not whole bands) keeps
         // the rewrite small: dropping every bitmap and re-emitting whole bands
         // floods the client link and can blank legitimate content.
-        let dets: Vec<rewrite::Rect> = res
-            .detections
+        let dets: Vec<rewrite::Rect> = detections
             .iter()
             .map(|d| rewrite::Rect { x: d.x, y: d.y, w: d.width, h: d.height })
             .collect();
@@ -625,7 +718,7 @@ where
         warn!(
             sid = %shared.session_id,
             "piigate: PII detected ({:?}), redacting {} region(s) and forwarding",
-            res.counts, res.detections.len()
+            counts, detections.len()
         );
 
         let mut wire: Vec<u8> = Vec::new();
@@ -663,7 +756,7 @@ where
                     canvas.w,
                     canvas.h,
                     region,
-                    &res.detections,
+                    detections,
                     bpp,
                 ));
             }
@@ -676,7 +769,7 @@ where
         // on the full-width band from the shadow canvas, so the detection bbox
         // spans the WHOLE entity; repaint that entire bbox as black so the
         // already-delivered portion is blanked too, not just the current delta.
-        for d in &res.detections {
+        for d in detections {
             let region = rewrite::Rect { x: d.x, y: d.y, w: d.width, h: d.height };
             wire.extend_from_slice(&rewrite::redact_region(
                 &canvas.fb,
@@ -694,7 +787,9 @@ where
         if !forward_bytes(shared, sink, &wire).await {
             return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true };
         }
-        let _ = shared.events.send(GateEvent::Detection(res));
+        let _ = shared
+            .events
+            .send(GateEvent::Detection(detection_snapshot(detections, counts)));
 
         if policy.kills_after_detection() {
             // RedactAndKill: the redacted batch is delivered, now stop.
@@ -727,11 +822,27 @@ where
     warn!(
         sid = %shared.session_id,
         "piigate: PII detected ({:?}), dropping held batch and terminating session",
-        res.counts
+        counts
     );
-    let _ = shared.events.send(GateEvent::Detection(res));
+    let _ = shared
+        .events
+        .send(GateEvent::Detection(detection_snapshot(detections, counts)));
     // Kill: the held batch was dropped, nothing forwarded.
     BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true }
+}
+
+/// Rebuilds a [`SnapshotResult`] from the blank-list + counts for the terminal
+/// `GateEvent::Detection` report (the violation sent upstream). The redaction
+/// path operates on the reconciled active set, so the event reflects exactly
+/// what was blanked this frame.
+fn detection_snapshot(
+    detections: &[presidio::EntityDetection],
+    counts: &std::collections::HashMap<String, i64>,
+) -> SnapshotResult {
+    SnapshotResult {
+        detections: detections.to_vec(),
+        counts: counts.clone(),
+    }
 }
 
 /// Delivers cleared PDUs downstream, coalescing them into bounded chunks
