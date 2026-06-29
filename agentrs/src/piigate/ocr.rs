@@ -169,11 +169,19 @@ struct RecRequest {
     boxes: Vec<[[f32; 2]; 4]>,
 }
 
-/// Result of a recognition-only call: one word per requested box, in the same
-/// order, in full-image coordinates.
+/// Result of a recognition-only call: EXACTLY one slot per requested box, in
+/// the same order, in full-image coordinates. A slot is `None` when that box
+/// recognized to nothing usable (empty/whitespace text, or geometry the agent
+/// rejects) — a legitimate result for a blank line, an icon, or a separator.
+///
+/// The 1:1 positional alignment is load-bearing: the per-line cache pairs each
+/// detected box with its recognition outcome, and the analyzer fails closed on
+/// a count mismatch. Recognition outcomes must therefore never be *dropped*
+/// (which would silently misalign boxes and words); an unusable result becomes
+/// `None` in place, preserving the slot.
 #[derive(Debug)]
 pub struct RecResult {
-    pub words: Vec<Word>,
+    pub words: Vec<Option<Word>>,
     pub server_ms: f64,
     pub request_bytes: usize,
 }
@@ -313,6 +321,7 @@ impl OcrClient {
         if boxes.is_empty() {
             return Ok(RecResult { words: Vec::new(), server_ms: 0.0, request_bytes: 0 });
         }
+        let want = boxes.len();
         let bmp = encode_bmp(rgba, width, height);
         let req = RecRequest {
             image: base64::engine::general_purpose::STANDARD.encode(&bmp),
@@ -342,8 +351,21 @@ impl OcrClient {
         let out: OcrServerResponse =
             serde_json::from_slice(&body).context("ocr: invalid rec response")?;
 
+        // The /rec contract is positional: the sidecar must return exactly one
+        // entry per requested box, in order. Enforce it at the boundary so a
+        // protocol violation is a clear error here rather than a misaligned
+        // box/word pairing downstream. Empty/unusable recognitions are kept as
+        // `None` slots by `validate_words_positional` — never dropped.
+        if out.words.len() != want {
+            anyhow::bail!(
+                "ocr: rec returned {} entries for {} boxes (positional contract violated)",
+                out.words.len(),
+                want
+            );
+        }
+
         Ok(RecResult {
-            words: validate_words(out.words, width, height),
+            words: validate_words_positional(out.words, width, height),
             server_ms: out.duration_ms,
             request_bytes,
         })
@@ -381,39 +403,59 @@ mod hash_tests {
 /// confidence is clamped to 0..1 and rescaled to the 0-100 Word convention.
 fn validate_words(raw: Vec<OcrServerWord>, width: usize, height: usize) -> Vec<Word> {
     raw.into_iter()
-        .filter_map(|w| {
-            let text = w.text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            if !w.conf.is_finite() || w.conf < 0.0 {
-                return None;
-            }
-            if w.x < 0 || w.y < 0 || w.w <= 0 || w.h <= 0 {
-                return None;
-            }
-            let (x, y, ww, hh) = (w.x as usize, w.y as usize, w.w as usize, w.h as usize);
-            // Reject tokens that fall outside the submitted image. The
-            // sidecar is a separate (untrusted) process: absurd coordinates
-            // would otherwise produce off-canvas bounding boxes and overflow
-            // the bbox merge in analyze_text. The Go engine does not
-            // bounds-check, but the agent-side sidecar runs in the customer
-            // network and warrants the stricter contract — words it drops
-            // here are off-screen anyway.
-            if x >= width || y >= height || ww > width - x || hh > height - y {
-                return None;
-            }
-            Some(Word {
-                text: text.to_string(),
-                left: x,
-                top: y,
-                width: ww,
-                height: hh,
-                // Server confidence is 0..1; Word.conf is 0-100.
-                conf: w.conf.min(1.0) * 100.0,
-            })
-        })
+        .filter_map(|w| validate_word(w, width, height))
         .collect()
+}
+
+/// Positional sibling of [`validate_words`] for the `/rec` path: returns one
+/// slot per input word, in order, with the same per-word sanitization but
+/// WITHOUT dropping. An unusable entry (empty text, bad confidence, degenerate
+/// or off-canvas geometry) becomes `None` in place rather than collapsing the
+/// vector — preserving the box↔word alignment the per-line cache relies on.
+fn validate_words_positional(
+    raw: Vec<OcrServerWord>,
+    width: usize,
+    height: usize,
+) -> Vec<Option<Word>> {
+    raw.into_iter()
+        .map(|w| validate_word(w, width, height))
+        .collect()
+}
+
+/// Sanitizes a single raw sidecar word, returning `None` if it is unusable.
+/// Shared by the dropping (`/ocr`, `/det` discovery) and positional (`/rec`)
+/// validators so both apply identical rules — only their handling of `None`
+/// differs (drop vs. keep-as-empty-slot).
+fn validate_word(w: OcrServerWord, width: usize, height: usize) -> Option<Word> {
+    let text = w.text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if !w.conf.is_finite() || w.conf < 0.0 {
+        return None;
+    }
+    if w.x < 0 || w.y < 0 || w.w <= 0 || w.h <= 0 {
+        return None;
+    }
+    let (x, y, ww, hh) = (w.x as usize, w.y as usize, w.w as usize, w.h as usize);
+    // Reject tokens that fall outside the submitted image. The sidecar is a
+    // separate (untrusted) process: absurd coordinates would otherwise produce
+    // off-canvas bounding boxes and overflow the bbox merge in analyze_text.
+    // The Go engine does not bounds-check, but the agent-side sidecar runs in
+    // the customer network and warrants the stricter contract — words rejected
+    // here are off-screen anyway.
+    if x >= width || y >= height || ww > width - x || hh > height - y {
+        return None;
+    }
+    Some(Word {
+        text: text.to_string(),
+        left: x,
+        top: y,
+        width: ww,
+        height: hh,
+        // Server confidence is 0..1; Word.conf is 0-100.
+        conf: w.conf.min(1.0) * 100.0,
+    })
 }
 
 #[cfg(test)]
@@ -450,6 +492,25 @@ mod tests {
         assert_eq!(kept[0].text, "ok"); // trimmed
         assert_eq!(kept[1].text, "clamp");
         assert_eq!(kept[1].conf, 100.0); // 5.0 clamped to 1.0 → 100
+    }
+
+    #[test]
+    fn positional_validation_keeps_one_slot_per_word() {
+        // Same inputs as the dropping validator, but positional: every input
+        // gets a slot; unusable ones become `None` IN PLACE (no collapse), so
+        // the i-th result still corresponds to the i-th requested /rec box.
+        let raw = vec![
+            OcrServerWord { text: "ok".into(), conf: 0.9, x: 0, y: 0, w: 10, h: 10 },
+            OcrServerWord { text: "".into(), conf: 0.0, x: 0, y: 0, w: 5, h: 5 }, // blank line
+            OcrServerWord { text: "bad".into(), conf: f64::NAN, x: 0, y: 0, w: 5, h: 5 },
+            OcrServerWord { text: "two".into(), conf: 0.8, x: 1, y: 1, w: 4, h: 4 },
+        ];
+        let slots = validate_words_positional(raw, 100, 100);
+        assert_eq!(slots.len(), 4, "one slot per input, never dropped");
+        assert_eq!(slots[0].as_ref().unwrap().text, "ok");
+        assert!(slots[1].is_none(), "empty text -> None slot, not removed");
+        assert!(slots[2].is_none(), "NaN conf -> None slot, not removed");
+        assert_eq!(slots[3].as_ref().unwrap().text, "two");
     }
 
     #[test]
