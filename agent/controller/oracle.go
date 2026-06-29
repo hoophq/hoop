@@ -15,7 +15,7 @@ import (
 
 func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-	// Native Oracle access is gated behind a feature flag. When it is off, 
+	// Native Oracle access is gated behind a feature flag. When it is off,
 	//It will refuse to open the proxy session instead of starting the TNS handshake.
 	if !featureflagstate.IsEnabled("beta.oracle_native") {
 		log.Infof("session=%s - oracle native access disabled by feature flag, closing session", sessionID)
@@ -75,17 +75,17 @@ func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
 	if connParams.GuardRailRules != nil {
 		guardRailRules = string(connParams.GuardRailRules)
 	}
-	var analyzerMetricsRules string
-	if connParams.AnalyzerMetricsRules != nil {
-		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
-	}
+	// var analyzerMetricsRules string
+	// if connParams.AnalyzerMetricsRules != nil {
+	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	// }
 
 	opts := map[string]string{
-		"sid":                       sessionID,
-		"hostname":                  connenv.host,
-		"port":                      connenv.port,
-		"username":                  connenv.user,
-		"password":                  connenv.pass,
+		"sid":      sessionID,
+		"hostname": connenv.host,
+		"port":     connenv.port,
+		"username": connenv.user,
+		"password": connenv.pass,
 		// The hoop client always presents the local Oracle proxy with the fixed
 		// placeholder noop/noop (see client/cmd/connect.go). Oracle auth is
 		// mutual, so the proxy needs the placeholder password to re-key the
@@ -102,7 +102,9 @@ func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
 		"dlp_masking_character":     "#",
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
 		"guard_rail_rules":          guardRailRules,
-		"analyzer_metrics_rules":    analyzerMetricsRules,
+		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
+		// on more intensive environments this is a problem, we can enable it later based on specific rules
+		// "analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Oracle()

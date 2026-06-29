@@ -72,10 +72,10 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
 	}
 
-	var analyzerMetricsRules string
-	if connParams.AnalyzerMetricsRules != nil {
-		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
-	}
+	// var analyzerMetricsRules string
+	// if connParams.AnalyzerMetricsRules != nil {
+	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	// }
 
 	var guardRailRules string
 	if connParams.GuardRailRules != nil {
@@ -91,8 +91,10 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
-		"analyzer_metrics_rules":    analyzerMetricsRules,
-		"guard_rail_rules":          guardRailRules,
+		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
+		// on more intensive environments this is a problem, we can enable it later based on specific rules
+		// "analyzer_metrics_rules":    analyzerMetricsRules,
+		"guard_rail_rules": guardRailRules,
 	}
 
 	// SQL exec connections route through the in-process database driver when the

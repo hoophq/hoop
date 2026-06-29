@@ -54,10 +54,10 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 	log.With("sid", sid, "conn", clientConnectionID, "legacy", connenv.connectionString == "").
 		Infof("starting mongodb connection at %v", connenv.Address())
 
-	var analyzerMetricsRules string
-	if connParams.AnalyzerMetricsRules != nil {
-		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
-	}
+	// var analyzerMetricsRules string
+	// if connParams.AnalyzerMetricsRules != nil {
+	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	// }
 	opts := map[string]string{
 		"sid":                       sid,
 		"connection_string":         connenv.connectionString,
@@ -70,7 +70,9 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"dlp_masking_character":     "#",
-		"analyzer_metrics_rules":    analyzerMetricsRules,
+		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
+		// on more intensive environments this is a problem, we can enable it later based on specific rules
+		// "analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MongoDB()
 	if err != nil {
