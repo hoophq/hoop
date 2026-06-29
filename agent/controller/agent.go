@@ -326,43 +326,43 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionIDKey := string(sessionID)
 	log.With("sid", sessionIDKey).Infof("received connect request")
 
-	connParams, err := a.buildConnectionParams(pkt)
-	if err != nil {
-		log.Warnf("failed building connection params, err=%v", err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(err.Error()),
-			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(internalExitCode),
-				pb.SpecGatewaySessionID:  sessionID,
-			},
-		})
-		return
-	}
-
-	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
-	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
-	connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
-	connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
-	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
-	connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
-	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
-
-	// Embedded mode usually has the context of the application.
-	// By having all environment variables in the context of execution
-	// permits a more seamless integration with internal language tooling.
-	if a.config.AgentMode == pb.AgentModeEmbeddedType {
-		for _, envKeyVal := range os.Environ() {
-			envKey, envVal, found := strings.Cut(envKeyVal, "=")
-			if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
-				continue
-			}
-			key := fmt.Sprintf("envvar:%s", envKey)
-			connParams.EnvVars[key] = b64Enc([]byte(envVal))
-		}
-	}
-
 	go func() {
+		connParams, err := a.buildConnectionParams(pkt)
+		if err != nil {
+			log.Warnf("failed building connection params, err=%v", err)
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(err.Error()),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+			return
+		}
+
+		connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
+		connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
+		connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
+		connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
+		connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
+		connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
+		connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
+
+		// Embedded mode usually has the context of the application.
+		// By having all environment variables in the context of execution
+		// permits a more seamless integration with internal language tooling.
+		if a.config.AgentMode == pb.AgentModeEmbeddedType {
+			for _, envKeyVal := range os.Environ() {
+				envKey, envVal, found := strings.Cut(envKeyVal, "=")
+				if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
+					continue
+				}
+				key := fmt.Sprintf("envvar:%s", envKey)
+				connParams.EnvVars[key] = b64Enc([]byte(envVal))
+			}
+		}
+
 		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
@@ -372,6 +372,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})
+			return
 		}
 
 		requestCommand := connParams.CmdList

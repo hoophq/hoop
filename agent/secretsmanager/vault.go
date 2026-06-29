@@ -81,7 +81,7 @@ func newVaultKeyValProvider(kvType secretProviderType, httpClient httpclient.Htt
 		httpClient = httpclient.NewHttpClient(config.tlsCA)
 	}
 
-	vaultHttpReqTimeout := time.Second * 10
+	vaultHttpReqTimeout := time.Second * 5
 	if v := os.Getenv("VAULT_HTTP_REQ_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		switch {
