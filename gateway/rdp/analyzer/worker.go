@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -66,8 +67,8 @@ type BitmapEvent struct {
 
 // wordRange tracks a word's character range in the reconstructed text string.
 type wordRange struct {
-	start int // inclusive byte offset in full text
-	end   int // exclusive byte offset in full text
+	start int // inclusive code-point (char) offset in full text
+	end   int // exclusive code-point (char) offset in full text
 	word  ocr.Word
 }
 
@@ -717,17 +718,23 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 // buildWordRanges constructs a character-offset index from OCR words.
 // The full text is reconstructed as "word1 word2 word3..." (space-separated),
 // and each wordRange records the start/end byte offsets of each word in that string.
+// Offsets are UNICODE CODE POINT (rune) counts, not byte lengths: Presidio runs
+// on Python str and reports entity start/end as code-point indices. Using byte
+// lengths drifts by one per extra byte of every earlier multi-byte character
+// (smart quotes, em-dashes, accented letters, stray OCR glyphs), mapping an
+// entity onto the wrong words and redacting the wrong line. Counting runes keeps
+// this index in Presidio's domain.
 func buildWordRanges(words []ocr.Word) []wordRange {
 	ranges := make([]wordRange, 0, len(words))
 	offset := 0
 	for _, w := range words {
-		end := offset + len(w.Text)
+		end := offset + utf8.RuneCountInString(w.Text)
 		ranges = append(ranges, wordRange{
 			start: offset,
 			end:   end,
 			word:  w,
 		})
-		offset = end + 1 // +1 for the space separator
+		offset = end + 1 // +1 for the single-rune space separator
 	}
 	return ranges
 }

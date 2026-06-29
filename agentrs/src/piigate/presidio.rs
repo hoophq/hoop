@@ -145,14 +145,22 @@ struct WordRange<'a> {
 
 /// Constructs a character-offset index from OCR words. The full text is the
 /// words joined by single spaces; each range records the word's start/end
-/// byte offsets in that string.
+/// offsets as UNICODE CODE POINT (char) counts.
+///
+/// Presidio runs on Python `str`, whose entity `start`/`end` are code-point
+/// indices, not UTF-8 byte offsets. Using byte lengths here would drift by one
+/// per extra byte of every multi-byte character that appears earlier in the
+/// text (smart quotes like U+2019 in "I'm", em-dashes, accented letters, or
+/// stray non-ASCII glyphs from OCR), mapping an entity onto the WRONG words and
+/// painting the redaction box on a different line. Counting chars keeps this
+/// index in the same domain as Presidio's offsets.
 fn build_word_ranges(words: &[Word]) -> Vec<WordRange<'_>> {
     let mut ranges = Vec::with_capacity(words.len());
     let mut offset = 0;
     for w in words {
-        let end = offset + w.text.len();
+        let end = offset + w.text.chars().count();
         ranges.push(WordRange { start: offset, end, word: w });
-        offset = end + 1; // +1 for the space separator
+        offset = end + 1; // +1 for the single-char space separator
     }
     ranges
 }
@@ -233,6 +241,34 @@ mod tests {
         // "alpha beta": alpha=[0,5), beta=[6,10)
         assert_eq!((ranges[0].start, ranges[0].end), (0, 5));
         assert_eq!((ranges[1].start, ranges[1].end), (6, 10));
+    }
+
+    #[test]
+    fn word_ranges_use_char_offsets_not_bytes() {
+        // "I'm" with a smart apostrophe (U+2019, 3 bytes / 1 char) before the
+        // PII word. Presidio reports the email at a CHAR offset; our ranges must
+        // be in the same (char) domain so the entity maps to the email word, not
+        // a byte-drifted neighbor. With the old byte-offset bug, "secret"'s
+        // range would start 2 higher than Presidio's offset and the entity would
+        // map to the wrong word (or out of bounds).
+        let words = [
+            word("I\u{2019}m", 0, 0, 30, 12), // 3 chars, 5 bytes
+            word("secret", 40, 0, 50, 12),
+        ];
+        let ranges = build_word_ranges(&words);
+        // Joined text "I’m secret": char offsets I’m=[0,3), secret=[4,10).
+        assert_eq!((ranges[0].start, ranges[0].end), (0, 3), "char count, not 5 bytes");
+        assert_eq!((ranges[1].start, ranges[1].end), (4, 10));
+
+        // Presidio flags "secret" at char [4,10). It must map to the second word.
+        let entity = AnalyzerResult {
+            start: 4,
+            end: 10,
+            score: 0.99,
+            entity_type: "EMAIL_ADDRESS".into(),
+        };
+        let bbox = map_entity_to_bbox(&entity, &ranges).unwrap();
+        assert_eq!(bbox, (40, 0, 50, 12), "entity must map to the 'secret' word");
     }
 
     #[test]
