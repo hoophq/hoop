@@ -129,12 +129,6 @@ struct Window {
     // changed/total ratio means most repaints are no-ops we now skip.
     paints_total: u64,
     paints_changed: u64,
-
-    // Per-line OCR cache accounting: total detected lines vs lines actually
-    // recognized (cache misses). A low recognized/total ratio means the line
-    // cache served most lines from a prior frame (the rec-cost saving).
-    lines_total: u64,
-    lines_recognized: u64,
 }
 
 impl Window {
@@ -224,17 +218,6 @@ impl LatencyAggregator {
         });
     }
 
-    /// Records per-line OCR cache accounting for one batch: total detected
-    /// lines vs lines actually recognized (cache misses). A low recognized/total
-    /// ratio means the line cache is serving most lines from a prior frame —
-    /// the recognition-cost saving.
-    pub fn record_lines(&self, total: u64, recognized: u64) {
-        self.push(|w| {
-            w.lines_total += total;
-            w.lines_recognized += recognized;
-        });
-    }
-
     /// Records the redaction (PDU rewrite + pixel blanking) for one batch.
     pub fn record_redact(&self, d: Duration) {
         self.push(|w| w.redact.push(as_micros(d)));
@@ -311,8 +294,6 @@ impl LatencyAggregator {
             ocr_sent_kib = ocr_kib,
             paints_total = w.paints_total,
             paints_changed = w.paints_changed,
-            lines_total = w.lines_total,
-            lines_recognized = w.lines_recognized,
             "piigate latency: composite[{}] ocr[{}] ocr_server[{}] presidio[{}] redact[{}] total[{}]",
             summarize(&mut w.composite),
             summarize(&mut w.ocr),

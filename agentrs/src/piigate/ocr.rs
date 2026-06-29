@@ -14,8 +14,7 @@
 use std::time::Duration;
 
 use anyhow::Context as _;
-use base64::Engine as _;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// One recognized token with its bounding box in full-image pixel space.
 /// `conf` follows the tesseract convention (0-100) like the Go analyzer.
@@ -110,82 +109,6 @@ pub struct OcrExtract {
     pub request_bytes: usize,
 }
 
-/// A detected text line: a 4-point quad in the sent image's pixel space exactly
-/// as the sidecar's detector produced it, plus `crop_hash` — the SHA-256 of the
-/// EXACT perspective-cropped pixels recognition will see for this line.
-///
-/// The agent keys its per-line OCR cache on `crop_hash` (with the quad geometry
-/// for diagnostics/placement), so a line is reused only when the exact
-/// recognition input recurs. Because the hash is computed by the sidecar over
-/// the same `get_rotate_crop_image` crop that `/rec` recognizes, "unchanged
-/// hash" provably means "recognition would see identical pixels" — there is no
-/// bbox-vs-quad gap through which a changed line could reuse a stale word.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LineBox {
-    /// Four [x, y] points (top-left, top-right, bottom-right, bottom-left).
-    pub quad: [[f32; 2]; 4],
-    /// SHA-256 (hex) of the perspective-cropped recognition pixels.
-    pub crop_hash: String,
-}
-
-impl LineBox {
-    /// Axis-aligned bounding rect (x0, y0, x1, y1) in image pixels, clamped to
-    /// non-negative. Used only for placing the resulting word / redaction box,
-    /// never for the cache validity check (that uses `crop_hash`).
-    pub fn bounds(&self) -> (usize, usize, usize, usize) {
-        let xs = self.quad.iter().map(|p| p[0]);
-        let ys = self.quad.iter().map(|p| p[1]);
-        let x0 = xs.clone().fold(f32::INFINITY, f32::min).max(0.0).floor() as usize;
-        let y0 = ys.clone().fold(f32::INFINITY, f32::min).max(0.0).floor() as usize;
-        let x1 = xs.fold(f32::NEG_INFINITY, f32::max).max(0.0).ceil() as usize;
-        let y1 = ys.fold(f32::NEG_INFINITY, f32::max).max(0.0).ceil() as usize;
-        (x0, y0, x1, y1)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct DetServerBox {
-    quad: [[f32; 2]; 4],
-    crop_hash: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct DetServerResponse {
-    duration_ms: f64,
-    boxes: Vec<DetServerBox>,
-}
-
-/// Result of a detection-only call: the line boxes plus the sidecar's
-/// self-reported inference time.
-#[derive(Debug)]
-pub struct DetResult {
-    pub boxes: Vec<LineBox>,
-    pub server_ms: f64,
-}
-
-#[derive(Debug, Serialize)]
-struct RecRequest {
-    image: String, // base64 of the same image det was run on
-    boxes: Vec<[[f32; 2]; 4]>,
-}
-
-/// Result of a recognition-only call: EXACTLY one slot per requested box, in
-/// the same order, in full-image coordinates. A slot is `None` when that box
-/// recognized to nothing usable (empty/whitespace text, or geometry the agent
-/// rejects) — a legitimate result for a blank line, an icon, or a separator.
-///
-/// The 1:1 positional alignment is load-bearing: the per-line cache pairs each
-/// detected box with its recognition outcome, and the analyzer fails closed on
-/// a count mismatch. Recognition outcomes must therefore never be *dropped*
-/// (which would silently misalign boxes and words); an unusable result becomes
-/// `None` in place, preserving the slot.
-#[derive(Debug)]
-pub struct RecResult {
-    pub words: Vec<Option<Word>>,
-    pub server_ms: f64,
-    pub request_bytes: usize,
-}
-
 /// Bounds the response body read: even a pathological full-screen of dense
 /// text is far below this.
 const MAX_OCR_RESPONSE_BYTES: usize = 8 << 20;
@@ -255,145 +178,6 @@ impl OcrClient {
             request_bytes,
         })
     }
-
-    /// Detection only: returns the text-line boxes for a top-down RGBA image.
-    /// Boxes are in the sent image's pixel space; the caller uses them to decide
-    /// which lines changed (per-line OCR cache) and recognizes only those via
-    /// [`recognize`](Self::recognize).
-    pub async fn detect(&self, rgba: &[u8], width: usize, height: usize) -> anyhow::Result<DetResult> {
-        let bmp = encode_bmp(rgba, width, height);
-        let resp = self
-            .client
-            .post(format!("{}/det", self.base_url))
-            .header("Content-Type", "application/octet-stream")
-            .body(bmp)
-            .send()
-            .await
-            .context("ocr: det request failed")?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.bytes().await.unwrap_or_default();
-            let snippet = String::from_utf8_lossy(&body[..body.len().min(512)]).to_string();
-            anyhow::bail!("ocr: det returned status {status}: {}", snippet.trim());
-        }
-        let body = resp.bytes().await.context("ocr: failed to read det response")?;
-        if body.len() > MAX_OCR_RESPONSE_BYTES {
-            anyhow::bail!("ocr: det response exceeds {MAX_OCR_RESPONSE_BYTES} bytes");
-        }
-        let out: DetServerResponse =
-            serde_json::from_slice(&body).context("ocr: invalid det response")?;
-
-        Ok(DetResult {
-            boxes: out
-                .boxes
-                .into_iter()
-                .map(|b| {
-                    // The crop_hash is the security-critical cache validity
-                    // token. Reject a malformed one (wrong length / non-hex)
-                    // rather than trust it: a constant or empty hash from a
-                    // misbehaving sidecar could otherwise cause a wrong reuse.
-                    if !is_sha256_hex(&b.crop_hash) {
-                        anyhow::bail!("ocr: det returned a malformed crop_hash");
-                    }
-                    Ok(LineBox {
-                        quad: b.quad,
-                        crop_hash: b.crop_hash,
-                    })
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?,
-            server_ms: out.duration_ms,
-        })
-    }
-
-    /// Recognition only: recognizes the given line boxes against `rgba` (the
-    /// SAME image `detect` was run on). The sidecar crops each box with the same
-    /// perspective transform as the combined pipeline, so the text is identical
-    /// to what `/ocr` would have produced. Returns one word per box, in order,
-    /// in full-image coordinates.
-    pub async fn recognize(
-        &self,
-        rgba: &[u8],
-        width: usize,
-        height: usize,
-        boxes: &[LineBox],
-    ) -> anyhow::Result<RecResult> {
-        if boxes.is_empty() {
-            return Ok(RecResult { words: Vec::new(), server_ms: 0.0, request_bytes: 0 });
-        }
-        let want = boxes.len();
-        let bmp = encode_bmp(rgba, width, height);
-        let req = RecRequest {
-            image: base64::engine::general_purpose::STANDARD.encode(&bmp),
-            boxes: boxes.iter().map(|b| b.quad).collect(),
-        };
-        let payload = serde_json::to_vec(&req).context("ocr: encode rec request")?;
-        let request_bytes = payload.len();
-        let resp = self
-            .client
-            .post(format!("{}/rec", self.base_url))
-            .header("Content-Type", "application/json")
-            .body(payload)
-            .send()
-            .await
-            .context("ocr: rec request failed")?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.bytes().await.unwrap_or_default();
-            let snippet = String::from_utf8_lossy(&body[..body.len().min(512)]).to_string();
-            anyhow::bail!("ocr: rec returned status {status}: {}", snippet.trim());
-        }
-        let body = resp.bytes().await.context("ocr: failed to read rec response")?;
-        if body.len() > MAX_OCR_RESPONSE_BYTES {
-            anyhow::bail!("ocr: rec response exceeds {MAX_OCR_RESPONSE_BYTES} bytes");
-        }
-        let out: OcrServerResponse =
-            serde_json::from_slice(&body).context("ocr: invalid rec response")?;
-
-        // The /rec contract is positional: the sidecar must return exactly one
-        // entry per requested box, in order. Enforce it at the boundary so a
-        // protocol violation is a clear error here rather than a misaligned
-        // box/word pairing downstream. Empty/unusable recognitions are kept as
-        // `None` slots by `validate_words_positional` — never dropped.
-        if out.words.len() != want {
-            anyhow::bail!(
-                "ocr: rec returned {} entries for {} boxes (positional contract violated)",
-                out.words.len(),
-                want
-            );
-        }
-
-        Ok(RecResult {
-            words: validate_words_positional(out.words, width, height),
-            server_ms: out.duration_ms,
-            request_bytes,
-        })
-    }
-}
-
-/// Whether `s` is a well-formed SHA-256 hex digest: exactly 64 lowercase hex
-/// characters. The per-line cache validity depends on this token, so a
-/// malformed value from a misbehaving sidecar must be rejected (fail closed),
-/// never used as a cache key.
-fn is_sha256_hex(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-#[cfg(test)]
-mod hash_tests {
-    use super::is_sha256_hex;
-
-    #[test]
-    fn sha256_hex_validation() {
-        assert!(is_sha256_hex(&"a".repeat(64)));
-        assert!(is_sha256_hex(&"0123456789abcdef".repeat(4)));
-        assert!(!is_sha256_hex(""), "empty rejected");
-        assert!(!is_sha256_hex(&"a".repeat(63)), "too short rejected");
-        assert!(!is_sha256_hex(&"a".repeat(65)), "too long rejected");
-        assert!(!is_sha256_hex(&"A".repeat(64)), "uppercase rejected");
-        assert!(!is_sha256_hex(&"g".repeat(64)), "non-hex rejected");
-    }
 }
 
 /// Validates and normalizes raw server tokens before they enter the analyzer
@@ -403,59 +187,39 @@ mod hash_tests {
 /// confidence is clamped to 0..1 and rescaled to the 0-100 Word convention.
 fn validate_words(raw: Vec<OcrServerWord>, width: usize, height: usize) -> Vec<Word> {
     raw.into_iter()
-        .filter_map(|w| validate_word(w, width, height))
+        .filter_map(|w| {
+            let text = w.text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            if !w.conf.is_finite() || w.conf < 0.0 {
+                return None;
+            }
+            if w.x < 0 || w.y < 0 || w.w <= 0 || w.h <= 0 {
+                return None;
+            }
+            let (x, y, ww, hh) = (w.x as usize, w.y as usize, w.w as usize, w.h as usize);
+            // Reject tokens that fall outside the submitted image. The
+            // sidecar is a separate (untrusted) process: absurd coordinates
+            // would otherwise produce off-canvas bounding boxes and overflow
+            // the bbox merge in analyze_text. The Go engine does not
+            // bounds-check, but the agent-side sidecar runs in the customer
+            // network and warrants the stricter contract — words it drops
+            // here are off-screen anyway.
+            if x >= width || y >= height || ww > width - x || hh > height - y {
+                return None;
+            }
+            Some(Word {
+                text: text.to_string(),
+                left: x,
+                top: y,
+                width: ww,
+                height: hh,
+                // Server confidence is 0..1; Word.conf is 0-100.
+                conf: w.conf.min(1.0) * 100.0,
+            })
+        })
         .collect()
-}
-
-/// Positional sibling of [`validate_words`] for the `/rec` path: returns one
-/// slot per input word, in order, with the same per-word sanitization but
-/// WITHOUT dropping. An unusable entry (empty text, bad confidence, degenerate
-/// or off-canvas geometry) becomes `None` in place rather than collapsing the
-/// vector — preserving the box↔word alignment the per-line cache relies on.
-fn validate_words_positional(
-    raw: Vec<OcrServerWord>,
-    width: usize,
-    height: usize,
-) -> Vec<Option<Word>> {
-    raw.into_iter()
-        .map(|w| validate_word(w, width, height))
-        .collect()
-}
-
-/// Sanitizes a single raw sidecar word, returning `None` if it is unusable.
-/// Shared by the dropping (`/ocr`, `/det` discovery) and positional (`/rec`)
-/// validators so both apply identical rules — only their handling of `None`
-/// differs (drop vs. keep-as-empty-slot).
-fn validate_word(w: OcrServerWord, width: usize, height: usize) -> Option<Word> {
-    let text = w.text.trim();
-    if text.is_empty() {
-        return None;
-    }
-    if !w.conf.is_finite() || w.conf < 0.0 {
-        return None;
-    }
-    if w.x < 0 || w.y < 0 || w.w <= 0 || w.h <= 0 {
-        return None;
-    }
-    let (x, y, ww, hh) = (w.x as usize, w.y as usize, w.w as usize, w.h as usize);
-    // Reject tokens that fall outside the submitted image. The sidecar is a
-    // separate (untrusted) process: absurd coordinates would otherwise produce
-    // off-canvas bounding boxes and overflow the bbox merge in analyze_text.
-    // The Go engine does not bounds-check, but the agent-side sidecar runs in
-    // the customer network and warrants the stricter contract — words rejected
-    // here are off-screen anyway.
-    if x >= width || y >= height || ww > width - x || hh > height - y {
-        return None;
-    }
-    Some(Word {
-        text: text.to_string(),
-        left: x,
-        top: y,
-        width: ww,
-        height: hh,
-        // Server confidence is 0..1; Word.conf is 0-100.
-        conf: w.conf.min(1.0) * 100.0,
-    })
 }
 
 #[cfg(test)]
@@ -492,25 +256,6 @@ mod tests {
         assert_eq!(kept[0].text, "ok"); // trimmed
         assert_eq!(kept[1].text, "clamp");
         assert_eq!(kept[1].conf, 100.0); // 5.0 clamped to 1.0 → 100
-    }
-
-    #[test]
-    fn positional_validation_keeps_one_slot_per_word() {
-        // Same inputs as the dropping validator, but positional: every input
-        // gets a slot; unusable ones become `None` IN PLACE (no collapse), so
-        // the i-th result still corresponds to the i-th requested /rec box.
-        let raw = vec![
-            OcrServerWord { text: "ok".into(), conf: 0.9, x: 0, y: 0, w: 10, h: 10 },
-            OcrServerWord { text: "".into(), conf: 0.0, x: 0, y: 0, w: 5, h: 5 }, // blank line
-            OcrServerWord { text: "bad".into(), conf: f64::NAN, x: 0, y: 0, w: 5, h: 5 },
-            OcrServerWord { text: "two".into(), conf: 0.8, x: 1, y: 1, w: 4, h: 4 },
-        ];
-        let slots = validate_words_positional(raw, 100, 100);
-        assert_eq!(slots.len(), 4, "one slot per input, never dropped");
-        assert_eq!(slots[0].as_ref().unwrap().text, "ok");
-        assert!(slots[1].is_none(), "empty text -> None slot, not removed");
-        assert!(slots[2].is_none(), "NaN conf -> None slot, not removed");
-        assert_eq!(slots[3].as_ref().unwrap().text, "two");
     }
 
     #[test]
