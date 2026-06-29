@@ -341,7 +341,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 	}
 }
 
-func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args reviewsWaitInput) (*mcp.CallToolResult, any, error) {
+func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args reviewsWaitInput) (*mcp.CallToolResult, any, error) {
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
@@ -368,7 +368,8 @@ func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args review
 		return reviewsWaitResult(initial, false, 0), nil, nil
 	}
 
-	rev, timedOut, waited, err := waitUntil(ctx, resolveWaitTimeout(args.TimeoutSeconds),
+	timeout := resolveWaitTimeout(args.TimeoutSeconds)
+	rev, timedOut, waited, err := waitUntil(ctx, timeout,
 		func() (*models.Review, bool, error) {
 			r, err := models.GetReviewByIdOrSid(orgID, args.ID)
 			if err != nil {
@@ -378,7 +379,8 @@ func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args review
 				return nil, false, models.ErrNotFound
 			}
 			return r, isReviewTerminal(r.Status), nil
-		})
+		},
+		newWaitHeartbeat(ctx, req, timeout))
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if rev == nil {
