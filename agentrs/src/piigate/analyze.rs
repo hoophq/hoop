@@ -44,10 +44,13 @@ use super::presidio::{analyze_text, AnalysisParams, PresidioClient, SnapshotResu
 ///   frame, so it tracks the current screen and cannot grow unbounded.
 #[derive(Default)]
 struct LineCache {
-    // (x0, y0, x1, y1, crop_sha256) -> the line's recognized word. The position
-    // is included so a hit also requires the same on-screen placement (a line
-    // that moved is re-analyzed in its new position).
-    entries: HashMap<LineKey, Word>,
+    // (x0, y0, x1, y1, crop_sha256) -> the line's recognition outcome. The
+    // position is included so a hit also requires the same on-screen placement
+    // (a line that moved is re-analyzed in its new position). The value is an
+    // `Option<Word>`: `None` caches a line that recognized to nothing usable
+    // (blank line, icon, separator), so a stable empty line is a cache hit too
+    // and never forces a needless rec.
+    entries: HashMap<LineKey, Option<Word>>,
 }
 
 /// Cache key: full-canvas bounding rect plus the SHA-256 (hex) of the exact
@@ -177,8 +180,8 @@ impl Analyzer for BandAnalyzer {
             // cache key for detection i, or None if the line is uncacheable.
             #[derive(Clone)]
             enum Slot {
-                Cached(Word),
-                Miss(usize), // index into miss_boxes
+                Cached(Option<Word>), // None = cached blank line
+                Miss(usize),          // index into miss_boxes
             }
             let mut slots: Vec<Slot> = Vec::with_capacity(det.boxes.len());
             let mut miss_boxes: Vec<LineBox> = Vec::new();
@@ -247,23 +250,30 @@ impl Analyzer for BandAnalyzer {
                 rec.words
             };
 
-            // Reassemble words in detection order, shifting band-local Y into
-            // full-canvas space, and publish each line into the new cache.
+            // Reassemble recognition outcomes in detection order, shifting
+            // band-local Y into full-canvas space, and publish each line into
+            // the new cache. A line may recognize to nothing usable (`None`):
+            // it still occupies a slot (preserving box↔word alignment) and is
+            // cached as blank, but contributes no word to Presidio and no
+            // redaction box.
             for (det_idx, slot) in slots.into_iter().enumerate() {
-                let word = match slot {
-                    Slot::Cached(w) => w, // already full-canvas
+                let word: Option<Word> = match slot {
+                    Slot::Cached(w) => w, // already full-canvas (or None)
                     Slot::Miss(mi) => {
-                        // rec returns one word per requested box, in order
+                        // rec returns one slot per requested box, in order
                         // (cardinality validated above, so the index is valid).
-                        let mut w = rec_words[mi].clone();
-                        w.top += band.y0; // band-local -> full-canvas
-                        w
+                        rec_words[mi].clone().map(|mut w| {
+                            w.top += band.y0; // band-local -> full-canvas
+                            w
+                        })
                     }
                 };
                 if let Some(key) = &keys[det_idx] {
                     new_cache.entries.insert(key.clone(), word.clone());
                 }
-                all_words.push(word);
+                if let Some(w) = word {
+                    all_words.push(w);
+                }
             }
         }
 
@@ -604,6 +614,56 @@ mod tests {
             res.is_err(),
             "a /rec returning fewer words than boxes must fail the analysis (fail-closed), not drop lines"
         );
+    }
+
+    // Regression for the "bottom half of the screen vanished" bug: RapidOCR's
+    // recognizer legitimately returns an EMPTY string for a detected box that
+    // holds no readable text (a blank row, an icon, a separator). /rec keeps
+    // that as an empty slot (positional contract: one entry per box), and the
+    // agent must turn it into a `None` word — NOT drop it. Dropping made the
+    // word count fall one short of the box count, tripping the fail-closed
+    // cardinality check and killing that band's forwarding, which on a real
+    // desktop blanked the lower portion of the screen.
+    async fn stub_rec_one_empty(_body: axum::body::Bytes) -> Json<Value> {
+        // Correct CARDINALITY (two entries for two boxes) but the second box
+        // recognized to empty text — exactly what the engine emits for a blank
+        // line. Must be accepted, not treated as a mismatch.
+        Json(json!({
+            "duration_ms": 1.0,
+            "words": [
+                { "text": "real text", "conf": 95.0, "x": 4, "y": 4,  "w": 40, "h": 12 },
+                { "text": "",          "conf": 0.0,  "x": 4, "y": 20, "w": 40, "h": 10 },
+            ],
+        }))
+    }
+
+    #[tokio::test]
+    async fn empty_recognition_is_kept_as_blank_slot_not_dropped() {
+        let app = Router::new()
+            .route("/det", post(stub_det_two)) // two detected boxes
+            .route("/rec", post(stub_rec_one_empty)) // second recognizes empty
+            .route("/analyze", post(stub_analyze_empty));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let analyzer = analyzer_for(&format!("http://{addr}"));
+        let (w, h) = (64usize, 64usize);
+        let fb = make_fb(w, h, 0xff);
+        let bands = vec![YBand { y0: 0, y1: 32 }];
+
+        // Must succeed: the empty second line is a `None` slot, the count still
+        // matches the box count, nothing is dropped, the band forwards normally.
+        let res = analyzer.analyze(&fb, w, h, &bands).await;
+        assert!(
+            res.is_ok(),
+            "an empty recognition must be kept as a blank slot, not dropped (which would fail-close and blank the band): {res:?}"
+        );
+
+        // A second identical frame is a full cache hit, including the blank
+        // line: the `None` outcome is cached too, so no needless re-rec.
+        analyzer.analyze(&fb, w, h, &bands).await.unwrap();
     }
 
     #[tokio::test]
