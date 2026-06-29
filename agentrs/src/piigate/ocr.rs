@@ -14,7 +14,8 @@
 use std::time::Duration;
 
 use anyhow::Context as _;
-use serde::Deserialize;
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
 
 /// One recognized token with its bounding box in full-image pixel space.
 /// `conf` follows the tesseract convention (0-100) like the Go analyzer.
@@ -109,6 +110,74 @@ pub struct OcrExtract {
     pub request_bytes: usize,
 }
 
+/// A detected text line: a 4-point quad in the sent image's pixel space exactly
+/// as the sidecar's detector produced it, plus `crop_hash` — the SHA-256 of the
+/// EXACT perspective-cropped pixels recognition will see for this line.
+///
+/// The agent keys its per-line OCR cache on `crop_hash` (with the quad geometry
+/// for diagnostics/placement), so a line is reused only when the exact
+/// recognition input recurs. Because the hash is computed by the sidecar over
+/// the same `get_rotate_crop_image` crop that `/rec` recognizes, "unchanged
+/// hash" provably means "recognition would see identical pixels" — there is no
+/// bbox-vs-quad gap through which a changed line could reuse a stale word.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineBox {
+    /// Four [x, y] points (top-left, top-right, bottom-right, bottom-left).
+    pub quad: [[f32; 2]; 4],
+    /// SHA-256 (hex) of the perspective-cropped recognition pixels.
+    pub crop_hash: String,
+}
+
+impl LineBox {
+    /// Axis-aligned bounding rect (x0, y0, x1, y1) in image pixels, clamped to
+    /// non-negative. Used only for placing the resulting word / redaction box,
+    /// never for the cache validity check (that uses `crop_hash`).
+    pub fn bounds(&self) -> (usize, usize, usize, usize) {
+        let xs = self.quad.iter().map(|p| p[0]);
+        let ys = self.quad.iter().map(|p| p[1]);
+        let x0 = xs.clone().fold(f32::INFINITY, f32::min).max(0.0).floor() as usize;
+        let y0 = ys.clone().fold(f32::INFINITY, f32::min).max(0.0).floor() as usize;
+        let x1 = xs.fold(f32::NEG_INFINITY, f32::max).max(0.0).ceil() as usize;
+        let y1 = ys.fold(f32::NEG_INFINITY, f32::max).max(0.0).ceil() as usize;
+        (x0, y0, x1, y1)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DetServerBox {
+    quad: [[f32; 2]; 4],
+    crop_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DetServerResponse {
+    duration_ms: f64,
+    boxes: Vec<DetServerBox>,
+}
+
+/// Result of a detection-only call: the line boxes plus the sidecar's
+/// self-reported inference time.
+#[derive(Debug)]
+pub struct DetResult {
+    pub boxes: Vec<LineBox>,
+    pub server_ms: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct RecRequest {
+    image: String, // base64 of the same image det was run on
+    boxes: Vec<[[f32; 2]; 4]>,
+}
+
+/// Result of a recognition-only call: one word per requested box, in the same
+/// order, in full-image coordinates.
+#[derive(Debug)]
+pub struct RecResult {
+    pub words: Vec<Word>,
+    pub server_ms: f64,
+    pub request_bytes: usize,
+}
+
 /// Bounds the response body read: even a pathological full-screen of dense
 /// text is far below this.
 const MAX_OCR_RESPONSE_BYTES: usize = 8 << 20;
@@ -177,6 +246,131 @@ impl OcrClient {
             server_ms: out.duration_ms,
             request_bytes,
         })
+    }
+
+    /// Detection only: returns the text-line boxes for a top-down RGBA image.
+    /// Boxes are in the sent image's pixel space; the caller uses them to decide
+    /// which lines changed (per-line OCR cache) and recognizes only those via
+    /// [`recognize`](Self::recognize).
+    pub async fn detect(&self, rgba: &[u8], width: usize, height: usize) -> anyhow::Result<DetResult> {
+        let bmp = encode_bmp(rgba, width, height);
+        let resp = self
+            .client
+            .post(format!("{}/det", self.base_url))
+            .header("Content-Type", "application/octet-stream")
+            .body(bmp)
+            .send()
+            .await
+            .context("ocr: det request failed")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.bytes().await.unwrap_or_default();
+            let snippet = String::from_utf8_lossy(&body[..body.len().min(512)]).to_string();
+            anyhow::bail!("ocr: det returned status {status}: {}", snippet.trim());
+        }
+        let body = resp.bytes().await.context("ocr: failed to read det response")?;
+        if body.len() > MAX_OCR_RESPONSE_BYTES {
+            anyhow::bail!("ocr: det response exceeds {MAX_OCR_RESPONSE_BYTES} bytes");
+        }
+        let out: DetServerResponse =
+            serde_json::from_slice(&body).context("ocr: invalid det response")?;
+
+        Ok(DetResult {
+            boxes: out
+                .boxes
+                .into_iter()
+                .map(|b| {
+                    // The crop_hash is the security-critical cache validity
+                    // token. Reject a malformed one (wrong length / non-hex)
+                    // rather than trust it: a constant or empty hash from a
+                    // misbehaving sidecar could otherwise cause a wrong reuse.
+                    if !is_sha256_hex(&b.crop_hash) {
+                        anyhow::bail!("ocr: det returned a malformed crop_hash");
+                    }
+                    Ok(LineBox {
+                        quad: b.quad,
+                        crop_hash: b.crop_hash,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
+            server_ms: out.duration_ms,
+        })
+    }
+
+    /// Recognition only: recognizes the given line boxes against `rgba` (the
+    /// SAME image `detect` was run on). The sidecar crops each box with the same
+    /// perspective transform as the combined pipeline, so the text is identical
+    /// to what `/ocr` would have produced. Returns one word per box, in order,
+    /// in full-image coordinates.
+    pub async fn recognize(
+        &self,
+        rgba: &[u8],
+        width: usize,
+        height: usize,
+        boxes: &[LineBox],
+    ) -> anyhow::Result<RecResult> {
+        if boxes.is_empty() {
+            return Ok(RecResult { words: Vec::new(), server_ms: 0.0, request_bytes: 0 });
+        }
+        let bmp = encode_bmp(rgba, width, height);
+        let req = RecRequest {
+            image: base64::engine::general_purpose::STANDARD.encode(&bmp),
+            boxes: boxes.iter().map(|b| b.quad).collect(),
+        };
+        let payload = serde_json::to_vec(&req).context("ocr: encode rec request")?;
+        let request_bytes = payload.len();
+        let resp = self
+            .client
+            .post(format!("{}/rec", self.base_url))
+            .header("Content-Type", "application/json")
+            .body(payload)
+            .send()
+            .await
+            .context("ocr: rec request failed")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.bytes().await.unwrap_or_default();
+            let snippet = String::from_utf8_lossy(&body[..body.len().min(512)]).to_string();
+            anyhow::bail!("ocr: rec returned status {status}: {}", snippet.trim());
+        }
+        let body = resp.bytes().await.context("ocr: failed to read rec response")?;
+        if body.len() > MAX_OCR_RESPONSE_BYTES {
+            anyhow::bail!("ocr: rec response exceeds {MAX_OCR_RESPONSE_BYTES} bytes");
+        }
+        let out: OcrServerResponse =
+            serde_json::from_slice(&body).context("ocr: invalid rec response")?;
+
+        Ok(RecResult {
+            words: validate_words(out.words, width, height),
+            server_ms: out.duration_ms,
+            request_bytes,
+        })
+    }
+}
+
+/// Whether `s` is a well-formed SHA-256 hex digest: exactly 64 lowercase hex
+/// characters. The per-line cache validity depends on this token, so a
+/// malformed value from a misbehaving sidecar must be rejected (fail closed),
+/// never used as a cache key.
+fn is_sha256_hex(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use super::is_sha256_hex;
+
+    #[test]
+    fn sha256_hex_validation() {
+        assert!(is_sha256_hex(&"a".repeat(64)));
+        assert!(is_sha256_hex(&"0123456789abcdef".repeat(4)));
+        assert!(!is_sha256_hex(""), "empty rejected");
+        assert!(!is_sha256_hex(&"a".repeat(63)), "too short rejected");
+        assert!(!is_sha256_hex(&"a".repeat(65)), "too long rejected");
+        assert!(!is_sha256_hex(&"A".repeat(64)), "uppercase rejected");
+        assert!(!is_sha256_hex(&"g".repeat(64)), "non-hex rejected");
     }
 }
 

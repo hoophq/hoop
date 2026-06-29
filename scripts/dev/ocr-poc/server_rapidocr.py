@@ -28,6 +28,8 @@ Run locally without Docker (CPU):
 """
 
 import asyncio
+import base64
+import hashlib
 import logging
 import os
 import time
@@ -37,6 +39,8 @@ import numpy as np
 import onnxruntime
 from fastapi import FastAPI, Request, Response
 from rapidocr import RapidOCR
+from rapidocr.ch_ppocr_rec.typings import TextRecInput
+from rapidocr.utils.process_img import get_rotate_crop_image
 
 from device_policy import cuda_device_count, resolve_device
 
@@ -112,6 +116,115 @@ async def ocr(request: Request):
 
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _run_ocr, img)
+
+
+def _run_det(img) -> dict:
+    """Detection only: return the text-line quad boxes for an image, each with a
+    content hash of the EXACT pixels recognition will see. The agent uses these
+    to decide which lines changed (per-line OCR cache) and re-runs recognition
+    only on the changed ones via /rec.
+
+    Boxes are returned as 4-point quads in full-image pixel coordinates, exactly
+    as RapidOCR's detector produces them, so /rec can reproduce the identical
+    crop with get_rotate_crop_image (no fidelity loss versus the combined /ocr
+    path).
+
+    crop_hash is the SHA-256 of the recognition crop produced by
+    get_rotate_crop_image for this box — i.e. the very pixels /rec will feed to
+    the recognizer. The agent keys its per-line cache on this hash, so a line is
+    reused ONLY when the exact recognition input recurs. Hashing the perspective
+    crop (not an axis-aligned bbox) closes the gap where a changed quad could
+    share a bbox: if recognition would see different pixels, the hash differs
+    and the line is re-recognized. SHA-256 makes a stale-reuse collision
+    cryptographically infeasible, upholding the guard's invariant."""
+    start = time.perf_counter()
+    result = ENGINE.text_det(img)
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    boxes = []
+    if getattr(result, "boxes", None) is not None:
+        for box in result.boxes:
+            arr = np.array(box, dtype=np.float32)
+            crop = get_rotate_crop_image(img, arr)
+            crop_hash = hashlib.sha256(np.ascontiguousarray(crop).tobytes()).hexdigest()
+            boxes.append(
+                {
+                    "quad": [[float(p[0]), float(p[1])] for p in box],
+                    "crop_hash": crop_hash,
+                }
+            )
+    return {"duration_ms": duration_ms, "boxes": boxes}
+
+
+def _run_rec(img, boxes) -> dict:
+    """Recognition only: crop each provided quad box from the image (using the
+    same perspective crop as the combined pipeline) and recognize it. Returns
+    one word per box, in full-image coordinates, in the SAME order as `boxes`.
+
+    The agent calls this only for the boxes whose pixels changed since the last
+    frame; unchanged lines are served from its cache. Cropping happens here (not
+    on the agent) so the recognized text is byte-for-byte what /ocr would have
+    produced for the same box."""
+    start = time.perf_counter()
+    words = []
+    if boxes:
+        crops = []
+        bounds = []
+        for box in boxes:
+            arr = np.array(box, dtype=np.float32)
+            crops.append(get_rotate_crop_image(img, arr))
+            xs = [p[0] for p in box]
+            ys = [p[1] for p in box]
+            bounds.append((int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))))
+        rec_out = ENGINE.text_rec(TextRecInput(img=crops))
+        txts = rec_out.txts or []
+        scores = rec_out.scores or []
+        for i, (x0, y0, x1, y1) in enumerate(bounds):
+            text = txts[i] if i < len(txts) else ""
+            conf = float(scores[i]) if i < len(scores) else 0.0
+            words.append(
+                {
+                    "text": text,
+                    "conf": conf,
+                    "x": x0,
+                    "y": y0,
+                    "w": x1 - x0,
+                    "h": y1 - y0,
+                }
+            )
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    return {"duration_ms": duration_ms, "words": words}
+
+
+@app.post("/det")
+async def det(request: Request):
+    body = await request.body()
+    img = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return Response(status_code=400, content="undecodable image")
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _run_det, img)
+
+
+@app.post("/rec")
+async def rec(request: Request):
+    # JSON: { "image": "<base64 of the same image det was run on>",
+    #         "boxes": [ [[x,y],[x,y],[x,y],[x,y]], ... ] }
+    payload = await request.json()
+    image_b64 = payload.get("image")
+    boxes = payload.get("boxes") or []
+    if not image_b64:
+        return Response(status_code=400, content="missing image")
+    try:
+        raw = base64.b64decode(image_b64)
+    except Exception:
+        return Response(status_code=400, content="invalid base64 image")
+    img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return Response(status_code=400, content="undecodable image")
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _run_rec, img, boxes)
 
 
 def warmup() -> None:
