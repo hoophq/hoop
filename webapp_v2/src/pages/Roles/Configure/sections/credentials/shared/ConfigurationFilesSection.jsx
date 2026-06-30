@@ -5,6 +5,7 @@ import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
+import SecretField from '../../../components/SecretField'
 import {
   decodeSecretValue,
   encodeSecretValue,
@@ -18,7 +19,7 @@ import { useConfigureRoleStore } from '../../../store'
 // renames map so position stays put; an empty placeholder row is kept
 // around so the section never collapses.
 
-function FileRow({ rowKey, displayName, content, onCommitName, onContentChange, onRemove }) {
+function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onCommitName, onContentChange, onCancelReplace, onRemove }) {
   const [draftName, setDraftName] = useState(displayName)
 
   useEffect(() => {
@@ -46,16 +47,29 @@ function FileRow({ rowKey, displayName, content, onCommitName, onContentChange, 
               onCommitName(trimmed)
             }}
           />
-          <Stack gap={4}>
-            <Text size="sm" fw={500}>Content</Text>
-            <Textarea
-              autosize
-              minRows={4}
-              placeholder="Paste your file content here"
-              value={content}
-              onChange={(e) => onContentChange(e.currentTarget.value)}
+          {writeOnly ? (
+            <SecretField
+              label="Content"
+              type="textarea"
+              isExisting
+              stagedAction={stagedAction}
+              stagedValue={content}
+              onReplace={onContentChange}
+              onChangeStaged={onContentChange}
+              onCancel={onCancelReplace}
             />
-          </Stack>
+          ) : (
+            <Stack gap={4}>
+              <Text size="sm" fw={500}>Content</Text>
+              <Textarea
+                autosize
+                minRows={4}
+                placeholder="Paste your file content here"
+                value={content}
+                onChange={(e) => onContentChange(e.currentTarget.value)}
+              />
+            </Stack>
+          )}
         </Stack>
       </Grid.Col>
       <Grid.Col span={1}>
@@ -74,7 +88,7 @@ function FileRow({ rowKey, displayName, content, onCommitName, onContentChange, 
   )
 }
 
-export default function ConfigurationFilesSection({ connection }) {
+export default function ConfigurationFilesSection({ connection, hideRoleInfo }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const renames = useConfigureRoleStore((s) => s.renames)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
@@ -147,18 +161,22 @@ export default function ConfigurationFilesSection({ connection }) {
             : currentSecrets[fsKey]
               ? decodeSecretValue(currentSecrets[fsKey])
               : ''
+          const writeOnly = Boolean(hideRoleInfo) && isExisting
           return (
             <FileRow
               key={fsKey}
               rowKey={fsKey}
               displayName={displayName}
               content={content}
+              writeOnly={writeOnly}
+              stagedAction={staged?.action}
               onCommitName={(newName) => {
                 renameSecret(fsKey, `filesystem:${newName}`)
               }}
               onContentChange={(plain) =>
                 replaceSecret(fsKey, encodeSecretValue(plain))
               }
+              onCancelReplace={() => cancelSecretChange(fsKey)}
               onRemove={() => {
                 if (isExisting) deleteSecret(fsKey)
                 else cancelSecretChange(fsKey)

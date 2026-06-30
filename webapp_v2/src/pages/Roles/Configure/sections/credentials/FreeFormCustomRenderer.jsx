@@ -11,14 +11,15 @@ import AgentSelectorSection from './shared/AgentSelectorSection'
 // Used by custom connections without a catalog entry — i.e.
 // custom/(empty subtype) and custom/linux-vm — and by every custom
 // subtype that the catalog doesn't define (legacy fallback).
-export default function FreeFormCustomRenderer({ connection, availableSources }) {
+export default function FreeFormCustomRenderer({ connection, availableSources, hideRoleInfo }) {
   return (
     <Stack gap="xl">
       <EnvironmentVariablesSection
         connection={connection}
         availableSources={availableSources}
+        hideRoleInfo={hideRoleInfo}
       />
-      <ConfigurationFilesSection connection={connection} />
+      <ConfigurationFilesSection connection={connection} hideRoleInfo={hideRoleInfo} />
       <CommandArgsSection />
       <AgentSelectorSection />
     </Stack>

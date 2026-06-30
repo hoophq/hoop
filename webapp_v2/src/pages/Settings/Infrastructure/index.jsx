@@ -8,14 +8,15 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
 import { BarChart3, EyeOff, ShieldOff } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import SelectionCard from '@/components/SelectionCard'
+import Switch from '@/components/Switch'
 import infrastructure from '@/services/infrastructure'
 import { docsUrl } from '@/utils/docsUrl'
+import { showSnackbar } from '@/utils/snackbar'
 
 const ANALYTICS_OPTIONS = [
   {
@@ -42,6 +43,7 @@ const ANALYTICS_OPTIONS = [
 
 const EMPTY_FORM = {
   analyticsMode: '',
+  hideRoleInfo: false,
   grpcUrl: '',
   postgresPort: '',
   sshPort: '',
@@ -86,18 +88,26 @@ function SectionRow({ title, description, callout, children }) {
 function SettingsInfrastructure() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [initialAnalyticsMode, setInitialAnalyticsMode] = useState('')
+  const [initialHideRoleInfo, setInitialHideRoleInfo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const showLoader = useMinDelay(loading)
 
   useEffect(() => {
-    Promise.all([infrastructure.get(), infrastructure.getAnalyticsMode()])
-      .then(([misc, analytics]) => {
+    Promise.all([
+      infrastructure.get(),
+      infrastructure.getAnalyticsMode(),
+      infrastructure.getHideRoleInfo(),
+    ])
+      .then(([misc, analytics, hideRole]) => {
         const mode = analytics?.analytics_mode ?? ''
+        const hideRoleInfo = hideRole?.hide_role_info ?? false
         setInitialAnalyticsMode(mode)
+        setInitialHideRoleInfo(hideRoleInfo)
         setForm({
           analyticsMode: mode,
+          hideRoleInfo,
           grpcUrl: misc.grpc_server_url ?? '',
           postgresPort: extractPort(misc.postgres_server_config?.listen_address),
           sshPort: extractPort(misc.ssh_server_config?.listen_address),
@@ -106,10 +116,9 @@ function SettingsInfrastructure() {
         })
       })
       .catch(() => {
-        notifications.show({
-          color: 'red',
-          title: 'Error',
-          message: 'Failed to load infrastructure configuration',
+        showSnackbar({
+          level: 'error',
+          text: 'Failed to load infrastructure configuration',
         })
       })
       .finally(() => setLoading(false))
@@ -126,18 +135,20 @@ function SettingsInfrastructure() {
       if (form.analyticsMode && form.analyticsMode !== initialAnalyticsMode) {
         requests.push(infrastructure.updateAnalyticsMode(form.analyticsMode))
       }
+      if (form.hideRoleInfo !== initialHideRoleInfo) {
+        requests.push(infrastructure.updateHideRoleInfo(form.hideRoleInfo))
+      }
       await Promise.all(requests)
       setInitialAnalyticsMode(form.analyticsMode)
-      notifications.show({
-        color: 'green',
-        title: 'Saved',
-        message: 'Infrastructure configuration saved successfully!',
+      setInitialHideRoleInfo(form.hideRoleInfo)
+      showSnackbar({
+        level: 'success',
+        text: 'Infrastructure configuration saved successfully!',
       })
     } catch {
-      notifications.show({
-        color: 'red',
-        title: 'Error',
-        message: 'Failed to save infrastructure configuration',
+      showSnackbar({
+        level: 'error',
+        text: 'Failed to save infrastructure configuration',
       })
     } finally {
       setSaving(false)
@@ -172,6 +183,17 @@ function SettingsInfrastructure() {
               />
             ))}
           </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="Block reading secrets"
+          description="When enabled, connection and role secret values (environment variables) are no longer returned by the API. Existing secrets can be replaced but never read back. Secrets Manager and AWS IAM Role references stay visible and editable."
+        >
+          <Switch
+            label={form.hideRoleInfo ? 'Enabled' : 'Disabled'}
+            checked={form.hideRoleInfo}
+            onChange={(e) => setField('hideRoleInfo')(e.currentTarget.checked)}
+          />
         </SectionRow>
 
         <SectionRow

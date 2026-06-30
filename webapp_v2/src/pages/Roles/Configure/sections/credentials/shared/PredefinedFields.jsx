@@ -21,10 +21,12 @@ const AWS_IAM_PASS_ENCODED = encodeSecretForSource(
 )
 
 // Schema-driven credential row list. A row renders as a SecretField
-// "Set / Replace" gate only when the backend returned an empty value
-// (Manual inline secret that got stripped); anything the backend
-// round-trips (references or values from a shape on
-// shouldRoundTripSecrets) renders as an editable SourcedInput.
+// "Set / Replace" gate when the backend returned an empty value (an
+// inline secret the gateway stripped because the org has hide_role_info
+// on), or -- defensively -- for any non-reference value while
+// hide_role_info is on. Everything else round-trips as an editable
+// SourcedInput: provider references always, plus every inline value when
+// hide_role_info is off.
 //
 // In AWS IAM Role mode (postgres/mysql), PASS is hidden and force-staged
 // to `_aws_iam_rds:authtoken`; USER and PASS get the `_aws_iam_rds:`
@@ -38,6 +40,7 @@ export default function PredefinedFields({
   availableSources,
   forceNewState,
   connectionMethod,
+  hideRoleInfo,
 }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
@@ -94,7 +97,7 @@ export default function PredefinedFields({
         // values (Manual secrets the gateway stripped) fall through to
         // the SecretField gate below.
         const isRoundTrippedPlain =
-          !forceNewState && encodedValue && !staged
+          !forceNewState && encodedValue && !staged && (!hideRoleInfo || isReference)
         if (isRoundTrippedPlain) {
           const decodedValue = decodeForDisplay(encodedValue)
           return (
@@ -139,7 +142,6 @@ export default function PredefinedFields({
             allowDelete={false}
             stagedAction={staged?.action}
             stagedValue={decodeForDisplay(staged?.value)}
-            secretsUpdatedAt={connection.secrets_updated_at}
             source={source}
             availableSources={availableSources}
             onSourceChange={(s) => setFieldSource(envKey, s)}
