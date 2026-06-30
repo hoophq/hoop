@@ -522,12 +522,13 @@ export const useConfigureRoleStore = create((set, get) => ({
   // SSH_PRIVATE_KEY gets the trailing newline the agent's parser requires
   // (mirrors CLJS helpers.cljs config->json).
   //
-  // When hide_role_info is on the gateway applies the patch as an overlay:
-  // only the keys we send survive, and a `null` value means "keep the
-  // stored secret". So every existing key the user didn't touch is echoed
-  // back as `null` — otherwise the overlay would drop it and wipe the
-  // credential. An empty string still clears the value, which is how
-  // "remove" works in write-only mode.
+  // The gateway replaces the whole env map over the keys it receives — an
+  // overlay when hide_role_info is on, a plain replace when off — so any key
+  // we omit is dropped. We therefore echo every untouched secret to keep it:
+  // `null` tells the overlay to preserve the stored (masked) value in
+  // write-only mode; off, we resend the current value verbatim (sending
+  // `null` there would persist the literal string "<nil>"). An empty string
+  // still clears a value, which is how "remove" works.
   buildSecretsPatch: () => {
     const { stagedSecrets, renames, connection, hideRoleInfo } = get()
     const out = {}
@@ -546,12 +547,12 @@ export const useConfigureRoleStore = create((set, get) => ({
       out[origKey] = ''
       out[newKey] = stagedValue || persisted
     }
-    // Write-only overlay drops any key it doesn't receive, so echo every
-    // untouched secret back as null to preserve it (references included).
-    if (hideRoleInfo) {
-      for (const key of Object.keys(connection?.secret || {})) {
-        if (!(key in out)) out[key] = null
-      }
+    // Echo untouched secrets so the full-map replace doesn't drop them:
+    // null preserves the masked value in write-only mode; off, resend the
+    // stored value as-is.
+    for (const key of Object.keys(connection?.secret || {})) {
+      if (key in out) continue
+      out[key] = hideRoleInfo ? null : (connection.secret[key] ?? '')
     }
     const sshKey = out['filesystem:SSH_PRIVATE_KEY']
     if (sshKey) {
