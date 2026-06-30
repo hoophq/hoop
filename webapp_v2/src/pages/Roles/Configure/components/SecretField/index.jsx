@@ -21,6 +21,26 @@ function LeadingIcon({ color, children }) {
   )
 }
 
+// Field label + required asterisk, rendered by SecretField itself rather
+// than via the inputs' built-in `label` prop. This keeps the label→input
+// spacing identical across the set / editing / new states — otherwise
+// typing flips a field between layouts and the gap visibly jumps. `gap="xs"`
+// matches SourcedInput so SecretField lines up with the rest of the form.
+function FieldLabel({ label, required }) {
+  return (
+    <Group gap={4}>
+      <Text size="sm" fw={500}>
+        {label}
+      </Text>
+      {required && (
+        <Text size="sm" c="red">
+          *
+        </Text>
+      )}
+    </Group>
+  )
+}
+
 // SecretField — write-only credential editor. One component, three
 // variations selected from its props:
 //   set      → a stored secret; the value is never shown (masked input +
@@ -30,8 +50,9 @@ function LeadingIcon({ color, children }) {
 //              marks the field as edited.
 //   new      → no stored value yet; a plain editable input (+ optional
 //              remove for free-form rows).
-// The Replace/Restore control is likewise one component with variants —
-// see InlineAction.
+// Every state is `<Stack gap="xs"><FieldLabel/>{control}</Stack>` so the
+// label spacing stays put as the state changes. The Replace/Restore control
+// is likewise one component with variants — see InlineAction.
 export default function SecretField({
   label,
   required = false,
@@ -67,29 +88,30 @@ export default function SecretField({
       ? [SECRET_MASK, SECRET_MASK, SECRET_MASK].join('\n')
       : SECRET_MASK
     return (
-      <Input
-        label={label}
-        withAsterisk={required}
-        readOnly
-        value={isReference ? referenceText : maskedValue}
-        leftSection={
-          <LeadingIcon color={isReference ? 'indigo' : 'green'}>
-            <Check size={12} />
-          </LeadingIcon>
-        }
-        rightSection={
-          <InlineAction
-            kind="replace"
-            onClick={() => {
-              setEditing(true)
-              onReplace('') // stage empty so HTML5 required validation works
-            }}
-          />
-        }
-        rightSectionWidth={RIGHT_SECTION_WIDTH}
-        rightSectionPointerEvents="auto"
-        classNames={isTextarea ? { section: classes.topSection } : undefined}
-      />
+      <Stack gap="xs">
+        <FieldLabel label={label} required={required} />
+        <Input
+          readOnly
+          value={isReference ? referenceText : maskedValue}
+          leftSection={
+            <LeadingIcon color={isReference ? 'indigo' : 'green'}>
+              <Check size={12} />
+            </LeadingIcon>
+          }
+          rightSection={
+            <InlineAction
+              kind="replace"
+              onClick={() => {
+                setEditing(true)
+                onReplace('') // stage empty so required validation works
+              }}
+            />
+          }
+          rightSectionWidth={RIGHT_SECTION_WIDTH}
+          rightSectionPointerEvents="auto"
+          classNames={isTextarea ? { section: classes.topSection } : undefined}
+        />
+      </Stack>
     )
   }
 
@@ -107,11 +129,10 @@ export default function SecretField({
     )
     const placeholderText = placeholder || 'Enter new value'
 
+    let control
     if (isTextarea) {
-      return (
+      control = (
         <Textarea
-          label={label}
-          withAsterisk={required}
           required={required}
           autoFocus
           autosize
@@ -120,22 +141,19 @@ export default function SecretField({
           value={stagedValue}
           onChange={(e) => handleChange(e.currentTarget.value)}
           leftSection={
-          <LeadingIcon color="gray">
-            <PencilLine size={12} />
-          </LeadingIcon>
-        }
+            <LeadingIcon color="gray">
+              <PencilLine size={12} />
+            </LeadingIcon>
+          }
           rightSection={restore}
           rightSectionWidth={RIGHT_SECTION_WIDTH}
           rightSectionPointerEvents="auto"
           classNames={{ section: classes.topSection }}
         />
       )
-    }
-
-    if (showPicker) {
-      return (
+    } else if (showPicker) {
+      control = (
         <SourcedInput
-          label={label}
           required={required}
           type="text"
           autoFocus
@@ -150,26 +168,31 @@ export default function SecretField({
           rightSectionPointerEvents="auto"
         />
       )
+    } else {
+      control = (
+        <TextInput
+          required={required}
+          autoFocus
+          placeholder={placeholderText}
+          value={stagedValue}
+          onChange={(e) => handleChange(e.currentTarget.value)}
+          leftSection={
+            <LeadingIcon color="gray">
+              <PencilLine size={12} />
+            </LeadingIcon>
+          }
+          rightSection={restore}
+          rightSectionWidth={RIGHT_SECTION_WIDTH}
+          rightSectionPointerEvents="auto"
+        />
+      )
     }
 
     return (
-      <TextInput
-        label={label}
-        withAsterisk={required}
-        required={required}
-        autoFocus
-        placeholder={placeholderText}
-        value={stagedValue}
-        onChange={(e) => handleChange(e.currentTarget.value)}
-        leftSection={
-          <LeadingIcon color="gray">
-            <PencilLine size={12} />
-          </LeadingIcon>
-        }
-        rightSection={restore}
-        rightSectionWidth={RIGHT_SECTION_WIDTH}
-        rightSectionPointerEvents="auto"
-      />
+      <Stack gap="xs">
+        <FieldLabel label={label} required={required} />
+        {control}
+      </Stack>
     )
   }
 
@@ -177,16 +200,7 @@ export default function SecretField({
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
-        <Group gap={4}>
-          <Text size="sm" fw={500}>
-            {label}
-          </Text>
-          {required && (
-            <Text size="sm" c="red">
-              *
-            </Text>
-          )}
-        </Group>
+        <FieldLabel label={label} required={required} />
         {onRemove && (
           <ActionIcon
             variant="subtle"
