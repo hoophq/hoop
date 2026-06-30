@@ -39,7 +39,7 @@ function deriveAuthMethod(connection) {
   return 'password'
 }
 
-export default function SshRenderer({ connection, availableSources, forceNewState }) {
+export default function SshRenderer({ connection, availableSources, forceNewState, hideRoleInfo }) {
   const initialMethod = useMemo(() => deriveAuthMethod(connection), [connection])
   const [authMethod, setAuthMethod] = useState(initialMethod)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
@@ -96,6 +96,7 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
         fields={fields}
         availableSources={availableSources}
         forceNewState={forceNewState}
+        hideRoleInfo={hideRoleInfo}
       />
 
       <AgentSelectorSection />

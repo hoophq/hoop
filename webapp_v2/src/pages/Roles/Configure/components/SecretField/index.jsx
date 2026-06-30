@@ -28,7 +28,6 @@ export default function SecretField({
   referenceText,
   stagedAction,
   stagedValue = '',
-  secretsUpdatedAt,
   source,
   availableSources,
   onSourceChange,
@@ -92,7 +91,6 @@ export default function SecretField({
       label={label}
       description={description}
       required={required}
-      secretsUpdatedAt={secretsUpdatedAt}
       isReference={isReference}
       referenceText={referenceText}
       onReplace={() => {

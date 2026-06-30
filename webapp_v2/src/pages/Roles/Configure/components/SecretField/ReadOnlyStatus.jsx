@@ -2,7 +2,6 @@ import { Group, Stack, Text, Paper, ThemeIcon } from '@mantine/core'
 import { Check } from 'lucide-react'
 import Button from '@/components/Button'
 import MarkdownText from '@/components/MarkdownText'
-import { formatTimestamp } from './util'
 
 // The "set" state of SecretField: an existing inline secret. We never
 // show the value — just a confirmation that it's stored, with a
@@ -12,12 +11,10 @@ export default function ReadOnlyStatus({
   label,
   description,
   required,
-  secretsUpdatedAt,
   isReference,
   referenceText,
   onReplace,
 }) {
-  const updated = formatTimestamp(secretsUpdatedAt)
   return (
     <Stack gap="xs">
       <Group justify="space-between" align="center">
@@ -48,11 +45,6 @@ export default function ReadOnlyStatus({
               <Check size={12} />
             </ThemeIcon>
             <Text size="sm" c="dimmed">Set</Text>
-            {updated && (
-              <Text size="xs" c="dimmed">
-                {'· Last updated ' + updated}
-              </Text>
-            )}
           </Group>
         )}
       </Paper>

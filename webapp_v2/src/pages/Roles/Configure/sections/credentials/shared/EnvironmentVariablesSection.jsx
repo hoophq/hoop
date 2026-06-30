@@ -6,9 +6,11 @@ import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import SourcedInput from '@/components/SourcedInput'
+import SecretField from '../../../components/SecretField'
 import {
   decodeForDisplay,
   encodeSecretForSource,
+  isSecretReference,
   isValidPosixKey,
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
@@ -34,9 +36,12 @@ function EnvvarRow({
   value,
   source,
   availableSources,
+  writeOnly,
+  stagedAction,
   onCommitKey,
   onValueChange,
   onSourceChange,
+  onCancelReplace,
   onRemove,
 }) {
   const [draftName, setDraftName] = useState(displayName)
@@ -71,7 +76,21 @@ function EnvvarRow({
         />
       </Grid.Col>
       <Grid.Col span={6}>
-        {showSourceSelect ? (
+        {writeOnly ? (
+          <SecretField
+            label="Value"
+            type="password"
+            isExisting
+            stagedAction={stagedAction}
+            stagedValue={value}
+            source={source}
+            availableSources={availableSources}
+            onSourceChange={onSourceChange}
+            onReplace={onValueChange}
+            onChangeStaged={onValueChange}
+            onCancel={onCancelReplace}
+          />
+        ) : showSourceSelect ? (
           <SourcedInput
             label="Value"
             type="password"
@@ -106,7 +125,7 @@ function EnvvarRow({
   )
 }
 
-export default function EnvironmentVariablesSection({ connection, availableSources }) {
+export default function EnvironmentVariablesSection({ connection, availableSources, hideRoleInfo }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
   const renames = useConfigureRoleStore((s) => s.renames)
@@ -204,6 +223,8 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
             fieldSources[envKey] ||
             (encodedForDetection ? sourceFromEncodedValue(encodedForDetection) : null) ||
             defaultSource
+          const isPersistedReference = isSecretReference(currentSecrets[envKey] || '')
+          const writeOnly = Boolean(hideRoleInfo) && isExisting && !isPersistedReference
           return (
             <EnvvarRow
               key={envKey}
@@ -212,6 +233,8 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
               value={value}
               source={source}
               availableSources={availableSources}
+              writeOnly={writeOnly}
+              stagedAction={staged?.action}
               onCommitKey={(newName) => {
                 const nextKey = newName.startsWith('envvar:')
                   ? newName
@@ -233,6 +256,7 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
                 }
                 setFieldSource(envKey, nextSource)
               }}
+              onCancelReplace={() => cancelSecretChange(envKey)}
               onRemove={() => {
                 if (isExisting) deleteSecret(envKey)
                 else cancelSecretChange(envKey)

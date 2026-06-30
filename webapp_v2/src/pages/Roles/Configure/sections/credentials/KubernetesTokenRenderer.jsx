@@ -1,9 +1,11 @@
 import { Stack, Title } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
+import SecretField from '../../components/SecretField'
 import { sourceOptionsFor } from '../../components/SecretField/util'
 import {
   decodeForDisplay,
   encodeSecretForSource,
+  isSecretReference,
   sourceFromEncodedValue,
   SOURCES,
 } from '../../utils/secretsCodec'
@@ -31,17 +33,21 @@ const BEARER_PREFIX = 'Bearer '
 //    references stay verbatim — those resolve to the raw token at
 //    runtime and the agent handles the prefix downstream.
 //
-// Both fields round-trip plaintext (the gateway returns their values —
-// see shouldRoundTripSecrets), so we always render an editable
-// SourcedInput; no Set/Replace mode here.
+// When hide_role_info is off the gateway returns both values, so they
+// render as editable SourcedInputs. When it's on the values come back
+// masked (keys preserved); we then render the write-only Set/Replace
+// gate for an existing inline field. Provider references survive masking
+// and stay editable either way.
 export default function KubernetesTokenRenderer({
   connection,
   availableSources,
   forceNewState,
+  hideRoleInfo,
 }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
+  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
   const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
 
   const currentSecrets = connection.secret || {}
@@ -96,47 +102,113 @@ export default function KubernetesTokenRenderer({
   const authTokenSource = fieldSource(AUTH_TOKEN_KEY)
   const authToken = fieldValue(AUTH_TOKEN_KEY, { transform: stripBearer })
 
+  // hide_role_info on => gateway masks both values (keys preserved).
+  // Render the write-only gate for an existing, non-reference field;
+  // references and method-switched fields stay editable.
+  const writeOnlyFor = (key) =>
+    Boolean(hideRoleInfo) &&
+    !forceNewState &&
+    key in currentSecrets &&
+    !isSecretReference(currentSecrets[key] || '')
+  const clusterUrlWriteOnly = writeOnlyFor(CLUSTER_URL_KEY)
+  const authTokenWriteOnly = writeOnlyFor(AUTH_TOKEN_KEY)
+
   return (
     <Stack gap="xl">
       <Stack gap="md">
         <Title order={4}>Kubernetes token</Title>
         <Stack gap="lg">
-          <SourcedInput
-            label="Cluster URL"
-            required
-            placeholder="e.g. https://kubernetes.default.svc.cluster.local:443"
-            value={clusterUrl}
-            onChange={(plain) =>
-              replaceSecret(
-                CLUSTER_URL_KEY,
-                encodeSecretForSource(plain, clusterUrlSource),
-              )
-            }
-            source={clusterUrlSource}
-            sources={sourceOptionsFor(availableSources)}
-            onSourceChange={(nextSource) => {
-              replaceSecret(
-                CLUSTER_URL_KEY,
-                encodeSecretForSource(clusterUrl, nextSource),
-              )
-              setFieldSource(CLUSTER_URL_KEY, nextSource)
-            }}
-          />
-          <SourcedInput
-            label="Authorization token"
-            required
-            placeholder="e.g. jwt.token.example"
-            value={authToken}
-            onChange={(plain) =>
-              replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(plain, authTokenSource))
-            }
-            source={authTokenSource}
-            sources={sourceOptionsFor(availableSources)}
-            onSourceChange={(nextSource) => {
-              replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(authToken, nextSource))
-              setFieldSource(AUTH_TOKEN_KEY, nextSource)
-            }}
-          />
+          {clusterUrlWriteOnly ? (
+            <SecretField
+              label="Cluster URL"
+              required
+              isExisting
+              stagedAction={stagedSecrets[CLUSTER_URL_KEY]?.action}
+              stagedValue={clusterUrl}
+              source={clusterUrlSource}
+              availableSources={availableSources}
+              onSourceChange={(nextSource) => {
+                replaceSecret(
+                  CLUSTER_URL_KEY,
+                  encodeSecretForSource(clusterUrl, nextSource),
+                )
+                setFieldSource(CLUSTER_URL_KEY, nextSource)
+              }}
+              onReplace={(plain) =>
+                replaceSecret(
+                  CLUSTER_URL_KEY,
+                  encodeSecretForSource(plain, clusterUrlSource),
+                )
+              }
+              onChangeStaged={(plain) =>
+                replaceSecret(
+                  CLUSTER_URL_KEY,
+                  encodeSecretForSource(plain, clusterUrlSource),
+                )
+              }
+              onCancel={() => cancelSecretChange(CLUSTER_URL_KEY)}
+            />
+          ) : (
+            <SourcedInput
+              label="Cluster URL"
+              required
+              placeholder="e.g. https://kubernetes.default.svc.cluster.local:443"
+              value={clusterUrl}
+              onChange={(plain) =>
+                replaceSecret(
+                  CLUSTER_URL_KEY,
+                  encodeSecretForSource(plain, clusterUrlSource),
+                )
+              }
+              source={clusterUrlSource}
+              sources={sourceOptionsFor(availableSources)}
+              onSourceChange={(nextSource) => {
+                replaceSecret(
+                  CLUSTER_URL_KEY,
+                  encodeSecretForSource(clusterUrl, nextSource),
+                )
+                setFieldSource(CLUSTER_URL_KEY, nextSource)
+              }}
+            />
+          )}
+          {authTokenWriteOnly ? (
+            <SecretField
+              label="Authorization token"
+              required
+              isExisting
+              stagedAction={stagedSecrets[AUTH_TOKEN_KEY]?.action}
+              stagedValue={authToken}
+              source={authTokenSource}
+              availableSources={availableSources}
+              onSourceChange={(nextSource) => {
+                replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(authToken, nextSource))
+                setFieldSource(AUTH_TOKEN_KEY, nextSource)
+              }}
+              onReplace={(plain) =>
+                replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(plain, authTokenSource))
+              }
+              onChangeStaged={(plain) =>
+                replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(plain, authTokenSource))
+              }
+              onCancel={() => cancelSecretChange(AUTH_TOKEN_KEY)}
+            />
+          ) : (
+            <SourcedInput
+              label="Authorization token"
+              required
+              placeholder="e.g. jwt.token.example"
+              value={authToken}
+              onChange={(plain) =>
+                replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(plain, authTokenSource))
+              }
+              source={authTokenSource}
+              sources={sourceOptionsFor(availableSources)}
+              onSourceChange={(nextSource) => {
+                replaceSecret(AUTH_TOKEN_KEY, encodeWithBearer(authToken, nextSource))
+                setFieldSource(AUTH_TOKEN_KEY, nextSource)
+              }}
+            />
+          )}
         </Stack>
       </Stack>
       <AllowInsecureSslSection connection={connection} />

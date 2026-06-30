@@ -14,6 +14,7 @@ import { deriveConnectionInfo } from './utils/connectionMethod'
 import { SOURCES, SOURCE_LABELS } from './utils/secretsCodec'
 import { useConfigureRoleStore } from './store'
 import { pickRendererRule } from './sections/credentials'
+import { formatTimestamp } from './components/SecretField/util'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
@@ -81,7 +82,7 @@ function CredentialsError({ title, message }) {
   )
 }
 
-function CredentialsBody({ connection, availableSources, forceNewState, connectionMethod }) {
+function CredentialsBody({ connection, availableSources, forceNewState, connectionMethod, hideRoleInfo }) {
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
   const loading = useConnectionsMetadataStore((s) => s.loading)
   const error = useConnectionsMetadataStore((s) => s.error)
@@ -115,7 +116,7 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
   }
 
   const node = rule.render(
-    { connection, availableSources, forceNewState, connectionMethod },
+    { connection, availableSources, forceNewState, connectionMethod, hideRoleInfo },
     { getSchema: getCredentialSchema },
   )
   if (!node) {
@@ -126,7 +127,15 @@ function CredentialsBody({ connection, availableSources, forceNewState, connecti
       />
     )
   }
-  return node
+  const lastUpdated = formatTimestamp(connection.secrets_updated_at)
+  return (
+    <Stack gap="md">
+      {lastUpdated && (
+        <Text size="xs" c="dimmed">{'Last updated ' + lastUpdated}</Text>
+      )}
+      {node}
+    </Stack>
+  )
 }
 
 function SecretsManagerProviderSection({ provider, onProviderChange }) {
@@ -167,6 +176,7 @@ export default function CredentialsTab({ connection }) {
   const setSecretsManagerProvider = useConfigureRoleStore(
     (s) => s.setSecretsManagerProvider,
   )
+  const hideRoleInfo = useConfigureRoleStore((s) => s.hideRoleInfo)
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
   const isDerivedMethod = selectedMethod === derived.method
@@ -215,6 +225,7 @@ export default function CredentialsTab({ connection }) {
         availableSources={availableSources}
         forceNewState={forceNewState}
         connectionMethod={selectedMethod}
+        hideRoleInfo={hideRoleInfo}
       />
     </Stack>
   )

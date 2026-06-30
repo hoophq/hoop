@@ -14,6 +14,7 @@ export default function CatalogRenderer({
   availableSources,
   forceNewState,
   connectionMethod,
+  hideRoleInfo,
 }) {
   return (
     <Stack gap="xl">
@@ -25,6 +26,7 @@ export default function CatalogRenderer({
           availableSources={availableSources}
           forceNewState={forceNewState}
           connectionMethod={connectionMethod}
+          hideRoleInfo={hideRoleInfo}
         />
       </Stack>
       <AgentSelectorSection />
