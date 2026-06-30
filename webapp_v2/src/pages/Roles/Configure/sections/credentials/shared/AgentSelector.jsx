@@ -9,7 +9,7 @@ import { useConfigureRoleStore } from '../../../store'
 // trigger a fetch on mount and read the cached state. Every bespoke
 // renderer ends with this section — keeps the agent picker in a
 // consistent position across the credentials tab.
-export default function AgentSelectorSection() {
+export default function AgentSelector() {
   const agents = useAgentStore((s) => s.agents)
   const fetchAgents = useAgentStore((s) => s.fetchAgents)
   const agentId = useConfigureRoleStore((s) => s.drafts.agent_id)

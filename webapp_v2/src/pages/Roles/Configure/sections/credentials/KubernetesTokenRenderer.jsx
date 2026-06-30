@@ -10,8 +10,8 @@ import {
   SOURCES,
 } from '../../utils/secretsCodec'
 import { useConfigureRoleStore } from '../../store'
-import AllowInsecureSslSection from './shared/AllowInsecureSslSection'
-import AgentSelectorSection from './shared/AgentSelectorSection'
+import AllowInsecureSsl from './shared/AllowInsecureSsl'
+import AgentSelector from './shared/AgentSelector'
 
 const CLUSTER_URL_KEY = 'envvar:REMOTE_URL'
 const AUTH_TOKEN_KEY = 'envvar:HEADER_AUTHORIZATION'
@@ -211,8 +211,8 @@ export default function KubernetesTokenRenderer({
           )}
         </Stack>
       </Stack>
-      <AllowInsecureSslSection connection={connection} />
-      <AgentSelectorSection />
+      <AllowInsecureSsl connection={connection} />
+      <AgentSelector />
     </Stack>
   )
 }

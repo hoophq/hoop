@@ -1,6 +1,6 @@
 import { Stack, Title } from '@mantine/core'
 import PredefinedFields from './shared/PredefinedFields'
-import AgentSelectorSection from './shared/AgentSelectorSection'
+import AgentSelector from './shared/AgentSelector'
 
 // Renders any catalog-driven connection: databases (postgres, mysql,
 // …), catalog applications (git, github, tcp), and catalog custom
@@ -29,7 +29,7 @@ export default function CatalogRenderer({
           hideRoleInfo={hideRoleInfo}
         />
       </Stack>
-      <AgentSelectorSection />
+      <AgentSelector />
     </Stack>
   )
 }
