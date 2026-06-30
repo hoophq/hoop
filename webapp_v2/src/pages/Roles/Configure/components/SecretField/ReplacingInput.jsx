@@ -1,11 +1,11 @@
-import { Group, Stack, ThemeIcon } from '@mantine/core'
+import { ThemeIcon } from '@mantine/core'
 import { PencilLine } from 'lucide-react'
 import TextInput from '@/components/TextInput'
 import Textarea from '@/components/Textarea'
 import SourcedInput from '@/components/SourcedInput'
-import FieldLabel from './FieldLabel'
 import InlineAction from './InlineAction'
 import { sourceOptionsFor } from './util'
+import classes from './SecretField.module.css'
 
 const RIGHT_SECTION_WIDTH = 112
 
@@ -28,24 +28,30 @@ export default function ReplacingInput({
 }) {
   const restore = <InlineAction kind="restore" onClick={onCancel} />
   const showPicker = Array.isArray(availableSources) && availableSources.length > 1
+  const pencil = (
+    <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+      <PencilLine size={12} />
+    </ThemeIcon>
+  )
 
   if (type === 'textarea') {
     return (
-      <Stack gap={4}>
-        <Group justify="space-between" align="center">
-          <FieldLabel label={label} required={required} />
-          {restore}
-        </Group>
-        <Textarea
-          autoFocus
-          autosize
-          minRows={4}
-          required={required}
-          placeholder={placeholder || 'Enter new value'}
-          value={value}
-          onChange={(e) => onChange(e.currentTarget.value)}
-        />
-      </Stack>
+      <Textarea
+        label={label}
+        withAsterisk={required}
+        required={required}
+        autoFocus
+        autosize
+        minRows={4}
+        placeholder={placeholder || 'Enter new value'}
+        value={value}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        leftSection={pencil}
+        rightSection={restore}
+        rightSectionWidth={RIGHT_SECTION_WIDTH}
+        rightSectionPointerEvents="auto"
+        classNames={{ section: classes.topSection }}
+      />
     )
   }
 
@@ -78,11 +84,7 @@ export default function ReplacingInput({
       placeholder={placeholder || 'Enter new value'}
       value={value}
       onChange={(e) => onChange(e.currentTarget.value)}
-      leftSection={
-        <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
-          <PencilLine size={12} />
-        </ThemeIcon>
-      }
+      leftSection={pencil}
       rightSection={restore}
       rightSectionWidth={RIGHT_SECTION_WIDTH}
       rightSectionPointerEvents="auto"
