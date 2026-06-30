@@ -205,6 +205,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -233,6 +236,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
