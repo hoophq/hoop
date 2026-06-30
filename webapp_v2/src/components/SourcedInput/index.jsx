@@ -3,7 +3,6 @@ import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import Textarea from '@/components/Textarea'
 import Select from '@/components/Select'
-import MarkdownText from '@/components/MarkdownText'
 import { SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
 import SourceMenu from './SourceMenu'
 import classes from './SourcedInput.module.css'
@@ -22,7 +21,6 @@ export default function SourcedInput({
   label,
   required,
   placeholder,
-  description,
   type = 'text',
   value,
   onChange,
@@ -41,13 +39,11 @@ export default function SourcedInput({
   const isTextarea = type === 'textarea'
 
   const labelNode = label ? <FieldLabel label={label} required={required} /> : null
-  const descriptionNode = description ? <MarkdownText>{description}</MarkdownText> : null
 
   if (isTextarea) {
     return (
       <Stack gap={4}>
         {labelNode}
-        {descriptionNode}
         {showSourceMenu && (
           <Select
             data={normalizeForSelect(sources)}
@@ -75,7 +71,6 @@ export default function SourcedInput({
   return (
     <Stack gap={4}>
       {labelNode}
-      {descriptionNode}
       <Group gap={0} wrap="nowrap" align="stretch">
         {showSourceMenu && (
           <SourceMenu
