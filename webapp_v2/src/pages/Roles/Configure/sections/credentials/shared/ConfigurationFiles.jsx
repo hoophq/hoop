@@ -27,7 +27,7 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
   }, [displayName])
 
   return (
-    <Grid gutter="md" align="flex-start" key={rowKey}>
+    <Grid gutter="md" align="center" key={rowKey}>
       <Grid.Col span={11}>
         <Stack gap="md">
           <TextInput
@@ -77,7 +77,6 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
           variant="subtle"
           color="red"
           size="lg"
-          mt="xl"
           onClick={onRemove}
           aria-label={'Remove configuration file ' + displayName}
         >
