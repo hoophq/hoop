@@ -32,6 +32,8 @@ export default function SourcedInput({
   sources,
   onSourceChange,
   rightSection,
+  rightSectionWidth,
+  rightSectionPointerEvents,
   size = 'sm',
 }) {
   const Input = INPUT_BY_TYPE[type] || TextInput
@@ -94,6 +96,8 @@ export default function SourcedInput({
           autoFocus={autoFocus}
           required={required}
           rightSection={rightSection}
+          rightSectionWidth={rightSectionWidth}
+          rightSectionPointerEvents={rightSectionPointerEvents}
           size={size}
           classNames={showSourceMenu ? { input: classes.inputSibling } : undefined}
         />
