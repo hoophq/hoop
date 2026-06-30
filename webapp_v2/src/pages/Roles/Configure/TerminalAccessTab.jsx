@@ -6,9 +6,9 @@ import MultiSelect from '@/components/MultiSelect'
 import Select from '@/components/Select'
 import { useConfigureRoleStore } from './store'
 import ToggleSection from './components/ToggleSection'
-import AIDataMaskingSection from './sections/AIDataMaskingSection'
+import AIDataMaskingSection from './components/AIDataMaskingSection'
 import MetadataFieldsInput from './sections/MetadataFieldsInput'
-import ReviewSection from './sections/ReviewSection'
+import ReviewSection from './components/ReviewSection'
 import { hasReviewConfig } from './utils/reviewConfig'
 
 // Terminal Access tab: every per-connection setting that affects how

@@ -244,7 +244,7 @@ import SourcedInput from '@/components/SourcedInput'
 // Sizes match Mantine inputs — default `sm`, accepts xs/sm/md/lg/xl:
 <SourcedInput size="md" {...props} />
 ```
-Supports `type="text" | "password" | "textarea"` and `size="xs" | "sm" | "md" | "lg" | "xl"` (default `sm`, Mantine's input default). Heights track Mantine's `--input-height-*` variables so a `size="md"` SourcedInput lines up with a `size="md"` TextInput on the same form. Renders the field description through `MarkdownText` so inline `[label](url)` links work. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
+Supports `type="text" | "password" | "textarea"` and `size="xs" | "sm" | "md" | "lg" | "xl"` (default `sm`, Mantine's input default). Heights track Mantine's `--input-height-*` variables so a `size="md"` SourcedInput lines up with a `size="md"` TextInput on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -364,17 +364,6 @@ import TagsInput from '@/components/TagsInput'
 />
 ```
 
-### `MarkdownText`
-Mantine `<Text>` drop-in that renders inline markdown links (`[label](url)`) as anchors. Used for catalog field descriptions sourced from `connections-metadata.json`, where helper text occasionally points to external docs. Only inline links are interpreted — bold, italics, lists, code, and other markdown stay verbatim.
-```jsx
-import MarkdownText from '@/components/MarkdownText'
-
-<MarkdownText>{'Read more in [our docs](https://hoop.dev/docs/postgres).'}</MarkdownText>
-
-// Override defaults like a regular Text:
-<MarkdownText size="sm" c="gray.7">{description}</MarkdownText>
-```
-Links open in a new tab with `rel="noopener noreferrer"`. Default `size="xs" c="dimmed"` matches helper-text styling.
 
 ---
 
