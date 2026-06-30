@@ -104,7 +104,6 @@ export default function PredefinedFields({
             <SourcedInput
               key={envKey}
               label={field.label}
-              description={field.description}
               required={field.required}
               placeholder={field.placeholder}
               type={field.type}
@@ -132,7 +131,6 @@ export default function PredefinedFields({
           <SecretField
             key={envKey}
             label={field.label}
-            description={field.description}
             required={field.required}
             placeholder={field.placeholder}
             type={field.type}
