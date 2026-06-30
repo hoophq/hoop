@@ -1,8 +1,8 @@
 import { Stack } from '@mantine/core'
-import EnvironmentVariablesSection from './shared/EnvironmentVariablesSection'
-import ConfigurationFilesSection from './shared/ConfigurationFilesSection'
-import CommandArgsSection from './shared/CommandArgsSection'
-import AgentSelectorSection from './shared/AgentSelectorSection'
+import EnvironmentVariables from './shared/EnvironmentVariables'
+import ConfigurationFiles from './shared/ConfigurationFiles'
+import CommandArgs from './shared/CommandArgs'
+import AgentSelector from './shared/AgentSelector'
 
 // Free-form custom connection editor. Matches the CLJS
 // server/credentials-step layout: env vars list + configuration files
@@ -14,14 +14,14 @@ import AgentSelectorSection from './shared/AgentSelectorSection'
 export default function FreeFormCustomRenderer({ connection, availableSources, hideRoleInfo }) {
   return (
     <Stack gap="xl">
-      <EnvironmentVariablesSection
+      <EnvironmentVariables
         connection={connection}
         availableSources={availableSources}
         hideRoleInfo={hideRoleInfo}
       />
-      <ConfigurationFilesSection connection={connection} hideRoleInfo={hideRoleInfo} />
-      <CommandArgsSection />
-      <AgentSelectorSection />
+      <ConfigurationFiles connection={connection} hideRoleInfo={hideRoleInfo} />
+      <CommandArgs />
+      <AgentSelector />
     </Stack>
   )
 }

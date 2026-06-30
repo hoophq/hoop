@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Radio from '@/components/Radio'
 import PredefinedFields from './shared/PredefinedFields'
-import AgentSelectorSection from './shared/AgentSelectorSection'
+import AgentSelector from './shared/AgentSelector'
 import { useConfigureRoleStore } from '../../store'
 
 // React-specific field schema. SSH's auth-method radio drives which
@@ -99,7 +99,7 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
         hideRoleInfo={hideRoleInfo}
       />
 
-      <AgentSelectorSection />
+      <AgentSelector />
     </Stack>
   )
 }

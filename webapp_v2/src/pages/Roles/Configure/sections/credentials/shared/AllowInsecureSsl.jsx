@@ -8,7 +8,7 @@ import ToggleSection from '../../../components/ToggleSection'
 // (see gateway/api/connections/secrets.go::isBooleanValue), so we can
 // read the actual current state instead of starting blind. Toggling
 // stages a replace whose value is base64-encoded "true" or "false".
-export default function AllowInsecureSslSection({ connection }) {
+export default function AllowInsecureSsl({ connection }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
 

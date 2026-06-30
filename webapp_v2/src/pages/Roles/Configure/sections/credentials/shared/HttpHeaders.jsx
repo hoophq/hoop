@@ -11,7 +11,7 @@ import {
   decodeForDisplay,
   encodeSecretForSource,
   isSecretReference,
-  isValidPosixKey,
+  isValidHeaderKey,
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
   SOURCES,
@@ -19,18 +19,16 @@ import {
 import { useConfigureRoleStore } from '../../../store'
 import { sourceOptionsFor } from '../../../components/SecretField/util'
 
-// Free-form env-var editor. Values round-trip plaintext from the
-// backend; rename commits on blur and is translated into delete-old +
-// replace-new at save time so the row's rendered position stays put.
-// The list never shrinks past one empty row — auto-adds a placeholder
-// if everything was removed.
-//
-// When `availableSources` is supplied (Secrets Manager mode) each row
-// gets a per-row source picker. The picked source decides whether the
-// value is encoded bare (manual) or with a `_vaultkv1:` / `_aws:` /
-// `_vaultkv2:` prefix.
+const HEADER_PREFIX = 'envvar:HEADER_'
 
-function EnvvarRow({
+// HTTP headers editor for httpproxy connections. Same row shape as
+// EnvironmentVariables but keyed under `envvar:HEADER_*`. CLJS
+// reference: configuration_inputs.cljs::http-headers-section
+// (parse-header-key allows any non-whitespace value — headers can be
+// case-sensitive and contain hyphens, so we don't enforce POSIX
+// uppercase here, unlike env vars).
+
+function HeaderRow({
   rowKey,
   displayName,
   value,
@@ -46,8 +44,6 @@ function EnvvarRow({
 }) {
   const [draftName, setDraftName] = useState(displayName)
 
-  // Keep the local draft in sync when the displayed name changes from
-  // outside (e.g. another component triggered a rename for this key).
   useEffect(() => {
     setDraftName(displayName)
   }, [displayName])
@@ -62,17 +58,16 @@ function EnvvarRow({
           value={draftName}
           onChange={(e) => {
             const next = e.currentTarget.value
-            // Live POSIX validation — invalid characters are silently
-            // rejected so the user can't end up with `12_BAD` (which
-            // the agent rejects at connect time anyway).
-            if (isValidPosixKey(next)) setDraftName(next)
+            // Headers allow any non-whitespace string (case-sensitive)
+            // — mirrors CLJS configuration_inputs.cljs:16-17,81-97.
+            if (isValidHeaderKey(next)) setDraftName(next)
           }}
           onBlur={() => {
             const trimmed = draftName.trim()
             if (!trimmed) return
             onCommitKey(trimmed)
           }}
-          placeholder="e.g. API_KEY"
+          placeholder="X-Request-Id"
         />
       </Grid.Col>
       <Grid.Col span={6}>
@@ -125,7 +120,15 @@ function EnvvarRow({
   )
 }
 
-export default function EnvironmentVariablesSection({ connection, availableSources, hideRoleInfo }) {
+// `excludeKeys` lists envvar keys this section should ignore — used by
+// ClaudeCodeRenderer to hide HEADER_X_API_KEY (which has its own input
+// in the Basic info section).
+export default function HttpHeaders({
+  connection,
+  availableSources,
+  excludeKeys = [],
+  hideRoleInfo,
+}) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
   const renames = useConfigureRoleStore((s) => s.renames)
@@ -135,10 +138,8 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
   const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
   const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
 
-  // When the parent runs in Secrets Manager mode it passes
-  // [provider, manual-input] as availableSources. The provider is the
-  // first item so it doubles as the default for fresh rows.
   const defaultSource = availableSources?.[0] || SOURCES.MANUAL
+  const exclude = new Set(excludeKeys)
 
   const currentSecrets = connection.secret || {}
   const stagedDeletedKeys = new Set(
@@ -147,39 +148,41 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
       .map(([k]) => k),
   )
   const existingKeys = Object.keys(currentSecrets)
-    .filter((k) => k.startsWith('envvar:'))
+    .filter((k) => k.startsWith(HEADER_PREFIX))
+    .filter((k) => !exclude.has(k))
     .filter((k) => !stagedDeletedKeys.has(k))
   const stagedNewKeys = Object.entries(stagedSecrets)
     .filter(
       ([k, change]) =>
         change.action === 'new' &&
-        k.startsWith('envvar:') &&
+        k.startsWith(HEADER_PREFIX) &&
+        !exclude.has(k) &&
         !existingKeys.includes(k),
     )
     .map(([k]) => k)
   const allKeys = [...existingKeys, ...stagedNewKeys]
 
   // Keep at least one row available so the section never collapses.
-  // Matches CLJS behaviour (the legacy form always shows a blank input).
+  // Matches CLJS behaviour and EnvironmentVariables — the list
+  // always shows a blank input even when no headers exist yet.
   useEffect(() => {
     if (allKeys.length === 0) {
-      const sentinel = 'envvar:NEW_KEY_1'
-      replaceSecret(sentinel, '')
+      replaceSecret(`${HEADER_PREFIX}NEW_HEADER_1`, '')
     }
   }, [allKeys.length, replaceSecret])
 
   const addEmptyRow = () => {
     let i = 1
-    while (allKeys.includes(`envvar:NEW_KEY_${i}`)) i += 1
-    replaceSecret(`envvar:NEW_KEY_${i}`, '')
+    while (allKeys.includes(`${HEADER_PREFIX}NEW_HEADER_${i}`)) i += 1
+    replaceSecret(`${HEADER_PREFIX}NEW_HEADER_${i}`, '')
   }
 
   return (
-    <Stack gap="xl">
+    <Stack gap="md">
       <Stack gap="xs">
-        <Title order={4}>Environment variables</Title>
+        <Title order={4}>HTTP headers</Title>
         <Text size="sm" c="dimmed">
-          Include environment variables to be used in your resource role.
+          Add HTTP headers that will be sent with each proxied request.
         </Text>
       </Stack>
 
@@ -189,33 +192,14 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
           const isExisting = envKey in currentSecrets
           const renamedTo = renames[envKey]
           const effectiveKey = renamedTo || envKey
-          // Hide the auto-generated `NEW_KEY_N` sentinel from the user
-          // ONLY when it's an actual UI placeholder (not persisted on
-          // the connection). Legacy junk records with the same name
-          // shape — created by an older version that didn't reject
-          // unnamed placeholders on save — must still display so the
-          // user can see and clean them up.
-          const isPlaceholder = !isExisting && PLACEHOLDER_KEY_RE.test(effectiveKey)
-          const displayName = isPlaceholder ? '' : effectiveKey.slice('envvar:'.length)
-          // If anything is staged for this row we honour it verbatim,
-          // even when the value is an empty string — that's "user
-          // explicitly cleared the input" and we don't want to fall back
-          // to the persisted value (would resurrect stale data when the
-          // auto-placeholder kicks in after a delete).
-          //
-          // We also strip any leading provider prefix (`_vaultkv1:` etc)
-          // so the input shows the bare reference id; the source picker
-          // to the left conveys which provider applies. In Manual mode
-          // (no availableSources) the strip is a no-op for ordinary
-          // values and only affects rows that happened to be saved as
-          // references — those round-trip back through the picker once
-          // the user re-enters Secrets Manager mode.
+          const isPlaceholder =
+            !isExisting && PLACEHOLDER_KEY_RE.test(effectiveKey)
+          const displayName = isPlaceholder
+            ? ''
+            : effectiveKey.slice(HEADER_PREFIX.length)
           const value = staged
             ? decodeForDisplay(staged.value || '')
             : decodeForDisplay(currentSecrets[envKey])
-          // Source priority: explicit per-field pick (fieldSources) →
-          // detection from the encoded value → defaultSource (provider
-          // when in Secrets Manager mode, manual otherwise).
           const encodedForDetection = staged
             ? staged.value
             : currentSecrets[envKey] || ''
@@ -226,7 +210,7 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
           const isPersistedReference = isSecretReference(currentSecrets[envKey] || '')
           const writeOnly = Boolean(hideRoleInfo) && isExisting && !isPersistedReference
           return (
-            <EnvvarRow
+            <HeaderRow
               key={envKey}
               rowKey={envKey}
               displayName={displayName}
@@ -236,21 +220,17 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
               writeOnly={writeOnly}
               stagedAction={staged?.action}
               onCommitKey={(newName) => {
-                const nextKey = newName.startsWith('envvar:')
+                // Header names round-trip case-sensitive — don't
+                // uppercase like env vars do.
+                const nextKey = newName.startsWith(HEADER_PREFIX)
                   ? newName
-                  : 'envvar:' + newName.toUpperCase()
+                  : HEADER_PREFIX + newName
                 renameSecret(envKey, nextKey)
               }}
               onValueChange={(plain) =>
                 replaceSecret(envKey, encodeSecretForSource(plain, source))
               }
               onSourceChange={(nextSource) => {
-                // Stage the value under the new source before bumping
-                // fieldSources so save() always sends the right prefix —
-                // even when the user just toggles the picker without
-                // typing. setFieldSource handles re-encoding for staged
-                // rows; for not-yet-staged rows we stage their current
-                // (already-stripped) value here.
                 if (!staged) {
                   replaceSecret(envKey, encodeSecretForSource(value, nextSource))
                 }
@@ -270,7 +250,7 @@ export default function EnvironmentVariablesSection({ connection, availableSourc
           w="fit-content"
           onClick={addEmptyRow}
         >
-          Add key/value
+          Add header
         </Button>
       </Stack>
     </Stack>
