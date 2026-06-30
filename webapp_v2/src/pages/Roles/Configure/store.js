@@ -517,13 +517,19 @@ export const useConfigureRoleStore = create((set, get) => ({
     return Object.keys(buildDraftsPatch(state.drafts, state.baseline)).length > 0
   },
 
-  // Empty value = delete (per backend mergeSecrets). Renames become
-  // delete-old + replace-new so row position is preserved in the UI
-  // while the wire stays correct. SSH_PRIVATE_KEY gets a trailing
-  // newline because the agent's parser requires it (mirrors CLJS
-  // helpers.cljs config->json).
+  // Builds the PATCH `secret` map. An empty value clears the entry; a
+  // rename becomes clear-old + write-new so the row keeps its position;
+  // SSH_PRIVATE_KEY gets the trailing newline the agent's parser requires
+  // (mirrors CLJS helpers.cljs config->json).
+  //
+  // When hide_role_info is on the gateway applies the patch as an overlay:
+  // only the keys we send survive, and a `null` value means "keep the
+  // stored secret". So every existing key the user didn't touch is echoed
+  // back as `null` — otherwise the overlay would drop it and wipe the
+  // credential. An empty string still clears the value, which is how
+  // "remove" works in write-only mode.
   buildSecretsPatch: () => {
-    const { stagedSecrets, renames, connection } = get()
+    const { stagedSecrets, renames, connection, hideRoleInfo } = get()
     const out = {}
     for (const [key, change] of Object.entries(stagedSecrets)) {
       if (isPlaceholderEntry(key, change)) continue
@@ -539,6 +545,13 @@ export const useConfigureRoleStore = create((set, get) => ({
       const persisted = connection?.secret?.[origKey] || ''
       out[origKey] = ''
       out[newKey] = stagedValue || persisted
+    }
+    // Write-only overlay drops any key it doesn't receive, so echo every
+    // untouched secret back as null to preserve it (references included).
+    if (hideRoleInfo) {
+      for (const key of Object.keys(connection?.secret || {})) {
+        if (!(key in out)) out[key] = null
+      }
     }
     const sshKey = out['filesystem:SSH_PRIVATE_KEY']
     if (sshKey) {

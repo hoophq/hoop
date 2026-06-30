@@ -1,5 +1,6 @@
 import { RefreshCw, RotateCcw } from 'lucide-react'
 import Button from '@/components/Button'
+import classes from './InlineAction.module.css'
 
 // The text+icon action docked in a SecretField input's right section.
 //   replace (set state)     → reveals the editor for a new value.
@@ -19,6 +20,7 @@ export default function InlineAction({ kind, onClick }) {
       size="compact-sm"
       rightSection={<Icon size={14} />}
       onClick={onClick}
+      classNames={{ label: classes.label }}
     >
       {label}
     </Button>

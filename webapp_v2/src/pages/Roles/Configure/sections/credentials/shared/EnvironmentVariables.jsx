@@ -114,7 +114,7 @@ function EnvvarRow({
         <ActionIcon
           variant="subtle"
           color="red"
-          size="lg"
+          size={36}
           onClick={onRemove}
           aria-label={'Remove ' + displayName}
         >
