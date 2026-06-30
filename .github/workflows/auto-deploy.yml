@@ -17,9 +17,11 @@ name: Auto Deploy
 # Canary ordering (mirrors infra's "Deploy All Instances"):
 #   - Demo environments (appdemo, hoopdemo) and the sandbox canary deploy in
 #     parallel as soon as the release succeeds.
-#   - Customer environments (tryrunops) deploy only after the sandbox deploy
-#     succeeds, so a broken release is caught on sandbox before it reaches a
-#     customer. A failing demo never blocks a customer deploy.
+#   - Customer and production environments (tryrunops, enjoei, rdstation, unico,
+#     dock, multitenant) deploy only after the sandbox deploy succeeds, so a
+#     broken release is caught on sandbox before it reaches a customer or the
+#     production cloud. They then roll out in parallel with each other. A
+#     failing demo never blocks a customer deploy.
 # Each deploy reuses the local composite action .github/actions/deploy-app,
 # which dispatches infra's "Deploy By App" and waits for it to finish.
 on:
@@ -100,15 +102,18 @@ jobs:
 
   deploy-customers:
     name: Deploy ${{ matrix.app }}
-    # Gate customer environments on the sandbox canary specifically: they only
-    # deploy once sandbox has upgraded successfully. (resolve-version is also
+    # Gate customer and production environments on the sandbox canary
+    # specifically: they only deploy once sandbox has upgraded successfully,
+    # then roll out in parallel with each other. (resolve-version is also
     # needed here to read its version output.)
     needs: [resolve-version, deploy-canary]
     runs-on: ubuntu-latest
     strategy:
+      # Independent namespaces — if one fails, still attempt the others and let
+      # each report its own status.
       fail-fast: false
       matrix:
-        app: [tryrunops]
+        app: [tryrunops, enjoei, rdstation, unico, dock, multitenant]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/deploy-app
