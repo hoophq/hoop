@@ -239,8 +239,14 @@ func buildLegacyGuardRailErrorMessage(rawInfo []byte) (string, bool) {
 		return "", false
 	}
 
-	parts := make([]string, 0, len(items))
+	totalItems := len(items)
+	itemParts := make([]string, 0, totalItems)
 	for _, item := range items {
+		parts := make([]string, 0)
+		if item.Message != "" {
+			parts = append(parts, item.Message)
+		}
+
 		direction := "InputRules"
 		if strings.EqualFold(item.Direction, "output") {
 			direction = "OutputRules"
@@ -253,18 +259,23 @@ func buildLegacyGuardRailErrorMessage(rawInfo []byte) (string, bool) {
 		ruleType := item.Rule.Type
 		if len(item.Rule.Words) > 0 {
 			parts = append(parts,
-				fmt.Sprintf("validation error, match guard rail %s rule, type=%s, words=%v", scope, ruleType, item.Rule.Words))
-			continue
-		}
-		if item.Rule.PatternRegex != "" {
+				fmt.Sprintf("match guard rail %s rule, type=%s, words=%v;", scope, ruleType, item.Rule.Words))
+		} else if item.Rule.PatternRegex != "" {
 			parts = append(parts,
-				fmt.Sprintf("validation error, match guard rail %s rule, type=%s, patterns=%s", scope, ruleType, item.Rule.PatternRegex))
-			continue
+				fmt.Sprintf("match guard rail %s rule, type=%s, patterns=%s;", scope, ruleType, item.Rule.PatternRegex))
+		} else {
+			parts = append(parts, fmt.Sprintf("match guard rail %s rule, type=%s;", scope, ruleType))
 		}
-		parts = append(parts, fmt.Sprintf("validation error, match guard rail %s rule, type=%s", scope, ruleType))
+
+		itemParts = append(itemParts, strings.Join(parts, ", "))
 	}
 
-	return "Blocked by the following Hoop Guardrails Rules: " + strings.Join(parts, ", "), true
+	baseMsg := "Blocked by the following Guardrails rule: "
+	if totalItems > 1 {
+		baseMsg = fmt.Sprintf("Blocked because %d Guardrails rules were violated: ", totalItems)
+	}
+
+	return baseMsg + strings.Join(itemParts, "; "), true
 }
 
 func sendFeatureFlagSeed(stream *streamclient.AgentStream) {

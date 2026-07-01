@@ -409,11 +409,15 @@ func sessionToMap(s *models.Session) map[string]any {
 	if len(s.GuardRailsInfo) > 0 {
 		grInfo := make([]map[string]any, 0, len(s.GuardRailsInfo))
 		for _, gr := range s.GuardRailsInfo {
-			grInfo = append(grInfo, map[string]any{
+			entry := map[string]any{
 				"rule_name":     gr.RuleName,
 				"direction":     gr.Direction,
 				"matched_words": gr.MatchedWords,
-			})
+			}
+			if gr.Message != "" {
+				entry["message"] = gr.Message
+			}
+			grInfo = append(grInfo, entry)
 		}
 		m["guardrails_info"] = grInfo
 	}

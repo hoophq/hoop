@@ -82,6 +82,9 @@ type SessionGuardRailsInfo struct {
 	Rule         SessionGuardRailMatchedRule `json:"rule"`
 	Direction    string                      `json:"direction"`
 	MatchedWords []string                    `json:"matched_words"`
+	// Message is the admin-defined message configured on the matched rule entry,
+	// resolved gateway-side. Empty when the matched rule has no custom message.
+	Message string `json:"message"`
 }
 
 type Session struct {
