@@ -317,6 +317,31 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	return guardRailRulesJsonData, nil
 }
 
+// connectionTypeSupportsGuardRails reports whether the agent-side proxy for the
+// given connection type actually evaluates guardrail rules. It is a session-open
+// admission policy: guarded sessions are only admitted for types with real
+// enforcement in libhoop. Guardrails are enforced for PostgreSQL, Oracle, HTTP
+// proxy, SSH and command-line (terminal console and exec, including the DB exec
+// drivers, which resolve to the command-line type). MySQL, MSSQL and MongoDB
+// native proxies do not yet evaluate guardrails, so a guarded session of those
+// types would run unguarded — we fail closed at session-open rather than
+// silently ignoring the configured rules (DEP-48).
+//
+// IMPORTANT: this list mirrors enforcement support in libhoop. When guardrail
+// evaluation is added to another protocol proxy there, add its type here.
+func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
+	switch connType {
+	case pb.ConnectionTypePostgres,
+		pb.ConnectionTypeOracleDB,
+		pb.ConnectionTypeHttpProxy,
+		pb.ConnectionTypeSSH,
+		pb.ConnectionTypeCommandLine:
+		return true
+	default:
+		return false
+	}
+}
+
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
 		{
@@ -478,6 +503,37 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			if err != nil {
 				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf(err.Error())
 				return err
+			}
+
+			// Fail closed: guardrails are enforced exclusively through Presidio and
+			// only for connection types whose agent proxy actually evaluates them.
+			// If a connection has guardrail rules but the server has no Presidio
+			// provider configured, OR the connection type cannot enforce guardrails,
+			// the request would run unguarded and blocked queries would pass through.
+			// Refuse the session at open time with a clear error instead (DEP-48).
+			//
+			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
+			// plain-exec is a gateway-internal verb gated by a per-process secret in
+			// the auth interceptor (see interceptors/auth: plain-exec-key). It is
+			// only used for gateway-generated introspection scripts (connection
+			// test, database explorer, MCP schema) and never carries user-authored
+			// input, so guardrail rules are not fetched nor enforced for it — the
+			// same long-standing behavior as DLP redaction, which is also disabled
+			// for plain-exec sessions.
+			if len(guardRailRulesJsonData) > 0 {
+				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
+				if !s.AppConfig.HasGuardrailProvider() {
+					logCtx.Warnf("refusing session: connection has guardrail rules but no Presidio provider is configured to enforce them")
+					return status.Errorf(codes.FailedPrecondition,
+						"this connection has guardrails configured, but the server has no Presidio (data masking) provider configured to enforce them; "+
+							"contact your administrator to configure Presidio")
+				}
+				if connType := pctx.ProtoConnectionType(); !connectionTypeSupportsGuardRails(connType) {
+					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
+					return status.Errorf(codes.FailedPrecondition,
+						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
+							"remove the guardrails from this connection or use a supported connection type", connType)
+				}
 			}
 		}
 
