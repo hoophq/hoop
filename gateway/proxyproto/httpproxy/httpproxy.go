@@ -38,6 +38,19 @@ const (
 	// NOTE in the future we might want to support custom headers as well
 	proxyTokenHeader = "Authorization"
 	proxyTokenCookie = "hoop_proxy_token"
+
+	// requestChunkSize bounds the size of each gRPC packet emitted when
+	// forwarding a client request to the agent. Without chunking, a large
+	// request body (e.g. a long-context LLM prompt with base64 attachments)
+	// serializes into a single gRPC message; anything above
+	// common/grpc.MaxRecvMsgSize is rejected by the agent's receive layer with
+	// ResourceExhausted — a stream-fatal error that tears down the agent's
+	// entire Connect stream, dropping every session on that agent. The
+	// agent-side proxy buffers packets until Content-Length bytes arrive, so
+	// packet boundaries are transparent to it. Mirrors the agent's response
+	// chunking (agent/controller/httpproxy.go httpProxyResponseChunkSize) and
+	// must stay safely below common/grpc.MaxRecvMsgSize.
+	requestChunkSize = 1024 * 1024 * 4 // 4 MiB
 )
 
 var instanceStore sync.Map
@@ -584,15 +597,18 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			sendErr <- fmt.Errorf("session closed")
 			return
 		}
-		err := sess.streamClient.Send(&pb.Packet{
-			Type:    pbagent.HttpProxyConnectionWrite,
-			Payload: []byte(rawRequest),
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:   []byte(sess.sid),
-				pb.SpecClientConnectionID: []byte(connectionID),
-				pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
-			},
+		// Split the request across multiple sub-limit packets (see
+		// requestChunkSize). Chunks are written sequentially from this single
+		// goroutine, so they arrive at the agent in order even though other
+		// in-flight requests interleave their own packets on the shared
+		// stream. The chunked writer is deliberately not Closed: closing it
+		// would close the session's underlying gRPC stream.
+		streamWriter := pb.NewStreamWriter(sess.streamClient, pbagent.HttpProxyConnectionWrite, map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sess.sid),
+			pb.SpecClientConnectionID: []byte(connectionID),
+			pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
 		})
+		_, err := pb.NewChunkedWriter(streamWriter, requestChunkSize).Write([]byte(rawRequest))
 		sendErr <- err
 	}()
 

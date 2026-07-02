@@ -9,6 +9,7 @@ import (
 	libhoopaianalyzer "libhoop/aianalyzer"
 	redactortypes "libhoop/redactor/types"
 	"strings"
+	"sync"
 
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
@@ -24,16 +25,86 @@ import (
 // common/grpc.MaxRecvMsgSize.
 const httpProxyResponseChunkSize = 1024 * 1024 * 4 // 4 MiB
 
+// httpProxyPacketQueue is a per-(sessionID, connectionID) FIFO of
+// HttpProxyConnectionWrite packets drained by a single on-demand worker
+// goroutine. See processHttpProxyWriteServer for the dispatch model.
+type httpProxyPacketQueue struct {
+	mu      sync.Mutex
+	packets []*pb.Packet
+	running bool
+}
+
+// push appends pkt and reports whether the caller must start a drain worker.
+// At most one caller observes true until that worker exits.
+func (q *httpProxyPacketQueue) push(pkt *pb.Packet) (startWorker bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.packets = append(q.packets, pkt)
+	if q.running {
+		return false
+	}
+	q.running = true
+	return true
+}
+
+// drain invokes handle on queued packets in arrival order and exits when the
+// queue is empty, so an idle connection does not hold a parked goroutine. The
+// running flag guarantees at most one worker per queue: it is cleared under
+// the same lock that observes emptiness, so a packet pushed after the last
+// drain always finds running=false and spawns a fresh worker, while a packet
+// pushed mid-drain is picked up by the current one.
+func (q *httpProxyPacketQueue) drain(handle func(*pb.Packet)) {
+	for {
+		q.mu.Lock()
+		if len(q.packets) == 0 {
+			q.running = false
+			q.mu.Unlock()
+			return
+		}
+		pkt := q.packets[0]
+		q.packets = q.packets[1:]
+		q.mu.Unlock()
+		handle(pkt)
+	}
+}
+
+// processHttpProxyWriteServer runs on the agent's packet recv loop. Handling a
+// proxied HTTP request is blocking: libhoop's Write performs the upstream
+// round-trip and does not return until response headers arrive, which for a
+// long-context LLM request can take minutes of time-to-first-byte. Processing
+// it inline would park the recv loop — stalling every other session on this
+// agent and, critically, preventing the TCPConnectionClose the gateway sends
+// when it abandons this same request from ever being dispatched: the
+// cancellation would deadlock against the request it is meant to cancel.
+//
+// Each packet is therefore appended to a per-(session, connection) FIFO
+// drained by a single worker goroutine. The recv loop never blocks, packets
+// for one connection keep their arrival order (required for chunked request
+// bodies and WebSocket frames), and connections proceed independently.
 func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
+	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+	if clientConnectionID == "" {
+		log.With("sid", sessionID).Info("connection not found in packet specfication")
+		a.sendClientSessionClose(sessionID, "http proxy connection id not found")
+		return
+	}
+	queueKey := fmt.Sprintf("%s:%s", sessionID, clientConnectionID)
+	obj, _ := a.httpProxyQueues.LoadOrStore(queueKey, &httpProxyPacketQueue{})
+	queue := obj.(*httpProxyPacketQueue)
+	if queue.push(pkt) {
+		go queue.drain(a.handleHttpProxyWrite)
+	}
+}
+
+// handleHttpProxyWrite performs the actual (blocking) request handling. It
+// must only be invoked from httpProxyPacketQueue.drain, which serializes
+// calls per (sessionID, connectionID).
+func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 	proxyBaseURL := string(pkt.Spec[pb.SpecHttpProxyBaseUrl])
 	log := log.With("sid", sessionID, "conn", clientConnectionID)
-	if clientConnectionID == "" {
-		log.Info("connection not found in packet specfication")
-		a.sendClientSessionClose(sessionID, "http proxy connection id not found")
-		return
-	}
 	connParams := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Infof("connection params not found")
@@ -50,6 +121,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 			}
 			log.Infof("failed writing packet, err=%v", err)
 			_ = httpServer.Close()
+			a.connStore.Del(clientConnectionIDKey)
 			// Check if this is a guardrails error - these should close the session with the error message
 			if isGuardrailsError(err) {
 				log.Infof("guardrails validation failed, closing session: %v", err)
@@ -148,15 +220,24 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		return
 	}
 
+	// Register the proxy before the first Write. Write blocks for the whole
+	// upstream round-trip, and while it is in flight the gateway may abandon
+	// the request (TCPConnectionClose) or end the session (SessionClose);
+	// those handlers cancel in-flight requests by looking the proxy up in the
+	// connStore and closing it, which cancels the proxy context and aborts the
+	// upstream call. Registering after Write (the previous behavior) made an
+	// in-flight first request — i.e. every plain HTTP request — uncancellable.
+	a.connStore.Set(clientConnectionIDKey, httpProxy)
+
 	// write the first packet when establishing the connection
 	if _, err := httpProxy.Write(pkt.Payload); err != nil {
 		// ErrWebSocketMode is not an error - it signals WebSocket mode was activated
 		if isWebSocketModeError(err) {
 			log.Infof("websocket mode activated on first request")
-			a.connStore.Set(clientConnectionIDKey, httpProxy)
 			return
 		}
 		log.Infof("failed writing first packet, err=%v", err)
+		a.connStore.Del(clientConnectionIDKey)
 		_ = httpProxy.Close()
 		// Check if this is a guardrails error - send the actual error message
 		if isGuardrailsError(err) {
@@ -167,7 +248,6 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		a.sendClientTCPConnectionClose(sessionID, clientConnectionID)
 		return
 	}
-	a.connStore.Set(clientConnectionIDKey, httpProxy)
 }
 
 // isGuardrailsError checks if the error is a guardrails validation failure.
