@@ -1,7 +1,9 @@
 (ns webapp.guardrails.rules-table
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Select Table Text Tooltip]]
-   ["lucide-react" :refer [CircleHelp]]
+   ["@radix-ui/themes" :refer [Box Flex Select Table Text TextArea Tooltip]]
+   ["lucide-react" :refer [CircleHelp Info]]
+   [clojure.string :as cs]
+   [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.guardrails.rule-buttons :as rule-buttons]))
@@ -35,7 +37,11 @@
   (on-rule-field-change state idx :type value)
   (on-rule-field-change state idx :rule "")
   (on-rule-field-change state idx :pattern_regex "")
-  (on-rule-field-change state idx :words []))
+  (on-rule-field-change state idx :words [])
+  ;; The custom error message describes a specific configuration, so switching
+  ;; the rule type invalidates it. Preset switches within the same type keep it
+  ;; (the message stays visible and editable in its cell).
+  (on-rule-field-change state idx :message ""))
 
 (defn- handle-preset-change [state idx value on-rule-field-change pattern-state words-state]
   (if (= value "custom-rule")
@@ -92,6 +98,60 @@
       :id (str "deny_words_list-" idx)
       :name (str "deny_words_list-" idx)}]))
 
+(def ^:private custom-message-tooltip
+  (str "When this rule is violated, this message will be displayed to the user "
+       "along the Rule Name and Configuration"))
+
+(defn- rule-message-cell
+  "Renders the \"Custom error message\" cell for a single rule.
+
+  The draft is kept in local state and committed to the rule on blur so app
+  state is not churned on every keystroke. Rows are keyed by the rule's stable
+  :_id, so sibling-field commits re-render (not remount) this cell and
+  in-flight edit state survives them."
+  [_rule _state _idx _on-rule-field-change]
+  (let [editing? (r/atom false)
+        draft (r/atom nil)]
+    (fn [rule state idx on-rule-field-change]
+      (let [message (or (:message rule) "")
+            start-edit (fn []
+                         (reset! draft message)
+                         (reset! editing? true))
+            commit (fn []
+                     (when @editing?
+                       (on-rule-field-change state idx :message (cs/trim (or @draft "")))
+                       (reset! editing? false)))]
+        (if @editing?
+          [:> TextArea
+           {:size "2"
+            :variant "surface"
+            :autoFocus true
+            :rows 3
+            :resize "vertical"
+            :placeholder "Describe the message shown to the user when this rule is triggered"
+            :value @draft
+            :on-change #(reset! draft (-> % .-target .-value))
+            :on-blur commit}]
+
+          [:> Box {:class "group cursor-pointer"
+                   :role "button"
+                   :tabIndex 0
+                   :aria-label (if (empty? message)
+                                 "Set a custom error message"
+                                 "Edit custom error message")
+                   :on-click start-edit
+                   :on-keyDown (fn [e]
+                                 (when (contains? #{"Enter" " "} (.-key e))
+                                   (.preventDefault e)
+                                   (start-edit)))}
+           (if (empty? message)
+             [:<>
+              [:> Text {:size "2" :class "text-[--gray-a9] group-hover:hidden"}
+               "No message"]
+              [:> Text {:size "2" :class "hidden group-hover:inline text-[--accent-11] hover:underline"}
+               "Set a custom error message"]]
+             [:> Text {:size "2" :class "text-[--gray-11] line-clamp-2"} message])])))))
+
 (defn main [{:keys [title
                     state
                     free-license?
@@ -118,11 +178,16 @@
           [:> Table.ColumnHeaderCell ""])
         [:> Table.ColumnHeaderCell "Type"]
         [:> Table.ColumnHeaderCell "Rule"]
-        [:> Table.ColumnHeaderCell "Details"]]]
+        [:> Table.ColumnHeaderCell "Details"]
+        [:> Table.ColumnHeaderCell
+         [:> Flex {:align "center" :gap "1"}
+          [:span "Custom error message"]
+          [:> Tooltip {:content custom-message-tooltip}
+           [:> Info {:size 14}]]]]]]
       [:> Table.Body
        (doall
         (for [[idx rule] (map-indexed vector @state)]
-          ^{:key (str (hash (str rule idx)))}
+          ^{:key (str (or (:_id rule) idx))}
           [:> Table.Row {:align "center"}
            (when @select-state
              [:> Table.RowHeaderCell {:p "2" :width "20px"}
@@ -173,7 +238,11 @@
                words-state
                on-word-change
                pattern-state
-               on-pattern-change])]]))]]
+               on-pattern-change])]
+
+           [:> Table.Cell {:p "4"}
+            (when-not (empty? (:rule rule))
+              [rule-message-cell rule state idx on-rule-field-change])]]))]]
 
      ;; Action buttons
      [rule-buttons/main
