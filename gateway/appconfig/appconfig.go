@@ -437,6 +437,16 @@ func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCred
 func (c Config) DlpProvider() string                   { return c.dlpProvider }
 func (c Config) DlpMode() string                       { return c.dlpMode }
 func (c Config) HasRedactCredentials() bool            { return c.hasRedactCredentials }
+
+// HasGuardrailProvider reports whether the server is configured with a DLP
+// provider capable of enforcing guardrails. Guardrails are evaluated exclusively
+// through MSPresidio, so this requires the mspresidio provider with both the
+// analyzer and anonymizer URLs configured. It is intentionally stricter than
+// HasRedactCredentials (which is also true for GCP), because GCP cannot enforce
+// guardrails.
+func (c Config) HasGuardrailProvider() bool {
+	return c.dlpProvider == "mspresidio" && c.msPresidioAnalyzerURL != "" && c.msPresidioAnonymizerURL != ""
+}
 func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnalyzerURL }
 func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
 func (c Config) PgUsername() string                    { return c.pgCred.username }

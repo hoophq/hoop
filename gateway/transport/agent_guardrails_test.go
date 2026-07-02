@@ -61,6 +61,36 @@ func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
 	}
 }
 
+func TestConnectionTypeSupportsGuardRails(t *testing.T) {
+	supported := []pb.ConnectionType{
+		pb.ConnectionTypePostgres,
+		pb.ConnectionTypeOracleDB,
+		pb.ConnectionTypeHttpProxy,
+		pb.ConnectionTypeSSH,
+		pb.ConnectionTypeCommandLine,
+	}
+	for _, ct := range supported {
+		if !connectionTypeSupportsGuardRails(ct) {
+			t.Errorf("expected connection type %q to support guardrails", ct)
+		}
+	}
+
+	// MySQL, MSSQL and MongoDB proxies do not evaluate guardrails yet, so a
+	// guarded session of these types must be refused (fail closed), not run
+	// unguarded (DEP-48).
+	unsupported := []pb.ConnectionType{
+		pb.ConnectionTypeMySQL,
+		pb.ConnectionTypeMSSQL,
+		pb.ConnectionTypeMongoDB,
+		pb.ConnectionTypeTCP,
+	}
+	for _, ct := range unsupported {
+		if connectionTypeSupportsGuardRails(ct) {
+			t.Errorf("expected connection type %q to NOT support guardrails", ct)
+		}
+	}
+}
+
 func TestBuildLegacyGuardRailErrorMessage_InvalidPayload(t *testing.T) {
 	msg, ok := buildLegacyGuardRailErrorMessage([]byte("{bad-json"))
 	if ok || msg != "" {
