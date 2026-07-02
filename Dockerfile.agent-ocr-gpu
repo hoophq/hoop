@@ -22,6 +22,10 @@ FROM ${HOOP_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The hoop base image drops to the unprivileged 'hoop' user; package
+# installation below needs root. The runtime user is restored after setup.
+USER root
+
 # Python + native libs RapidOCR's opencv dependency links. The CUDA userspace
 # runtime libraries are NOT bundled by the onnxruntime-gpu wheel — they are
 # installed explicitly below as nvidia-*-cu12 wheels. The driver itself is
@@ -76,6 +80,12 @@ COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
 COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
 COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
 RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
+
+# Drop back to the base image's unprivileged runtime user. Everything under
+# /opt/ocr-venv, /opt/cuda-libs and /opt/ocr stays root-owned and
+# world-readable — the engine only reads them at runtime (models ship inside
+# the rapidocr wheel, so nothing is downloaded or written after build).
+USER hoop
 
 ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
 ENV OCR_PORT=18868
