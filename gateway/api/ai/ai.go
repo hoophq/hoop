@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -557,6 +558,6 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 //	@Router			/ai/session-analyzer/system-prompt [get]
 func GetSessionAnalyzerSystemPrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.AISessionAnalyzerSystemPrompt{
-		Prompt: SessionAnalyzerSystemPrompt,
+		Prompt: aianalyzer.SessionAnalyzerSystemPrompt,
 	})
 }

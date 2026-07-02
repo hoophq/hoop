@@ -1,7 +1,7 @@
 (ns webapp.resources.setup.roles-step
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Link Separator Text Switch]]
-   ["lucide-react" :refer [ArrowUpRight Plus Trash2]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link Separator Text Switch]]
+   ["lucide-react" :refer [ArrowUpRight Check Plus ShieldCheck Trash2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
@@ -210,34 +210,45 @@
        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
         "Skip SSL certificate verification for HTTPS connections."]]]]))
 
+(defn- claude-code-cred-display
+  "Display value for a claude-code create-form field, unwrapping the
+  {:value :source} secrets-manager shape into a plain string."
+  [credentials k]
+  (let [v (get credentials k "")]
+    (if (map? v) (or (:value v) "") v)))
+
 (defn claude-code-role-form [role-index]
   (let [credentials (rf/subscribe [:resource-setup/role-credentials role-index])
-        connection-method (rf/subscribe [:resource-setup/role-connection-method role-index])]
+        connection-method (rf/subscribe [:resource-setup/role-connection-method role-index])
+        vertex-flag? (rf/subscribe [:feature-flag/enabled? "experimental.claude_code_vertex"])]
     (fn [role-index]
-      (let [api-url-value (get @credentials "remote_url" "")
-            api-key-value (get @credentials "HEADER_X_API_KEY" "")
+      (let [creds @credentials
+            provider (let [p (claude-code-cred-display creds "provider")]
+                       (if (empty? p) "anthropic" p))
+            vertex? (= provider "vertex")
+            ;; Show the Vertex option when the feature is enabled, or when the
+            ;; role is already set to Vertex (so it never hides existing config).
+            show-vertex-option? (or @vertex-flag? vertex?)
+            api-url-value (claude-code-cred-display creds "remote_url")
+            api-key-value (claude-code-cred-display creds "HEADER_X_API_KEY")
+            region-value (claude-code-cred-display creds "GCP_REGION")
+            project-value (claude-code-cred-display creds "GCP_PROJECT_ID")
+            sa-json-value (claude-code-cred-display creds "GCP_SERVICE_ACCOUNT_JSON")
             show-selector? (= @connection-method "secrets-manager")
-            handle-api-url-change (fn [e]
-                                    (let [new-value (-> e .-target .-value)]
-                                      (rf/dispatch [:resource-setup->update-role-credentials
-                                                    role-index
-                                                    "remote_url"
-                                                    new-value])))
-            handle-api-key-change (fn [e]
-                                    (let [new-value (-> e .-target .-value)]
-                                      (rf/dispatch [:resource-setup->update-role-credentials
-                                                    role-index
-                                                    "HEADER_X_API_KEY"
-                                                    new-value])))]
+            update-cred (fn [k]
+                          (fn [e]
+                            (rf/dispatch [:resource-setup->update-role-credentials
+                                          role-index k (-> e .-target .-value)])))]
 
-        ;; Initialize default values
-        (when (empty? api-url-value)
+        ;; Initialize default values. REMOTE_URL is only relevant for the
+        ;; Anthropic provider; Vertex derives it from the region at submit time.
+        (when (and (not vertex?) (empty? api-url-value))
           (rf/dispatch [:resource-setup->update-role-credentials
                         role-index
                         "remote_url"
                         "https://api.anthropic.com"]))
 
-        (when (nil? (get credentials "insecure"))
+        (when (nil? (get creds "insecure"))
           (rf/dispatch [:resource-setup->update-role-credentials
                         role-index
                         "insecure"
@@ -247,28 +258,66 @@
          [:> Box {:class "space-y-radix-4"}
           [:> Heading {:size "3"} "Basic info"]
 
-          [forms/input {:label "Anthropic API URL"
-                        :placeholder "https://api.anthropic.com"
-                        :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
-                        :required true
-                        :type "text"
-                        :on-change handle-api-url-change
-                        :start-adornment (when show-selector?
-                                           [connection-method/source-selector role-index "remote_url"])}]
+          (when show-vertex-option?
+            [forms/select
+             {:label "Provider"
+              :options [{:text "Anthropic API" :value "anthropic"}
+                        {:text "Google Vertex AI" :value "vertex"}]
+              :selected provider
+              :on-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                        role-index "provider" %])}])
 
-          [forms/input {:label "Anthropic API Key"
-                        :placeholder "sk-ant-..."
-                        :value api-key-value
-                        :required true
-                        :type "password"
-                        :on-change handle-api-key-change
-                        :start-adornment (when show-selector?
-                                           [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]]
+          (if vertex?
+            [:<>
+             [:> Callout.Root {:size "1" :color "gray"}
+              [:> Callout.Text
+               "Claude Code runs in Vertex mode against hoop. hoop mints a short-lived "
+               "token from the service account below and proxies requests to Google Vertex AI."]]
+
+             [forms/input {:label "GCP Region"
+                           :placeholder "us-east5"
+                           :value region-value
+                           :required true
+                           :type "text"
+                           :on-change (update-cred "GCP_REGION")}]
+
+             [forms/input {:label "GCP Project ID"
+                           :placeholder "my-gcp-project"
+                           :value project-value
+                           :required true
+                           :type "text"
+                           :on-change (update-cred "GCP_PROJECT_ID")}]
+
+             [forms/textarea {:label "Service Account JSON"
+                              :placeholder "{\n  \"type\": \"service_account\",\n  ...\n}"
+                              :value sa-json-value
+                              :required true
+                              :rows 8
+                              :on-change (update-cred "GCP_SERVICE_ACCOUNT_JSON")}]]
+
+            [:<>
+             [forms/input {:label "Anthropic API URL"
+                           :placeholder "https://api.anthropic.com"
+                           :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
+                           :required true
+                           :type "text"
+                           :on-change (update-cred "remote_url")
+                           :start-adornment (when show-selector?
+                                              [connection-method/source-selector role-index "remote_url"])}]
+
+             [forms/input {:label "Anthropic API Key"
+                           :placeholder "sk-ant-..."
+                           :value api-key-value
+                           :required true
+                           :type "password"
+                           :on-change (update-cred "HEADER_X_API_KEY")
+                           :start-adornment (when show-selector?
+                                              [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]])]
 
          [configuration-inputs/http-headers-section role-index]
 
          [:> Flex {:align "center" :gap "3"}
-          [:> Switch {:checked (get credentials "insecure" false)
+          [:> Switch {:checked (get creds "insecure" false)
                       :size "3"
                       :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
                                                       role-index
@@ -279,6 +328,99 @@
             "Allow insecure SSL"]
            [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
             "Skip SSL certificate verification for HTTPS connections."]]]]))))
+
+
+;; MCP role form - HTTP proxy subtype whose endpoint is protected by OAuth
+;; (e.g. https://mcp.figma.com/mcp). The admin resolves the MCP authorization
+;; here at setup: Hoop drives the OAuth login and freezes the obtained access
+;; token into the connection's HEADER_AUTHORIZATION credential.
+(defn mcp-role-form [role-index]
+  (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        mcp-state @(rf/subscribe [:mcp-oauth/state role-index])
+        remote-url-value (get credentials "remote_url" "")
+        authorized? (not (cs/blank? (get credentials "HEADER_AUTHORIZATION" "")))
+        status (:status mcp-state :idle)
+        busy? (contains? #{:authorizing :pending} status)
+        show-selector? (= connection-method "secrets-manager")
+        handle-remote-url-change (fn [e]
+                                   (rf/dispatch [:resource-setup->update-role-credentials
+                                                 role-index "remote_url" (-> e .-target .-value)]))]
+    (when (nil? (get credentials "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials role-index "insecure" false]))
+    [:> Box {:class "space-y-6"}
+     ;; Server URL
+     [forms/input {:label "MCP Server URL"
+                   :placeholder "e.g. https://mcp.linear.app"
+                   :value remote-url-value
+                   :required true
+                   :type "text"
+                   :on-change handle-remote-url-change
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "remote_url"])}]
+
+     ;; Authorization section
+     [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "MCP Authorization"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Log in to the MCP server to obtain an access token. The token is stored in this connection's Authorization header."]]
+
+      ;; Optional pre-registered client credentials. Left blank, Hoop registers
+      ;; a client dynamically with the MCP server. These inputs are auth-flow
+      ;; only and are never stored as connection environment variables.
+      [:> Box {:class "space-y-3"}
+       [forms/input {:label "Client ID (optional)"
+                     :placeholder "Leave blank to register automatically"
+                     :value (or (:client-id mcp-state) "")
+                     :type "text"
+                     :on-change #(rf/dispatch [:mcp-oauth/set-field role-index :client-id (-> % .-target .-value)])}]
+       [forms/input {:label "Client Secret (optional)"
+                     :placeholder "Only if your client requires one"
+                     :value (or (:client-secret mcp-state) "")
+                     :type "password"
+                     :on-change #(rf/dispatch [:mcp-oauth/set-field role-index :client-secret (-> % .-target .-value)])}]]
+
+      ;; Status + action
+      (cond
+        authorized?
+        [:> Flex {:align "center" :justify "between" :gap "3"}
+         [:> Flex {:align "center" :gap "2"}
+          [:> Check {:size 16 :class "text-[--grass-11]"}]
+          [:> Text {:size "2" :weight "medium" :class "text-[--grass-11]"}
+           "Authorized — access token stored"]]
+         [:> Flex {:gap "2"}
+          [:> Button {:size "2" :type "button" :variant "soft" :disabled busy?
+                      :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
+           "Re-authorize"]
+          [:> Button {:size "2" :type "button" :variant "ghost" :color "red" :pt "3"
+                      :on-click #(rf/dispatch [:mcp-oauth/clear role-index])}
+           "Clear"]]]
+
+        :else
+        [:> Box {:class "space-y-2"}
+         [:> Button {:size "2" :type "button" :variant "solid" :disabled busy?
+                     :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
+          [:> ShieldCheck {:size 16}]
+          (if busy? "Authorizing…" "Authorize with MCP")]
+         (when (= status :error)
+           [:> Text {:as "p" :size "2" :class "text-[--red-11]"}
+            (or (:error mcp-state) "Authorization failed")])])]
+
+     ;; Optional extra headers (forwarded alongside the Authorization header)
+     [configuration-inputs/http-headers-section role-index]
+
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get credentials "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index "insecure" %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
 
 
 ;; Custom/Metadata-driven role form (includes databases)
@@ -424,6 +566,9 @@
 
         (= resource-subtype "claude-code")
         [claude-code-role-form role-index]
+
+        (= resource-subtype "mcp")
+        [mcp-role-form role-index]
 
         (contains? constants/http-proxy-subtypes resource-subtype)
         [http-proxy-role-form role-index]

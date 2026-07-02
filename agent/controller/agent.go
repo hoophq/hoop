@@ -76,6 +76,25 @@ type (
 		// it, async-dispatched goroutines could each miss the connStore
 		// cache and dial duplicate upstream SSH connections.
 		sshFlightGroup singleflight.Group
+
+		// httpProxyQueues holds one httpProxyPacketQueue per (sessionID,
+		// connectionID), keyed "sid:connID" like the connStore. The recv
+		// loop enqueues HttpProxyConnectionWrite packets here and a per-queue
+		// worker drains them in order, so a blocking upstream request never
+		// stalls packet dispatch (see processHttpProxyWriteServer). Entries
+		// are removed in sessionCleanup; they are intentionally NOT removed
+		// on TCPConnectionClose so a late packet cannot race a mid-drain
+		// worker into a second, concurrent worker for the same connection.
+		httpProxyQueues sync.Map
+
+		// gcpTokenSources caches one oauth2.TokenSource per session (keyed by
+		// gateway session ID) for claude-code connections that federate to
+		// Google Vertex AI. The source is built once from the connection's
+		// service-account key and reused for the life of the session so the
+		// bearer is minted lazily and auto-refreshed by the oauth2 library
+		// shortly before expiry — rather than re-minted on every proxied
+		// request. Entries are removed in sessionCleanup.
+		gcpTokenSources sync.Map
 	}
 	connEnv struct {
 		scheme             string
@@ -93,9 +112,15 @@ type (
 		connectionString   string
 		httpProxyRemoteURL string
 		httpProxyHeaders   map[string]string
-		awsRegion          string
-		awsSecretAccessKey string
-		awsAccessKeyID     string
+		// gcpServiceAccountJSON carries the GCP service-account key configured
+		// on a claude-code connection that federates to Google Vertex AI. When
+		// present (and the experimental.claude_code_vertex flag is on) the agent
+		// mints a short-lived OAuth bearer from it and injects it as the upstream
+		// Authorization header. Empty for every other connection.
+		gcpServiceAccountJSON string
+		awsRegion             string
+		awsSecretAccessKey    string
+		awsAccessKeyID        string
 
 		kubernetesClusterURL         string
 		kubernetesToken              string
@@ -226,6 +251,10 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	case pbagent.MongoDBConnectionWrite:
 		a.processMongoDBProtocol(pkt)
 
+	// Oracle Protocol
+	case pbagent.OracleConnectionWrite:
+		a.processOracleProtocol(pkt)
+
 	// raw tcp
 	case pbagent.TCPConnectionWrite:
 		a.processTCPWriteServer(pkt)
@@ -283,18 +312,22 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// SSH connection writes and the SessionClose that ends them can be
-		// dispatched concurrently when the async flag is enabled, so a
-		// slow upstream on one session does not stall packet processing
-		// for other sessions on this agent. processSSHProtocol uses the
-		// session RW lock, per-connection write mutex, and singleflight
-		// group on the Agent to keep concurrent handlers correct.
+		// SSH connection writes and the SessionClose that ends them are
+		// dispatched concurrently so a slow upstream on one session does
+		// not stall packet processing for other sessions on this agent.
+		// processSSHProtocol uses the session RW lock, per-connection
+		// write mutex, and singleflight group on the Agent to keep
+		// concurrent handlers correct.
 		//
 		// SessionClose is included so the recv loop is not blocked when
 		// it has to wait for an in-flight SSH handler to drain before
 		// running session cleanup.
-		if featureflagstate.IsEnabled("experimental.agent_async_ssh") &&
-			(pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose) {
+		//
+		// HttpProxyConnectionWrite stays inline: its handler only enqueues
+		// the packet into a per-connection FIFO drained by a worker
+		// goroutine (see processHttpProxyWriteServer), which keeps the
+		// recv loop free without giving up per-connection ordering.
+		if pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose {
 			go a.processPacket(pkt)
 			continue
 		}
@@ -308,43 +341,43 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionIDKey := string(sessionID)
 	log.With("sid", sessionIDKey).Infof("received connect request")
 
-	connParams, err := a.buildConnectionParams(pkt)
-	if err != nil {
-		log.Warnf("failed building connection params, err=%v", err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(err.Error()),
-			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(internalExitCode),
-				pb.SpecGatewaySessionID:  sessionID,
-			},
-		})
-		return
-	}
-
-	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
-	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
-	connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
-	connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
-	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
-	connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
-	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
-
-	// Embedded mode usually has the context of the application.
-	// By having all environment variables in the context of execution
-	// permits a more seamless integration with internal language tooling.
-	if a.config.AgentMode == pb.AgentModeEmbeddedType {
-		for _, envKeyVal := range os.Environ() {
-			envKey, envVal, found := strings.Cut(envKeyVal, "=")
-			if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
-				continue
-			}
-			key := fmt.Sprintf("envvar:%s", envKey)
-			connParams.EnvVars[key] = b64Enc([]byte(envVal))
-		}
-	}
-
 	go func() {
+		connParams, err := a.buildConnectionParams(pkt)
+		if err != nil {
+			log.Warnf("failed building connection params, err=%v", err)
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(err.Error()),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+			return
+		}
+
+		connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
+		connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
+		connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
+		connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
+		connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
+		connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
+		connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
+
+		// Embedded mode usually has the context of the application.
+		// By having all environment variables in the context of execution
+		// permits a more seamless integration with internal language tooling.
+		if a.config.AgentMode == pb.AgentModeEmbeddedType {
+			for _, envKeyVal := range os.Environ() {
+				envKey, envVal, found := strings.Cut(envKeyVal, "=")
+				if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
+					continue
+				}
+				key := fmt.Sprintf("envvar:%s", envKey)
+				connParams.EnvVars[key] = b64Enc([]byte(envVal))
+			}
+		}
+
 		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
@@ -354,6 +387,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})
+			return
 		}
 
 		requestCommand := connParams.CmdList
@@ -436,6 +470,18 @@ func (a *Agent) sessionCleanup(sessionID string) {
 		a.connStore.Del(key)
 		a.connWriteLocks.Delete(key)
 	}
+	// Drop the session's HTTP proxy packet queues. Iterated separately from
+	// the connStore because a queue can outlive its connStore entry (e.g. a
+	// connection whose first write failed and was deleted from the store).
+	a.httpProxyQueues.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
+			a.httpProxyQueues.Delete(key)
+		}
+		return true
+	})
+	// Drop any cached Vertex token source so the service-account-derived
+	// credential does not outlive the session in agent memory.
+	a.gcpTokenSources.Delete(sessionID)
 }
 
 func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
@@ -734,9 +780,10 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
 		options:           envVarS.Getenv("OPTIONS"),
 		// this option is only used by mongodb at the momento
-		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
-		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
-		httpProxyHeaders:   httpProxyHeaders,
+		connectionString:      envVarS.Getenv("CONNECTION_STRING"),
+		httpProxyRemoteURL:    envVarS.Getenv("REMOTE_URL"),
+		httpProxyHeaders:      httpProxyHeaders,
+		gcpServiceAccountJSON: envVarS.Getenv("GCP_SERVICE_ACCOUNT_JSON"),
 
 		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
 		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),
@@ -874,7 +921,7 @@ func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSes
 			cluster = string(val)
 		case "envvar:EKS_AWS_REGION":
 			awsRegion = string(val)
-		case "envvar:EKS_ROLE_SESSION":
+		case "envvar:EKS_ROLE_SESSION", "envvar:EKS_BINDING_USER_ROLE":
 			roleSession = string(val)
 		case "envvar:EKS_ROLE_ARN":
 			roleArn = string(val)

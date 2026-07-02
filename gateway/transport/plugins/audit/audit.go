@@ -289,6 +289,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if decJSONPayload != nil {
 			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
+	case pbagent.OracleConnectionWrite:
+		// native Oracle clients (sqlplus, DBeaver, …) stream raw TNS bytes; log
+		// the printable text (SQL and text fields) extracted from each packet.
+		if queryText := decodeOracleClientQuery(pkt.Payload); queryText != nil {
+			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, queryText, eventMetadata)
+		}
 	case pbclient.WriteStdout, pbclient.WriteStderr:
 		err := p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {
@@ -356,8 +362,32 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 func (p *auditPlugin) OnShutdown() {}
 
 func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
+	metadata := map[string][]byte{}
+
+	// Per-request AI session analyzer verdict (HTTP proxy). An empty value means
+	// the request was not analyzed (analysis skipped or failed open) — the spec
+	// is shared across requests on a connection, so a present-but-empty value is
+	// libhoop clearing a stale verdict and must be treated as absent.
+	if verdict, ok := pkt.Spec[spectypes.AIAnalyzerInfoKey]; ok && len(verdict) > 0 {
+		metadata[spectypes.AIAnalyzerInfoKey] = verdict
+	}
+
+	if maskingInfo := parseDataMaskingInfo(pkt); maskingInfo != nil {
+		metadata[spectypes.DataMaskingInfoKey] = maskingInfo
+	}
+
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
+}
+
+// parseDataMaskingInfo extracts the DLP data-masking summary from a packet spec,
+// supporting both the current msgpack encoding and the legacy gob-encoded
+// transformation summary from older clients.
+func parseDataMaskingInfo(pkt *pb.Packet) []byte {
 	if dataMaskingInfo, ok := pkt.Spec[spectypes.DataMaskingInfoKey]; ok {
-		return map[string][]byte{spectypes.DataMaskingInfoKey: dataMaskingInfo}
+		return dataMaskingInfo
 	}
 	tsEnc := pkt.Spec[pb.SpecDLPTransformationSummary]
 	if tsEnc == nil {
@@ -399,7 +429,7 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 	}
 	infoEnc, _ := (&spectypes.DataMaskingInfo{Items: overviewItems}).Encode()
 	if len(infoEnc) > 0 {
-		return map[string][]byte{spectypes.DataMaskingInfoKey: infoEnc}
+		return infoEnc
 	}
 	return nil
 }

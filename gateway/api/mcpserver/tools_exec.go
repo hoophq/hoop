@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -72,6 +73,17 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 	}
 	if conn == nil {
 		return errResult(fmt.Sprintf("connection %q not found or not accessible", args.ConnectionName)), nil, nil
+	}
+
+	// Preflight the per-user federation gate. A gcp_oauth-federated connection
+	// (e.g. BigQuery) runs as the user's own Google identity; if the user has
+	// not connected their account the session-open would be denied. Surface the
+	// consent flow now, before incurring exec side effects (audit row, AI
+	// analysis, Jira ticket creation).
+	if consentRequired, err := apiconnections.FederationConsentRequired(sc.GetOrgID(), conn.ID, sc.GetUserID()); err != nil {
+		return nil, nil, fmt.Errorf("failed checking federation consent status: %w", err)
+	} else if consentRequired {
+		return jsonResult(oauthRequiredEnvelope(sc, conn.Name))
 	}
 
 	trackClient := analytics.New()
@@ -236,6 +248,12 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 
 	select {
 	case resp := <-respCh:
+		// Safety net for the session-open federation gate: if the user
+		// disconnected their account between the preflight and the run, the
+		// gate denies the session and tags the error with the stable marker.
+		if env, ok := federationConsentEnvelopeFromResponse(sc, resp); ok {
+			return jsonResult(env)
+		}
 		return execResponseToEnvelope(resp, sessionID)
 	case <-timeoutCtx.Done():
 		// Force the goroutine to unblock; its result will be persisted async.

@@ -16,22 +16,24 @@ import (
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
-	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/services"
 
-	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/externaljwt"
+	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
+	_ "github.com/hoophq/hoop/gateway/federation/gcpoauth"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
-	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
@@ -212,7 +214,7 @@ func Run() {
 	}
 
 	bootstrap.Phase("Starting proxies")
-	if serverConfig != nil {
+	if serverConfig != nil && !isOrgMultiTenant {
 		pgc := serverConfig.PostgresServerConfig
 		if pgc != nil && pgc.ListenAddress != "" {
 			step := bootstrap.Step("Postgres proxy")
@@ -227,10 +229,18 @@ func Run() {
 		sshc := serverConfig.SSHServerConfig
 		if sshc != nil && sshc.ListenAddress != "" && len(sshc.HostsKey) > 0 {
 			step := bootstrap.Step("SSH proxy")
-			err := sshproxy.GetServerInstance().Start(
-				serverConfig.SSHServerConfig.ListenAddress,
-				serverConfig.SSHServerConfig.HostsKey,
-			)
+			sshServerConfig := sshproxy.ServerConfig{
+				ListenAddress: sshc.ListenAddress,
+				HostsKey:      sshc.HostsKey,
+				TrustedCAs:    sshc.TrustedCAs,
+			}
+			if sshc.UserMapping != nil {
+				sshServerConfig.UserMapping = sshcertproxy.UserMapping{
+					CertAttr: sshc.UserMapping.CertAttribute,
+					UserAttr: sshc.UserMapping.UserAttribute,
+				}
+			}
+			err := sshproxy.GetServerInstance().Start(sshServerConfig)
 			if err != nil {
 				step.Fail(err)
 				log.Fatalf("failed to start ssh server, reason=%v", err)
@@ -278,7 +288,7 @@ func Run() {
 	// unconditionally — per-org gating then happens on the enqueue side
 	// inside RDPSessionRecorder.
 	go analyzer.RunSupervisor(context.Background(), appconfig.Get().MSPresidioAnalyzerURL(), defaultOrgID)
-	go eventrouting.RunSupervisor(context.Background(), defaultOrgID)
+	go eventrouting.RunSupervisor(context.Background())
 
 	bootstrap.Phase("Starting API")
 	grpcStep := bootstrap.Step("gRPC gateway")

@@ -442,6 +442,272 @@ const docTemplate = `{
                 }
             }
         },
+        "/ai-agents": {
+            "get": {
+                "description": "List all AI Agents for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "List AI Agents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.AIAgentResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Generate a new AI Agent. The raw key is returned only once in the response and cannot be retrieved after creation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Create AI Agent",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai-agents/{nameOrID}": {
+            "get": {
+                "description": "Get an AI Agent by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Get AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an AI Agent's name and/or groups. Works for both active and revoked agents.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Update AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Revoke an AI Agent (soft delete). The agent status is set to revoked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Revoke AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai-agents/{nameOrID}/reactivate": {
+            "post": {
+                "description": "Reactivate a revoked AI Agent. Sets status back to active and clears deactivation metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI Agents"
+                ],
+                "summary": "Reactivate AI Agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the AI Agent",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIAgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/ai/session-analyzer/providers": {
             "get": {
                 "description": "Get the AI provider configured for the session analyzer feature in the organization",
@@ -2493,6 +2759,139 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/federation/oauth": {
+            "get": {
+                "description": "Reports, for the authenticated user, whether they have connected a per-user account (e.g. their Google account for gcp_oauth) to a connection. Clients use this to decide whether to prompt the user to connect before running. Access is scoped to connections the user is allowed to run.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Report the user's per-user federation connection status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationOAuthStatusResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the authenticated user's stored Google refresh token for a gcp_oauth-federated connection. Subsequent sessions fail until the user re-consents.",
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Disconnect a user's Google account from a connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrID}/federation/oauth/authorize": {
+            "get": {
+                "description": "Returns the Google consent URL for the authenticated user to connect their Google account to a gcp_oauth-federated connection. The browser should be redirected to the returned URL; Google redirects back to the gateway callback, which stores the resulting refresh token.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Start the Google OAuth consent flow for a connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "URL to return the browser to after consent (must match the API hostname)",
+                        "name": "redirect",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FederationOAuthAuthorizeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -3086,6 +3485,40 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
+                    }
+                }
+            }
+        },
+        "/federation/oauth/callback": {
+            "get": {
+                "description": "Google's OAuth redirect target. Validates the state issued by the authorize endpoint, exchanges the authorization code for a refresh token, stores it for the user/connection, and redirects the browser back to the application with federation_oauth=success|error. This endpoint is unauthenticated but state-validated, and is not called directly by clients.",
+                "tags": [
+                    "Federation"
+                ],
+                "summary": "Google OAuth callback for connection federation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth state (issued by the authorize endpoint)",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth authorization code",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth error returned by Google",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect back to the application with federation_oauth=success|error"
                     }
                 }
             }
@@ -4479,6 +4912,145 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/mcp-oauth/authorize": {
+            "post": {
+                "description": "Discovers the MCP server's authorization server (RFC 9728 / RFC 8414), optionally performs Dynamic Client Registration (RFC 7591) when no client credentials are supplied, and returns the authorization URL for the admin's browser to complete an Authorization Code + PKCE login. The browser is redirected there; the upstream provider redirects back to the gateway callback, which exchanges the code for a token. Used by the connection create page.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Start the OAuth login flow for an MCP connection",
+                "parameters": [
+                    {
+                        "description": "MCP OAuth login request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MCPOAuthAuthorizeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MCPOAuthAuthorizeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/mcp-oauth/callback": {
+            "get": {
+                "description": "The upstream authorization server's redirect target. Validates the state issued by the authorize endpoint, exchanges the authorization code for an access token, stores it on the flow row, and redirects the browser back to the connection create page with mcp_oauth=success|error and the flow_id. This endpoint is unauthenticated but state-validated, and is not called directly by clients.",
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "OAuth callback for MCP connection login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth state (the flow id issued by the authorize endpoint)",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth authorization code",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth error returned by the authorization server",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect back to the application with mcp_oauth=success|error"
+                    }
+                }
+            }
+        },
+        "/mcp-oauth/token/{flowID}": {
+            "get": {
+                "description": "Returns the access token obtained by a completed MCP OAuth login so the connection create page can freeze it into the connection's HEADER_AUTHORIZATION configuration. The token is returned at most once: the flow row is deleted on read.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Retrieve the token obtained by an MCP OAuth login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The flow id returned by the authorize endpoint",
+                        "name": "flowID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MCPOAuthTokenResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "425": {
+                        "description": "Too Early",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -9514,6 +10086,204 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "openapi.AIAgentCreateRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "groups": {
+                    "description": "Groups to assign to this AI Agent",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "name": {
+                    "description": "Human-readable name for the AI Agent",
+                    "type": "string",
+                    "example": "claude-ops"
+                }
+            }
+        },
+        "openapi.AIAgentCreateResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this agent",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this agent",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this AI Agent",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "key": {
+                    "description": "The generated AI Agent key. This is the only time the full key is shown.",
+                    "type": "string",
+                    "example": "hpk_Ab3fX9kL..."
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the AI Agent key for identification",
+                    "type": "string",
+                    "example": "hpk_1nzb***************************************"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "ai-agent"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the AI Agent",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AIAgentStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.AIAgentResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this agent",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this agent",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this AI Agent",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the AI Agent key for identification",
+                    "type": "string",
+                    "example": "hpk_1nzb***************************************"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "ai-agent"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the AI Agent",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AIAgentStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.AIAgentStatusType": {
+            "type": "string",
+            "enum": [
+                "active",
+                "revoked"
+            ],
+            "x-enum-varnames": [
+                "AIAgentStatusActive",
+                "AIAgentStatusRevoked"
+            ]
+        },
+        "openapi.AIAgentUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "description": "Updated group list (replaces existing groups)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "platform"
+                    ]
+                },
+                "name": {
+                    "description": "Updated display name",
+                    "type": "string",
+                    "example": "claude-prod"
+                }
+            }
+        },
         "openapi.AIProviderRequest": {
             "type": "object",
             "required": [
@@ -11022,14 +11792,15 @@ const docTemplate = `{
             ],
             "properties": {
                 "admin_credentials_json": {
-                    "description": "AdminCredentialsJSON is the plaintext admin credential blob (for\nbuiltin/gcp_iam: the admin service account JSON). Write-only — never\nreturned on GET. Required on the initial POST when HookSource=builtin;\noptional on PUT (omitting it leaves the stored value unchanged).",
+                    "description": "AdminCredentialsJSON is the plaintext admin credential blob. Its shape is\nprovider-specific: for gcp_iam it is the admin service-account JSON; for\ngcp_oauth it is the OAuth client config JSON ({\"client_id\":\"...\",\n\"client_secret\":\"...\"}). Write-only — never returned on GET. Required on\nthe initial POST when HookSource=builtin; optional on PUT (omitting it\nleaves the stored value unchanged).",
                     "type": "string"
                 },
                 "builtin_provider": {
-                    "description": "BuiltinProvider is required when HookSource=builtin. Only \"gcp_iam\"\nships today.",
+                    "description": "BuiltinProvider is required when HookSource=builtin. \"gcp_iam\"\nimpersonates a per-user service account via an admin SA key; \"gcp_oauth\"\nmints tokens from a per-user Google OAuth refresh token (no service\naccounts).",
                     "type": "string",
                     "enum": [
-                        "gcp_iam"
+                        "gcp_iam",
+                        "gcp_oauth"
                     ],
                     "example": "gcp_iam"
                 },
@@ -12119,6 +12890,36 @@ const docTemplate = `{
                 "FeatureStatusDisabled"
             ]
         },
+        "openapi.FederationOAuthAuthorizeResponse": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "description": "URL is the Google OAuth consent URL to redirect the user's browser to.",
+                    "type": "string",
+                    "example": "https://accounts.google.com/o/oauth2/auth?client_id=...\u0026state=..."
+                }
+            }
+        },
+        "openapi.FederationOAuthStatusResponse": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "description": "Connected is true when the user has a stored credential for this\nconnection. Always false for providers that are not per-user.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "google_email": {
+                    "description": "GoogleEmail is the consented Google identity, present only when\nConnected is true for gcp_oauth.",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "provider": {
+                    "description": "Provider is the connection's configured federation provider\n(e.g. \"gcp_oauth\", \"gcp_iam\"), or empty when the connection has no\nfederation configured. Only gcp_oauth requires a per-user connection.",
+                    "type": "string",
+                    "example": "gcp_oauth"
+                }
+            }
+        },
         "openapi.FederationTestConnection": {
             "type": "object",
             "required": [
@@ -12835,6 +13636,84 @@ const docTemplate = `{
                 "login_url": {
                     "description": "The URL to redirect the user to the identity provider",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.MCPOAuthAuthorizeRequest": {
+            "type": "object",
+            "required": [
+                "server_url"
+            ],
+            "properties": {
+                "client_id": {
+                    "description": "ClientID is an optional pre-registered OAuth client id. When empty the\ngateway registers a client dynamically.",
+                    "type": "string"
+                },
+                "client_secret": {
+                    "description": "ClientSecret is an optional pre-registered OAuth client secret, paired\nwith ClientID.",
+                    "type": "string"
+                },
+                "scopes": {
+                    "description": "Scopes is an optional space-delimited scope string. When empty the\nscopes advertised by the authorization server are requested.",
+                    "type": "string",
+                    "example": "openid profile"
+                },
+                "server_url": {
+                    "description": "ServerURL is the MCP endpoint to authorize against (the OAuth resource).",
+                    "type": "string",
+                    "example": "https://mcp.figma.com/mcp"
+                }
+            }
+        },
+        "openapi.MCPOAuthAuthorizeResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_url": {
+                    "description": "AuthorizationURL is the upstream OAuth authorization URL to open.",
+                    "type": "string",
+                    "example": "https://www.figma.com/oauth?client_id=...\u0026state=..."
+                },
+                "flow_id": {
+                    "description": "FlowID identifies this login flow; used to redeem the token afterwards.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                }
+            }
+        },
+        "openapi.MCPOAuthTokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "description": "AccessToken is the OAuth access token.",
+                    "type": "string"
+                },
+                "authorization_header": {
+                    "description": "AuthorizationHeader is the full \"\u003cTokenType\u003e \u003cAccessToken\u003e\" value to set\nas HEADER_AUTHORIZATION on the connection.",
+                    "type": "string",
+                    "example": "Bearer eyJ..."
+                },
+                "client_id": {
+                    "description": "ClientID is the OAuth client id used (relevant when registered dynamically).",
+                    "type": "string"
+                },
+                "expires_in": {
+                    "description": "ExpiresIn is the access token lifetime in seconds, when known.",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "refresh_token": {
+                    "description": "RefreshToken is the OAuth refresh token, when the provider returned one.",
+                    "type": "string"
+                },
+                "server_url": {
+                    "description": "ServerURL echoes the authorized MCP endpoint.",
+                    "type": "string",
+                    "example": "https://mcp.figma.com/mcp"
+                },
+                "token_type": {
+                    "description": "TokenType is the OAuth token type (typically \"Bearer\").",
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },
@@ -15195,6 +16074,48 @@ const docTemplate = `{
                     "description": "The listen address to run the SSH server proxy",
                     "type": "string",
                     "example": "0.0.0.0:12222"
+                },
+                "trusted_cas": {
+                    "description": "TrustedCAs is the list of trusted SSH CA public keys in authorized_keys\nformat. When non-empty, the server accepts certificate authentication.\nUserMapping is required when TrustedCAs is set.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "ssh-ed25519 AAAA..."
+                    ]
+                },
+                "user_mapping": {
+                    "description": "UserMapping is required when TrustedCAs is configured. It defines how\nthe certificate is matched against a Hoop user.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SSHUserMapping"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.SSHUserMapping": {
+            "type": "object",
+            "properties": {
+                "cert_attr": {
+                    "description": "CertAttribute is the certificate field used for the lookup.\n\"principal\" checks all ValidPrincipals; the first match wins.\n\"key_id\" uses the certificate's KeyId field.",
+                    "type": "string",
+                    "enum": [
+                        "principal",
+                        "key_id"
+                    ],
+                    "example": "principal"
+                },
+                "user_attr": {
+                    "description": "UserAttribute is the Hoop user table column matched against the cert value.",
+                    "type": "string",
+                    "enum": [
+                        "email",
+                        "subject",
+                        "user_id"
+                    ],
+                    "example": "email"
                 }
             }
         },
@@ -15580,6 +16501,10 @@ const docTemplate = `{
                         "ERROR"
                     ],
                     "example": "INFO"
+                },
+                "postgres_proxy_enabled": {
+                    "description": "Report if the Postgres proxy server has a listen address configured",
+                    "type": "boolean"
                 },
                 "redact_provider": {
                     "description": "Redact Provider used by the server",

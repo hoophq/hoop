@@ -10,6 +10,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hoophq/hoop/gateway/federation"
@@ -86,7 +87,15 @@ func ResolveFederationDryRun(ctx context.Context, cfg *models.ConnectionFederati
 
 	switch cfg.HookSource {
 	case models.FederationHookSourceBuiltin:
-		return resolveBuiltinCore(ctx, cfg, in, resolvedPrincipal, adminPlain)
+		userPlain, googleEmail, uerr := loadUserCredentials(cfg, in)
+		if uerr != nil {
+			return nil, uerr
+		}
+		defer zeroBytes(userPlain)
+		if googleEmail != "" {
+			resolvedPrincipal = googleEmail
+		}
+		return resolveBuiltinCore(ctx, cfg, in, resolvedPrincipal, adminPlain, userPlain)
 	default:
 		return nil, fmt.Errorf("unknown federation hook_source %q", cfg.HookSource)
 	}
@@ -111,23 +120,67 @@ func dispatchWithStoredCreds(ctx context.Context, cfg *models.ConnectionFederati
 		// Zero the plaintext credentials before returning so the buffer
 		// can't be inspected via heap dumps post-resolve. Best-effort
 		// (Go's GC may have already copied the slice) but cheap.
-		defer func() {
-			for i := range adminPlain {
-				adminPlain[i] = 0
-			}
-		}()
-		return resolveBuiltinCore(ctx, cfg, in, principal, adminPlain)
+		defer zeroBytes(adminPlain)
+
+		userPlain, googleEmail, uerr := loadUserCredentials(cfg, in)
+		if uerr != nil {
+			return nil, uerr
+		}
+		defer zeroBytes(userPlain)
+		if googleEmail != "" {
+			principal = googleEmail
+		}
+		return resolveBuiltinCore(ctx, cfg, in, principal, adminPlain, userPlain)
 	default:
 		return nil, fmt.Errorf("unknown federation hook_source %q", cfg.HookSource)
 	}
 }
 
+// loadUserCredentials fetches and decrypts the per-user credential a provider
+// needs, keyed by (connection, user). It is a no-op for providers that do not
+// use per-user credentials (e.g. gcp_iam), returning empty results so the
+// gcp_iam path is unchanged.
+//
+// For gcp_oauth it loads the stored Google refresh token. A missing row
+// (ErrNotFound) is NOT an error here: it returns empty so the resolver can
+// surface the actionable "user has not connected an account" message. The
+// returned googleEmail, when non-empty, is the consented Google identity the
+// caller uses to override the resolved principal so audit metadata reflects
+// the real human rather than an identity-template render.
+//
+// Ownership: the caller is responsible for zeroing the returned userPlain.
+func loadUserCredentials(cfg *models.ConnectionFederationConfig, in FederationInput) (userPlain []byte, googleEmail string, err error) {
+	if cfg.BuiltinProvider == nil || *cfg.BuiltinProvider != models.FederationProviderGCPOAuth {
+		return nil, "", nil
+	}
+	cred, err := models.GetFederationUserCredential(models.DB, in.OrgID, cfg.ConnectionID, in.UserID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("failed loading user federation credential: %w", err)
+	}
+	plain, derr := models.DecryptCredentialSecretKey(cred.RefreshTokenEncrypted)
+	if derr != nil {
+		return nil, "", fmt.Errorf("failed decrypting user federation credential: %w", derr)
+	}
+	return []byte(plain), cred.GoogleEmail, nil
+}
+
+// zeroBytes best-effort wipes a plaintext credential buffer.
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
 // resolveBuiltinCore looks up the configured builtin resolver and invokes it
-// with the supplied principal and plaintext admin credentials. It is
+// with the supplied principal and plaintext credentials. It is
 // credential-agnostic: callers are responsible for sourcing adminPlain
 // (either by decrypting cfg.AdminCredentialsEncrypted or by accepting it
-// directly from an API caller) and for zeroing the buffer afterwards.
-func resolveBuiltinCore(ctx context.Context, cfg *models.ConnectionFederationConfig, in FederationInput, principal string, adminPlain []byte) (*federation.Result, error) {
+// directly from an API caller) and userPlain (the per-user credential, e.g.
+// the gcp_oauth refresh token) and for zeroing both buffers afterwards.
+func resolveBuiltinCore(ctx context.Context, cfg *models.ConnectionFederationConfig, in FederationInput, principal string, adminPlain, userPlain []byte) (*federation.Result, error) {
 	if cfg.BuiltinProvider == nil || *cfg.BuiltinProvider == "" {
 		return nil, fmt.Errorf("builtin federation config missing builtin_provider")
 	}
@@ -142,6 +195,7 @@ func resolveBuiltinCore(ctx context.Context, cfg *models.ConnectionFederationCon
 		UserEmail:             in.UserEmail,
 		Config:                cfg,
 		AdminCredentialsPlain: adminPlain,
+		UserCredentialsPlain:  userPlain,
 		ResolvedPrincipal:     principal,
 	})
 }

@@ -6,20 +6,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
 
 // Publish records an event and creates one pending dispatch per matching
-// active subscription. Feature-flag gated. Errors are logged but never
-// returned to the caller.
+// active subscription. Errors are logged but never returned to the caller.
 func Publish(orgID, eventType string, payload map[string]any, source, producerEventID string) {
-	if !featureflag.IsEnabled(orgID, "experimental.event_routing") {
-		return
-	}
-
 	if _, ok := Catalog[eventType]; !ok {
 		log.Warnf("event-routing: unknown event type %q, skipping publish", eventType)
 		return

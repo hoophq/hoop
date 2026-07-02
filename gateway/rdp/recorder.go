@@ -1,6 +1,7 @@
 package rdp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -82,7 +83,18 @@ func NewRDPSessionRecorder(
 		connectionSub: connectionSub,
 		labels:        make(map[string]string),
 		startTime:     time.Now().UTC(),
-		parser:        GetParser(),
+	}
+
+	// Each recorder gets its own isolated parser instance. The WASM parser keeps
+	// per-instance mutable state (parsed bitmaps, bump allocator, and Fast-Path
+	// fragment reassembly), so sharing one instance across concurrent RDP
+	// sessions corrupts that state and crashes the gateway. Use a background
+	// context so a canceled request context never disables the parser mid-session.
+	p, err := parser.NewParser(context.Background())
+	if err != nil {
+		log.With("sid", sessionID).Errorf("failed to create RDP parser, recording will store no bitmaps: %v", err)
+	} else {
+		r.parser = p
 	}
 
 	// Create temp file for streaming events
@@ -114,7 +126,7 @@ func (r *RDPSessionRecorder) RecordOutput(data []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.closed || len(data) == 0 {
+	if r.closed || len(data) == 0 || r.parser == nil {
 		return
 	}
 
@@ -268,6 +280,12 @@ func (r *RDPSessionRecorder) Close(err error) {
 	if len(r.outputBuffer) > 0 {
 		r.parseAndStorePDU(r.outputBuffer)
 		r.outputBuffer = nil
+	}
+
+	// Release this session's isolated WASM parser instance.
+	if r.parser != nil {
+		_ = r.parser.Close()
+		r.parser = nil
 	}
 
 	if r.tmpFile == nil {

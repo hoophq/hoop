@@ -99,29 +99,53 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 		return
 	}
 
-	// hpk_ API key authentication
+	// hpk_ API key / AI agent authentication
+	// Both API Keys and AI Agents share the same hpk_ token format. We look up
+	// the hash in the api_keys table first; on miss, we fall back to ai_agents.
 	if token, err := parseToken(c); err == nil && strings.HasPrefix(token, "hpk_") {
+		isAIAgent := false
 		keyHash := models.HashAPIKey(token)
+
 		ctx, err := models.GetAPIKeyContext(keyHash)
 		if err != nil {
 			log.Errorf("failed looking up api key, err=%v", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 			return
 		}
+
 		if ctx == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-			return
+			// fall back to AI agent lookup
+			ctx, err = models.GetAIAgentContext(keyHash)
+			if err != nil {
+				log.Errorf("failed looking up ai agent, err=%v", err)
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
+				return
+			}
+
+			if ctx == nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+				return
+			}
+			isAIAgent = true
 		}
 
 		roles := rolesFromContext(c)
 		if !isGroupAllowed(ctx.UserGroups, roles...) {
-			log.Debugf("forbidden access: %v %v, roles=%v, api_key=%v",
-				c.Request.Method, c.Request.URL.Path, roles, ctx.UserName)
+			subjectKind := "api_key"
+			if isAIAgent {
+				subjectKind = "ai_agent"
+			}
+			log.Debugf("forbidden access: %v %v, roles=%v, %s=%v",
+				c.Request.Method, c.Request.URL.Path, roles, subjectKind, ctx.UserName)
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
 			return
 		}
 
-		go models.UpdateAPIKeyLastUsed(ctx.UserID)
+		if isAIAgent {
+			go models.UpdateAIAgentLastUsed(ctx.UserID)
+		} else {
+			go models.UpdateAPIKeyLastUsed(ctx.UserID)
+		}
 		c.Set(apiKeyAuthContextKey, true)
 		r.setUserContext(ctx, c, serverConfig.GrpcURL, serverConfig.AuthMethod)
 		return

@@ -187,8 +187,9 @@
   "Connection-specific actions page"
   [connection user-data]
   (let [is-admin? (:admin? user-data)
+        postgres-proxy-enabled? (get-in @(rf/subscribe [:gateway->info]) [:data :postgres_proxy_enabled])
         ;; Get actions dynamically based on connection permissions
-        all-actions (constants/get-connection-actions connection is-admin?)
+        all-actions (constants/get-connection-actions connection is-admin? postgres-proxy-enabled?)
         ;; Separate main actions from configuration
         main-actions (remove #(= (:id %) "configure") all-actions)
         ;; Configuration actions (already filtered by admin in get-connection-actions)

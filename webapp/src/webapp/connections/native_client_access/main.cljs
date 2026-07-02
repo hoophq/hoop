@@ -64,6 +64,14 @@
          "aws ssm start-session --target {TARGET_INSTANCE} "
          "--endpoint-url \"" endpoint-url "\"")))
 
+(defn- build-mcp-url
+  "Build the MCP endpoint URL exposed by the local http proxy, in the form
+   protocol://hostname:port/mcp."
+  [{:keys [port]}]
+  (let [protocol (.-protocol js/location)
+        hostname (get-hostname)]
+    (str protocol "//" hostname ":" port "/mcp")))
+
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
   [{:keys [error-message]}]
@@ -268,6 +276,47 @@
         :id "port"
         :logs port}]]]))
 
+(defn- mcp-credentials-fields
+  "MCP specific credentials fields: the MCP endpoint URL and the Authorization
+   header used to authenticate the MCP client against the proxy."
+  [{:keys [proxy_token port] :as connection-credentials}]
+    [:> Box {:class "space-y-4"}
+      ;; Host
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Host"]
+      [logs/new-container
+       {:status :success
+        :id "hostname"
+        :logs (get-hostname)}]]
+
+    ;; Port
+    [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+        "Port"]
+      [logs/new-container
+        {:status :success
+        :id "port"
+        :logs port}]]
+
+   ;; MCP URL
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "MCP URL"]
+    [logs/new-container
+     {:status :success
+      :id "mcp-url"
+      :logs (build-mcp-url connection-credentials)}]]
+
+   ;; Authorization Header
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Authorization Header"]
+    [logs/new-container
+     {:status :success
+      :id "authtoken"
+      :logs proxy_token}]]])
+
 (defn- ssh-credentials-fields
   "SSH specific credentials fields"
   [connection-credentials]
@@ -318,6 +367,7 @@
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
      "claude-code" [custom-views/claude-code-credentials-fields native-client-access-data]
+     "mcp" [mcp-credentials-fields connection_credentials]
      "httpproxy" [http-proxy-credentials-fields connection_credentials]
      "kubernetes" [http-proxy-credentials-fields connection_credentials]
      "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
@@ -519,6 +569,7 @@
         "aws-ssm" "AWS SSM"
         "kubernetes" "Kubernetes"
         "httpproxy" "HTTP Proxy"
+        "mcp" "MCP"
         (formatters/title-case
          (:connection_subtype native-client-access-data)))]]
     (when-let [expire-at (:expire_at native-client-access-data)]

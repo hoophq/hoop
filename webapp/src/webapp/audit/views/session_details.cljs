@@ -165,12 +165,11 @@
               ;; stream their audit events; exec/runbook keep their table views.
               connect? (= (:verb session) "connect")
               live? (and connect? open? (:id session))
-              ;; Use the live tail for every connect session — it gives a
-              ;; readable, terminal-style view of the stream, decoded
-              ;; client-side. The same component handles both the raw wire
-              ;; frames pushed via SSE and the pre-decoded SQL the backend
-              ;; returns for finished sessions via `?event_stream=raw-queries`.
-              show-live-tail? connect?
+              postgres? (= connection-subtype "postgres")
+              ;; Live tail only for live sessions and finished postgres; other
+              ;; finished sessions keep their native renderer (Logs+Video, RDP,
+              ;; raw), else a terminal renders one keystroke per row.
+              show-live-tail? (and connect? (or live? postgres?))
               ;; Open/close SSE subscription as the live state changes
               _ (cond
                   (and live? (not= @subscribed-id (:id session)))
@@ -344,10 +343,8 @@
                  (= (:status @session-details) :loading)
                  [loading-player]
 
-                 ;; Connect-verb session — dedicated terminal-style view that
-                 ;; renders decoded SQL (both the live SSE wire frames and
-                 ;; the historical pre-decoded queries) instead of the
-                 ;; expand/collapse list.
+                 ;; Live sessions and finished postgres: terminal-style tail.
+                 ;; Other finished sessions fall through to their native renderer.
                  show-live-tail?
                  [session-live-tail/main session]
 

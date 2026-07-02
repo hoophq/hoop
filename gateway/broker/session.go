@@ -176,18 +176,142 @@ func (s *Session) ToConn() net.Conn {
 	return &sessionConnWrapper{session: s}
 }
 
-func CreateAgent(agentID string, ws *websocket.Conn) error {
-	BrokerInstance.agents.Store(agentID, NewAgentCommunicator(ws))
-	return nil
+// AgentCapabilityWait bounds how long a caller will wait for an agent's
+// capability advertisement to arrive before treating it as unknown. The
+// capability frame is the first thing an agent sends after connecting, so this
+// only ever elapses for an old agent that never advertises, or a degenerate
+// connection — in which case the caller fails closed. Kept small so a healthy
+// new agent's frame (already in flight) is observed without adding meaningful
+// latency.
+const AgentCapabilityWait = 3 * time.Second
+
+// agentEntry is the broker's per-agent runtime state: the live communicator
+// plus any connection-scoped capabilities the agent advertised after
+// connecting.
+//
+//   - `capabilitiesKnown` distinguishes "agent said it cannot" from "agent has
+//     not told us yet" — a distinction the PII guard relies on to fail closed
+//     on the unknown case rather than silently running a session unguarded.
+//   - `ready` is closed exactly once, when the capability frame arrives, so a
+//     caller can wait (bounded) for the connect-time advertisement instead of
+//     racing it.
+//   - `id` identifies this specific connection instance so cleanup on
+//     disconnect only removes the entry if it has not already been replaced by
+//     a newer connection for the same agent name.
+type agentEntry struct {
+	id           uuid.UUID
+	comm         ConnectionCommunicator
+	mu           sync.Mutex
+	capabilities map[string]string
+
+	readyMu sync.Mutex // guards readyClosed; ready chan itself is immutable
+	ready   chan struct{}
+	// readyClosed mirrors "ready is closed" so close happens at most once.
+	readyClosed bool
 }
 
-func GetAgent(agentID string) (ConnectionCommunicator, bool) {
+func (e *agentEntry) markReady() {
+	e.readyMu.Lock()
+	defer e.readyMu.Unlock()
+	if !e.readyClosed {
+		e.readyClosed = true
+		close(e.ready)
+	}
+}
+
+// CreateAgent registers a freshly connected agent and returns an opaque handle
+// (its connection-instance id) that the caller must pass to RemoveAgent on
+// disconnect. Tying removal to this id prevents a late-closing old connection
+// from deleting the entry of a newer connection that reused the same agent
+// name.
+func CreateAgent(agentID string, ws *websocket.Conn) (uuid.UUID, error) {
+	instanceID := uuid.New()
+	BrokerInstance.agents.Store(agentID, &agentEntry{
+		id:           instanceID,
+		comm:         NewAgentCommunicator(ws),
+		capabilities: map[string]string{},
+		ready:        make(chan struct{}),
+	})
+	return instanceID, nil
+}
+
+// RemoveAgent deletes the agent's broker state on disconnect, but only if the
+// currently stored entry is still the one created with instanceID. If a newer
+// connection for the same name has already replaced it, this is a no-op — the
+// stale connection must not evict the live one.
+func RemoveAgent(agentID string, instanceID uuid.UUID) {
+	if e, ok := getAgentEntry(agentID); ok && e.id == instanceID {
+		BrokerInstance.agents.Delete(agentID)
+	}
+}
+
+func getAgentEntry(agentID string) (*agentEntry, bool) {
 	if v, ok := BrokerInstance.agents.Load(agentID); ok {
-		if c, ok := v.(ConnectionCommunicator); ok {
-			return c, true
+		if e, ok := v.(*agentEntry); ok {
+			return e, true
 		}
 	}
 	return nil, false
+}
+
+func GetAgent(agentID string) (ConnectionCommunicator, bool) {
+	if e, ok := getAgentEntry(agentID); ok {
+		return e.comm, true
+	}
+	return nil, false
+}
+
+// SetAgentCapabilities records the connection-scoped capabilities advertised
+// by an agent and unblocks anyone waiting on the advertisement. Called when a
+// Capabilities control frame is received. No-op if the agent is not currently
+// registered. The map is defensively copied so later mutation by the caller
+// cannot race readers of the stored state.
+func SetAgentCapabilities(agentID string, capabilities map[string]string) {
+	e, ok := getAgentEntry(agentID)
+	if !ok {
+		return
+	}
+	cp := make(map[string]string, len(capabilities))
+	for k, v := range capabilities {
+		cp[k] = v
+	}
+	e.mu.Lock()
+	e.capabilities = cp
+	e.mu.Unlock()
+	e.markReady()
+}
+
+// AgentCapability reports the value of a single advertised capability and
+// whether the agent's capabilities are known at all. If the agent is connected
+// but has not advertised yet, it waits up to AgentCapabilityWait for the
+// connect-time frame (closing the connect race) before reporting unknown.
+//
+// The two booleans are distinct on purpose:
+//   - known=false: the agent has not advertised capabilities within the wait
+//     (old agent, or a degenerate connection). Callers that need a security
+//     guarantee should generally treat this as "cannot" and fail closed —
+//     EXCEPT where availability across mixed-version rollouts outweighs it: the
+//     RDP handler deliberately runs unknown-capability sessions unguarded
+//     rather than 403-ing every connection through a not-yet-upgraded agent
+//     (see gateway/rdp/irongw.go). Choose per call site, consciously.
+//   - known=true, value=false: the agent explicitly cannot do this.
+//   - known=true, value=true: the agent can.
+func AgentCapability(agentID, key string) (value bool, known bool) {
+	e, ok := getAgentEntry(agentID)
+	if !ok {
+		return false, false
+	}
+
+	// Wait (bounded) for the connect-time advertisement if it has not arrived.
+	select {
+	case <-e.ready:
+	case <-time.After(AgentCapabilityWait):
+		return false, false
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.capabilities[key] == "true", true
 }
 
 func GetSession(sessionId uuid.UUID) *Session {

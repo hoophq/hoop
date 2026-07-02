@@ -53,30 +53,41 @@ func runClaudeConfigure(connectionName string) {
 	baseURL := fmt.Sprintf("%s://%s:%s", scheme, creds.Hostname, creds.Port)
 	proxyToken := creds.ProxyToken
 
-	if err := updateClaudeSettings(baseURL, proxyToken, claudeSettingsFile); err != nil {
+	settings := claudeSettings{
+		baseURL:       baseURL,
+		proxyToken:    proxyToken,
+		vertexProject: creds.VertexProjectID,
+		vertexRegion:  creds.VertexRegion,
+	}
+	if err := updateClaudeSettings(settings, claudeSettingsFile); err != nil {
 		printErrorAndExit("failed to update Claude settings: %s", err.Error())
 	}
 
 	path, _ := claudeSettingsFilePath(claudeSettingsFile)
-	printClaudeConfigureSuccess(path, connectionName, baseURL, proxyToken)
+	printClaudeConfigureSuccess(path, connectionName, settings)
 }
 
-func printClaudeConfigureSuccess(settingsPath, connectionName, baseURL, token string) {
+func printClaudeConfigureSuccess(settingsPath, connectionName string, settings claudeSettings) {
 	labelStyle := lipgloss.NewStyle().Faint(true).Width(14)
 	valueStyle := lipgloss.NewStyle()
 	successStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
 
 	// truncate token for display
-	displayToken := token
-	if len(token) > 24 {
-		displayToken = token[:24] + "..."
+	displayToken := settings.proxyToken
+	if len(displayToken) > 24 {
+		displayToken = displayToken[:24] + "..."
 	}
 
 	fmt.Println()
 	fmt.Printf("  %s %s\n", successStyle.Render("✓"), styles.Fainted("%s updated", settingsPath))
 	fmt.Println()
 	fmt.Printf("  %s%s\n", labelStyle.Render("Connection"), valueStyle.Render(connectionName))
-	fmt.Printf("  %s%s\n", labelStyle.Render("Base URL"), valueStyle.Render(baseURL))
+	if settings.isVertex() {
+		fmt.Printf("  %s%s\n", labelStyle.Render("Provider"), valueStyle.Render("Google Vertex AI"))
+		fmt.Printf("  %s%s\n", labelStyle.Render("Project"), valueStyle.Render(settings.vertexProject))
+		fmt.Printf("  %s%s\n", labelStyle.Render("Region"), valueStyle.Render(settings.vertexRegion))
+	}
+	fmt.Printf("  %s%s\n", labelStyle.Render("Base URL"), valueStyle.Render(settings.baseURL))
 	fmt.Printf("  %s%s\n", labelStyle.Render("Token"), valueStyle.Render(displayToken))
 	fmt.Println()
 	fmt.Println(styles.Fainted("  Claude Code requests are now routed through hoop."))
@@ -87,9 +98,11 @@ func printClaudeConfigureSuccess(settingsPath, connectionName, baseURL, token st
 }
 
 type activeCredentials struct {
-	Hostname   string `json:"hostname"`
-	Port       string `json:"port"`
-	ProxyToken string `json:"proxy_token"`
+	Hostname        string `json:"hostname"`
+	Port            string `json:"port"`
+	ProxyToken      string `json:"proxy_token"`
+	VertexProjectID string `json:"vertex_project_id"`
+	VertexRegion    string `json:"vertex_region"`
 }
 
 type credentialsEnvelope struct {

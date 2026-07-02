@@ -57,7 +57,7 @@
           [:> Heading {:as "h3" :size "2"}
            "Redacted Data"]
           [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
-           "protected with AI Data Masking"]
+           "protected with Live Data Masking"]
           [:> Text {:as "p" :size "8"}
            [:> Strong
             (-> @reports->today-redacted-data :data :total_redact_count)]]]]]

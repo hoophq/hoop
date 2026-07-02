@@ -27,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -37,27 +38,49 @@ const (
 	// NOTE in the future we might want to support custom headers as well
 	proxyTokenHeader = "Authorization"
 	proxyTokenCookie = "hoop_proxy_token"
+
+	// requestChunkSize bounds the size of each gRPC packet emitted when
+	// forwarding a client request to the agent. Without chunking, a large
+	// request body (e.g. a long-context LLM prompt with base64 attachments)
+	// serializes into a single gRPC message; anything above
+	// common/grpc.MaxRecvMsgSize is rejected by the agent's receive layer with
+	// ResourceExhausted — a stream-fatal error that tears down the agent's
+	// entire Connect stream, dropping every session on that agent. The
+	// agent-side proxy buffers packets until Content-Length bytes arrive, so
+	// packet boundaries are transparent to it. Mirrors the agent's response
+	// chunking (agent/controller/httpproxy.go httpProxyResponseChunkSize) and
+	// must stay safely below common/grpc.MaxRecvMsgSize.
+	requestChunkSize = 1024 * 1024 * 4 // 4 MiB
 )
 
 var instanceStore sync.Map
 
 type HttpProxyServer struct {
 	sessionStore sync.Map // map[string]*httpProxySession
-	httpServer   *http.Server
-	listener     net.Listener
-	listenAddr   string
-	tlsConfig    *tls.Config
-	mutex        sync.RWMutex
+	// createGroup de-duplicates concurrent session creation per secretKeyHash.
+	// The session row is persisted the moment the gRPC stream connects (Save ->
+	// OnConnect), so a burst of first-requests for the same proxy token must
+	// share a single connect; otherwise each request opens its own stream and
+	// leaves an orphaned "open" session behind. Only one goroutine per key runs
+	// the creation; the rest block and reuse its result.
+	createGroup singleflight.Group
+	httpServer  *http.Server
+	listener    net.Listener
+	listenAddr  string
+	tlsConfig   *tls.Config
 }
 
 type httpProxySession struct {
-	sid           string
-	ctx           context.Context
-	cancelFn      func(msg string, a ...any)
-	streamClient  pb.ClientTransport
-	responseStore sync.Map    // stores response channels per connectionID
-	closed        atomic.Bool // fast-fail flag to avoid mutex contention on session close
-	connCounter   atomic.Int64
+	sid            string
+	orgID          string // owning org, used to gate and run the AI session analyzer
+	connectionName string
+	userSubject    string
+	ctx            context.Context
+	cancelFn       func(msg string, a ...any)
+	streamClient   pb.ClientTransport
+	responseStore  sync.Map    // stores response channels per connectionID
+	closed         atomic.Bool // fast-fail flag to avoid mutex contention on session close
+	connCounter    atomic.Int64
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -304,7 +327,9 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 		// Check if session context is still valid
 		if sess.ctx.Err() != nil {
 			log.Infof("http proxy session context error: %v, removing session for connection %s", sess.ctx.Err(), secretKeyHash)
-			s.sessionStore.Delete(secretKeyHash)
+			// Only evict this exact session; a concurrent creator may already
+			// have replaced it under the same key.
+			s.sessionStore.CompareAndDelete(secretKeyHash, sess)
 			return nil, fmt.Errorf("http proxy session context error: %v", sess.ctx.Err())
 		}
 		log.Debugf("http proxy session found for connection %s", secretKeyHash)
@@ -315,7 +340,7 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 }
 
 func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string) (*httpProxySession, error) {
-	// First try to get existing valid session
+	// Fast path: reuse a live session without entering the singleflight group.
 	sess, err := s.getSessionOrRelease(secretKeyHash)
 	if err != nil {
 		return nil, err
@@ -324,6 +349,32 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		return sess, nil
 	}
 
+	// Slow path: only one goroutine per secretKeyHash runs the creation; the
+	// rest block here and receive the same session. A burst of first-requests
+	// therefore opens a single gRPC stream (and a single audit session row)
+	// instead of one per request.
+	v, err, _ := s.createGroup.Do(secretKeyHash, func() (any, error) {
+		// Re-check inside the group: a previous leader may have created and
+		// stored the session in the window before singleflight forgot the key.
+		if sess, err := s.getSessionOrRelease(secretKeyHash); err != nil {
+			return nil, err
+		} else if sess != nil {
+			return sess, nil
+		}
+		return s.createSession(secretKeyHash, correlationID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*httpProxySession), nil
+}
+
+// createSession validates the proxy-token credentials, opens a dedicated gRPC
+// stream to the gateway, performs the SessionOpen handshake and registers the
+// resulting session in sessionStore. It must only be called through
+// getOrCreateSession's singleflight group so concurrent first-requests for the
+// same secretKeyHash share a single stream instead of each opening one.
+func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*httpProxySession, error) {
 	// Validate credentials first
 	dba, err := getValidConnectionCredentials(secretKeyHash)
 	if err != nil {
@@ -356,8 +407,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		fmt.Errorf("http proxy connection access expired"))
 
 	session := &httpProxySession{
-		sid: sid,
-		ctx: ctx,
+		sid:            sid,
+		orgID:          dba.OrgID,
+		connectionName: dba.ConnectionName,
+		userSubject:    dba.UserSubject,
+		ctx:            ctx,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
@@ -460,21 +514,17 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 			_, _ = session.streamClient.Close()
 			log.Infof("http proxy session cleanup: stream closed, sid=%s", sid)
 		}
-		// Cleanup will be done by handleAgentResponses defer, but we also try here as backup
-		s.sessionStore.Delete(secretKeyHash)
+		// Only remove ourselves: CompareAndDelete guards against evicting a
+		// different session another goroutine registered under the same key,
+		// which would orphan the live session as a perpetual "open" row.
+		// Cleanup is also attempted by the handleAgentResponses defer.
+		s.sessionStore.CompareAndDelete(secretKeyHash, session)
 		log.Infof("http proxy session cleanup: session removed from store, sid=%s", sid)
 	}()
 
-	// Store session; in case of reace condition, the first one wins and we close the new one
-	s.mutex.Lock()
-	if existingSession, ok := s.sessionStore.Load(secretKeyHash); ok {
-		s.mutex.Unlock()
-		// Another goroutine created the session first, close this one
-		session.cancelFn("duplicate session, another session already exists")
-		return existingSession.(*httpProxySession), nil
-	}
+	// Register the session. singleflight guarantees we are the only creator for
+	// this secretKeyHash, so a plain Store cannot clobber a concurrent winner.
 	s.sessionStore.Store(secretKeyHash, session)
-	s.mutex.Unlock()
 
 	return session, nil
 }
@@ -547,15 +597,18 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			sendErr <- fmt.Errorf("session closed")
 			return
 		}
-		err := sess.streamClient.Send(&pb.Packet{
-			Type:    pbagent.HttpProxyConnectionWrite,
-			Payload: []byte(rawRequest),
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:   []byte(sess.sid),
-				pb.SpecClientConnectionID: []byte(connectionID),
-				pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
-			},
+		// Split the request across multiple sub-limit packets (see
+		// requestChunkSize). Chunks are written sequentially from this single
+		// goroutine, so they arrive at the agent in order even though other
+		// in-flight requests interleave their own packets on the shared
+		// stream. The chunked writer is deliberately not Closed: closing it
+		// would close the session's underlying gRPC stream.
+		streamWriter := pb.NewStreamWriter(sess.streamClient, pbagent.HttpProxyConnectionWrite, map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sess.sid),
+			pb.SpecClientConnectionID: []byte(connectionID),
+			pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
 		})
+		_, err := pb.NewChunkedWriter(streamWriter, requestChunkSize).Write([]byte(rawRequest))
 		sendErr <- err
 	}()
 
@@ -578,6 +631,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
 	case <-ctx.Done():
+		sess.notifyAgentConnectionClose(connectionID)
 		http.Error(w, "request send timeout", http.StatusGatewayTimeout)
 		return
 	}
@@ -589,6 +643,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
 	case <-time.After(httpTimeout):
+		sess.notifyAgentConnectionClose(connectionID)
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 		return
 	case response, ok := <-responseChan:
@@ -651,6 +706,13 @@ func (sess *httpProxySession) writeBufferedResponse(
 ) {
 	log := log.With("sid", sess.sid, "conn", connectionID)
 
+	// Reassembling a large body from multiple packets can outlast the server's
+	// absolute WriteTimeout. Take over the write deadline and roll it forward
+	// per chunk (below) so a big response is not truncated mid-transfer, while
+	// a stalled client still trips the per-write deadline.
+	const bufferedWriteDeadline = 30 * time.Second
+	rc := http.NewResponseController(w)
+
 	for key, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)
@@ -659,6 +721,10 @@ func (sess *httpProxySession) writeBufferedResponse(
 	w.WriteHeader(resp.StatusCode)
 
 	flusher, _ := w.(http.Flusher)
+
+	if err := rc.SetWriteDeadline(time.Now().Add(bufferedWriteDeadline)); err != nil {
+		log.Debugf("could not set write deadline for buffered response: %v", err)
+	}
 
 	// Body bytes carried by the first packet (resp.Body reads it after the
 	// headers). A premature EOF here is expected when Content-Length is larger
@@ -698,6 +764,7 @@ func (sess *httpProxySession) writeBufferedResponse(
 		case <-idleTimer.C:
 			log.Warnf("response reassembly aborted: idle timeout (%v) exceeded, written=%d/%d",
 				idleTimeout, bodyWritten, resp.ContentLength)
+			sess.notifyAgentConnectionClose(connectionID)
 			return
 		case data, ok := <-responseChan:
 			if !ok {
@@ -706,8 +773,12 @@ func (sess *httpProxySession) writeBufferedResponse(
 				return
 			}
 			if len(data) > 0 {
+				if err := rc.SetWriteDeadline(time.Now().Add(bufferedWriteDeadline)); err != nil {
+					log.Debugf("could not set write deadline for buffered chunk: %v", err)
+				}
 				if _, err := w.Write(data); err != nil {
 					log.Warnf("failed writing response body chunk: %v", err)
+					sess.notifyAgentConnectionClose(connectionID)
 					return
 				}
 				bodyWritten += int64(len(data))
@@ -742,8 +813,9 @@ func isSSEStreamingResponse(resp *http.Response) bool {
 // HTTP client, flushing after each one so events are delivered in real-time.
 //
 // The stream ends when the responseChan is closed (agent finished), the session
-// context is cancelled, or an idle timeout of 5 minutes is exceeded between
-// consecutive chunks.
+// context is cancelled, or the idle timeout is exceeded between consecutive
+// chunks. On abandonment (idle timeout or client write error) the agent is
+// notified so it stops relaying the upstream response into a dead channel.
 func (sess *httpProxySession) handleSSEStream(
 	w http.ResponseWriter,
 	resp *http.Response,
@@ -752,6 +824,19 @@ func (sess *httpProxySession) handleSSEStream(
 ) {
 	log := log.With("sid", sess.sid, "conn", connectionID, "type", "sse")
 	log.Infof("SSE stream detected, starting streaming relay")
+
+	// Take over the connection's deadlines from the http.Server. The server
+	// arms a single absolute ReadTimeout/WriteTimeout when the request is read;
+	// for an SSE relay that streams for minutes those deadlines would abort a
+	// perfectly healthy stream (observed as a "write ... i/o timeout" at the
+	// server WriteTimeout). We disable the read deadline (the request body was
+	// already fully consumed) and instead roll the write deadline forward per
+	// chunk below, so total stream duration is unbounded while a genuinely
+	// stuck client (one that stops draining) is still disconnected.
+	rc := http.NewResponseController(w)
+	if err := rc.SetReadDeadline(time.Time{}); err != nil {
+		log.Debugf("could not clear read deadline for SSE stream: %v", err)
+	}
 
 	// Copy response headers to the client
 	for key, values := range resp.Header {
@@ -778,6 +863,10 @@ func (sess *httpProxySession) handleSSEStream(
 	// Each chunk is a raw HTTP chunked-encoding fragment produced by the agent's
 	// httputil.NewChunkedWriter wrapping the gRPC streamWriter.
 	const sseIdleTimeout = 90 * time.Second
+	// Per-write deadline: an individual chunk (a few KB up to a few MB) must
+	// flush within this window. It is reset before every write, so it never
+	// bounds the total stream duration — only a wedged client trips it.
+	const sseWriteDeadline = 30 * time.Second
 	idleTimer := time.NewTimer(sseIdleTimeout)
 	defer idleTimer.Stop()
 
@@ -788,6 +877,7 @@ func (sess *httpProxySession) handleSSEStream(
 			return
 		case <-idleTimer.C:
 			log.Warnf("SSE stream ended: idle timeout (%v) exceeded", sseIdleTimeout)
+			sess.notifyAgentConnectionClose(connectionID)
 			return
 		case data, ok := <-responseChan:
 			if !ok {
@@ -796,8 +886,12 @@ func (sess *httpProxySession) handleSSEStream(
 				return
 			}
 
+			if err := rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline)); err != nil {
+				log.Debugf("could not set write deadline for SSE chunk: %v", err)
+			}
 			if _, err := w.Write(data); err != nil {
 				log.Warnf("SSE stream ended: write error: %v", err)
+				sess.notifyAgentConnectionClose(connectionID)
 				return
 			}
 			if flusher != nil {
@@ -993,7 +1087,9 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			return true
 		})
 
-		server.sessionStore.Delete(secretKeyHash)
+		// Ownership-aware removal: never evict a different session registered
+		// under the same key by a newer creator.
+		server.sessionStore.CompareAndDelete(secretKeyHash, sess)
 		log.Warnf("handleAgentResponses: session removed from store, sid=%s", sess.sid)
 	}()
 
@@ -1084,6 +1180,35 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			// Unknown packet type, log and ignore
 			log.Debugf("unknown packet type received: %v, sid=%s", pkt.Type, sess.sid)
 		}
+	}
+}
+
+// notifyAgentConnectionClose asks the agent to tear down the upstream
+// connection identified by connectionID. The gateway calls this when it
+// abandons a request or stream before the agent signalled completion (client
+// disconnected, request/idle timeout, write error). Without it the agent keeps
+// relaying the upstream response into a response channel that no longer has a
+// reader — wasting the upstream connection (e.g. a Vertex SSE stream) and
+// spamming "no response channel found (response dropped)" on every late packet.
+//
+// The agent handles pbagent.TCPConnectionClose by closing the matching libhoop
+// proxy, which cancels the in-flight request context and aborts the upstream
+// body read. Best-effort: on a closing session the send may fail, but the
+// session teardown then performs the same cleanup.
+func (sess *httpProxySession) notifyAgentConnectionClose(connectionID string) {
+	if sess.closed.Load() || sess.streamClient == nil {
+		return
+	}
+	err := sess.streamClient.Send(&pb.Packet{
+		Type: pbagent.TCPConnectionClose,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sess.sid),
+			pb.SpecClientConnectionID: []byte(connectionID),
+		},
+	})
+	if err != nil {
+		log.With("sid", sess.sid, "conn", connectionID).
+			Warnf("failed notifying agent to close connection: %v", err)
 	}
 }
 

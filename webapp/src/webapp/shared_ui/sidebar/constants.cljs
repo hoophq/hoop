@@ -154,7 +154,7 @@
     :navigate :ai-session-analyzer
     :admin-only? true}
    {:name "AIDataMasking"
-    :label "AI Data Masking"
+    :label "Live Data Masking"
     :icon (get icons-registry "AIDataMasking")
     :uri (routes/url-for :ai-data-masking)
     :navigate :ai-data-masking

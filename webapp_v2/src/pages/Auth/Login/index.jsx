@@ -93,7 +93,7 @@ function Login() {
         setAuthMethod(method)
 
         if (method !== 'local') {
-          redirectToIdp()
+          redirectToIdp(method)
         }
       } catch (err) {
         console.error('Failed to fetch server info:', err)
@@ -106,11 +106,14 @@ function Login() {
     fetchAuthMethod()
   }, [isAuthenticated])
 
-  const redirectToIdp = async (options = {}) => {
+  const redirectToIdp = async (method, options = {}) => {
     setLoading(true)
     try {
       const callbackUrl = `${window.location.origin}/auth/callback`
-      const loginUrl = await authService.getLoginUrl(callbackUrl, options)
+      const loginUrl =
+        method === 'saml'
+          ? await authService.getSamlLoginUrl(callbackUrl, options)
+          : await authService.getLoginUrl(callbackUrl, options)
       window.location.replace(loginUrl)
     } catch (err) {
       setError('Failed to initialize login')
@@ -169,7 +172,7 @@ function Login() {
         <Alert color="red" mb="md">
           {error}
         </Alert>
-        <Button fullWidth onClick={() => redirectToIdp({ promptLogin: true })} loading={loading}>
+        <Button fullWidth onClick={() => redirectToIdp(authMethod, { promptLogin: true })} loading={loading}>
           Try again
         </Button>
       </AuthCard>

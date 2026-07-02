@@ -150,16 +150,34 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	// client proxy authentication (access token)
 	default:
 		if isApiKey && strings.HasPrefix(bearerToken, "hpk_") {
+			isAIAgent := false
 			keyHash := models.HashAPIKey(bearerToken)
+
 			ctx, err := models.GetAPIKeyContext(keyHash)
 			if err != nil {
 				log.Errorf("failed looking up api key, err=%v", err)
 				return status.Errorf(codes.Internal, "internal error")
 			}
+
 			if ctx == nil {
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				ctx, err = models.GetAIAgentContext(keyHash)
+				if err != nil {
+					log.Errorf("failed looking up ai agent, err=%v", err)
+					return status.Errorf(codes.Internal, "internal error")
+				}
+
+				if ctx == nil {
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+				isAIAgent = true
 			}
-			go models.UpdateAPIKeyLastUsed(ctx.UserID)
+
+			if isAIAgent {
+				go models.UpdateAIAgentLastUsed(ctx.UserID)
+			} else {
+				go models.UpdateAPIKeyLastUsed(ctx.UserID)
+			}
+
 			ctx.UserID = ctx.UserSubject
 			gwctx := &GatewayContext{
 				UserContext:  *ctx,

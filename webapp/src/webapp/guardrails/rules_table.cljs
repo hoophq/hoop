@@ -73,7 +73,7 @@
                      (when (= (.-key e) "Enter")
                        (.preventDefault e)))
        :value (get @pattern-state idx "")}]
-     [:> Tooltip {:content "Use Go regex syntax."}
+     [:> Tooltip {:content "Use Python regex syntax."}
       [:> CircleHelp {:size 16}]]]
 
     (= "deny_words_list" (:type rule))

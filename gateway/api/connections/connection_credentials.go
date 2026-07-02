@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
@@ -29,7 +30,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code", "mcp"}
 
 // noExpirySentinel is the expire_at value stored for credentials that should
 // not expire — the human "Open in Native Client" flow issues these when the
@@ -731,7 +732,7 @@ func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn 
 		sshproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeRDP:
 		broker.RevokeByCredentialID(cred.ID)
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
 		// SSM has no persistent session store; proxies reject new connections
@@ -892,17 +893,42 @@ func buildConnectionCredentialsResponse(
 				"subdomain": "` + browserWildcardCommand + `"
 			}`
 		base.ConnectionType = proto.ConnectionType(connectionType).String()
-		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
+		info := &openapi.HttpProxyConnectionInfo{
 			Hostname:   host,
 			Port:       serverPort,
 			ProxyToken: secretKey,
 			Command:    jsonCommandsString,
 		}
+		// For a claude-code connection federated to Google Vertex AI, surface
+		// the GCP project/region so `hoop claude configure` can emit the
+		// Vertex-mode client env. Gated by the experimental flag so a deploy
+		// with the feature off never advertises Vertex settings.
+		if conn.SubType.String == proto.ConnectionTypeClaudeCode.String() &&
+			featureflag.IsEnabled(cred.OrgID, "experimental.claude_code_vertex") {
+			info.VertexProjectID = decodeConnectionEnv(conn, "GCP_PROJECT_ID")
+			info.VertexRegion = decodeConnectionEnv(conn, "GCP_REGION")
+		}
+		base.ConnectionCredentials = info
 	default:
 		return nil
 	}
 
 	return &base
+}
+
+// decodeConnectionEnv returns the plaintext value of a connection env-var
+// secret (stored base64-encoded under the "envvar:NAME" key), or "" when the
+// key is absent or undecodable.
+func decodeConnectionEnv(conn *models.Connection, name string) string {
+	enc := conn.Envs[fmt.Sprintf("envvar:%s", name)]
+	if enc == "" {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		return ""
+	}
+	return string(decoded)
 }
 
 func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
@@ -922,7 +948,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -1073,6 +1099,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("httpproxy", keySize)
 	case proto.ConnectionTypeClaudeCode:
 		return keys.GenerateSecureRandomKey("claude-code", keySize)
+	case proto.ConnectionTypeMcp:
+		return keys.GenerateSecureRandomKey("mcp", keySize)
 	case proto.ConnectionTypeKubernetes:
 		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:
