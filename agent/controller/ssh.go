@@ -29,6 +29,12 @@ const (
 	// built whenever either flag is on).
 	optSSHGuardrailsExecOutput = "ssh_guardrails_exec_output"
 	optSSHGuardrailsInput      = "ssh_guardrails_input"
+
+	// optConnectionMode selects libhoop's SSH backend. connectionModeLocal
+	// terminates the session on the agent host (the application/ssh-local
+	// subtype); any other value (the default) proxies to an upstream sshd.
+	optConnectionMode   = "connection_mode"
+	connectionModeLocal = "local"
 )
 
 func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
@@ -86,22 +92,37 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 			return existing, nil
 		}
 
-		connenv, parseErr := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeSSH)
-		if parseErr != nil {
-			return nil, fmt.Errorf("SSH credentials not found in memory: %v", parseErr)
-		}
+		var opts map[string]string
+		if connParams.ConnectionSubType == pb.ConnectionSubTypeSSHLocal {
+			// application/ssh-local: the session terminates on the agent host, so
+			// there is no upstream to authenticate to and no HOST/USER/PASS
+			// secrets are required. Selecting the local backend is the only
+			// difference from the proxy path below.
+			log.With("sid", sid, "conn", clientConnectionID).
+				Infof("starting local SSH session")
+			opts = map[string]string{
+				"sid":             sid,
+				"connection_id":   clientConnectionID,
+				optConnectionMode: connectionModeLocal,
+			}
+		} else {
+			connenv, parseErr := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeSSH)
+			if parseErr != nil {
+				return nil, fmt.Errorf("SSH credentials not found in memory: %v", parseErr)
+			}
 
-		log.With("sid", sid, "conn", clientConnectionID).
-			Infof("starting SSH proxy connection at %v", connenv.Address())
+			log.With("sid", sid, "conn", clientConnectionID).
+				Infof("starting SSH proxy connection at %v", connenv.Address())
 
-		opts := map[string]string{
-			"sid":                    sid,
-			"hostname":               connenv.host,
-			"port":                   connenv.port,
-			"username":               connenv.user,
-			"password":               connenv.pass,
-			"authorized_server_keys": connenv.authorizedSSHKeys,
-			"connection_id":          clientConnectionID,
+			opts = map[string]string{
+				"sid":                    sid,
+				"hostname":               connenv.host,
+				"port":                   connenv.port,
+				"username":               connenv.user,
+				"password":               connenv.pass,
+				"authorized_server_keys": connenv.authorizedSSHKeys,
+				"connection_id":          clientConnectionID,
+			}
 		}
 		// Guardrails enforcement for SSH is split across two independent feature
 		// flags: one for exec-command input + session output, one for best-effort

@@ -509,6 +509,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
 			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			ConnectionSubType:          pctx.ConnectionSubType,
 			UserID:                     pctx.UserID,
 			UserEmail:                  pctx.UserEmail,
 			EnvVars:                    pctx.ConnectionSecret,

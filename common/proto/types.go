@@ -34,13 +34,17 @@ type (
 	AgentConnectionParams struct {
 		ConnectionName string
 		ConnectionType string
-		UserID         string
-		UserEmail      string
-		EnvVars        map[string]any
-		CmdList        []string
-		ClientArgs     []string
-		ClientVerb     string
-		ClientOrigin   string
+		// ConnectionSubType is the DB `subtype` before it collapses into
+		// ConnectionType. Most protocols ignore it; the SSH handler uses it to
+		// select libhoop's local backend for ConnectionSubTypeSSHLocal.
+		ConnectionSubType string
+		UserID            string
+		UserEmail         string
+		EnvVars           map[string]any
+		CmdList           []string
+		ClientArgs        []string
+		ClientVerb        string
+		ClientOrigin      string
 
 		DlpProvider              string
 		DlpMode                  string
@@ -318,6 +322,12 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
 		case "ssh":
+			return ConnectionType(ConnectionTypeSSH)
+		case ConnectionSubTypeSSHLocal:
+			// Same ssh transport, terminated on the agent host. The local vs
+			// remote distinction is carried to the agent via the propagated
+			// subtype, not the proto type, so the CLI and gateway front-ends
+			// remain protocol-agnostic.
 			return ConnectionType(ConnectionTypeSSH)
 		case "git":
 			return ConnectionType(ConnectionTypeSSH)

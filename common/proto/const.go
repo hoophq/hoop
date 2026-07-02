@@ -63,6 +63,14 @@ const (
 	ConnectionTypeRDP         ConnectionType = "rdp"
 	ConnectionTypeSSM         ConnectionType = "aws-ssm"
 
+	// ConnectionSubTypeSSHLocal is the DB `subtype` (under the "application"
+	// type) that terminates the SSH session on the agent host itself instead of
+	// proxying to an upstream sshd. It collapses to ConnectionTypeSSH via
+	// ToConnectionType — same ssh transport, CLI and gateway front-ends stay
+	// agnostic — while the agent selects libhoop's local backend from the
+	// subtype propagated in AgentConnectionParams.
+	ConnectionSubTypeSSHLocal string = "ssh-local"
+
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"
 	ConnectionOriginClientProxyManager = "client-proxymanager"
