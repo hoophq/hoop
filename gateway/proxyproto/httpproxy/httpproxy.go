@@ -615,6 +615,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
 	case <-ctx.Done():
+		sess.notifyAgentConnectionClose(connectionID)
 		http.Error(w, "request send timeout", http.StatusGatewayTimeout)
 		return
 	}
@@ -626,6 +627,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
 	case <-time.After(httpTimeout):
+		sess.notifyAgentConnectionClose(connectionID)
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 		return
 	case response, ok := <-responseChan:
@@ -688,6 +690,13 @@ func (sess *httpProxySession) writeBufferedResponse(
 ) {
 	log := log.With("sid", sess.sid, "conn", connectionID)
 
+	// Reassembling a large body from multiple packets can outlast the server's
+	// absolute WriteTimeout. Take over the write deadline and roll it forward
+	// per chunk (below) so a big response is not truncated mid-transfer, while
+	// a stalled client still trips the per-write deadline.
+	const bufferedWriteDeadline = 30 * time.Second
+	rc := http.NewResponseController(w)
+
 	for key, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)
@@ -696,6 +705,10 @@ func (sess *httpProxySession) writeBufferedResponse(
 	w.WriteHeader(resp.StatusCode)
 
 	flusher, _ := w.(http.Flusher)
+
+	if err := rc.SetWriteDeadline(time.Now().Add(bufferedWriteDeadline)); err != nil {
+		log.Debugf("could not set write deadline for buffered response: %v", err)
+	}
 
 	// Body bytes carried by the first packet (resp.Body reads it after the
 	// headers). A premature EOF here is expected when Content-Length is larger
@@ -735,6 +748,7 @@ func (sess *httpProxySession) writeBufferedResponse(
 		case <-idleTimer.C:
 			log.Warnf("response reassembly aborted: idle timeout (%v) exceeded, written=%d/%d",
 				idleTimeout, bodyWritten, resp.ContentLength)
+			sess.notifyAgentConnectionClose(connectionID)
 			return
 		case data, ok := <-responseChan:
 			if !ok {
@@ -743,8 +757,12 @@ func (sess *httpProxySession) writeBufferedResponse(
 				return
 			}
 			if len(data) > 0 {
+				if err := rc.SetWriteDeadline(time.Now().Add(bufferedWriteDeadline)); err != nil {
+					log.Debugf("could not set write deadline for buffered chunk: %v", err)
+				}
 				if _, err := w.Write(data); err != nil {
 					log.Warnf("failed writing response body chunk: %v", err)
+					sess.notifyAgentConnectionClose(connectionID)
 					return
 				}
 				bodyWritten += int64(len(data))
@@ -779,8 +797,9 @@ func isSSEStreamingResponse(resp *http.Response) bool {
 // HTTP client, flushing after each one so events are delivered in real-time.
 //
 // The stream ends when the responseChan is closed (agent finished), the session
-// context is cancelled, or an idle timeout of 5 minutes is exceeded between
-// consecutive chunks.
+// context is cancelled, or the idle timeout is exceeded between consecutive
+// chunks. On abandonment (idle timeout or client write error) the agent is
+// notified so it stops relaying the upstream response into a dead channel.
 func (sess *httpProxySession) handleSSEStream(
 	w http.ResponseWriter,
 	resp *http.Response,
@@ -789,6 +808,19 @@ func (sess *httpProxySession) handleSSEStream(
 ) {
 	log := log.With("sid", sess.sid, "conn", connectionID, "type", "sse")
 	log.Infof("SSE stream detected, starting streaming relay")
+
+	// Take over the connection's deadlines from the http.Server. The server
+	// arms a single absolute ReadTimeout/WriteTimeout when the request is read;
+	// for an SSE relay that streams for minutes those deadlines would abort a
+	// perfectly healthy stream (observed as a "write ... i/o timeout" at the
+	// server WriteTimeout). We disable the read deadline (the request body was
+	// already fully consumed) and instead roll the write deadline forward per
+	// chunk below, so total stream duration is unbounded while a genuinely
+	// stuck client (one that stops draining) is still disconnected.
+	rc := http.NewResponseController(w)
+	if err := rc.SetReadDeadline(time.Time{}); err != nil {
+		log.Debugf("could not clear read deadline for SSE stream: %v", err)
+	}
 
 	// Copy response headers to the client
 	for key, values := range resp.Header {
@@ -815,6 +847,10 @@ func (sess *httpProxySession) handleSSEStream(
 	// Each chunk is a raw HTTP chunked-encoding fragment produced by the agent's
 	// httputil.NewChunkedWriter wrapping the gRPC streamWriter.
 	const sseIdleTimeout = 90 * time.Second
+	// Per-write deadline: an individual chunk (a few KB up to a few MB) must
+	// flush within this window. It is reset before every write, so it never
+	// bounds the total stream duration — only a wedged client trips it.
+	const sseWriteDeadline = 30 * time.Second
 	idleTimer := time.NewTimer(sseIdleTimeout)
 	defer idleTimer.Stop()
 
@@ -825,6 +861,7 @@ func (sess *httpProxySession) handleSSEStream(
 			return
 		case <-idleTimer.C:
 			log.Warnf("SSE stream ended: idle timeout (%v) exceeded", sseIdleTimeout)
+			sess.notifyAgentConnectionClose(connectionID)
 			return
 		case data, ok := <-responseChan:
 			if !ok {
@@ -833,8 +870,12 @@ func (sess *httpProxySession) handleSSEStream(
 				return
 			}
 
+			if err := rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline)); err != nil {
+				log.Debugf("could not set write deadline for SSE chunk: %v", err)
+			}
 			if _, err := w.Write(data); err != nil {
 				log.Warnf("SSE stream ended: write error: %v", err)
+				sess.notifyAgentConnectionClose(connectionID)
 				return
 			}
 			if flusher != nil {
@@ -1123,6 +1164,35 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			// Unknown packet type, log and ignore
 			log.Debugf("unknown packet type received: %v, sid=%s", pkt.Type, sess.sid)
 		}
+	}
+}
+
+// notifyAgentConnectionClose asks the agent to tear down the upstream
+// connection identified by connectionID. The gateway calls this when it
+// abandons a request or stream before the agent signalled completion (client
+// disconnected, request/idle timeout, write error). Without it the agent keeps
+// relaying the upstream response into a response channel that no longer has a
+// reader — wasting the upstream connection (e.g. a Vertex SSE stream) and
+// spamming "no response channel found (response dropped)" on every late packet.
+//
+// The agent handles pbagent.TCPConnectionClose by closing the matching libhoop
+// proxy, which cancels the in-flight request context and aborts the upstream
+// body read. Best-effort: on a closing session the send may fail, but the
+// session teardown then performs the same cleanup.
+func (sess *httpProxySession) notifyAgentConnectionClose(connectionID string) {
+	if sess.closed.Load() || sess.streamClient == nil {
+		return
+	}
+	err := sess.streamClient.Send(&pb.Packet{
+		Type: pbagent.TCPConnectionClose,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sess.sid),
+			pb.SpecClientConnectionID: []byte(connectionID),
+		},
+	})
+	if err != nil {
+		log.With("sid", sess.sid, "conn", connectionID).
+			Warnf("failed notifying agent to close connection: %v", err)
 	}
 }
 
