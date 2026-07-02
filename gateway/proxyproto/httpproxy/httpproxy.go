@@ -27,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -43,11 +44,17 @@ var instanceStore sync.Map
 
 type HttpProxyServer struct {
 	sessionStore sync.Map // map[string]*httpProxySession
-	httpServer   *http.Server
-	listener     net.Listener
-	listenAddr   string
-	tlsConfig    *tls.Config
-	mutex        sync.RWMutex
+	// createGroup de-duplicates concurrent session creation per secretKeyHash.
+	// The session row is persisted the moment the gRPC stream connects (Save ->
+	// OnConnect), so a burst of first-requests for the same proxy token must
+	// share a single connect; otherwise each request opens its own stream and
+	// leaves an orphaned "open" session behind. Only one goroutine per key runs
+	// the creation; the rest block and reuse its result.
+	createGroup singleflight.Group
+	httpServer  *http.Server
+	listener    net.Listener
+	listenAddr  string
+	tlsConfig   *tls.Config
 }
 
 type httpProxySession struct {
@@ -307,7 +314,9 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 		// Check if session context is still valid
 		if sess.ctx.Err() != nil {
 			log.Infof("http proxy session context error: %v, removing session for connection %s", sess.ctx.Err(), secretKeyHash)
-			s.sessionStore.Delete(secretKeyHash)
+			// Only evict this exact session; a concurrent creator may already
+			// have replaced it under the same key.
+			s.sessionStore.CompareAndDelete(secretKeyHash, sess)
 			return nil, fmt.Errorf("http proxy session context error: %v", sess.ctx.Err())
 		}
 		log.Debugf("http proxy session found for connection %s", secretKeyHash)
@@ -318,7 +327,7 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 }
 
 func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string) (*httpProxySession, error) {
-	// First try to get existing valid session
+	// Fast path: reuse a live session without entering the singleflight group.
 	sess, err := s.getSessionOrRelease(secretKeyHash)
 	if err != nil {
 		return nil, err
@@ -327,6 +336,32 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 		return sess, nil
 	}
 
+	// Slow path: only one goroutine per secretKeyHash runs the creation; the
+	// rest block here and receive the same session. A burst of first-requests
+	// therefore opens a single gRPC stream (and a single audit session row)
+	// instead of one per request.
+	v, err, _ := s.createGroup.Do(secretKeyHash, func() (any, error) {
+		// Re-check inside the group: a previous leader may have created and
+		// stored the session in the window before singleflight forgot the key.
+		if sess, err := s.getSessionOrRelease(secretKeyHash); err != nil {
+			return nil, err
+		} else if sess != nil {
+			return sess, nil
+		}
+		return s.createSession(secretKeyHash, correlationID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*httpProxySession), nil
+}
+
+// createSession validates the proxy-token credentials, opens a dedicated gRPC
+// stream to the gateway, performs the SessionOpen handshake and registers the
+// resulting session in sessionStore. It must only be called through
+// getOrCreateSession's singleflight group so concurrent first-requests for the
+// same secretKeyHash share a single stream instead of each opening one.
+func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*httpProxySession, error) {
 	// Validate credentials first
 	dba, err := getValidConnectionCredentials(secretKeyHash)
 	if err != nil {
@@ -466,21 +501,17 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string
 			_, _ = session.streamClient.Close()
 			log.Infof("http proxy session cleanup: stream closed, sid=%s", sid)
 		}
-		// Cleanup will be done by handleAgentResponses defer, but we also try here as backup
-		s.sessionStore.Delete(secretKeyHash)
+		// Only remove ourselves: CompareAndDelete guards against evicting a
+		// different session another goroutine registered under the same key,
+		// which would orphan the live session as a perpetual "open" row.
+		// Cleanup is also attempted by the handleAgentResponses defer.
+		s.sessionStore.CompareAndDelete(secretKeyHash, session)
 		log.Infof("http proxy session cleanup: session removed from store, sid=%s", sid)
 	}()
 
-	// Store session; in case of reace condition, the first one wins and we close the new one
-	s.mutex.Lock()
-	if existingSession, ok := s.sessionStore.Load(secretKeyHash); ok {
-		s.mutex.Unlock()
-		// Another goroutine created the session first, close this one
-		session.cancelFn("duplicate session, another session already exists")
-		return existingSession.(*httpProxySession), nil
-	}
+	// Register the session. singleflight guarantees we are the only creator for
+	// this secretKeyHash, so a plain Store cannot clobber a concurrent winner.
 	s.sessionStore.Store(secretKeyHash, session)
-	s.mutex.Unlock()
 
 	return session, nil
 }
@@ -999,7 +1030,9 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			return true
 		})
 
-		server.sessionStore.Delete(secretKeyHash)
+		// Ownership-aware removal: never evict a different session registered
+		// under the same key by a newer creator.
+		server.sessionStore.CompareAndDelete(secretKeyHash, sess)
 		log.Warnf("handleAgentResponses: session removed from store, sid=%s", sess.sid)
 	}()
 
