@@ -259,12 +259,12 @@ func buildLegacyGuardRailErrorMessage(rawInfo []byte) (string, bool) {
 		ruleType := item.Rule.Type
 		if len(item.Rule.Words) > 0 {
 			parts = append(parts,
-				fmt.Sprintf("match guard rail %s rule, type=%s, words=%v;", scope, ruleType, item.Rule.Words))
+				fmt.Sprintf("match guard rail %s rule, type=%s, words=%v", scope, ruleType, item.Rule.Words))
 		} else if item.Rule.PatternRegex != "" {
 			parts = append(parts,
-				fmt.Sprintf("match guard rail %s rule, type=%s, patterns=%s;", scope, ruleType, item.Rule.PatternRegex))
+				fmt.Sprintf("match guard rail %s rule, type=%s, patterns=%s", scope, ruleType, item.Rule.PatternRegex))
 		} else {
-			parts = append(parts, fmt.Sprintf("match guard rail %s rule, type=%s;", scope, ruleType))
+			parts = append(parts, fmt.Sprintf("match guard rail %s rule, type=%s", scope, ruleType))
 		}
 
 		itemParts = append(itemParts, strings.Join(parts, ", "))
