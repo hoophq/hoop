@@ -276,12 +276,25 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
+	return encodeGuardRailRules(connGuardRailRules)
+}
 
+// encodeGuardRailRules turns the connection's stored guardrail rules into the
+// JSON payload shipped to the agent (AgentConnectionParams.GuardRailRules).
+// It returns nil — meaning "no guardrails" — when the connection has no rules
+// to enforce. Emptiness MUST be judged by rule count, not slice nil-ness:
+// services.GetGuardRailRulesForConnection fabricates "[]" (JSON empty array)
+// rule sets for connections without guardrails, and json.Unmarshal turns "[]"
+// into an empty NON-nil slice. A nil-ness check made every ruleless
+// connection look guarded, which the fail-closed admission check (DEP-48)
+// then refused for connection types without guardrail enforcement.
+func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
 	}
 
 	var inputRules, outputRules []guardrails.DataRules
+	var err error
 
 	// decode input rules
 	if connGuardRailRules.GuardRailInputRules != nil {
@@ -297,8 +310,8 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 		}
 	}
 
-	// check if there are no rules
-	if inputRules == nil && outputRules == nil {
+	// no rules to enforce -> no guardrail payload
+	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
 
