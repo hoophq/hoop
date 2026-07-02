@@ -77,6 +77,16 @@ type (
 		// cache and dial duplicate upstream SSH connections.
 		sshFlightGroup singleflight.Group
 
+		// httpProxyQueues holds one httpProxyPacketQueue per (sessionID,
+		// connectionID), keyed "sid:connID" like the connStore. The recv
+		// loop enqueues HttpProxyConnectionWrite packets here and a per-queue
+		// worker drains them in order, so a blocking upstream request never
+		// stalls packet dispatch (see processHttpProxyWriteServer). Entries
+		// are removed in sessionCleanup; they are intentionally NOT removed
+		// on TCPConnectionClose so a late packet cannot race a mid-drain
+		// worker into a second, concurrent worker for the same connection.
+		httpProxyQueues sync.Map
+
 		// gcpTokenSources caches one oauth2.TokenSource per session (keyed by
 		// gateway session ID) for claude-code connections that federate to
 		// Google Vertex AI. The source is built once from the connection's
@@ -312,6 +322,11 @@ func (a *Agent) Run() error {
 		// SessionClose is included so the recv loop is not blocked when
 		// it has to wait for an in-flight SSH handler to drain before
 		// running session cleanup.
+		//
+		// HttpProxyConnectionWrite stays inline: its handler only enqueues
+		// the packet into a per-connection FIFO drained by a worker
+		// goroutine (see processHttpProxyWriteServer), which keeps the
+		// recv loop free without giving up per-connection ordering.
 		if pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose {
 			go a.processPacket(pkt)
 			continue
@@ -455,6 +470,15 @@ func (a *Agent) sessionCleanup(sessionID string) {
 		a.connStore.Del(key)
 		a.connWriteLocks.Delete(key)
 	}
+	// Drop the session's HTTP proxy packet queues. Iterated separately from
+	// the connStore because a queue can outlive its connStore entry (e.g. a
+	// connection whose first write failed and was deleted from the store).
+	a.httpProxyQueues.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
+			a.httpProxyQueues.Delete(key)
+		}
+		return true
+	})
 	// Drop any cached Vertex token source so the service-account-derived
 	// credential does not outlive the session in agent memory.
 	a.gcpTokenSources.Delete(sessionID)
