@@ -87,7 +87,7 @@
 (defn can-open-web-terminal?
   "Check if a role/connection can open web terminal based on subtype and access modes"
   [role]
-  (if-not (or (#{"tcp" "ssh" "rdp" "github" "git"} (:subtype role))
+  (if-not (or (#{"tcp" "ssh" "ssh-local" "rdp" "github" "git"} (:subtype role))
               (http-proxy-subtypes (:subtype role)))
     (if (or (= "enabled" (:access_mode_runbooks role))
             (= "enabled" (:access_mode_exec role)))
