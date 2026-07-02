@@ -103,6 +103,12 @@ func (s *GatewayTestServer) Post(t *testing.T, path, token string, body any) *ht
 	return s.do(t, http.MethodPost, path, token, body)
 }
 
+// Put issues a PUT with a JSON body.
+func (s *GatewayTestServer) Put(t *testing.T, path, token string, body any) *http.Response {
+	t.Helper()
+	return s.do(t, http.MethodPut, path, token, body)
+}
+
 // Delete issues a DELETE.
 func (s *GatewayTestServer) Delete(t *testing.T, path, token string) *http.Response {
 	t.Helper()
