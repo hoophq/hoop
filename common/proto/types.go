@@ -321,17 +321,7 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		switch subtype {
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
-		case "ssh":
-			return ConnectionType(ConnectionTypeSSH)
-		case ConnectionSubTypeSSHLocal:
-			// Same ssh transport, terminated on the agent host. The local vs
-			// remote distinction is carried to the agent via the propagated
-			// subtype, not the proto type, so the CLI and gateway front-ends
-			// remain protocol-agnostic.
-			return ConnectionType(ConnectionTypeSSH)
-		case "git":
-			return ConnectionType(ConnectionTypeSSH)
-		case "github":
+		case "ssh", "ssh-local", "git", "github":
 			return ConnectionType(ConnectionTypeSSH)
 		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
 		case "httpproxy":
