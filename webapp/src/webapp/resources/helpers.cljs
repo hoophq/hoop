@@ -96,7 +96,7 @@
     false))
 
 (def ^:private direct-native-subtypes
-  #{"postgres" "ssh" "github" "git"})
+  #{"postgres" "ssh" "ssh-local" "github" "git"})
 
 (def ^:private custom-native-subtypes
   #{"rdp" "aws-ssm"})

@@ -27,6 +27,14 @@
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
 
+(defn- normalize-subtype
+  "Collapse SSH variants to \"ssh\" for the connect UI. Local-mode SSH
+   connections carry the subtype \"ssh-local\" but connect the same way as a
+   regular SSH connection (gateway SSH server + password), so they should show
+   the same credentials and command instructions."
+  [subtype]
+  (if (= subtype "ssh-local") "ssh" subtype))
+
 (defn- get-hostname []
   (let [hostname (.-hostname js/location)]
     (if (= hostname "localhost")
@@ -362,7 +370,7 @@
   "Credentials tab content - adapts based on connection type"
   [{:keys [connection_subtype connection_credentials] :as native-client-access-data}]
   [:> Box {:class "space-y-radix-6"}
-   (case connection_subtype
+   (case (normalize-subtype connection_subtype)
      "postgres" [postgres-credentials-fields connection_credentials]
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
@@ -428,7 +436,7 @@
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
-        subtype (:connection_subtype native-client-access-data)
+        subtype (normalize-subtype (:connection_subtype native-client-access-data))
         has-command? (contains? #{"ssh" "rdp"} subtype)]
 
     (fn []
@@ -562,7 +570,7 @@
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Type: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      (case (:connection_subtype native-client-access-data)
+      (case (normalize-subtype (:connection_subtype native-client-access-data))
         "postgres" "PostgreSQL"
         "rdp" "Remote Desktop"
         "ssh" "SSH"

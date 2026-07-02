@@ -115,6 +115,12 @@
   (let [configs (get connection-configs-required :ssh)
         credentials @(rf/subscribe [:connection-setup/ssh-credentials])
         auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])
+        subtype @(rf/subscribe [:connection-setup/connection-subtype])
+        ;; The proxy/local toggle only applies to plain SSH. This same view also
+        ;; serves git/github connections, which always require credentials.
+        ssh? (= subtype "ssh")
+        connection-type @(rf/subscribe [:connection-setup/ssh-connection-type])
+        local? (and ssh? (= connection-type "local"))
         filtered-fields (filter (fn [field]
                                   (case auth-method
                                     "password" (not= (:key field) "authorized_server_keys")
@@ -134,25 +140,48 @@
         [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
          "Provide SSH information to setup your connection."]]
 
-       [connection-method/main "ssh"]
+       ;; Connection Type: proxy (default) vs local — SSH only (not git/github).
+       (when ssh?
+         [:> Box {:class "space-y-4 mb-6"}
+          [:> Heading {:as "h4" :size "3" :weight "medium"}
+           "Connection Type"]
+          [:> RadioGroup.Root
+           {:value connection-type
+            :on-value-change #(rf/dispatch [:connection-setup/set-ssh-connection-type %])}
+           [:> Flex {:direction "column" :gap "3"}
+            [:> Box
+             [:> RadioGroup.Item {:value "proxy"} "Proxy to a remote host"]
+             [:> Text {:as "p" :size "2" :color "gray" :ml "5"}
+              "The agent authenticates to a remote SSH server and forwards the session. Configure the target host and credentials below."]]
+            [:> Box
+             [:> RadioGroup.Item {:value "local"} "Local (run on the agent host)"]
+             [:> Text {:as "p" :size "2" :color "gray" :ml "5"}
+              "The agent runs the shell or command directly on the machine where it is deployed. No target host or credentials are required."]]]]])
 
-       [:> Box {:class "space-y-4 mb-6"}
-        [:> Heading {:as "h4" :size "3" :weight "medium"}
-         "Authentication Method"]
-        [:> RadioGroup.Root
-         {:value auth-method
-          :on-value-change #(rf/dispatch [:connection-setup/set-ssh-auth-method %])}
-         [:> Flex {:direction "column" :gap "2"}
-          [:> RadioGroup.Item {:value "password"} "Username & Password"]
-          [:> RadioGroup.Item {:value "key"} "Private Key Authentication"]]]]
+       ;; Credential configuration is only relevant when proxying to a remote
+       ;; host. Local connections run on the agent itself, so authentication and
+       ;; the host/username/private-key fields are hidden.
+       (when-not local?
+         [:<>
+          [connection-method/main "ssh"]
 
-       [:> Grid {:columns "1" :gap "4"}
-        (for [field filtered-fields]
-          ^{:key (:key field)}
-          [render-ssh-field (assoc field
-                                   :value (get credentials (:key field) (:value field)))])
+          [:> Box {:class "space-y-4 mb-6"}
+           [:> Heading {:as "h4" :size "3" :weight "medium"}
+            "Authentication Method"]
+           [:> RadioGroup.Root
+            {:value auth-method
+             :on-value-change #(rf/dispatch [:connection-setup/set-ssh-auth-method %])}
+            [:> Flex {:direction "column" :gap "2"}
+             [:> RadioGroup.Item {:value "password"} "Username & Password"]
+             [:> RadioGroup.Item {:value "key"} "Private Key Authentication"]]]]
 
-        [agent-selector/main]]]]]))
+          [:> Grid {:columns "1" :gap "4"}
+           (for [field filtered-fields]
+             ^{:key (:key field)}
+             [render-ssh-field (assoc field
+                                      :value (get credentials (:key field) (:value field)))])]])
+
+       [agent-selector/main]]]]))
 
 (defn kubernetes-token []
   (let [credentials @(rf/subscribe [:connection-setup/kubernetes-token])

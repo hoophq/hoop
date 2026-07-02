@@ -1,6 +1,6 @@
 (ns webapp.resources.setup.roles-step
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link Separator Text Switch]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link RadioGroup Separator Text Switch]]
    ["lucide-react" :refer [ArrowUpRight Check Plus ShieldCheck Trash2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -18,6 +18,10 @@
         connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
         ;; Local state for auth method (default to password)
         auth-method (or (get credentials "auth-method") "password")
+        ;; connection-type selects proxy (default) vs local; stored alongside the
+        ;; role credentials but stripped before the payload is built.
+        connection-type (or (get credentials "connection-type") "proxy")
+        local? (= connection-type "local")
         filtered-fields (filter (fn [field]
                                   (case auth-method
                                     "password" (not= (:key field) "authorized_server_keys")
@@ -25,53 +29,74 @@
                                     true))
                                 configs)]
     [:> Box {:class "space-y-4"}
-     ;; Authentication Method Selector
+     ;; Connection Type: proxy (default) vs local
      [:> Box {:class "space-y-4 mb-6"}
       [:> Heading {:as "h4" :size "3" :weight "medium"}
-       "Authentication Method"]
-      [:> Grid {:columns "2" :gap "3"}
-       [:> Button {:size "2"
-                   :type "button"
-                   :variant (if (= auth-method "password") "solid" "outline")
-                   :on-click #(rf/dispatch [:resource-setup->update-role-credentials
-                                            role-index
-                                            "auth-method"
-                                            "password"])}
-        "Username & Password"]
-       [:> Button {:size "2"
-                   :type "button"
-                   :variant (if (= auth-method "key") "solid" "outline")
-                   :on-click #(rf/dispatch [:resource-setup->update-role-credentials
-                                            role-index
-                                            "auth-method"
-                                            "key"])}
-        "Private Key Authentication"]]]
+       "Connection Type"]
+      [:> RadioGroup.Root
+       {:value connection-type
+        :on-value-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                        role-index "connection-type" %])}
+       [:> Flex {:direction "column" :gap "3"}
+        [:> Box
+         [:> RadioGroup.Item {:value "proxy"} "Proxy to a remote host"]
+         [:> Text {:as "p" :size "2" :color "gray" :ml "5"}
+          "The agent authenticates to a remote SSH server and forwards the session. Configure the target host and credentials below."]]
+        [:> Box
+         [:> RadioGroup.Item {:value "local"} "Local (run on the agent host)"]
+         [:> Text {:as "p" :size "2" :color "gray" :ml "5"}
+          "The agent runs the shell or command directly on the machine where it is deployed. No target host or credentials are required."]]]]]
 
-     ;; SSH Fields (filtered based on auth method)
-     [:> Grid {:columns "1" :gap "4"}
-      (for [field filtered-fields]
-        ^{:key (:key field)}
-        (let [field-key (:key field)
-              field-value (get credentials field-key "")
-              show-source-selector? (= connection-method "secrets-manager")
-              display-value field-value
-              handle-change (fn [e]
-                              (let [new-value (-> e .-target .-value)]
-                                (rf/dispatch [:resource-setup->update-role-credentials
-                                              role-index
-                                              field-key
-                                              new-value])))
-              base-props {:label (:label field)
-                          :placeholder (or (:placeholder field) (str "e.g. " field-key))
-                          :value display-value
-                          :required (:required field)
-                          :type "password"
-                          :on-change handle-change
-                          :start-adornment (when show-source-selector?
-                                             [connection-method/source-selector role-index field-key])}]
-          (if (= (:type field) "textarea")
-            [forms/textarea (dissoc base-props :type :start-adornment)]
-            [forms/input base-props])))]]))
+     ;; Credential configuration is only relevant when proxying to a remote host.
+     (when-not local?
+       [:<>
+        ;; Authentication Method Selector
+        [:> Box {:class "space-y-4 mb-6"}
+         [:> Heading {:as "h4" :size "3" :weight "medium"}
+          "Authentication Method"]
+         [:> Grid {:columns "2" :gap "3"}
+          [:> Button {:size "2"
+                      :type "button"
+                      :variant (if (= auth-method "password") "solid" "outline")
+                      :on-click #(rf/dispatch [:resource-setup->update-role-credentials
+                                               role-index
+                                               "auth-method"
+                                               "password"])}
+           "Username & Password"]
+          [:> Button {:size "2"
+                      :type "button"
+                      :variant (if (= auth-method "key") "solid" "outline")
+                      :on-click #(rf/dispatch [:resource-setup->update-role-credentials
+                                               role-index
+                                               "auth-method"
+                                               "key"])}
+           "Private Key Authentication"]]]
+
+        ;; SSH Fields (filtered based on auth method)
+        [:> Grid {:columns "1" :gap "4"}
+         (for [field filtered-fields]
+           ^{:key (:key field)}
+           (let [field-key (:key field)
+                 field-value (get credentials field-key "")
+                 show-source-selector? (= connection-method "secrets-manager")
+                 display-value field-value
+                 handle-change (fn [e]
+                                 (let [new-value (-> e .-target .-value)]
+                                   (rf/dispatch [:resource-setup->update-role-credentials
+                                                 role-index
+                                                 field-key
+                                                 new-value])))
+                 base-props {:label (:label field)
+                             :placeholder (or (:placeholder field) (str "e.g. " field-key))
+                             :value display-value
+                             :required (:required field)
+                             :type "password"
+                             :on-change handle-change
+                             :start-adornment (when show-source-selector?
+                                                [connection-method/source-selector role-index field-key])}]
+             (if (= (:type field) "textarea")
+               [forms/textarea (dissoc base-props :type :start-adornment)]
+               [forms/input base-props])))]])]))
 
 ;; TCP role form - Based on network.cljs
 (defn tcp-role-form [role-index]
@@ -529,7 +554,12 @@
         has-env-vars? (or (contains? #{"linux-vm"} resource-subtype)
                           (contains? constants/http-proxy-subtypes resource-subtype))
         has-credentials? (seq credentials-config)
-        should-show-connection-method? (or has-credentials? has-env-vars?)
+        ;; Local SSH has no credentials, so the credential-source selector is
+        ;; irrelevant and hidden.
+        local-ssh? (and (= resource-subtype "ssh")
+                        (= (get (:credentials role) "connection-type") "local"))
+        should-show-connection-method? (and (or has-credentials? has-env-vars?)
+                                            (not local-ssh?))
         can-remove? (> (count roles) 1)]
 
     [:> Grid {:columns "7" :gap "7"}

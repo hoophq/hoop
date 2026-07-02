@@ -91,27 +91,30 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 			return existing, nil
 		}
 
-		connenv, parseErr := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeSSH)
-		if parseErr != nil {
-			return nil, fmt.Errorf("SSH credentials not found in memory: %v", parseErr)
-		}
-		connectionMode := connectionModeProxy
-		if connParams.ConnectionSubType == "ssh-local" {
-			connectionMode = connectionModeLocal
+		opts := map[string]string{
+			"sid":             sid,
+			"connection_id":   clientConnectionID,
+			"connection_mode": connectionModeProxy,
 		}
 
-		opts := map[string]string{
-			"sid":                    sid,
-			"connection_id":          clientConnectionID,
-			"connection_mode":        connectionMode,
-			"hostname":               connenv.host,
-			"port":                   connenv.port,
-			"username":               connenv.user,
-			"password":               connenv.pass,
-			"authorized_server_keys": connenv.authorizedSSHKeys,
+		if connParams.ConnectionSubType == "ssh-local" {
+			opts["connection_mode"] = connectionModeLocal
 		}
+
+		if opts["connection_mode"] == connectionModeProxy {
+			connenv, parseErr := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeSSH)
+			if parseErr != nil {
+				return nil, fmt.Errorf("SSH credentials not found in memory: %v", parseErr)
+			}
+			opts["hostname"] = connenv.host
+			opts["port"] = connenv.port
+			opts["username"] = connenv.user
+			opts["password"] = connenv.pass
+			opts["authorized_server_keys"] = connenv.authorizedSSHKeys
+		}
+
 		log.With("sid", sid, "conn", clientConnectionID).
-			Infof("starting SSH proxy connection, mode=%v", connectionMode)
+			Infof("starting SSH proxy connection, mode=%v", opts["connection_mode"])
 		// Guardrails enforcement for SSH is split across two independent feature
 		// flags: one for exec-command input + session output, one for best-effort
 		// interactive-shell stdin. Build the redactor client (and thread the DLP

@@ -94,9 +94,16 @@
   (let [subtype (:subtype role)
         connection-method (:connection-method role)
         secrets-provider (or (:secrets-manager-provider role) "vault-kv1")
-        credentials (if (= subtype "claude-code")
-                      (claude-code-secret-credentials (:credentials role))
-                      (:credentials role))
+        raw-credentials (if (= subtype "claude-code")
+                          (claude-code-secret-credentials (:credentials role))
+                          (:credentials role))
+        ;; auth-method and connection-type are UI-only role state, never secrets.
+        ;; Local SSH runs on the agent host itself, so it carries no credentials.
+        ssh-local? (and (= subtype "ssh")
+                        (= (get (:credentials role) "connection-type") "local"))
+        credentials (if ssh-local?
+                      {}
+                      (dissoc raw-credentials "auth-method" "connection-type"))
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])
         config-files (or (:configuration-files role) [])
@@ -161,7 +168,12 @@
   "Process a single role into the format expected by the API"
   [role agent-id & [command-role]]
   (let [type (:type role)
-        subtype (:subtype role)
+        raw-subtype (:subtype role)
+        ;; Local SSH is submitted with the wire subtype "ssh-local"; the role
+        ;; keeps subtype "ssh" so process-role-secret drops its credentials.
+        ssh-local? (and (= raw-subtype "ssh")
+                        (= (get (:credentials role) "connection-type") "local"))
+        subtype (if ssh-local? "ssh-local" raw-subtype)
         secret (process-role-secret role)
         command-role (if command-role
                        command-role

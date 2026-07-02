@@ -30,7 +30,10 @@ import (
 	"gorm.io/gorm"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code", "mcp"}
+var validConnectionTypes = []string{
+	"postgres", "ssh", "ssh-local", "rdp", "aws-ssm",
+	"httpproxy", "kubernetes", "claude-code", "mcp",
+}
 
 // noExpirySentinel is the expire_at value stored for credentials that should
 // not expire — the human "Open in Native Client" flow issues these when the
@@ -100,10 +103,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
-		c.AbortWithStatusJSON(400, gin.H{"message": "Listening address is not configured for this connection type"})
-		return
-	}
+	// if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
+	// 	c.AbortWithStatusJSON(400, gin.H{"message": "Listening address is not configured for this connection type"})
+	// 	return
+	// }
 
 	if conn.AccessModeConnect != "enabled" {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access mode connect is not enabled for this connection"})
@@ -1089,7 +1092,7 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 	switch connType {
 	case proto.ConnectionTypePostgres:
 		return keys.GenerateSecureRandomKey("pg", keySize)
-	case proto.ConnectionTypeSSH:
+	case proto.ConnectionTypeSSH, "ssh-local":
 		return keys.GenerateSecureRandomKey("ssh", keySize)
 	case proto.ConnectionTypeRDP:
 		return keys.GenerateSecureRandomKey("rdp", keySize)
