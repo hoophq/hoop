@@ -54,7 +54,7 @@ pub mod testpdu;
 
 use std::sync::Arc;
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use parking_lot::Mutex;
 use tokio::io::{AsyncWrite, AsyncWriteExt as _};
 use tokio::sync::{mpsc, Notify};
@@ -140,8 +140,17 @@ pub enum GateEvent {
 
 /// One framed PDU awaiting analysis clearance: the exact wire bytes to
 /// forward plus the bitmap payloads it carried.
+///
+/// `data` is a zero-copy slice of the ingest tail (`BytesMut::split_to` +
+/// `freeze`). Backlog accounting ([`GatePdu::size`], `queued_bytes`) counts
+/// LOGICAL payload bytes, not allocator-retained memory: `Bytes` slices from
+/// one ingest share their backing slab, which is freed only when every slice
+/// into it is dropped. Queued PDUs are drained and dropped together per
+/// batch, so the retained overshoot is bounded by the slab tails and stays
+/// proportional to the accounted backlog — but [`MAX_HELD_BYTES`] is a cap
+/// on the logical backlog, not an exact heap bound.
 struct GatePdu {
-    data: Vec<u8>,
+    data: Bytes,
     patches: Vec<BitmapPatch>,
 }
 
@@ -336,7 +345,7 @@ impl PiiGate {
                         st.tail.len()
                     );
                     let pdu = GatePdu {
-                        data: std::mem::take(&mut st.tail).to_vec(),
+                        data: std::mem::take(&mut st.tail).freeze(),
                         patches: Vec::new(),
                     };
                     enqueue(&mut st, pdu);
@@ -348,13 +357,14 @@ impl PiiGate {
             }
 
             // split_to is O(1) (BytesMut splits the buffer, no memmove of
-            // the remaining tail); the gate's hot path frames many small
-            // PDUs, so this avoids quadratic churn.
+            // the remaining tail) and freeze() hands the PDU its slice
+            // zero-copy; the gate's hot path frames many small PDUs, so this
+            // avoids both quadratic churn and a per-PDU copy.
             let data = st.tail.split_to(size);
             // Parse failures fail open: the PDU is still queued and
             // forwarded, just with no pixels to analyze.
             let patches = st.parser.parse(&data);
-            enqueue(&mut st, GatePdu { data: data.to_vec(), patches });
+            enqueue(&mut st, GatePdu { data: data.freeze(), patches });
         }
 
         let has_work = !st.queue.is_empty();
@@ -868,18 +878,16 @@ where
 
 /// Forwards a raw byte buffer downstream (used for redacted/rewritten PDUs,
 /// which are synthesized rather than copied from a GatePdu). Same cancellation
-/// and failure semantics as the batch path.
-async fn forward_bytes<W>(shared: &GateShared, sink: &mut W, mut bytes: &[u8]) -> bool
+/// and failure semantics as the batch path; writes bounded slices directly,
+/// no intermediate copies.
+async fn forward_bytes<W>(shared: &GateShared, sink: &mut W, bytes: &[u8]) -> bool
 where
     W: AsyncWrite + Unpin,
 {
-    while !bytes.is_empty() {
-        let n = bytes.len().min(FORWARD_CHUNK_BYTES);
-        let mut chunk = bytes[..n].to_vec();
-        if !flush(shared, sink, &mut chunk).await {
+    for chunk in bytes.chunks(FORWARD_CHUNK_BYTES) {
+        if !send(shared, sink, chunk).await {
             return false;
         }
-        bytes = &bytes[n..];
     }
     true
 }
@@ -888,14 +896,27 @@ async fn flush<W>(shared: &GateShared, sink: &mut W, chunk: &mut Vec<u8>) -> boo
 where
     W: AsyncWrite + Unpin,
 {
-    if chunk.is_empty() {
+    if !send(shared, sink, chunk).await {
+        return false;
+    }
+    chunk.clear();
+    true
+}
+
+/// Writes one buffer downstream with the gate's cancellation and failure
+/// semantics: the cancel signal aborts a write stalled on a dead peer, and a
+/// transport error marks the gate closed so the analysis loop exits.
+async fn send<W>(shared: &GateShared, sink: &mut W, buf: &[u8]) -> bool
+where
+    W: AsyncWrite + Unpin,
+{
+    if buf.is_empty() {
         return true;
     }
     let write = async {
-        sink.write_all(chunk).await?;
+        sink.write_all(buf).await?;
         sink.flush().await
     };
-    // The cancel signal must also abort a write stalled on a dead peer.
     let res = tokio::select! {
         res = write => res,
         _ = shared.cancel.cancelled() => return false,
@@ -905,7 +926,6 @@ where
         shared.state.lock().closed = true;
         return false;
     }
-    chunk.clear();
     true
 }
 

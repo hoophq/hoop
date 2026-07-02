@@ -18,6 +18,10 @@ use serde::Deserialize;
 
 /// One recognized token with its bounding box in full-image pixel space.
 /// `conf` follows the tesseract convention (0-100) like the Go analyzer.
+///
+/// Deliberately does NOT implement `PartialEq`: `conf` is a float and its
+/// equality is never the right semantic — dedup paths compare text+geometry
+/// via `analyze::same_words`.
 #[derive(Debug, Clone)]
 pub struct Word {
     pub text: String,

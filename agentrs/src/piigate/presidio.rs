@@ -45,7 +45,7 @@ pub struct EntityDetection {
 }
 
 /// The outcome of analyzing one framebuffer state.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SnapshotResult {
     pub detections: Vec<EntityDetection>,
     pub counts: HashMap<String, i64>,
