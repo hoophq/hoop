@@ -255,7 +255,26 @@ func (a *Api) AuditMiddleware() gin.HandlerFunc {
 		// Execute handler
 		c.Next()
 
-		// Log the audit entry after handler completes
+		// Snapshot everything the audit entry needs while still on the request
+		// goroutine. The audit write is dispatched asynchronously below, and
+		// gin.Context (plus the wrapped writer) must not be read from that
+		// goroutine: outer middlewares (otelgin, sentry) mutate the context
+		// during request teardown, which races a goroutine that outlives the
+		// handler. Reading here — before returning — keeps all context access
+		// single-threaded.
+		auditCtx := storagev2.ParseContext(c)
+		httpMethod := c.Request.Method
+		httpPath := c.Request.URL.Path
+		clientIP := c.ClientIP()
+		httpStatus := arw.Status()
+		var errorMessage string
+		if len(c.Errors) > 0 {
+			errorMessage = c.Errors.String()
+		} else if httpStatus >= 400 && arw.responseBody != nil && arw.responseBody.Len() > 0 {
+			errorMessage = extractErrorMessage(httpStatus, arw.responseBody)
+		}
+
+		// Log the audit entry after the handler completes, off the request path.
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -263,31 +282,16 @@ func (a *Api) AuditMiddleware() gin.HandlerFunc {
 				}
 			}()
 
-			ctx := storagev2.ParseContext(c)
-			if ctx == nil || ctx.OrgID == "" {
+			if auditCtx == nil || auditCtx.OrgID == "" {
 				return
 			}
 
-			// Get HTTP details
-			httpMethod := c.Request.Method
-			httpStatus := arw.Status()
-			httpPath := c.Request.URL.Path
-			clientIP := c.ClientIP()
-
-			// Derive resource type and action from path
+			// Derive resource type and action from the captured path/method.
 			resourceType, action := audit.DeriveResourceAndAction(httpPath, httpMethod)
-
-			// Collect error message if any
-			var errorMessage string
-			if len(c.Errors) > 0 {
-				errorMessage = c.Errors.String()
-			} else if httpStatus >= 400 && arw.responseBody != nil && arw.responseBody.Len() > 0 {
-				errorMessage = extractErrorMessage(httpStatus, arw.responseBody)
-			}
 
 			// Log to audit using the audit package function
 			audit.LogFromMiddleware(
-				ctx,
+				auditCtx,
 				httpMethod,
 				httpStatus,
 				httpPath,
