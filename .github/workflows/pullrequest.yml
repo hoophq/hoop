@@ -64,3 +64,28 @@ jobs:
       # https://golang.testcontainers.org/system_requirements/
       - name: Integration Test
         run: make test-integration
+
+  gateway-smoke-test:
+    name: Gateway Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Gateway smoke tests exercise only the HTTP API, auth, RBAC and the
+      # model/migration layer — no protocol proxying — so the OSS _libhoop
+      # stub (wired by libhoop-map) is sufficient. No libhoop checkout and no
+      # GH_TOKEN are required. No Rust toolchain either: the committed
+      # rdp_parser.wasm is embedded via go:embed, so make test-gateway does
+      # not regenerate it.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
+      # runners have Docker pre-installed, so no services: block is needed.
+      - name: Gateway Smoke Test
+        run: make test-gateway

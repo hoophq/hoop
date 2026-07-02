@@ -90,6 +90,14 @@ test-enterprise: libhoop-map generate-wasm
 test-integration: libhoop-map generate-wasm
 	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
+# Gateway smoke tests only exercise the HTTP API / model / auth layers. They
+# need libhoop-map (OSS _libhoop stub satisfies the imports) but not a fresh
+# WASM build: gateway/rdp/parser embeds the committed rdp_parser.wasm via
+# go:embed, so the artifact already exists at build time. Skipping
+# generate-wasm keeps this target independent of the Rust toolchain.
+test-gateway: libhoop-map
+	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/...
+
 generate-openapi-docs: libhoop-map
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
@@ -262,4 +270,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration test-gateway generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
