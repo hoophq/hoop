@@ -52,15 +52,16 @@ spec:
         - secretRef:
             name: extra-agent-config
         {{- end}}
-        {{- with .Values.volumeMounts }}
+        {{- if or .Values.spiffe.enabled .Values.volumeMounts }}
         volumeMounts:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
         {{- if .Values.spiffe.enabled }}
-        volumeMounts:
         - mountPath: /run/spiffe
           name: spiffe-tokens
           readOnly: true
+        {{- end }}
+        {{- with .Values.volumeMounts }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
       {{- if .Values.spiffe.enabled }}
       - name: spiffe-helper
@@ -80,7 +81,22 @@ spec:
         - name: spiffe-helper-config
           mountPath: /etc/spiffe-helper
           readOnly: true
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.spiffe.enabled .Values.volumes }}
       volumes:
+      {{- if .Values.spiffe.enabled }}
       - name: spiffe-workload-api
         {{- if eq (.Values.spiffe.workloadAPI.type | default "csi") "hostPath" }}
         hostPath:
@@ -98,19 +114,7 @@ spec:
         configMap:
           name: hoopagent-spiffe-helper
       {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with .Values.volumes }}
-      volumes:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
       {{- end }}
