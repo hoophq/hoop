@@ -31,6 +31,7 @@
 (defn get-api-connection-type [ui-type subtype]
   (cond
     (or (= subtype "ssh")
+        (= subtype "ssh-local")
         (= subtype "git")
         (= subtype "github")) "application"
     :else (case ui-type
@@ -70,6 +71,10 @@
         connection-subtype (get-in db [:connection-setup :subtype])
         is-http-proxy-subtype? (contains? http-proxy-subtypes connection-subtype)
         api-type (get-api-connection-type ui-type connection-subtype)
+        ;; Local SSH connections run the session on the agent host itself: they
+        ;; carry no credentials and are sent with the wire subtype "ssh-local".
+        ssh-connection-type (get-in db [:connection-setup :ssh-connection-type] "proxy")
+        local-ssh? (and (= connection-subtype "ssh") (= ssh-connection-type "local"))
         connection-name (get-in db [:connection-setup :name])
         selected-attributes (get-in db [:connection-setup :attributes :selected] [])
         agent-id (get-in db [:connection-setup :agent-id])
@@ -248,7 +253,10 @@
                                                     {:key "USER" :value (resource-process-form/extract-value user-value connection-method "user" secrets-provider)}
                                                     {:key "PASS" :value (resource-process-form/extract-value pass-value connection-method "pass" secrets-provider)}
                                                     {:key "AUTHORIZED_SERVER_KEYS" :value (resource-process-form/extract-value keys-value connection-method "authorized_server_keys" secrets-provider)}])]
-                         (concat ssh-env-vars env-vars))
+                         ;; Local SSH carries no credentials — drop any host/user/
+                         ;; pass/key that may linger in the form from a prior proxy
+                         ;; selection.
+                         (if local-ssh? env-vars (concat ssh-env-vars env-vars)))
 
                        :else (mapv (fn [{:keys [key value]}]
                                      {:key key
@@ -286,11 +294,15 @@
                         (when-not (empty? command-string)
                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
         resource-subtype-override (get-in db [:connection-setup :resource-subtype-override])
-        effective-subtype (if (and (= ui-type "custom")
-                                   resource-subtype-override
-                                   (seq resource-subtype-override))
+        effective-subtype (cond
+                            (and (= ui-type "custom")
+                                 resource-subtype-override
+                                 (seq resource-subtype-override))
                             resource-subtype-override
-                            connection-subtype)
+
+                            local-ssh? "ssh-local"
+
+                            :else connection-subtype)
         payload {:type api-type
                  :subtype effective-subtype
                  :name connection-name
@@ -503,6 +515,7 @@
                            (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (or (= connection-subtype "ssh")
+                                       (= connection-subtype "ssh-local")
                                        (= connection-subtype "git")
                                        (= connection-subtype "github")))
                           (extract-ssh-credentials credentials))
@@ -675,7 +688,14 @@
                                     :secrets-manager-provider nil})]
 
     {:type connection-type
-     :subtype (if is-custom-with-override? "custom" connection-subtype)
+     ;; Local SSH is stored with subtype "ssh-local" but the setup form routes
+     ;; and renders it as a regular "ssh" connection; the local/proxy choice is
+     ;; tracked separately via :ssh-connection-type.
+     :subtype (cond
+                is-custom-with-override? "custom"
+                (= connection-subtype "ssh-local") "ssh"
+                :else connection-subtype)
+     :ssh-connection-type (if (= connection-subtype "ssh-local") "local" "proxy")
      :name (:name connection)
      :resource-name (:resource_name connection)
      :agent-id (:agent_id connection)

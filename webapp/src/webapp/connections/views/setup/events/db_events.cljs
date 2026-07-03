@@ -498,6 +498,17 @@
          new-value {:value (str value) :source inferred-source}]
      (assoc-in db [:connection-setup :ssh-credentials field] new-value))))
 
+;; ssh-connection-type selects how the SSH session is served:
+;;   "proxy" (default) — the agent authenticates to a remote SSH server and
+;;                       forwards the session (wire subtype "ssh").
+;;   "local"           — the agent runs the shell/command directly on its own
+;;                       host; no target host or credentials (wire subtype
+;;                       "ssh-local").
+(rf/reg-event-db
+ :connection-setup/set-ssh-connection-type
+ (fn [db [_ conn-type]]
+   (assoc-in db [:connection-setup :ssh-connection-type] conn-type)))
+
 ;; Kubernetes Token events
 (rf/reg-event-db
  :connection-setup/set-kubernetes-token

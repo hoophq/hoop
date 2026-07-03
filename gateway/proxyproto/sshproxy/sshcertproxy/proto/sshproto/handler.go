@@ -151,7 +151,11 @@ func (h *Handler) AcceptAndServe(newCh ssh.NewChannel, channelID uint16) error {
 		return fmt.Errorf("failed writing open channel to stream, err=%v", err)
 	}
 
-	h.startForwarding(clientCh, clientRequests, channelID)
+	// Raw session channels forward the client's exec/shell request and stdin data
+	// as-is: gate stdin until the command request is forwarded so piped input
+	// can't overtake it. Non-session channels (direct-tcpip) have no such request
+	// and must stream immediately.
+	h.startForwarding(clientCh, clientRequests, channelID, newCh.ChannelType() == "session")
 	return nil
 }
 
@@ -260,7 +264,9 @@ func (h *Handler) ServeSession(
 		return fmt.Errorf("failed forwarding %s request: %w", upstreamReq.RequestType, err)
 	}
 
-	h.startForwarding(stdinR, clientRequests, channelID)
+	// The exec/shell request was already forwarded above, so stdin can flow
+	// immediately — no gate needed.
+	h.startForwarding(stdinR, clientRequests, channelID, false)
 	return nil
 }
 
@@ -268,12 +274,26 @@ func (h *Handler) ServeSession(
 // the stdin reader / clientCh and the agent for the lifetime of the channel.
 // stdinR is the source of client stdin data; it may be the ssh.Channel itself
 // or a pipe fed by a pre-reading goroutine.
-func (h *Handler) startForwarding(stdinR io.Reader, clientRequests <-chan *ssh.Request, channelID uint16) {
+//
+// When gateOnCommand is set, the stdin forwarder is held until the requests
+// goroutine forwards the session's command request (exec/shell/subsystem). The
+// go SSH server delivers channel requests and channel data on independent
+// paths, so forwarding them from two goroutines races: piped stdin (e.g.
+// `echo 'ls -l' | ssh host bash`) can overtake the exec request and reach the
+// agent before the command exists, which drops the input. Callers that already
+// forwarded the command themselves (ServeSession) pass false.
+func (h *Handler) startForwarding(stdinR io.Reader, clientRequests <-chan *ssh.Request, channelID uint16, gateOnCommand bool) {
+	sessionStarted := make(chan struct{})
+	if !gateOnCommand {
+		close(sessionStarted)
+	}
+
 	// Copy data from client to agent. We don't close clientCh here because
 	// the client may still be waiting to receive data (e.g., git clone sends a command
 	// then waits for the response). The channel will be closed when we receive
 	// a CloseChannel message from the agent.
 	h.channelWg.Go(func() {
+		<-sessionStarted
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := stdinR.Read(buf)
@@ -306,6 +326,19 @@ func (h *Handler) startForwarding(stdinR io.Reader, clientRequests <-chan *ssh.R
 
 	// Handle incoming requests from the client.
 	h.channelWg.Go(func() {
+		// released guards the one-time close of sessionStarted; only this
+		// goroutine touches it, so no synchronization is required.
+		released := !gateOnCommand
+		release := func() {
+			if !released {
+				released = true
+				close(sessionStarted)
+			}
+		}
+		// unblock the stdin forwarder if the channel closes before any command
+		// request arrives, so it can drain and exit rather than leak.
+		defer release()
+
 		for req := range clientRequests {
 			log.With("sid", h.sid, "conn", h.connID, "ch", channelID, "type", req.Type).
 				Debug("received client ssh request")
@@ -319,6 +352,16 @@ func (h *Handler) startForwarding(stdinR io.Reader, clientRequests <-chan *ssh.R
 			if _, err := h.streamW.Write(data); err != nil {
 				h.cancelFn("failed writing to stream, err=%v", err)
 				return
+			}
+
+			// The command request has now been forwarded ahead of any stdin
+			// data: release the stdin forwarder (shell/exec start a session;
+			// subsystem covers sftp).
+			if gateOnCommand {
+				switch req.Type {
+				case "shell", "exec", "subsystem":
+					release()
+				}
 			}
 
 			if req.WantReply {

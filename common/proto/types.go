@@ -34,13 +34,17 @@ type (
 	AgentConnectionParams struct {
 		ConnectionName string
 		ConnectionType string
-		UserID         string
-		UserEmail      string
-		EnvVars        map[string]any
-		CmdList        []string
-		ClientArgs     []string
-		ClientVerb     string
-		ClientOrigin   string
+		// ConnectionSubType is the DB `subtype` before it collapses into
+		// ConnectionType. Most protocols ignore it; the SSH handler uses it to
+		// select libhoop's local backend for ConnectionSubTypeSSHLocal.
+		ConnectionSubType string
+		UserID            string
+		UserEmail         string
+		EnvVars           map[string]any
+		CmdList           []string
+		ClientArgs        []string
+		ClientVerb        string
+		ClientOrigin      string
 
 		DlpProvider              string
 		DlpMode                  string
@@ -317,11 +321,7 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		switch subtype {
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
-		case "ssh":
-			return ConnectionType(ConnectionTypeSSH)
-		case "git":
-			return ConnectionType(ConnectionTypeSSH)
-		case "github":
+		case "ssh", "ssh-local", "git", "github":
 			return ConnectionType(ConnectionTypeSSH)
 		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
 		case "httpproxy":

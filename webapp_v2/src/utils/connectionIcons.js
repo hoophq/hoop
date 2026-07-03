@@ -9,6 +9,7 @@ const ICONS = {
   mongodb: '/icons/connections/mongodb-default.svg',
   oracledb: '/icons/connections/oracle-default.svg',
   ssh: '/icons/connections/custom-ssh.svg',
+  'ssh-local': '/icons/connections/custom-ssh.svg',
   'command-line': '/icons/connections/custom-ssh.svg',
   custom: '/icons/connections/custom-ssh.svg',
   tcp: '/icons/connections/custom-tcp-http.svg',

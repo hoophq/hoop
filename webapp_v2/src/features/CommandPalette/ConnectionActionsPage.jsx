@@ -9,7 +9,7 @@ const ACTION_TYPES = {
   CONFIGURE: 'configure',
 }
 
-const DIRECT_NATIVE_SUBTYPES = new Set(['postgres', 'ssh', 'github', 'git'])
+const DIRECT_NATIVE_SUBTYPES = new Set(['postgres', 'ssh', 'ssh-local', 'github', 'git'])
 const HTTP_PROXY_SUBTYPES = new Set(['httpproxy', 'kibana', 'grafana', 'claude-code'])
 const CUSTOM_NATIVE_SUBTYPES = new Set(['rdp', 'aws-ssm'])
 const KUBERNETES_SUBTYPES = new Set(['kubernetes-token', 'kubernetes', 'kubernetes-eks'])

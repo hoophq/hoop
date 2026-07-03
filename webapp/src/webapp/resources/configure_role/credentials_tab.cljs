@@ -44,6 +44,7 @@
                        :else [network/http-credentials-form]))
 
        "application" (if (or (= (:subtype connection) "ssh")
+                             (= (:subtype connection) "ssh-local")
                              (= (:subtype connection) "git")
                              (= (:subtype connection) "github"))
                        [server/ssh-credentials]

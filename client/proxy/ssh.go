@@ -255,13 +255,48 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 		return
 	}
 
+	// Preserve SSH ordering between requests and stdin data. The go SSH server
+	// delivers channel requests (exec/shell) and channel data on independent
+	// paths, and forwarding them from two goroutines races: piped stdin (e.g.
+	// `echo 'ls -l' | ssh host bash`) can overtake the exec request, so the
+	// remote sshd receives stdin before the command exists and drops it. Gate
+	// the stdin forwarder until the session's command request has been sent.
+	// Non-session channels (direct-tcpip port-forwards) carry no such request,
+	// so they stream immediately.
+	isSession := chType == "session"
+	sessionStarted := make(chan struct{})
+	if !isSession {
+		close(sessionStarted)
+	}
+
 	go func() {
-		defer clientCh.Close()
+		<-sessionStarted
 		_, err = io.Copy(sshtypes.NewDataWriter(streamW, channelID), clientCh)
+		// Local stdin reached EOF (e.g. `echo x | ssh host cmd`). Half-close the
+		// remote side by sending EOF instead of closing the channel: the remote
+		// command sees stdin end and runs, while the channel stays open to stream
+		// its output back. The channel is closed later when the agent sends
+		// CloseChannel (handled in PacketWriteClient).
+		if _, werr := streamW.Write((sshtypes.EOF{ChannelID: channelID}).Encode()); werr != nil {
+			clog.With("ch", channelID, "conn", connID).Debugf("failed sending EOF to stream, err=%v", werr)
+		}
 		clog.With("ch", channelID, "conn", connID).Debugf("done copying ssh buffer, err=%v", err)
 	}()
 
 	go func() {
+		// released guards the one-time close of sessionStarted; it is only ever
+		// touched by this single goroutine, so no synchronization is needed.
+		released := !isSession
+		release := func() {
+			if !released {
+				released = true
+				close(sessionStarted)
+			}
+		}
+		// unblock the stdin forwarder if the channel closes without a command
+		// request, so it can drain and exit rather than leak.
+		defer release()
+
 		for req := range clientRequests {
 			data := (sshtypes.SSHRequest{
 				ChannelID:   channelID,
@@ -274,6 +309,13 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 			if err != nil {
 				clog.With("ch", channelID, "conn", connID).Debugf("failed writing to stream, err=%v", err)
 				return
+			}
+			// The command request has now been forwarded ahead of any stdin data:
+			// release the stdin forwarder (shell/exec start an interactive or
+			// one-shot command; subsystem covers sftp).
+			switch req.Type {
+			case "shell", "exec", "subsystem":
+				release()
 			}
 			if req.WantReply {
 				if err := req.Reply(true, nil); err != nil {
