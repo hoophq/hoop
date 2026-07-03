@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/hoophq/hoop/agent/integration/testutil"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
 )
 
 const mysqlTestTimeout = 30 * time.Second
@@ -311,6 +313,98 @@ func TestMySQL_BadCredentials(t *testing.T) {
 
 	if err := client.PingWithTimeout(15 * time.Second); err == nil {
 		t.Fatal("expected ping to fail with bad upstream credentials, got nil")
+	}
+}
+
+// TestMySQL_CloseKillsRunningQuery verifies that closing a client
+// connection while a statement is still executing terminates the backend
+// thread via the KILL CONNECTION side channel in libhoop's proxy Close.
+//
+// It provisions a user whose grants are scoped to the test schema only —
+// a regression guard for the kill side connection forcing the `mysql`
+// system schema in its DSN, which such users cannot open (ERR 1044),
+// silently leaving the query running after the client was gone.
+func TestMySQL_CloseKillsRunningQuery(t *testing.T) {
+	mc := testutil.StartMySQL(t)
+
+	// Sidecar root connection to provision the restricted user and to
+	// observe the server's processlist directly.
+	rootDB, err := sql.Open("mysql", mc.ConnString())
+	if err != nil {
+		t.Fatalf("failed opening root connection: %v", err)
+	}
+	defer rootDB.Close()
+
+	const user, pass = "kill_test_user", "kill_test_pass"
+	if _, err := rootDB.Exec(fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", user, pass)); err != nil {
+		t.Fatalf("failed creating restricted user: %v", err)
+	}
+	if _, err := rootDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'", mc.Database, user)); err != nil {
+		t.Fatalf("failed granting privileges: %v", err)
+	}
+
+	restricted := *mc
+	restricted.User = user
+	restricted.Password = pass
+
+	agent, tr := startAgent(t)
+	defer shutdownAgent(t, agent, tr)
+	sessionID := testutil.OpenMySQLSession(t, tr, &restricted)
+	demux := testutil.StartRecvDemux(t, tr)
+	connID := "conn-1"
+	client := testutil.DialPipedMySQL(t, tr, demux, &restricted, sessionID, connID)
+
+	// Establish the bridged connection before starting the long query.
+	if err := client.PingWithTimeout(mysqlTestTimeout); err != nil {
+		t.Fatalf("mysql ping through agent failed: %v", err)
+	}
+
+	// Long-running statement; it is expected to die with an error once
+	// the backend thread is killed, so the result is discarded.
+	go func() {
+		rows, err := client.DB.Query("SELECT SLEEP(120)")
+		if err == nil {
+			rows.Close()
+		}
+	}()
+	waitForSleepingQuery(t, rootDB, user, true, 15*time.Second)
+
+	tr.Inject(&pb.Packet{
+		Type: pbagent.TCPConnectionClose,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sessionID),
+			pb.SpecClientConnectionID: []byte(connID),
+		},
+	})
+
+	// The SLEEP statement must vanish from the processlist well before
+	// its 120s run time, proving the backend thread was killed rather
+	// than orphaned.
+	waitForSleepingQuery(t, rootDB, user, false, 15*time.Second)
+}
+
+// waitForSleepingQuery polls information_schema.PROCESSLIST until a SELECT
+// SLEEP statement owned by user is present (present=true) or gone
+// (present=false), failing the test on timeout.
+func waitForSleepingQuery(t *testing.T, db *sql.DB, user string, present bool, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		var count int
+		err := db.QueryRow(
+			"SELECT count(*) FROM information_schema.PROCESSLIST WHERE USER = ? AND INFO LIKE 'SELECT SLEEP%'",
+			user).Scan(&count)
+		if err != nil {
+			t.Fatalf("failed querying processlist: %v", err)
+		}
+		if (count > 0) == present {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %v waiting for sleeping query owned by %q (want present=%v, count=%d)",
+				timeout, user, present, count)
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
 }
 
