@@ -87,16 +87,30 @@ test-oss: libhoop-map generate-wasm
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
+# Integration tests drive the real controller.Agent against upstream
+# containers via libhoop. Needs the enterprise libhoop (the OSS _libhoop stub
+# returns "missing protocol hoop library" for every protocol) — the CI job
+# checks it out at ./libhoop.
 test-integration: libhoop-map generate-wasm
 	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
+
+# Agent↔gateway transport harness. Runs against the real gateway gRPC
+# transport; the PG round-trip needs the enterprise libhoop proxy (skips on
+# the OSS stub), so the rest still run locally. Kept a separate target/CI job
+# from test-integration so its Postgres containers don't contend with the
+# heavy agent suite on a shared runner.
+test-transport: libhoop-map generate-wasm
+	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 8m -count=1 ./gateway/integration/transport/...
 
 # Gateway smoke tests only exercise the HTTP API / model / auth layers. They
 # need libhoop-map (OSS _libhoop stub satisfies the imports) but not a fresh
 # WASM build: gateway/rdp/parser embeds the committed rdp_parser.wasm via
 # go:embed, so the artifact already exists at build time. Skipping
-# generate-wasm keeps this target independent of the Rust toolchain.
+# generate-wasm keeps this target independent of the Rust toolchain. The path
+# is non-recursive on purpose: the transport suite (a subdir) needs the
+# enterprise libhoop and runs under test-transport instead.
 test-gateway: libhoop-map
-	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/...
+	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
 
 generate-openapi-docs: libhoop-map
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
@@ -270,4 +284,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration test-gateway generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration test-transport test-gateway generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

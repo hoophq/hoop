@@ -46,6 +46,33 @@ type (
 
 const listenAddr = "0.0.0.0:8010"
 
+// NewGRPCServer builds the transport gRPC server with the full production
+// interceptor chain (sessionuuid → auth → tracing, plus the unary auth
+// validator) and registers the transport service on it. It is the single
+// wiring shared by the production entrypoint (StartRPCServer) and the
+// integration harness, which serves it on an ephemeral listener — so both
+// exercise the identical chain and message-size limits. It does not listen,
+// serve, or install signal handlers; the caller owns the listener lifecycle.
+func (s *Server) NewGRPCServer() *grpc.Server {
+	grpcInterceptors := grpc.ChainStreamInterceptor(
+		sessionuuidinterceptor.New(),
+		authinterceptor.New(),
+		tracinginterceptor.New(s.AppConfig.ApiURL()),
+	)
+	opts := []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
+		grpcInterceptors,
+		authinterceptor.WithUnaryValidator(),
+	}
+	if s.TLSConfig != nil {
+		opts = append(opts, grpc.Creds(credentials.NewTLS(s.TLSConfig)))
+	}
+	grpcServer := grpc.NewServer(opts...)
+	pb.RegisterTransportServer(grpcServer, s)
+	log.Debugf("server transport created, tls=%v", s.TLSConfig != nil)
+	return grpcServer
+}
+
 func (s *Server) StartRPCServer() {
 	log.Debugf("starting gateway at %v", listenAddr)
 	listener, err := net.Listen("tcp", listenAddr)
@@ -54,30 +81,8 @@ func (s *Server) StartRPCServer() {
 		log.Fatal(err)
 	}
 
-	grpcInterceptors := grpc.ChainStreamInterceptor(
-		sessionuuidinterceptor.New(),
-		authinterceptor.New(),
-		tracinginterceptor.New(s.AppConfig.ApiURL()),
-	)
-	var grpcServer *grpc.Server
-	if s.TLSConfig != nil {
-		grpcServer = grpc.NewServer(
-			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
-			grpc.Creds(credentials.NewTLS(s.TLSConfig)),
-			grpcInterceptors,
-			authinterceptor.WithUnaryValidator(),
-		)
-	}
-	if grpcServer == nil {
-		grpcServer = grpc.NewServer(
-			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
-			grpcInterceptors,
-			authinterceptor.WithUnaryValidator(),
-		)
-	}
-	pb.RegisterTransportServer(grpcServer, s)
+	grpcServer := s.NewGRPCServer()
 	handleGracefulShutdown()
-	log.Debugf("server transport created, tls=%v", s.TLSConfig != nil)
 	if err := grpcServer.Serve(listener); err != nil {
 		sentry.CaptureException(err)
 		log.Fatalf("failed to serve: %v", err)
