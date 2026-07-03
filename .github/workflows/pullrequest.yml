@@ -33,14 +33,13 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
-      # Integration tests drive the real controller.Agent — and the real
-      # gateway gRPC transport (gateway/integration/transport) — against real
-      # upstream containers via libhoop. The OSS _libhoop stub returns "missing
-      # protocol hoop library for X" for every protocol, so we need the
-      # enterprise libhoop checked out at ./libhoop. The Makefile's libhoop-map
-      # target tries to overwrite this with a symlink, but `rm libhoop || true`
-      # is a no-op against a non-empty directory — the checkout wins. Matches
-      # the build jobs in pullrequest-release.yml.
+      # Integration tests drive the real controller.Agent against real upstream
+      # containers via libhoop. The OSS _libhoop stub returns "missing protocol
+      # hoop library for X" for every protocol, so we need the enterprise
+      # libhoop checked out at ./libhoop. The Makefile's libhoop-map target
+      # tries to overwrite this with a symlink, but `rm libhoop || true` is a
+      # no-op against a non-empty directory — the checkout wins. Matches the
+      # build jobs in pullrequest-release.yml.
       - name: Checkout libhoop
         uses: actions/checkout@v3
         with:
@@ -65,6 +64,46 @@ jobs:
       # https://golang.testcontainers.org/system_requirements/
       - name: Integration Test
         run: make test-integration
+
+  transport-test:
+    name: Transport Integration Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      # The transport harness drives the real gateway gRPC transport end to end
+      # (real agent controller + real Postgres). Its PostgreSQL protocol
+      # round-trip needs the enterprise libhoop proxy — the OSS _libhoop stub
+      # returns "missing protocol hoop library" and that one test skips. Same
+      # ./libhoop checkout trick as the Integration Test job (libhoop-map's
+      # `rm libhoop || true` is a no-op against this non-empty directory).
+      #
+      # This runs as its own job (not folded into Integration Test) so its
+      # Postgres containers do not contend on one runner with the heavy agent
+      # suite's containers, which caused timeouts when the two ran in parallel.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Transport Integration Test
+        run: make test-transport
 
   gateway-smoke-test:
     name: Gateway Smoke Test

@@ -87,17 +87,18 @@ test-oss: libhoop-map generate-wasm
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-# Integration tests drive the real controller.Agent and the real gateway gRPC
-# transport against upstream containers via libhoop. Both suites need the
-# enterprise libhoop (the OSS _libhoop stub returns "missing protocol hoop
-# library" for every protocol) — the CI job checks it out at ./libhoop. The
-# transport suite skips only its protocol round-trip on the OSS stub.
+# Integration tests drive the real controller.Agent against upstream
+# containers via libhoop. Needs the enterprise libhoop (the OSS _libhoop stub
+# returns "missing protocol hoop library" for every protocol) — the CI job
+# checks it out at ./libhoop.
 test-integration: libhoop-map generate-wasm
-	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/... ./gateway/integration/transport/...
+	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
-# Agent↔gateway transport harness only (subset of test-integration). Runs
-# against the real gRPC transport; the PG round-trip needs the enterprise
-# libhoop proxy and skips on the OSS stub, so the rest still run locally.
+# Agent↔gateway transport harness. Runs against the real gateway gRPC
+# transport; the PG round-trip needs the enterprise libhoop proxy (skips on
+# the OSS stub), so the rest still run locally. Kept a separate target/CI job
+# from test-integration so its Postgres containers don't contend with the
+# heavy agent suite on a shared runner.
 test-transport: libhoop-map generate-wasm
 	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 8m -count=1 ./gateway/integration/transport/...
 
@@ -107,7 +108,7 @@ test-transport: libhoop-map generate-wasm
 # go:embed, so the artifact already exists at build time. Skipping
 # generate-wasm keeps this target independent of the Rust toolchain. The path
 # is non-recursive on purpose: the transport suite (a subdir) needs the
-# enterprise libhoop and runs under test-integration instead.
+# enterprise libhoop and runs under test-transport instead.
 test-gateway: libhoop-map
 	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
 
