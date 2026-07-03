@@ -1,7 +1,7 @@
 (ns webapp.guardrails.rules-table
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Select Table Text TextArea Tooltip]]
-   ["lucide-react" :refer [CircleHelp Info]]
+   ["@radix-ui/themes" :refer [Box Flex IconButton Select Table Text TextArea Tooltip]]
+   ["lucide-react" :refer [CircleHelp Info SquarePen]]
    [clojure.string :as cs]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -133,24 +133,26 @@
             :on-change #(reset! draft (-> % .-target .-value))
             :on-blur commit}]
 
-          [:> Box {:class "group cursor-pointer"
-                   :role "button"
-                   :tabIndex 0
-                   :aria-label (if (empty? message)
-                                 "Set a custom error message"
-                                 "Edit custom error message")
-                   :on-click start-edit
-                   :on-keyDown (fn [e]
-                                 (when (contains? #{"Enter" " "} (.-key e))
-                                   (.preventDefault e)
-                                   (start-edit)))}
-           (if (empty? message)
-             [:<>
-              [:> Text {:size "2" :class "text-[--gray-a9] group-hover:hidden"}
-               "No message"]
-              [:> Text {:size "2" :class "hidden group-hover:inline text-[--accent-11] hover:underline"}
-               "Set a custom error message"]]
-             [:> Text {:size "2" :class "text-[--gray-11] line-clamp-2"} message])])))))
+          [:> Flex {:align "center" :gap "2" :class "w-full"}
+           [:> Box {:class "flex-1 min-w-0"}
+            (if (empty? message)
+              [:button {:type "button"
+                        :class (str "block w-full cursor-pointer text-right text-xs "
+                                    "leading-4 text-[--accent-11] hover:underline")
+                        :on-click start-edit}
+               "Set a custom error message"]
+              [:> Text {:as "p" :size "1" :class "text-[--gray-11] line-clamp-2"} message])]
+           [:> IconButton
+            {:size "2"
+             :variant "ghost"
+             :color "var(--accent-11)"
+             :type "button"
+             :aria-label (if (empty? message)
+                           "Set a custom error message"
+                           "Edit custom error message")
+             :on-click start-edit}
+            [:> SquarePen
+             {:size 16}]]])))))
 
 (defn main [{:keys [title
                     state
