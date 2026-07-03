@@ -9,6 +9,18 @@ image: {}
   # repository: hoophq/hoopdev
   # pullPolicy: Always
   # tag: latest
+  #
+  # Realtime RDP PII guard: to enable agent-side PII analysis, use the
+  # bundled-OCR agent image (the OCR engine runs on loopback inside the
+  # container — screen pixels never leave the agent). Provide
+  # MSPRESIDIO_ANALYZER_URL below; the gateway turns the guard on per-org via
+  # the experimental.rdp_pii_guard flag. Pick one variant:
+  #   # CPU:
+  #   repository: hoophq/hoop-agent-ocr
+  #   tag: <release>
+  #   # GPU (pod needs a GPU + the nvidia device plugin/runtime):
+  #   repository: hoophq/hoop-agent-ocr
+  #   tag: <release>-gpu
 
 config: {}
   # HOOP_KEY: '<AUTH_KEY>'
@@ -16,9 +28,26 @@ config: {}
   # LOG_LEVEL: 'debug|info|warn|error'
   # LOG_GRPC: '0|1|2'
   # HOOP_GATEWAY_URL: 'https://gateway.example.com'
+  # Presidio analyzer for the RDP PII guard (and terminal DLP). Required to
+  # enable guarding when using the bundled-OCR agent image above.
   # MSPRESIDIO_ANALYZER_URL: ''
   # MSPRESIDIO_ANONYMIZER_URL: ''
   # DLP_MODE: 'strict|best-effort'
+  #
+  # HashiCorp Vault secrets-manager integration (agent-side). Set VAULT_ADDR
+  # plus either a static token (VAULT_TOKEN) or AppRole credentials
+  # (VAULT_APP_ROLE_ID + VAULT_APP_ROLE_SECRET_ID, both required together).
+  # VAULT_TOKEN and VAULT_CACERT accept the 'base64://<...>' or 'file://<path>'
+  # prefixes in addition to a raw value.
+  # VAULT_ADDR: 'https://vault.example.com:8200'
+  # VAULT_TOKEN: ''
+  # VAULT_CACERT: ''
+  # VAULT_APP_ROLE_ID: ''
+  # VAULT_APP_ROLE_SECRET_ID: ''
+  # Per-request timeout for the agent's Vault HTTP calls (Go duration, e.g.
+  # '10s', '1m'). Values <= 1s are rejected and the default is used.
+  # Defaults to '10s' when unset.
+  # VAULT_HTTP_REQ_TIMEOUT: '10s'
 
 # -- Authenticate the agent to the gateway via SPIFFE JWT-SVID instead of HOOP_KEY.
 # When enabled:

@@ -12,6 +12,7 @@ import (
 
 	"libhoop/redactor"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
@@ -22,6 +23,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/federation"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -35,6 +37,7 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 // federationResolveTimeout caps the SessionOpen-time blocking call to the
@@ -202,6 +205,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -230,6 +236,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -267,12 +276,25 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
+	return encodeGuardRailRules(connGuardRailRules)
+}
 
+// encodeGuardRailRules turns the connection's stored guardrail rules into the
+// JSON payload shipped to the agent (AgentConnectionParams.GuardRailRules).
+// It returns nil — meaning "no guardrails" — when the connection has no rules
+// to enforce. Emptiness MUST be judged by rule count, not slice nil-ness:
+// services.GetGuardRailRulesForConnection fabricates "[]" (JSON empty array)
+// rule sets for connections without guardrails, and json.Unmarshal turns "[]"
+// into an empty NON-nil slice. A nil-ness check made every ruleless
+// connection look guarded, which the fail-closed admission check (DEP-48)
+// then refused for connection types without guardrail enforcement.
+func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
 	}
 
 	var inputRules, outputRules []guardrails.DataRules
+	var err error
 
 	// decode input rules
 	if connGuardRailRules.GuardRailInputRules != nil {
@@ -288,8 +310,8 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 		}
 	}
 
-	// check if there are no rules
-	if inputRules == nil && outputRules == nil {
+	// no rules to enforce -> no guardrail payload
+	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
 
@@ -306,6 +328,31 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	}
 
 	return guardRailRulesJsonData, nil
+}
+
+// connectionTypeSupportsGuardRails reports whether the agent-side proxy for the
+// given connection type actually evaluates guardrail rules. It is a session-open
+// admission policy: guarded sessions are only admitted for types with real
+// enforcement in libhoop. Guardrails are enforced for PostgreSQL, Oracle, HTTP
+// proxy, SSH and command-line (terminal console and exec, including the DB exec
+// drivers, which resolve to the command-line type). MySQL, MSSQL and MongoDB
+// native proxies do not yet evaluate guardrails, so a guarded session of those
+// types would run unguarded — we fail closed at session-open rather than
+// silently ignoring the configured rules (DEP-48).
+//
+// IMPORTANT: this list mirrors enforcement support in libhoop. When guardrail
+// evaluation is added to another protocol proxy there, add its type here.
+func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
+	switch connType {
+	case pb.ConnectionTypePostgres,
+		pb.ConnectionTypeOracleDB,
+		pb.ConnectionTypeHttpProxy,
+		pb.ConnectionTypeSSH,
+		pb.ConnectionTypeCommandLine:
+		return true
+	default:
+		return false
+	}
 }
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
@@ -325,6 +372,69 @@ func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	}
 
 	return analyzerMetricsRulesJsonData, nil
+}
+
+// getAISessionAnalyzerParams resolves the per-connection AI session analyzer
+// configuration shipped to the agent so its HTTP proxy can classify and enforce
+// requests inline.
+//
+// It returns (nil, nil) — analysis disabled — when:
+//   - the experimental.http_session_analyzer flag is off for the org,
+//   - the connection is not an HTTP-family type (the agent only enforces
+//     analysis in the HTTP proxy path; DB/exec analysis runs gateway-side),
+//   - the connection has no analyzer rule (the feature is opt-in), or
+//   - no AI provider is configured for the org (can't analyze without one).
+func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyzerParams, error) {
+	if !featureflag.IsEnabled(pctx.OrgID, "experimental.http_session_analyzer") {
+		return nil, nil
+	}
+	switch pctx.ProtoConnectionType() {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
+	default:
+		return nil, nil
+	}
+
+	orgID, err := uuid.Parse(pctx.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid org id %q: %w", pctx.OrgID, err)
+	}
+
+	rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, pctx.ConnectionName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed obtaining ai session analyzer rule: %w", err)
+	}
+
+	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("ai session analyzer rule %q is configured but no ai provider is set; skipping analysis", rule.Name)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed obtaining ai provider: %w", err)
+	}
+
+	params := &pb.AISessionAnalyzerParams{
+		RuleName:         rule.Name,
+		Provider:         provider.Provider,
+		Model:            provider.Model,
+		LowRiskAction:    string(rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action),
+		MediumRiskAction: string(rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action),
+		HighRiskAction:   string(rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action),
+	}
+	if provider.ApiUrl != nil {
+		params.APIURL = *provider.ApiUrl
+	}
+	if provider.ApiKey != nil {
+		params.APIKey = *provider.ApiKey
+	}
+	if rule.CustomPrompt != nil {
+		params.CustomPrompt = *rule.CustomPrompt
+	}
+	return params, nil
 }
 
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
@@ -407,21 +517,60 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf(err.Error())
 				return err
 			}
+
+			// Fail closed: guardrails are enforced exclusively through Presidio and
+			// only for connection types whose agent proxy actually evaluates them.
+			// If a connection has guardrail rules but the server has no Presidio
+			// provider configured, OR the connection type cannot enforce guardrails,
+			// the request would run unguarded and blocked queries would pass through.
+			// Refuse the session at open time with a clear error instead (DEP-48).
+			//
+			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
+			// plain-exec is a gateway-internal verb gated by a per-process secret in
+			// the auth interceptor (see interceptors/auth: plain-exec-key). It is
+			// only used for gateway-generated introspection scripts (connection
+			// test, database explorer, MCP schema) and never carries user-authored
+			// input, so guardrail rules are not fetched nor enforced for it — the
+			// same long-standing behavior as DLP redaction, which is also disabled
+			// for plain-exec sessions.
+			if len(guardRailRulesJsonData) > 0 {
+				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
+				if !s.AppConfig.HasGuardrailProvider() {
+					logCtx.Warnf("refusing session: connection has guardrail rules but no Presidio provider is configured to enforce them")
+					return status.Errorf(codes.FailedPrecondition,
+						"this connection has guardrails configured, but the server has no Presidio (data masking) provider configured to enforce them; "+
+							"contact your administrator to configure Presidio")
+				}
+				if connType := pctx.ProtoConnectionType(); !connectionTypeSupportsGuardRails(connType) {
+					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
+					return status.Errorf(codes.FailedPrecondition,
+						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
+							"remove the guardrails from this connection or use a supported connection type", connType)
+				}
+			}
+		}
+
+		// Resolve the AI session analyzer config for HTTP-family connections.
+		// Fail-open: a resolution glitch must never break the session, so on
+		// error we log and ship no analyzer config (analysis is skipped).
+		aiAnalyzerParams, err := getAISessionAnalyzerParams(&pctx)
+		if err != nil {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("failed resolving ai session analyzer params, skipping analysis: %v", err)
 		}
 
 		clientArgs := clientArgsDecode(pkt.Spec)
 
-		// Federation resolution. Runs only when the experimental.iam_federation
-		// flag is enabled for the org and a federation row exists for the
+		// Federation resolution. Runs when a federation row exists for the
 		// connection. Resolved env vars are merged into pctx.ConnectionSecret
 		// in the format the agent's secretsmanager.Decode expects
 		// (envvar:NAME → base64(plaintext)). Failure semantics are governed by
 		// the per-connection fallback_policy: "deny" aborts the session with a
 		// SessionOpenAgentOffline-style error packet so the client surfaces a
-		// human-readable reason; "readonly" retries once with the configured
-		// readonly_principal and proceeds. Either path writes audit metadata
-		// to sessions.metadata.federation so admins can correlate sessions
-		// with the cloud-side identity used.
+		// human-readable reason; "static" skips federation and lets the session
+		// run on the connection's existing static credentials. Either path
+		// writes audit metadata to sessions.metadata.federation so admins can
+		// correlate sessions with the cloud-side identity used.
 		if err := resolveFederationForSession(&pctx, stream); err != nil {
 			return err
 		}
@@ -445,6 +594,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			DataMaskingEntityTypesData: entityTypesJsonData,
 			GuardRailRules:             guardRailRulesJsonData,
 			AnalyzerMetricsRules:       analyzerMetricsRulesJsonData,
+			AISessionAnalyzer:          aiAnalyzerParams,
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)
@@ -468,20 +618,17 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 }
 
 // resolveFederationForSession looks up the federation config for the
-// session's connection and, if one is present and the org has the feature
-// flag enabled, calls services.ResolveFederation. On success it mutates
-// pctx.ConnectionSecret in place to inject the resolved env vars and writes
-// the audit metadata to the session row.
+// session's connection and, if one is present, calls
+// services.ResolveFederation. On success it mutates pctx.ConnectionSecret in
+// place to inject the resolved env vars and writes the audit metadata to the
+// session row.
 //
 // Returning a non-nil error from this function aborts the session-open
 // flow: the caller bails out before sending the AgentConnectionParams to
-// the agent. Use this for "deny" semantics. For "readonly" semantics this
-// function never returns an error; it retries internally and only fails if
-// the retry also fails.
+// the agent. Use this for "deny" semantics. For "static" semantics this
+// function returns nil without mutating pctx.ConnectionSecret, leaving the
+// connection's existing static credentials in place for the session.
 func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient.ProxyStream) error {
-	if !featureflag.IsEnabled(pctx.OrgID, "experimental.iam_federation") {
-		return nil
-	}
 	cfg, err := models.GetConnectionFederationConfig(models.DB, pctx.OrgID, pctx.ConnectionID)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
@@ -502,26 +649,42 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	defer cancel()
 
 	res, resolveErr := services.ResolveFederation(ctx, cfg, in)
-	fallbackApplied := false
 	if resolveErr != nil {
 		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
 			Warnf("federation: primary resolve failed (policy=%s): %v", cfg.FallbackPolicy, resolveErr)
 		switch cfg.FallbackPolicy {
-		case models.FederationFallbackReadonly:
-			fallbackCtx, fallbackCancel := context.WithTimeout(context.Background(), federationResolveTimeout)
-			defer fallbackCancel()
-			fallbackRes, fbErr := services.ResolveFederationFallback(fallbackCtx, cfg, in)
-			if fbErr != nil {
-				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
-					Errorf("federation: fallback (readonly) also failed: %v", fbErr)
-				return status.Errorf(codes.FailedPrecondition,
-					"federation failed and fallback also failed: primary=%v fallback=%v",
-					resolveErr, fbErr)
+		case models.FederationFallbackStatic:
+			// Static fallback: do not federate this session. Leave the
+			// connection's existing static credentials in pctx.ConnectionSecret
+			// untouched (nothing injected, nothing superseded) so the session
+			// runs the pre-federation flow. We still write an audit entry so
+			// operators can see federation was attempted and fell back.
+			log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+				Infof("federation: primary resolve failed; falling back to static connection credentials (policy=static)")
+			provider := cfg.HookSource
+			if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
+				provider = *cfg.BuiltinProvider
 			}
-			res = fallbackRes
-			fallbackApplied = true
+			if auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
+				Provider:        provider,
+				HookSource:      cfg.HookSource,
+				FallbackApplied: true,
+			}); auditErr != nil {
+				log.With("sid", pctx.SID).Warnf("federation: failed writing static-fallback audit metadata: %v", auditErr)
+			}
+			return nil
 		default:
 			// deny is the secure default for any unrecognized policy too.
+			// When the failure is specifically "the user has not connected a
+			// per-user account" (e.g. gcp_oauth consent not completed), tag the
+			// message with a stable, machine-readable code and the connection
+			// name so clients can render an actionable "connect your account"
+			// affordance instead of a raw error string.
+			if errors.Is(resolveErr, federation.ErrUserNotConnected) {
+				return status.Errorf(codes.FailedPrecondition,
+					"federation failed %s: %v",
+					federation.FormatOAuthNotConnected(pctx.ConnectionName), resolveErr)
+			}
 			return status.Errorf(codes.FailedPrecondition, "federation failed: %v", resolveErr)
 		}
 	}
@@ -563,13 +726,16 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
 		provider = *cfg.BuiltinProvider
 	}
+	// Reaching here means the primary resolve succeeded; the static-fallback
+	// path returns earlier without injecting anything, so FallbackApplied is
+	// always false at this point.
 	auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
 		Provider:          provider,
 		HookSource:        cfg.HookSource,
 		ResolvedPrincipal: res.ResolvedPrincipal,
 		AdminPrincipal:    res.AdminPrincipal,
 		TokenExpiresAt:    res.TokenExpiresAt,
-		FallbackApplied:   fallbackApplied,
+		FallbackApplied:   false,
 	})
 	if auditErr != nil {
 		log.With("sid", pctx.SID).Warnf("federation: failed writing session audit metadata: %v", auditErr)
@@ -580,7 +746,6 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 		"connection-id", pctx.ConnectionID,
 		"provider", provider,
 		"principal", res.ResolvedPrincipal,
-		"fallback", fallbackApplied,
 		"expires-at", res.TokenExpiresAt.Format(time.RFC3339),
 		"superseded", supersededRemoved,
 	).Infof("federation: injected %d env var(s) into session, superseded %d static env(s)",

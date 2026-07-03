@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Group, Stack, Text, Title, Tooltip } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
+import { Button, Group, Stack, Text, Title } from '@mantine/core'
+import { showSnackbar } from '@/utils/snackbar'
 import { KeyRound, Unplug } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
@@ -9,7 +9,9 @@ import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
 import ActionMenu from '@/components/ActionMenu'
 import Modal from '@/components/Modal'
+import Tooltip from '@/components/Tooltip'
 import { apiKeysService } from '@/services/apiKeys'
+import { truncateKey } from '@/utils/maskedKey'
 
 function formatDate(dateStr) {
   if (!dateStr) return '—'
@@ -18,11 +20,6 @@ function formatDate(dateStr) {
     month: 'short',
     day: '2-digit',
   })
-}
-
-function truncateKey(key) {
-  if (!key) return '—'
-  return key.length > 12 ? `${key.slice(0, 10)}...` : key
 }
 
 export default function ApiKeys() {
@@ -52,10 +49,10 @@ export default function ApiKeys() {
   async function handleRevoke(key) {
     try {
       await apiKeysService.revoke(key.id)
-      notifications.show({ message: 'API key deactivated.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'API key deactivated.' })
       fetchKeys()
     } catch {
-      notifications.show({ message: 'Failed to deactivate key.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Failed to deactivate key.' })
     } finally {
       setConfirmRevoke(null)
     }
@@ -64,10 +61,10 @@ export default function ApiKeys() {
   async function handleActivate(key) {
     try {
       await apiKeysService.reactivate(key.id)
-      notifications.show({ message: 'API key activated.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'API key activated.' })
       fetchKeys()
     } catch {
-      notifications.show({ message: 'Failed to activate key.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Failed to activate key.' })
     }
   }
 

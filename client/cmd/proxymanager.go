@@ -145,6 +145,12 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 					return err
 				}
 				connStore.Set(sid, srv)
+			case pb.ConnectionTypeOracleDB:
+				srv := proxy.NewOracleServer(proxyPort, client)
+				if err := srv.Serve(sid); err != nil {
+					return err
+				}
+				connStore.Set(sid, srv)
 			case pb.ConnectionTypeTCP:
 				srv := proxy.NewTCPServer(proxyPort, client, pbagent.TCPConnectionWrite)
 				if err := srv.Serve(sid); err != nil {
@@ -196,6 +202,16 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			srv, ok := srvObj.(*proxy.MongoDBServer)
 			if !ok {
 				return fmt.Errorf("mongodb proxy server instance not found")
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if _, err := srv.PacketWriteClient(connectionID, pkt); err != nil {
+				return fmt.Errorf("failed writing to client, err=%v", err)
+			}
+		case pbclient.OracleConnectionWrite:
+			srvObj := connStore.Get(sid)
+			srv, ok := srvObj.(*proxy.OracleServer)
+			if !ok {
+				return fmt.Errorf("oracle proxy server instance not found")
 			}
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 			if _, err := srv.PacketWriteClient(connectionID, pkt); err != nil {

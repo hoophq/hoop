@@ -30,6 +30,7 @@
         created-roles @(rf/subscribe [:resources->last-created-roles])
         processed-roles @(rf/subscribe [:resource-setup/processed-roles])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
+        postgres-proxy-enabled? (get-in @(rf/subscribe [:gateway->info]) [:data :postgres_proxy_enabled])
         onboarding? (helpers/is-onboarding-context?)
         ;; For add-role context, use created-roles; for setup, use processed-roles (from payload)
         actual-roles (if (= context :add-role) created-roles processed-roles)
@@ -37,7 +38,7 @@
         first-role (first actual-roles)
         ;; Check capabilities of the first role
         can-web-terminal? (helpers/can-open-web-terminal? first-role)
-        can-native-client? (helpers/can-access-native-client? first-role)]
+        can-native-client? (helpers/can-access-native-client? first-role postgres-proxy-enabled?)]
 
     [:> Box {:class "px-[98px] py-10"}
      ;; Success icon
@@ -76,7 +77,7 @@
       (when single-role?
         [action-card {:icon ShieldCheck
                       :title "Configure additional features"
-                      :description "Advanced protections like AI Data Masking, Runbooks and more"
+                      :description "Advanced protections like Live Data Masking, Runbooks and more"
                       :on-click (fn []
                                   (rf/dispatch-sync [:plugins->get-my-plugins])
                                   (rf/dispatch [:navigate :configure-role {} :connection-name (:name first-role)]))}])
@@ -101,9 +102,8 @@
                       :title "Test Connection on Web Terminal"
                       :description "Start using your resource immediately in your browser"
                       :on-click (fn []
-                                  (js/localStorage.setItem "selected-connection" {:name (:name first-role)})
                                   (rf/dispatch-sync [:database-schema->clear-schema])
-                                  (rf/dispatch [:navigate :editor-plugin-panel]))}]
+                                  (rf/dispatch [:navigate :editor-plugin {:role (:name first-role)}]))}]
 
         (not single-role?)
         [action-card {:icon Monitor
@@ -112,7 +112,7 @@
                       :on-click (fn []
                                   (rf/dispatch-sync [:primary-connection/clear-selected])
                                   (rf/dispatch-sync [:database-schema->clear-schema])
-                                  (rf/dispatch [:navigate :editor-plugin-panel]))}])]
+                                  (rf/dispatch [:navigate :editor-plugin]))}])]
 
      ;; Footer action — only the onboarding "Go Home" remains
      (when (and onboarding? (not single-role?))

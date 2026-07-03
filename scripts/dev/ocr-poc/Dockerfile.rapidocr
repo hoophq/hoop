@@ -1,0 +1,34 @@
+# RapidOCR OCR PoC — CPU flavor (see server_rapidocr.py).
+#
+# Slim image with onnxruntime's CPU execution provider: no CUDA libraries,
+# an order of magnitude smaller than the GPU flavor. For GPU hosts use
+# Dockerfile.rapidocr-gpu instead — this image always runs on CPU.
+#
+#   docker build -f Dockerfile.rapidocr -t ocr-poc-rapid .
+#   docker run -d --name ocr-poc-rapid -p 8868:8868 ocr-poc-rapid
+#   curl http://localhost:8868/healthz  # -> {"status":"ok","device":"onnxruntime-cpu"}
+FROM python:3.12-slim-bookworm
+
+# libgl1/libglib2.0-0/libxcb1/libsm6/libxext6: rapidocr depends on regular
+# opencv-python (not headless), whose native module links these even for
+# imdecode-only use.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Bounded pins: open-ended ranges make benchmark numbers non-reproducible.
+RUN pip install --no-cache-dir \
+    "rapidocr>=3.1,<4" \
+    "onnxruntime>=1.19,<2" \
+    "fastapi>=0.115,<1" \
+    "uvicorn>=0.30,<1"
+
+COPY device_policy.py server_rapidocr.py /app/
+# Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes,
+# each with its own model instance (the gateway analyzer issues up to 8
+# concurrent chunk requests). 4 matches the benchmarked configuration;
+# tune to the host's CPU budget with `docker run -e WEB_CONCURRENCY=N`.
+ENV WEB_CONCURRENCY=4
+EXPOSE 8868
+CMD ["python3", "-m", "uvicorn", "server_rapidocr:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8868"]

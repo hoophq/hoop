@@ -1,0 +1,67 @@
+name: Deploy app via infra
+description: >-
+  Dispatch the hoophq/infra "Deploy By App" workflow for a single environment
+  and wait for that deploy to finish, failing the step if the deploy fails.
+
+inputs:
+  version:
+    description: Semantic version to deploy, e.g. "1.94.0".
+    required: true
+  app:
+    description: >-
+      Target environment name. Must have hoopcloud/<app>/values.yml in
+      hoophq/infra.
+    required: true
+  github-token:
+    description: >-
+      PAT with actions:write on hoophq/infra. The default GITHUB_TOKEN cannot
+      trigger workflows in another repository.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Dispatch infra Deploy By App and wait
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        VERSION: ${{ inputs.version }}
+        APP: ${{ inputs.app }}
+      run: |
+        set -euo pipefail
+
+        # Record a timestamp slightly before dispatch (30s back to absorb any
+        # clock skew between this runner and GitHub) so we can correlate the
+        # run we are about to create.
+        dispatched_after=$(date -u -d '30 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
+
+        gh workflow run deploy-by-app.yml --repo hoophq/infra \
+          -f version="$VERSION" -f app="$APP"
+        echo "Dispatched 'Deploy By App': app=$APP version=$VERSION"
+
+        # workflow_dispatch does not return a run id. The infra workflow's
+        # run-name is "Deploy App <app> (<version>)" — unique per release — so
+        # we poll for the matching run created after our dispatch and take the
+        # newest (handles a manual re-run of the same version).
+        title="Deploy App ${APP} (${VERSION})"
+        run_id=""
+        for _ in $(seq 1 30); do
+          run_id=$(gh run list --repo hoophq/infra \
+            --workflow deploy-by-app.yml --event workflow_dispatch --limit 50 \
+            --json databaseId,displayTitle,createdAt \
+            --jq "[.[] | select(.displayTitle == \"$title\" and .createdAt >= \"$dispatched_after\")] | sort_by(.createdAt) | last | .databaseId")
+          if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+            break
+          fi
+          sleep 5
+        done
+
+        if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+          echo "::error::Timed out locating the dispatched infra run for '$title'."
+          exit 1
+        fi
+
+        echo "Watching infra run $run_id ($title) until completion..."
+        # --exit-status makes this step fail when the deploy fails, so a
+        # broken rollout surfaces here instead of passing silently.
+        gh run watch "$run_id" --repo hoophq/infra --exit-status

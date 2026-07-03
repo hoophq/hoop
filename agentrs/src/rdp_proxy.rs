@@ -27,6 +27,15 @@ pub struct RdpProxy<C, S> {
     server_stream: S,
     #[allow(dead_code)]
     client_stream_leftover_bytes: bytes::BytesMut,
+    /// Agent-side PII guard for the post-CredSSP forwarding stage. None = no
+    /// guard (transparent forwarding).
+    #[builder(default)]
+    guard: Option<crate::piigate::config::GuardConfig>,
+    #[builder(default = String::new())]
+    session_id: String,
+    /// Reports guard violations to the gateway. None = no reporting.
+    #[builder(default)]
+    report: Option<crate::proxy::ViolationReporter>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +93,9 @@ where
         username,
         password,
         client_stream_leftover_bytes,
+        guard,
+        session_id,
+        report,
     } = proxy;
 
     let tls_config = config
@@ -175,6 +187,19 @@ where
     )
     .await?;
 
+    // -- Intercept the client's Client Info PDU to force server-side rendering
+    //    performance flags (disable wallpaper, full-window drag, menu
+    //    animations, theming). This cuts the volume of bitmap updates the
+    //    server sends, which both reduces bandwidth and — when the PII guard is
+    //    active — shrinks the amount of screen the guard must OCR. Applied to
+    //    every RDP session through the proxy. Best-effort: if the Client Info
+    //    PDU is not seen (unexpected sequence), forwarding continues unmodified.
+    if let Err(e) = intercept_client_info(&mut client_framed, &mut server_framed).await {
+        // Never fail the session on an optimization: log and fall through to
+        // transparent forwarding with the client's original flags.
+        info!("RDP perf-flag injection skipped ({e:#}); forwarding client flags unchanged");
+    }
+
     let (mut client_stream, client_leftover) = client_framed.into_inner();
     let (mut server_stream, server_leftover) = server_framed.into_inner();
 
@@ -195,6 +220,9 @@ where
     Proxy::builder()
         .transport_a(client_stream)
         .transport_b(server_stream)
+        .session_id(session_id)
+        .guard(guard)
+        .report(report)
         .build()
         .forward()
         .await
@@ -559,6 +587,151 @@ struct HandshakeResult {
     server_security_protocol: nego::SecurityProtocol,
 }
 
+/// Performance flags forced onto every client's Client Info PDU. These ask the
+/// RDP server to skip rendering that produces large or frequent bitmap updates
+/// with no information value for OCR: the desktop wallpaper, full-window drag
+/// ghosting, menu fade/slide animations, and visual theming. Fewer/smaller
+/// bitmap updates means less bandwidth and, when the PII guard is on, less
+/// screen area to OCR per frame.
+fn forced_performance_flags() -> ironrdp_pdu::rdp::client_info::PerformanceFlags {
+    use ironrdp_pdu::rdp::client_info::PerformanceFlags;
+    PerformanceFlags::DISABLE_WALLPAPER
+        | PerformanceFlags::DISABLE_FULLWINDOWDRAG
+        | PerformanceFlags::DISABLE_MENUANIMATIONS
+        | PerformanceFlags::DISABLE_THEMING
+}
+
+/// Relays post-CredSSP PDUs from client to server, pumping server→client
+/// traffic for pacing, until the client's Client Info PDU is seen. That PDU is
+/// patched to OR-in [`forced_performance_flags`] and forwarded; every other PDU
+/// is forwarded byte-for-byte unmodified. Returns as soon as the Client Info
+/// PDU has been forwarded, leaving any buffered-ahead bytes in the framed
+/// readers for the caller's leftover flush.
+///
+/// Safety / cancellation: each PDU is fully read and then forwarded before the
+/// next read, so on any error the streams are left on a clean PDU boundary and
+/// the caller can fall back to transparent forwarding without desync. The
+/// `select!` over two `read_pdu()` futures is sound because
+/// `ironrdp_tokio`/`ironrdp_async` buffer bytes in the framed object, not in the
+/// future: a `read_pdu` future dropped by `select!` retains any bytes already
+/// read in the framed buffer, so cancelling the losing branch cannot lose data
+/// or split a frame. `ironrdp_async::Framed::read_pdu` (v0.5.0) is explicitly
+/// documented cancel-safe ("Data may have been read, but it will be stored in
+/// the internal buffer"), as is the underlying `read_exact`. Only the single
+/// Client Info PDU is ever re-encoded, and only when it round-trips losslessly
+/// (see `patch_client_info_frame`); every other byte passes through verbatim.
+async fn intercept_client_info<C, S>(
+    client_framed: &mut ironrdp_tokio::TokioFramed<C>,
+    server_framed: &mut ironrdp_tokio::TokioFramed<S>,
+) -> Result<()>
+where
+    C: AsyncWrite + AsyncRead + Unpin + Send + Sync,
+    S: AsyncWrite + AsyncRead + Unpin + Send + Sync,
+{
+    // Bound the search: the Client Info PDU arrives a handful of PDUs after the
+    // MCS connect (erect domain, attach user, channel joins). If we somehow do
+    // not see it within a sane number of client PDUs, give up and let
+    // transparent forwarding take over rather than buffering indefinitely.
+    const MAX_CLIENT_PDUS_BEFORE_INFO: usize = 32;
+
+    let mut seen = 0usize;
+    loop {
+        tokio::select! {
+            // Pace the handshake: relay any server→client PDU verbatim. The
+            // client only emits its next request (and ultimately the Client
+            // Info PDU) after these confirms.
+            biased;
+            server_read = server_framed.read_pdu() => {
+                let (_, frame) = server_read.context("read server PDU during client-info intercept")?;
+                client_framed.write_all(&frame).await.context("relay server PDU to client")?;
+            }
+            client_read = client_framed.read_pdu() => {
+                let (_, frame) = client_read.context("read client PDU during client-info intercept")?;
+                if let Some(patched) = patch_client_info_frame(&frame) {
+                    server_framed.write_all(&patched).await.context("forward patched Client Info PDU")?;
+                    info!("RDP: forced server-side performance flags (wallpaper/drag/anim/theming disabled)");
+                    return Ok(());
+                }
+                // Not the Client Info PDU — forward verbatim.
+                server_framed.write_all(&frame).await.context("relay client PDU to server")?;
+                seen += 1;
+                if seen > MAX_CLIENT_PDUS_BEFORE_INFO {
+                    anyhow::bail!("Client Info PDU not seen within {MAX_CLIENT_PDUS_BEFORE_INFO} PDUs");
+                }
+            }
+        }
+    }
+}
+
+/// If `frame` is an `X224(SendDataRequest)` whose user data is a Client Info
+/// PDU, returns the re-encoded frame with [`forced_performance_flags`] OR-ed
+/// in. Returns `None` for any frame that is not a Client Info PDU (which is
+/// then forwarded verbatim), so a decode mismatch can never corrupt the stream.
+fn patch_client_info_frame(frame: &[u8]) -> Option<Vec<u8>> {
+    use ironrdp_pdu::rdp::client_info::{ExtendedClientOptionalInfo, PerformanceFlags};
+    use ironrdp_pdu::rdp::ClientInfoPdu;
+    use std::borrow::Cow;
+
+    // X224 → MCS SendDataRequest (client→server data carrier).
+    let x224: x224::X224<mcs::SendDataRequest<'_>> = ironrdp_core::decode(frame).ok()?;
+    let sdr = x224.0;
+
+    // SendDataRequest user data → Client Info PDU. Anything else (channel data,
+    // other MCS messages) fails this decode and is left untouched.
+    let mut info: ClientInfoPdu = ironrdp_core::decode(sdr.user_data.as_ref()).ok()?;
+
+    // FIDELITY GUARD. We can only patch a PDU we can reproduce byte-for-byte
+    // except for the flag bits. ironrdp's ExtendedClientOptionalInfo decode
+    // captures only {timezone, session_id, performance_flags, reconnect_cookie}
+    // and discards any trailing RDP-10+ reserved bytes; its encode emits only
+    // those four. So a client that sends extra/trailing optional material would
+    // have it dropped on re-encode. To never silently mutate the wire beyond the
+    // flags, we re-encode the UNMODIFIED decoded PDU and require it to be
+    // byte-identical to the original user data. If it is not (the model is lossy
+    // for this exact frame), we decline and the caller forwards it verbatim.
+    //
+    // For the browser IronRDP web client (the only client today) the PDU is
+    // exactly timezone+session_id+performance_flags, so this guard always
+    // passes; it exists to keep any future/native client correct by refusing to
+    // patch rather than corrupting.
+    let reencoded_unmodified = ironrdp_core::encode_vec(&info).ok()?;
+    if reencoded_unmodified.as_slice() != sdr.user_data.as_ref() {
+        return None;
+    }
+
+    // The builder is order-constrained (timezone -> session_id ->
+    // performance_flags -> reconnect_cookie). The fidelity guard above
+    // guarantees these are exactly the fields present, so replaying them is
+    // lossless. Missing timezone/session_id can't reach here (guard would have
+    // failed), but we still bail defensively rather than invent values.
+    let opt = &info.client_info.extra_info.optional_data;
+    let timezone = opt.timezone()?.clone();
+    let session_id = opt.session_id()?;
+    let current = opt.performance_flags().unwrap_or_else(PerformanceFlags::empty);
+    let updated = current | forced_performance_flags();
+
+    let builder = ExtendedClientOptionalInfo::builder()
+        .timezone(timezone)
+        .session_id(session_id)
+        .performance_flags(updated);
+    // reconnect_cookie is the last optional field; replay it if present.
+    let rebuilt = match opt.reconnect_cookie() {
+        Some(cookie) => builder.reconnect_cookie(*cookie).build(),
+        None => builder.build(),
+    };
+    info.client_info.extra_info.optional_data = rebuilt;
+
+    // Re-encode the Client Info PDU, rewrap it in a SendDataRequest with the
+    // SAME initiator/channel ids, then in X224.
+    let info_bytes = ironrdp_core::encode_vec(&info).ok()?;
+    let rewrapped = mcs::SendDataRequest {
+        initiator_id: sdr.initiator_id,
+        channel_id: sdr.channel_id,
+        user_data: Cow::Owned(info_bytes),
+    };
+    ironrdp_core::encode_vec(&x224::X224(rewrapped)).ok()
+}
+
 async fn send_pdu<S, P>(framed: &mut ironrdp_tokio::TokioFramed<S>, pdu: &P) -> Result<()>
 where
     S: AsyncWrite + Unpin + Send + Sync,
@@ -595,5 +768,183 @@ impl<S> GetPeerCert for tokio_rustls::server::TlsStream<S> {
             .1
             .peer_certificates()
             .and_then(|certs| certs.first())
+    }
+}
+
+#[cfg(test)]
+mod perf_flags_tests {
+    use super::*;
+    use ironrdp_pdu::rdp::client_info::{
+        ClientInfo, ClientInfoFlags, CompressionType, Credentials, ExtendedClientInfo,
+        ExtendedClientOptionalInfo, OptionalSystemTime, PerformanceFlags, TimezoneInfo,
+    };
+    use ironrdp_pdu::rdp::headers::{BasicSecurityHeader, BasicSecurityHeaderFlags};
+    use ironrdp_pdu::rdp::ClientInfoPdu;
+    use std::borrow::Cow;
+
+    fn timezone() -> TimezoneInfo {
+        TimezoneInfo {
+            bias: 0,
+            standard_name: String::new(),
+            standard_date: OptionalSystemTime(None),
+            standard_bias: 0,
+            daylight_name: String::new(),
+            daylight_date: OptionalSystemTime(None),
+            daylight_bias: 0,
+        }
+    }
+
+    /// Builds a wire frame (`X224(SendDataRequest{ ClientInfoPdu })`) carrying a
+    /// Client Info PDU with the given starting performance flags.
+    fn client_info_frame(start: PerformanceFlags) -> Vec<u8> {
+        let optional_data = ExtendedClientOptionalInfo::builder()
+            .timezone(timezone())
+            .session_id(0)
+            .performance_flags(start)
+            .build();
+        let info = ClientInfoPdu {
+            security_header: BasicSecurityHeader {
+                flags: BasicSecurityHeaderFlags::INFO_PKT,
+            },
+            client_info: ClientInfo {
+                credentials: Credentials {
+                    username: "user".into(),
+                    password: "pass".into(),
+                    domain: None,
+                },
+                code_page: 0,
+                flags: ClientInfoFlags::UNICODE | ClientInfoFlags::MOUSE,
+                compression_type: CompressionType::K8,
+                alternate_shell: String::new(),
+                work_dir: String::new(),
+                extra_info: ExtendedClientInfo {
+                    address_family: ironrdp_pdu::rdp::client_info::AddressFamily::INET,
+                    address: String::new(),
+                    dir: String::new(),
+                    optional_data,
+                },
+            },
+        };
+        let info_bytes = ironrdp_core::encode_vec(&info).unwrap();
+        let sdr = mcs::SendDataRequest {
+            initiator_id: 1007,
+            channel_id: 1003,
+            user_data: Cow::Owned(info_bytes),
+        };
+        ironrdp_core::encode_vec(&x224::X224(sdr)).unwrap()
+    }
+
+    fn decode_flags(frame: &[u8]) -> PerformanceFlags {
+        let x224: x224::X224<mcs::SendDataRequest<'_>> = ironrdp_core::decode(frame).unwrap();
+        let info: ClientInfoPdu = ironrdp_core::decode(x224.0.user_data.as_ref()).unwrap();
+        info.client_info
+            .extra_info
+            .optional_data
+            .performance_flags()
+            .unwrap()
+    }
+
+    #[test]
+    fn patches_perf_flags_into_client_info() {
+        let frame = client_info_frame(PerformanceFlags::ENABLE_FONT_SMOOTHING);
+        let patched = patch_client_info_frame(&frame).expect("should patch a Client Info PDU");
+        let flags = decode_flags(&patched);
+        // Forced flags are present.
+        assert!(flags.contains(PerformanceFlags::DISABLE_WALLPAPER));
+        assert!(flags.contains(PerformanceFlags::DISABLE_FULLWINDOWDRAG));
+        assert!(flags.contains(PerformanceFlags::DISABLE_MENUANIMATIONS));
+        assert!(flags.contains(PerformanceFlags::DISABLE_THEMING));
+        // Pre-existing client flag is preserved (OR, not replace).
+        assert!(flags.contains(PerformanceFlags::ENABLE_FONT_SMOOTHING));
+    }
+
+    #[test]
+    fn preserves_credentials_and_channel_ids() {
+        let frame = client_info_frame(PerformanceFlags::empty());
+        let patched = patch_client_info_frame(&frame).expect("should patch");
+        // Channel/initiator ids and credentials must survive the re-encode.
+        let x224: x224::X224<mcs::SendDataRequest<'_>> = ironrdp_core::decode(&patched).unwrap();
+        assert_eq!(x224.0.initiator_id, 1007);
+        assert_eq!(x224.0.channel_id, 1003);
+        let info: ClientInfoPdu = ironrdp_core::decode(x224.0.user_data.as_ref()).unwrap();
+        assert_eq!(info.client_info.credentials.username, "user");
+        assert_eq!(info.client_info.credentials.password, "pass");
+    }
+
+    #[test]
+    fn idempotent_when_flags_already_set() {
+        let frame = client_info_frame(forced_performance_flags());
+        let patched = patch_client_info_frame(&frame).expect("should still decode/re-encode");
+        assert_eq!(decode_flags(&patched), forced_performance_flags());
+    }
+
+    #[test]
+    fn non_client_info_frame_is_left_untouched() {
+        // An arbitrary (non-Client-Info) X224 SendDataRequest must not be
+        // mistaken for a Client Info PDU — patch returns None so the caller
+        // forwards it verbatim.
+        let sdr = mcs::SendDataRequest {
+            initiator_id: 1007,
+            channel_id: 1003,
+            user_data: Cow::Owned(vec![0xDE, 0xAD, 0xBE, 0xEF]),
+        };
+        let frame = ironrdp_core::encode_vec(&x224::X224(sdr)).unwrap();
+        assert!(patch_client_info_frame(&frame).is_none());
+    }
+
+    #[test]
+    fn garbage_frame_is_left_untouched() {
+        assert!(patch_client_info_frame(&[0x00, 0x01, 0x02, 0x03]).is_none());
+    }
+
+    #[test]
+    fn declines_when_reencode_would_be_lossy() {
+        use ironrdp_pdu::rdp::ClientInfoPdu;
+        // Build a canonical Client Info PDU, then append the RDP-10+ reserved
+        // trailing bytes (reserved1/reserved2) that ironrdp's decoder CONSUMES
+        // but its encoder does NOT re-emit. The fidelity guard must detect that
+        // re-encoding cannot reproduce these bytes and decline to patch (so the
+        // caller forwards the frame verbatim) rather than silently drop them.
+        let optional_data = ExtendedClientOptionalInfo::builder()
+            .timezone(timezone())
+            .session_id(0)
+            .performance_flags(PerformanceFlags::empty())
+            .build();
+        let info = ClientInfoPdu {
+            security_header: BasicSecurityHeader {
+                flags: BasicSecurityHeaderFlags::INFO_PKT,
+            },
+            client_info: ClientInfo {
+                credentials: Credentials {
+                    username: "user".into(),
+                    password: "pass".into(),
+                    domain: None,
+                },
+                code_page: 0,
+                flags: ClientInfoFlags::UNICODE | ClientInfoFlags::MOUSE,
+                compression_type: CompressionType::K8,
+                alternate_shell: String::new(),
+                work_dir: String::new(),
+                extra_info: ExtendedClientInfo {
+                    address_family: ironrdp_pdu::rdp::client_info::AddressFamily::INET,
+                    address: String::new(),
+                    dir: String::new(),
+                    optional_data,
+                },
+            },
+        };
+        let mut info_bytes = ironrdp_core::encode_vec(&info).unwrap();
+        // Append reserved1 + reserved2 (two u16) that decode reads and discards.
+        info_bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        let sdr = mcs::SendDataRequest {
+            initiator_id: 1007,
+            channel_id: 1003,
+            user_data: Cow::Owned(info_bytes),
+        };
+        let frame = ironrdp_core::encode_vec(&x224::X224(sdr)).unwrap();
+        assert!(
+            patch_client_info_frame(&frame).is_none(),
+            "a frame whose trailing bytes can't be reproduced must NOT be patched"
+        );
     }
 }

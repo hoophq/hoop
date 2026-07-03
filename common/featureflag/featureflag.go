@@ -33,54 +33,75 @@ type Flag struct {
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
-	"experimental.nightly_flag": {
-		Name:        "experimental.nightly_flag",
-		Description: "Example flag for testing the feature flag system (no-op)",
-		Default:     false,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
-	},
 	"experimental.log_exec_input": {
 		Name:        "experimental.log_exec_input",
 		Description: "Include the truncated exec input as a structured log attribute on the agent (for SIEM export). May log sensitive content.",
-		Default:     false,
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
 	"experimental.rdp_pii_detection": {
 		Name:        "experimental.rdp_pii_detection",
 		Description: "Enable async RDP PII detection workers and per-session analysis enqueue. Requires Presidio analyzer URL and tesseract OCR.",
-		Default:     false,
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.event_routing": {
-		Name:        "experimental.event_routing",
-		Description: "Enable the event routing pipeline: publish lifecycle events and dispatch them to runbook-backed subscriptions.",
-		Default:     false,
+	"experimental.rdp_pii_guard": {
+		Name:        "experimental.rdp_pii_guard",
+		Description: "Block RDP frames until realtime PII analysis clears them and kill the session on detection (hold-and-release). Requires Presidio analyzer URL and tesseract OCR.",
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
-	},
-	"experimental.agent_async_ssh": {
-		Name:        "experimental.agent_async_ssh",
-		Description: "Dispatch SSH packets to per-packet goroutines on the agent. Fixes parallel-session blocking where one slow SSH session stalls others on the same agent.",
-		Default:     false,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentAgent},
 	},
 	"experimental.rulepacks": {
 		Name:        "experimental.rulepacks",
 		Description: "Enable Rulepacks (attribute bundles): /rulepacks endpoints, rulepack_id on attributes, hide rulepack-owned attributes from feature lists.",
-		Default:     false,
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.iam_federation": {
-		Name:        "experimental.iam_federation",
-		Description: "Resolve per-session cloud credentials by impersonating the calling user's IAM principal (GCP IAM v1) so cloud audit logs attribute queries to the human, not the shared admin SA. When enabled, federation config on a connection is consulted at SessionOpen and short-lived credentials are injected as env vars before the agent runs the command.",
+	"experimental.db_exec_driver": {
+		Name:        "experimental.db_exec_driver",
+		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",
 		Default:     false,
 		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
+	"beta.oracle_native": {
+		Name:        "beta.oracle_native",
+		Description: "Enable native Oracle (TNS) database access so clients like sqlplus/DBeaver connect through hoop's local proxy. When disabled, Oracle connections cannot open a native proxy session.",
+		Default:     true,
+		Stability:   StabilityBeta,
+		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
+	},
+	"experimental.http_session_analyzer": {
+		Name:        "experimental.http_session_analyzer",
+		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code). Each request is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
+		Default:     true,
+		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
+	},
+	"experimental.ssh_guardrails": {
+		Name:        "experimental.ssh_guardrails",
+		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio) to be configured.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
+	"experimental.ssh_input_guardrails": {
+		Name:        "experimental.ssh_input_guardrails",
+		Description: "Best-effort guardrails on interactive SSH shell stdin: each command line typed on a session shell is reconstructed and validated against input rules before the Enter that submits it is forwarded; a match blocks the command and ends the session. Reconstruction is approximate — shell history recall, tab-completion and cursor editing can bypass it — so treat it as advisory and pair it with experimental.ssh_guardrails (output rules) for defense in depth. Only interactive shells are inspected (not exec, sftp or port-forwards). Requires a DLP provider (Presidio) to be configured.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
+	"experimental.claude_code_vertex": {
+		Name:        "experimental.claude_code_vertex",
+		Description: "Allow claude-code connections to authenticate against Google Vertex AI: the connection stores a GCP service-account key and the agent mints a short-lived, auto-refreshing OAuth bearer that it injects as the upstream Authorization header while transparently proxying Claude Code traffic to Vertex. Claude Code runs in Vertex mode (CLAUDE_CODE_USE_VERTEX) pointed at the hoop proxy. When off, the Vertex provider is hidden in the connection form and the agent does not mint GCP tokens.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway, ComponentAgent},
 	},
 }
 

@@ -8,4 +8,5 @@ use (
 	./common
 	./gateway
 	./libhoop
+	./tunnel
 )

@@ -4,9 +4,6 @@
 
 (def default-db
   {:agents {:status :loading, :data []}
-   :ai-data-masking {:list {:status :idle :data []}
-                     :active-rule {:status :idle :data nil}
-                     :submitting? false}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
@@ -119,4 +116,19 @@
    :provisioning {:resources {:status :idle :data []}
                   :jobs      []
                   :sessions  []}
-   :connections->list {:status :idle :data []}})
+   :connections->list {:status :idle :data []}
+   :resources/federation {:status :idle
+                          :data nil
+                          :form {:enabled true
+                                 :hook_source "builtin"
+                                 :builtin_provider "gcp_iam"
+                                 :admin_credentials_json ""
+                                 :extra_config {:project_id ""}
+                                 :identity_source_attribute "$.user.email"
+                                 :identity_target_template "{user.email}"
+                                 :fallback_policy "deny"
+                                 :token_ttl_seconds 3600}
+                          :credentials-editing? false
+                          :mapping-editor-open? false
+                          :test-status :idle
+                          :test-result nil}})

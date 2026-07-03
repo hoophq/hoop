@@ -1,5 +1,6 @@
 @import "allotment/dist/style.css";
 @import "@radix-ui/themes/styles.css";
+@import "asciinema-player/dist/bundle/asciinema-player.css";
 @import "./highlight.css";
 @import "./cmdk.css";
 
@@ -14,6 +15,10 @@
 }
 
 .rt-PopperContent {
+  z-index: 202;
+}
+
+.rt-TooltipContent {
   z-index: 202;
 }
 
@@ -176,4 +181,8 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+.asciinema-player .start-prompt .play-button div span svg {
+  display: inline-block;
 }

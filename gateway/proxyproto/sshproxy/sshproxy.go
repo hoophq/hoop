@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	sshtypes "libhoop/proxy/ssh/types"
 	"net"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,30 +16,44 @@ import (
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	pbagent "github.com/hoophq/hoop/common/proto/agent"
-	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy/sshcertproxy/proto/sshproto"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"golang.org/x/crypto/ssh"
 )
 
-// from syscall.SIGWINCH, avoid syscall errors when compiling on Windows
-const SIGWINCH = syscall.Signal(0x1c)
 const instanceKey = "ssh_server"
 
 var instanceStore sync.Map
 
-type proxyServer struct {
-	listenAddress   string
-	connectionStore sync.Map
-	listener        net.Listener
-	hostKey         ssh.Signer
+// ServerConfig holds all configuration required to start the SSH proxy server.
+type ServerConfig struct {
+	ListenAddress string
+	// HostsKey is the base64-encoded PEM private key used as the SSH host key.
+	HostsKey string
+	// TrustedCAs is the list of trusted SSH CA public keys in authorized_keys
+	// format. When non-empty, the certificate-based server is started instead
+	// of the password-based server.
+	TrustedCAs []string
+	// UserMapping specifies which certificate attribute (principal or key_id) is
+	// matched against which user table column (email, subject, user_id).
+	// Required when TrustedCAs is non-empty.
+	UserMapping sshcertproxy.UserMapping
 }
 
-// GetServerInstance returns the singleton instance of SSHServer.
+// proxyServer is the external-facing singleton. It holds exactly one active
+// server implementation (password-based or certificate-based), selected at
+// Start() time based on TrustedCAs configuration.
+type proxyServer struct {
+	pwdServer  *passwordServer
+	certServer *sshcertproxy.Server
+}
+
+// GetServerInstance returns the singleton proxy server instance.
 func GetServerInstance() *proxyServer {
 	instance, _ := instanceStore.Load(instanceKey)
 	if server, ok := instance.(*proxyServer); ok {
@@ -52,68 +64,116 @@ func GetServerInstance() *proxyServer {
 	return server
 }
 
-func (s *proxyServer) Start(listenAddr, hostsKeyB64Enc string) (err error) {
-	instance, _ := instanceStore.Load(instanceKey)
-	if _, ok := instance.(*proxyServer); ok && s.listener != nil {
+// Start initializes and runs the SSH proxy server. When TrustedCAs are
+// configured the certificate-based server is started; otherwise the
+// password-based server is started. It is a no-op if already running.
+func (s *proxyServer) Start(cfg ServerConfig) error {
+	if s.pwdServer != nil || s.certServer != nil {
 		return nil
 	}
 
-	sshHostsKey, err := parseHostsKey(hostsKeyB64Enc)
+	hostKey, err := parseHostsKey(cfg.HostsKey)
 	if err != nil {
 		return fmt.Errorf("failed parsing hosts key, reason=%v", err)
 	}
-	log.Infof("starting ssh server proxy at %v", listenAddr)
 
-	// start new instance
-	server, err := runProxyServer(listenAddr, sshHostsKey)
+	if len(cfg.TrustedCAs) > 0 {
+		s.certServer, err = sshcertproxy.Run(cfg.ListenAddress, hostKey, cfg.TrustedCAs, cfg.UserMapping)
+	} else {
+		s.pwdServer, err = runPasswordServer(cfg.ListenAddress, hostKey)
+	}
 	if err != nil {
 		return err
 	}
-	instanceStore.Store(instanceKey, server)
+
+	instanceStore.Store(instanceKey, s)
 	return nil
 }
 
-// RevokeByCredentialID cancels all connections using the given credential ID.
-// This triggers the same cleanup flow as when a credential expires.
+// RevokeByCredentialID cancels all password-authenticated connections using
+// the given credential ID. Certificate-authenticated connections are not
+// tracked by credential ID and are unaffected.
 func (s *proxyServer) RevokeByCredentialID(credentialID string) {
+	if s.pwdServer != nil {
+		s.pwdServer.revokeByCredentialID(credentialID)
+	}
+}
+
+// Stop cancels all active connections, closes the listener, and resets the
+// server state so that Start can be called again on the same instance.
+func (s *proxyServer) Stop() error {
+	instanceStore.Delete(instanceKey)
+	var err error
+	if s.pwdServer != nil {
+		err = s.pwdServer.stop()
+		s.pwdServer = nil
+	} else if s.certServer != nil {
+		err = s.certServer.Stop()
+		s.certServer = nil
+	}
+	return err
+}
+
+func parseHostsKey(privateKeyB64Enc string) (hostsKey ssh.Signer, err error) {
+	privateKeyPemBytes, err := base64.StdEncoding.DecodeString(privateKeyB64Enc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
+	}
+	privateKey, err := decodeOpenSSHPrivateKey(privateKeyPemBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
+	}
+	hostsKey, err = ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create hosts key signer: %v", err)
+	}
+	return hostsKey, nil
+}
+
+// passwordServer is the SSH proxy server implementation for password-based
+// (secret access key) authentication.
+type passwordServer struct {
+	listenAddress   string
+	connectionStore sync.Map
+	listener        net.Listener
+	hostKey         ssh.Signer
+}
+
+func (s *passwordServer) revokeByCredentialID(credentialID string) {
 	s.connectionStore.Range(func(key, value any) bool {
-		if sshConn, ok := value.(*sshConnection); ok && sshConn.credentialID == credentialID {
-			sshConn.cancelFn("credential revoked")
+		if conn, ok := value.(*passwordConnection); ok && conn.credentialID == credentialID {
+			conn.cancelFn("credential revoked")
 		}
 		return true
 	})
 }
 
-func (s *proxyServer) Stop() error {
-	instance, _ := instanceStore.LoadAndDelete(instanceKey)
-	if server, ok := instance.(*proxyServer); ok {
-		// cancel all active connections
-		s.connectionStore.Range(func(key, value any) bool {
-			if sshConn, ok := value.(*sshConnection); ok {
-				sshConn.cancelFn("proxy server is shutting down")
-			}
-			return true
-		})
-
-		// close the listener
-		if server.listener != nil {
-			log.Infof("stopping ssh server proxy at %v", server.listener.Addr().String())
-			_ = server.listener.Close()
+func (s *passwordServer) stop() error {
+	s.connectionStore.Range(func(key, value any) bool {
+		if conn, ok := value.(*passwordConnection); ok {
+			conn.cancelFn("proxy server is shutting down")
 		}
+		return true
+	})
+	if s.listener != nil {
+		log.Infof("stopping ssh server proxy at %v", s.listener.Addr().String())
+		_ = s.listener.Close()
 	}
 	return nil
 }
 
-func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error) {
+func runPasswordServer(listenAddr string, hostKey ssh.Signer) (*passwordServer, error) {
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
-	server := &proxyServer{
-		connectionStore: sync.Map{},
-		listener:        lis,
-		listenAddress:   listenAddr,
-		hostKey:         hostKey,
+
+	log.Infof("starting ssh server proxy at %v", listenAddr)
+
+	server := &passwordServer{
+		listenAddress: listenAddr,
+		listener:      lis,
+		hostKey:       hostKey,
 	}
 
 	go func() {
@@ -136,9 +196,8 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 
 			// creates a new SSH connection instance
 			sessionID := uuid.NewString()
-			conn, err := newSSHConnection(sessionID, connectionID, netConn, hostKey)
+			conn, err := newPasswordConnection(sessionID, connectionID, netConn, server)
 			if err != nil {
-				// Prevents log pollution from health check requests on this port
 				if err == io.EOF {
 					log.With("sid", sessionID, "conn", connectionID).
 						Debugf("failed creating new SSH connection, reason=%v", err)
@@ -167,39 +226,23 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 	return server, nil
 }
 
-type pendingSSHRequest struct {
-	req   *ssh.Request
-	reply chan bool
-}
-
-// pendingReplyQueue holds pending SSH requests per channel in FIFO order
-// so that replies from the agent are matched to the correct request (e.g. pty-req then shell).
-type pendingReplyQueue struct {
-	mu      sync.Mutex
-	pending []*pendingSSHRequest
-}
-
-type sshConnection struct {
+type passwordConnection struct {
 	id                  string
 	sid                 string
 	credentialID        string
 	ctx                 context.Context
 	cancelFn            func(msg string, a ...any)
 	grpcClient          pb.ClientTransport
+	handler             sshcertproxy.ChannelHandler
 	clientNewSshChannel <-chan ssh.NewChannel
 	sshConn             *ssh.ServerConn
-	sshChannels         sync.Map
-	pendingRequests     sync.Map // maps channelID (uint16) to *pendingReplyQueue
-	channelWg           sync.WaitGroup
 }
 
-func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*sshConnection, error) {
-	sshServerConfig := &ssh.ServerConfig{
-		// NoClientAuth: true, // Ignore client authentication
-		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-			log.
-				With("sid", sid).
-				Infof("ssh connection attempt, user=%v, remote-addr=%v, local-addr=%v", conn.User(), conn.RemoteAddr(), conn.LocalAddr())
+func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordServer) (*passwordConnection, error) {
+	sshCfg := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+			log.With("sid", sid).Infof("ssh connection attempt, user=%v, remote-addr=%v, local-addr=%v",
+				c.User(), c.RemoteAddr(), c.LocalAddr())
 
 			// Hash the received password (secret access key)
 			secretKeyHash, err := keys.Hash256Key(string(password))
@@ -224,12 +267,12 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 
 			// Session duration remaining based on the expiration time
 			ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
-
 			log.Infof("obtained access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
 				dba.ID, dba.UserSubject, dba.ConnectionName, sid,
 				dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 			extensions := map[string]string{
+				"hoop-auth-method":      "password",
 				"hoop-credential-id":    dba.ID,
 				"hoop-user-subject":     dba.UserSubject,
 				"hoop-connection-name":  dba.ConnectionName,
@@ -244,12 +287,11 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 			return &ssh.Permissions{Extensions: extensions}, nil
 		},
 	}
-
 	// the encryption key to be used we use a single hosts key
 	// used for the SSH handshake and related to the known_hosts file
-	sshServerConfig.AddHostKey(hostKey)
+	sshCfg.AddHostKey(server.hostKey)
 
-	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, sshServerConfig)
+	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, sshCfg)
 	if err != nil {
 		if err == io.EOF {
 			return nil, io.EOF
@@ -284,20 +326,17 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 
 	var tokenVerifier idp.UserInfoTokenVerifier
 	if !isMachineCredential {
-		var err error
 		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
 		if err != nil {
 			log.Errorf("failed to load IDP provider: %v", err)
 			return nil, err
 		}
-
 		if err := usertoken.CheckUserToken(tokenVerifier, userSubject); err != nil {
 			return nil, err
 		}
 	}
 
-	log.
-		With("sid", sid, "remote-addr", conn.RemoteAddr()).
+	log.With("sid", sid, "remote-addr", conn.RemoteAddr()).
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
 
 	grpcOpts := []*grpc.ClientOptions{
@@ -332,40 +371,45 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	}
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
-	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
-	sessionConn := &sshConnection{
-		id:           connID,
-		sid:          sid,
-		credentialID: credentialID,
-		ctx:          ctx,
-		cancelFn: func(msg string, a ...any) {
-			cancelFn(fmt.Errorf(msg, a...))
-			timeoutCancelFn()
-		},
-		sshConn:             sshConn,
+	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
+		fmt.Errorf("connection access expired, resourceid=%v", connID))
+	wrappedCancelFn := func(msg string, a ...any) {
+		cancelFn(fmt.Errorf(msg, a...))
+		timeoutCancelFn()
+	}
+
+	c := &passwordConnection{
+		id:                  connID,
+		sid:                 sid,
+		credentialID:        credentialID,
+		ctx:                 ctx,
+		cancelFn:            wrappedCancelFn,
 		grpcClient:          client,
+		sshConn:             sshConn,
 		clientNewSshChannel: clientNewCh,
 	}
 
 	if !isMachineCredential {
-		usertoken.PollingUserToken(sessionConn.ctx, func(cause error) {
-			sessionConn.cancelFn(cause.Error())
+		usertoken.PollingUserToken(c.ctx, func(cause error) {
+			c.cancelFn(cause.Error())
 		}, tokenVerifier, userSubject)
 	}
 
-	return sessionConn, nil
+	return c, nil
 }
 
-func (c *sshConnection) handleConnection() {
-	// it is important to wait for the session to be established
-	// before handling ssh channels
-	c.handleClientWrite()
+func (c *passwordConnection) handleConnection() {
+	handler, err := sshproto.OpenSession(c.sid, c.id, c.grpcClient, c.ctx, c.cancelFn)
+	if err != nil {
+		c.cancelFn("failed opening session: %v", err)
+		_, _ = c.grpcClient.Close()
+		_ = c.sshConn.Close()
+		return
+	}
+	c.handler = handler
 	go c.handleServerWrite()
 
-	// wait for the connection to be closed
-	// either by the client, server, or context cancellation
 	<-c.ctx.Done()
-
 	ctxErr := context.Cause(c.ctx)
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
 
@@ -388,20 +432,15 @@ func (c *sshConnection) handleConnection() {
 	hasUserError := false
 	if ctxErr != nil {
 		if msg := translateUpstreamError(ctxErr.Error()); msg != "" {
-			notifyOpenChannels(&c.sshChannels, msg)
+			notifyOpenChannels(c.handler.RangeChannels, msg)
 			hasUserError = true
 		}
 	}
 
 	if !hasUserError {
-		// Normal (non-error) teardown: wait for all channel
-		// data-forwarding goroutines to flush remaining writes
-		// to the gRPC stream. Without this, SessionClose can be
-		// sent before trailing data packets, causing the agent
-		// to tear down the session prematurely.
 		flushDone := make(chan struct{})
 		go func() {
-			c.channelWg.Wait()
+			c.handler.Wait()
 			close(flushDone)
 		}()
 		select {
@@ -411,218 +450,16 @@ func (c *sshConnection) handleConnection() {
 		}
 	}
 
-	// notify the server that the session is closing
-	err := c.grpcClient.Send(&pb.Packet{
-		Type: pbagent.SessionClose,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID: []byte(c.sid),
-		},
-	})
-	if err != nil {
+	if err := c.handler.SendClose(); err != nil {
 		log.With("sid", c.sid, "conn", c.id).Warnf("failed sending session close packet, err=%v", err)
-		return
-	}
-
-	// On normal teardown, give the agent 2 seconds to drain its
-	// state before we hang up the transport. On error teardowns the
-	// user has nothing else to see and we already closed the
-	// channels in notifyOpenChannels, so close immediately.
-	if !hasUserError {
+	} else if !hasUserError {
 		time.Sleep(time.Second * 2)
 	}
+	_ = c.handler.Close()
 	_ = c.sshConn.Close()
-	_, _ = c.grpcClient.Close()
 }
 
-func (c *sshConnection) handleClientWrite() {
-	// send the open session packet to the server
-	err := c.grpcClient.Send(&pb.Packet{
-		Type: pbagent.SessionOpen,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:   []byte(c.sid),
-			pb.SpecClientConnectionID: []byte(c.id),
-		},
-	})
-	if err != nil {
-		c.cancelFn("failed sending open session packet, err=%v", err)
-		return
-	}
-
-	startupCh := make(chan struct{})
-	// listen for incoming packets from the gRPC server
-	go func() {
-		// always send startup signal when the control loop ends
-		// to ensure it doesn't get stuck until it reaches the open session timeout
-		defer func() { startupCh <- struct{}{}; close(startupCh) }()
-		for {
-			pkt, err := c.grpcClient.Recv()
-			if err != nil {
-				c.cancelFn("received error processing grpc client, err=%v", err)
-				return
-			}
-			if pkt == nil {
-				c.cancelFn("received nil packet, closing connection")
-				return
-			}
-
-			switch pb.PacketType(pkt.Type) {
-			case pbclient.SessionOpenOK:
-				log.With("sid", c.sid).Infof("session opened successfully")
-				startupCh <- struct{}{}
-
-			case pbclient.SSHConnectionWrite:
-				switch sshtypes.DecodeType(pkt.Payload) {
-				case sshtypes.DataType:
-					var data sshtypes.Data
-					if err := sshtypes.Decode(pkt.Payload, &data); err != nil {
-						c.cancelFn("failed decoding ssh data, err=%v", err)
-						return
-					}
-					connWrapperObj, _ := c.sshChannels.Load(fmt.Sprintf("%v", data.ChannelID))
-					clientCh, ok := connWrapperObj.(io.WriteCloser)
-					if !ok {
-						c.cancelFn("local channel %q not found", data.ChannelID)
-						return
-					}
-					log.With("sid", c.sid, "ch", data.ChannelID, "conn", c.id).Debugf("received data type")
-					if _, err := clientCh.Write(data.Payload); err != nil {
-						c.cancelFn("failed writing ssh data, err=%v", err)
-						return
-					}
-
-				case sshtypes.CloseChannelType:
-					var cc sshtypes.CloseChannel
-					if err := sshtypes.Decode(pkt.Payload, &cc); err != nil {
-						c.cancelFn("failed decoding close channel, err=%v", err)
-						return
-					}
-
-					obj, _ := c.sshChannels.Load(fmt.Sprintf("%v", cc.ID))
-					if clientCh, ok := obj.(io.Closer); ok {
-						err := clientCh.Close()
-
-						log.
-							With("sid", c.sid, "ch", cc.ID, "conn", c.id).
-							Debugf("closing client ssh channel type=%v, err=%v", cc.Type, err)
-					}
-
-				case sshtypes.SSHRequestReplyType:
-					var reply sshtypes.SSHRequestReply
-					if err := sshtypes.Decode(pkt.Payload, &reply); err != nil {
-						c.cancelFn("failed decoding ssh request reply, err=%v", err)
-						return
-					}
-					log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
-						Debugf("received ssh request reply, ok=%v", reply.OK)
-
-					// Forward the reply to the next pending client request (FIFO per channel)
-					queue := c.loadPendingReplyQueue(reply.ChannelID)
-					if queue == nil {
-						log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
-							Infof("pending reply queue missing or invalid, dropping reply")
-					} else {
-						queue.mu.Lock()
-						if len(queue.pending) > 0 {
-							pendingReq := queue.pending[0]
-							queue.pending = queue.pending[1:]
-							queue.mu.Unlock()
-							select {
-							case pendingReq.reply <- reply.OK:
-								log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
-									Debugf("forwarded ssh request reply to client")
-							case <-c.ctx.Done():
-								return
-							default:
-								log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).Infof("channel full or already handled (e.g. timeout), dropping request")
-							}
-						} else {
-							queue.mu.Unlock()
-						}
-					}
-
-				case sshtypes.ServerSSHRequestType:
-					var serverReq sshtypes.ServerSSHRequest
-					if err := sshtypes.Decode(pkt.Payload, &serverReq); err != nil {
-						c.cancelFn("failed decoding server ssh request, err=%v", err)
-						return
-					}
-					log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
-						Debugf("received server ssh request type=%q, wantreply=%v, payload-length=%v",
-							serverReq.RequestType, serverReq.WantReply, len(serverReq.Payload))
-
-					// Forward the request to the client channel
-					connWrapperObj, _ := c.sshChannels.Load(fmt.Sprintf("%v", serverReq.ChannelID))
-					clientCh, ok := connWrapperObj.(ssh.Channel)
-					if !ok {
-						log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
-							Warnf("local channel not found for server request")
-						continue
-					}
-					// Send the request to the client (e.g., exit-status)
-					_, err := clientCh.SendRequest(serverReq.RequestType, serverReq.WantReply, serverReq.Payload)
-					if err != nil {
-						log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
-							Debugf("failed sending server request to client: %v", err)
-					}
-
-				case sshtypes.EOFType:
-					var eof sshtypes.EOF
-					if err := sshtypes.Decode(pkt.Payload, &eof); err != nil {
-						log.With("sid", c.sid, "ch", eof.ChannelID, "conn", c.id).
-							Infof("failed decoding ssh eof, err=%v", err)
-						c.cancelFn("failed decoding ssh eof, err=%v", err)
-						return
-					}
-					obj, _ := c.sshChannels.Load(fmt.Sprintf("%v", eof.ChannelID))
-					if ch, ok := obj.(interface{ CloseWrite() error }); ok {
-						_ = ch.CloseWrite()
-					}
-
-				default:
-					c.cancelFn("received unknown ssh message type (%v)", sshtypes.DecodeType(pkt.Payload))
-					return
-				}
-
-			case pbclient.SessionOpenWaitingApproval:
-				c.cancelFn("session with review are not implemented yet, closing connection")
-				return
-
-			case pbclient.TCPConnectionClose, pbclient.SessionClose:
-				c.cancelFn("connection closed by server, payload=%v", string(pkt.Payload))
-				return
-
-			default:
-				c.cancelFn(`received invalid packet type %T`, pkt.Type)
-				return
-			}
-		}
-	}()
-
-	openSessionReadyTimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancelFn()
-
-	select {
-	case <-startupCh:
-	case <-openSessionReadyTimeout.Done():
-		c.cancelFn("session timed out before it was ready")
-	}
-}
-
-// loadPendingReplyQueue returns the pending reply queue for the channel, or nil if missing or invalid.
-func (c *sshConnection) loadPendingReplyQueue(channelID uint16) *pendingReplyQueue {
-	queueObj, ok := c.pendingRequests.Load(channelID)
-	if !ok {
-		return nil
-	}
-	queue, ok := queueObj.(*pendingReplyQueue)
-	if !ok || queue == nil {
-		return nil
-	}
-	return queue
-}
-
-func (c *sshConnection) handleServerWrite() {
-	// do not continue if the context is already done
+func (c *passwordConnection) handleServerWrite() {
 	select {
 	case <-c.ctx.Done():
 		return
@@ -632,6 +469,8 @@ func (c *sshConnection) handleServerWrite() {
 	channelID := uint16(0)
 	for newCh := range c.clientNewSshChannel {
 		channelID++
+		log.With("conn", c.id, "sid", c.sid, "ch", channelID).
+			Infof("received new channel, type=%v", newCh.ChannelType())
 		go c.handleChannel(newCh, channelID)
 	}
 	// The SSH client disconnected (clientNewSshChannel was closed).
@@ -642,146 +481,8 @@ func (c *sshConnection) handleServerWrite() {
 	c.cancelFn("ssh client disconnected")
 }
 
-func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
-	log.With("conn", c.id, "sid", c.sid, "ch", channelID).Infof("received new channel, type=%v", newCh.ChannelType())
-
-	clientCh, clientRequests, err := newCh.Accept()
-	if err != nil {
-		c.cancelFn("failed obtaining channel, err=%v", err)
-		return
+func (c *passwordConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
+	if err := c.handler.AcceptAndServe(newCh, channelID); err != nil {
+		c.cancelFn("failed handling channel, err=%v", err)
 	}
-
-	c.sshChannels.Store(fmt.Sprintf("%v", channelID), clientCh)
-
-	streamW := pb.NewStreamWriter(c.grpcClient, pbagent.SSHConnectionWrite, map[string][]byte{
-		string(pb.SpecGatewaySessionID):   []byte(c.sid),
-		string(pb.SpecClientConnectionID): []byte(c.id),
-	})
-
-	openChData := (sshtypes.OpenChannel{
-		ChannelID:        channelID,
-		ChannelType:      newCh.ChannelType(),
-		ChannelExtraData: newCh.ExtraData(),
-	}).Encode()
-
-	if _, err := streamW.Write(openChData); err != nil {
-		c.cancelFn("failed writing open channel to stream, err=%v", err)
-		return
-	}
-
-	// Copy data from client to agent. Note: We don't close clientCh here because
-	// the client may still be waiting to receive data (e.g., git clone sends a command
-	// then waits for the response). The channel will be closed when we receive
-	// a CloseChannel message from the agent.
-	c.channelWg.Add(1)
-	go func() {
-		defer c.channelWg.Done()
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := clientCh.Read(buf)
-			if n > 0 {
-				log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-					Debugf("read %d bytes from client, forwarding to agent", n)
-				data := sshtypes.Data{ChannelID: channelID, Payload: buf[:n]}
-				if _, writeErr := streamW.Write(data.Encode()); writeErr != nil {
-					c.cancelFn("failed writing client data to agent, err=%v", writeErr)
-					return
-				}
-			}
-			if readErr != nil {
-				if readErr != io.EOF {
-					log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-						Debugf("error reading from client: %v", readErr)
-				} else {
-					log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-						Debugf("client closed write side (EOF), sending EOF to agent")
-					// Signal to the agent that the client has closed its write side
-					eofData := sshtypes.EOF{ChannelID: channelID}
-					if _, writeErr := streamW.Write(eofData.Encode()); writeErr != nil {
-						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
-							Debugf("failed sending EOF to agent: %v", writeErr)
-					}
-				}
-				break
-			}
-		}
-	}()
-
-	// handle incoming requests from the client
-	c.channelWg.Add(1)
-	go func() {
-		defer c.channelWg.Done()
-		for req := range clientRequests {
-			log.With("sid", c.sid, "conn", c.id, "ch", channelID, "type", req.Type).Debug("received client ssh request")
-
-			data := (sshtypes.SSHRequest{
-				ChannelID:   channelID,
-				RequestType: req.Type,
-				WantReply:   req.WantReply,
-				Payload:     req.Payload,
-			}).Encode()
-
-			// send the request to the server
-			_, err := streamW.Write(data)
-			if err != nil {
-				c.cancelFn("failed writing to stream, err=%v", err)
-				return
-			}
-
-			// respond to the request if needed
-			if req.WantReply {
-				replyChan := make(chan bool, 1)
-				pendingReq := &pendingSSHRequest{
-					req:   req,
-					reply: replyChan,
-				}
-				v, _ := c.pendingRequests.LoadOrStore(channelID, &pendingReplyQueue{})
-				queue, ok := v.(*pendingReplyQueue)
-				if !ok || queue == nil {
-					log.With("sid", c.sid, "conn", c.id, "ch", channelID).Warnf("pending reply queue missing or invalid, skipping")
-					continue
-				}
-				queue.mu.Lock()
-				queue.pending = append(queue.pending, pendingReq)
-				queue.mu.Unlock()
-
-				// Wait for the agent's reply in a separate goroutine to avoid blocking
-				go func(clientReq *ssh.Request, chID uint16) {
-					select {
-					case <-c.ctx.Done():
-						return
-					case ok := <-replyChan:
-						if err := clientReq.Reply(ok, nil); err != nil {
-							log.With("sid", c.sid, "conn", c.id, "ch", chID, "type", clientReq.Type).
-								Debugf("failed sending response to channel, err=%v", err)
-						}
-					case <-time.After(5 * time.Second):
-						// Timeout waiting for agent reply, assume failure
-						if err := clientReq.Reply(false, nil); err != nil {
-							log.With("sid", c.sid, "conn", c.id, "ch", chID, "type", clientReq.Type).
-								Debugf("failed sending response to channel (timeout), err=%v", err)
-						}
-					}
-				}(req, channelID)
-			}
-		}
-
-		log.With("ch", channelID, "conn", c.id).Debugf("done processing ssh client requests")
-	}()
-}
-
-func parseHostsKey(privateKeyB64Enc string) (hostsKey ssh.Signer, err error) {
-	privateKeyPemBytes, err := base64.StdEncoding.DecodeString(privateKeyB64Enc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
-	}
-	privateKey, err := decodeOpenSSHPrivateKey(privateKeyPemBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
-	}
-	hostsKey, err = ssh.NewSignerFromKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create hosts key signer: %v", err)
-	}
-	return hostsKey, nil
 }

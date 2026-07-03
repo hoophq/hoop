@@ -13,12 +13,20 @@
    [webapp.resources.configure-role.credentials-tab :as credentials-tab]
    [webapp.resources.configure-role.details-tab :as details-tab]
    [webapp.resources.configure-role.native-access-tab :as native-access-tab]
-   [webapp.resources.configure-role.terminal-access-tab :as terminal-access-tab]))
+   [webapp.resources.configure-role.terminal-access-tab :as terminal-access-tab]
+   [webapp.resources.federation.events]
+   [webapp.resources.federation.subs]))
 
 (defn get-form-id
-  "Returns the form ID based on connection type"
-  [connection-type connection-subtype]
+  "Returns the form ID based on connection type and (for BigQuery) the
+   selected connection method."
+  [connection-type connection-subtype connection-method]
   (cond
+    ;; BigQuery's type is "custom", so key on the unique subtype
+    (and (= connection-subtype "bigquery")
+         (= connection-method "iam_federation"))
+    "federation-form"
+
     ;; Kubernetes Token connections
     (and (= connection-type "custom")
          (= connection-subtype "kubernetes-token"))
@@ -82,6 +90,7 @@
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:jira-templates->get-all])
     (rf/dispatch [:connections->load-metadata])
+    (rf/dispatch [:federation/consume-oauth-return])
 
     (fn []
       (let [conn-data (:data @connection)
@@ -89,9 +98,15 @@
                          (= (:status @guardrails-list) :loading)
                          (= (:status @jira-templates-list) :loading))
 
+            is-bigquery? (= (:subtype conn-data) "bigquery")
+            connection-method @(rf/subscribe [:connection-setup/connection-method])
+            federation-selected? (and is-bigquery? (= connection-method "iam_federation"))
+            ;; a federation row already exists on this connection
+            federation-configured? (some? @(rf/subscribe [:federation/data]))
+
             handle-save (fn []
                           (let [{:keys [type subtype]} conn-data
-                                form-id (get-form-id type subtype)
+                                form-id (get-form-id type subtype connection-method)
                                 form (.getElementById js/document form-id)]
 
                             (if-not form
@@ -109,13 +124,13 @@
                                         "key" (rf/dispatch [:connection-setup/update-ssh-credentials "pass" ""])
                                         nil)))
 
-                                    (let [selected-attrs @(rf/subscribe [:resources/selected-attributes])
-                                          initial-attrs  @(rf/subscribe [:resources/initial-attributes])]
-                                      (when (not= (set selected-attrs) (set initial-attrs))
-                                        (rf/dispatch [:attributes/update-for-connection
-                                                      connection-name
-                                                      selected-attrs
-                                                      initial-attrs])))
+                                  (let [selected-attrs @(rf/subscribe [:resources/selected-attributes])
+                                        initial-attrs  @(rf/subscribe [:resources/initial-attributes])]
+                                    (when (not= (set selected-attrs) (set initial-attrs))
+                                      (rf/dispatch [:attributes/update-for-connection
+                                                    connection-name
+                                                    selected-attrs
+                                                    initial-attrs])))
 
                                   (when-let [tag-key @(rf/subscribe [:connection-setup/current-key])]
                                     (when (.-value tag-key)
@@ -127,6 +142,31 @@
                                         current-env-value @(rf/subscribe [:connection-setup/env-current-value])]
                                     (when (every? not-empty [current-env-key current-env-value])
                                       (rf/dispatch [:connection-setup/add-env-row])))
+
+                                  (cond
+                                    federation-selected?
+                                    ;; mirror the federation form into the static
+                                    ;; fallback secret before the connection update
+                                    (let [fed-form @(rf/subscribe [:federation/form])]
+                                      ;; Only gcp_iam stores a service-account key that
+                                      ;; doubles as the connection's static
+                                      ;; GOOGLE_APPLICATION_CREDENTIALS fallback. gcp_oauth's
+                                      ;; admin credential is the OAuth client JSON, which must
+                                      ;; never be written as a GCP credentials file.
+                                      (when (= (:builtin_provider fed-form) "gcp_iam")
+                                        (rf/dispatch [:connection-setup/update-config-file-by-key
+                                                      "GOOGLE_APPLICATION_CREDENTIALS"
+                                                      (:admin_credentials_json fed-form)]))
+                                      (rf/dispatch [:connection-setup/update-metadata-credentials
+                                                    "CLOUDSDK_CORE_PROJECT"
+                                                    (get-in fed-form [:extra_config :project_id])])
+                                      (rf/dispatch [:federation/save connection-name]))
+
+                                    ;; switched away from IAM federation — drop the
+                                    ;; stored config so it doesn't re-select on reload
+                                    (and is-bigquery? federation-configured?)
+                                    (rf/dispatch [:federation/delete connection-name]))
+
                                   (rf/dispatch [:resources->update-role-connection
                                                 {:name connection-name
                                                  :resource-name (:resource_name conn-data)
@@ -144,6 +184,8 @@
                            (:data @guardrails-list)
                            (:data @jira-templates-list))]
             (rf/dispatch [:connection-setup/initialize-state processed])
+            (when is-bigquery?
+              (rf/dispatch [:federation/load connection-name]))
             (reset! initialized? true)))
 
         (if loading?
@@ -207,4 +249,5 @@
     (finally
       (rf/dispatch [:connection-setup/initialize-state nil])
       (rf/dispatch [:resources/clear-attributes])
-      (rf/dispatch [:connections->clear-connection-details]))))
+      (rf/dispatch [:connections->clear-connection-details])
+      (rf/dispatch [:federation/clear]))))

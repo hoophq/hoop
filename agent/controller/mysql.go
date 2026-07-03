@@ -51,10 +51,10 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
 	}
 
-	var analyzerMetricsRules string
-	if connParams.AnalyzerMetricsRules != nil {
-		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
-	}
+	// var analyzerMetricsRules string
+	// if connParams.AnalyzerMetricsRules != nil {
+	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	// }
 	opts := map[string]string{
 		"sid":                       sid,
 		"hostname":                  connenv.host,
@@ -67,7 +67,9 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
 		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
-		"analyzer_metrics_rules":    analyzerMetricsRules,
+		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
+		// on more intensive environments this is a problem, we can enable it later based on specific rules
+		// "analyzer_metrics_rules":    analyzerMetricsRules,
 		// #TODO: (chico) we are connecting with insecure true. To not introduce breaking changes, we will keep it true for now.
 		// Later we should add this to connection params and set it accordingly.
 		// and we need pass the CA cert too in case of secure connection, to verify server cert and do the tls upgrade.

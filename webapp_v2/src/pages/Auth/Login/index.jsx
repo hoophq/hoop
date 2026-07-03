@@ -14,7 +14,6 @@ import {
   Box,
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
-import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
 
@@ -51,7 +50,6 @@ function AuthCard({ children }) {
 function Login() {
   const navigate = useNavigate()
   const { setToken, getAndClearRedirectUrl, isAuthenticated } = useAuthStore()
-  const { setUser } = useUserStore()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -66,7 +64,7 @@ function Login() {
       if (redirectUrl) {
         window.location.href = redirectUrl
       } else {
-        navigate('/')
+        navigate('/client')
       }
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
@@ -86,10 +84,16 @@ function Login() {
       try {
         const serverInfo = await authService.getPublicServerInfo()
         const method = serverInfo.auth_method || 'local'
+
+        if (serverInfo.setup_required && method !== 'oidc') {
+          navigate('/setup', { replace: true })
+          return
+        }
+
         setAuthMethod(method)
 
         if (method !== 'local') {
-          redirectToIdp()
+          redirectToIdp(method)
         }
       } catch (err) {
         console.error('Failed to fetch server info:', err)
@@ -102,11 +106,14 @@ function Login() {
     fetchAuthMethod()
   }, [isAuthenticated])
 
-  const redirectToIdp = async (options = {}) => {
+  const redirectToIdp = async (method, options = {}) => {
     setLoading(true)
     try {
       const callbackUrl = `${window.location.origin}/auth/callback`
-      const loginUrl = await authService.getLoginUrl(callbackUrl, options)
+      const loginUrl =
+        method === 'saml'
+          ? await authService.getSamlLoginUrl(callbackUrl, options)
+          : await authService.getLoginUrl(callbackUrl, options)
       window.location.replace(loginUrl)
     } catch (err) {
       setError('Failed to initialize login')
@@ -120,16 +127,16 @@ function Login() {
     setLoading(true)
 
     try {
-      const { token, user } = await authService.loginLocal(email, password)
+      const { token } = await authService.loginLocal(email, password)
       setToken(token)
-      setUser(user)
 
       const redirectUrl = getAndClearRedirectUrl()
       if (redirectUrl) {
         window.location.href = redirectUrl
-      } else {
-        navigate('/')
+        return
       }
+
+      navigate('/client')
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid email or password')
     } finally {
@@ -165,7 +172,7 @@ function Login() {
         <Alert color="red" mb="md">
           {error}
         </Alert>
-        <Button fullWidth onClick={() => redirectToIdp({ promptLogin: true })} loading={loading}>
+        <Button fullWidth onClick={() => redirectToIdp(authMethod, { promptLogin: true })} loading={loading}>
           Try again
         </Button>
       </AuthCard>

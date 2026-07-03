@@ -268,7 +268,7 @@ func sessionsGetAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, arg
 	})
 }
 
-func sessionsWaitAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsWaitAnalysisInput) (*mcp.CallToolResult, any, error) {
+func sessionsWaitAnalysisHandler(ctx context.Context, req *mcp.CallToolRequest, args sessionsWaitAnalysisInput) (*mcp.CallToolResult, any, error) {
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
@@ -295,14 +295,16 @@ func sessionsWaitAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, ar
 		return sessionsWaitAnalysisResult(initial, false, 0), nil, nil
 	}
 
-	sess, timedOut, waited, err := waitUntil(ctx, resolveWaitTimeout(args.TimeoutSeconds),
+	timeout := resolveWaitTimeout(args.TimeoutSeconds)
+	sess, timedOut, waited, err := waitUntil(ctx, timeout,
 		func() (*models.Session, bool, error) {
 			s, err := models.GetSessionByID(sc.OrgID, args.ID)
 			if err != nil {
 				return nil, false, err
 			}
 			return s, s.AIAnalysis != nil, nil
-		})
+		},
+		newWaitHeartbeat(ctx, req, timeout))
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if sess == nil {

@@ -19,7 +19,8 @@ import {
   WandSparkles,
   Layers,
   KeyRound,
-  Webhook
+  Webhook,
+  Bot
 } from 'lucide-react';
 import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
@@ -31,7 +32,6 @@ export const MAIN_ITEMS = [
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false },
   { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false },
-  { label: 'Provisioning', path: '/provisioning', icon: Boxes, adminOnly: true },
   {
     label: 'Search',
     icon: Search,
@@ -43,21 +43,21 @@ export const MAIN_ITEMS = [
 ]
 
 export const DISCOVER_ITEMS = [
+  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true },
   { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true },
   { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true },
   {
     label: 'Event Routing',
     path: '/features/event-routing',
     icon: Webhook,
-    adminOnly: true,
-    featureFlag: 'experimental.event_routing',
-    badge: { text: 'BETA', color: 'indigo' }
+    adminOnly: true
   },
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true },
   { label: 'Jira Templates', path: '/jira-templates', icon: Layers, adminOnly: true },
   { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true },
-  { label: 'AI Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
+  { label: 'Live Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
   { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true },
+  { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true },
   {
     label: 'Rulepacks',
     path: '/rulepacks',

@@ -29,6 +29,15 @@
   [array]
   (mapv #(into {} {"value" % "label" (s/lower-case (s/replace % #"_" " "))}) array))
 
+(defn base64-encode
+  "Base64-encodes a string. `js/btoa` only accepts Latin1, so we first
+   percent-encode to UTF-8 bytes and map them into the Latin1 range. The
+   output is identical to plain btoa for ASCII input, and correct for any
+   UTF-8 content (e.g. a pasted service-account JSON), which the Go backend
+   decodes as UTF-8 bytes."
+  [s]
+  (js/btoa (js/unescape (js/encodeURIComponent s))))
+
 (defn config->json
   "Converts configuration maps to a JSON format with prefixed keys.
    Takes a vector of config maps with :key and :value and a prefix string.
@@ -46,7 +55,7 @@
                       final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
                                     (str value "\n")
                                     value)]
-                  {prefixed-key (js/btoa final-value)})))
+                  {prefixed-key (base64-encode final-value)})))
          (reduce into {}))))
 
 (def testable-connection-types
@@ -101,9 +110,11 @@
 
 (defn can-access-native-client?
   "Check if a role/connection can access native client based on subtype and access mode"
-  [{:keys [access_mode_connect] :as role}]
+  [{:keys [access_mode_connect subtype] :as role} postgres-proxy-enabled?]
   (and (= "enabled" access_mode_connect)
-       (native-subtype? role)))
+       (native-subtype? role)
+       (or (not= subtype "postgres")
+           postgres-proxy-enabled?)))
 
 (defn get-secret-prefix
   "Returns the prefix string for a given secret source or provider."

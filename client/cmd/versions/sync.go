@@ -73,6 +73,16 @@ This usually means you're connected to a local development build that wasn't sta
   - To install the latest published release instead, run `+"`hoop versions upgrade`"+`.`,
 			apiURL, target)
 
+	case errors.Is(err, upgrade.ErrBelowWindowsFloor):
+		winFloor := upgrade.MinInstallableVersionWindows[1:] // strip leading "v"
+		return fmt.Errorf(`the gateway at %s is on version %s, but `+"`hoop versions`"+` only supports Windows from %s onward.
+Hoop CLIs older than %s don't manage themselves correctly on Windows, so a matching CLI can't be installed for you here.
+
+What to do:
+  - recommended: upgrade the gateway to %s or newer, then re-run `+"`hoop versions sync`"+`.
+  - manual: download a Windows build of hoop %s by hand from https://github.com/hoophq/hoop/releases. That CLI won't be able to self-manage on Windows, so future version changes will also need to be done by hand.`,
+			apiURL, target, winFloor, winFloor, winFloor, target)
+
 	case errors.Is(err, upgrade.ErrBelowFloor):
 		return fmt.Errorf(`the gateway at %s is on version %s, but the `+"`hoop versions sync`"+` command was only introduced in %s.0.
 Hoop CLIs older than %s.0 don't ship this command, so it can't install a matching CLI for you.

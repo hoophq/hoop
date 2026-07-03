@@ -66,6 +66,25 @@ func ArtifactName(version string, p Platform) string {
 	return fmt.Sprintf("hoop_%s_%s.tar.gz", version, p)
 }
 
+// ExecutableName returns the hoop executable filename packaged inside the
+// release artifact for this platform. Windows binaries carry a .exe
+// suffix because the Go toolchain appends it for GOOS=windows builds, so
+// the Windows tarball contains hoop.exe rather than hoop.
+func (p Platform) ExecutableName() string {
+	return executableName(p.OS == "Windows")
+}
+
+// executableName is the single source of truth for the OS-dependent hoop
+// binary filename. It is shared by Platform.ExecutableName (which keys off
+// the release OS label) and the host-side layout (which keys off
+// runtime.GOOS) so the two can never drift.
+func executableName(windows bool) string {
+	if windows {
+		return "hoop.exe"
+	}
+	return "hoop"
+}
+
 // ArtifactURL returns the full https URL for the release tarball.
 func ArtifactURL(version string, p Platform) string {
 	return fmt.Sprintf("%s/%s/%s", ReleasesBaseURL, version, ArtifactName(version, p))

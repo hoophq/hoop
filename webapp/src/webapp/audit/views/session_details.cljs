@@ -133,7 +133,7 @@
     current-path (.-pathname (.-location js/window))
     is-dedicated-page? (cs/starts-with? current-path "/sessions/")
     ;; tracks the session id we have an SSE subscription open for, so we
-    ;; can subscribe exactly once per machine session and clean up on close
+    ;; can subscribe exactly once per live session and clean up on close
     subscribed-id (r/atom nil)]
 
     (rf/dispatch [:gateway->get-info])
@@ -161,24 +161,25 @@
                   (rf/dispatch [:connections->get-connection-details connection-name]))
               ready? (= (:status session) "ready")
               open? (= (:status session) "open")
-              machine-session? (= (:identity_type session) "machine")
-              live-machine? (and machine-session? open? (:id session))
-              ;; Use the live tail for every machine session — it gives a
-              ;; readable, terminal-style view of the SQL stream, decoded
-              ;; client-side. The same component handles both the raw wire
-              ;; frames pushed via SSE and the pre-decoded SQL the backend
-              ;; returns for finished sessions via `?event_stream=raw-queries`.
-              show-live-tail? machine-session?
+              ;; Interactive connect-verb sessions (postgres/ssh/tcp/http-proxy/…)
+              ;; stream their audit events; exec/runbook keep their table views.
+              connect? (= (:verb session) "connect")
+              live? (and connect? open? (:id session))
+              postgres? (= connection-subtype "postgres")
+              ;; Live tail only for live sessions and finished postgres; other
+              ;; finished sessions keep their native renderer (Logs+Video, RDP,
+              ;; raw), else a terminal renders one keystroke per row.
+              show-live-tail? (and connect? (or live? postgres?))
               ;; Open/close SSE subscription as the live state changes
               _ (cond
-                  (and live-machine? (not= @subscribed-id (:id session)))
+                  (and live? (not= @subscribed-id (:id session)))
                   (do
                     (when @subscribed-id
                       (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id]))
                     (reset! subscribed-id (:id session))
                     (rf/dispatch [:audit->session-stream-subscribe (:id session)]))
 
-                  (and (not live-machine?) @subscribed-id)
+                  (and (not live?) @subscribed-id)
                   (do
                     (rf/dispatch [:audit->session-stream-unsubscribe @subscribed-id])
                     (reset! subscribed-id nil)))
@@ -342,10 +343,8 @@
                  (= (:status @session-details) :loading)
                  [loading-player]
 
-                 ;; Machine session — dedicated terminal-style view that
-                 ;; renders decoded SQL (both the live SSE wire frames and
-                 ;; the historical pre-decoded queries) instead of the
-                 ;; expand/collapse list.
+                 ;; Live sessions and finished postgres: terminal-style tail.
+                 ;; Other finished sessions fall through to their native renderer.
                  show-live-tail?
                  [session-live-tail/main session]
 

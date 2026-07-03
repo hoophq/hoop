@@ -207,6 +207,58 @@ type APIKeyResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+type AIAgentStatusType string
+
+const (
+	AIAgentStatusActive  AIAgentStatusType = "active"
+	AIAgentStatusRevoked AIAgentStatusType = "revoked"
+)
+
+type AIAgentCreateRequest struct {
+	// Human-readable name for the AI Agent
+	Name string `json:"name" binding:"required" example:"claude-ops"`
+	// Groups to assign to this AI Agent
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type AIAgentCreateResponse struct {
+	AIAgentResponse
+	// The generated AI Agent key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
+}
+
+type AIAgentUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"claude-prod"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type AIAgentResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"ai-agent"`
+	// Masked version of the AI Agent key for identification
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
+	// Current status of the AI Agent
+	Status AIAgentStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this AI Agent
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this agent
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this agent
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
 // agent plus a set of groups that feed into RBAC on authentication.
 //
@@ -1257,6 +1309,8 @@ type ServerInfo struct {
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
 	// Report if SSH_CLIENT_HOST_KEY is set
 	HasSSHClientHostKey bool `json:"has_ssh_client_host_key"`
+	// Report if the Postgres proxy server has a listen address configured
+	PostgresProxyEnabled bool `json:"postgres_proxy_enabled"`
 	// API_URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
@@ -2000,13 +2054,17 @@ type ConnectionFederationConfig struct {
 	// built-in resolver category ships today; the field is preserved so new
 	// sources can be added without breaking existing configurations.
 	HookSource string `json:"hook_source" enums:"builtin" example:"builtin" binding:"required"`
-	// BuiltinProvider is required when HookSource=builtin. Only "gcp_iam"
-	// ships today.
-	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam" example:"gcp_iam"`
-	// AdminCredentialsJSON is the plaintext admin credential blob (for
-	// builtin/gcp_iam: the admin service account JSON). Write-only — never
-	// returned on GET. Required on the initial POST when HookSource=builtin;
-	// optional on PUT (omitting it leaves the stored value unchanged).
+	// BuiltinProvider is required when HookSource=builtin. "gcp_iam"
+	// impersonates a per-user service account via an admin SA key; "gcp_oauth"
+	// mints tokens from a per-user Google OAuth refresh token (no service
+	// accounts).
+	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam,gcp_oauth" example:"gcp_iam"`
+	// AdminCredentialsJSON is the plaintext admin credential blob. Its shape is
+	// provider-specific: for gcp_iam it is the admin service-account JSON; for
+	// gcp_oauth it is the OAuth client config JSON ({"client_id":"...",
+	// "client_secret":"..."}). Write-only — never returned on GET. Required on
+	// the initial POST when HookSource=builtin; optional on PUT (omitting it
+	// leaves the stored value unchanged).
 	AdminCredentialsJSON string `json:"admin_credentials_json,omitempty"`
 	// HasAdminCredentials is server-set on GET responses to let the UI know
 	// whether a credential is stored without exposing its value.
@@ -2017,11 +2075,10 @@ type ConnectionFederationConfig struct {
 	// IdentityTargetTemplate is the principal template the source attribute
 	// substitutes into (defaults to "{user.email}").
 	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
-	// FallbackPolicy controls behavior when resolution fails.
-	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
-	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
-	// the impersonation target on the fallback path.
-	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// FallbackPolicy controls behavior when resolution fails. "deny" aborts
+	// the session; "static" skips federation and lets the session run on the
+	// connection's existing static credentials.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,static" example:"deny"`
 	// TokenTTLSeconds caps the lifetime of generated credentials (default
 	// 3600, max 43200). Built-in providers may clamp lower based on cloud
 	// API limits.
@@ -2137,6 +2194,83 @@ type FederationTestResponse struct {
 	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
 }
 
+// FederationOAuthAuthorizeResponse is returned by the gcp_oauth consent
+// authorize endpoint. The client should redirect the browser to URL; after the
+// user approves, Google redirects back to the gateway callback which stores the
+// resulting refresh token.
+type FederationOAuthAuthorizeResponse struct {
+	// URL is the Google OAuth consent URL to redirect the user's browser to.
+	URL string `json:"url" example:"https://accounts.google.com/o/oauth2/auth?client_id=...&state=..."`
+}
+
+// FederationOAuthStatusResponse reports, for the authenticated user, whether
+// they have connected a per-user account for a federated connection. Clients
+// use it to decide whether to prompt the user to connect before running.
+type FederationOAuthStatusResponse struct {
+	// Provider is the connection's configured federation provider
+	// (e.g. "gcp_oauth", "gcp_iam"), or empty when the connection has no
+	// federation configured. Only gcp_oauth requires a per-user connection.
+	Provider string `json:"provider" example:"gcp_oauth"`
+	// Connected is true when the user has a stored credential for this
+	// connection. Always false for providers that are not per-user.
+	Connected bool `json:"connected" example:"false"`
+	// GoogleEmail is the consented Google identity, present only when
+	// Connected is true for gcp_oauth.
+	GoogleEmail string `json:"google_email,omitempty" example:"alice@example.com"`
+}
+
+// MCPOAuthAuthorizeRequest starts the OAuth login flow for an "mcp" httpproxy
+// connection. ServerURL is the MCP endpoint (the OAuth protected resource).
+// ClientID/ClientSecret are optional: when both are empty the gateway performs
+// Dynamic Client Registration (RFC 7591) against the discovered authorization
+// server.
+type MCPOAuthAuthorizeRequest struct {
+	// ServerURL is the MCP endpoint to authorize against (the OAuth resource).
+	ServerURL string `json:"server_url" binding:"required" example:"https://mcp.figma.com/mcp"`
+	// ClientID is an optional pre-registered OAuth client id. When empty the
+	// gateway registers a client dynamically.
+	ClientID string `json:"client_id,omitempty"`
+	// ClientSecret is an optional pre-registered OAuth client secret, paired
+	// with ClientID.
+	ClientSecret string `json:"client_secret,omitempty"`
+	// Scopes is an optional space-delimited scope string. When empty the
+	// scopes advertised by the authorization server are requested.
+	Scopes string `json:"scopes,omitempty" example:"openid profile"`
+}
+
+// MCPOAuthAuthorizeResponse is returned by the MCP OAuth authorize endpoint.
+// The client should open AuthorizationURL in the browser; after login the
+// provider redirects back to the gateway callback, which exchanges the code
+// for a token. The create page then redeems the token with FlowID.
+type MCPOAuthAuthorizeResponse struct {
+	// AuthorizationURL is the upstream OAuth authorization URL to open.
+	AuthorizationURL string `json:"authorization_url" example:"https://www.figma.com/oauth?client_id=...&state=..."`
+	// FlowID identifies this login flow; used to redeem the token afterwards.
+	FlowID string `json:"flow_id" example:"7c8a1234-5678-9abc-def0-123456789abc"`
+}
+
+// MCPOAuthTokenResponse carries the access token obtained by a completed MCP
+// OAuth login. AuthorizationHeader is the ready-to-use value for the
+// connection's HEADER_AUTHORIZATION configuration. The token is returned at
+// most once: the flow is consumed on read.
+type MCPOAuthTokenResponse struct {
+	// AccessToken is the OAuth access token.
+	AccessToken string `json:"access_token"`
+	// TokenType is the OAuth token type (typically "Bearer").
+	TokenType string `json:"token_type" example:"Bearer"`
+	// AuthorizationHeader is the full "<TokenType> <AccessToken>" value to set
+	// as HEADER_AUTHORIZATION on the connection.
+	AuthorizationHeader string `json:"authorization_header" example:"Bearer eyJ..."`
+	// RefreshToken is the OAuth refresh token, when the provider returned one.
+	RefreshToken string `json:"refresh_token,omitempty"`
+	// ExpiresIn is the access token lifetime in seconds, when known.
+	ExpiresIn int64 `json:"expires_in,omitempty" example:"3600"`
+	// ClientID is the OAuth client id used (relevant when registered dynamically).
+	ClientID string `json:"client_id,omitempty"`
+	// ServerURL echoes the authorized MCP endpoint.
+	ServerURL string `json:"server_url" example:"https://mcp.figma.com/mcp"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
@@ -2150,11 +2284,30 @@ type ServerMiscConfig struct {
 	HttpProxyServerConfig *HttpProxyServerConfig `json:"http_proxy_server_config"`
 }
 
+// SSHUserMapping configures which certificate attribute is matched against
+// which Hoop user attribute to authorize certificate-based SSH connections.
+// Required when trusted_cas is set.
+type SSHUserMapping struct {
+	// CertAttribute is the certificate field used for the lookup.
+	// "principal" checks all ValidPrincipals; the first match wins.
+	// "key_id" uses the certificate's KeyId field.
+	CertAttribute string `json:"cert_attr" enums:"principal,key_id" example:"principal"`
+	// UserAttribute is the Hoop user table column matched against the cert value.
+	UserAttribute string `json:"user_attr" enums:"email,subject,user_id" example:"email"`
+}
+
 type SSHServerConfig struct {
 	// The listen address to run the SSH server proxy
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222"`
 	// The hosts key used for SSH connections
 	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
+	// TrustedCAs is the list of trusted SSH CA public keys in authorized_keys
+	// format. When non-empty, the server accepts certificate authentication.
+	// UserMapping is required when TrustedCAs is set.
+	TrustedCAs []string `json:"trusted_cas,omitempty" example:"ssh-ed25519 AAAA..."`
+	// UserMapping is required when TrustedCAs is configured. It defines how
+	// the certificate is matched against a Hoop user.
+	UserMapping *SSHUserMapping `json:"user_mapping,omitempty"`
 }
 
 type RDPServerConfig struct {
@@ -2272,8 +2425,10 @@ type ConnectionCredentialsResponse struct {
 	HasReview bool `json:"has_review" example:"false"`
 	// The review ID if review is required
 	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
-	// When the database access connection expires
-	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the database access connection expires. Null when the credential
+	// has no expiration (persistent native-client credentials issued without
+	// access_duration_seconds).
+	ExpireAt *time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 }
@@ -2314,6 +2469,14 @@ type HttpProxyConnectionInfo struct {
 	ProxyToken string `json:"proxy_token"`
 	// The command to access the HTTP proxy instance
 	Command string `json:"command"`
+	// VertexProjectID is set only for claude-code connections federated to
+	// Google Vertex AI (experimental.claude_code_vertex). It is the GCP project
+	// `hoop claude configure` writes to ANTHROPIC_VERTEX_PROJECT_ID so Claude
+	// Code runs in Vertex mode against the hoop proxy. Empty otherwise.
+	VertexProjectID string `json:"vertex_project_id,omitempty"`
+	// VertexRegion is the GCP region (CLOUD_ML_REGION) for the Vertex-federated
+	// claude-code connection. Empty for non-Vertex connections.
+	VertexRegion string `json:"vertex_region,omitempty"`
 }
 
 type PostgresConnectionInfo struct {

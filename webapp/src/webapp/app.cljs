@@ -9,10 +9,6 @@
    [re-frame.core :as rf]
    [webapp.agents.new :as create-agent]
    [webapp.agents.panel :as agents]
-   [webapp.ai-data-masking.create-update-form :as ai-data-masking-create-update]
-   [webapp.ai-data-masking.events]
-   [webapp.ai-data-masking.main :as ai-data-masking]
-   [webapp.ai-data-masking.subs]
    [webapp.audit.views.main :as audit]
    [webapp.audit.views.session-details :as session-details]
    [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
@@ -37,6 +33,8 @@
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
+   [webapp.resources.setup.events.mcp-oauth]
+   [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.setup.guardrails-suggestions.events]
    [webapp.resources.setup.guardrails-suggestions.subs]
    [webapp.resources.main :as resources-main]
@@ -125,8 +123,6 @@
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
-   [webapp.setup.main :as setup]
-   [webapp.setup.events]
    [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
@@ -369,9 +365,6 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
-
-(defmethod routes/panels :setup-panel []
-  [layout :auth [setup/main]])
 
 (defmethod routes/panels :onboarding-panel []
   [layout :auth [onboarding/main]])
@@ -732,31 +725,6 @@
       [routes/wrap-admin-only
        [runbook-rule-form/main :edit {:rule-id rule-id}]]]]))
 
-(defmethod routes/panels :ai-data-masking-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-admin-only
-    [ai-data-masking/main]]])
-
-(defmethod routes/panels :create-ai-data-masking-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (rf/dispatch [:ai-data-masking->clear-active-rule])
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [ai-data-masking-create-update/main :create]]]])
-
-(defmethod routes/panels :edit-ai-data-masking-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        ai-data-masking-id (:ai-data-masking-id (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:ai-data-masking->get-by-id ai-data-masking-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [ai-data-masking-create-update/main :edit]]]]))
-
 (defmethod routes/panels :ai-session-analyzer-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
@@ -867,13 +835,6 @@
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
-
-        (and (-> @gateway-public-info :data :setup_required)
-             (not= (-> @gateway-public-info :data :auth_method) "oidc")
-             (not= @active-panel :setup-panel))
-        (do
-          (rf/dispatch [:navigate :setup])
-          [loading-transition])
 
         :else
         [theme-provider

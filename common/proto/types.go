@@ -52,6 +52,28 @@ type (
 		DataMaskingEntityTypesData json.RawMessage
 		GuardRailRules             json.RawMessage
 		AnalyzerMetricsRules       json.RawMessage
+
+		// AISessionAnalyzer carries the per-connection AI risk analyzer
+		// configuration resolved by the gateway. It is nil when the connection
+		// has no analyzer rule or the org has no AI provider configured, in
+		// which case the agent skips analysis entirely.
+		AISessionAnalyzer *AISessionAnalyzerParams
+	}
+
+	// AISessionAnalyzerParams is the resolved AI session analyzer configuration
+	// shipped from the gateway to the agent so the agent's HTTP proxy can
+	// classify and enforce requests inline. The risk-tier actions are resolved
+	// strings (allow_execution / block_execution / require_access_request).
+	AISessionAnalyzerParams struct {
+		RuleName         string
+		Provider         string
+		APIURL           string
+		APIKey           string
+		Model            string
+		CustomPrompt     string
+		LowRiskAction    string
+		MediumRiskAction string
+		HighRiskAction   string
 	}
 
 	// TODO: remove it later, kept for compatibility issues
@@ -167,6 +189,82 @@ func (s *streamWriter) SendSessionClose(errMsg string) error {
 		Payload: errPayload,
 		Spec:    spec,
 	})
+}
+
+// chunkedWriter wraps an io.Writer and splits each Write call into sub-writes no
+// larger than maxChunkSize. It lets byte-stream protocols (e.g. the HTTP proxy)
+// emit arbitrarily large payloads without producing a single gRPC message that
+// exceeds the transport receive limit (common/grpc.MaxRecvMsgSize), which would
+// otherwise be rejected with a ResourceExhausted error.
+//
+// It must NOT be used for message-framed protocols (Postgres, MySQL, MongoDB,
+// MSSQL): splitting one protocol message across packets would corrupt the
+// gateway's per-message audit recording, query parsing and DLP/guardrails, all
+// of which assume one packet equals one complete protocol message.
+//
+// The wrapper transparently forwards the underlying writer's Close and
+// SendSessionClose behaviors so wrapping a streamWriter does not disable the
+// session-close error reporting libhoop relies on for guardrail violations.
+type chunkedWriter struct {
+	w            io.Writer
+	maxChunkSize int
+}
+
+// NewChunkedWriter returns an io.WriteCloser that caps each underlying Write at
+// maxChunkSize bytes. A non-positive maxChunkSize disables chunking (writes pass
+// through unchanged).
+func NewChunkedWriter(w io.Writer, maxChunkSize int) io.WriteCloser {
+	return &chunkedWriter{w: w, maxChunkSize: maxChunkSize}
+}
+
+func (c *chunkedWriter) Write(p []byte) (int, error) {
+	if c.maxChunkSize <= 0 || len(p) <= c.maxChunkSize {
+		return c.w.Write(p)
+	}
+	written := 0
+	for len(p) > 0 {
+		n := len(p)
+		if n > c.maxChunkSize {
+			n = c.maxChunkSize
+		}
+		nw, err := c.w.Write(p[:n])
+		written += nw
+		if err != nil {
+			return written, err
+		}
+		if nw < n {
+			return written, io.ErrShortWrite
+		}
+		p = p[n:]
+	}
+	return written, nil
+}
+
+func (c *chunkedWriter) Close() error {
+	if wc, ok := c.w.(io.Closer); ok {
+		return wc.Close()
+	}
+	return nil
+}
+
+// SendSessionClose forwards to the underlying writer when it implements the
+// SessionCloser contract, preserving libhoop's ability to report guardrail
+// errors (e.g. on WebSocket streams) through the stream.
+func (c *chunkedWriter) SendSessionClose(errMsg string) error {
+	if sc, ok := c.w.(SessionCloser); ok {
+		return sc.SendSessionClose(errMsg)
+	}
+	return nil
+}
+
+// AddSpecVal forwards spec metadata to the underlying writer when it supports
+// it. libhoop attaches per-request metadata (e.g. the AI session analyzer
+// verdict) through this contract, so without forwarding it the metadata would
+// never reach the gateway on the response packets.
+func (c *chunkedWriter) AddSpecVal(key string, val []byte) {
+	if sw, ok := c.w.(interface{ AddSpecVal(string, []byte) }); ok {
+		sw.AddSpecVal(key, val)
+	}
 }
 
 func GobEncode(data any) ([]byte, error) {

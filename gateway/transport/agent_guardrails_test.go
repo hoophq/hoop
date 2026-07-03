@@ -61,6 +61,110 @@ func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
 	}
 }
 
+func TestConnectionTypeSupportsGuardRails(t *testing.T) {
+	supported := []pb.ConnectionType{
+		pb.ConnectionTypePostgres,
+		pb.ConnectionTypeOracleDB,
+		pb.ConnectionTypeHttpProxy,
+		pb.ConnectionTypeSSH,
+		pb.ConnectionTypeCommandLine,
+	}
+	for _, ct := range supported {
+		if !connectionTypeSupportsGuardRails(ct) {
+			t.Errorf("expected connection type %q to support guardrails", ct)
+		}
+	}
+
+	// MySQL, MSSQL and MongoDB proxies do not evaluate guardrails yet, so a
+	// guarded session of these types must be refused (fail closed), not run
+	// unguarded (DEP-48).
+	unsupported := []pb.ConnectionType{
+		pb.ConnectionTypeMySQL,
+		pb.ConnectionTypeMSSQL,
+		pb.ConnectionTypeMongoDB,
+		pb.ConnectionTypeTCP,
+	}
+	for _, ct := range unsupported {
+		if connectionTypeSupportsGuardRails(ct) {
+			t.Errorf("expected connection type %q to NOT support guardrails", ct)
+		}
+	}
+}
+
+func TestEncodeGuardRailRules(t *testing.T) {
+	t.Run("nil rules yield no payload", func(t *testing.T) {
+		payload, err := encodeGuardRailRules(nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if payload != nil {
+			t.Fatalf("expected nil payload, got %q", string(payload))
+		}
+	})
+
+	// services.GetGuardRailRulesForConnection fabricates "[]" rule sets for
+	// connections WITHOUT guardrails. These must not produce a payload —
+	// otherwise the fail-closed admission check (DEP-48) refuses ruleless
+	// sessions on types without guardrail enforcement.
+	t.Run("fabricated empty-array rules yield no payload", func(t *testing.T) {
+		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
+			GuardRailInputRules:  []byte("[]"),
+			GuardRailOutputRules: []byte("[]"),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if payload != nil {
+			t.Fatalf("expected nil payload for empty rules, got %q", string(payload))
+		}
+	})
+
+	t.Run("absent rule columns yield no payload", func(t *testing.T) {
+		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if payload != nil {
+			t.Fatalf("expected nil payload, got %q", string(payload))
+		}
+	})
+
+	t.Run("real rules yield a payload", func(t *testing.T) {
+		inputRules := []byte(`[{"items":[{"type":"deny_words_list","words":["DENYWORD"]}]}]`)
+		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
+			GuardRailInputRules:  inputRules,
+			GuardRailOutputRules: []byte("[]"),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payload) == 0 {
+			t.Fatal("expected non-empty payload")
+		}
+		var decoded struct {
+			InputRules  []json.RawMessage `json:"input_rules"`
+			OutputRules []json.RawMessage `json:"output_rules"`
+		}
+		if err := json.Unmarshal(payload, &decoded); err != nil {
+			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(decoded.InputRules) != 1 {
+			t.Fatalf("expected 1 input rule, got %d", len(decoded.InputRules))
+		}
+		if len(decoded.OutputRules) != 0 {
+			t.Fatalf("expected no output rules, got %d", len(decoded.OutputRules))
+		}
+	})
+
+	t.Run("invalid rules yield an error", func(t *testing.T) {
+		if _, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
+			GuardRailInputRules: []byte("{bad-json"),
+		}); err == nil {
+			t.Fatal("expected error for invalid rules JSON")
+		}
+	})
+}
+
 func TestBuildLegacyGuardRailErrorMessage_InvalidPayload(t *testing.T) {
 	msg, ok := buildLegacyGuardRailErrorMessage([]byte("{bad-json"))
 	if ok || msg != "" {

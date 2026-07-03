@@ -1,0 +1,126 @@
+.shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dark gradient marketing panel — branded surface that cannot be
+   expressed via Mantine palette tokens (mirrors the legacy CLJS design). */
+.leftPanel {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-lg);
+  padding: var(--mantine-spacing-xxlAlt) var(--mantine-spacing-xl);
+  min-height: 620px;
+  background: linear-gradient(135deg, #0d1729 0%, #182449 35%, #1e2e5a 70%, #243570 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.leftPanel::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -10%;
+  width: 70%;
+  height: 160%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, var(--mantine-color-gray-7) 0%, transparent 70%);
+  opacity: 0.1;
+}
+
+.leftPanel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.eyebrow {
+  letter-spacing: 0.14em;
+}
+
+.gatewayOnline {
+  letter-spacing: 0.08em;
+}
+
+.heroHeading {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  max-width: 340px;
+  letter-spacing: -0.025em;
+}
+
+.heroBody {
+  max-width: 340px;
+}
+
+.dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  background: var(--mantine-color-gray-7);
+}
+
+.brandsDivider {
+  border-bottom: 1px solid var(--mantine-color-gray-8);
+  padding-bottom: var(--mantine-spacing-md);
+  margin-bottom: var(--mantine-spacing-md);
+}
+
+.blockquote {
+  margin: 0;
+  padding-left: var(--mantine-spacing-md);
+  border-left: 2px solid var(--mantine-color-gray-4);
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-md);
+  color: var(--mantine-color-gray-4);
+}
+
+.statusDivider {
+  flex: 1;
+  height: 1px;
+  background: var(--mantine-color-gray-8);
+}
+
+.pulseDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mantine-color-gray-4);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Right-hand form panel */
+.rightPanel {
+  border-radius: var(--mantine-radius-lg);
+  border: 1px solid var(--mantine-color-gray-3);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.formHeading {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+
+/* Password strength meter — 4 segmented bars driven by [data-active]. */
+.strengthBar {
+  flex: 1;
+  height: 2px;
+  border-radius: var(--mantine-radius-xs);
+  background: var(--mantine-color-gray-3);
+  transition: background 150ms ease;
+}
+
+.strengthBar[data-active='true'] {
+  background: var(--mantine-color-gray-9);
+}

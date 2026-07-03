@@ -144,7 +144,7 @@
                      :on-click #(rf/dispatch [:navigate :configure-resource {} :resource-id (:name resource)])}
           "Configure"])]))])
 
-(defn roles-list-content [connections-data user test-connection-state display-name-map]
+(defn roles-list-content [connections-data user test-connection-state display-name-map postgres-proxy-enabled?]
   [:ul {:role "list" :class "list-none m-0 p-0"}
    (doall
     (for [connection connections-data]
@@ -193,7 +193,7 @@
                "Open in Web Terminal"])
 
             (when (and (can-hoop-cli? connection)
-                       (not (can-access-native-client? connection)))
+                       (not (can-access-native-client? connection postgres-proxy-enabled?)))
               [:> DropdownMenu.Item {:on-click
                                      #(rf/dispatch [:modal->open
                                                     {:content [hoop-cli-modal/main (:name connection)]
@@ -201,7 +201,7 @@
                                                      :class "overflow-hidden"}])}
                "Open with Hoop CLI"])
 
-            (when (can-access-native-client? connection)
+            (when (can-access-native-client? connection postgres-proxy-enabled?)
               [:> DropdownMenu.Item {:on-click
                                      #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
                "Open in Native Client"])
@@ -262,7 +262,8 @@
         selected-resource (r/atom nil)
         selected-attribute (r/atom nil)
         search-debounce-timer (r/atom nil)
-        connections-metadata (rf/subscribe [:connections->metadata])]
+        connections-metadata (rf/subscribe [:connections->metadata])
+        gateway-info (rf/subscribe [:gateway->info])]
 
     ;; Initial load
     (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
@@ -279,6 +280,7 @@
     (fn []
       (let [resources-state @resources
             connections-state @connections
+            postgres-proxy-enabled? (get-in @gateway-info [:data :postgres_proxy_enabled])
             resource-names (resource-name-map @connections-metadata)
             resources-data (:data resources-state)
             connections-data (:data connections-state)
@@ -371,9 +373,14 @@
                                                "Search roles")
                                  :value @search-name
                                  :onChange (fn [e]
-                                             (let [value (-> e .-target .-value)
+                                             (let [input (.-target e)
+                                                   caret-start (.-selectionStart input)
+                                                   caret-end (.-selectionEnd input)
+                                                   value (.-value input)
                                                    trimmed (cs/trim value)]
                                                (reset! search-name value)
+                                               (r/flush)
+                                               (.setSelectionRange input caret-start caret-end)
                                                (when @search-debounce-timer
                                                  (js/clearTimeout @search-debounce-timer))
                                                (when (or (cs/blank? trimmed) (> (count trimmed) 2))
@@ -513,7 +520,7 @@
              ;; Content
              :else
              [:> Box {:class "flex-1"}
-              [roles-list-content connections-data @user @test-connection-state resource-names]
+              [roles-list-content connections-data @user @test-connection-state resource-names postgres-proxy-enabled?]
               (when (:has-more? connections-state)
                 [infinite-scroll
                  {:on-load-more (fn []

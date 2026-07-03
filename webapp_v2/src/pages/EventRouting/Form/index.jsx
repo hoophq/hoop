@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Navigate, useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import { Anchor, Box, Card, Grid, Group, Stack, Text, Title } from "@mantine/core"
 import { useInViewport } from "@mantine/hooks"
 import { notifications } from "@mantine/notifications"
@@ -11,11 +11,8 @@ import Radio from "@/components/Radio"
 import Select from "@/components/Select"
 import TextInput from "@/components/TextInput"
 import Textarea from "@/components/Textarea"
-import { useUserStore } from "@/stores/useUserStore"
 import { useEventRoutingStore } from "../store"
 import EventDescription from "../components/EventDescription"
-
-const FEATURE_FLAG = "experimental.event_routing"
 
 function extractRepoName(repository) {
   if (!repository) return ""
@@ -59,9 +56,6 @@ export default function EventRoutingForm() {
 
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
 
-  const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
-  const flagEnabled = isFeatureFlagEnabled(FEATURE_FLAG)
-
   const subscriptions = useEventRoutingStore((s) => s.subscriptions)
   const catalog = useEventRoutingStore((s) => s.catalog.data)
   const connections = useEventRoutingStore((s) => s.connections.data)
@@ -77,8 +71,8 @@ export default function EventRoutingForm() {
   const submitting = useEventRoutingStore((s) => s.submitting)
 
   useEffect(() => {
-    if (flagEnabled) fetchAll()
-  }, [flagEnabled, fetchAll])
+    fetchAll()
+  }, [fetchAll])
 
   const sub = isEdit
     ? subscriptions.data.find((s) => s.id === id) || null
@@ -287,8 +281,6 @@ export default function EventRoutingForm() {
     value: c.name || c,
     label: c.name || c,
   }))
-
-  if (!flagEnabled) return <Navigate to="/" replace />
 
   if (
     isEdit &&

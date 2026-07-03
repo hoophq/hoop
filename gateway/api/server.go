@@ -21,6 +21,7 @@ import (
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
+	aiagents "github.com/hoophq/hoop/gateway/api/aiagents"
 	apikeys "github.com/hoophq/hoop/gateway/api/apikeys"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
@@ -126,12 +127,16 @@ type Api struct {
 // @scope.profile
 // @scope.email
 // @scope.openid
-func (a *Api) StartAPI() {
-	if os.Getenv("PORT") == "" {
-		os.Setenv("PORT", "8009")
-	}
+// BuildEngine constructs the fully-wired gin engine the gateway serves:
+// security/CORS middleware, the static UI handler, the well-known/SSM/RDP
+// groups, the /api route group with its Sentry middleware and the complete
+// API route tree, and the registered request validators.
+//
+// It performs no network I/O, so StartAPI and the integration/smoke tests
+// share the exact same handler — tests exercise the production middleware
+// chain and validators rather than a stripped-down router.
+func (a *Api) BuildEngine() *gin.Engine {
 	zaplogger := log.NewDefaultLogger(nil)
-	defer zaplogger.Sync()
 	route := gin.New()
 	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
 	if os.Getenv("GIN_MODE") == "debug" {
@@ -173,6 +178,21 @@ func (a *Api) StartAPI() {
 
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
+
+	return route
+}
+
+func (a *Api) StartAPI() {
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8009")
+	}
+	route := a.BuildEngine()
+	// BuildEngine always assigns a.logger; guard the defer so a future
+	// refactor that changes that contract fails loudly elsewhere rather than
+	// nil-panicking here during shutdown.
+	if a.logger != nil {
+		defer a.logger.Sync()
+	}
 
 	if a.TLSConfig != nil {
 		server := http.Server{
@@ -363,6 +383,40 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventReactivateApiKey),
 		apikeys.Reactivate)
+
+	r.GET("/ai-agents",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		aiagents.List)
+	r.GET("/ai-agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		aiagents.Get)
+	r.POST("/ai-agents",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateAIAgent),
+		aiagents.Create)
+	r.PUT("/ai-agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateAIAgent),
+		aiagents.Update)
+	r.DELETE("/ai-agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventRevokeAIAgent),
+		aiagents.Revoke)
+	r.POST("/ai-agents/:nameOrID/reactivate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventReactivateAIAgent),
+		aiagents.Reactivate)
+
 	r.GET("/spiffe-mappings",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -455,6 +509,42 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.TestFederationConfig)
+
+	// gcp_oauth consent flow. Unlike the admin-only config endpoints above,
+	// authorize/disconnect are available to any authenticated user because
+	// each user manages their own per-connection Google credential. The
+	// callback is unauthenticated (Google calls it directly) and is secured by
+	// the single-use, TTL-bounded state row created at authorize time.
+	r.GET("/connections/:nameOrID/federation/oauth/authorize",
+		r.AuthMiddleware,
+		apiconnections.AuthorizeFederationOAuth)
+	r.GET("/connections/:nameOrID/federation/oauth",
+		r.AuthMiddleware,
+		apiconnections.GetFederationOAuthStatus)
+	r.DELETE("/connections/:nameOrID/federation/oauth",
+		r.AuthMiddleware,
+		apiconnections.DisconnectFederationOAuth)
+	r.GET("/federation/oauth/callback",
+		apiconnections.FederationOAuthCallback)
+
+	// MCP connection OAuth login flow. Used by the connection create page to
+	// authorize an "mcp" httpproxy connection against a remote MCP server that
+	// protects its endpoint with OAuth (e.g. https://mcp.figma.com/mcp). The
+	// admin authorizes once; the obtained token is frozen into the connection's
+	// HEADER_AUTHORIZATION configuration. authorize/token are admin-only (only
+	// admins create connections); the callback is unauthenticated because the
+	// upstream provider redirects the browser to it directly and is secured by
+	// the single-use, TTL-bounded flow row created at authorize time.
+	r.POST("/mcp-oauth/authorize",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.StartMCPOAuth)
+	r.GET("/mcp-oauth/token/:flowID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetMCPOAuthToken)
+	r.GET("/mcp-oauth/callback",
+		apiconnections.MCPOAuthCallback)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
