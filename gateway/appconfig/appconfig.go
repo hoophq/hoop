@@ -438,12 +438,13 @@ func (c Config) DlpProvider() string                   { return c.dlpProvider }
 func (c Config) DlpMode() string                       { return c.dlpMode }
 func (c Config) HasRedactCredentials() bool            { return c.hasRedactCredentials }
 
-// HasGuardrailProvider reports whether the server is configured with a DLP
-// provider capable of enforcing guardrails. Guardrails are evaluated exclusively
-// through MSPresidio, so this requires the mspresidio provider with both the
-// analyzer and anonymizer URLs configured. It is intentionally stricter than
-// HasRedactCredentials (which is also true for GCP), because GCP cannot enforce
-// guardrails.
+// HasGuardrailProvider reports whether the mspresidio provider is fully
+// configured (both analyzer and anonymizer URLs).
+//
+// NOTE: this is NOT used to gate guardrail enforcement. Guardrails are enforced
+// by the agent's built-in pattern-matching engine (see gateway/guardrails), not
+// by a DLP provider, so they do not require Presidio. Retained for informational
+// use; see the session-open admission logic in gateway/transport/client.go.
 func (c Config) HasGuardrailProvider() bool {
 	return c.dlpProvider == "mspresidio" && c.msPresidioAnalyzerURL != "" && c.msPresidioAnonymizerURL != ""
 }

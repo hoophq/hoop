@@ -518,12 +518,16 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				return err
 			}
 
-			// Fail closed: guardrails are enforced exclusively through Presidio and
-			// only for connection types whose agent proxy actually evaluates them.
-			// If a connection has guardrail rules but the server has no Presidio
-			// provider configured, OR the connection type cannot enforce guardrails,
-			// the request would run unguarded and blocked queries would pass through.
-			// Refuse the session at open time with a clear error instead (DEP-48).
+			// Fail closed for connection types whose agent proxy does not
+			// evaluate guardrails (mysql, mssql, mongodb): a guarded session of
+			// those types would run unguarded, so refuse it at session-open
+			// (DEP-48).
+			//
+			// Guardrails are enforced by the agent's built-in pattern-matching
+			// engine (deny-word / regex — see gateway/guardrails), NOT by a DLP
+			// provider, so Presidio is NOT required to enforce them. The earlier
+			// Presidio requirement here refused sessions on deployments that rely
+			// on that built-in engine and is intentionally not enforced.
 			//
 			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
 			// plain-exec is a gateway-internal verb gated by a per-process secret in
@@ -535,12 +539,6 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// for plain-exec sessions.
 			if len(guardRailRulesJsonData) > 0 {
 				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
-				if !s.AppConfig.HasGuardrailProvider() {
-					logCtx.Warnf("refusing session: connection has guardrail rules but no Presidio provider is configured to enforce them")
-					return status.Errorf(codes.FailedPrecondition,
-						"this connection has guardrails configured, but the server has no Presidio (data masking) provider configured to enforce them; "+
-							"contact your administrator to configure Presidio")
-				}
 				if connType := pctx.ProtoConnectionType(); !connectionTypeSupportsGuardRails(connType) {
 					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
 					return status.Errorf(codes.FailedPrecondition,
