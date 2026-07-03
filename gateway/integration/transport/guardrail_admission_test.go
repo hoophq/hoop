@@ -4,7 +4,6 @@ package transport
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -13,22 +12,20 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-// TestGuardedConnectionRefusedWithoutProvider is the guard for the guardrails
-// fix in getGuardRailsRulesForConnection: the fix makes a connection with ZERO
-// rules open normally (proven by TestPGProtocolRoundTrip), and this test proves
-// the other, security-critical half — a connection that DOES have real
-// guardrail rules is still fail-closed at session-open when no Presidio provider
-// is configured (#1573 / DEP-48).
+// TestGuardedConnectionOpensWithoutProvider verifies the gateway admits a
+// session on a guarded connection even when no Presidio provider is configured.
+// Guardrails are enforced by the agent's built-in pattern-matching engine (see
+// gateway/guardrails), not by a DLP provider, so the earlier DEP-48 Presidio
+// gate was removed — it broke deployments that rely on that engine.
 //
-// It binds an explicit guardrail rule to the connection (rather than relying on
-// the shared org's default security-pack, which another test may have cleared),
-// so it is order-independent. The refusal happens gateway-side before the agent
-// proxy runs, so this test needs no enterprise libhoop and runs on the OSS stub.
-func TestGuardedConnectionRefusedWithoutProvider(t *testing.T) {
+// It binds an explicit guardrail rule to a supported (postgres) connection.
+// The admission decision is gateway-side; SessionOpenOK is sent by the agent
+// before any protocol proxy runs, so this needs no enterprise libhoop and runs
+// on the OSS stub. A FailedPrecondition here (the old behavior) would mean the
+// Presidio gate came back.
+func TestGuardedConnectionOpensWithoutProvider(t *testing.T) {
 	c := transports()[0] // gateway-side admission; wire-agnostic, gRPC suffices
 
 	connName := uniqueName("guarded")
@@ -55,18 +52,10 @@ func TestGuardedConnectionRefusedWithoutProvider(t *testing.T) {
 		t.Fatalf("send SessionOpen: %v", err)
 	}
 
-	// The guarded session must be refused at open time (DEP-48): the gateway
-	// terminates the Connect stream with FailedPrecondition before the agent
-	// ever opens the upstream. Receiving SessionOpenOK instead would mean the
-	// guardrails fix regressed and unguarded a guarded connection.
-	pkt, err := recvUntil(cli, 15*time.Second, pbclient.SessionOpenOK)
-	if err == nil {
-		t.Fatalf("guarded connection opened (got %s) without a Presidio provider; DEP-48 protection regressed", pkt.Type)
-	}
-	if code := status.Code(err); code != codes.FailedPrecondition {
-		t.Fatalf("refusal error code = %v, want FailedPrecondition (err=%v)", code, err)
-	}
-	if !strings.Contains(err.Error(), "Presidio") {
-		t.Fatalf("expected a Presidio/guardrail refusal, got: %v", err)
+	// The guarded session is admitted: the agent replies SessionOpenOK. If the
+	// Presidio gate were still present the gateway would instead terminate the
+	// stream with FailedPrecondition, which recvUntil surfaces as an error.
+	if _, err := recvUntil(cli, 15*time.Second, pbclient.SessionOpenOK); err != nil {
+		t.Fatalf("guarded connection was not admitted without a Presidio provider: %v", err)
 	}
 }
