@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hoophq/hoop/client/cmd/styles"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/version"
@@ -49,7 +50,7 @@ func runClaudeConfigure(connectionName string) {
 		printErrorAndExit("%s", err.Error())
 	}
 
-	scheme := "http"
+	scheme := cmdutils.GetUrlScheme(config.ApiURL)
 	baseURL := fmt.Sprintf("%s://%s:%s", scheme, creds.Hostname, creds.Port)
 	proxyToken := creds.ProxyToken
 
