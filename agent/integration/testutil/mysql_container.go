@@ -73,7 +73,7 @@ func StartMySQL(t T) *MySQLContainer {
 		t.Fatalf("failed to get mapped mysql port: %v", err)
 	}
 
-	host, err := container.Host(ctx)
+	host, err := ContainerHost(ctx, container)
 	if err != nil {
 		t.Fatalf("failed to get mysql container host: %v", err)
 	}
