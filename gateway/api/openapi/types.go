@@ -747,6 +747,8 @@ type SessionGuardRailsInfo struct {
 	Direction string `json:"direction" enums:"input,output" example:"input"`
 	// MatchedWords are the words that matched the rule
 	MatchedWords []string `json:"matched_words,omitempty" example:"password,secret"`
+	// Message is the admin-defined message configured on the matched rule entry, when present
+	Message string `json:"message,omitempty" example:"This query was blocked by your organization's data policy"`
 }
 
 type SessionAIAnalysis struct {
@@ -1526,37 +1528,39 @@ type GuardRailRuleRequest struct {
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
 
-	// The input rule
+	// The input rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
 	*/
 	Input map[string]any `json:"input"`
-	// The output rule
+	// The output rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
@@ -1577,37 +1581,39 @@ type GuardRailRuleResponse struct {
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
 
-	// The input rule
+	// The input rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
 	*/
 	Input map[string]any `json:"input"`
-	// The output rule
+	// The output rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
