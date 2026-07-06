@@ -39,6 +39,21 @@ const (
 // ping because mongod logs "waiting for connections" slightly before the
 // root user (created from the MONGO_INITDB env vars) is usable.
 func StartMongoDB(t T) *MongoContainer {
+	return startMongoDB(t)
+}
+
+// StartMongoDBWithTestCommands boots the same container as StartMongoDB
+// but with --setParameter enableTestCommands=1, unlocking server test
+// commands such as `sleep`, which tests use as a deterministic stand-in
+// for a long-running operation (unlike cursor reads, it is never aborted
+// by a client disconnect — only killOp stops it).
+func StartMongoDBWithTestCommands(t T) *MongoContainer {
+	return startMongoDB(t, "--setParameter", "enableTestCommands=1")
+}
+
+// startMongoDB boots the MongoDB container, passing any extra args to
+// mongod (the image entrypoint forwards container args to the daemon).
+func startMongoDB(t T, mongodArgs ...string) *MongoContainer {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -46,6 +61,7 @@ func StartMongoDB(t T) *MongoContainer {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "mongo:7",
 			ExposedPorts: []string{"27017/tcp"},
+			Cmd:          mongodArgs,
 			Env: map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": mongoRootUser,
 				"MONGO_INITDB_ROOT_PASSWORD": mongoRootPass,
