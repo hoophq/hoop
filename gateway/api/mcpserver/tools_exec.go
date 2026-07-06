@@ -208,7 +208,7 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 		events.DeriveFromSessionStart(sc.OrgID, &newSession, conn)
 		return execResponseToEnvelope(&clientexec.Response{
 			HasReview:  true,
-			Output:     fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
+			Output:     fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), review.ID),
 			SessionID:  sessionID,
 			AIAnalysis: sessionapi.ToOpenApiSessionAIAnalysis(analyzeRes),
 		}, sessionID)
