@@ -38,6 +38,11 @@ type FetchConnectionsOptions struct {
 	// HTTPClient lets callers inject a client with custom TLS / proxies.
 	// Defaults to a 15-second-timeout client.
 	HTTPClient *http.Client
+
+	// OnNewToken, when set, is invoked with the rotated access token if
+	// the gateway's response carries an X-New-Access-Token header. See
+	// token.go for the rotation contract.
+	OnNewToken func(newToken string)
 }
 
 // FetchConnections returns the list of connections available to the
@@ -79,10 +84,14 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("GET %s: %w", base.String(), ErrUnauthorized)
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("GET %s returned %s: %s", base.String(), resp.Status, strings.TrimSpace(string(body)))
 	}
+	harvestRotatedToken(resp, opts.OnNewToken)
 
 	// The non-paginated endpoint returns a flat array of openapi.Connection.
 	// We decode only the two fields we need so this code is robust to
