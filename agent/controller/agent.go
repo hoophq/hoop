@@ -37,7 +37,6 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
-	"golang.org/x/sync/singleflight"
 )
 
 type (
@@ -65,19 +64,17 @@ type (
 		// closed=true under RLock instead of racing through a fresh state.
 		sessionStates sync.Map
 
-		// connWriteLocks serializes writes per (sessionID, connectionID).
-		// Required when packet dispatch is async (see Run) so that two
-		// goroutines handling consecutive packets for the same connection
-		// don't reorder writes to the upstream proxy.
-		connWriteLocks sync.Map
+		// sshWriteQueues holds one packetQueue per (sessionID,
+		// connectionID), keyed "sid:connID" like the connStore. The recv
+		// loop enqueues SSHConnectionWrite packets here and a per-queue
+		// worker drains them in order (see processSSHWriteQueued): SSH
+		// framing requires per-connection stream order — a per-connection
+		// mutex is NOT sufficient, since goroutines contending on a mutex
+		// acquire it in arbitrary order. Entries are removed in
+		// sessionCleanup, mirroring httpProxyQueues.
+		sshWriteQueues sync.Map
 
-		// sshFlightGroup deduplicates concurrent first-packet handling for
-		// the same (sessionID, connectionID) in processSSHProtocol. Without
-		// it, async-dispatched goroutines could each miss the connStore
-		// cache and dial duplicate upstream SSH connections.
-		sshFlightGroup singleflight.Group
-
-		// httpProxyQueues holds one httpProxyPacketQueue per (sessionID,
+		// httpProxyQueues holds one packetQueue per (sessionID,
 		// connectionID), keyed "sid:connID" like the connStore. The recv
 		// loop enqueues HttpProxyConnectionWrite packets here and a per-queue
 		// worker drains them in order, so a blocking upstream request never
@@ -193,19 +190,6 @@ func (a *Agent) sessionStateFor(sessionID string) *sessionState {
 	return actual.(*sessionState)
 }
 
-// connWriteLockFor returns the per-connection write mutex. It serializes
-// writes to a single upstream proxy when packet dispatch is async, so
-// consecutive packets for the same (sessionID, connectionID) do not
-// reorder at the libhoop layer.
-func (a *Agent) connWriteLockFor(key string) *sync.Mutex {
-	if v, ok := a.connWriteLocks.Load(key); ok {
-		return v.(*sync.Mutex)
-	}
-	mu := &sync.Mutex{}
-	actual, _ := a.connWriteLocks.LoadOrStore(key, mu)
-	return actual.(*sync.Mutex)
-}
-
 func (a *Agent) Close(cause error) {
 	log.Infof("shutting down agent controller")
 	for _, obj := range a.connStore.List() {
@@ -265,7 +249,7 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 	// SSH protocol
 	case pbagent.SSHConnectionWrite:
-		a.processSSHProtocol(pkt)
+		a.processSSHWriteQueued(pkt)
 
 	// terminal
 	case pbagent.TerminalWriteStdin:
@@ -312,22 +296,20 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// SSH connection writes and the SessionClose that ends them are
-		// dispatched concurrently so a slow upstream on one session does
-		// not stall packet processing for other sessions on this agent.
-		// processSSHProtocol uses the session RW lock, per-connection
-		// write mutex, and singleflight group on the Agent to keep
-		// concurrent handlers correct.
+		// SSHConnectionWrite is enqueued into a per-(session, connection)
+		// FIFO drained by a worker goroutine (see processSSHWriteQueued),
+		// exactly like HttpProxyConnectionWrite: the recv loop never
+		// blocks on a slow upstream, connections proceed independently,
+		// and packets for one connection keep their stream arrival order.
+		// Order matters: dispatching each packet with `go` (the previous
+		// model) let an exec request overtake the OpenChannel it belongs
+		// to, and libhoop's proxy drops requests for unknown channels —
+		// the client then waits forever for an exit-status (DEP-57).
 		//
-		// SessionClose is included so the recv loop is not blocked when
-		// it has to wait for an in-flight SSH handler to drain before
-		// running session cleanup.
-		//
-		// HttpProxyConnectionWrite stays inline: its handler only enqueues
-		// the packet into a per-connection FIFO drained by a worker
-		// goroutine (see processHttpProxyWriteServer), which keeps the
-		// recv loop free without giving up per-connection ordering.
-		if pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose {
+		// SessionClose is dispatched concurrently so the recv loop is not
+		// blocked while it waits for in-flight SSH handlers to drain
+		// (it takes the session RW write lock) before cleanup.
+		if pkt.Type == pbagent.SessionClose {
 			go a.processPacket(pkt)
 			continue
 		}
@@ -468,14 +450,26 @@ func (a *Agent) sessionCleanup(sessionID string) {
 			}()
 		}
 		a.connStore.Del(key)
-		a.connWriteLocks.Delete(key)
 	}
-	// Drop the session's HTTP proxy packet queues. Iterated separately from
-	// the connStore because a queue can outlive its connStore entry (e.g. a
-	// connection whose first write failed and was deleted from the store).
+	// Drop the session's HTTP proxy and SSH packet queues. Iterated
+	// separately from the connStore because a queue can outlive its
+	// connStore entry (e.g. a connection whose first write failed and was
+	// deleted from the store).
 	a.httpProxyQueues.Range(func(key, _ any) bool {
 		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
 			a.httpProxyQueues.Delete(key)
+		}
+		return true
+	})
+	// Deleting an SSH queue entry while its drain worker may still be alive
+	// is safe only because session closure is terminal: closed=true was
+	// stored above under the write lock, so both the surviving worker and
+	// any replacement queue/worker created by a late packet find closed=true
+	// in processSSHProtocol and no-op. Without that invariant, a late packet
+	// could resurrect a second live worker for the same connection.
+	a.sshWriteQueues.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
+			a.sshWriteQueues.Delete(key)
 		}
 		return true
 	})
