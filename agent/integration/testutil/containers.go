@@ -11,6 +11,24 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+// ContainerHost returns the host address for reaching a container's
+// published ports, normalizing "localhost" to "127.0.0.1". Docker's port
+// proxy on CI runners is not always bound on IPv6, and "localhost" can
+// resolve to "::1" first — clients then see "connection refused" until
+// their readiness deadline expires even though the container is healthy
+// on the IPv4 loopback (observed with the MongoDB driver on GitHub
+// Actions, DEP-57). Pinning the IPv4 literal removes the ambiguity.
+func ContainerHost(ctx context.Context, container testcontainers.Container) (string, error) {
+	host, err := container.Host(ctx)
+	if err != nil {
+		return "", err
+	}
+	if host == "localhost" {
+		return "127.0.0.1", nil
+	}
+	return host, nil
+}
+
 type PGContainer struct {
 	Host      string
 	Port      string
@@ -57,7 +75,7 @@ func StartPostgres(t T) *PGContainer {
 		t.Fatalf("failed to get mapped port: %v", err)
 	}
 
-	host, err := container.Host(ctx)
+	host, err := ContainerHost(ctx, container)
 	if err != nil {
 		t.Fatalf("failed to get container host: %v", err)
 	}

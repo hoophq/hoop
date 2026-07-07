@@ -80,7 +80,7 @@ func StartMSSQL(t T) *MSSQLContainer {
 		t.Fatalf("failed to get mapped mssql port: %v", err)
 	}
 
-	host, err := container.Host(ctx)
+	host, err := ContainerHost(ctx, container)
 	if err != nil {
 		t.Fatalf("failed to get mssql container host: %v", err)
 	}

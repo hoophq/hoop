@@ -9,7 +9,6 @@ import (
 	libhoopaianalyzer "libhoop/aianalyzer"
 	redactortypes "libhoop/redactor/types"
 	"strings"
-	"sync"
 
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
@@ -24,49 +23,6 @@ import (
 // a ResourceExhausted error. The value must stay safely below
 // common/grpc.MaxRecvMsgSize.
 const httpProxyResponseChunkSize = 1024 * 1024 * 4 // 4 MiB
-
-// httpProxyPacketQueue is a per-(sessionID, connectionID) FIFO of
-// HttpProxyConnectionWrite packets drained by a single on-demand worker
-// goroutine. See processHttpProxyWriteServer for the dispatch model.
-type httpProxyPacketQueue struct {
-	mu      sync.Mutex
-	packets []*pb.Packet
-	running bool
-}
-
-// push appends pkt and reports whether the caller must start a drain worker.
-// At most one caller observes true until that worker exits.
-func (q *httpProxyPacketQueue) push(pkt *pb.Packet) (startWorker bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	q.packets = append(q.packets, pkt)
-	if q.running {
-		return false
-	}
-	q.running = true
-	return true
-}
-
-// drain invokes handle on queued packets in arrival order and exits when the
-// queue is empty, so an idle connection does not hold a parked goroutine. The
-// running flag guarantees at most one worker per queue: it is cleared under
-// the same lock that observes emptiness, so a packet pushed after the last
-// drain always finds running=false and spawns a fresh worker, while a packet
-// pushed mid-drain is picked up by the current one.
-func (q *httpProxyPacketQueue) drain(handle func(*pb.Packet)) {
-	for {
-		q.mu.Lock()
-		if len(q.packets) == 0 {
-			q.running = false
-			q.mu.Unlock()
-			return
-		}
-		pkt := q.packets[0]
-		q.packets = q.packets[1:]
-		q.mu.Unlock()
-		handle(pkt)
-	}
-}
 
 // processHttpProxyWriteServer runs on the agent's packet recv loop. Handling a
 // proxied HTTP request is blocking: libhoop's Write performs the upstream
@@ -90,15 +46,30 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		return
 	}
 	queueKey := fmt.Sprintf("%s:%s", sessionID, clientConnectionID)
-	obj, _ := a.httpProxyQueues.LoadOrStore(queueKey, &httpProxyPacketQueue{})
-	queue := obj.(*httpProxyPacketQueue)
-	if queue.push(pkt) {
+	obj, _ := a.httpProxyQueues.LoadOrStore(queueKey, &packetQueue{})
+	queue := obj.(*packetQueue)
+	startWorker, overflow := queue.push(pkt)
+	if overflow {
+		// The drain worker is wedged (upstream not answering) while the
+		// gateway keeps streaming request data. Fail THIS connection
+		// explicitly instead of buffering unbounded payload in agent
+		// memory — sibling connections multiplexed on the same session
+		// stay alive, consistent with the handler's other per-connection
+		// failure paths. The queue entry deliberately stays in place
+		// (see the httpProxyQueues field comment) so a late packet can't
+		// spawn a second worker; it is dropped with the session.
+		log.With("sid", sessionID, "conn", clientConnectionID).
+			Errorf("http proxy packet queue overflow, closing connection")
+		a.sendClientTCPConnectionClose(sessionID, clientConnectionID)
+		return
+	}
+	if startWorker {
 		go queue.drain(a.handleHttpProxyWrite)
 	}
 }
 
 // handleHttpProxyWrite performs the actual (blocking) request handling. It
-// must only be invoked from httpProxyPacketQueue.drain, which serializes
+// must only be invoked from packetQueue.drain, which serializes
 // calls per (sessionID, connectionID).
 func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
