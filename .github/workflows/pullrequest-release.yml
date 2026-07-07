@@ -727,3 +727,73 @@ jobs:
         run: |-
           gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Completed with Success, Version=${GIT_TAG}" || true
 
+
+  # PoC: scan the preview images for forbidden (AGPL-family) licenses and
+  # keep a single reconciled PR comment: created/updated when findings
+  # exist, updated to "resolved" when a later push fixes them. Non-blocking
+  # on purpose while we evaluate the tool; make the check step fail to turn
+  # it into a gate.
+  license-scan:
+    runs-on: ubuntu-latest
+    name: License Scan (Trivy)
+    # The preview images only exist for same-repo PRs (fork PRs cannot push
+    # to Docker Hub), and this guard also keeps the PAT away from any
+    # fork-triggered context.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    needs:
+      - docker-publish-hoopgateway-amd64
+      - docker-publish-hoopagent-amd64
+    steps:
+      - name: Scan preview images
+        run: |
+          mkdir -p /tmp/license-scan
+          for image in hoop hoopdev; do
+            ref="hoophq/${image}:${{ github.sha }}-amd64"
+            echo "scanning $ref"
+            docker run --rm \
+              -v /tmp/license-scan:/scan \
+              aquasec/trivy:0.72.0 image \
+              --scanners license \
+              --format json \
+              --quiet \
+              --output "/scan/${image}.json" \
+              "$ref"
+          done
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for forbidden licenses
+        id: check
+        run: |
+          python3 scripts/ci/check-forbidden-licenses.py \
+            --comment-out /tmp/license-scan/comment.json \
+            hoophq/hoop=/tmp/license-scan/hoop.json \
+            hoophq/hoopdev=/tmp/license-scan/hoopdev.json
+
+      - name: Reconcile PR comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |-
+          # Single sticky comment keyed by the marker: upsert on findings,
+          # update to "resolved" when a previous finding disappears, stay
+          # silent when the PR was never flagged.
+          marker='<!-- trivy-license-scan -->'
+          comment_id=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+
+          if [ "${{ steps.check.outputs.found }}" = "true" ]; then
+            if [ -n "$comment_id" ]; then
+              gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$comment_id" \
+                --input /tmp/license-scan/comment.json
+            else
+              gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+                --input /tmp/license-scan/comment.json
+            fi
+          elif [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$comment_id" \
+              --input /tmp/license-scan/comment.json
+          fi
