@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -222,7 +225,99 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 
 	log.Debugf("access allowed: %v %v, roles=%v, email=%s, isadmin=%v, isauditor=%v",
 		c.Request.Method, c.Request.URL.Path, roles, ctx.UserEmail, ctx.IsAdmin(), ctx.IsAuditor())
+	r.maybeProactiveRotate(tokenVerifier, serverConfig, ctx, c)
 	r.setUserContext(ctx, c, serverConfig.GrpcURL, serverConfig.AuthMethod)
+}
+
+const (
+	// proactiveRotationWindow is how close to expiry a still-valid token must
+	// be before the middleware rotates it via X-New-Access-Token. Long-lived
+	// clients (hsh-tunneld) poll well within this window, so they always hold
+	// a token that is valid at gRPC stream-open time.
+	proactiveRotationWindow = 10 * time.Minute
+
+	// localAuthRenewalDuration is the lifetime of a re-minted local-auth
+	// token. It mirrors defaultTokenExpiration in gateway/api/login/local.
+	localAuthRenewalDuration = 12 * time.Hour
+
+	// localAuthMaxSessionAge is the absolute cap of a local-auth sliding
+	// session: renewal is refused once the original login (auth_time) is
+	// older than this, forcing a real re-authentication. Kept as a constant
+	// while the feature is experimental; per-org configuration is planned
+	// with the require_tunnel_for_data_plane org settings (DEP-16).
+	localAuthMaxSessionAge = 7 * 24 * time.Hour
+)
+
+// maybeProactiveRotate rotates a still-valid access token that is close to
+// expiry, emitting the replacement via the X-New-Access-Token header. It is
+// best-effort by design: any failure leaves the request untouched (the
+// presented token is still valid) and the client retries on its next call.
+//
+// Contract note: rotation happens after authn/authz succeed but BEFORE the
+// handler runs, so a client may receive a rotated token on a request whose
+// handler later fails (4xx/5xx). That is deliberate — the rotation is a
+// property of the (valid) session, not of the request outcome, and holding
+// it back on handler errors would leave long-lived clients stuck with an
+// almost-expired token exactly when they are erroring.
+//
+// Gated by the experimental.tunnel_token_renewal feature flag. Without it the
+// gateway keeps the pre-existing reactive behavior (refresh only after
+// expiry), which cannot keep gRPC tunnel streams working since the gRPC auth
+// interceptor has no refresh path.
+func (r *Router) maybeProactiveRotate(tokenVerifier idp.TokenVerifier, serverConfig idptypes.ServerConfig, ctx *models.Context, c *gin.Context) {
+	// The reactive path already rotated this request's token.
+	if c.Writer.Header().Get("X-New-Access-Token") != "" {
+		return
+	}
+	if !featureflag.IsEnabled(ctx.OrgID, "experimental.tunnel_token_renewal") {
+		return
+	}
+	accessToken, err := parseToken(c)
+	if err != nil {
+		return
+	}
+	expiresAt, ok := tokenExpiry(accessToken)
+	if !ok || time.Until(expiresAt) > proactiveRotationWindow {
+		return
+	}
+
+	var newAccessToken string
+	switch serverConfig.AuthMethod {
+	case idptypes.ProviderTypeLocal:
+		renewer, ok := tokenVerifier.(idp.SessionRenewer)
+		if !ok {
+			return
+		}
+		newAccessToken, err = renewer.RenewAccessToken(accessToken, localAuthRenewalDuration, localAuthMaxSessionAge)
+	case idptypes.ProviderTypeOIDC, idptypes.ProviderTypeIDP:
+		newAccessToken, err = idp.TryProactiveRefreshForVerifiedSubject(tokenVerifier, ctx.UserSubject)
+	default:
+		// SAML sessions cannot be renewed without a fresh assertion.
+		return
+	}
+	if err != nil {
+		log.With("subject", ctx.UserSubject).Debugf("proactive token rotation skipped: %v", err)
+		return
+	}
+	log.With("subject", ctx.UserSubject, "auth_method", serverConfig.AuthMethod).
+		Infof("access token rotated proactively (expiring in %v)", time.Until(expiresAt).Truncate(time.Second))
+	c.Header("X-New-Access-Token", newAccessToken)
+}
+
+// tokenExpiry extracts the exp claim from a JWT without re-verifying the
+// signature — callers must only use it on tokens that already passed
+// VerifyAccessToken. Returns false for opaque (non-JWT) tokens or tokens
+// without an exp claim; those are never proactively rotated.
+func tokenExpiry(tokenString string) (time.Time, bool) {
+	claims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(tokenString, claims); err != nil {
+		return time.Time{}, false
+	}
+	exp, err := claims.GetExpirationTime()
+	if err != nil || exp == nil {
+		return time.Time{}, false
+	}
+	return exp.Time, true
 }
 
 // setUserContext and call next middleware

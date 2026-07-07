@@ -65,6 +65,7 @@ func (m *Manager) makeTCPHandler(
 	alloc *addressing.Allocator,
 	registry *connRegistry,
 	gatewayCfg grpc.ClientConfig,
+	tokens TokenSource,
 ) netstack.Handler {
 	logger := m.opts.Logger
 	userAgent := m.opts.UserAgent
@@ -78,8 +79,13 @@ func (m *Manager) makeTCPHandler(
 		}
 		subType, _ := registry.subTypeOf(name)
 		logger.Printf("tunnelmgr: accept %s:%d -> %s (%s)", localAddr, localPort, name, subType)
+		// Re-snapshot the token per flow: gatewayCfg is a value copy, so
+		// a token rotated mid-session (DEP-24) is picked up by every new
+		// stream while in-flight pipes keep their original credentials.
+		flowCfg := gatewayCfg
+		flowCfg.Token, _ = tokens.Snapshot()
 		err := client.DialAndPipe(context.Background(), conn, client.PipeOptions{
-			GatewayConfig:  gatewayCfg,
+			GatewayConfig:  flowCfg,
 			ConnectionName: name,
 			UserAgent:      userAgent,
 		})

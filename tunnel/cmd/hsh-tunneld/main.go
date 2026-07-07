@@ -229,6 +229,11 @@ func run(logger *log.Logger, opts runOptions) error {
 	// Build the lifecycle owner. The Manager handles every operation
 	// that touches the netstack / gateway / route table; main.go only
 	// triggers it via the daemonService.
+	// Shared token state (DEP-24): the manager reads the current token
+	// per flow and reports gateway-driven rotations; the service (built
+	// below) persists rotations and swaps the token on login/logout.
+	tokens := newTokenState()
+
 	mgr, err := tunnelmgr.New(tunnelmgr.Options{
 		Logger:        logger,
 		SessionSeed:   opts.sessionSeed,
@@ -237,6 +242,7 @@ func run(logger *log.Logger, opts runOptions) error {
 		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		UserAgent:     userAgent(),
+		TokenSource:   tokens,
 	})
 	if err != nil {
 		return fmt.Errorf("init tunnelmgr: %w", err)
@@ -258,6 +264,7 @@ func run(logger *log.Logger, opts runOptions) error {
 		OnTunnelDown: func() {
 			logger.Printf("tunnel torn down — netstack and routes released")
 		},
+		Tokens: tokens,
 	})
 	if err != nil {
 		return fmt.Errorf("init service: %w", err)
@@ -289,6 +296,12 @@ func run(logger *log.Logger, opts runOptions) error {
 	// tunnel is down, so it covers both "tunnel already up at startup"
 	// and "tunnel comes up later via login" without extra wiring.
 	svc.StartAutoRefresh(ctx, opts.refreshInterval, logger.Printf)
+
+	// Start the silent token-renewal scheduler (DEP-24). Like the
+	// auto-refresh loop it runs for the whole daemon lifetime and
+	// no-ops while logged out, so it covers login-before-startup and
+	// login-after-startup identically.
+	svc.StartTokenRenewal(ctx, logger.Printf)
 
 	// Block on signal. TearDown on shutdown is best-effort: the
 	// per-tunnel ctx is parented to ctx, so closing it cancels the
@@ -330,18 +343,18 @@ func mergeConfigWithEnv(file daemonconfig.Config) daemonconfig.Config {
 // Branches on snap.ResolvedConfigured:
 //
 //   - true:  tunnelmgr already wired the TUN device into
-//            systemd-resolved at bring-up. The banner reports that
-//            *.<tld> names resolve natively now and skips the
-//            manual-hint block entirely. Users can run `psql -h
-//            foo.hoop` immediately.
+//     systemd-resolved at bring-up. The banner reports that
+//     *.<tld> names resolve natively now and skips the
+//     manual-hint block entirely. Users can run `psql -h
+//     foo.hoop` immediately.
 //
 //   - false: either the host doesn't run systemd-resolved (the
-//            common Alpine/FreeBSD/whatever case) or resolvectl
-//            failed. The banner prints the historical manual-hint
-//            block so the operator can wire DNS through whatever
-//            resolver they do use. tunnelmgr already logged the
-//            specific failure to the journal; we don't repeat it
-//            here.
+//     common Alpine/FreeBSD/whatever case) or resolvectl
+//     failed. The banner prints the historical manual-hint
+//     block so the operator can wire DNS through whatever
+//     resolver they do use. tunnelmgr already logged the
+//     specific failure to the journal; we don't repeat it
+//     here.
 func printTunnelUpBanner(logger *log.Logger, snap tunnelmgr.Snapshot, tld string) {
 	logger.Printf("tunnel is up.")
 	logger.Printf("  host addr: %s (%s)", snap.HostAddr, snap.DeviceName)
@@ -473,5 +486,3 @@ func startIPCServer(ctx context.Context, logger *log.Logger, opts runOptions, sv
 		}
 	}
 }
-
-

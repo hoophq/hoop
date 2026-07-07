@@ -67,6 +67,18 @@ type ExpiredTokenSubjectVerifier interface {
 	VerifyExpiredTokenSubject(tokenStr string) (string, error)
 }
 
+// SessionRenewer is an optional interface for providers that mint their own
+// tokens (local auth) and can renew a still-valid token as a sliding session:
+// the renewed token gets a fresh expiry but preserves the original auth_time,
+// and renewal is refused once the session is older than maxSessionAge.
+type SessionRenewer interface {
+	// RenewAccessToken verifies currentToken (which must still be valid),
+	// and returns a re-minted token with the same subject/email/auth_time
+	// and a fresh tokenDuration expiry. It fails if the original
+	// authentication happened more than maxSessionAge ago.
+	RenewAccessToken(currentToken string, tokenDuration, maxSessionAge time.Duration) (string, error)
+}
+
 var (
 	singletonStore         = memory.New()
 	singletonStoreKey      = "1"
@@ -119,6 +131,15 @@ func (v userInfoTokenVerifier) VerifyExpiredTokenSubject(tokenStr string) (strin
 	return "", fmt.Errorf("expired token subject verification not supported by this provider")
 }
 
+// RenewAccessToken delegates to the underlying provider if it supports
+// sliding-session renewal (local auth).
+func (v userInfoTokenVerifier) RenewAccessToken(currentToken string, tokenDuration, maxSessionAge time.Duration) (string, error) {
+	if sr, ok := v.UserInfoTokenVerifier.(SessionRenewer); ok {
+		return sr.RenewAccessToken(currentToken, tokenDuration, maxSessionAge)
+	}
+	return "", fmt.Errorf("session renewal not supported by this provider")
+}
+
 // TryRefreshExpiredToken validates the signature of an expired JWT, extracts
 // the subject, looks up the stored refresh token, and exchanges it for a new
 // access token. On success it persists the new tokens, syncs user groups from
@@ -133,12 +154,37 @@ func TryRefreshExpiredToken(tokenVerifier TokenVerifier, expiredToken string) (s
 	if err != nil {
 		return "", "", fmt.Errorf("failed to verify expired token: %w", err)
 	}
-
-	type refreshResult struct {
-		subject        string
-		newAccessToken string
+	newAccessToken, err := refreshForSubject(tokenVerifier, subject, "reactive")
+	if err != nil {
+		return "", "", err
 	}
+	return subject, newAccessToken, nil
+}
 
+// TryProactiveRefreshForVerifiedSubject exchanges the stored refresh token
+// for a new access token for a subject whose current token is still valid
+// (pre-expiry rotation).
+//
+// SECURITY: the subject MUST come from a token that already passed
+// signature verification in the caller — this function performs a refresh
+// exchange keyed solely by subject and does not re-verify anything. Do not
+// call it with a subject from any other source (headers, request bodies,
+// unverified claims): that would be a confused-deputy refresh.
+//
+// Long-lived clients (hsh-tunneld) rely on this to always hold a token that
+// is valid at gRPC stream-open time: the HTTP middleware rotates the token
+// before it expires, so there is no window where new tunnel flows race the
+// expiry moment.
+func TryProactiveRefreshForVerifiedSubject(tokenVerifier TokenVerifier, subject string) (string, error) {
+	return refreshForSubject(tokenVerifier, subject, "proactive")
+}
+
+// refreshForSubject performs the actual refresh-token exchange for a subject.
+// Concurrent calls for the same subject (reactive or proactive) are
+// deduplicated via singleflight — the subject key is shared on purpose so a
+// proactive rotation and a reactive refresh racing each other produce a
+// single IDP round-trip.
+func refreshForSubject(tokenVerifier TokenVerifier, subject, mode string) (string, error) {
 	result, err, _ := refreshGroup.Do(subject, func() (any, error) {
 		userToken, err := models.GetUserToken(models.DB, subject)
 		if err != nil || userToken == nil {
@@ -168,15 +214,13 @@ func TryRefreshExpiredToken(tokenVerifier TokenVerifier, expiredToken string) (s
 
 		syncUserGroupsFromUserInfo(tokenVerifier, subject, newToken.AccessToken)
 
-		log.With("subject", subject).Infof("access token refreshed successfully")
-		return &refreshResult{subject: subject, newAccessToken: newToken.AccessToken}, nil
+		log.With("subject", subject, "mode", mode).Infof("access token refreshed successfully")
+		return newToken.AccessToken, nil
 	})
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-
-	r := result.(*refreshResult)
-	return r.subject, r.newAccessToken, nil
+	return result.(string), nil
 }
 
 // syncUserGroupsFromUserInfo fetches fresh group claims from the IDP userinfo

@@ -10,6 +10,7 @@ import (
 
 	"github.com/hoophq/hoop/common/version"
 
+	"github.com/hoophq/hoop/tunnel/client"
 	"github.com/hoophq/hoop/tunnel/daemonconfig"
 	"github.com/hoophq/hoop/tunnel/ipc"
 	"github.com/hoophq/hoop/tunnel/loginflow"
@@ -52,6 +53,12 @@ type daemonService struct {
 	// Config persistence.
 	configPath string
 
+	// tokens is the shared in-memory owner of the current gateway
+	// bearer token (see tokenrenewal.go). The service keeps it in
+	// lock-step with cfg.Token: login/logout/auth-expiry call SetLocal,
+	// gateway-driven rotations arrive through the rotation hook.
+	tokens *tokenState
+
 	mu        sync.RWMutex
 	lastError string
 	loggedIn  bool
@@ -89,6 +96,10 @@ type daemonServiceOptions struct {
 	// OnTunnelDown fires after Manager.TearDown completes — used
 	// today only for the logout path.
 	OnTunnelDown func()
+
+	// Tokens is the shared token state also wired into the tunnel
+	// manager's TokenProvider / OnTokenRotated options. Required.
+	Tokens *tokenState
 }
 
 func newDaemonService(opts daemonServiceOptions) (*daemonService, error) {
@@ -98,15 +109,24 @@ func newDaemonService(opts daemonServiceOptions) (*daemonService, error) {
 	if opts.ParentContext == nil {
 		return nil, errors.New("daemonService: ParentContext is required")
 	}
+	if opts.Tokens == nil {
+		return nil, errors.New("daemonService: Tokens is required")
+	}
 	s := &daemonService{
 		mgr:          opts.Manager,
 		parentCtx:    opts.ParentContext,
 		configPath:   opts.ConfigPath,
+		tokens:       opts.Tokens,
 		cfg:          opts.InitialConfig,
 		loggedIn:     opts.InitialConfig.LoggedIn(),
 		onTunnelUp:   opts.OnTunnelUp,
 		onTunnelDown: opts.OnTunnelDown,
 	}
+	// Seed the shared token state from the persisted config and route
+	// gateway-driven rotations back through this service so they reach
+	// the config file.
+	s.tokens.SetLocal(opts.InitialConfig.Token)
+	s.tokens.SetRotationHook(s.persistRotatedToken)
 	if opts.InitialConfig.APIURL != "" {
 		flow, err := loginflow.New(loginflow.Options{
 			APIURL:    opts.InitialConfig.APIURL,
@@ -127,6 +147,66 @@ func (s *daemonService) SetLastError(msg string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastError = msg
+}
+
+// persistRotatedToken is the tokenState rotation hook: it writes a
+// token the gateway rotated via X-New-Access-Token to the daemon's
+// config file. The in-memory rotation already happened (tokenState is
+// updated before the hook fires), so a disk failure degrades to
+// "renewal survives until the daemon restarts" — recorded in lastError
+// but never fatal to the live tunnel.
+func (s *daemonService) persistRotatedToken(newToken string) {
+	s.mu.Lock()
+	next := s.cfg
+	next.Token = newToken
+	s.mu.Unlock()
+
+	if s.configPath != "" {
+		if err := daemonconfig.Save(s.configPath, next, daemonconfig.SaveOptions{}); err != nil {
+			s.SetLastError("persist rotated token: " + err.Error())
+			return
+		}
+	}
+
+	s.mu.Lock()
+	s.cfg = next
+	s.mu.Unlock()
+}
+
+// authExpired is the clean-failure path of DEP-24: the gateway rejected
+// the token with 401 and could not renew it server-side, so the session
+// is unrecoverable. Tear the tunnel down, drop the dead credential from
+// config and memory, and leave an explicit reason in lastError so
+// `hsh tunnel status` tells the user exactly what to do instead of the
+// tunnel silently half-working with a dead token.
+func (s *daemonService) authExpired(reason string) {
+	s.mu.Lock()
+	next := s.cfg
+	next.Token = ""
+	s.mu.Unlock()
+
+	if s.configPath != "" {
+		if err := daemonconfig.Save(s.configPath, next, daemonconfig.SaveOptions{}); err != nil {
+			// Keep going: the in-memory state still transitions to
+			// logged-out; the stale on-disk token will fail bring-up at
+			// next restart and land in this same path again.
+			reason += " (also failed to clear the stored token: " + err.Error() + ")"
+		}
+	}
+
+	s.mu.Lock()
+	s.cfg = next
+	s.loggedIn = false
+	s.mu.Unlock()
+	s.tokens.SetLocal("")
+
+	if err := s.mgr.TearDown(); err != nil {
+		reason += " (tear down: " + err.Error() + ")"
+	}
+	if s.onTunnelDown != nil {
+		s.onTunnelDown()
+	}
+	s.SetLastError(reason)
 }
 
 // BringUpFromConfig is invoked by main.go at startup when the config
@@ -180,6 +260,7 @@ func (s *daemonService) persistTokenFromLogin(token string) error {
 	s.cfg = next
 	s.loggedIn = true
 	s.mu.Unlock()
+	s.tokens.SetLocal(token)
 
 	// Hot-reload: try to bring the tunnel up with the new token.
 	// If the tunnel was already up (rare — login flow refuses
@@ -327,6 +408,7 @@ func (s *daemonService) Logout(context.Context) error {
 	s.cfg = next
 	s.loggedIn = false
 	s.mu.Unlock()
+	s.tokens.SetLocal("")
 
 	// Hot tear-down: drop the live tunnel so the connection list
 	// vanishes immediately and any in-flight gRPC pipes terminate.
@@ -488,6 +570,13 @@ func (s *daemonService) RefreshConnections(ctx context.Context) (ipc.RefreshConn
 		return ipc.RefreshConnectionsResponse{Running: false, Count: 0}, nil
 	}
 	if err := s.mgr.Refresh(ctx); err != nil {
+		if errors.Is(err, client.ErrUnauthorized) {
+			// Session is dead (server-side refresh also failed): clean
+			// teardown with an explicit reason instead of retrying a
+			// dead credential every tick (DEP-24).
+			s.authExpired("session expired and could not be renewed; run 'hsh tunnel login' to re-authenticate")
+			return ipc.RefreshConnectionsResponse{}, fmt.Errorf("refresh connections: %w", err)
+		}
 		s.SetLastError("refresh connections: " + err.Error())
 		return ipc.RefreshConnectionsResponse{}, fmt.Errorf("refresh connections: %w", err)
 	}
@@ -536,4 +625,3 @@ func (s *daemonService) StartAutoRefresh(ctx context.Context, interval time.Dura
 		}
 	}()
 }
-
