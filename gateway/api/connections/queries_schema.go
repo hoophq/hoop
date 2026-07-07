@@ -126,6 +126,7 @@ ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;`, dbName)
 
 func getOracleDBTablesQuery() string {
 	return `
+SET ARRAYSIZE 1000;
 SELECT
     t.owner as schema_name,
     'table' as object_type,
