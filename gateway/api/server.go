@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/webappui"
 	"go.uber.org/zap"
 
 	"github.com/hoophq/hoop/common/log"
@@ -149,12 +149,32 @@ func (a *Api) BuildEngine() *gin.Engine {
 	route.Use(CORSMiddleware())
 	baseURL := appconfig.Get().ApiURLPath()
 
-	// UI
-	webappStaticUiPath := appconfig.Get().WebappStaticUiPath()
-	route.Use(static.Serve(baseURL+"/", static.LocalFile(webappStaticUiPath, false)))
+	// UI: assets resolved from STATIC_UI_PATH, the default disk path or the
+	// build embedded in the binary; index.html and js/app.js are
+	// transformed in memory with this gateway's URL and served from memory.
+	webappUI, err := webappui.Resolve()
+	if err != nil {
+		log.Warnf("failed loading the web UI, running API-only, reason=%v", err)
+	}
+	webappui.LogSource(webappUI)
+	if webappUI != nil {
+		route.Use(static.Serve(baseURL+"/", webappUI.FileSystem()))
+		route.GET(baseURL+"/index.html", func(c *gin.Context) {
+			webappUI.WriteIndex(c.Writer, http.StatusOK)
+		})
+		if webappUI.HasAppJs() {
+			route.GET(baseURL+"/js/app.js", func(c *gin.Context) {
+				webappUI.WriteAppJs(c.Writer)
+			})
+		}
+	}
 	route.NoRoute(func(c *gin.Context) {
 		if !strings.HasPrefix(c.Request.RequestURI, baseURL+"/api") {
-			c.File(fmt.Sprintf("%s/index.html", webappStaticUiPath))
+			if webappUI != nil {
+				webappUI.WriteIndex(c.Writer, http.StatusOK)
+				return
+			}
+			c.Status(http.StatusNotFound)
 			return
 		}
 	})

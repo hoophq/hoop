@@ -129,7 +129,14 @@ securityContext: {}
 
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:
+  # postgres://user:pass@host:5432/dbname — external PostgreSQL (recommended).
+  # pglite:///path/to/data-dir — embedded PostgreSQL (single-node/standalone
+  # only; requires a persistent volume mounted at the data directory).
   POSTGRES_DB_URI: ''
+  # Optional: load SQL migration files from a directory on disk instead of
+  # the copy embedded in the gateway binary. Only set this if you manage
+  # migration files externally; the image ships them at /app/migrations.
+  # MIGRATION_PATH_FILES: '/app/migrations'
   # API_URL: 'yourdomain.tld'
   IDP_AUDIENCE: null
   IDP_ISSUER: null

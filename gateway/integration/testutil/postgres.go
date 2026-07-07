@@ -72,6 +72,12 @@ func StartPostgres(ctx context.Context) (*PostgresContainer, error) {
 		_ = container.Terminate(context.Background())
 		return nil, fmt.Errorf("failed getting postgres container host: %w", err)
 	}
+	// Docker's port proxy on CI runners is not always bound on IPv6, and
+	// "localhost" can resolve to "::1" first, yielding spurious connection
+	// refusals against a healthy container. Pin the IPv4 loopback.
+	if host == "localhost" {
+		host = "127.0.0.1"
+	}
 
 	return &PostgresContainer{
 		Host:      host,

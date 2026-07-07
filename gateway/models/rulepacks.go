@@ -41,6 +41,16 @@ func GetRulepack(db *gorm.DB, orgID, id uuid.UUID) (*Rulepack, error) {
 	return &rp, nil
 }
 
+// ExistsRulepackByDisplayName reports whether a rulepack with the given
+// display name exists for the organization.
+func ExistsRulepackByDisplayName(db *gorm.DB, orgID uuid.UUID, displayName string) (bool, error) {
+	var count int64
+	err := db.Model(&Rulepack{}).
+		Where("org_id = ? AND display_name = ?", orgID, displayName).
+		Count(&count).Error
+	return count > 0, err
+}
+
 func ListRulepacks(db *gorm.DB, orgID uuid.UUID, opts RulepackFilterOption) ([]*Rulepack, int64, error) {
 	var total int64
 	query := db.Model(&Rulepack{}).Where("org_id = ?", orgID)

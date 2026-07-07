@@ -112,6 +112,33 @@ test-transport: libhoop-map generate-wasm
 test-gateway: libhoop-map
 	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
 
+# Same smoke suite, but the gateway state store is the embedded PGlite (wasm)
+# database instead of a PostgreSQL container — the standalone-mode regression
+# net. It fails on SQL the embedded backend cannot run and on code that
+# deadlocks the pool capped at one connection, both invisible on regular
+# PostgreSQL. No Docker required.
+test-gateway-pglite: libhoop-map
+	env CGO_ENABLED=0 GATEWAY_TEST_DB=pglite go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
+
+# Standalone-mode lifecycle suite (DEP-38): boots the gateway on the embedded
+# PGlite database with the full transport stack, provisions the dedicated
+# `standalone` agent through the same services code path `hoop start
+# standalone` runs, and asserts a real agent controller connects with the
+# provisioned DSN. The OSS _libhoop stub suffices (no protocol proxying) and
+# the committed rdp_parser.wasm is embedded, so neither the enterprise libhoop
+# nor the Rust toolchain is required. No Docker either.
+test-standalone: libhoop-map
+	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/standalone/
+
+# True single-binary end-to-end (DEP-38): builds the hoop CLI and runs
+# `hoop start standalone` as a subprocess twice against the same throwaway
+# $HOME — first boot (initdb + migrations + agent provisioning) and resume
+# boot (cluster resume + persisted credentials). The only test layer that
+# exercises the shipped artifact itself: go:embed assets, CLI wiring, and
+# the gateway+agent single-process composition.
+test-standalone-e2e: libhoop-map
+	./scripts/standalone-e2e.sh
+
 generate-openapi-docs: libhoop-map
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
@@ -229,6 +256,14 @@ build-webapp:
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
 
+# Stage the built webapp (dist/webapp.tar.gz) into the gateway embed
+# directory so `make build-go` produces a binary carrying the web UI.
+embed-webapp:
+	rm -rf gateway/webappui/staticui
+	mkdir -p gateway/webappui/staticui
+	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C gateway/webappui/staticui --strip-components=2 ./public
+	touch gateway/webappui/staticui/.gitkeep
+
 build-helm-chart:
 	mkdir -p ${DIST_FOLDER}
 	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
@@ -243,7 +278,7 @@ build-gateway-bundle:
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp
 	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_${GOARCH}.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
-	cp rootfs/app/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
+	cp gateway/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
 	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 1 && \
 	tar -czf ${DIST_FOLDER}/hoopgateway_${VERSION}-Linux_${GOARCH}.tar.gz -C ${DIST_FOLDER}/ hoopgateway
 
@@ -284,4 +319,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration test-transport test-gateway generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

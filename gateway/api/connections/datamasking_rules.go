@@ -8,6 +8,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -19,8 +20,8 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			request		body		[]openapi.DataMaskingRuleConnectionRequest	true	"The request body resource"
-//	@Success		200			{object}	[]openapi.DataMaskingRuleConnection
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Success		200				{object}	[]openapi.DataMaskingRuleConnection
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/datamasking-rules [put]
 func UpdateDataMaskingRuleConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -28,6 +29,16 @@ func UpdateDataMaskingRuleConnection(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+
+	// Attaching masking rules requires a DLP provider (they are silently
+	// not enforced without one); clearing the associations (empty set) is
+	// always allowed.
+	if len(req) > 0 {
+		if err := services.CheckRedactProvider(); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))

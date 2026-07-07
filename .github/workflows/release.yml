@@ -140,7 +140,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -167,6 +167,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -190,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -217,6 +226,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -240,7 +258,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Amd64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -267,6 +285,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -290,7 +317,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Arm64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -317,6 +344,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -340,7 +376,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Amd64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -367,6 +403,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -398,7 +443,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Arm64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -425,6 +470,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV

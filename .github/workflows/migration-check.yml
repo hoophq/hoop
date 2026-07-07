@@ -19,7 +19,7 @@ jobs:
         id: detect
         run: |-
           BASE_REF="${{ github.base_ref }}"
-          CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- 'rootfs/app/migrations/' || true)
+          CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- 'gateway/migrations/' || true)
           if [ -z "$CHANGED_FILES" ]; then
             echo "No migration files changed"
             echo "has_changes=false" >> $GITHUB_OUTPUT

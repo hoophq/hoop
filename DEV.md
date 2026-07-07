@@ -191,7 +191,7 @@ Install the [golang migrate cli](https://github.com/golang-migrate/migrate/relea
 1. In the root folder of the project, run the following command:
 
 ```sh
-migrate create -ext sql -dir rootfs/app/migrations -seq my_new_change
+migrate create -ext sql -dir gateway/migrations -seq my_new_change
 ```
 
 2. Add the `up` and `down` migrations
@@ -199,7 +199,7 @@ migrate create -ext sql -dir rootfs/app/migrations -seq my_new_change
 4. Test reverting the migration
 
 ```sh
-migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslmode=disable' -path rootfs/app/migrations/ down 1
+migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslmode=disable' -path gateway/migrations/ down 1
 ```
 
 ### Migration Best Practices

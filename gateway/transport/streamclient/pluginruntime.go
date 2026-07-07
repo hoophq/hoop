@@ -22,7 +22,7 @@ func loadRuntimePlugins(ctx plugintypes.Context) ([]runtimePlugin, error) {
 	}
 	var nonRegisteredPlugins []string
 	for _, p := range plugintypes.RegisteredPlugins {
-		p1, err := models.GetPluginByName(ctx.GetOrgID(), p.Name())
+		p1, err := models.GetPluginByName(models.DB, ctx.GetOrgID(), p.Name())
 		if err != nil && err != models.ErrNotFound {
 			log.Errorf("failed retrieving plugin %q, err=%v", p.Name(), err)
 			return nil, status.Errorf(codes.Internal, "failed registering plugins")

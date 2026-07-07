@@ -108,6 +108,7 @@ jobs:
           path: dist/
 
   darwin-amd64:
+    needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
 
@@ -137,6 +138,15 @@ jobs:
       - name: Generate WASM
         run: make generate-wasm
 
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
@@ -151,6 +161,7 @@ jobs:
           path: dist/
 
   darwin-arm64:
+    needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
 
@@ -180,6 +191,15 @@ jobs:
       - name: Generate WASM
         run: make generate-wasm
 
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
@@ -194,6 +214,7 @@ jobs:
           path: dist/
 
   windows-amd64:
+    needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Windows Amd64
 
@@ -223,6 +244,15 @@ jobs:
       - name: Generate WASM
         run: make generate-wasm
 
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
@@ -237,6 +267,7 @@ jobs:
           path: dist/
 
   windows-arm64:
+    needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Windows Arm64
 
@@ -266,6 +297,15 @@ jobs:
       - name: Generate WASM
         run: make generate-wasm
 
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
@@ -280,6 +320,7 @@ jobs:
           path: dist/
 
   linux-amd64:
+    needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Linux Amd64
 
@@ -309,6 +350,15 @@ jobs:
       - name: Generate WASM
         run: make generate-wasm
 
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
@@ -327,6 +377,7 @@ jobs:
           path: dist/
 
   linux-arm64:
+    needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Linux Arm64
 
@@ -355,6 +406,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV

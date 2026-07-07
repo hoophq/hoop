@@ -20,11 +20,15 @@ import (
 
 // TODO: it should include all runtime configuration
 
-const defaultWebappStaticUiPath string = "/app/ui/public"
 
 type pgCredentials struct {
 	connectionString string
 	username         string
+
+	// pgliteDataDir is set when POSTGRES_DB_URI uses the pglite:// scheme
+	// (e.g. pglite:///var/lib/hoop/pgdata). It holds the data directory of
+	// the embedded PGlite database the gateway must boot before connecting.
+	pgliteDataDir string
 }
 type Config struct {
 	apiKey                          string
@@ -42,7 +46,6 @@ type Config struct {
 	webhookAppURL                   *url.URL
 	licenseSigningKey               *rsa.PrivateKey
 	licenseSignerOrgID              string
-	migrationPathFiles              string
 	orgMultitenant                  bool
 	apiURL                          string
 	grpcURL                         string
@@ -52,6 +55,7 @@ type Config struct {
 	apiURLPath                      string
 	webappUsersManagement           string
 	webappStaticUIPath              string
+	migrationPathFiles              string
 	disableSessionsDownload         bool
 	disableClipboardCopyCut         bool
 	gatewayUseTLS                   bool
@@ -112,13 +116,17 @@ func Load() error {
 	if err != nil {
 		return err
 	}
+	// SQL migrations are embedded in the binary (gateway/migrations) and by
+	// default no files are read from disk. MIGRATION_PATH_FILES remains
+	// supported as an explicit override for deployments that manage
+	// migration files externally: when set, migrations are loaded from that
+	// directory instead of the embedded copy.
 	migrationPathFiles := strings.TrimSuffix(os.Getenv("MIGRATION_PATH_FILES"), "/")
-	if migrationPathFiles == "" {
-		migrationPathFiles = "/app/migrations"
-	}
-	firstMigrationFilePath := fmt.Sprintf("%s/000001_init.up.sql", migrationPathFiles)
-	if _, err := os.Stat(firstMigrationFilePath); err != nil {
-		return fmt.Errorf("unable to find first migration file %v, err=%v", firstMigrationFilePath, err)
+	if migrationPathFiles != "" {
+		firstMigrationFilePath := fmt.Sprintf("%s/000001_init.up.sql", migrationPathFiles)
+		if _, err := os.Stat(firstMigrationFilePath); err != nil {
+			return fmt.Errorf("MIGRATION_PATH_FILES is set but the first migration file %v is not readable, err=%v", firstMigrationFilePath, err)
+		}
 	}
 	allowedOrgID, licensePrivKey, err := loadLicensePrivateKey()
 	if err != nil {
@@ -136,10 +144,9 @@ func Load() error {
 	if err != nil {
 		return err
 	}
+	// Empty when not explicitly configured: the web UI source is then
+	// resolved by gateway/webappui (default disk path or embedded build).
 	webappStaticUiPath := os.Getenv("STATIC_UI_PATH")
-	if webappStaticUiPath == "" {
-		webappStaticUiPath = defaultWebappStaticUiPath
-	}
 	// it's important to coerce to empty string when the path is just a /
 	// in most cases this is a typo provided by the user that will affect
 	// every part of the application using the api url to construct links
@@ -259,7 +266,6 @@ func Load() error {
 		authMethod:                      authMethod,
 		askAICredentials:                askAICred,
 		pgCred:                          pgCred,
-		migrationPathFiles:              migrationPathFiles,
 		licenseSigningKey:               licensePrivKey,
 		licenseSignerOrgID:              allowedOrgID,
 		gcpDLPJsonCredentials:           gcpJsonCred,
@@ -273,6 +279,7 @@ func Load() error {
 		webhookAppURL:                   webhookAppURL,
 		webappUsersManagement:           webappUsersManagement,
 		webappStaticUIPath:              webappStaticUiPath,
+		migrationPathFiles:              migrationPathFiles,
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
 		disableClipboardCopyCut:         os.Getenv("DISABLE_CLIPBOARD_COPY_CUT") == "true",
@@ -349,6 +356,17 @@ func loadPostgresCredentials() (*pgCredentials, error) {
 		return nil, fmt.Errorf("failed parsing POSTGRES_DB_URI, err=%v", err)
 	}
 
+	// pglite:///<data-dir> enables the embedded PGlite database. The
+	// connection string is derived at startup after the embedded database
+	// is booted (see gateway/pglite); only the data directory is configured.
+	if pgURL.Scheme == "pglite" {
+		dataDir := pgURL.Path
+		if pgURL.Host != "" || dataDir == "" || dataDir == "/" {
+			return nil, fmt.Errorf("POSTGRES_DB_URI with pglite scheme must be an absolute path in the form pglite:///path/to/data-dir")
+		}
+		return &pgCredentials{username: "postgres", pgliteDataDir: dataDir}, nil
+	}
+
 	var pgUser, pgPassword string
 	if pgURL.User != nil {
 		pgUser = pgURL.User.Username()
@@ -423,6 +441,8 @@ func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 // ApiURL is the base URL without any path segment or query strings (scheme://host:port)
 func (c Config) ApiURL() string                        { return c.apiURL }
 func (c Config) GrpcURL() string                       { return c.grpcURL }
+// WebappStaticUiPath returns the explicitly configured STATIC_UI_PATH, or
+// empty when unset (the web UI source is then resolved by gateway/webappui).
 func (c Config) WebappStaticUiPath() string            { return c.webappStaticUIPath }
 func (c Config) ApiHostname() string                   { return c.apiHostname }
 func (c Config) ApiHost() string                       { return c.apiHost } // ApiHost host or host:port
@@ -452,9 +472,21 @@ func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnal
 func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
 func (c Config) PgUsername() string                    { return c.pgCred.username }
 func (c Config) PgURI() string                         { return c.pgCred.connectionString }
+
+// MigrationPathFiles returns the directory to load SQL migration files
+// from when MIGRATION_PATH_FILES is set. Empty means the migrations
+// embedded in the binary are used (the default).
+func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
+
+// PgliteDataDir returns the embedded PGlite data directory when
+// POSTGRES_DB_URI uses the pglite:// scheme, or empty otherwise.
+func (c Config) PgliteDataDir() string { return c.pgCred.pgliteDataDir }
+
+// IsPgliteEnabled reports whether the gateway must boot the embedded PGlite
+// database instead of connecting to an external PostgreSQL.
+func (c Config) IsPgliteEnabled() bool { return c.pgCred.pgliteDataDir != "" }
 func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
 func (c Config) DisableClipboardCopyCut() bool         { return c.disableClipboardCopyCut }
-func (c Config) MigrationPathFiles() string            { return c.migrationPathFiles }
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }

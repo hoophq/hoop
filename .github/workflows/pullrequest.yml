@@ -129,3 +129,70 @@ jobs:
       # runners have Docker pre-installed, so no services: block is needed.
       - name: Gateway Smoke Test
         run: make test-gateway
+
+  gateway-smoke-test-pglite:
+    name: Gateway Smoke Test (embedded PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Same smoke suite as gateway-smoke-test, but the state store is the
+      # embedded PGlite (wasm) database — the standalone-mode regression net.
+      # It fails on SQL the embedded backend cannot run and on code that
+      # deadlocks the pool capped at one connection, both invisible on
+      # regular PostgreSQL. Runs entirely in-process: no Docker, no
+      # testcontainers.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      - name: Gateway Smoke Test (pglite)
+        run: make test-gateway-pglite
+
+  standalone-test:
+    name: Standalone Mode Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Standalone-mode lifecycle suite (DEP-38): gateway on the embedded
+      # PGlite database + the dedicated standalone agent provisioned through
+      # the same code path `hoop start standalone` runs, connected via a
+      # real agent controller. Runs entirely in-process: no Docker, no
+      # enterprise libhoop, no Rust toolchain.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      - name: Standalone Mode Test
+        run: make test-standalone
+
+  standalone-e2e:
+    name: Standalone Single-Binary E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Builds the real hoop CLI and runs `hoop start standalone` as a
+      # subprocess: first boot (embedded PGlite initdb + migrations + agent
+      # provisioning) and resume boot (cluster resume + persisted
+      # credentials). The only job that tests the shipped artifact itself —
+      # go:embed assets, CLI wiring, and the single-process composition.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      - name: Standalone Single-Binary E2E
+        run: make test-standalone-e2e

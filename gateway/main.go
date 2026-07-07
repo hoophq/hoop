@@ -29,6 +29,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/pglite"
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
@@ -36,7 +37,6 @@ import (
 	"github.com/hoophq/hoop/gateway/rdp"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport"
-	"github.com/hoophq/hoop/gateway/webappjs"
 
 	// plugins
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
@@ -58,9 +58,6 @@ func Run() {
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
-	if err := webappjs.ConfigureServerURL(); err != nil {
-		log.Warnf("failed configuring webappjs server URL, running gateway without it, reason=%v", err)
-	}
 
 	tlsConfig, err := appconfig.Get().GetTLSConfig()
 	if err != nil {
@@ -69,16 +66,28 @@ func Run() {
 
 	bootstrap.Phase("Bootstrapping")
 
-	pgURI, migrationPathFiles := appconfig.Get().PgURI(), appconfig.Get().MigrationPathFiles()
+	pgURI := appconfig.Get().PgURI()
+	migrateURI, dbMaxOpenConns := pgURI, 0
+	if appconfig.Get().IsPgliteEnabled() {
+		pgliteStep := bootstrap.Step("Embedded database (pglite)")
+		pgliteInstance, err := pglite.Start(context.Background(), appconfig.Get().PgliteDataDir())
+		if err != nil {
+			pgliteStep.Fail(err)
+			log.Fatal(err)
+		}
+		// The embedded backend serves one wire-protocol session at a time.
+		pgURI, migrateURI, dbMaxOpenConns = pgliteInstance.DSN(), pgliteInstance.MigrateDSN(), 1
+		pgliteStep.OK("")
+	}
 	migrateStep := bootstrap.Step("Database migrations")
-	if err := modelsbootstrap.MigrateDB(pgURI, migrationPathFiles); err != nil {
+	if err := modelsbootstrap.MigrateDB(migrateURI, appconfig.Get().MigrationPathFiles()); err != nil {
 		migrateStep.Fail(err)
 		log.Fatal(err)
 	}
 	migrateStep.OK("")
 
 	apiURL := appconfig.Get().FullApiURL()
-	if err := models.InitDatabaseConnection(); err != nil {
+	if err := models.InitDatabaseConnection(pgURI, dbMaxOpenConns); err != nil {
 		log.Fatal(err)
 	}
 

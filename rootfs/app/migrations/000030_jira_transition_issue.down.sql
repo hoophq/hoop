@@ -1,1 +1,0 @@
-ALTER TABLE private.jira_issue_templates DROP COLUMN jira_transition_name_on_close;

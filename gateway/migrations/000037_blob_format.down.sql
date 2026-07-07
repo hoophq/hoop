@@ -1,0 +1,1 @@
+ALTER TABLE private.blobs DROP COLUMN format;

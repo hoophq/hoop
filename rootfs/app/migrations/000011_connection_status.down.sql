@@ -1,5 +1,0 @@
-BEGIN;
-
--- noop
-
-COMMIT;

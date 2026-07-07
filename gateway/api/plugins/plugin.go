@@ -53,7 +53,7 @@ func Post(c *gin.Context) {
 	}
 
 	// existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
-	_, err := models.GetPluginByName(ctx.OrgID, req.Name)
+	_, err := models.GetPluginByName(models.DB, ctx.OrgID, req.Name)
 	switch err {
 	case models.ErrNotFound:
 	case nil:
@@ -114,7 +114,7 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := models.GetPluginByName(ctx.OrgID, req.Name)
+	existingPlugin, err := models.GetPluginByName(models.DB, ctx.OrgID, req.Name)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
@@ -156,7 +156,7 @@ func PutConfig(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := models.GetPluginByName(ctx.OrgID, pluginName)
+	existingPlugin, err := models.GetPluginByName(models.DB, ctx.OrgID, pluginName)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
@@ -206,7 +206,7 @@ func PutConfig(c *gin.Context) {
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
-	obj, err := models.GetPluginByName(ctx.OrgID, name)
+	obj, err := models.GetPluginByName(models.DB, ctx.OrgID, name)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})

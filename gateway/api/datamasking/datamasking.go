@@ -20,6 +20,18 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+// requireRedactProvider aborts rule creation/updates with 422 when the
+// server has no DLP provider configured (the invariant and remediation text
+// live in services.CheckRedactProvider). Read/list/delete stay available so
+// existing rules remain visible and removable.
+func requireRedactProvider(c *gin.Context) bool {
+	if err := services.CheckRedactProvider(); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return false
+	}
+	return true
+}
+
 func getLicenseType(ctx *storagev2.Context) string {
 	licenseType := license.OSSType
 	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
@@ -138,11 +150,14 @@ func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
 //	@Tags			Data Masking Rules
 //	@Accept			json
 //	@Produce		json
-//	@Param			request		body		openapi.DataMaskingRuleRequest	true	"The request body resource"
-//	@Success		201			{object}	openapi.DataMaskingRule
-//	@Failure		400,409,500	{object}	openapi.HTTPError
+//	@Param			request			body		openapi.DataMaskingRuleRequest	true	"The request body resource"
+//	@Success		201				{object}	openapi.DataMaskingRule
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules [post]
 func Post(c *gin.Context) {
+	if !requireRedactProvider(c) {
+		return
+	}
 	ctx := storagev2.ParseContext(c)
 	req := parseRequestPayload(c)
 	if req == nil {
@@ -235,11 +250,14 @@ func Post(c *gin.Context) {
 //	@Tags			Data Masking Rules
 //	@Accept			json
 //	@Produce		json
-//	@Param			request		body		openapi.DataMaskingRuleRequest	true	"The request body resource"
-//	@Success		200			{object}	openapi.DataMaskingRule
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Param			request			body		openapi.DataMaskingRuleRequest	true	"The request body resource"
+//	@Success		200				{object}	openapi.DataMaskingRule
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules/{id} [put]
 func Put(c *gin.Context) {
+	if !requireRedactProvider(c) {
+		return
+	}
 	ctx := storagev2.ParseContext(c)
 	req := parseRequestPayload(c)
 	if req == nil {

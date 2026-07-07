@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
-	"runtime"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
@@ -22,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/pglite"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport"
 	pluginsrbac "github.com/hoophq/hoop/gateway/transport/plugins/accesscontrol"
@@ -31,6 +30,22 @@ import (
 	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	pluginswebhooks "github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
+)
+
+// DatabaseBackend selects the state store StartGateway boots the gateway
+// against.
+type DatabaseBackend string
+
+const (
+	// DBPostgresContainer runs a throwaway PostgreSQL testcontainer (the
+	// default, zero-value backend).
+	DBPostgresContainer DatabaseBackend = ""
+	// DBPglite runs the embedded PGlite (wasm) database inside the test
+	// process, exactly as `POSTGRES_DB_URI=pglite://` deployments do — pool
+	// capped at one connection, embedded migration set, no Docker. Suites
+	// run against this backend to catch regressions that only manifest on
+	// the single-session backend (pool=1 deadlocks, unsupported SQL).
+	DBPglite DatabaseBackend = "pglite"
 )
 
 // GatewayOptions selects which layers of the gateway a test suite boots. The
@@ -50,14 +65,21 @@ type GatewayOptions struct {
 	// WithGRPC starts the transport gRPC server on an ephemeral loopback
 	// port, reachable via Gateway.GRPCAddr.
 	WithGRPC bool
+	// Database selects the state store backend; defaults to
+	// DBPostgresContainer.
+	Database DatabaseBackend
 }
 
 // Gateway is a fully booted, in-process gateway under test. It owns every
-// backing resource (PostgreSQL container, HTTP server, gRPC server) and tears
+// backing resource (state-store backend, HTTP server, gRPC server) and tears
 // them all down on Close.
 type Gateway struct {
-	// Postgres is the throwaway state-store container.
+	// Postgres is the throwaway state-store container; nil when the suite
+	// runs on the DBPglite backend.
 	Postgres *PostgresContainer
+	// Pglite is the embedded database instance; nil unless the suite runs
+	// on the DBPglite backend.
+	Pglite *pglite.Instance
 	// HTTP is the in-process HTTP API server; nil unless WithHTTP was set.
 	HTTP *GatewayTestServer
 	// GRPCAddr is the "host:port" of the transport gRPC server; empty unless
@@ -66,9 +88,10 @@ type Gateway struct {
 	// OrgID is the id of the bootstrapped default organization.
 	OrgID string
 
-	grpcServer   *grpc.Server
-	grpcListener net.Listener
-	auditPath    string
+	grpcServer    *grpc.Server
+	grpcListener  net.Listener
+	auditPath     string
+	pgliteDataDir string
 }
 
 // StartGateway boots a gateway in-process the way gateway/main.go does, minus
@@ -87,34 +110,50 @@ type Gateway struct {
 // The returned Gateway must be closed by the caller (typically via defer in
 // TestMain) to release the container and network listeners.
 func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err error) {
-	pg, err := StartPostgres(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// On any failure past this point, tear the container back down so a
-	// bootstrap error does not leak a running Postgres for the whole run.
+	gw = &Gateway{}
+	// On any failure past this point, tear every already-started resource
+	// back down so a bootstrap error does not leak containers, embedded
+	// databases, or listeners for the whole run.
 	defer func() {
-		if err != nil && pg != nil {
-			_ = pg.Terminate()
+		if err != nil {
+			gw.Close()
+			gw = nil
 		}
 	}()
 
-	migrationsPath, err := migrationsDir()
-	if err != nil {
-		return nil, err
+	// appconfig.Load reads these env vars, so they must be set before Load.
+	// AUTH_METHOD=local makes the gateway issue/verify its own
+	// ed25519-signed JWTs without an external IDP.
+	env := map[string]string{
+		"AUTH_METHOD": "local",
+		"API_URL":     "http://127.0.0.1:8009",
+		"GRPC_URL":    "grpc://127.0.0.1:8010",
+		"GIN_MODE":    "release",
 	}
 
-	// appconfig.Load reads these env vars and stat-checks the migration path,
-	// so they must be set before Load. AUTH_METHOD=local makes the gateway
-	// issue/verify its own ed25519-signed JWTs without an external IDP.
-	for k, v := range map[string]string{
-		"POSTGRES_DB_URI":      pg.URI(),
-		"MIGRATION_PATH_FILES": migrationsPath,
-		"AUTH_METHOD":          "local",
-		"API_URL":              "http://127.0.0.1:8009",
-		"GRPC_URL":             "grpc://127.0.0.1:8010",
-		"GIN_MODE":             "release",
-	} {
+	switch opts.Database {
+	case DBPglite:
+		// The embedded database boots from a throwaway data directory; the
+		// pglite:// URI only carries the directory (gateway/main.go boots
+		// the instance after appconfig.Load, and so does this harness).
+		dataDir, derr := os.MkdirTemp("", "hoop-pglite-*")
+		if derr != nil {
+			return nil, fmt.Errorf("create pglite data dir: %w", derr)
+		}
+		gw.pgliteDataDir = dataDir
+		env["POSTGRES_DB_URI"] = "pglite://" + dataDir
+	case DBPostgresContainer:
+		pg, perr := StartPostgres(ctx)
+		if perr != nil {
+			return nil, perr
+		}
+		gw.Postgres = pg
+		env["POSTGRES_DB_URI"] = pg.URI()
+	default:
+		return nil, fmt.Errorf("unknown database backend %q", opts.Database)
+	}
+
+	for k, v := range env {
 		if serr := os.Setenv(k, v); serr != nil {
 			return nil, fmt.Errorf("setenv %s: %w", k, serr)
 		}
@@ -124,10 +163,24 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 		return nil, fmt.Errorf("appconfig.Load: %w", err)
 	}
 
-	if err = modelsbootstrap.MigrateDB(appconfig.Get().PgURI(), appconfig.Get().MigrationPathFiles()); err != nil {
+	// Mirror the database boot in gateway/main.go: on pglite the instance
+	// is started in-process and the pool is capped at one connection (the
+	// embedded backend serves a single wire-protocol session at a time).
+	pgURI := appconfig.Get().PgURI()
+	migrateURI, dbMaxOpenConns := pgURI, 0
+	if opts.Database == DBPglite {
+		inst, perr := pglite.Start(ctx, appconfig.Get().PgliteDataDir())
+		if perr != nil {
+			return nil, fmt.Errorf("start embedded pglite: %w", perr)
+		}
+		gw.Pglite = inst
+		pgURI, migrateURI, dbMaxOpenConns = inst.DSN(), inst.MigrateDSN(), 1
+	}
+
+	if err = modelsbootstrap.MigrateDB(migrateURI, appconfig.Get().MigrationPathFiles()); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
-	if err = models.InitDatabaseConnection(); err != nil {
+	if err = models.InitDatabaseConnection(pgURI, dbMaxOpenConns); err != nil {
 		return nil, fmt.Errorf("init db connection: %w", err)
 	}
 	if err = modelsbootstrap.RunGolangMigrations(); err != nil {
@@ -145,7 +198,7 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 		return nil, fmt.Errorf("bootstrap default org: %w", err)
 	}
 
-	gw = &Gateway{Postgres: pg, OrgID: orgID}
+	gw.OrgID = orgID
 
 	if opts.WithPlugins {
 		if err = gw.registerPlugins(); err != nil {
@@ -186,6 +239,16 @@ func (g *Gateway) Close() {
 		if err := g.Postgres.Terminate(); err != nil {
 			fmt.Fprintf(os.Stderr, "gateway test teardown: terminate postgres: %v\n", err)
 		}
+	}
+	if g.Pglite != nil {
+		// Clean shutdown checkpoints the embedded cluster, mirroring the
+		// gateway's own shutdown path.
+		if err := g.Pglite.Close(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "gateway test teardown: close pglite: %v\n", err)
+		}
+	}
+	if g.pgliteDataDir != "" {
+		_ = os.RemoveAll(g.pgliteDataDir)
 	}
 	if g.auditPath != "" {
 		_ = os.RemoveAll(g.auditPath)
@@ -290,21 +353,4 @@ func buildEngine() *gin.Engine {
 		ReleaseConnectionFn: func(_, _, _, _ string) {},
 	}
 	return a.BuildEngine()
-}
-
-// migrationsDir resolves the absolute path to rootfs/app/migrations from this
-// source file's location, so it is independent of the test's working
-// directory (the smoke and transport suites live at different depths).
-func migrationsDir() (string, error) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("unable to resolve caller for migrations path")
-	}
-	// thisFile = <repo>/gateway/integration/testutil/gateway_boot.go
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
-	path, err := filepath.Abs(filepath.Join(repoRoot, "rootfs", "app", "migrations"))
-	if err != nil {
-		return "", fmt.Errorf("resolving migrations path: %w", err)
-	}
-	return path, nil
 }
