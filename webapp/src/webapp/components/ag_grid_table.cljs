@@ -59,34 +59,33 @@
    Parameters:
    - columns: vector of column definitions in the format [{:field 'field_name' :headerName 'Title' ...}]
    - rows: vector of row data as maps
+   - dark-mode?: boolean selecting the dark or light grid theme
    - options: map of additional options for the AG Grid
      - :theme - theme to use (default, alpine, balham, material)
      - :height - table height (default 400px)
      - :pagination? - enable pagination (default false)
      - :auto-size-columns? - automatically adjust columns (default true)"
-  [{:keys [columns rows options]}]
+  [{:keys [columns rows options dark-mode?]}]
   (let [default-options {:height "400px"
                          :pagination? false
                          :auto-size-columns? true}
         merged-options (merge default-options options)]
-
-    (fn [{:keys [dark-mode?]}]
-      [:section {:style {:height (:height merged-options)
-                         :width "100%"}
-                 :aria-label "Query results table"}
-       [:> AgGridReact {:theme (if dark-mode? alpine-dark alpine-light)
-                        :columnDefs (clj->js columns)
-                        :rowData (clj->js rows)
-                        :defaultColDef (clj->js {:resizable true
-                                                 :sortable true
-                                                 :filter true
-                                                 :editable true})
-                        :pagination (boolean (:pagination? merged-options))
-                        :paginationPageSize (or (:page-size merged-options) 20)
-                        :onGridReady (fn [params]
-                                       (when (and (:auto-size-columns? merged-options)
-                                                  (aget params "columnApi"))
-                                         (.autoSizeAllColumns (aget params "columnApi"))))}]])))
+    [:section {:style {:height (:height merged-options)
+                       :width "100%"}
+               :aria-label "Query results table"}
+     [:> AgGridReact {:theme (if dark-mode? alpine-dark alpine-light)
+                      :columnDefs (clj->js columns)
+                      :rowData (clj->js rows)
+                      :defaultColDef (clj->js {:resizable true
+                                               :sortable true
+                                               :filter true
+                                               :editable true})
+                      :pagination (boolean (:pagination? merged-options))
+                      :paginationPageSize (or (:page-size merged-options) 20)
+                      :onGridReady (fn [params]
+                                     (when (and (:auto-size-columns? merged-options)
+                                                (aget params "columnApi"))
+                                       (.autoSizeAllColumns (aget params "columnApi"))))}]]))
 
 (defn error-message
   "Component to display error message with malformed data"

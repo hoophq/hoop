@@ -1,6 +1,7 @@
 (ns webapp.webclient.log-area.main
   (:require ["papaparse" :as papa]
-            ["@radix-ui/themes" :refer [Box Flex]]
+            ["@radix-ui/themes" :refer [Box Flex Text]]
+            ["lucide-react" :refer [AlertTriangle]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -32,6 +33,25 @@
       (cs/join "\n" (drop 2 lines))
       script)))
 
+(defn- execution-error-view
+  "Failed executions return the raw CLI output (error message mixed with any
+   partial results), which cannot be parsed as tabular data. Show it as an
+   error instead of feeding it to the grid."
+  [response]
+  [:> Flex {:direction "column"
+            :gap "2"
+            :class "h-full overflow-auto py-regular pl-regular pr-large"
+            :role "alert"
+            :aria-label "Query execution error"}
+   [:> Flex {:align "center" :gap "2"}
+    [:> AlertTriangle {:size 16 :class "shrink-0 text-red-500" :aria-hidden "true"}]
+    [:> Text {:size "2" :weight "medium" :class "text-red-500"}
+     "Execution failed"]]
+   [:pre {:class "font-mono text-sm text-gray-11 whitespace-pre-wrap break-words"}
+    (if (cs/blank? response)
+      "No output returned. Open the session details for more information."
+      response)]])
+
 ;; TODO: Change it for send DB in the payload and not the response
 (defn- sanitize-response [response connection-type]
   (cond
@@ -61,6 +81,7 @@
                           :classes "h-full"}
             tabular-status (:status @script-response)
             tabular-loading? (= tabular-status :loading)
+            execution-failed? (= "failed" (:output_status (:data @script-response)))
             results-transformed (transform-results->matrix response connection-type)
             results-heads (first results-transformed)
             results-body (next results-transformed)
@@ -72,6 +93,7 @@
                                        (not parallel-mode-active?))
                               {:tabular "Tabular"}))
             tabular-data? (and connection-type-database?
+                               (not execution-failed?)
                                (seq results-heads)
                                (seq results-body))
             session-id (:session_id (:data @script-response))
@@ -119,9 +141,11 @@
                                                   :logs))
                    :class "flex-1 min-h-0 overflow-hidden"}
            (case @selected-tab
-             "Tabular" [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
-                        {:height "100%"
-                         :pagination? (> (count results-body) 100)
-                         :auto-size-columns? true}]
+             "Tabular" (if execution-failed?
+                         [execution-error-view response]
+                         [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
+                          {:height "100%"
+                           :pagination? (> (count results-body) 100)
+                           :auto-size-columns? true}])
              "Logs" [logs/main :logs logs-content]
              :else [logs/main logs-content])]]]))))
