@@ -70,8 +70,10 @@ func CreateRDPSession(
 		return nil, fmt.Errorf("agent not found: %s", connectionInfo.AgentName)
 	}
 
-	// 8192 is the maximum number of messages that can be queued without blocking
-	dataChannel := make(chan []byte, 8192)
+	// Slot count only decouples producer and consumer scheduling; the real
+	// bound on queued data is the byte budget (maxQueuedBytes) enforced by
+	// ForwardToTCP.
+	dataChannel := make(chan []byte, 1024)
 	credentialsReceived := make(chan bool, 1)
 
 	session := &Session{
@@ -86,6 +88,8 @@ func CreateRDPSession(
 		credentialsReceived: credentialsReceived,
 		ctx:                 ctx,
 		cancel:              timeoutCancelFn,
+		maxQueueBytes:       maxQueuedBytes,
+		spaceFreed:          make(chan struct{}, 1),
 	}
 
 	// Store session immediately so it can be found by WebSocket handler
@@ -135,14 +139,25 @@ func CreateRDPSession(
 		Payload:  []byte{}, // Empty payload since session ID is in header
 	}
 
+	// abort releases the session's context (unblocking any relay producer
+	// already racing data in) and deregisters it. It deliberately does NOT
+	// call session.Close(): that would close the AgentCommunicator, which is
+	// the agent's shared websocket — killing every other session on that
+	// agent over a single failed session setup. The client TCP connection is
+	// owned and closed by the caller on error.
+	abort := func() {
+		timeoutCancelFn()
+		BrokerInstance.sessions.Delete(sessionID)
+	}
+
 	framedData, err := EncodeWebSocketMessage(sessionID, msg)
 	if err != nil {
-		BrokerInstance.sessions.Delete(sessionID)
+		abort()
 		return nil, err
 	}
 
 	if err := session.SendToAgent(framedData); err != nil {
-		BrokerInstance.sessions.Delete(sessionID)
+		abort()
 		return nil, err
 	}
 
@@ -157,7 +172,7 @@ func CreateRDPSession(
 		return session, nil
 	case <-timeoutCtx.Done():
 		// Clean up session on timeout
-		BrokerInstance.sessions.Delete(sessionID)
+		abort()
 		return nil, fmt.Errorf("timeout waiting for %s started response", protocol)
 	}
 }
