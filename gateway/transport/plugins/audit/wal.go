@@ -370,7 +370,7 @@ func (p *auditPlugin) encodeEventEntry(buf *strings.Builder, ev *eventlogv1.Even
 	if len(ev.Payload) == 0 {
 		return
 	}
-	stream := p.truncateTCPEventStream(ev.Payload, protoConnType)
+	stream := p.truncateOpaqueEventStream(ev.Payload, protoConnType)
 	if buf.Len() > 0 {
 		buf.WriteByte(',')
 	}
@@ -454,9 +454,20 @@ func accumulateAIAnalyzerVerdict(ev *eventlogv1.EventLog, metrics *SessionMetric
 	)
 }
 
-func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, protoConnType pb.ConnectionType) []byte {
-	if len(eventStream) > 5000 && protoConnType == pb.ConnectionTypeTCP {
-		return eventStream[0:5000]
+// maxOpaqueEventStreamBytes caps how much of a single opaque byte-stream
+// event is persisted to the session blob_stream at flush time. Applies to
+// protocols whose payloads are unreadable binary in the audit replay (raw
+// TCP, RDP frames): storing them whole is pure cost — for RDP it meant
+// base64-encoding full bitmap frames into Postgres on every flush, up to the
+// 110 MiB per-session cap, with the corresponding gateway memory spike. RDP
+// session replay does not read this blob; it uses the dedicated RDP recorder
+// stream.
+const maxOpaqueEventStreamBytes = 5000
+
+func (p *auditPlugin) truncateOpaqueEventStream(eventStream []byte, protoConnType pb.ConnectionType) []byte {
+	isOpaque := protoConnType == pb.ConnectionTypeTCP || protoConnType == pb.ConnectionTypeRDP
+	if len(eventStream) > maxOpaqueEventStreamBytes && isOpaque {
+		return eventStream[0:maxOpaqueEventStreamBytes]
 	}
 	return eventStream
 }
