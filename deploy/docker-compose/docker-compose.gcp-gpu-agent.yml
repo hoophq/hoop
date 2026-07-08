@@ -55,6 +55,12 @@ services:
       # OCR workers; each holds its own model copy in the T4's VRAM. 4 fits
       # comfortably in 16GB. Tune down if you see VRAM pressure.
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
+      # Recognition runtime (see server_rapidocr.py). fp16 bucket sessions:
+      # measured 1.8x end-to-end on this T4 with byte-identical text. The en
+      # model reads Latin/digits only — correct for this deployment's en-US
+      # desktops; switch to ch (and drop fp16 if VRAM-tight) for CJK.
+      - OCR_REC_PRECISION=${OCR_REC_PRECISION:-fp16}
+      - OCR_REC_LANG=${OCR_REC_LANG:-en}
     # Give the bundled engine GPUs via the nvidia container runtime.
     deploy:
       resources:
