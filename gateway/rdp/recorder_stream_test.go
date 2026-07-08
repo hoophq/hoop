@@ -209,6 +209,31 @@ func TestStreamEventsSinkErrorStops(t *testing.T) {
 	}
 }
 
+func TestStreamEventsSkipsOversizedLines(t *testing.T) {
+	// One legitimate event, one oversized line (> maxRecordedEventBytes,
+	// as an old/foreign log could contain), one more legitimate event.
+	small := makeEventLine(t, 1.0, []byte("ok"))
+	big := makeEventLine(t, 2.0, make([]byte, maxRecordedEventBytes)) // >8 MiB after encoding
+	lines := [][]byte{small, big, makeEventLine(t, 3.0, []byte("ok2"))}
+
+	tmpPath := writeEventLines(t, lines)
+	r := &RDPSessionRecorder{sessionID: "sid-oversized", startTime: time.Now()}
+
+	entryCount, _, err := r.streamEvents(tmpPath, func(chunk json.RawMessage) error {
+		if len(chunk) > finalizeChunkBytes+maxRecordedEventBytes {
+			return fmt.Errorf("chunk exceeded the finalize memory unit: %d", len(chunk))
+		}
+		var entries []any
+		return json.Unmarshal(chunk, &entries)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entryCount != 2 {
+		t.Fatalf("entryCount=%d, want 2 (oversized entry skipped)", entryCount)
+	}
+}
+
 func TestRecordOutputStopsWhenTruncated(t *testing.T) {
 	r := &RDPSessionRecorder{sessionID: "sid-cap", startTime: time.Now(), truncated: true}
 	r.RecordOutput(make([]byte, 4096))

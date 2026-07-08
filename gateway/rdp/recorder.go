@@ -37,6 +37,15 @@ const finalizeChunkBytes = 8 << 20 // 8 MiB
 // (sessionwal.DefaultMaxRead).
 const maxRecordedBytes = 128 << 20 // 128 MiB
 
+// maxRecordedEventBytes caps a single encoded event line. Without it, one
+// huge bitmap update (an uncompressed full-screen paint on a large display
+// encodes at ~1.78x the pixel bytes) becomes the in-memory unit of finalize
+// streaming and defeats the finalizeChunkBytes bound. Oversized events are
+// skipped — losing one frame of replay — rather than truncated, since a
+// partial event line would not be valid JSON. Enforced at write time, and
+// again at read time as defense-in-depth for logs written by other versions.
+const maxRecordedEventBytes = finalizeChunkBytes
+
 // RDPSessionRecorder captures RDP traffic for session replay.
 // Bitmap events are streamed to a temp file to avoid holding everything in memory.
 type RDPSessionRecorder struct {
@@ -238,6 +247,15 @@ func (r *RDPSessionRecorder) parseAndStorePDU(data []byte) {
 			base64.StdEncoding.EncodeToString(eventJSON),
 		}
 		line, _ := json.Marshal(event)
+
+		// Skip single events too large to stream within the finalize memory
+		// bound; one lost frame beats an unbounded allocation at close.
+		if len(line)+1 > maxRecordedEventBytes {
+			log.With("sid", r.sessionID).Warnf(
+				"skipping oversized RDP bitmap event (%d bytes encoded, cap %d); one replay frame lost",
+				len(line), maxRecordedEventBytes)
+			continue
+		}
 
 		// Stop recording (not the session) once the replay log reaches the
 		// cap; an unbounded log would have to be streamed to the database at
@@ -476,12 +494,20 @@ func (r *RDPSessionRecorder) streamEvents(tmpPath string, sink func(chunk json.R
 		}
 	}
 
-	// Each line in the temp file is one complete JSON event.
+	// Each line in the temp file is one complete JSON event. Write-time
+	// enforcement of maxRecordedEventBytes makes oversized lines impossible
+	// in logs produced by this version; the guard below is defense-in-depth
+	// (older/foreign logs) so a single entry can never balloon the finalize
+	// memory unit past ~2x finalizeChunkBytes.
 	reader := bufio.NewReaderSize(f, 1<<20)
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		line = bytes.TrimSuffix(line, []byte("\n"))
-		if len(line) > 0 {
+		if len(line) > maxRecordedEventBytes {
+			log.With("sid", r.sessionID).Warnf(
+				"skipping oversized recorded event (%d bytes, cap %d); one replay frame lost",
+				len(line), maxRecordedEventBytes)
+		} else if len(line) > 0 {
 			if err := appendEntry(line); err != nil {
 				return entryCount, entryBytes, err
 			}
