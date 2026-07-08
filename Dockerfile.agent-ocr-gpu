@@ -90,8 +90,11 @@ from rapidocr import RapidOCR; \
 from rapidocr.utils.typings import LangRec; \
 RapidOCR(params={'Rec.lang_type': LangRec.EN})" && \
     python3 -m venv /tmp/convert-venv && \
+    # numpy must stay on the 1.x line: onnxconverter-common 1.14.0 calls
+    # np.fromstring, which NumPy 2 removed (build fails with "The binary
+    # mode of fromstring is removed").
     /tmp/convert-venv/bin/pip install --no-cache-dir \
-        "onnx==1.17.0" "onnxconverter-common==1.14.0" && \
+        "onnx==1.17.0" "onnxconverter-common==1.14.0" "numpy==1.26.4" && \
     mkdir -p /opt/ocr/models && \
     MODELS_DIR=$(/opt/ocr-venv/bin/python -c "\
 import rapidocr, pathlib; \
