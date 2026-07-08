@@ -27,6 +27,7 @@ unit-testable without onnxruntime or model files (see test_bucket_rec.py).
 """
 
 import logging
+import threading
 from collections import defaultdict
 
 import cv2
@@ -37,6 +38,97 @@ logger = logging.getLogger("uvicorn.error")
 REC_H = 48
 BUCKET_WIDTHS = (192, 288, 384, 576, 768, 960, 1152, 1344, 1536, 1920)
 MAX_BATCH = 6
+
+# Detection input shape buckets. The det session family has the same
+# single-shape conv-cache constraint as recognition: production dirty bands
+# arrive at ever-varying heights, and every new (h, w) rebuilds + re-tunes
+# the det conv graphs (~500ms per shape change on an A100). Inputs are
+# padded to these buckets and each bucket shape gets a dedicated session
+# (see the server's BucketDet).
+DET_H_BUCKETS = (64, 128, 192, 256, 320, 448, 640, 896, 1088)
+DET_W_BUCKETS = (512, 1024, 1440, 1920)
+
+
+def pad_det_input(img):
+    """Pads img to the enclosing (height, width) det bucket with
+    BORDER_REPLICATE. Returns (padded, real_h, real_w) so callers can filter
+    and clip detection boxes back to the real area. Images larger than the
+    biggest bucket are returned unchanged (rare: >4K-wide frames)."""
+    h, w = img.shape[:2]
+    bh = next((b for b in DET_H_BUCKETS if h <= b), None)
+    bw = next((b for b in DET_W_BUCKETS if w <= b), None)
+    if bh is None or bw is None or (bh == h and bw == w):
+        return img, h, w
+    padded = cv2.copyMakeBorder(img, 0, bh - h, 0, bw - w, cv2.BORDER_REPLICATE)
+    return padded, h, w
+
+
+def filter_and_scale_boxes(boxes, real_h, real_w, inv_scale):
+    """Post-processes det quads from a padded input: drops phantom boxes
+    lying entirely inside the padding, clips boxes crossing into it to the
+    real area, and scales coordinates back to full resolution. Returns a
+    list of float32 quads, or None when nothing survives.
+
+    Clipping to real_w/real_h (not -1) matches rapidocr's own DB
+    postprocess convention (ch_ppocr_det/utils.py clips to dest_width)."""
+    out = []
+    for box in boxes:
+        arr = np.asarray(box, dtype=np.float32)
+        if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] != 2:
+            logger.warning("dropping malformed det box with shape %s", arr.shape)
+            continue
+        if arr[:, 0].min() >= real_w or arr[:, 1].min() >= real_h:
+            continue  # phantom box entirely inside the padding
+        arr = arr.copy()
+        arr[:, 0] = np.clip(arr[:, 0], 0.0, float(real_w))
+        arr[:, 1] = np.clip(arr[:, 1], 0.0, float(real_h))
+        out.append(arr * inv_scale)
+    return out or None
+
+
+class BucketDet:
+    """Routes detection to one dedicated detector per padded input shape.
+
+    A single det session re-tunes its cuDNN-FE conv graphs whenever
+    consecutive inputs alternate shapes (the cache holds exactly one built
+    graph per node), so each bucket shape gets its own detector — created
+    lazily on first hit via the injected factory, tuned once, cached for the
+    process lifetime. Shapes outside the bucket grid (inputs larger than the
+    biggest bucket) run on the shared base detector and are never cached, so
+    the cache size is bounded by len(DET_H_BUCKETS) * len(DET_W_BUCKETS).
+
+    Thread-safety: creation is guarded by double-checked locking. Note that
+    rapidocr's TextDetector assigns self.preprocess_op per call
+    (ch_ppocr_det/main.py) — a benign write here because every call to a
+    given bucket detector carries the same padded shape, so concurrent
+    writes are idempotent. The stock shared-detector path performs the same
+    per-call write with VARYING shapes, so this layout is strictly safer
+    than the stock concurrency contract, not looser.
+
+    base_det: fallback detector callable for out-of-grid shapes.
+    detector_factory: callable () -> detector; must return a detector whose
+        session is exclusively owned by that instance.
+    """
+
+    def __init__(self, base_det, detector_factory):
+        self._base = base_det
+        self._factory = detector_factory
+        self._dets = {}
+        self._lock = threading.Lock()
+        self._grid = {(bh, bw) for bh in DET_H_BUCKETS for bw in DET_W_BUCKETS}
+
+    def __call__(self, det_input):
+        key = det_input.shape[:2]
+        if key not in self._grid:
+            return self._base(det_input)
+        det = self._dets.get(key)
+        if det is None:
+            with self._lock:
+                det = self._dets.get(key)
+                if det is None:
+                    det = self._factory()
+                    self._dets[key] = det
+        return det(det_input)
 
 
 class BucketRec:

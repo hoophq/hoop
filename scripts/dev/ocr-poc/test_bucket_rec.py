@@ -118,3 +118,155 @@ def test_padding_is_zeros_after_normalize():
     assert np.allclose(batch[0, :, :, :100], 1.0)
     # Padded region: zeros (NOT background white).
     assert np.all(batch[0, :, :, 100:] == 0.0)
+
+
+# --- det shape-bucket helpers ------------------------------------------------
+
+from bucket_rec import DET_H_BUCKETS, DET_W_BUCKETS, filter_and_scale_boxes, pad_det_input
+
+
+def test_pad_det_input_pads_to_enclosing_bucket():
+    img = np.full((104, 1900, 3), 200, dtype=np.uint8)
+    padded, real_h, real_w = pad_det_input(img)
+    assert (real_h, real_w) == (104, 1900)
+    assert padded.shape[:2] == (128, 1920)
+    # padding replicates the border, so the pad region is the border color
+    assert padded[120, 1910, 0] == 200
+
+
+def test_pad_det_input_exact_bucket_untouched():
+    img = np.zeros((256, 1920, 3), dtype=np.uint8)
+    padded, real_h, real_w = pad_det_input(img)
+    assert padded is img and (real_h, real_w) == (256, 1920)
+
+
+def test_pad_det_input_oversize_passthrough():
+    img = np.zeros((DET_H_BUCKETS[-1] + 1, 4000, 3), dtype=np.uint8)
+    padded, real_h, real_w = pad_det_input(img)
+    assert padded is img and (real_h, real_w) == img.shape[:2]
+
+
+def test_filter_and_scale_boxes_drops_phantoms_and_clips():
+    real_h, real_w = 100, 1000
+    boxes = [
+        # fully inside the real area: kept, scaled
+        [[10, 10], [50, 10], [50, 30], [10, 30]],
+        # entirely inside padding (below real_h): dropped
+        [[20, 120], [80, 120], [80, 140], [20, 140]],
+        # crosses into padding: clipped to the real area, then scaled
+        [[900, 80], [1100, 80], [1100, 130], [900, 130]],
+    ]
+    out = filter_and_scale_boxes(boxes, real_h, real_w, 2.0)
+    assert len(out) == 2
+    assert np.allclose(out[0][0], [20, 20])  # scaled by 2
+    assert out[1][:, 0].max() == 2000  # clipped to real_w=1000, scaled by 2
+    assert out[1][:, 1].max() == 200  # clipped to real_h=100, scaled by 2
+
+
+def test_filter_and_scale_boxes_all_phantoms_returns_none():
+    boxes = [[[10, 200], [50, 200], [50, 230], [10, 230]]]
+    assert filter_and_scale_boxes(boxes, 100, 1000, 1.0) is None
+
+
+# --- BucketDet routing/creation ------------------------------------------------
+
+import threading as _threading
+
+from bucket_rec import BucketDet
+
+
+class FakeDetector:
+    def __init__(self, tag):
+        self.tag = tag
+        self.calls = []
+
+    def __call__(self, img):
+        self.calls.append(img.shape[:2])
+        return ("det-result", self.tag, img.shape[:2])
+
+
+def test_bucket_det_lazy_creation_and_reuse():
+    created = []
+
+    def factory():
+        det = FakeDetector(len(created))
+        created.append(det)
+        return det
+
+    base = FakeDetector("base")
+    bd = BucketDet(base, factory)
+    img = np.zeros((128, 1920, 3), dtype=np.uint8)
+    r1 = bd(img)
+    r2 = bd(img)
+    assert len(created) == 1  # one session per bucket shape, reused
+    assert r1[1] == r2[1] == 0
+    assert base.calls == []
+
+
+def test_bucket_det_out_of_grid_falls_through_uncached():
+    created = []
+
+    def factory():
+        created.append(1)
+        return FakeDetector("bucketed")
+
+    base = FakeDetector("base")
+    bd = BucketDet(base, factory)
+    oversize = np.zeros((2000, 4000, 3), dtype=np.uint8)
+    r = bd(oversize)
+    assert r[1] == "base"
+    assert created == [] and bd._dets == {}
+
+
+def test_bucket_det_concurrent_first_hit_creates_one_detector():
+    created = []
+    barrier = _threading.Barrier(8)
+
+    def factory():
+        det = FakeDetector(len(created))
+        created.append(det)
+        return det
+
+    bd = BucketDet(FakeDetector("base"), factory)
+    img = np.zeros((256, 1920, 3), dtype=np.uint8)
+    results, errors = [], []
+
+    def hit():
+        try:
+            barrier.wait(timeout=5)
+            results.append(bd(img))
+        except Exception as e:  # pragma: no cover - failure reporting
+            errors.append(e)
+
+    threads = [_threading.Thread(target=hit) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not errors
+    assert len(created) == 1  # double-checked locking held
+    assert len(results) == 8 and all(r[1] == 0 for r in results)
+
+
+def test_bucket_det_distinct_buckets_get_distinct_detectors():
+    created = []
+
+    def factory():
+        det = FakeDetector(len(created))
+        created.append(det)
+        return det
+
+    bd = BucketDet(FakeDetector("base"), factory)
+    bd(np.zeros((128, 1920, 3), dtype=np.uint8))
+    bd(np.zeros((256, 1920, 3), dtype=np.uint8))
+    assert len(created) == 2
+    assert set(bd._dets.keys()) == {(128, 1920), (256, 1920)}
+
+
+def test_filter_and_scale_boxes_drops_malformed():
+    boxes = [
+        [[10, 10], [50, 10], [50, 30], [10, 30]],
+        [[1, 2, 3]],  # malformed: wrong inner arity
+    ]
+    out = filter_and_scale_boxes(boxes, 100, 1000, 1.0)
+    assert len(out) == 1

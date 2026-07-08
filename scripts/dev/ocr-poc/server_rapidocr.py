@@ -28,20 +28,32 @@ Run locally without Docker (CPU):
 """
 
 import asyncio
+import copy
 import logging
 import os
+import pathlib
 import time
 
 import cv2
 import numpy as np
 import onnxruntime
+import rapidocr
 from fastapi import FastAPI, Request, Response
 from rapidocr import RapidOCR
 from rapidocr.ch_ppocr_rec.typings import TextRecInput
+from rapidocr.inference_engine.onnxruntime.main import OrtInferSession
 from rapidocr.utils.process_img import get_rotate_crop_image
 from rapidocr.utils.typings import LangRec
 
-from bucket_rec import BUCKET_WIDTHS, MAX_BATCH, REC_H, BucketRec
+from bucket_rec import (
+    BUCKET_WIDTHS,
+    MAX_BATCH,
+    REC_H,
+    BucketDet,
+    BucketRec,
+    filter_and_scale_boxes,
+    pad_det_input,
+)
 from device_policy import cuda_device_count, resolve_device
 
 app = FastAPI()
@@ -129,25 +141,82 @@ if not 0.0 < DET_DOWNSCALE <= 1.0:
 DET_MIN_SIDE = 640
 
 
+# Detection input shape buckets (fp16 runtime only). The detection session
+# has the same cuDNN-FE single-shape conv cache problem BucketRec solves for
+# recognition: production dirty bands arrive at ever-varying heights (and are
+# usually below DET_MIN_SIDE, so they skip the downscale entirely), and every
+# new (h, w) rebuilds + EXHAUSTIVE-retunes the det conv graphs — measured
+# ~500ms per shape change on an A100 vs ~30ms steady-state. Padding the det
+# input to bucketed dimensions (BORDER_REPLICATE) caps the distinct shapes
+# the session ever sees; boxes falling entirely inside the padding are
+# phantoms and dropped, boxes crossing into it are clipped to the real area.
+#
+# Gated to the fp16 runtime: replicated border content can shift det box
+# edges marginally near image boundaries, so the stock fp32 path stays
+# byte-identical to previous releases.
+def _make_det_detector_factory(base_det, model_path: str):
+    """Builds the per-bucket detector factory for BucketDet.
+
+    Each detector is a shallow copy of the stock TextDetector with its own
+    dedicated fp32 ORT session (det stays fp32 — fp16 det measurably changes
+    box geometry, which is the product's redaction rectangles). The copy
+    shares the stock pre/postprocess ops; TextDetector assigns
+    self.preprocess_op per call, which is safe here because each copy only
+    ever sees one input shape (see BucketDet's docstring for the analysis).
+    The raw session is injected through OrtInferSession's 'session' cfg key
+    (rapidocr PR #451). device_id 0 matches rapidocr's own cuda_ep_cfg
+    default; the deployment contract passes exactly one GPU per container.
+    """
+    if not os.path.exists(model_path):
+        raise RuntimeError(f"det model not found at {model_path}")
+
+    def factory():
+        cuda_opts = {
+            "device_id": 0,
+            "arena_extend_strategy": "kNextPowerOfTwo",
+            "cudnn_conv_algo_search": "EXHAUSTIVE",
+            "do_copy_in_default_stream": True,
+        }
+        sess_opts = onnxruntime.SessionOptions()
+        sess_opts.log_severity_level = 4
+        raw = onnxruntime.InferenceSession(
+            model_path,
+            sess_options=sess_opts,
+            providers=[("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"],
+        )
+        det = copy.copy(base_det)
+        det.session = OrtInferSession({"session": raw})
+        return det
+
+    return factory
+
+
 def _det_boxes_downscaled(img):
     """Runs text detection on a downscaled copy of `img` (cheaper CPU normalize
     + inference), returning line-quad boxes in FULL-RESOLUTION coordinates.
     Falls back to full-res detection when the image is small or downscaling is
-    disabled, so tiny frames keep full recall."""
+    disabled, so tiny frames keep full recall. In the fp16 runtime the det
+    input is additionally padded to bucketed dimensions (see above)."""
     h, w = img.shape[:2]
     scale = DET_DOWNSCALE
     if scale >= 1.0 or min(h, w) * scale < DET_MIN_SIDE:
-        det = ENGINE.text_det(img)
-        return det.boxes
-    small = cv2.resize(
-        img, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA
-    )
-    det = ENGINE.text_det(small)
+        det_input, scale = img, 1.0
+    else:
+        det_input = cv2.resize(
+            img,
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
+
+    if BUCKET_DET is not None:
+        det_input, real_h, real_w = pad_det_input(det_input)
+        det = BUCKET_DET(det_input)
+    else:
+        real_h, real_w = det_input.shape[:2]
+        det = ENGINE.text_det(det_input)
     if det.boxes is None:
         return None
-    inv = 1.0 / scale
-    # Scale each quad's points back to full-resolution coordinates.
-    return [np.asarray(box, dtype=np.float32) * inv for box in det.boxes]
+    return filter_and_scale_boxes(det.boxes, real_h, real_w, 1.0 / scale)
 
 
 # --- fp16 fixed-shape recognition runtime ----------------------------------
@@ -194,6 +263,19 @@ _FP16_MODEL_PATH = os.environ.get(
     "OCR_REC_FP16_MODEL", f"/opt/ocr/models/{REC_LANG}_rec_fp16.onnx"
 )
 BUCKET_REC = _build_bucket_rec(_FP16_MODEL_PATH) if REC_PRECISION == "fp16" else None
+
+# Per-bucket detection sessions (see BucketDet). Detection always runs the
+# fp32 det model — fp16 det measurably changes box geometry (merging), which
+# is the product's redaction rectangles; only the SESSION layout changes.
+_DET_MODEL_PATH = os.environ.get(
+    "OCR_DET_MODEL",
+    str(pathlib.Path(str(rapidocr.__file__)).parent / "models" / "ch_PP-OCRv4_det_mobile.onnx"),
+)
+BUCKET_DET = (
+    BucketDet(ENGINE.text_det, _make_det_detector_factory(ENGINE.text_det, _DET_MODEL_PATH))
+    if REC_PRECISION == "fp16"
+    else None
+)
 
 
 @app.get("/healthz")
@@ -304,6 +386,19 @@ def warmup() -> None:
                 "fp16 bucket sessions tuned in %.0fms (%d buckets)",
                 (time.perf_counter() - start) * 1000.0,
                 len(BUCKET_REC.sessions),
+            )
+        if BUCKET_DET is not None:
+            # Pre-tune the det bucket sessions production traffic hits most:
+            # dirty bands are full-width strips up to MAX_CHUNK_ROWS+padding
+            # tall, plus the downscaled full-frame shape. Remaining bucket
+            # combos tune lazily on first hit (one-time cost per bucket).
+            start = time.perf_counter()
+            for dh, dw in ((64, 1920), (128, 1920), (192, 1920), (256, 1920), (320, 1920), (896, 1440)):
+                BUCKET_DET(np.full((dh, dw, 3), 245, dtype=np.uint8))
+            logger.info(
+                "det bucket sessions tuned in %.0fms (%d sessions)",
+                (time.perf_counter() - start) * 1000.0,
+                len(BUCKET_DET._dets),
             )
     except Exception:
         logger.exception("RapidOCR warmup failed on %s", DEVICE)
