@@ -76,7 +76,46 @@ RUN mkdir -p /opt/cuda-libs && \
     test -e /opt/cuda-libs/libcudart.so.12 && test -e /opt/cuda-libs/libcublasLt.so.12
 ENV LD_LIBRARY_PATH="/opt/cuda-libs"
 
+# Prefetch the en recognition model (OCR_REC_LANG=en) and produce the fp16
+# conversions (OCR_REC_PRECISION=fp16) AT BUILD TIME, preserving the image's
+# "nothing is downloaded or written after build" property. The converter
+# packages live in a throwaway venv so the runtime venv stays exactly the
+# pinned dependency set above. Instantiating RapidOCR with LangRec.EN is the
+# supported way to fetch the en model — it lands next to the bundled ch
+# models inside the rapidocr wheel and doubles as a wheel sanity check.
+# keep_io_types=True keeps fp32 inputs/outputs, so the fp16 models are
+# drop-in for the same pre/postprocessing code paths.
+RUN /opt/ocr-venv/bin/python -c "\
+from rapidocr import RapidOCR; \
+from rapidocr.utils.typings import LangRec; \
+RapidOCR(params={'Rec.lang_type': LangRec.EN})" && \
+    python3 -m venv /tmp/convert-venv && \
+    # numpy must stay on the 1.x line: onnxconverter-common 1.14.0 calls
+    # np.fromstring, which NumPy 2 removed (build fails with "The binary
+    # mode of fromstring is removed").
+    /tmp/convert-venv/bin/pip install --no-cache-dir \
+        "onnx==1.17.0" "onnxconverter-common==1.14.0" "numpy==1.26.4" && \
+    mkdir -p /opt/ocr/models && \
+    MODELS_DIR=$(/opt/ocr-venv/bin/python -c "\
+import rapidocr, pathlib; \
+print(pathlib.Path(rapidocr.__file__).parent / 'models')") && \
+    test -s "$MODELS_DIR/ch_PP-OCRv4_rec_mobile.onnx" && \
+    test -s "$MODELS_DIR/en_PP-OCRv4_rec_mobile.onnx" && \
+    /tmp/convert-venv/bin/python -c "\
+import onnx, sys; \
+from onnxconverter_common import float16; \
+models_dir = sys.argv[1]; \
+[onnx.save( \
+    float16.convert_float_to_float16(onnx.load(f'{models_dir}/{src}'), keep_io_types=True), \
+    f'/opt/ocr/models/{dst}') \
+ for src, dst in ( \
+    ('ch_PP-OCRv4_rec_mobile.onnx', 'ch_rec_fp16.onnx'), \
+    ('en_PP-OCRv4_rec_mobile.onnx', 'en_rec_fp16.onnx'))]" "$MODELS_DIR" && \
+    rm -rf /tmp/convert-venv && \
+    test -s /opt/ocr/models/ch_rec_fp16.onnx && test -s /opt/ocr/models/en_rec_fp16.onnx
+
 COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
+COPY scripts/dev/ocr-poc/bucket_rec.py /opt/ocr/bucket_rec.py
 COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
 COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
 RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
@@ -90,8 +129,18 @@ USER hoop
 ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
 ENV OCR_PORT=18868
 # Each worker holds its own copy of the models in VRAM; tune to the GPU
-# memory budget with `docker run -e WEB_CONCURRENCY=N`.
+# memory budget with `docker run -e WEB_CONCURRENCY=N`. With
+# OCR_REC_PRECISION=fp16 each worker additionally holds one fixed-shape
+# recognition session per width bucket (~600MB/worker measured on a T4).
 ENV WEB_CONCURRENCY=4
+# Recognition runtime knobs (see server_rapidocr.py for the full rationale):
+#   OCR_REC_LANG:      ch (default) | en — en is faster and more accurate on
+#                      Latin-only screens but CANNOT read CJK text (CJK PII
+#                      would be missed). Per-deployment product decision.
+#   OCR_REC_PRECISION: fp32 (default) | fp16 — fp16 runs recognition through
+#                      fixed-shape bucket sessions, measured 1.8x end-to-end
+#                      on a T4 with byte-identical text output. CUDA only.
+# Defaults preserve the exact behavior of previous image releases.
 
 ENTRYPOINT ["tini", "--", "/opt/ocr/entrypoint-embedded.sh"]
 CMD ["/usr/local/bin/hoop-default-agent.sh"]
