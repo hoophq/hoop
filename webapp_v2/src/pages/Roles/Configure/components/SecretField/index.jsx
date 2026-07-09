@@ -58,6 +58,7 @@ export default function SecretField({
   required = false,
   placeholder,
   type,
+  minRows,
   isExisting,
   isReference,
   referenceText,
@@ -74,6 +75,9 @@ export default function SecretField({
   const [editing, setEditing] = useState(false)
   const isTextarea = type === 'textarea'
   const showPicker = Array.isArray(availableSources) && availableSources.length > 1
+  // Fixed row count override for textareas (see SourcedInput); the
+  // editing state defaults to 4 growable rows when not set.
+  const textareaSizing = minRows ? { minRows, maxRows: minRows } : { minRows: 4 }
 
   const state =
     stagedAction === 'replace' || stagedAction === 'new' || editing
@@ -136,7 +140,7 @@ export default function SecretField({
           required={required}
           autoFocus
           autosize
-          minRows={4}
+          {...textareaSizing}
           placeholder={placeholderText}
           value={stagedValue}
           onChange={(e) => handleChange(e.currentTarget.value)}
@@ -214,6 +218,7 @@ export default function SecretField({
       </Group>
       <SourcedInput
         type={type}
+        minRows={minRows}
         required={required}
         placeholder={placeholder || 'Enter value'}
         value={stagedValue}

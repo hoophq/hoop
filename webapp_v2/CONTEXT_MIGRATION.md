@@ -222,7 +222,7 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
 - Auth pages — Login, Register (local), Signup (IDP org setup), Callback, SignupCallback
 - Agents page (list + create wizard)
-- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections.
+- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
 - Auth store, User store, UI store, Agent store
 - ClojureApp bridge component
 - Re-frame dispatch bridge — React can trigger CLJS actions via `window.hoopDispatch` (wrapped in Zustand stores)
