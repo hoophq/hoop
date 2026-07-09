@@ -18,6 +18,10 @@ FROM ${HOOP_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The hoop base image drops to the unprivileged 'hoop' user; package
+# installation below needs root. The runtime user is restored after setup.
+USER root
+
 # Python + native libs RapidOCR's opencv dependency links (imdecode only,
 # but the module still loads them). Kept minimal; no build toolchain.
 RUN apt-get update -y && \
@@ -41,6 +45,12 @@ COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
 COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
 COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
 RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
+
+# Drop back to the base image's unprivileged runtime user. Everything under
+# /opt/ocr-venv and /opt/ocr stays root-owned and world-readable — the engine
+# only reads them at runtime (models ship inside the rapidocr wheel, so
+# nothing is downloaded or written after build).
+USER hoop
 
 # The agent reaches the bundled engine on loopback by default. Operators only
 # need to set MSPRESIDIO_ANALYZER_URL to enable guarding — no extra container.

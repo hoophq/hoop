@@ -1,1 +1,0 @@
-ALTER TABLE private.authconfig ADD COLUMN provider_name VARCHAR(64) NULL;

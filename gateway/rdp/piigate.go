@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/hoophq/hoop/common/featureflag"
@@ -164,6 +165,10 @@ type PIIGate struct {
 	// released, never states still queued behind a batch seal.
 	canvas shadowCanvas
 	dirty  *analyzer.DirtyBands
+
+	// Per-session latency aggregator: records compositing/OCR/Presidio/total
+	// per batch and logs a windowed summary (see piigate_metrics.go).
+	metrics *piiLatencyAggregator
 }
 
 // NewPIIGate creates a gate and starts its analysis goroutine. Callers must
@@ -197,6 +202,7 @@ func NewPIIGate(ctx context.Context, cfg PIIGateConfig) (*PIIGate, error) {
 		notify:  make(chan struct{}, 1),
 		done:    make(chan struct{}),
 		cancel:  cancel,
+		metrics: newPIILatencyAggregator(cfg.SessionID),
 	}
 	if cfg.analyzeOverride != nil {
 		g.analyze = cfg.analyzeOverride
@@ -310,6 +316,9 @@ func (g *PIIGate) signal() {
 // limit.
 func (g *PIIGate) analysisLoop(ctx context.Context) {
 	defer close(g.done)
+	// Emit the final (partial) latency window on every exit path so the last
+	// few seconds of measurements are never silently dropped.
+	defer g.metrics.flushFinal()
 	for {
 		select {
 		case <-ctx.Done():
@@ -358,7 +367,12 @@ func (g *PIIGate) takePending() ([]gatePDU, bool) {
 func (g *PIIGate) processPDUs(ctx context.Context, pdus []gatePDU) bool {
 	i := 0
 	for i < len(pdus) {
+		// End-to-end batch timer: from compositing the first PDU through the
+		// forward/drop decision — the latency the gate adds to the stream.
+		batchStart := time.Now()
+
 		j := i
+		compositeStart := time.Now()
 		for j < len(pdus) {
 			if j > i && g.pduConflicts(pdus[j]) {
 				break
@@ -366,12 +380,36 @@ func (g *PIIGate) processPDUs(ctx context.Context, pdus []gatePDU) bool {
 			g.compositePDU(pdus[j])
 			j++
 		}
-		if !g.analyzeAndForward(ctx, pdus[i:j]) {
+		compositeDur := time.Since(compositeStart)
+
+		outcome := g.analyzeAndForward(ctx, pdus[i:j])
+		g.metrics.recordBatch(
+			compositeDur, outcome.ocrDur, outcome.presidioDur, time.Since(batchStart),
+			outcome.forwardedBytes, outcome.detection,
+		)
+		if !outcome.proceed {
 			return false
 		}
 		i = j
 	}
 	return true
+}
+
+// batchOutcome is the result of analyzing and forwarding one batch, plus the
+// per-stage timings the latency aggregator records.
+type batchOutcome struct {
+	// proceed reports whether the analysis loop should continue (false = exit:
+	// kill, forward failure, or cancellation).
+	proceed bool
+	// forwardedBytes is the wire bytes written downstream for this batch (0
+	// when dropped/killed).
+	forwardedBytes int64
+	// detection reports whether this batch contained PII.
+	detection bool
+	// ocrDur/presidioDur are the analyzer's per-stage timings (0 when the
+	// batch dirtied nothing and analysis was skipped).
+	ocrDur      time.Duration
+	presidioDur time.Duration
 }
 
 // pduConflicts reports whether any of the PDU's patches would touch rows
@@ -397,24 +435,41 @@ func (g *PIIGate) compositePDU(pdu gatePDU) {
 }
 
 // analyzeAndForward analyzes the current shadow framebuffer state (if the
-// batch dirtied anything) and forwards the batch on clearance. Returns false
-// when the loop must exit.
-func (g *PIIGate) analyzeAndForward(ctx context.Context, batch []gatePDU) bool {
+// batch dirtied anything) and forwards the batch on clearance. The returned
+// batchOutcome drives the loop (proceed) and feeds the latency aggregator
+// (per-stage timings, forwarded bytes, detection).
+func (g *PIIGate) analyzeAndForward(ctx context.Context, batch []gatePDU) batchOutcome {
+	var out batchOutcome
 	bands := g.takeBands()
 	if len(bands) > 0 {
 		res, err := g.analyze(
 			ctx, g.canvas.fb, g.canvas.w, g.canvas.h, bands,
 			g.cfg.SessionID, 0, 0, g.cfg.Presidio, g.cfg.Params,
 		)
+		// res carries the per-stage timings even on error (they are recorded
+		// before the early return inside the analyzer), so a slow or failing
+		// OCR/Presidio — the likely offender — still shows up in the window.
+		//
+		// SnapshotResult.{OCRDuration,PresidioDuration} are part of the
+		// realtime gate's instrumentation contract (populated by
+		// analyzer.AnalyzeFramebufferBands on every path, including errors and
+		// empty-OCR). A nil res (defensive: the analyzer always returns
+		// non-nil today) simply loses this batch's OCR/Presidio attribution,
+		// never a panic.
+		if res != nil {
+			out.ocrDur = res.OCRDuration
+			out.presidioDur = res.PresidioDuration
+		}
 		switch {
 		case err != nil:
 			if ctx.Err() != nil {
-				return false
+				return out
 			}
 			// Fail open: forwarding beats freezing the session on an
 			// analyzer hiccup (PoC policy; see type doc).
 			log.With("sid", g.cfg.SessionID).Warnf("piigate: analysis failed, failing open: %v", err)
 		case len(res.Counts) > 0:
+			out.detection = true
 			// Terminal-state transition under the lock: if an overload (or
 			// Close) already terminated the gate while this analysis was in
 			// flight, the session is going down anyway — do not fire a
@@ -427,14 +482,20 @@ func (g *PIIGate) analyzeAndForward(ctx context.Context, batch []gatePDU) bool {
 			g.tail = nil
 			g.mu.Unlock()
 			if alreadyDown {
-				return false
+				return out
 			}
 			log.With("sid", g.cfg.SessionID).Warnf("piigate: PII detected (%v), dropping held batch and terminating session", res.Counts)
 			g.cfg.OnDetection(res)
-			return false
+			return out
 		}
 	}
-	return g.forwardBatch(batch)
+	out.proceed = g.forwardBatch(batch)
+	if out.proceed {
+		for _, p := range batch {
+			out.forwardedBytes += int64(len(p.data))
+		}
+	}
+	return out
 }
 
 // takeBands drains the dirty-band accumulator, clamped to the framebuffer.
@@ -500,8 +561,17 @@ type shadowCanvas struct {
 }
 
 // composite decodes one bitmap patch and draws it, growing the canvas if the
-// patch extends beyond it. Returns false when the patch cannot be composited
-// (oversized extent or decode failure) — fail-open for that region.
+// patch extends beyond it. Returns whether the canvas CHANGED (any pixel
+// differs, or the canvas grew) — the caller marks the region dirty only then,
+// so byte-identical RDP repaints are not needlessly re-OCR'd. Returns false
+// when the patch cannot be composited (oversized extent or decode failure) —
+// fail-open for that region — and also false for a successful pixel-identical
+// paint (nothing new to analyze).
+//
+// Skipping unchanged paints is safe for the guard: the shadow canvas already
+// holds (and already analyzed) those exact pixels, so there is no unanalyzed
+// content to leak. The PDU is still forwarded regardless of this return — only
+// the OCR/analysis decision is affected.
 func (c *shadowCanvas) composite(bmp parser.BitmapRect, data []byte) bool {
 	right, bottom := int(bmp.X)+int(bmp.Width), int(bmp.Y)+int(bmp.Height)
 	if right > maxCanvasDim || bottom > maxCanvasDim {
@@ -519,11 +589,15 @@ func (c *shadowCanvas) composite(bmp parser.BitmapRect, data []byte) bool {
 		log.With("sid", c.sessionID).Debugf("piigate: bitmap decode error: %v", err)
 		return false
 	}
+	grew := false
 	if right > c.w || bottom > c.h {
 		c.grow(right, bottom)
+		grew = true
 	}
-	analyzer.CompositeBitmap(c.fb, c.w, c.h, rgba, int(bmp.Width), int(bmp.Height), int(bmp.X), int(bmp.Y))
-	return true
+	changed := analyzer.CompositeBitmap(c.fb, c.w, c.h, rgba, int(bmp.Width), int(bmp.Height), int(bmp.X), int(bmp.Y))
+	// A grow exposes new canvas area, so treat it as changed even if the
+	// painted pixels matched the (zeroed) new region.
+	return changed || grew
 }
 
 // grow reallocates the framebuffer to cover at least (width x height),

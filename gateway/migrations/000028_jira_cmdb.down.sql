@@ -1,0 +1,1 @@
+ALTER TABLE private.jira_issue_templates DROP COLUMN cmdb_types;

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // MongoContainer wraps a MongoDB container for integration tests.
@@ -39,6 +39,21 @@ const (
 // ping because mongod logs "waiting for connections" slightly before the
 // root user (created from the MONGO_INITDB env vars) is usable.
 func StartMongoDB(t T) *MongoContainer {
+	return startMongoDB(t)
+}
+
+// StartMongoDBWithTestCommands boots the same container as StartMongoDB
+// but with --setParameter enableTestCommands=1, unlocking server test
+// commands such as `sleep`, which tests use as a deterministic stand-in
+// for a long-running operation (unlike cursor reads, it is never aborted
+// by a client disconnect — only killOp stops it).
+func StartMongoDBWithTestCommands(t T) *MongoContainer {
+	return startMongoDB(t, "--setParameter", "enableTestCommands=1")
+}
+
+// startMongoDB boots the MongoDB container, passing any extra args to
+// mongod (the image entrypoint forwards container args to the daemon).
+func startMongoDB(t T, mongodArgs ...string) *MongoContainer {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -46,6 +61,7 @@ func StartMongoDB(t T) *MongoContainer {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "mongo:7",
 			ExposedPorts: []string{"27017/tcp"},
+			Cmd:          mongodArgs,
 			Env: map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": mongoRootUser,
 				"MONGO_INITDB_ROOT_PASSWORD": mongoRootPass,
@@ -71,7 +87,7 @@ func StartMongoDB(t T) *MongoContainer {
 		t.Fatalf("failed to get mapped mongodb port: %v", err)
 	}
 
-	host, err := container.Host(ctx)
+	host, err := ContainerHost(ctx, container)
 	if err != nil {
 		t.Fatalf("failed to get mongodb container host: %v", err)
 	}
@@ -99,7 +115,12 @@ func (c *MongoContainer) UpstreamConnString() string {
 }
 
 func (c *MongoContainer) waitForReady(t T) {
-	deadline := time.Now().Add(60 * time.Second)
+	// 120s matches the container-start context above. mongod's first boot
+	// (storage engine init + root user creation from MONGO_INITDB) can
+	// exceed a minute on a loaded CI runner even after the wait strategy's
+	// log line and listening port have been observed (DEP-57).
+	const readyDeadline = 120 * time.Second
+	deadline := time.Now().Add(readyDeadline)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		if lastErr = c.ping(); lastErr == nil {
@@ -107,7 +128,7 @@ func (c *MongoContainer) waitForReady(t T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	t.Fatalf("mongodb container never became ready within 60s: %v", lastErr)
+	t.Fatalf("mongodb container never became ready within %v: %v", readyDeadline, lastErr)
 }
 
 // directClient opens a short-lived direct connection to the container

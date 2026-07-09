@@ -268,7 +268,7 @@ func sessionsGetAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, arg
 	})
 }
 
-func sessionsWaitAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsWaitAnalysisInput) (*mcp.CallToolResult, any, error) {
+func sessionsWaitAnalysisHandler(ctx context.Context, req *mcp.CallToolRequest, args sessionsWaitAnalysisInput) (*mcp.CallToolResult, any, error) {
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
@@ -295,14 +295,16 @@ func sessionsWaitAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, ar
 		return sessionsWaitAnalysisResult(initial, false, 0), nil, nil
 	}
 
-	sess, timedOut, waited, err := waitUntil(ctx, resolveWaitTimeout(args.TimeoutSeconds),
+	timeout := resolveWaitTimeout(args.TimeoutSeconds)
+	sess, timedOut, waited, err := waitUntil(ctx, timeout,
 		func() (*models.Session, bool, error) {
 			s, err := models.GetSessionByID(sc.OrgID, args.ID)
 			if err != nil {
 				return nil, false, err
 			}
 			return s, s.AIAnalysis != nil, nil
-		})
+		},
+		newWaitHeartbeat(ctx, req, timeout))
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if sess == nil {
@@ -407,11 +409,15 @@ func sessionToMap(s *models.Session) map[string]any {
 	if len(s.GuardRailsInfo) > 0 {
 		grInfo := make([]map[string]any, 0, len(s.GuardRailsInfo))
 		for _, gr := range s.GuardRailsInfo {
-			grInfo = append(grInfo, map[string]any{
+			entry := map[string]any{
 				"rule_name":     gr.RuleName,
 				"direction":     gr.Direction,
 				"matched_words": gr.MatchedWords,
-			})
+			}
+			if gr.Message != "" {
+				entry["message"] = gr.Message
+			}
+			grInfo = append(grInfo, entry)
 		}
 		m["guardrails_info"] = grInfo
 	}

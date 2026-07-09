@@ -96,6 +96,20 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.tunnel_token_renewal": {
+		Name:        "experimental.tunnel_token_renewal",
+		Description: "Silently renew user access tokens before they expire so long-lived tunnel sessions (hsh-tunneld) never present an expired token: the HTTP auth middleware rotates tokens within a pre-expiry window via X-New-Access-Token (OIDC uses the stored refresh token; local auth re-mints a sliding-session JWT capped at 7 days from the original login). When off, tokens are only refreshed reactively after they expire, and local-auth tokens are never renewed.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.claude_code_vertex": {
+		Name:        "experimental.claude_code_vertex",
+		Description: "Allow claude-code connections to authenticate against Google Vertex AI: the connection stores a GCP service-account key and the agent mints a short-lived, auto-refreshing OAuth bearer that it injects as the upstream Authorization header while transparently proxying Claude Code traffic to Vertex. Claude Code runs in Vertex mode (CLAUDE_CODE_USE_VERTEX) pointed at the hoop proxy. When off, the Vertex provider is hidden in the connection form and the agent does not mint GCP tokens.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway, ComponentAgent},
+	},
 }
 
 // All returns every registered flag, sorted by name.

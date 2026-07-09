@@ -205,6 +205,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -233,6 +236,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -270,12 +276,25 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
+	return encodeGuardRailRules(connGuardRailRules)
+}
 
+// encodeGuardRailRules turns the connection's stored guardrail rules into the
+// JSON payload shipped to the agent (AgentConnectionParams.GuardRailRules).
+// It returns nil — meaning "no guardrails" — when the connection has no rules
+// to enforce. Emptiness MUST be judged by rule count, not slice nil-ness:
+// services.GetGuardRailRulesForConnection fabricates "[]" (JSON empty array)
+// rule sets for connections without guardrails, and json.Unmarshal turns "[]"
+// into an empty NON-nil slice. A nil-ness check made every ruleless
+// connection look guarded, which the fail-closed admission check (DEP-48)
+// then refused for connection types without guardrail enforcement.
+func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
 	}
 
 	var inputRules, outputRules []guardrails.DataRules
+	var err error
 
 	// decode input rules
 	if connGuardRailRules.GuardRailInputRules != nil {
@@ -291,8 +310,8 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 		}
 	}
 
-	// check if there are no rules
-	if inputRules == nil && outputRules == nil {
+	// no rules to enforce -> no guardrail payload
+	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
 
@@ -309,6 +328,31 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	}
 
 	return guardRailRulesJsonData, nil
+}
+
+// connectionTypeSupportsGuardRails reports whether the agent-side proxy for the
+// given connection type actually evaluates guardrail rules. It is a session-open
+// admission policy: guarded sessions are only admitted for types with real
+// enforcement in libhoop. Guardrails are enforced for PostgreSQL, Oracle, HTTP
+// proxy, SSH and command-line (terminal console and exec, including the DB exec
+// drivers, which resolve to the command-line type). MySQL, MSSQL and MongoDB
+// native proxies do not yet evaluate guardrails, so a guarded session of those
+// types would run unguarded — we fail closed at session-open rather than
+// silently ignoring the configured rules (DEP-48).
+//
+// IMPORTANT: this list mirrors enforcement support in libhoop. When guardrail
+// evaluation is added to another protocol proxy there, add its type here.
+func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
+	switch connType {
+	case pb.ConnectionTypePostgres,
+		pb.ConnectionTypeOracleDB,
+		pb.ConnectionTypeHttpProxy,
+		pb.ConnectionTypeSSH,
+		pb.ConnectionTypeCommandLine:
+		return true
+	default:
+		return false
+	}
 }
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
@@ -473,6 +517,35 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf(err.Error())
 				return err
 			}
+
+			// Fail closed for connection types whose agent proxy does not
+			// evaluate guardrails (mysql, mssql, mongodb): a guarded session of
+			// those types would run unguarded, so refuse it at session-open
+			// (DEP-48).
+			//
+			// Guardrails are enforced by the agent's built-in pattern-matching
+			// engine (deny-word / regex — see gateway/guardrails), NOT by a DLP
+			// provider, so Presidio is NOT required to enforce them. The earlier
+			// Presidio requirement here refused sessions on deployments that rely
+			// on that built-in engine and is intentionally not enforced.
+			//
+			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
+			// plain-exec is a gateway-internal verb gated by a per-process secret in
+			// the auth interceptor (see interceptors/auth: plain-exec-key). It is
+			// only used for gateway-generated introspection scripts (connection
+			// test, database explorer, MCP schema) and never carries user-authored
+			// input, so guardrail rules are not fetched nor enforced for it — the
+			// same long-standing behavior as DLP redaction, which is also disabled
+			// for plain-exec sessions.
+			if len(guardRailRulesJsonData) > 0 {
+				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
+				if connType := pctx.ProtoConnectionType(); !connectionTypeSupportsGuardRails(connType) {
+					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
+					return status.Errorf(codes.FailedPrecondition,
+						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
+							"remove the guardrails from this connection or use a supported connection type", connType)
+				}
+			}
 		}
 
 		// Resolve the AI session analyzer config for HTTP-family connections.
@@ -503,6 +576,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
 			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			ConnectionSubType:          pctx.ConnectionSubType,
 			UserID:                     pctx.UserID,
 			UserEmail:                  pctx.UserEmail,
 			EnvVars:                    pctx.ConnectionSecret,

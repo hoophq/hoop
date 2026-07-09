@@ -1,0 +1,1 @@
+ALTER TABLE private.dbrole_jobs ADD COLUMN hook_status JSON NULL;

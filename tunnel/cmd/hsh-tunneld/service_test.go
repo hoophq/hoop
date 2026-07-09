@@ -32,6 +32,7 @@ func newTestService(t *testing.T, initialCfg daemonconfig.Config) *daemonService
 		ParentContext: context.Background(),
 		ConfigPath:    "", // in-memory: do not persist
 		InitialConfig: initialCfg,
+		Tokens:        newTokenState(),
 	})
 	if err != nil {
 		t.Fatalf("newDaemonService: %v", err)

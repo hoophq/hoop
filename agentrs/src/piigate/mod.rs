@@ -44,6 +44,7 @@ pub mod capabilities;
 pub mod canvas;
 pub mod config;
 pub mod framing;
+pub mod metrics;
 pub mod ocr;
 pub mod presidio;
 pub mod report;
@@ -53,7 +54,7 @@ pub mod testpdu;
 
 use std::sync::Arc;
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use parking_lot::Mutex;
 use tokio::io::{AsyncWrite, AsyncWriteExt as _};
 use tokio::sync::{mpsc, Notify};
@@ -64,6 +65,7 @@ use analyze::Analyzer;
 use bands::DirtyBands;
 use canvas::{ShadowCanvas, MAX_CANVAS_DIM};
 use framing::{pdu_size, BitmapPatch, FastPathParser};
+use metrics::LatencyAggregator;
 use presidio::SnapshotResult;
 
 /// Caps the per-session backlog awaiting analysis (PDU bytes plus their
@@ -138,8 +140,17 @@ pub enum GateEvent {
 
 /// One framed PDU awaiting analysis clearance: the exact wire bytes to
 /// forward plus the bitmap payloads it carried.
+///
+/// `data` is a zero-copy slice of the ingest tail (`BytesMut::split_to` +
+/// `freeze`). Backlog accounting ([`GatePdu::size`], `queued_bytes`) counts
+/// LOGICAL payload bytes, not allocator-retained memory: `Bytes` slices from
+/// one ingest share their backing slab, which is freed only when every slice
+/// into it is dropped. Queued PDUs are drained and dropped together per
+/// batch, so the retained overshoot is bounded by the slab tails and stays
+/// proportional to the accounted backlog — but [`MAX_HELD_BYTES`] is a cap
+/// on the logical backlog, not an exact heap bound.
 struct GatePdu {
-    data: Vec<u8>,
+    data: Bytes,
     patches: Vec<BitmapPatch>,
 }
 
@@ -158,6 +169,63 @@ struct GateState {
     closed: bool,
 }
 
+/// The set of PII regions currently on the client's screen that must keep being
+/// blanked on every forwarded frame. Detections persist here across batches
+/// (OCR runs only on dirty bands, so a static secret is not re-detected every
+/// frame) and are reconciled away only when a RE-OCR of their band confirms
+/// they are gone. Owned by the single analysis task; not shared, so no lock.
+#[derive(Default)]
+struct ActivePii {
+    rects: Vec<presidio::EntityDetection>,
+}
+
+impl ActivePii {
+    /// Reconciles the active set after a batch whose CHANGED regions are
+    /// `bands` (derived from patches that actually altered pixels) and whose
+    /// fresh OCR of those regions produced `fresh`.
+    ///
+    /// The invariant: a redacted region must keep being blanked until its
+    /// PIXELS change. The shadow canvas holds the true (unredacted) screen while
+    /// the client holds the redacted version, so a byte-identical RDP repaint of
+    /// a redacted region (which `composite` reports as "unchanged", hence NOT in
+    /// `bands`) would otherwise be forwarded unredacted and re-expose the
+    /// secret. Keeping such untouched rects active prevents that.
+    ///
+    /// An active rect is DROPPED when either:
+    ///   - a changed band overlaps it (its pixels changed -> this batch re-OCR'd
+    ///     that region, so `fresh` is authoritative for it now), or
+    ///   - a fresh detection overlaps it (the same line was re-detected, possibly
+    ///     shifted by a reflow -> the fresh rect supersedes the stale one).
+    ///
+    /// The second clause prevents stale rects from accumulating when text
+    /// reflows a few pixels (zoom/scroll) so the new detection's band does not
+    /// perfectly cover the old rect's position.
+    ///
+    /// Returns the full set to blank this batch (survivors + fresh).
+    fn reconcile(
+        &mut self,
+        bands: &[bands::YBand],
+        fresh: Vec<presidio::EntityDetection>,
+    ) -> &[presidio::EntityDetection] {
+        let overlaps_band = |r: &presidio::EntityDetection| {
+            let (y0, y1) = (r.y, r.y + r.height);
+            bands.iter().any(|b| y0 < b.y1 && b.y0 < y1)
+        };
+        let overlaps_fresh = |r: &presidio::EntityDetection| {
+            fresh.iter().any(|f| {
+                r.x < f.x + f.width
+                    && f.x < r.x + r.width
+                    && r.y < f.y + f.height
+                    && f.y < r.y + r.height
+            })
+        };
+        self.rects
+            .retain(|r| !overlaps_band(r) && !overlaps_fresh(r));
+        self.rects.extend(fresh);
+        &self.rects
+    }
+}
+
 struct GateShared {
     session_id: String,
     state: Mutex<GateState>,
@@ -169,6 +237,10 @@ struct GateShared {
     cancel: CancellationToken,
     events: mpsc::UnboundedSender<GateEvent>,
     policy: GatePolicy,
+    /// Per-session latency aggregator, shared with the analyzer so one window
+    /// summary spans the whole pipeline (compositing here, OCR/Presidio in the
+    /// analyzer, redaction here).
+    metrics: Arc<LatencyAggregator>,
 }
 
 /// The hold-and-release valve. Create with [`PiiGate::spawn`]; feed
@@ -191,6 +263,7 @@ impl PiiGate {
         events: mpsc::UnboundedSender<GateEvent>,
         band_padding: usize,
         policy: GatePolicy,
+        metrics: Arc<LatencyAggregator>,
     ) -> Self
     where
         W: AsyncWrite + Unpin + Send + 'static,
@@ -210,6 +283,7 @@ impl PiiGate {
             cancel: CancellationToken::new(),
             events,
             policy,
+            metrics,
         });
 
         let task = tokio::spawn(analysis_loop(
@@ -271,7 +345,7 @@ impl PiiGate {
                         st.tail.len()
                     );
                     let pdu = GatePdu {
-                        data: std::mem::take(&mut st.tail).to_vec(),
+                        data: std::mem::take(&mut st.tail).freeze(),
                         patches: Vec::new(),
                     };
                     enqueue(&mut st, pdu);
@@ -283,13 +357,14 @@ impl PiiGate {
             }
 
             // split_to is O(1) (BytesMut splits the buffer, no memmove of
-            // the remaining tail); the gate's hot path frames many small
-            // PDUs, so this avoids quadratic churn.
+            // the remaining tail) and freeze() hands the PDU its slice
+            // zero-copy; the gate's hot path frames many small PDUs, so this
+            // avoids both quadratic churn and a per-PDU copy.
             let data = st.tail.split_to(size);
             // Parse failures fail open: the PDU is still queued and
             // forwarded, just with no pixels to analyze.
             let patches = st.parser.parse(&data);
-            enqueue(&mut st, GatePdu { data: data.to_vec(), patches });
+            enqueue(&mut st, GatePdu { data: data.freeze(), patches });
         }
 
         let has_work = !st.queue.is_empty();
@@ -349,12 +424,36 @@ fn enqueue(st: &mut GateState, pdu: GatePdu) {
 async fn analysis_loop<W>(
     shared: Arc<GateShared>,
     analyzer: Arc<dyn Analyzer>,
+    sink: W,
+    dirty: DirtyBands,
+    canvas: ShadowCanvas,
+) where
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    run_analysis_loop(&shared, &*analyzer, sink, dirty, canvas).await;
+    // Emit the final (partial) latency window on every exit path — kill,
+    // forward failure, cancellation, or normal close — so the last few
+    // seconds of measurements are never silently dropped.
+    shared.metrics.flush_final();
+}
+
+async fn run_analysis_loop<W>(
+    shared: &GateShared,
+    analyzer: &dyn Analyzer,
     mut sink: W,
     mut dirty: DirtyBands,
     mut canvas: ShadowCanvas,
 ) where
     W: AsyncWrite + Unpin + Send + 'static,
 {
+    // Sticky PII set: detections persist across batches until a RE-OCR of their
+    // screen region confirms they are gone. OCR only runs on dirty bands, so a
+    // static on-screen secret stops being re-detected once its line stops
+    // changing; without persistence a later repaint (scroll, restore, RDP
+    // resend) could re-deliver it unredacted. Owned by the single analysis task
+    // alongside `dirty`/`canvas`, so no locking is needed.
+    let mut active_pii = ActivePii::default();
+
     loop {
         tokio::select! {
             _ = shared.notify.notified() => {}
@@ -372,7 +471,17 @@ async fn analysis_loop<W>(
                 }
             };
             let Some(pdus) = pdus else { break };
-            if !process_pdus(&shared, &*analyzer, &mut sink, &mut dirty, &mut canvas, pdus).await {
+            if !process_pdus(
+                shared,
+                analyzer,
+                &mut sink,
+                &mut dirty,
+                &mut canvas,
+                &mut active_pii,
+                pdus,
+            )
+            .await
+            {
                 return;
             }
         }
@@ -394,6 +503,7 @@ async fn process_pdus<W>(
     sink: &mut W,
     dirty: &mut DirtyBands,
     canvas: &mut ShadowCanvas,
+    active_pii: &mut ActivePii,
     pdus: Vec<GatePdu>,
 ) -> bool
 where
@@ -401,24 +511,69 @@ where
 {
     let mut i = 0;
     while i < pdus.len() {
+        // End-to-end batch timer: from compositing the first PDU through the
+        // forward/drop decision. This is the latency the gate adds to the
+        // client stream.
+        let batch_started = std::time::Instant::now();
+
         let mut j = i;
+        let mut patches_total = 0usize;
+        let mut patches_changed = 0usize;
+        let composite_started = std::time::Instant::now();
         while j < pdus.len() {
             if j > i && pdu_conflicts(dirty, &pdus[j]) {
                 break;
             }
             for p in &pdus[j].patches {
+                patches_total += 1;
+                // Only a paint that actually changed pixels (or grew the
+                // canvas) marks the region dirty — byte-identical RDP repaints
+                // carry no new content and must not trigger a re-OCR.
                 if canvas.composite(p) {
+                    patches_changed += 1;
                     dirty.add_rect(p.y, p.height);
+                    // Diagnostic: record the changed patch's tight geometry vs
+                    // the full-canvas-width band we actually OCR for it. The
+                    // aggregated ratio tells us how much 2D (horizontal) rect
+                    // scoping could cut OCR pixel area before we build it.
+                    shared.metrics.record_patch_geometry(
+                        p.width as u32,
+                        p.height as u32,
+                        canvas.w as u32,
+                    );
                 }
             }
             j += 1;
         }
-        if !analyze_and_forward(shared, analyzer, sink, dirty, canvas, &pdus[i..j]).await {
+        shared.metrics.record_composite(composite_started.elapsed());
+        shared
+            .metrics
+            .record_paints(patches_total as u64, patches_changed as u64);
+
+        let outcome =
+            analyze_and_forward(shared, analyzer, sink, dirty, canvas, active_pii, &pdus[i..j])
+                .await;
+        shared
+            .metrics
+            .record_batch(batch_started.elapsed(), outcome.forwarded_bytes, outcome.detection);
+        if !outcome.proceed {
             return false;
         }
         i = j;
     }
     true
+}
+
+/// The result of analyzing and forwarding one batch.
+struct BatchOutcome {
+    /// Whether the analysis loop should continue (false = exit: kill, forward
+    /// failure, or cancellation).
+    proceed: bool,
+    /// Bytes written downstream for this batch (0 when the batch was dropped
+    /// or the session killed without forwarding).
+    forwarded_bytes: u64,
+    /// Whether this batch contained a PII detection.
+    detection: bool,
 }
 
 /// Reports whether any of the PDU's patches would touch rows already dirtied
@@ -436,8 +591,9 @@ async fn analyze_and_forward<W>(
     sink: &mut W,
     dirty: &mut DirtyBands,
     canvas: &mut ShadowCanvas,
+    active_pii: &mut ActivePii,
     batch: &[GatePdu],
-) -> bool
+) -> BatchOutcome
 where
     W: AsyncWrite + Unpin,
 {
@@ -453,12 +609,16 @@ where
         })
         .collect();
 
+    // This batch's freshly-OCR'd detections (empty when no band was dirty).
+    let mut fresh = SnapshotResult::default();
     if !bands.is_empty() {
         // Cancellation drops the analysis future (aborting its in-flight
         // HTTP requests) — a hung OCR sidecar must never wedge teardown.
         let res = tokio::select! {
             res = analyzer.analyze(&canvas.fb, canvas.w, canvas.h, &bands) => res,
-            _ = shared.cancel.cancelled() => return false,
+            _ = shared.cancel.cancelled() => {
+                return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: false };
+            }
         };
         match res {
             Err(e) => {
@@ -487,16 +647,36 @@ where
                 if !already_down {
                     let _ = shared.events.send(GateEvent::AnalysisError);
                 }
-                return false;
+                return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: false };
             }
-            Ok(res) if res.is_detection() => {
-                return on_detection(shared, sink, canvas, batch, res).await;
+            Ok(res) => {
+                fresh = res;
             }
-            Ok(_) => {}
         }
     }
 
-    forward_batch(shared, sink, batch).await
+    // Reconcile the sticky PII set with this batch's fresh OCR: rects whose band
+    // was re-analyzed are replaced by the fresh result (so removed PII is
+    // released and persisting PII is refreshed), while rects in bands not
+    // analyzed this frame are kept. The returned slice is everything that must
+    // be blanked on THIS forwarded frame — the fix for "a static secret stops
+    // being redacted once its line stops changing".
+    let counts = fresh.counts.clone();
+    let to_blank = active_pii.reconcile(&bands, fresh.detections);
+
+    if to_blank.is_empty() {
+        // No PII anywhere on screen: forward the batch untouched.
+        let batch_bytes: u64 = batch.iter().map(|p| p.data.len() as u64).sum();
+        let proceed = forward_batch(shared, sink, batch).await;
+        return BatchOutcome {
+            proceed,
+            forwarded_bytes: if proceed { batch_bytes } else { 0 },
+            detection: false,
+        };
+    }
+
+    // PII present (fresh and/or sticky): redact every active rect this frame.
+    on_detection(shared, sink, canvas, batch, to_blank, &counts).await
 }
 
 /// Handles a detection according to the gate policy. Returns false when the
@@ -507,14 +687,16 @@ async fn on_detection<W>(
     sink: &mut W,
     canvas: &ShadowCanvas,
     batch: &[GatePdu],
-    res: SnapshotResult,
-) -> bool
+    detections: &[presidio::EntityDetection],
+    counts: &std::collections::HashMap<String, i64>,
+) -> BatchOutcome
 where
     W: AsyncWrite + Unpin,
 {
     let policy = shared.policy;
 
     if policy.redacts() {
+        let redact_started = std::time::Instant::now();
         // Hold-and-rewrite, SELECTIVELY. For each held PDU:
         //   - A PDU whose bitmap patches do NOT overlap any detection is
         //     forwarded UNMODIFIED — this preserves the legitimate screen
@@ -529,8 +711,7 @@ where
         // Repainting ONLY the PII-overlapping regions (not whole bands) keeps
         // the rewrite small: dropping every bitmap and re-emitting whole bands
         // floods the client link and can blank legitimate content.
-        let dets: Vec<rewrite::Rect> = res
-            .detections
+        let dets: Vec<rewrite::Rect> = detections
             .iter()
             .map(|d| rewrite::Rect { x: d.x, y: d.y, w: d.width, h: d.height })
             .collect();
@@ -547,7 +728,7 @@ where
         warn!(
             sid = %shared.session_id,
             "piigate: PII detected ({:?}), redacting {} region(s) and forwarding",
-            res.counts, res.detections.len()
+            counts, detections.len()
         );
 
         let mut wire: Vec<u8> = Vec::new();
@@ -585,7 +766,7 @@ where
                     canvas.w,
                     canvas.h,
                     region,
-                    &res.detections,
+                    detections,
                     bpp,
                 ));
             }
@@ -598,7 +779,7 @@ where
         // on the full-width band from the shadow canvas, so the detection bbox
         // spans the WHOLE entity; repaint that entire bbox as black so the
         // already-delivered portion is blanked too, not just the current delta.
-        for d in &res.detections {
+        for d in detections {
             let region = rewrite::Rect { x: d.x, y: d.y, w: d.width, h: d.height };
             wire.extend_from_slice(&rewrite::redact_region(
                 &canvas.fb,
@@ -609,10 +790,16 @@ where
                 bpp,
             ));
         }
+        // Redaction (PDU rewrite + pixel blanking) is complete; the remaining
+        // cost is just the downstream write, timed as part of the batch total.
+        shared.metrics.record_redact(redact_started.elapsed());
+        let wire_bytes = wire.len() as u64;
         if !forward_bytes(shared, sink, &wire).await {
-            return false;
+            return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true };
         }
-        let _ = shared.events.send(GateEvent::Detection(res));
+        let _ = shared
+            .events
+            .send(GateEvent::Detection(detection_snapshot(detections, counts)));
 
         if policy.kills_after_detection() {
             // RedactAndKill: the redacted batch is delivered, now stop.
@@ -621,9 +808,10 @@ where
             st.queue.clear();
             st.queued_bytes = 0;
             st.tail.clear();
-            return false;
+            return BatchOutcome { proceed: false, forwarded_bytes: wire_bytes, detection: true };
         }
-        return true; // Redact: keep guarding.
+        // Redact: keep guarding.
+        return BatchOutcome { proceed: true, forwarded_bytes: wire_bytes, detection: true };
     }
 
     // Kill: drop the held batch and terminate. Terminal-state transition
@@ -639,15 +827,32 @@ where
         already
     };
     if already_down {
-        return false;
+        return BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true };
     }
     warn!(
         sid = %shared.session_id,
         "piigate: PII detected ({:?}), dropping held batch and terminating session",
-        res.counts
+        counts
     );
-    let _ = shared.events.send(GateEvent::Detection(res));
-    false
+    let _ = shared
+        .events
+        .send(GateEvent::Detection(detection_snapshot(detections, counts)));
+    // Kill: the held batch was dropped, nothing forwarded.
+    BatchOutcome { proceed: false, forwarded_bytes: 0, detection: true }
+}
+
+/// Rebuilds a [`SnapshotResult`] from the blank-list + counts for the terminal
+/// `GateEvent::Detection` report (the violation sent upstream). The redaction
+/// path operates on the reconciled active set, so the event reflects exactly
+/// what was blanked this frame.
+fn detection_snapshot(
+    detections: &[presidio::EntityDetection],
+    counts: &std::collections::HashMap<String, i64>,
+) -> SnapshotResult {
+    SnapshotResult {
+        detections: detections.to_vec(),
+        counts: counts.clone(),
+    }
 }
 
 /// Delivers cleared PDUs downstream, coalescing them into bounded chunks
@@ -673,18 +878,16 @@ where
 
 /// Forwards a raw byte buffer downstream (used for redacted/rewritten PDUs,
 /// which are synthesized rather than copied from a GatePdu). Same cancellation
-/// and failure semantics as the batch path.
-async fn forward_bytes<W>(shared: &GateShared, sink: &mut W, mut bytes: &[u8]) -> bool
+/// and failure semantics as the batch path; writes bounded slices directly,
+/// no intermediate copies.
+async fn forward_bytes<W>(shared: &GateShared, sink: &mut W, bytes: &[u8]) -> bool
 where
     W: AsyncWrite + Unpin,
 {
-    while !bytes.is_empty() {
-        let n = bytes.len().min(FORWARD_CHUNK_BYTES);
-        let mut chunk = bytes[..n].to_vec();
-        if !flush(shared, sink, &mut chunk).await {
+    for chunk in bytes.chunks(FORWARD_CHUNK_BYTES) {
+        if !send(shared, sink, chunk).await {
             return false;
         }
-        bytes = &bytes[n..];
     }
     true
 }
@@ -693,14 +896,27 @@ async fn flush<W>(shared: &GateShared, sink: &mut W, chunk: &mut Vec<u8>) -> boo
 where
     W: AsyncWrite + Unpin,
 {
-    if chunk.is_empty() {
+    if !send(shared, sink, chunk).await {
+        return false;
+    }
+    chunk.clear();
+    true
+}
+
+/// Writes one buffer downstream with the gate's cancellation and failure
+/// semantics: the cancel signal aborts a write stalled on a dead peer, and a
+/// transport error marks the gate closed so the analysis loop exits.
+async fn send<W>(shared: &GateShared, sink: &mut W, buf: &[u8]) -> bool
+where
+    W: AsyncWrite + Unpin,
+{
+    if buf.is_empty() {
         return true;
     }
     let write = async {
-        sink.write_all(chunk).await?;
+        sink.write_all(buf).await?;
         sink.flush().await
     };
-    // The cancel signal must also abort a write stalled on a dead peer.
     let res = tokio::select! {
         res = write => res,
         _ = shared.cancel.cancelled() => return false,
@@ -710,7 +926,6 @@ where
         shared.state.lock().closed = true;
         return false;
     }
-    chunk.clear();
     true
 }
 

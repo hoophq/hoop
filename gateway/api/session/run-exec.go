@@ -84,7 +84,7 @@ func RunReviewedExec(c *gin.Context) {
 
 	// The plugin must be active to be able to change the state of the review
 	// after the execution, this will ensure that a review is executed only once.
-	p, err := models.GetPluginByName(ctx.OrgID, plugintypes.PluginReviewName)
+	p, err := models.GetPluginByName(models.DB, ctx.OrgID, plugintypes.PluginReviewName)
 	if err != nil && err != models.ErrNotFound {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving review plugin")
 		return

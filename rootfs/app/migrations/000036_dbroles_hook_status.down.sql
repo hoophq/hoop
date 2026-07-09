@@ -1,1 +1,0 @@
-ALTER TABLE private.dbrole_jobs DROP COLUMN hook_status;

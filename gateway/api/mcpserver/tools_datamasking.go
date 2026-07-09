@@ -9,6 +9,7 @@ import (
 	"github.com/hoophq/hoop/common/license"
 	apigdatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -137,6 +138,9 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if !sc.IsAdminUser() {
 		return errResult("admin access required"), nil, nil
 	}
+	if err := services.CheckRedactProvider(); err != nil {
+		return errResult(err.Error()), nil, nil
+	}
 
 	supported := toModelSupportedEntityTypes(args.SupportedEntityTypes)
 	custom := toModelCustomEntityTypes(args.CustomEntityTypes)
@@ -208,6 +212,9 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	}
 	if !sc.IsAdminUser() {
 		return errResult("admin access required"), nil, nil
+	}
+	if err := services.CheckRedactProvider(); err != nil {
+		return errResult(err.Error()), nil, nil
 	}
 
 	supported := toModelSupportedEntityTypes(args.SupportedEntityTypes)

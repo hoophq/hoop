@@ -1,3 +1,0 @@
--- noop: the promoted flags were removed from the catalog and their per-org
--- overrides deleted. The deleted preferences cannot be reconstructed, and the
--- flag names are no longer recognized, so there is nothing to restore.

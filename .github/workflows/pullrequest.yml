@@ -64,3 +64,135 @@ jobs:
       # https://golang.testcontainers.org/system_requirements/
       - name: Integration Test
         run: make test-integration
+
+  transport-test:
+    name: Transport Integration Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      # The transport harness drives the real gateway gRPC transport end to end
+      # (real agent controller + real Postgres). Its PostgreSQL protocol
+      # round-trip needs the enterprise libhoop proxy — the OSS _libhoop stub
+      # returns "missing protocol hoop library" and that one test skips. Same
+      # ./libhoop checkout trick as the Integration Test job (libhoop-map's
+      # `rm libhoop || true` is a no-op against this non-empty directory).
+      #
+      # This runs as its own job (not folded into Integration Test) so its
+      # Postgres containers do not contend on one runner with the heavy agent
+      # suite's containers, which caused timeouts when the two ran in parallel.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Transport Integration Test
+        run: make test-transport
+
+  gateway-smoke-test:
+    name: Gateway Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Gateway smoke tests exercise only the HTTP API, auth, RBAC and the
+      # model/migration layer — no protocol proxying — so the OSS _libhoop
+      # stub (wired by libhoop-map) is sufficient. No libhoop checkout and no
+      # GH_TOKEN are required. No Rust toolchain either: the committed
+      # rdp_parser.wasm is embedded via go:embed, so make test-gateway does
+      # not regenerate it.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
+      # runners have Docker pre-installed, so no services: block is needed.
+      - name: Gateway Smoke Test
+        run: make test-gateway
+
+  gateway-smoke-test-pglite:
+    name: Gateway Smoke Test (embedded PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Same smoke suite as gateway-smoke-test, but the state store is the
+      # embedded PGlite (wasm) database — the standalone-mode regression net.
+      # It fails on SQL the embedded backend cannot run and on code that
+      # deadlocks the pool capped at one connection, both invisible on
+      # regular PostgreSQL. Runs entirely in-process: no Docker, no
+      # testcontainers.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      - name: Gateway Smoke Test (pglite)
+        run: make test-gateway-pglite
+
+  standalone-test:
+    name: Standalone Mode Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Standalone-mode lifecycle suite (DEP-38): gateway on the embedded
+      # PGlite database + the dedicated standalone agent provisioned through
+      # the same code path `hoop start standalone` runs, connected via a
+      # real agent controller. Runs entirely in-process: no Docker, no
+      # enterprise libhoop, no Rust toolchain.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      - name: Standalone Mode Test
+        run: make test-standalone
+
+  standalone-e2e:
+    name: Standalone Single-Binary E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Builds the real hoop CLI and runs `hoop start standalone` as a
+      # subprocess: first boot (embedded PGlite initdb + migrations + agent
+      # provisioning) and resume boot (cluster resume + persisted
+      # credentials). The only job that tests the shipped artifact itself —
+      # go:embed assets, CLI wiring, and the single-process composition.
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26.0'
+
+      - name: Standalone Single-Binary E2E
+        run: make test-standalone-e2e

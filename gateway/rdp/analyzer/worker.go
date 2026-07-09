@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -66,8 +67,8 @@ type BitmapEvent struct {
 
 // wordRange tracks a word's character range in the reconstructed text string.
 type wordRange struct {
-	start int // inclusive byte offset in full text
-	end   int // exclusive byte offset in full text
+	start int // inclusive code-point (char) offset in full text
+	end   int // exclusive code-point (char) offset in full text
 	word  ocr.Word
 }
 
@@ -300,14 +301,21 @@ func getCanvasDimensions(session *models.Session) (int, int) {
 	return w, h
 }
 
-// CompositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer at (dstX, dstY).
+// CompositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer
+// at (dstX, dstY) and reports whether any pixel actually CHANGED.
+//
+// RDP routinely resends byte-identical tiles (idle repaints, unchanged
+// backgrounds); a paint that changes nothing has no new content to analyze, so
+// the realtime gate uses the return value to skip marking that region dirty.
+// Callers that don't care (full-frame analysis, rdpbench) simply ignore it.
 //
 // Contract: framebuffer must be RGBA (4 bytes/pixel, top-down) with
 // len >= fbWidth*fbHeight*4, and patch must be RGBA with len >= patchW*patchH*4
 // (as produced by rle.ToRGBA / rle.DecompressToRGBA). Out-of-bounds regions are
 // clipped. The function does no locking: callers sharing the framebuffer across
 // goroutines must synchronize externally.
-func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) {
+func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) bool {
+	changed := false
 	for row := 0; row < patchH; row++ {
 		fbY := dstY + row
 		if fbY < 0 || fbY >= fbHeight {
@@ -323,13 +331,20 @@ func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, pa
 			si := srcOff + col*4
 			di := dstOff + col*4
 			if si+3 < len(patch) && di+3 < len(framebuffer) {
-				framebuffer[di] = patch[si]
-				framebuffer[di+1] = patch[si+1]
-				framebuffer[di+2] = patch[si+2]
-				framebuffer[di+3] = patch[si+3]
+				if framebuffer[di] != patch[si] ||
+					framebuffer[di+1] != patch[si+1] ||
+					framebuffer[di+2] != patch[si+2] ||
+					framebuffer[di+3] != patch[si+3] {
+					framebuffer[di] = patch[si]
+					framebuffer[di+1] = patch[si+1]
+					framebuffer[di+2] = patch[si+2]
+					framebuffer[di+3] = patch[si+3]
+					changed = true
+				}
 			}
 		}
 	}
+	return changed
 }
 
 // SampleFramebuffer extracts every 64th scanline from the framebuffer for fast hashing.
@@ -703,17 +718,23 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 // buildWordRanges constructs a character-offset index from OCR words.
 // The full text is reconstructed as "word1 word2 word3..." (space-separated),
 // and each wordRange records the start/end byte offsets of each word in that string.
+// Offsets are UNICODE CODE POINT (rune) counts, not byte lengths: Presidio runs
+// on Python str and reports entity start/end as code-point indices. Using byte
+// lengths drifts by one per extra byte of every earlier multi-byte character
+// (smart quotes, em-dashes, accented letters, stray OCR glyphs), mapping an
+// entity onto the wrong words and redacting the wrong line. Counting runes keeps
+// this index in Presidio's domain.
 func buildWordRanges(words []ocr.Word) []wordRange {
 	ranges := make([]wordRange, 0, len(words))
 	offset := 0
 	for _, w := range words {
-		end := offset + len(w.Text)
+		end := offset + utf8.RuneCountInString(w.Text)
 		ranges = append(ranges, wordRange{
 			start: offset,
 			end:   end,
 			word:  w,
 		})
-		offset = end + 1 // +1 for the space separator
+		offset = end + 1 // +1 for the single-rune space separator
 	}
 	return ranges
 }

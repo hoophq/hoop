@@ -73,6 +73,7 @@ export function canTestConnection({ type, subtype } = {}) {
 const NATIVE_CLIENT_DIRECT_SUBTYPES = new Set([
   'postgres',
   'ssh',
+  'ssh-local',
   'github',
   'git',
 ])

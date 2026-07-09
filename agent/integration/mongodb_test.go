@@ -13,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"github.com/hoophq/hoop/agent/integration/testutil"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
 )
 
 const mongoTestTimeout = 30 * time.Second
@@ -241,6 +243,105 @@ func TestMongoDB_BadCredentials(t *testing.T) {
 	if err := client.PingWithTimeout(15 * time.Second); err == nil {
 		t.Fatal("expected ping to fail with bad upstream credentials, got nil")
 	}
+}
+
+// TestMongoDB_CloseKillsRunningOperation is the regression test for
+// operations surviving a client disconnect. Closing the proxy used to only
+// close the backend TCP socket, which MongoDB does not treat as a reason
+// to abort most in-flight operations (only cursor reads are aborted, and
+// only at interrupt checkpoints) — a heavy command kept running server-side
+// after the hoop client was gone. Close() must now kill the operations of
+// its backend connection through the killOp side channel.
+//
+// The long-running operation is the server `sleep` test command (hence
+// StartMongoDBWithTestCommands): unlike a slow find, it is deterministic
+// and is never self-aborted on disconnect, so the only way it disappears
+// from $currentOp is an explicit killOp.
+func TestMongoDB_CloseKillsRunningOperation(t *testing.T) {
+	mc := testutil.StartMongoDBWithTestCommands(t)
+	agent, tr := startAgent(t)
+	defer shutdownAgent(t, agent, tr)
+	sessionID := testutil.OpenMongoSession(t, tr, mc)
+	demux := testutil.StartRecvDemux(t, tr)
+	client := testutil.DialPipedMongo(t, tr, demux, mc, sessionID, "conn-kill")
+
+	if err := client.PingWithTimeout(mongoTestTimeout); err != nil {
+		t.Fatalf("mongodb ping through agent failed: %v", err)
+	}
+
+	// Sidecar admin client observing the server directly, bypassing the
+	// agent, to assert what is actually running server-side.
+	sidecarCtx, sidecarCancel := context.WithTimeout(context.Background(), mongoTestTimeout)
+	defer sidecarCancel()
+	sidecar, err := mongo.Connect(sidecarCtx, options.Client().ApplyURI(mc.UpstreamConnString()))
+	if err != nil {
+		t.Fatalf("failed opening sidecar connection: %v", err)
+	}
+	defer sidecar.Disconnect(context.Background())
+
+	// Fire the long-running operation through the proxied connection. It
+	// returns with an error either when killOp aborts it (the fix) or when
+	// the bridge is torn down, so the goroutine always exits.
+	go func() {
+		_ = client.Client.Database("admin").RunCommand(context.Background(), bson.D{
+			{Key: "sleep", Value: 1},
+			{Key: "millis", Value: 120000},
+			{Key: "lock", Value: "none"},
+		}).Err()
+	}()
+
+	if !waitForMongoSleepOp(t, sidecar, true, 15*time.Second) {
+		t.Fatal("sleep operation never showed up in $currentOp; cannot exercise the kill path")
+	}
+
+	// Close the whole session at the agent — what a client disconnect
+	// triggers at the gateway. sessionCleanup closes every proxy of the
+	// session; the one owning the backend connection with the sleep
+	// operation must kill it.
+	tr.Inject(&pb.Packet{
+		Type: pbagent.SessionClose,
+		Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+	})
+
+	if !waitForMongoSleepOp(t, sidecar, false, 20*time.Second) {
+		t.Fatal("sleep operation still running on the server after session close: the killOp side channel did not terminate it")
+	}
+}
+
+// waitForMongoSleepOp polls $currentOp through the sidecar connection until
+// the presence of the sleep test command matches wantPresent, returning
+// false on timeout.
+func waitForMongoSleepOp(t *testing.T, sidecar *mongo.Client, wantPresent bool, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if mongoSleepOpRunning(t, sidecar) == wantPresent {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}
+
+// mongoSleepOpRunning reports whether a `sleep` command is currently
+// running on the server, checked via $currentOp over the sidecar (direct,
+// non-proxied) connection.
+func mongoSleepOpRunning(t *testing.T, sidecar *mongo.Client) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cursor, err := sidecar.Database("admin").Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$currentOp", Value: bson.D{{Key: "allUsers", Value: true}}}},
+		{{Key: "$match", Value: bson.D{{Key: "command.sleep", Value: bson.D{{Key: "$exists", Value: true}}}}}},
+	})
+	if err != nil {
+		t.Fatalf("failed listing current operations: %v", err)
+	}
+	var ops []bson.M
+	if err := cursor.All(ctx, &ops); err != nil {
+		t.Fatalf("failed decoding current operations: %v", err)
+	}
+	return len(ops) > 0
 }
 
 // asMongoCommandError is errors.As specialized for mongo.CommandError.

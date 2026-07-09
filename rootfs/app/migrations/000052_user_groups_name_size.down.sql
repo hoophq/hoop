@@ -1,1 +1,0 @@
-ALTER TABLE private.user_groups ALTER COLUMN name TYPE VARCHAR(100);

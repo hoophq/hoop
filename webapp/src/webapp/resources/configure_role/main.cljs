@@ -41,6 +41,7 @@
     ;; SSH connections
     (and (= connection-type "application")
          (or (= connection-subtype "ssh")
+             (= connection-subtype "ssh-local")
              (= connection-subtype "git")
              (= connection-subtype "github")))
     "ssh-credentials-form"
@@ -116,6 +117,7 @@
                                 (do
                                   (when (and (= type "application")
                                              (or (= subtype "ssh")
+                                                 (= subtype "ssh-local")
                                                  (= subtype "git")
                                                  (= subtype "github")))
                                     (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]

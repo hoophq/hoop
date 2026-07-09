@@ -57,3 +57,64 @@ func TestGuardRailRules(t *testing.T) {
 	}
 
 }
+
+func TestMessageSurvivesDecode(t *testing.T) {
+	dataRules, err := Decode([]byte(`[{"rules":[{"type":"deny_words_list","words":["SELECT"],"pattern_regex":"","message":"no selects allowed"}]}]`))
+	assert.NoError(t, err)
+	assert.Len(t, dataRules, 1)
+	assert.Len(t, dataRules[0].Items, 1)
+	assert.Equal(t, "no selects allowed", dataRules[0].Items[0].Message)
+}
+
+func TestMatchMessage(t *testing.T) {
+	dataRules := []DataRules{
+		{Items: []Rule{
+			{Type: denyWordListType, Words: []string{"SELECT"}, Message: "deny select message"},
+			{Type: patternMatchRegexType, PatternRegex: "[A-Z0-9]+", Message: "pattern message"},
+			{Type: denyWordListType, Words: []string{"DROP"}}, // no message configured
+		}},
+	}
+
+	for _, tt := range []struct {
+		msg          string
+		ruleType     string
+		words        []string
+		patternRegex string
+		expected     string
+	}{
+		{
+			msg:      "matches deny word rule message",
+			ruleType: denyWordListType,
+			words:    []string{"SELECT"},
+			expected: "deny select message",
+		},
+		{
+			msg:          "matches pattern rule message",
+			ruleType:     patternMatchRegexType,
+			patternRegex: "[A-Z0-9]+",
+			expected:     "pattern message",
+		},
+		{
+			msg:      "returns empty when matched rule has no message",
+			ruleType: denyWordListType,
+			words:    []string{"DROP"},
+			expected: "",
+		},
+		{
+			msg:      "returns empty when words differ",
+			ruleType: denyWordListType,
+			words:    []string{"UPDATE"},
+			expected: "",
+		},
+		{
+			msg:          "returns empty when pattern differs",
+			ruleType:     patternMatchRegexType,
+			patternRegex: "different",
+			expected:     "",
+		},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			assert.Equal(t, tt.expected, MatchMessage(dataRules, tt.ruleType, tt.words, tt.patternRegex))
+		})
+	}
+}

@@ -57,10 +57,10 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	if connParams.GuardRailRules != nil {
 		guardRailRules = string(connParams.GuardRailRules)
 	}
-	var analyzerMetricsRules string
-	if connParams.AnalyzerMetricsRules != nil {
-		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
-	}
+	// var analyzerMetricsRules string
+	// if connParams.AnalyzerMetricsRules != nil {
+	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	// }
 
 	opts := map[string]string{
 		"sid":                          sessionID,
@@ -79,7 +79,9 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		"data_masking_entity_data":     dataMaskingEntityTypesData,
 		"dlp_experimental_redact_rows": connenv.experimentalRedactRows,
 		"guard_rail_rules":             guardRailRules,
-		"analyzer_metrics_rules":       analyzerMetricsRules,
+		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
+		// on more intensive environments this is a problem, we can enable it later based on specific rules
+		// "analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {

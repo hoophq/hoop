@@ -109,10 +109,9 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - Auth provider resolution: dynamic (`gateway/idp/core.go`): DB `server_auth_config` overrides env; providers are `local`, `oidc`, `saml` with 30-minute cached verifier instances.
 
 ## Database & Migrations
-- SQL migrations live in `rootfs/app/migrations/`.
+- SQL migrations live in `gateway/migrations/` and are embedded into the gateway binary (`go:embed` + golang-migrate iofs); deployments never read them from disk.
 - File-based migrations run first via `golang-migrate`, then Go-coded migrations run via `modelsbootstrap.RunGolangMigrations()`.
-- Startup requires at least `000001_init.up.sql` to exist at the configured migration path.
-- Create new migrations: `migrate create -ext sql -dir rootfs/app/migrations -seq <description>`.
+- Create new migrations: `migrate create -ext sql -dir gateway/migrations -seq <description>`.
 - Always provide both `.up.sql` and `.down.sql`; test rollback with `migrate ... down 1`.
 
 - **IMPORTANT**: Migration numbering must to be sequential. Check existing migrations before creating new ones to avoid conflicts. If a migration with the same number already exists in `origin/main`, it migration needs to be renamed to a higher number during merge conflict resolution.
@@ -131,7 +130,7 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
 | Format Swagger annotations | `swag fmt` | Run in `gateway/` |
-| Create new SQL migration | `migrate create -ext sql -dir rootfs/app/migrations -seq name` | |
+| Create new SQL migration | `migrate create -ext sql -dir gateway/migrations -seq name` | |
 | Publish release | `make publish` | Requires GitHub CLI (`gh`) |
 
 ## External Integrations
@@ -251,7 +250,7 @@ When merging `main` into a feature branch:
 | API route registration | `gateway/api/server.go` → `buildRoutes()` |
 | Role definitions | `gateway/api/apiroutes/roles.go` |
 | Plugin registration | `gateway/main.go` (search `RegisteredPlugins`) |
-| SQL migrations | `rootfs/app/migrations/` |
+| SQL migrations | `gateway/migrations/` |
 | Dev run script | `scripts/dev/run.sh` |
 | Env sample | `.env.sample` |
 | Webapp entry (legacy CLJS) | `webapp/src/webapp/core.cljs` |

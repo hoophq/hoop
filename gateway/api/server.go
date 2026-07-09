@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/webappui"
 	"go.uber.org/zap"
 
 	"github.com/hoophq/hoop/common/log"
@@ -127,12 +127,16 @@ type Api struct {
 // @scope.profile
 // @scope.email
 // @scope.openid
-func (a *Api) StartAPI() {
-	if os.Getenv("PORT") == "" {
-		os.Setenv("PORT", "8009")
-	}
+// BuildEngine constructs the fully-wired gin engine the gateway serves:
+// security/CORS middleware, the static UI handler, the well-known/SSM/RDP
+// groups, the /api route group with its Sentry middleware and the complete
+// API route tree, and the registered request validators.
+//
+// It performs no network I/O, so StartAPI and the integration/smoke tests
+// share the exact same handler — tests exercise the production middleware
+// chain and validators rather than a stripped-down router.
+func (a *Api) BuildEngine() *gin.Engine {
 	zaplogger := log.NewDefaultLogger(nil)
-	defer zaplogger.Sync()
 	route := gin.New()
 	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
 	if os.Getenv("GIN_MODE") == "debug" {
@@ -145,12 +149,32 @@ func (a *Api) StartAPI() {
 	route.Use(CORSMiddleware())
 	baseURL := appconfig.Get().ApiURLPath()
 
-	// UI
-	webappStaticUiPath := appconfig.Get().WebappStaticUiPath()
-	route.Use(static.Serve(baseURL+"/", static.LocalFile(webappStaticUiPath, false)))
+	// UI: assets resolved from STATIC_UI_PATH, the default disk path or the
+	// build embedded in the binary; index.html and js/app.js are
+	// transformed in memory with this gateway's URL and served from memory.
+	webappUI, err := webappui.Resolve()
+	if err != nil {
+		log.Warnf("failed loading the web UI, running API-only, reason=%v", err)
+	}
+	webappui.LogSource(webappUI)
+	if webappUI != nil {
+		route.Use(static.Serve(baseURL+"/", webappUI.FileSystem()))
+		route.GET(baseURL+"/index.html", func(c *gin.Context) {
+			webappUI.WriteIndex(c.Writer, http.StatusOK)
+		})
+		if webappUI.HasAppJs() {
+			route.GET(baseURL+"/js/app.js", func(c *gin.Context) {
+				webappUI.WriteAppJs(c.Writer)
+			})
+		}
+	}
 	route.NoRoute(func(c *gin.Context) {
 		if !strings.HasPrefix(c.Request.RequestURI, baseURL+"/api") {
-			c.File(fmt.Sprintf("%s/index.html", webappStaticUiPath))
+			if webappUI != nil {
+				webappUI.WriteIndex(c.Writer, http.StatusOK)
+				return
+			}
+			c.Status(http.StatusNotFound)
 			return
 		}
 	})
@@ -174,6 +198,21 @@ func (a *Api) StartAPI() {
 
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
+
+	return route
+}
+
+func (a *Api) StartAPI() {
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8009")
+	}
+	route := a.BuildEngine()
+	// BuildEngine always assigns a.logger; guard the defer so a future
+	// refactor that changes that contract fails loudly elsewhere rather than
+	// nil-panicking here during shutdown.
+	if a.logger != nil {
+		defer a.logger.Sync()
+	}
 
 	if a.TLSConfig != nil {
 		server := http.Server{

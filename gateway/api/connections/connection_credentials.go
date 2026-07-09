@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
@@ -29,7 +30,10 @@ import (
 	"gorm.io/gorm"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code", "mcp"}
+var validConnectionTypes = []string{
+	"postgres", "ssh", "ssh-local", "rdp", "aws-ssm",
+	"httpproxy", "kubernetes", "claude-code", "mcp",
+}
 
 // noExpirySentinel is the expire_at value stored for credentials that should
 // not expire — the human "Open in Native Client" flow issues these when the
@@ -99,10 +103,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
-		c.AbortWithStatusJSON(400, gin.H{"message": "Listening address is not configured for this connection type"})
-		return
-	}
+	// if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
+	// 	c.AbortWithStatusJSON(400, gin.H{"message": "Listening address is not configured for this connection type"})
+	// 	return
+	// }
 
 	if conn.AccessModeConnect != "enabled" {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access mode connect is not enabled for this connection"})
@@ -892,17 +896,42 @@ func buildConnectionCredentialsResponse(
 				"subdomain": "` + browserWildcardCommand + `"
 			}`
 		base.ConnectionType = proto.ConnectionType(connectionType).String()
-		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
+		info := &openapi.HttpProxyConnectionInfo{
 			Hostname:   host,
 			Port:       serverPort,
 			ProxyToken: secretKey,
 			Command:    jsonCommandsString,
 		}
+		// For a claude-code connection federated to Google Vertex AI, surface
+		// the GCP project/region so `hoop claude configure` can emit the
+		// Vertex-mode client env. Gated by the experimental flag so a deploy
+		// with the feature off never advertises Vertex settings.
+		if conn.SubType.String == proto.ConnectionTypeClaudeCode.String() &&
+			featureflag.IsEnabled(cred.OrgID, "experimental.claude_code_vertex") {
+			info.VertexProjectID = decodeConnectionEnv(conn, "GCP_PROJECT_ID")
+			info.VertexRegion = decodeConnectionEnv(conn, "GCP_REGION")
+		}
+		base.ConnectionCredentials = info
 	default:
 		return nil
 	}
 
 	return &base
+}
+
+// decodeConnectionEnv returns the plaintext value of a connection env-var
+// secret (stored base64-encoded under the "envvar:NAME" key), or "" when the
+// key is absent or undecodable.
+func decodeConnectionEnv(conn *models.Connection, name string) string {
+	enc := conn.Envs[fmt.Sprintf("envvar:%s", name)]
+	if enc == "" {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		return ""
+	}
+	return string(decoded)
 }
 
 func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
@@ -1063,7 +1092,7 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 	switch connType {
 	case proto.ConnectionTypePostgres:
 		return keys.GenerateSecureRandomKey("pg", keySize)
-	case proto.ConnectionTypeSSH:
+	case proto.ConnectionTypeSSH, "ssh-local":
 		return keys.GenerateSecureRandomKey("ssh", keySize)
 	case proto.ConnectionTypeRDP:
 		return keys.GenerateSecureRandomKey("rdp", keySize)

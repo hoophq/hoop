@@ -15,7 +15,7 @@ import (
 )
 
 func migrateOrganizationRunbooks(db *gorm.DB, orgID string) error {
-	obj, err := models.GetPluginByName(orgID, plugintypes.PluginRunbooksName)
+	obj, err := models.GetPluginByName(db, orgID, plugintypes.PluginRunbooksName)
 	if err != nil {
 		if err == models.ErrNotFound {
 			log.Infof("No runbook plugin found for org %s, skipping", orgID)

@@ -1,1 +1,0 @@
-ALTER TABLE private.authconfig DROP COLUMN provider_name;

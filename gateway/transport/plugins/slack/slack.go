@@ -104,7 +104,7 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 	}
 
 	for _, org := range orgList {
-		pl, err := models.GetPluginByName(org.ID, plugintypes.PluginSlackName)
+		pl, err := models.GetPluginByName(models.DB, org.ID, plugintypes.PluginSlackName)
 		if err != nil && err != models.ErrNotFound {
 			log.Errorf("failed retrieving plugin entity %v", err)
 			continue

@@ -16,10 +16,22 @@
            :value (resource-process-form/extract-value value connection-method (keyword key) secrets-provider)})
         headers))
 
+(defn claude-code-vertex-remote-url
+  "Builds the Google Vertex AI host the agent proxies claude-code traffic to,
+  from the configured GCP region. A blank or \"global\" region resolves to the
+  global endpoint; any other region uses the regional endpoint. The hostname
+  pattern matches Vertex AI's documented endpoints."
+  [region]
+  (let [r (str/trim (or region ""))]
+    (if (or (str/blank? r) (= r "global"))
+      "https://aiplatform.googleapis.com"
+      (str "https://" r "-aiplatform.googleapis.com"))))
+
 ;; Create a new connection
 (defn get-api-connection-type [ui-type subtype]
   (cond
     (or (= subtype "ssh")
+        (= subtype "ssh-local")
         (= subtype "git")
         (= subtype "github")) "application"
     :else (case ui-type
@@ -59,6 +71,10 @@
         connection-subtype (get-in db [:connection-setup :subtype])
         is-http-proxy-subtype? (contains? http-proxy-subtypes connection-subtype)
         api-type (get-api-connection-type ui-type connection-subtype)
+        ;; Local SSH connections run the session on the agent host itself: they
+        ;; carry no credentials and are sent with the wire subtype "ssh-local".
+        ssh-connection-type (get-in db [:connection-setup :ssh-connection-type] "proxy")
+        local-ssh? (and (= connection-subtype "ssh") (= ssh-connection-type "local"))
         connection-name (get-in db [:connection-setup :name])
         selected-attributes (get-in db [:connection-setup :attributes :selected] [])
         agent-id (get-in db [:connection-setup :agent-id])
@@ -181,14 +197,31 @@
                                               (str insecure-value)
                                               (if insecure-value "true" "false")))
 
-                             ;; For claude-code, include the HEADER_X_API_KEY in the base env vars
+                             ;; For claude-code, the emitted env vars depend on
+                             ;; the provider: the Anthropic API key path uses a
+                             ;; static HEADER_X_API_KEY, while the Google Vertex
+                             ;; AI path stores a service-account key (the agent
+                             ;; mints the upstream bearer) and derives REMOTE_URL
+                             ;; from the GCP region.
+                             claude-code-provider (let [p (get credentials :provider)]
+                                                    (if (map? p) (:value p) (or p "anthropic")))
                              base-env-vars (if (= connection-subtype "claude-code")
-                                             (let [api-key-value (get credentials :HEADER_X_API_KEY)
-                                                   api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)]
-                                               (filterv #(not (str/blank? (:value %)))
-                                                        [{:key "REMOTE_URL" :value remote-url}
-                                                         {:key "HEADER_X_API_KEY" :value api-key}
-                                                         {:key "INSECURE" :value insecure-str}]))
+                                             (if (= claude-code-provider "vertex")
+                                               (let [region (resource-process-form/extract-value (get credentials :GCP_REGION) connection-method :GCP_REGION secrets-provider)
+                                                     project (resource-process-form/extract-value (get credentials :GCP_PROJECT_ID) connection-method :GCP_PROJECT_ID secrets-provider)
+                                                     sa-json (resource-process-form/extract-value (get credentials :GCP_SERVICE_ACCOUNT_JSON) connection-method :GCP_SERVICE_ACCOUNT_JSON secrets-provider)]
+                                                 (filterv #(not (str/blank? (:value %)))
+                                                          [{:key "REMOTE_URL" :value (claude-code-vertex-remote-url region)}
+                                                           {:key "GCP_SERVICE_ACCOUNT_JSON" :value sa-json}
+                                                           {:key "GCP_PROJECT_ID" :value project}
+                                                           {:key "GCP_REGION" :value region}
+                                                           {:key "INSECURE" :value insecure-str}]))
+                                               (let [api-key-value (get credentials :HEADER_X_API_KEY)
+                                                     api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)]
+                                                 (filterv #(not (str/blank? (:value %)))
+                                                          [{:key "REMOTE_URL" :value remote-url}
+                                                           {:key "HEADER_X_API_KEY" :value api-key}
+                                                           {:key "INSECURE" :value insecure-str}])))
                                              ;; MCP (and any http proxy) keeps its Authorization
                                              ;; token in network-credentials, not the headers list,
                                              ;; so it is not shown/edited as a plain header. Emit it
@@ -220,7 +253,10 @@
                                                     {:key "USER" :value (resource-process-form/extract-value user-value connection-method "user" secrets-provider)}
                                                     {:key "PASS" :value (resource-process-form/extract-value pass-value connection-method "pass" secrets-provider)}
                                                     {:key "AUTHORIZED_SERVER_KEYS" :value (resource-process-form/extract-value keys-value connection-method "authorized_server_keys" secrets-provider)}])]
-                         (concat ssh-env-vars env-vars))
+                         ;; Local SSH carries no credentials — drop any host/user/
+                         ;; pass/key that may linger in the form from a prior proxy
+                         ;; selection.
+                         (if local-ssh? env-vars (concat ssh-env-vars env-vars)))
 
                        :else (mapv (fn [{:keys [key value]}]
                                      {:key key
@@ -258,11 +294,15 @@
                         (when-not (empty? command-string)
                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
         resource-subtype-override (get-in db [:connection-setup :resource-subtype-override])
-        effective-subtype (if (and (= ui-type "custom")
-                                   resource-subtype-override
-                                   (seq resource-subtype-override))
+        effective-subtype (cond
+                            (and (= ui-type "custom")
+                                 resource-subtype-override
+                                 (seq resource-subtype-override))
                             resource-subtype-override
-                            connection-subtype)
+
+                            local-ssh? "ssh-local"
+
+                            :else connection-subtype)
         payload {:type api-type
                  :subtype effective-subtype
                  :name connection-name
@@ -426,15 +466,25 @@
                  (boolean insecure-value))}))
 
 (defn extract-claude-code-credentials
-  "Retrieves and normalizes remote_url, API key and insecure flag from secrets for claude-code credentials"
+  "Retrieves and normalizes claude-code credentials from secrets. Detects the
+  provider: a connection carrying GCP service-account/project/region secrets is
+  Google Vertex AI; otherwise it is the Anthropic API."
   [credentials]
   (let [remote-url-value (get credentials "REMOTE_URL")
         normalized-remote-url (connection-method/normalize-credential-value remote-url-value)
         api-key-value (get credentials "HEADER_X_API_KEY")
         normalized-api-key (connection-method/normalize-credential-value api-key-value)
+        sa-json-value (get credentials "GCP_SERVICE_ACCOUNT_JSON")
+        project-value (get credentials "GCP_PROJECT_ID")
+        region-value (get credentials "GCP_REGION")
+        vertex? (boolean (or sa-json-value project-value region-value))
         insecure-value (get credentials "INSECURE")]
     {:remote_url normalized-remote-url
      :HEADER_X_API_KEY normalized-api-key
+     :provider (if vertex? "vertex" "anthropic")
+     :GCP_SERVICE_ACCOUNT_JSON (connection-method/normalize-credential-value sa-json-value)
+     :GCP_PROJECT_ID (connection-method/normalize-credential-value project-value)
+     :GCP_REGION (connection-method/normalize-credential-value region-value)
      :insecure (if (string? insecure-value)
                  (= insecure-value "true")
                  (boolean insecure-value))}))
@@ -465,6 +515,7 @@
                            (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (or (= connection-subtype "ssh")
+                                       (= connection-subtype "ssh-local")
                                        (= connection-subtype "git")
                                        (= connection-subtype "github")))
                           (extract-ssh-credentials credentials))
@@ -535,6 +586,13 @@
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
                               insecure? #(= (:key %) "INSECURE")
+                              ;; claude-code Vertex secrets are edited through
+                              ;; dedicated form fields, not the generic headers
+                              ;; list, so keep them out of it.
+                              claude-code-vertex-key? #(contains? #{"GCP_SERVICE_ACCOUNT_JSON"
+                                                                    "GCP_PROJECT_ID"
+                                                                    "GCP_REGION"}
+                                                                  (:key %))
                               header? #(str/starts-with? % "HEADER_")
                               processed-headers (mapv (fn [{:keys [key value]}]
                                                         {:key (if (header? key)
@@ -543,7 +601,8 @@
                                                          :value value})
                                                       (->> headers
                                                            (remove remote-url?)
-                                                           (remove insecure?)))]
+                                                           (remove insecure?)
+                                                           (remove claude-code-vertex-key?)))]
                           processed-headers))
 
         connection-type (:type connection)
@@ -629,7 +688,14 @@
                                     :secrets-manager-provider nil})]
 
     {:type connection-type
-     :subtype (if is-custom-with-override? "custom" connection-subtype)
+     ;; Local SSH is stored with subtype "ssh-local" but the setup form routes
+     ;; and renders it as a regular "ssh" connection; the local/proxy choice is
+     ;; tracked separately via :ssh-connection-type.
+     :subtype (cond
+                is-custom-with-override? "custom"
+                (= connection-subtype "ssh-local") "ssh"
+                :else connection-subtype)
+     :ssh-connection-type (if (= connection-subtype "ssh-local") "local" "proxy")
      :name (:name connection)
      :resource-name (:resource_name connection)
      :agent-id (:agent_id connection)

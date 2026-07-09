@@ -616,7 +616,6 @@ Resources:
                   PLUGIN_AUDIT_PATH=/opt/hoop/sessions
                   PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
                   STATIC_UI_PATH=/opt/hoop/webapp/public
-                  MIGRATION_PATH_FILES=/opt/hoop/migrations
                   LOG_LEVEL=info
                   LOG_ENCODING=json
                   API_URL=https://${AppPublicDNS}
@@ -630,7 +629,6 @@ Resources:
                   PLUGIN_AUDIT_PATH=/opt/hoop/sessions
                   PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
                   STATIC_UI_PATH=/opt/hoop/webapp/public
-                  MIGRATION_PATH_FILES=/opt/hoop/migrations
                   LOG_LEVEL=info
                   LOG_ENCODING=json
                   API_URL=https://${AppPublicDNS}
@@ -705,7 +703,8 @@ Resources:
                 set -eo pipefail
                 VERSION=LATEST_HOOP_VERSION
                 curl -sL https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoopgateway_$VERSION-Linux_amd64.tar.gz -o hoopgateway_$VERSION-Linux_amd64.tar.gz
-                # make sure the migration path doesn't have any files
+                # clear migration files from previous installs; the tarball
+                # repopulates /opt/hoop/migrations with the current set
                 rm -rf /opt/hoop/migrations
                 tar --extract --file hoopgateway_$VERSION-Linux_amd64.tar.gz -C / --strip 1 && rm -f hoopgateway_$VERSION-Linux_amd64.tar.gz
                 chown -R root: /opt/hoop

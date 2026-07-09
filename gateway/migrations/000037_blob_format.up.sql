@@ -1,0 +1,1 @@
+ALTER TABLE private.blobs ADD COLUMN format VARCHAR(40) NULL;

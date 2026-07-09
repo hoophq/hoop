@@ -18,7 +18,7 @@ const defaultRulepackVersion = "0.1.0"
 // defaultRulepackSpec describes one managed rulepack plus its guardrail rules.
 // The data here is the single source of truth used by SeedDefaultRulepacksForOrg
 // and must stay in sync with the SQL migration that backfills existing orgs
-// (rootfs/app/migrations/000093_default_rulepacks.up.sql).
+// (gateway/migrations/000093_default_rulepacks.up.sql).
 type defaultRulepackSpec struct {
 	DisplayName string
 	Tags        []string
@@ -272,6 +272,19 @@ func SeedDefaultRulepacksForOrg(ctx context.Context, orgID string) error {
 	logger := log.With("org_id", orgID)
 	seeded, skipped := 0, 0
 	for _, spec := range defaultRulepackCatalog {
+		// Skip existing packs upfront instead of relying on the unique
+		// constraint: probing with INSERT burns one aborted transaction
+		// per pack on every boot (the constraint remains the backstop for
+		// races).
+		exists, err := models.ExistsRulepackByDisplayName(models.DB, orgUUID, spec.DisplayName)
+		if err != nil {
+			return fmt.Errorf("default rulepack %q: %w", spec.DisplayName, err)
+		}
+		if exists {
+			skipped++
+			continue
+		}
+
 		rp, rules, err := buildDefaultRulepackInput(orgUUID, spec)
 		if err != nil {
 			return fmt.Errorf("default rulepack %q: %w", spec.DisplayName, err)

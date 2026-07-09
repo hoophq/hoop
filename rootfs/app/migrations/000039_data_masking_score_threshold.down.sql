@@ -1,1 +1,0 @@
-ALTER TABLE private.datamasking_rules DROP COLUMN score_threshold;

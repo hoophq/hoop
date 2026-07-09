@@ -1,11 +1,11 @@
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 
 // Icon for any connection. The connection's `subtype` is the only key
-// we look up — no aliases, no command-parsing fallbacks. If the
-// subtype is missing from connections-metadata.json the fallback icon
-// renders, which forces legacy backend rows (e.g. subtype "cloudwatch"
-// rather than "aws-cloudwatch") to be corrected rather than papered
-// over.
+// we look up — no command-parsing fallbacks, and aliasing is limited
+// to the explicit table below. If the subtype is missing from
+// connections-metadata.json the fallback icon renders, which forces
+// legacy backend rows (e.g. subtype "cloudwatch" rather than
+// "aws-cloudwatch") to be corrected rather than papered over.
 //
 // The metadata store loads asynchronously at app start (App.jsx). A
 // component that needs an up-to-date icon must therefore *subscribe*
@@ -16,8 +16,14 @@ import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStor
 // "may return the fallback if metadata isn't loaded yet" caveat.
 const FALLBACK = '/icons/connections/custom-ssh.svg'
 
+// ssh-local is plain SSH running on the agent host. It intentionally
+// has no catalog entry, so alias it to ssh and track whatever icon the
+// catalog assigns there.
+const SUBTYPE_ALIASES = { 'ssh-local': 'ssh' }
+
 function iconUrlFromMetadata(connection, getIconName) {
-  const iconName = getIconName(connection?.subtype)
+  const subtype = SUBTYPE_ALIASES[connection?.subtype] || connection?.subtype
+  const iconName = getIconName(subtype)
   return iconName ? `/icons/connections/${iconName}-default.svg` : FALLBACK
 }
 

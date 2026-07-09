@@ -62,8 +62,8 @@
    :guardrails->active-guardrail {:action nil
                                   :name ""
                                   :description ""
-                                  :input [{:type "" :rule "" :details ""}]
-                                  :output [{:type "" :rule "" :details ""}]}
+                                  :input [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]
+                                  :output [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed

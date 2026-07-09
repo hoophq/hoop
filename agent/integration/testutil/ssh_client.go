@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,7 +27,7 @@ import (
 // translator. From the test's perspective it's a regular SSH client:
 // New a session, run Exec or Shell, get output back.
 //
-// Why this exists
+// # Why this exists
 //
 // libhoop's SSH proxy speaks hoop's custom envelope on the agent ←→
 // gateway wire, not raw SSH. So tests can't simply wrap MockTransport
@@ -170,6 +171,26 @@ func DialPipedSSH(t *testing.T, tr *MockTransport, demux *RecvDemux,
 	// MockTransport, so the inbound pump matters only after the first
 	// channel opens.
 	go p.inboundPump(ctx)
+
+	// Session-close watcher: when the agent ends the session (upstream
+	// failure, guardrails block, or the OSS libhoop stub's "missing
+	// protocol hoop library"), tear the piped transport down so every
+	// blocked x/crypto/ssh call errors out immediately. Without this,
+	// a SessionClose is invisible to the SSH client — it has no
+	// per-connection ID so the demux never routes it here — and the
+	// test hangs until the suite's global timeout (DEP-57).
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-demux.SessionCloseChan(sid):
+			reason, _ := demux.SessionCloseReason(sid)
+			// Not t.Logf: this goroutine can outlive the test body and
+			// logging via t after completion panics. Stderr is safe and
+			// still lands in the test output.
+			fmt.Fprintf(os.Stderr, "testutil: agent closed session %s: %s — closing piped SSH transport\n", sid, reason)
+			p.Close()
+		}
+	}()
 
 	// Run the test's SSH client handshake. ssh.NewClientConn returns
 	// after KEX + auth completes successfully (or fails).

@@ -52,9 +52,12 @@ import (
 // State enumerates the manager lifecycle.
 //
 // Idle  → no netstack, no routes, no goroutines. The daemon is "logged
-//         out" or simply hasn't been asked to bring the tunnel up yet.
+//
+//	out" or simply hasn't been asked to bring the tunnel up yet.
+//
 // Up    → netstack is serving TCP + DNS, routes are configured, the
-//         gateway gRPC is dialable from the TUN side.
+//
+//	gateway gRPC is dialable from the TUN side.
 //
 // We intentionally do NOT expose the transient BringingUp / TearingDown
 // values — callers should observe steady states only. Internally we
@@ -164,38 +167,73 @@ type Options struct {
 	// back to the manual hint on unsupported hosts). Tests inject a
 	// fake to assert call shape without spawning resolvectl.
 	ResolvedConfigurer resolved.Configurer
+
+	// TokenSource, when set, supplies the current gateway bearer token
+	// and receives tokens the gateway rotates via X-New-Access-Token.
+	// The manager snapshots it at every use site (per-flow gRPC dials,
+	// connection-list refreshes) instead of pinning the token captured
+	// at bring-up, so a token rotated mid-session (DEP-24 silent
+	// renewal) takes effect on the next dial without re-bringing the
+	// tunnel up. Optional: when nil, the bring-up config's Token is
+	// used for the whole session (pre-renewal behaviour).
+	TokenSource TokenSource
 }
+
+// TokenSource is the manager's view of the daemon's token state. The
+// epoch makes rotation race-safe: a rotation harvested from an
+// in-flight response is only accepted if the token state has not been
+// swapped (login/logout/auth-expiry) since the request was built —
+// otherwise a slow response from a dead session could resurrect its
+// token after an explicit logout.
+type TokenSource interface {
+	// Snapshot returns the token to attach to a request right now and
+	// the epoch identifying this token generation.
+	Snapshot() (token string, epoch uint64)
+
+	// Rotate installs a token the gateway rotated during a request
+	// built at the given epoch. Implementations must reject the
+	// rotation when the epoch no longer matches.
+	Rotate(newToken string, epoch uint64)
+}
+
+// staticTokenSource pins a single token for the whole tunnel session —
+// the pre-DEP-24 behaviour, used when Options.TokenSource is nil
+// (tests, embedded usage).
+type staticTokenSource struct{ token string }
+
+func (s staticTokenSource) Snapshot() (string, uint64) { return s.token, 0 }
+func (s staticTokenSource) Rotate(string, uint64)      {}
 
 // Manager is the lifecycle owner. Construct with New; drive with
 // BringUp / TearDown; read with Snapshot. Safe for concurrent use.
 type Manager struct {
 	opts Options
 
-	mu       sync.RWMutex
-	state    State
-	since    time.Time
-	current  *liveTunnel // non-nil iff state == StateUp
+	mu      sync.RWMutex
+	state   State
+	since   time.Time
+	current *liveTunnel // non-nil iff state == StateUp
 }
 
 // liveTunnel groups every resource that participates in a single
 // "up" session. Held under Manager.mu while transitioning; readable
 // without the lock once published to Manager.current.
 type liveTunnel struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	alloc    *addressing.Allocator
-	registry *connRegistry
-	stack    *netstack.Stack
+	ctx        context.Context
+	cancel     context.CancelFunc
+	alloc      *addressing.Allocator
+	registry   *connRegistry
+	stack      *netstack.Stack
 	deviceName string
 	prefix     string
 	hostAddr   netip.Addr
 	gateway    netip.Addr
 	apiBase    string
-	// token is the gateway bearer token captured at bring-up, reused by
-	// Refresh to re-fetch the connection list without going through the
-	// daemon config again. It lives only in memory for the tunnel's
-	// lifetime (the daemon's config file is the durable copy).
-	token string
+	// tokens supplies the gateway bearer token for every use site and
+	// receives epoch-guarded rotations harvested during this tunnel's
+	// own REST calls (DEP-24). Never nil: BringUp falls back to a
+	// static source pinning the bring-up token.
+	tokens TokenSource
 
 	// routeCfg is the exact addressing handed to netstack.ConfigureRoutes
 	// at bring-up. Stored verbatim so teardown reverses precisely what was
@@ -425,7 +463,15 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		return nil, err
 	}
 
-	gatewayCfg, apiBase, err := m.buildGatewayConfig(ctx, cfg)
+	// Resolve the token plumbing once: with a TokenSource the token is
+	// re-snapshotted at every use site so mid-session rotations (DEP-24)
+	// apply to new flows; without one, the bring-up token is pinned.
+	source := m.opts.TokenSource
+	if source == nil {
+		source = staticTokenSource{token: cfg.Token}
+	}
+
+	gatewayCfg, apiBase, err := m.buildGatewayConfig(ctx, cfg, source)
 	if err != nil {
 		return cleanup(err)
 	}
@@ -437,7 +483,7 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		alloc.Prefix(), alloc.Gateway())
 
 	registry := newConnRegistry()
-	added, err := loadConnections(ctx, alloc, registry, apiBase, gatewayCfg.Token, m.opts.Logger)
+	added, err := loadConnections(ctx, alloc, registry, apiBase, source, m.opts.Logger)
 	if err != nil {
 		return cleanup(err)
 	}
@@ -453,7 +499,7 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		GatewayV4:  alloc.GatewayV4(),
 		DeviceName: m.opts.DeviceName,
 		TCPAccept:  m.makeAcceptFunc(alloc, registry),
-		TCPHandler: m.makeTCPHandler(alloc, registry, gatewayCfg),
+		TCPHandler: m.makeTCPHandler(alloc, registry, gatewayCfg, source),
 		DNSHandler: rsvr.HandleUDP,
 	})
 	if err != nil {
@@ -514,7 +560,7 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		hostAddr:       alloc.HostAddr(),
 		gateway:        alloc.Gateway(),
 		apiBase:        apiBase,
-		token:          gatewayCfg.Token,
+		tokens:         source,
 		routeCfg:       routeCfg,
 		resolvedActive: resolvedActive,
 		resolved:       m.opts.ResolvedConfigurer,
@@ -536,12 +582,15 @@ func loadConnections(
 	ctx context.Context,
 	alloc *addressing.Allocator,
 	registry *connRegistry,
-	apiBase, token string,
+	apiBase string,
+	tokens TokenSource,
 	logger Logger,
 ) (activeCount int, err error) {
+	token, epoch := tokens.Snapshot()
 	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
 		APIBaseURL: apiBase,
 		Token:      token,
+		OnNewToken: func(newToken string) { tokens.Rotate(newToken, epoch) },
 	})
 	if err != nil {
 		return 0, fmt.Errorf("fetch connections: %w", err)
@@ -577,7 +626,7 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	if t == nil {
 		return nil
 	}
-	_, err := loadConnections(ctx, t.alloc, t.registry, t.apiBase, t.token, m.opts.Logger)
+	_, err := loadConnections(ctx, t.alloc, t.registry, t.apiBase, t.tokens, m.opts.Logger)
 	return err
 }
 
