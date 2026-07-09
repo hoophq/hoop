@@ -10,6 +10,7 @@ import {
   decodeForDisplay,
   decodeSecretValue,
   encodeSecretForSource,
+  encodeSecretValue,
   isSecretReference,
   PLACEHOLDER_KEY_RE,
   sourceFromEncodedValue,
@@ -367,33 +368,13 @@ export const useConfigureRoleStore = create((set, get) => ({
       // prefix so save() sends the right thing.
       let nextStaged = state.stagedSecrets
       if (staged && staged.value) {
-        // staged.value is base64-encoded; decode then re-encode for the
+        // staged.value is base64-encoded; decode (stripping any existing
+        // provider prefix so we don't double-up) then re-encode for the
         // new source. Empty staged values stay empty.
-        const plain = (() => {
-          try {
-            const decoded = atob(staged.value)
-            // strip any existing provider prefix so we don't double-up
-            for (const prefix of ['_aws:', '_envjson:', '_vaultkv1:', '_vaultkv2:', '_aws_iam_rds:']) {
-              if (decoded.startsWith(prefix)) return decoded.slice(prefix.length)
-            }
-            return decoded
-          } catch {
-            return ''
-          }
-        })()
-        const reencoded =
-          source === 'manual-input'
-            ? btoa(plain)
-            : btoa(
-                ({
-                  'vault-kv1': '_vaultkv1:',
-                  'vault-kv2': '_vaultkv2:',
-                  'aws-secrets-manager': '_aws:',
-                }[source] || '') + plain,
-              )
+        const plain = decodeForDisplay(staged.value)
         nextStaged = {
           ...state.stagedSecrets,
-          [key]: { ...staged, value: reencoded },
+          [key]: { ...staged, value: encodeSecretForSource(plain, source) },
         }
       }
       return { fieldSources: nextSources, stagedSecrets: nextStaged }
@@ -567,13 +548,11 @@ export const useConfigureRoleStore = create((set, get) => ({
     }
     const sshKey = out['filesystem:SSH_PRIVATE_KEY']
     if (sshKey) {
-      try {
-        const decoded = atob(sshKey)
-        if (decoded && !decoded.endsWith('\n')) {
-          out['filesystem:SSH_PRIVATE_KEY'] = btoa(decoded + '\n')
-        }
-      } catch {
-        // Malformed base64 — leave as-is; the backend will reject it.
+      // decodeSecretValue returns '' for malformed base64 — leave those
+      // as-is; the backend will reject them.
+      const decoded = decodeSecretValue(sshKey)
+      if (decoded && !decoded.endsWith('\n')) {
+        out['filesystem:SSH_PRIVATE_KEY'] = encodeSecretValue(decoded + '\n')
       }
     }
     return out
