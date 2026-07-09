@@ -4,12 +4,12 @@ import { ArrowUpRight } from 'lucide-react'
 import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
 import Select from '@/components/Select'
-import { useConfigureRoleStore } from './store'
-import ToggleSection from './components/ToggleSection'
-import AIDataMaskingSection from './components/AIDataMaskingSection'
-import MetadataFieldsInput from './sections/MetadataFieldsInput'
-import ReviewSection from './components/ReviewSection'
-import { hasReviewConfig } from './utils/reviewConfig'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import ToggleSection from '@/pages/Roles/Configure/components/ToggleSection'
+import AIDataMaskingSection from '@/pages/Roles/Configure/components/AIDataMaskingSection'
+import MetadataFieldsInput from '@/pages/Roles/Configure/sections/MetadataFieldsInput'
+import ReviewSection from '@/pages/Roles/Configure/components/ReviewSection'
+import { hasReviewConfig } from '@/pages/Roles/Configure/utils/reviewConfig'
 
 // Terminal Access tab: every per-connection setting that affects how
 // commands run from the web terminal or hoop CLI's exec/connect flows.

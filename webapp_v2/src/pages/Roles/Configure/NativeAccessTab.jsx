@@ -1,9 +1,9 @@
 import { Stack } from '@mantine/core'
-import { useConfigureRoleStore } from './store'
-import ToggleSection from './components/ToggleSection'
-import AIDataMaskingSection from './components/AIDataMaskingSection'
-import ReviewSection from './components/ReviewSection'
-import { hasReviewConfig } from './utils/reviewConfig'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import ToggleSection from '@/pages/Roles/Configure/components/ToggleSection'
+import AIDataMaskingSection from '@/pages/Roles/Configure/components/AIDataMaskingSection'
+import ReviewSection from '@/pages/Roles/Configure/components/ReviewSection'
+import { hasReviewConfig } from '@/pages/Roles/Configure/utils/reviewConfig'
 
 // Native Access tab: governs whether sessions can be opened against
 // this resource role from a native client (desktop app or CLI), plus

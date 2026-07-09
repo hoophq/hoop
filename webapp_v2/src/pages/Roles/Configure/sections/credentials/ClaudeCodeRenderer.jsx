@@ -4,12 +4,12 @@ import { Info } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Select from '@/components/Select'
 import { useUserStore } from '@/stores/useUserStore'
-import PredefinedFields from './shared/PredefinedFields'
-import HttpHeaders from './shared/HttpHeaders'
-import AllowInsecureSsl from './shared/AllowInsecureSsl'
-import AgentSelector from './shared/AgentSelector'
-import { useConfigureRoleStore } from '../../store'
-import { decodeSecretValue, encodeSecretValue } from '../../utils/secretsCodec'
+import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
+import HttpHeaders from '@/pages/Roles/Configure/sections/credentials/shared/HttpHeaders'
+import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
+import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { decodeSecretValue, encodeSecretValue } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 // Claude Code httpproxy connection. Catalog's `httpproxy/claude-code`
 // entry ships an empty credentials list, so all fields live here.

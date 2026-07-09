@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { Stack } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
-import SecretField from '../../../components/SecretField'
-import { sourceOptionsFor } from '../../../components/SecretField/util'
+import SecretField from '@/pages/Roles/Configure/components/SecretField'
+import { sourceOptionsFor } from '@/pages/Roles/Configure/components/SecretField/util'
 import {
   decodeForDisplay,
   decodeSecretValue,
@@ -10,9 +10,9 @@ import {
   isSecretReference,
   sourceFromEncodedValue,
   SOURCES,
-} from '../../../utils/secretsCodec'
+} from '@/pages/Roles/Configure/utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
-import { useConfigureRoleStore } from '../../../store'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 const AWS_IAM_PASS_VALUE = 'authtoken'
 const AWS_IAM_PASS_ENCODED = encodeSecretForSource(

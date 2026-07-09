@@ -4,9 +4,9 @@ import Button from '@/components/Button';
 import Alert from '@/components/Alert';
 import MultiSelect from '@/components/MultiSelect';
 import { useUserStore } from '@/stores/useUserStore';
-import { useConfigureRoleStore } from '../store';
-import { dlpOptionsFor } from '../utils/dlpInfoTypes';
-import ToggleSection from './ToggleSection';
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store';
+import { dlpOptionsFor } from '@/pages/Roles/Configure/utils/dlpInfoTypes';
+import ToggleSection from '@/pages/Roles/Configure/components/ToggleSection';
 
 // Shared AI Data Masking section used by both Terminal Access and
 // Native Access tabs. Gated by license and gateway capabilities, and

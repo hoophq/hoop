@@ -13,7 +13,7 @@ import {
   isSecretReference,
   PLACEHOLDER_KEY_RE,
   sourceFromEncodedValue,
-} from './utils/secretsCodec'
+} from '@/pages/Roles/Configure/utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 
 // Page-local store for Configure Role. The staged-secrets contract is

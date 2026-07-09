@@ -4,7 +4,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
 import Autocomplete from '@/components/Autocomplete'
-import { useConfigureRoleStore } from '../store'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 // Key/value editor for connection_tags. Mirrors the CLJS pattern in
 // webapp/.../setup/tags_inputs.cljs: each pair (existing or pending)
