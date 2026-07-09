@@ -1,5 +1,5 @@
 # Dockerfile.tools
-FROM hoophq/agent-tools:noble-20251013
+FROM hoophq/agent-tools:noble-20260709-6890906
 
 COPY rootfs /
 # SQL migrations are embedded in the gateway binary; the on-disk copy is
