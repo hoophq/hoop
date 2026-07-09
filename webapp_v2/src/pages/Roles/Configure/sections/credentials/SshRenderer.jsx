@@ -25,11 +25,23 @@ const SSH_FIELDS = [
   },
 ]
 
-// SSH credentials editor used by application/ssh.
+// Every credential key the proxy mode may persist. Local mode clears
+// them all on save — the agent runs the shell on its own host and the
+// gateway stores an empty secret map (mirrors CLJS process_form.cljs,
+// which submits `credentials {}` for local SSH).
+const SSH_SECRET_KEYS = [
+  'envvar:HOST',
+  'envvar:PORT',
+  'envvar:USER',
+  'envvar:PASS',
+  'envvar:AUTHORIZED_SERVER_KEYS',
+]
+
+// SSH credentials editor used by application/ssh and application/ssh-local.
 //
-// The connection accepts either password or private-key authentication.
-// We derive the active method from whichever secret key the connection
-// currently has set (envvar:PASS for password,
+// In proxy mode the connection accepts either password or private-key
+// authentication. We derive the active method from whichever secret key
+// the connection currently has set (envvar:PASS for password,
 // envvar:AUTHORIZED_SERVER_KEYS for key) and let the admin switch
 // between them — switching just hides the inactive field; clearing the
 // opposite key is the save handler's responsibility (see store.save).
@@ -44,6 +56,16 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
   const [authMethod, setAuthMethod] = useState(initialMethod)
   const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
   const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const setDraft = useConfigureRoleStore((s) => s.setDraft)
+  const draftSubtype = useConfigureRoleStore((s) => s.drafts.subtype)
+
+  // Proxy ("ssh") vs local ("ssh-local") lives in the subtype draft so
+  // CredentialsTab (which hosts the connection-method cards outside this
+  // renderer) and buildDraftsPatch see the same state. Mirrors the CLJS
+  // edit page, which normalizes ssh-local to ssh + connection-type
+  // "local" and re-derives the wire subtype on save.
+  const mode = draftSubtype === 'ssh-local' ? 'local' : 'proxy'
+  const isLocal = mode === 'local'
 
   const fields = SSH_FIELDS.filter((f) => {
     if (authMethod === 'password') return f.key !== 'authorized_server_keys'
@@ -68,6 +90,29 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
     }
   }
 
+  // Switching connection type: local clears every persisted SSH
+  // credential on the wire (and drops unsaved typing on the rest);
+  // back to proxy restores whatever the connection still stores, then
+  // re-applies the auth-method exclusivity rule so the inactive
+  // credential stays staged for delete.
+  const handleModeChange = (next) => {
+    if (next === mode) return
+    const secrets = connection?.secret || {}
+    if (next === 'local') {
+      setDraft({ subtype: 'ssh-local' })
+      for (const key of SSH_SECRET_KEYS) {
+        if (key in secrets) deleteSecret(key)
+        else cancelSecretChange(key)
+      }
+    } else {
+      setDraft({ subtype: 'ssh' })
+      for (const key of SSH_SECRET_KEYS) cancelSecretChange(key)
+      const inactive =
+        authMethod === 'password' ? 'envvar:AUTHORIZED_SERVER_KEYS' : 'envvar:PASS'
+      if (inactive in secrets) deleteSecret(inactive)
+    }
+  }
+
   return (
     <Stack gap="xl">
       <Stack gap="xs">
@@ -78,26 +123,52 @@ export default function SshRenderer({ connection, availableSources, forceNewStat
       </Stack>
 
       <Stack gap="xs">
-        <Title order={5} fw={500}>Authentication Method</Title>
+        <Title order={5} fw={500}>Connection Type</Title>
         <Radio.Group
-          value={authMethod}
-          onChange={handleAuthChange}
-          name="ssh-auth-method"
+          value={mode}
+          onChange={handleModeChange}
+          name="ssh-connection-type"
         >
           <Stack gap="xs" mt="xs">
-            <Radio value="password" label="Username & Password" />
-            <Radio value="key" label="Private Key Authentication" />
+            <Radio
+              value="proxy"
+              label="Proxy to a remote host"
+              description="The agent authenticates to a remote SSH server and forwards the session. Configure the target host and credentials below."
+            />
+            <Radio
+              value="local"
+              label="Local (run on the agent host)"
+              description="The agent runs the shell or command directly on the machine where it is deployed. No target host or credentials are required."
+            />
           </Stack>
         </Radio.Group>
       </Stack>
 
-      <PredefinedFields
-        connection={connection}
-        fields={fields}
-        availableSources={availableSources}
-        forceNewState={forceNewState}
-        hideRoleInfo={hideRoleInfo}
-      />
+      {!isLocal && (
+        <>
+          <Stack gap="xs">
+            <Title order={5} fw={500}>Authentication Method</Title>
+            <Radio.Group
+              value={authMethod}
+              onChange={handleAuthChange}
+              name="ssh-auth-method"
+            >
+              <Stack gap="xs" mt="xs">
+                <Radio value="password" label="Username & Password" />
+                <Radio value="key" label="Private Key Authentication" />
+              </Stack>
+            </Radio.Group>
+          </Stack>
+
+          <PredefinedFields
+            connection={connection}
+            fields={fields}
+            availableSources={availableSources}
+            forceNewState={forceNewState}
+            hideRoleInfo={hideRoleInfo}
+          />
+        </>
+      )}
 
       <AgentSelector />
     </Stack>
