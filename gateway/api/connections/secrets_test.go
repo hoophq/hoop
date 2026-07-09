@@ -3,6 +3,8 @@ package apiconnections
 import (
 	"encoding/base64"
 	"testing"
+
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 func b64(s string) string {
@@ -94,6 +96,32 @@ func TestStripInlineSecrets(t *testing.T) {
 		_ = stripInlineSecrets(in)
 		if in["envvar:PASS"] != original {
 			t.Fatalf("input was mutated")
+		}
+	})
+}
+
+func TestToOpenApiDefaultDatabaseMasking(t *testing.T) {
+	conn := &models.Connection{
+		Envs: map[string]string{
+			"envvar:DB":   b64("customers"),
+			"envvar:PASS": b64("hunter2"),
+		},
+	}
+
+	t.Run("hide_role_info off returns the decoded value", func(t *testing.T) {
+		out := ToOpenApi(conn, false)
+		if out.DefaultDatabase != "customers" {
+			t.Fatalf("DefaultDatabase = %q, want %q", out.DefaultDatabase, "customers")
+		}
+	})
+
+	t.Run("hide_role_info on masks the value", func(t *testing.T) {
+		out := ToOpenApi(conn, true)
+		if out.DefaultDatabase != "" {
+			t.Fatalf("DefaultDatabase = %q, want empty: envvar:DB comes from the secret env map and must not be readable back", out.DefaultDatabase)
+		}
+		if out.Secrets["envvar:DB"] != nil {
+			t.Fatalf("Secrets[envvar:DB] = %v, want nil", out.Secrets["envvar:DB"])
 		}
 	})
 }

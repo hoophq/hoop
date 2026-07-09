@@ -548,9 +548,15 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
 	}
-	defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
-	if len(defaultDB) == 0 {
-		defaultDB = []byte(``)
+	// default_database is derived from the secret env map (envvar:DB), so it
+	// is subject to the same write-only policy as Secrets: returning it while
+	// the map is masked would be a read-back path for an inline secret value.
+	var defaultDB []byte
+	if !hideRoleInfo {
+		defaultDB, _ = base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+		if len(defaultDB) == 0 {
+			defaultDB = []byte(``)
+		}
 	}
 
 	var publicEnvs map[string]any
