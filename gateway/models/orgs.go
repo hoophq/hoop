@@ -65,11 +65,17 @@ func UpdateOrgAnalyticsMode(orgID, mode string) error {
 		Error
 }
 
-func UpdateOrgHideRoleInfo(orgID string, hideRoleInfo bool) error {
-	return DB.Table("private.orgs").
+func UpdateOrgHideRoleInfo(db *gorm.DB, orgID string, hideRoleInfo bool) error {
+	res := db.Table("private.orgs").
 		Where("id = ?", orgID).
-		Update("hide_role_info", hideRoleInfo).
-		Error
+		Update("hide_role_info", hideRoleInfo)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organization, bool, error) {

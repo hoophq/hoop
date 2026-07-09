@@ -132,7 +132,7 @@ func UpdateOrgHideRoleInfo(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if err := models.UpdateOrgHideRoleInfo(ctx.OrgID, *req.HideRoleInfo); err != nil {
+	if err := models.UpdateOrgHideRoleInfo(models.DB, ctx.OrgID, *req.HideRoleInfo); err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "organization not found"})
 			return
