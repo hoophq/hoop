@@ -284,7 +284,7 @@ export const useConfigureRoleStore = create((set, get) => ({
         userGroups.status === 'fulfilled' ? userGroups.value || [] : []
       const hideRoleInfo =
         hideRole.status === 'fulfilled'
-          ? hideRole.value?.hide_role_info ?? false
+          ? hideRole.value?.data?.hide_role_info ?? false
           : false
       set({
         guardrailsList:

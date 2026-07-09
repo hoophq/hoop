@@ -6,16 +6,9 @@
 // the React bundle, not under /api — so we bypass the axios instance
 // (no auth header, no 401 interceptor, no baseURL prefix).
 //
-// Mirrors the CLJS fetcher at
+// Returns the raw fetch promise; the consuming store owns status checks
+// and JSON decoding. Mirrors the CLJS fetcher at
 // webapp/src/webapp/events/connections.cljs:187-198.
 export const connectionsMetadataService = {
-  fetch: () =>
-    fetch('/data/connections-metadata.json').then((res) => {
-      if (!res.ok) {
-        throw new Error(
-          `Failed to load connections metadata: ${res.status} ${res.statusText}`
-        )
-      }
-      return res.json()
-    }),
+  fetch: () => fetch('/data/connections-metadata.json'),
 }
