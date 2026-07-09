@@ -74,16 +74,42 @@ export function sourceFromEncodedValue(encoded) {
   return SOURCES.MANUAL
 }
 
+// btoa/atob only handle Latin1: encoding a value with characters outside
+// that range (accented passwords, pasted JSON keyfiles) throws, and the
+// gateway stores UTF-8 bytes. Bridge through TextEncoder/TextDecoder so
+// any string round-trips — mirrors the CLJS helper at
+// webapp/src/webapp/resources/helpers.cljs (utf8-safe b64-encode).
+const utf8Encoder = new TextEncoder()
+const utf8Decoder = new TextDecoder()
+
+function utf8ToBase64(str) {
+  const bytes = utf8Encoder.encode(str)
+  // Chunked conversion: String.fromCharCode(...bytes) overflows the call
+  // stack for large inputs (config files, private keys).
+  let bin = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(bin)
+}
+
+function base64ToUtf8(encoded) {
+  const bin = atob(encoded)
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  return utf8Decoder.decode(bytes)
+}
+
 // Prepends the source's prefix (if any) and base64-encodes.
 export function encodeSecretForSource(plain, source) {
   if (plain == null) return ''
   const prefix = PREFIX_BY_SOURCE[source]
-  return prefix ? btoa(prefix + plain) : btoa(plain)
+  return utf8ToBase64(prefix ? prefix + plain : plain)
 }
 
 function safeAtob(encoded) {
   try {
-    return atob(encoded)
+    return base64ToUtf8(encoded)
   } catch {
     return null
   }
@@ -104,7 +130,7 @@ export function decodeForDisplay(encoded) {
 
 export function encodeSecretValue(plain) {
   if (plain == null) return ''
-  return btoa(plain)
+  return utf8ToBase64(plain)
 }
 
 export function isSecretReference(encoded) {
