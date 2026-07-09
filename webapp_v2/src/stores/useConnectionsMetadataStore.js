@@ -20,7 +20,13 @@ export const useConnectionsMetadataStore = create((set, get) => ({
     if (get().metadata || get().loading) return
     set({ loading: true, error: null })
     try {
-      const data = await connectionsMetadataService.fetch()
+      const res = await connectionsMetadataService.fetch()
+      if (!res.ok) {
+        throw new Error(
+          `Failed to load connections metadata: ${res.status} ${res.statusText}`
+        )
+      }
+      const data = await res.json()
       set({ metadata: data, loading: false })
     } catch (error) {
       set({ error: error.message || String(error), loading: false })

@@ -14,9 +14,9 @@ import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import SelectionCard from '@/components/SelectionCard'
 import Switch from '@/components/Switch'
-import infrastructure from '@/services/infrastructure'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
+import { useInfrastructureStore } from './store'
 
 const ANALYTICS_OPTIONS = [
   {
@@ -87,26 +87,18 @@ function SectionRow({ title, description, callout, children }) {
 
 function SettingsInfrastructure() {
   const [form, setForm] = useState(EMPTY_FORM)
-  const [initialAnalyticsMode, setInitialAnalyticsMode] = useState('')
-  const [initialHideRoleInfo, setInitialHideRoleInfo] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const loading = useInfrastructureStore((s) => s.loading)
+  const saving = useInfrastructureStore((s) => s.saving)
+  const load = useInfrastructureStore((s) => s.load)
+  const save = useInfrastructureStore((s) => s.save)
 
   const showLoader = useMinDelay(loading)
 
   useEffect(() => {
-    Promise.all([
-      infrastructure.get(),
-      infrastructure.getAnalyticsMode(),
-      infrastructure.getHideRoleInfo(),
-    ])
-      .then(([misc, analytics, hideRole]) => {
-        const mode = analytics?.analytics_mode ?? ''
-        const hideRoleInfo = hideRole?.hide_role_info ?? false
-        setInitialAnalyticsMode(mode)
-        setInitialHideRoleInfo(hideRoleInfo)
+    load()
+      .then(({ misc, analyticsMode, hideRoleInfo }) => {
         setForm({
-          analyticsMode: mode,
+          analyticsMode,
           hideRoleInfo,
           grpcUrl: misc.grpc_server_url ?? '',
           postgresPort: extractPort(misc.postgres_server_config?.listen_address),
@@ -121,26 +113,19 @@ function SettingsInfrastructure() {
           text: 'Failed to load infrastructure configuration',
         })
       })
-      .finally(() => setLoading(false))
-  }, [])
+  }, [load])
 
   function setField(field) {
     return (value) => setForm((prev) => ({ ...prev, [field]: value }))
   }
 
   async function handleSave() {
-    setSaving(true)
     try {
-      const requests = [infrastructure.update(buildMiscPayload(form))]
-      if (form.analyticsMode && form.analyticsMode !== initialAnalyticsMode) {
-        requests.push(infrastructure.updateAnalyticsMode(form.analyticsMode))
-      }
-      if (form.hideRoleInfo !== initialHideRoleInfo) {
-        requests.push(infrastructure.updateHideRoleInfo(form.hideRoleInfo))
-      }
-      await Promise.all(requests)
-      setInitialAnalyticsMode(form.analyticsMode)
-      setInitialHideRoleInfo(form.hideRoleInfo)
+      await save({
+        miscPayload: buildMiscPayload(form),
+        analyticsMode: form.analyticsMode,
+        hideRoleInfo: form.hideRoleInfo,
+      })
       showSnackbar({
         level: 'success',
         text: 'Infrastructure configuration saved successfully!',
@@ -150,8 +135,6 @@ function SettingsInfrastructure() {
         level: 'error',
         text: 'Failed to save infrastructure configuration',
       })
-    } finally {
-      setSaving(false)
     }
   }
 
