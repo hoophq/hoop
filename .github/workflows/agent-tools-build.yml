@@ -49,6 +49,20 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Fail fast on publish runs: bump-consumers needs the PAT at the very
+      # end of the pipeline, and discovering it is missing only after the
+      # image was already published leaves the registry and the consumers
+      # out of sync — the exact drift this workflow exists to prevent.
+      - name: Verify GH_TOKEN secret is present
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::secrets.GH_TOKEN (PAT) is required so the FROM-bump PR can be created after publishing. Add it in repo settings."
+            exit 1
+          fi
+
   build-amd64:
     runs-on: ubuntu-latest
     name: Build agent-tools (amd64)
@@ -197,6 +211,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           TAG: ${{ needs.meta.outputs.tag }}
+        # Idempotent by construction: TAG is deterministic per commit+day, so
+        # a rerun after a partial failure reuses the same branch (checkout -B
+        # + force push) and skips PR creation when one is already open.
         run: |
           set -euo pipefail
           branch="ci/agent-tools-bump-${TAG}"
@@ -210,9 +227,16 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
+          git checkout -B "$branch"
           git commit -am "build: bump agent-tools base image to ${TAG}"
-          git push -u origin "$branch"
+          # The branch is owned by this workflow and derived from TAG; force
+          # push makes reruns converge on the same content.
+          git push --force -u origin "$branch"
+
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "bump PR for ${TAG} already open; nothing to create"
+            exit 0
+          fi
 
           gh pr create \
             --title "build: bump agent-tools base image to ${TAG}" \
