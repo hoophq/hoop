@@ -5,14 +5,14 @@ import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
-import SecretField from '../../../components/SecretField'
+import SecretField from '@/pages/Roles/Configure/components/SecretField'
 import {
   decodeSecretValue,
   encodeSecretValue,
   isValidPosixKey,
   PLACEHOLDER_KEY_RE,
-} from '../../../utils/secretsCodec'
-import { useConfigureRoleStore } from '../../../store'
+} from '@/pages/Roles/Configure/utils/secretsCodec'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 // Configuration files for a custom connection. Same pattern as the
 // environment variables section: rename commits on blur via the store's

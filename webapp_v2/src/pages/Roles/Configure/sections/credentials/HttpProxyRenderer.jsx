@@ -1,8 +1,8 @@
 import { Stack, Title } from '@mantine/core'
-import PredefinedFields from './shared/PredefinedFields'
-import HttpHeaders from './shared/HttpHeaders'
-import AllowInsecureSsl from './shared/AllowInsecureSsl'
-import AgentSelector from './shared/AgentSelector'
+import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
+import HttpHeaders from '@/pages/Roles/Configure/sections/credentials/shared/HttpHeaders'
+import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
+import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 
 // Generic HTTP proxy renderer for the non-Claude httpproxy subtypes
 // (web-application, grafana, kibana). The catalog only carries

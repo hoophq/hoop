@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
-import { useConfigureRoleStore } from '../store'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 // Dynamic list of "field name" inputs for mandatory metadata. Sessions
 // created against this role require the user to fill in each named

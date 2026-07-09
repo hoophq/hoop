@@ -1,4 +1,4 @@
-import { SOURCE_LABELS } from '../../utils/secretsCodec'
+import { SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 export function sourceOptionsFor(availableSources) {
   return (availableSources || []).map((s) => ({ value: s, label: SOURCE_LABELS[s] || s }))

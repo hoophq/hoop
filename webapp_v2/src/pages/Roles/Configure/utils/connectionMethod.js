@@ -1,6 +1,6 @@
-import { isSecretReference, decodeSecretValue, parseReference } from './secretsCodec'
+import { isSecretReference, decodeSecretValue, parseReference } from '@/pages/Roles/Configure/utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
-import { SOURCES } from './secretsCodec'
+import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 // Derive the connection method (and provider, when method is Secrets
 // Manager) from the envvar values' prefixes. Mirrors CLJS

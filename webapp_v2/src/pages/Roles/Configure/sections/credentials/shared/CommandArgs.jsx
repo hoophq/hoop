@@ -1,6 +1,6 @@
 import { Stack, Title, Text } from '@mantine/core'
 import TagsInput from '@/components/TagsInput'
-import { useConfigureRoleStore } from '../../../store'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 // Additional command arguments. Stored as the connection's `command`
 // array. Mirrors the CLJS server/credentials-step "Additional command"

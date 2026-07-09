@@ -1,8 +1,8 @@
 import { Stack } from '@mantine/core'
-import EnvironmentVariables from './shared/EnvironmentVariables'
-import ConfigurationFiles from './shared/ConfigurationFiles'
-import CommandArgs from './shared/CommandArgs'
-import AgentSelector from './shared/AgentSelector'
+import EnvironmentVariables from '@/pages/Roles/Configure/sections/credentials/shared/EnvironmentVariables'
+import ConfigurationFiles from '@/pages/Roles/Configure/sections/credentials/shared/ConfigurationFiles'
+import CommandArgs from '@/pages/Roles/Configure/sections/credentials/shared/CommandArgs'
+import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 
 // Free-form custom connection editor. Matches the CLJS
 // server/credentials-step layout: env vars list + configuration files

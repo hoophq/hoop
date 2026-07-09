@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Radio from '@/components/Radio'
-import PredefinedFields from './shared/PredefinedFields'
-import AgentSelector from './shared/AgentSelector'
-import { useConfigureRoleStore } from '../../store'
+import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
+import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 // React-specific field schema. SSH's auth-method radio drives which
 // field is rendered and which is required — neither is encodable in

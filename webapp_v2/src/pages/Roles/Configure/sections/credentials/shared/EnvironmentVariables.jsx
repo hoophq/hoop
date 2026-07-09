@@ -6,7 +6,7 @@ import ActionIcon from '@/components/ActionIcon'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import SourcedInput from '@/components/SourcedInput'
-import SecretField from '../../../components/SecretField'
+import SecretField from '@/pages/Roles/Configure/components/SecretField'
 import {
   decodeForDisplay,
   encodeSecretForSource,
@@ -15,9 +15,9 @@ import {
   sourceFromEncodedValue,
   PLACEHOLDER_KEY_RE,
   SOURCES,
-} from '../../../utils/secretsCodec'
-import { useConfigureRoleStore } from '../../../store'
-import { sourceOptionsFor } from '../../../components/SecretField/util'
+} from '@/pages/Roles/Configure/utils/secretsCodec'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { sourceOptionsFor } from '@/pages/Roles/Configure/components/SecretField/util'
 
 // Free-form env-var editor. Values round-trip plaintext from the
 // backend; rename commits on blur and is translated into delete-old +

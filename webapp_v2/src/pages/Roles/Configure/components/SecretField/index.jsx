@@ -5,8 +5,8 @@ import TextInput from '@/components/TextInput'
 import Textarea from '@/components/Textarea'
 import SourcedInput from '@/components/SourcedInput'
 import ActionIcon from '@/components/ActionIcon'
-import InlineAction from './InlineAction'
-import { sourceOptionsFor, SECRET_MASK } from './util'
+import InlineAction from '@/pages/Roles/Configure/components/SecretField/InlineAction'
+import { sourceOptionsFor, SECRET_MASK } from '@/pages/Roles/Configure/components/SecretField/util'
 import classes from './SecretField.module.css'
 
 const RIGHT_SECTION_WIDTH = 112

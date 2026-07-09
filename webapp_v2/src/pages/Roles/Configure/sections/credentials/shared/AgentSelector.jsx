@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Stack, Title, Text } from '@mantine/core'
 import Select from '@/components/Select'
 import { useAgentStore } from '@/stores/useAgentStore'
-import { useConfigureRoleStore } from '../../../store'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 
 // Lets the admin re-assign which agent runs this connection. The agent
 // list is shared with /agents and lives in useAgentStore so we just

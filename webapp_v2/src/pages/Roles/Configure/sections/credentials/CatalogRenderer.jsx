@@ -1,6 +1,6 @@
 import { Stack, Title } from '@mantine/core'
-import PredefinedFields from './shared/PredefinedFields'
-import AgentSelector from './shared/AgentSelector'
+import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
+import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 
 // Renders any catalog-driven connection: databases (postgres, mysql,
 // …), catalog applications (git, github, tcp), and catalog custom

@@ -1,10 +1,10 @@
 import { isFreeFormCustomSubtype } from '@/utils/connectionPolicy'
-import CatalogRenderer from './CatalogRenderer'
-import SshRenderer from './SshRenderer'
-import ClaudeCodeRenderer from './ClaudeCodeRenderer'
-import HttpProxyRenderer from './HttpProxyRenderer'
-import KubernetesTokenRenderer from './KubernetesTokenRenderer'
-import FreeFormCustomRenderer from './FreeFormCustomRenderer'
+import CatalogRenderer from '@/pages/Roles/Configure/sections/credentials/CatalogRenderer'
+import SshRenderer from '@/pages/Roles/Configure/sections/credentials/SshRenderer'
+import ClaudeCodeRenderer from '@/pages/Roles/Configure/sections/credentials/ClaudeCodeRenderer'
+import HttpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/HttpProxyRenderer'
+import KubernetesTokenRenderer from '@/pages/Roles/Configure/sections/credentials/KubernetesTokenRenderer'
+import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
 
 // Dispatch table — order matters: the first matching rule wins. Each
 // rule declares whether its renderer depends on connections-metadata.json

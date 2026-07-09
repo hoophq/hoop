@@ -1,17 +1,17 @@
 import { Stack, Title } from '@mantine/core'
 import SourcedInput from '@/components/SourcedInput'
-import SecretField from '../../components/SecretField'
-import { sourceOptionsFor } from '../../components/SecretField/util'
+import SecretField from '@/pages/Roles/Configure/components/SecretField'
+import { sourceOptionsFor } from '@/pages/Roles/Configure/components/SecretField/util'
 import {
   decodeForDisplay,
   encodeSecretForSource,
   isSecretReference,
   sourceFromEncodedValue,
   SOURCES,
-} from '../../utils/secretsCodec'
-import { useConfigureRoleStore } from '../../store'
-import AllowInsecureSsl from './shared/AllowInsecureSsl'
-import AgentSelector from './shared/AgentSelector'
+} from '@/pages/Roles/Configure/utils/secretsCodec'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
+import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 
 const CLUSTER_URL_KEY = 'envvar:REMOTE_URL'
 const AUTH_TOKEN_KEY = 'envvar:HEADER_AUTHORIZATION'

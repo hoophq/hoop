@@ -10,11 +10,11 @@ import {
   supportsAwsIam,
 } from '@/utils/connectionPolicy'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
-import { deriveConnectionInfo } from './utils/connectionMethod'
-import { SOURCES, SOURCE_LABELS } from './utils/secretsCodec'
-import { useConfigureRoleStore } from './store'
-import { pickRendererRule } from './sections/credentials'
-import { formatTimestamp } from './components/SecretField/util'
+import { deriveConnectionInfo } from '@/pages/Roles/Configure/utils/connectionMethod'
+import { SOURCES, SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
+import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { pickRendererRule } from '@/pages/Roles/Configure/sections/credentials'
+import { formatTimestamp } from '@/pages/Roles/Configure/components/SecretField/util'
 
 const SECRETS_PROVIDERS = [
   SOURCES.VAULT_KV1,
