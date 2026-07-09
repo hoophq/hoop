@@ -7,12 +7,17 @@ import (
 
 // Value prefixes that mark an envvar as a pointer to an external secret
 // provider rather than the secret itself. Keep in sync with
-// agent/secretsmanager/, agent/rds/iam_rds.go, agent/controller/agent.go.
+// agent/secretsmanager/, agent/rds/iam_rds.go, agent/controller/agent.go
+// and webapp_v2 secretsCodec.js REFERENCE_PREFIXES.
+// _aws_iam_rds is a mode marker ("mint an RDS IAM auth token at connect
+// time"), not stored credentials — it must round-trip under
+// hide_role_info or the UI loses the AWS IAM method detection.
 var secretReferencePrefixes = []string{
 	"_aws:",
 	"_envjson:",
 	"_vaultkv1:",
 	"_vaultkv2:",
+	"_aws_iam_rds:",
 }
 
 // IsSecretReference reports whether a base64-encoded envvar value decodes
@@ -34,18 +39,10 @@ func IsSecretReference(encodedValue string) bool {
 	return false
 }
 
-func hasAnySecretReference(envs map[string]string) bool {
-	for _, v := range envs {
-		if IsSecretReference(v) {
-			return true
-		}
-	}
-	return false
-}
-
 // stripInlineSecrets returns a copy of envs where inline secret values
-// are blanked out. References and boolean toggles round-trip; the key
-// set is preserved so the UI knows which credentials exist.
+// are blanked out. Only external references round-trip — every inline
+// value, including boolean toggles, is masked; the key set is preserved
+// so the UI knows which credentials exist.
 func stripInlineSecrets(envs map[string]string) map[string]any {
 	if envs == nil {
 		return nil
@@ -94,37 +91,4 @@ func envsEqual(a, b map[string]string) bool {
 		}
 	}
 	return true
-}
-
-// mergeSecrets applies a patch onto existing envs. Patch semantics:
-// non-empty value replaces (or adds), empty value deletes, absent key
-// is preserved. Returns the new map and whether anything changed.
-// `existing` is not mutated.
-func mergeSecrets(existing, patch map[string]string) (map[string]string, bool) {
-	if patch == nil {
-		out := make(map[string]string, len(existing))
-		for k, v := range existing {
-			out[k] = v
-		}
-		return out, false
-	}
-	out := make(map[string]string, len(existing)+len(patch))
-	for k, v := range existing {
-		out[k] = v
-	}
-	changed := false
-	for k, v := range patch {
-		if v == "" {
-			if _, present := out[k]; present {
-				delete(out, k)
-				changed = true
-			}
-			continue
-		}
-		if existingVal, present := out[k]; !present || existingVal != v {
-			out[k] = v
-			changed = true
-		}
-	}
-	return out, changed
 }
