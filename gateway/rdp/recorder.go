@@ -1,10 +1,13 @@
 package rdp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -17,6 +20,31 @@ import (
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/rdp/parser"
 )
+
+// finalizeChunkBytes bounds how much of the recorded event log is held in
+// memory at a time while streaming the session blob to Postgres at close.
+// Each chunk is appended to the session's blob_stream via jsonb
+// concatenation, so peak finalize memory is ~one chunk instead of the whole
+// recording (which for long high-throughput sessions reached GBs and
+// OOM-killed the gateway).
+const finalizeChunkBytes = 8 << 20 // 8 MiB
+
+// maxRecordedBytes caps the on-disk event log per session. Once reached the
+// recorder stops capturing further bitmap events (the session itself is
+// unaffected); the replay is truncated rather than letting a marathon
+// screen-churn session grow an unbounded temp file that must later be
+// streamed to the database. Mirrors the audit WAL's flush cap philosophy
+// (sessionwal.DefaultMaxRead).
+const maxRecordedBytes = 128 << 20 // 128 MiB
+
+// maxRecordedEventBytes caps a single encoded event line. Without it, one
+// huge bitmap update (an uncompressed full-screen paint on a large display
+// encodes at ~1.78x the pixel bytes) becomes the in-memory unit of finalize
+// streaming and defeats the finalizeChunkBytes bound. Oversized events are
+// skipped — losing one frame of replay — rather than truncated, since a
+// partial event line would not be valid JSON. Enforced at write time, and
+// again at read time as defense-in-depth for logs written by other versions.
+const maxRecordedEventBytes = finalizeChunkBytes
 
 // RDPSessionRecorder captures RDP traffic for session replay.
 // Bitmap events are streamed to a temp file to avoid holding everything in memory.
@@ -47,6 +75,9 @@ type RDPSessionRecorder struct {
 	bitmapCount   int
 	bytesWritten  int64
 	lastTimestamp float64
+	// truncated is set once maxRecordedBytes is reached; further output is
+	// no longer parsed or recorded.
+	truncated bool
 }
 
 // rdpEvent stores a single RDP event: [timestamp_seconds, event_type, base64_data]
@@ -126,7 +157,7 @@ func (r *RDPSessionRecorder) RecordOutput(data []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.closed || len(data) == 0 || r.parser == nil {
+	if r.closed || r.truncated || len(data) == 0 || r.parser == nil {
 		return
 	}
 
@@ -217,6 +248,26 @@ func (r *RDPSessionRecorder) parseAndStorePDU(data []byte) {
 		}
 		line, _ := json.Marshal(event)
 
+		// Skip single events too large to stream within the finalize memory
+		// bound; one lost frame beats an unbounded allocation at close.
+		if len(line)+1 > maxRecordedEventBytes {
+			log.With("sid", r.sessionID).Warnf(
+				"skipping oversized RDP bitmap event (%d bytes encoded, cap %d); one replay frame lost",
+				len(line), maxRecordedEventBytes)
+			continue
+		}
+
+		// Stop recording (not the session) once the replay log reaches the
+		// cap; an unbounded log would have to be streamed to the database at
+		// close, and marathon screen-churn sessions produced multi-GB logs.
+		if r.bytesWritten+int64(len(line))+1 > maxRecordedBytes {
+			r.truncated = true
+			log.With("sid", r.sessionID).Warnf(
+				"RDP recording reached %d MiB cap after %d events; replay will be truncated, session continues",
+				maxRecordedBytes>>20, r.eventCount)
+			return
+		}
+
 		// Write to temp file (one JSON line per event)
 		if _, err := r.tmpFile.Write(line); err != nil {
 			log.With("sid", r.sessionID).Errorf("failed to write bitmap to temp file: %v", err)
@@ -227,6 +278,7 @@ func (r *RDPSessionRecorder) parseAndStorePDU(data []byte) {
 			return
 		}
 
+		r.bytesWritten += int64(len(line)) + 1
 		r.eventCount++
 		r.bitmapCount++
 		r.lastTimestamp = timestamp
@@ -292,20 +344,39 @@ func (r *RDPSessionRecorder) Close(err error) {
 		return
 	}
 
-	// Close temp file for writing, then read it back
+	// Close temp file for writing, then stream it back. A failed close can
+	// mean unflushed event data — the finalize below still runs, but the
+	// replay may be truncated, so make that visible.
 	tmpPath := r.tmpFile.Name()
-	r.tmpFile.Close()
+	if closeErr := r.tmpFile.Close(); closeErr != nil {
+		log.With("sid", r.sessionID).Errorf("failed closing temp recording file, replay may be incomplete: %v", closeErr)
+	}
 	defer os.Remove(tmpPath)
 
-	// Build the final JSON array by reading back from the temp file
-	// Format: [ handshake_event, bitmap_event_1, bitmap_event_2, ... ]
-	eventsJSON, readErr := r.buildEventsJSON(tmpPath)
-	if readErr != nil {
-		log.With("sid", r.sessionID).Errorf("failed to build events JSON: %v", readErr)
-		return
+	// Stream the recorded events into the session's blob_stream in bounded
+	// chunks (finalizeChunkBytes each) instead of materializing the whole
+	// replay in memory. Final format in the database is identical to the
+	// previous single-blob write: [ handshake_event, bitmap_event_1, ... ]
+	var eventSize int64 = 2 // "[]"
+	streamOK := false
+	if blobErr := models.CreateEmptySessionStreamBlob(r.orgID, r.sessionID, nil); blobErr != nil {
+		log.With("sid", r.sessionID).Errorf("failed creating session stream blob: %v", blobErr)
+	} else {
+		entryCount, entryBytes, streamErr := r.streamEvents(tmpPath, func(chunk json.RawMessage) error {
+			return models.AppendSessionStream(r.orgID, r.sessionID, chunk)
+		})
+		if entryCount > 0 {
+			// size of "[e1,e2,...]": entries + separating commas + brackets
+			eventSize = entryBytes + int64(entryCount-1) + 2
+		}
+		if streamErr != nil {
+			// Partial replay is preserved; the session is still finalized
+			// below so it never gets stuck in the open state.
+			log.With("sid", r.sessionID).Errorf("failed streaming session events (%d entries persisted): %v", entryCount, streamErr)
+		} else {
+			streamOK = true
+		}
 	}
-
-	eventSize := int64(len(eventsJSON))
 
 	// Canvas dimensions
 	canvasWidth := r.maxWidth
@@ -330,23 +401,22 @@ func (r *RDPSessionRecorder) Close(err error) {
 		ID:         r.sessionID,
 		OrgID:      r.orgID,
 		Metrics:    map[string]any{"event_size": eventSize, "bitmap_count": r.bitmapCount, "canvas_width": canvasWidth, "canvas_height": canvasHeight},
-		BlobStream: json.RawMessage(eventsJSON),
 		Status:     string(openapi.SessionStatusDone),
 		ExitCode:   exitCode,
 		EndSession: &endTime,
 	}
 
-	if dbErr := models.UpdateSessionEventStream(sessDone); dbErr != nil {
+	if dbErr := models.MarkSessionDone(sessDone); dbErr != nil {
 		log.With("sid", r.sessionID).Errorf("failed to finalize RDP session: %v", dbErr)
 		return
 	}
 
 	// Enqueue async PII analysis if there are bitmap frames to analyze, the
-	// analysis pipeline is actually enabled on this gateway, AND the org has
-	// the experimental flag turned on. Otherwise the job would sit 'pending'
-	// forever (worker pool may be stopped by the supervisor) and the session
-	// would appear stuck.
-	if r.bitmapCount > 0 &&
+	// full replay stream was persisted, the analysis pipeline is actually
+	// enabled on this gateway, AND the org has the experimental flag turned
+	// on. Otherwise the job would sit 'pending' forever (worker pool may be
+	// stopped by the supervisor) and the session would appear stuck.
+	if streamOK && r.bitmapCount > 0 &&
 		analyzer.IsEnabled(appconfig.Get().MSPresidioAnalyzerURL()) &&
 		featureflag.IsEnabled(r.orgID, analyzer.FlagName) {
 		if enqueueErr := models.CreateRDPAnalysisJob(r.orgID, r.sessionID); enqueueErr != nil {
@@ -361,20 +431,57 @@ func (r *RDPSessionRecorder) Close(err error) {
 		r.eventCount, r.bitmapCount, eventSize)
 }
 
-// buildEventsJSON reads bitmap events from the temp file and builds the final JSON array
-func (r *RDPSessionRecorder) buildEventsJSON(tmpPath string) ([]byte, error) {
-	tmpData, err := os.ReadFile(tmpPath)
+// streamEvents reads the recorded events back from the temp file and hands
+// them to sink as JSON array chunks of at most ~finalizeChunkBytes each
+// (plus one entry of overshoot). Concatenating all chunk contents yields the
+// same event sequence the previous whole-file builder produced:
+// [handshake_event, bitmap_event_1, bitmap_event_2, ...]. Peak memory is one
+// chunk, independent of recording size.
+//
+// Returns the number of entries and their cumulative encoded size (entries
+// only, excluding array punctuation) that were successfully handed to the
+// sink. On error, entries already accepted by the sink remain persisted —
+// the caller decides how to proceed.
+func (r *RDPSessionRecorder) streamEvents(tmpPath string, sink func(chunk json.RawMessage) error) (entryCount int, entryBytes int64, err error) {
+	f, err := os.Open(tmpPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read temp file: %w", err)
+		return 0, 0, fmt.Errorf("failed to open temp file: %w", err)
+	}
+	defer f.Close()
+
+	chunk := bytes.NewBuffer(make([]byte, 0, finalizeChunkBytes+(1<<20)))
+	chunkEntries := 0
+
+	flush := func() error {
+		if chunkEntries == 0 {
+			return nil
+		}
+		chunk.WriteByte(']')
+		if err := sink(json.RawMessage(chunk.Bytes())); err != nil {
+			return err
+		}
+		entryCount += chunkEntries
+		entryBytes += int64(chunk.Len() - 2 - (chunkEntries - 1)) // strip brackets+commas
+		chunk.Reset()
+		chunkEntries = 0
+		return nil
 	}
 
-	// Build JSON array: [handshake, event1, event2, ...]
-	// Start with "["
-	var result []byte
-	result = append(result, '[')
+	appendEntry := func(entry []byte) error {
+		if chunkEntries == 0 {
+			chunk.WriteByte('[')
+		} else {
+			chunk.WriteByte(',')
+		}
+		chunk.Write(entry)
+		chunkEntries++
+		if chunk.Len() >= finalizeChunkBytes {
+			return flush()
+		}
+		return nil
+	}
 
-	// Add handshake event first if available
-	first := true
+	// Handshake event goes first so replay starts from the connection setup.
 	if len(r.handshakeData) > 0 {
 		handshakeEvent := [3]any{
 			0,
@@ -382,28 +489,38 @@ func (r *RDPSessionRecorder) buildEventsJSON(tmpPath string) ([]byte, error) {
 			base64.StdEncoding.EncodeToString(r.handshakeData),
 		}
 		hJSON, _ := json.Marshal(handshakeEvent)
-		result = append(result, hJSON...)
-		first = false
-	}
-
-	// Append each line from the temp file (each line is a JSON event)
-	start := 0
-	for i := 0; i < len(tmpData); i++ {
-		if tmpData[i] == '\n' {
-			line := tmpData[start:i]
-			if len(line) > 0 {
-				if !first {
-					result = append(result, ',')
-				}
-				result = append(result, line...)
-				first = false
-			}
-			start = i + 1
+		if err := appendEntry(hJSON); err != nil {
+			return entryCount, entryBytes, err
 		}
 	}
 
-	result = append(result, ']')
-	return result, nil
+	// Each line in the temp file is one complete JSON event. Write-time
+	// enforcement of maxRecordedEventBytes makes oversized lines impossible
+	// in logs produced by this version; the guard below is defense-in-depth
+	// (older/foreign logs) so a single entry can never balloon the finalize
+	// memory unit past ~2x finalizeChunkBytes.
+	reader := bufio.NewReaderSize(f, 1<<20)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		line = bytes.TrimSuffix(line, []byte("\n"))
+		if len(line) > maxRecordedEventBytes {
+			log.With("sid", r.sessionID).Warnf(
+				"skipping oversized recorded event (%d bytes, cap %d); one replay frame lost",
+				len(line), maxRecordedEventBytes)
+		} else if len(line) > 0 {
+			if err := appendEntry(line); err != nil {
+				return entryCount, entryBytes, err
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return entryCount, entryBytes, fmt.Errorf("failed reading temp file: %w", readErr)
+		}
+	}
+
+	return entryCount, entryBytes, flush()
 }
 
 // GetSessionID returns the session ID
