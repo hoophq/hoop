@@ -20,8 +20,10 @@ import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 // the only non-obvious bit:
 //   stagedSecrets[key] = { action: 'replace' | 'delete' | 'new', value?: string }
 //   - 'replace' overrides an existing inline secret (value is base64-encoded).
-//   - 'delete'  removes an existing key (custom connection type only).
-//   - 'new'     adds a brand-new custom-type secret (key + value).
+//   - 'delete'  removes an existing key: buildSecretsPatch omits it from
+//               the wire map, which drops it server-side in both
+//               hide_role_info modes.
+//   - 'new'     adds a brand-new secret (key + value).
 
 // Schema for the draft fields the form edits. One entry per field that
 // round-trips between `connection` (server) and `drafts` (form state).
@@ -64,6 +66,10 @@ const DRAFT_FIELDS = {
   access_max_duration: { default: null, nullable: true },
   agent_id: { default: '' },
   command: { default: [], compare: arraysEqual },
+  // Wire subtype. Only the SSH renderer's Connection Type radio mutates
+  // it ("ssh" ↔ "ssh-local"); for every other connection it round-trips
+  // untouched and never reaches the PATCH body.
+  subtype: { default: '' },
 }
 
 function freshDrafts() {
@@ -517,25 +523,29 @@ export const useConfigureRoleStore = create((set, get) => ({
     return Object.keys(buildDraftsPatch(state.drafts, state.baseline)).length > 0
   },
 
-  // Builds the PATCH `secret` map. An empty value clears the entry; a
-  // rename becomes clear-old + write-new so the row keeps its position;
-  // SSH_PRIVATE_KEY gets the trailing newline the agent's parser requires
-  // (mirrors CLJS helpers.cljs config->json).
+  // Builds the PATCH `secret` map. A deleted (or renamed-away) key is
+  // omitted from the map entirely; a rename writes the value under the
+  // new key so the row keeps its position; SSH_PRIVATE_KEY gets the
+  // trailing newline the agent's parser requires (mirrors CLJS
+  // helpers.cljs config->json).
   //
   // The gateway replaces the whole env map over the keys it receives — an
   // overlay when hide_role_info is on, a plain replace when off — so any key
-  // we omit is dropped. We therefore echo every untouched secret to keep it:
-  // `null` tells the overlay to preserve the stored (masked) value in
-  // write-only mode; off, we resend the current value verbatim (sending
-  // `null` there would persist the literal string "<nil>"). An empty string
-  // still clears a value, which is how "remove" works.
+  // we omit is dropped. That's exactly how "remove" works: omission deletes
+  // the key server-side in both modes, matching the CLJS full-map rebuild
+  // (sending '' instead would keep a phantom key with an empty value, which
+  // later renders as a "set" masked credential). Every untouched secret is
+  // echoed to keep it: `null` tells the overlay to preserve the stored
+  // (masked) value in write-only mode; off, we resend the current value
+  // verbatim (sending `null` there would persist the literal string "<nil>").
   buildSecretsPatch: () => {
     const { stagedSecrets, renames, connection, hideRoleInfo } = get()
     const out = {}
+    const removed = new Set()
     for (const [key, change] of Object.entries(stagedSecrets)) {
       if (isPlaceholderEntry(key, change)) continue
       if (change.action === 'delete') {
-        out[key] = ''
+        removed.add(key)
       } else {
         out[key] = change.value
       }
@@ -544,14 +554,15 @@ export const useConfigureRoleStore = create((set, get) => ({
       if (origKey === newKey) continue
       const stagedValue = stagedSecrets[origKey]?.value
       const persisted = connection?.secret?.[origKey] || ''
-      out[origKey] = ''
+      removed.add(origKey)
+      delete out[origKey]
       out[newKey] = stagedValue || persisted
     }
     // Echo untouched secrets so the full-map replace doesn't drop them:
     // null preserves the masked value in write-only mode; off, resend the
     // stored value as-is.
     for (const key of Object.keys(connection?.secret || {})) {
-      if (key in out) continue
+      if (key in out || removed.has(key)) continue
       out[key] = hideRoleInfo ? null : (connection.secret[key] ?? '')
     }
     const sshKey = out['filesystem:SSH_PRIVATE_KEY']
@@ -594,14 +605,25 @@ export const useConfigureRoleStore = create((set, get) => ({
     set({ saving: true, error: null })
     try {
       const payload = buildDraftsPatch(drafts, baseline)
-      if (Object.keys(stagedSecrets).length > 0) {
+      // A key rename with an untouched value stages nothing in
+      // stagedSecrets — it lives in `renames` only — so both maps gate
+      // whether the secret patch is sent.
+      if (Object.keys(stagedSecrets).length > 0 || Object.keys(renames).length > 0) {
         payload.secret = get().buildSecretsPatch()
       }
       const updated = await connectionsService.patchConnection(connection.name, payload)
       const newDrafts = draftsFromConnection(updated)
+      // Re-seed per-field sources from the saved connection (same as
+      // loadConnection) so renamed keys don't leave stale entries around.
+      const fieldSources = {}
+      for (const [k, v] of Object.entries(updated.secret || {})) {
+        fieldSources[k] = sourceFromEncodedValue(v)
+      }
       set({
         connection: updated,
         stagedSecrets: {},
+        renames: {},
+        fieldSources,
         drafts: newDrafts,
         baseline: newDrafts,
         saving: false,

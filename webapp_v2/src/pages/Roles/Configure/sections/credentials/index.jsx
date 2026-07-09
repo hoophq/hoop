@@ -24,7 +24,11 @@ const RENDERER_RULES = [
   {
     name: 'application-ssh',
     requiresCatalog: false,
-    matches: (c) => c.type === 'application' && c.subtype === 'ssh',
+    // ssh-local is plain SSH running on the agent host; the same
+    // renderer serves both subtypes and owns the proxy/local toggle.
+    matches: (c) =>
+      c.type === 'application' &&
+      (c.subtype === 'ssh' || c.subtype === 'ssh-local'),
     render: (props) => <SshRenderer {...props} />,
   },
   {
@@ -60,7 +64,12 @@ const RENDERER_RULES = [
     requiresCatalog: true,
     matches: (c) => {
       if (c.type === 'database') return true
-      if (c.type === 'application' && c.subtype && c.subtype !== 'ssh') return true
+      if (
+        c.type === 'application' &&
+        c.subtype &&
+        c.subtype !== 'ssh' &&
+        c.subtype !== 'ssh-local'
+      ) return true
       if (
         c.type === 'custom' &&
         c.subtype &&

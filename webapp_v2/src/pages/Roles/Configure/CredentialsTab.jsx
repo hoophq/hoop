@@ -177,6 +177,14 @@ export default function CredentialsTab({ connection }) {
     (s) => s.setSecretsManagerProvider,
   )
   const hideRoleInfo = useConfigureRoleStore((s) => s.hideRoleInfo)
+  // Local SSH runs on the agent host — no credentials, so the
+  // credential-source chooser is meaningless. Follows the draft (not
+  // the persisted subtype) so the section hides/shows as the user flips
+  // the Connection Type radio in SshRenderer. Mirrors CLJS server.cljs,
+  // which renders connection-method/main only in proxy mode.
+  const draftSubtype = useConfigureRoleStore((s) => s.drafts.subtype)
+  const isLocalSsh =
+    connection.type === 'application' && draftSubtype === 'ssh-local'
   const awsIamAvailable = supportsAwsIam(connection.subtype)
   const isSecretsManager = selectedMethod === CONNECTION_METHODS.SECRETS_MANAGER
   const isDerivedMethod = selectedMethod === derived.method
@@ -209,12 +217,14 @@ export default function CredentialsTab({ connection }) {
 
   return (
     <Stack gap="xl" maw={720}>
-      <ConnectionMethodSection
-        selectedMethod={selectedMethod}
-        onSelect={setSelectedMethod}
-        awsIamAvailable={awsIamAvailable}
-      />
-      {isSecretsManager && (
+      {!isLocalSsh && (
+        <ConnectionMethodSection
+          selectedMethod={selectedMethod}
+          onSelect={setSelectedMethod}
+          awsIamAvailable={awsIamAvailable}
+        />
+      )}
+      {!isLocalSsh && isSecretsManager && (
         <SecretsManagerProviderSection
           provider={secretsProvider}
           onProviderChange={setSecretsProvider}
