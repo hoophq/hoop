@@ -33,10 +33,15 @@ export default function SourcedInput({
   rightSectionWidth,
   rightSectionPointerEvents,
   size = 'sm',
+  minRows,
 }) {
   const Input = INPUT_BY_TYPE[type] || TextInput
   const showSourceMenu = Array.isArray(sources) && sources.length > 1
   const isTextarea = type === 'textarea'
+  // A fixed row count for textareas that must not collapse (e.g. a
+  // pasted service-account JSON). The wrapper's autosize default caps
+  // at 6 rows, so the max is raised alongside the min.
+  const textareaSizing = minRows ? { minRows, maxRows: minRows } : {}
 
   const labelNode = label ? <FieldLabel label={label} required={required} /> : null
 
@@ -63,6 +68,7 @@ export default function SourcedInput({
           autoFocus={autoFocus}
           required={required}
           size={size}
+          {...textareaSizing}
         />
       </Stack>
     )

@@ -107,6 +107,7 @@ export default function PredefinedFields({
               required={field.required}
               placeholder={field.placeholder}
               type={field.type}
+              minRows={field.minRows}
               value={decodedValue}
               onChange={(plain) =>
                 replaceSecret(envKey, encodeSecretForSource(plain, source))
@@ -134,6 +135,7 @@ export default function PredefinedFields({
             required={field.required}
             placeholder={field.placeholder}
             type={field.type}
+            minRows={field.minRows}
             isExisting={isExisting}
             isReference={isReference}
             referenceText={referenceText}
