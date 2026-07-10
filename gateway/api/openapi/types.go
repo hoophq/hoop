@@ -2351,6 +2351,22 @@ type ServerAuthSamlConfig struct {
 	IdpMetadataURL string `json:"idp_metadata_url" example:"https://auth.domain.tld/saml/metadata" binding:"required"`
 	// Specifies the claim identifier used to configure group propagation.
 	GroupsClaim string `json:"groups_claim" default:"groups"`
+	// The identity provider details resolved from the metadata URL when the configuration was last saved. It is a read only field
+	ResolvedMetadata *ServerAuthSamlResolvedMetadata `json:"resolved_metadata,omitempty" readonly:"true"`
+}
+
+// ServerAuthSamlResolvedMetadata is a snapshot of the identity provider that the
+// configured metadata URL resolved to, allowing administrators to verify the
+// metadata URL points to the intended identity provider.
+type ServerAuthSamlResolvedMetadata struct {
+	// The entity ID declared in the identity provider metadata document
+	EntityID string `json:"entity_id" example:"https://app.onelogin.com/saml/metadata/123456"`
+	// The Single Sign-On URL users are redirected to when authenticating
+	SsoURL string `json:"sso_url" example:"https://mycompany.onelogin.com/trust/saml2/http-post/sso/123456"`
+	// The expiration time of the most recent signing certificate found in the metadata
+	CertificateExpiresAt time.Time `json:"certificate_expires_at" example:"2030-01-01T00:00:00Z"`
+	// When the metadata document was fetched and resolved
+	ResolvedAt time.Time `json:"resolved_at" example:"2026-07-10T12:00:00Z"`
 }
 
 type ProviderType string

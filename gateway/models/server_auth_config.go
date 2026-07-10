@@ -39,6 +39,17 @@ type ServerAuthOidcConfig struct {
 type ServerAuthSamlConfig struct {
 	IdpMetadataURL string `json:"idp_metadata_url"`
 	GroupsClaim    string `json:"groups_claim"`
+	// ResolvedMetadata is a snapshot of the identity provider details resolved
+	// from IdpMetadataURL when the configuration was last saved. It is derived
+	// data that surfaces which IdP the URL actually points to.
+	ResolvedMetadata *ServerAuthSamlResolvedMetadata `json:"resolved_metadata,omitempty"`
+}
+
+type ServerAuthSamlResolvedMetadata struct {
+	EntityID             string    `json:"entity_id"`
+	SsoURL               string    `json:"sso_url"`
+	CertificateExpiresAt time.Time `json:"certificate_expires_at"`
+	ResolvedAt           time.Time `json:"resolved_at"`
 }
 
 type ServerMcpAuthConfig struct {
