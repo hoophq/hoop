@@ -139,28 +139,42 @@
                     "Request demo")}])
 
 (defn guardrails-promotion
-  "Specific component for Guardrails"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "Guardrails"
-    :mode mode
-    :image "guardrails-promotion.png"
-    :description "Create custom rules to guide and protect usage within your resource roles."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Automated Policy Enforcement"
-                     :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}
-                    {:icon [:> ShieldCheck {:size 20}]
-                     :title "Smart Command Filtering"
-                     :description "Block potentially dangerous commands before execution and prevent accidental data modifications or deletions."}
-                    {:icon [:> TextSearch {:size 20}]
-                     :title "Context-Aware Access"
-                     :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]
-    :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :create-guardrail])
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Create new Guardrails"
-                    "Request demo")}])
+  "Specific component for Guardrails.
+
+   When provider-available? is explicitly false, renders the 'DLP provider
+   required' variant: a documentation link and an explanation instead of the
+   create CTA. This mirrors how Live Data Masking presents its screen when a
+   Microsoft Presidio DLP provider is not configured — guardrails are enforced
+   through Presidio, so without it the feature cannot be set up (EVL-62)."
+  [{:keys [mode installed? provider-available?]}]
+  (let [empty-state? (= mode :empty-state)
+        dlp-missing? (false? provider-available?)]
+    [feature-promotion
+     (merge
+      {:feature-name "Guardrails"
+       :mode mode
+       :image "guardrails-promotion.png"
+       :description "Create custom rules to guide and protect usage within your resource roles."
+       :feature-items [{:icon [:> ListCheck {:size 20}]
+                        :title "Automated Policy Enforcement"
+                        :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}
+                       {:icon [:> ShieldCheck {:size 20}]
+                        :title "Smart Command Filtering"
+                        :description "Block potentially dangerous commands before execution and prevent accidental data modifications or deletions."}
+                       {:icon [:> TextSearch {:size 20}]
+                        :title "Context-Aware Access"
+                        :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]}
+      (if dlp-missing?
+        {:extra-information (str "Guardrails require a Microsoft Presidio DLP provider to be "
+                                "enforced. Configure Presidio to create and manage guardrails.")
+         :link-button-href [:features :guardrails]
+         :link-button-text "Go to Guardrails documentation"}
+        {:on-primary-click (if empty-state?
+                             #(rf/dispatch [:navigate :create-guardrail])
+                             request-demo)
+         :primary-text (if empty-state?
+                         "Create new Guardrails"
+                         "Request demo")}))]))
 
 (defn jira-templates-promotion
   "Specific component for Jira templates"
