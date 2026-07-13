@@ -773,7 +773,7 @@ func handleSystemPacketRequests(pktType string) (handled bool) {
 	return
 }
 
-func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus string) {
+func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason string) {
 	if reviewStatus == string(openapi.ReviewStatusApproved) {
 		pluginslack.SendApprovedMessage(
 			orgID,
@@ -789,8 +789,12 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 		packetType := pbclient.SessionOpenApproveOK
 		if reviewStatus == string(openapi.ReviewStatusRejected) {
 			packetType = pbclient.SessionClose
-			payload = []byte(`access to connection has been denied`)
-			proxyStream.Close(fmt.Errorf("access to connection has been denied"))
+			deniedMsg := "access to connection has been denied"
+			if rejectReason != "" {
+				deniedMsg = fmt.Sprintf("access to connection has been denied: %s", rejectReason)
+			}
+			payload = []byte(deniedMsg)
+			proxyStream.Close(fmt.Errorf("%s", deniedMsg))
 		}
 		// TODO: return erroo to caller
 		_ = proxyStream.Send(&pb.Packet{

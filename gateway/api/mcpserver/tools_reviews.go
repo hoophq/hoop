@@ -329,6 +329,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 						rev.SessionID,
 						ptr.ToString(rev.OwnerSlackID),
 						rev.Status.Str(),
+						ptr.ToString(rev.RejectionReason),
 					)
 				} else {
 					log.Warnf("mcp: review update succeeded but transport release function is nil, sid=%v", rev.SessionID)

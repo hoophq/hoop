@@ -123,6 +123,7 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 				rev.SessionID,
 				ptr.ToString(rev.OwnerSlackID),
 				rev.Status.Str(),
+				ptr.ToString(rev.RejectionReason),
 			)
 		}
 		if rev.Status == models.ReviewStatusRejected {
