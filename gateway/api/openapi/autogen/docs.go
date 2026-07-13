@@ -16402,6 +16402,40 @@ const docTemplate = `{
                     "description": "Identity Provider Metadata URL (SAML 2.0)",
                     "type": "string",
                     "example": "https://auth.domain.tld/saml/metadata"
+                },
+                "resolved_metadata": {
+                    "description": "The identity provider details resolved from the metadata URL when the configuration was last saved. It is a read only field",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ServerAuthSamlResolvedMetadata"
+                        }
+                    ],
+                    "readOnly": true
+                }
+            }
+        },
+        "openapi.ServerAuthSamlResolvedMetadata": {
+            "type": "object",
+            "properties": {
+                "certificate_expires_at": {
+                    "description": "The expiration time of the most recent signing certificate found in the metadata",
+                    "type": "string",
+                    "example": "2030-01-01T00:00:00Z"
+                },
+                "entity_id": {
+                    "description": "The entity ID declared in the identity provider metadata document",
+                    "type": "string",
+                    "example": "https://app.onelogin.com/saml/metadata/123456"
+                },
+                "resolved_at": {
+                    "description": "When the metadata document was fetched and resolved",
+                    "type": "string",
+                    "example": "2026-07-10T12:00:00Z"
+                },
+                "sso_url": {
+                    "description": "The Single Sign-On URL users are redirected to when authenticating",
+                    "type": "string",
+                    "example": "https://mycompany.onelogin.com/trust/saml2/http-post/sso/123456"
                 }
             }
         },
