@@ -785,20 +785,28 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 
 	proxyStream := streamclient.GetProxyStream(sid)
 	if proxyStream != nil {
-		var payload []byte
-		packetType := pbclient.SessionOpenApproveOK
 		if reviewStatus == string(openapi.ReviewStatusRejected) {
-			packetType = pbclient.SessionClose
 			deniedMsg := buildReviewDeniedMessage(rejectReason, rejectedBy)
-			payload = []byte(deniedMsg)
+			// Deliver the denial (reason + reviewer) to the client BEFORE tearing
+			// the stream down. Close cancels the stream context, so sending after
+			// it can race the client's Recv and drop the payload, leaving the CLI
+			// with a generic error instead of the reject details.
+			if err := proxyStream.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
+				Payload: []byte(deniedMsg),
+			}); err != nil {
+				log.With("sid", sid).Warnf("failed sending session close to client on review rejection: %v", err)
+			}
 			proxyStream.Close(fmt.Errorf("%s", deniedMsg))
+		} else {
+			if err := proxyStream.Send(&pb.Packet{
+				Type: pbclient.SessionOpenApproveOK,
+				Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
+			}); err != nil {
+				log.With("sid", sid).Warnf("failed sending approval to client: %v", err)
+			}
 		}
-		// TODO: return erroo to caller
-		_ = proxyStream.Send(&pb.Packet{
-			Type:    packetType,
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
-			Payload: payload,
-		})
 	}
 	log.With("sid", sid, "has-stream", proxyStream != nil).Infof("review status change")
 }
@@ -809,13 +817,33 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 // those are available. With neither, it degrades to the plain denial line.
 func buildReviewDeniedMessage(rejectReason, rejectedBy string) string {
 	msg := "Access to connection has been denied"
-	if rejectReason != "" {
-		msg += "\n  Reason: " + rejectReason
+	if reason := sanitizeTerminalText(rejectReason); reason != "" {
+		msg += "\n  Reason: " + reason
 	}
-	if rejectedBy != "" {
-		msg += "\n  Rejected by " + rejectedBy
+	if by := sanitizeTerminalText(rejectedBy); by != "" {
+		msg += "\n  Rejected by " + by
 	}
 	return msg
+}
+
+// sanitizeTerminalText neutralizes reviewer-provided text before it is embedded
+// into the CLI-facing denial message (and the stream close error). Control
+// characters (ANSI escapes, CR, LF, etc.) are replaced with spaces so a crafted
+// rejection reason cannot spoof or corrupt terminal output, and the length is
+// bounded to keep the payload small.
+func sanitizeTerminalText(s string) string {
+	const maxRunes = 500
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			r = ' '
+		}
+		out = append(out, r)
+		if len(out) >= maxRunes {
+			break
+		}
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
