@@ -28,10 +28,9 @@
             all-rules (:data @guardrails-rules-list)
             free-license? (-> @user :data :free-license?)
             limit-reached? (and free-license? (>= (count all-rules) 1))
-            redact-provider (-> @gateway-info :data :redact_provider)
-            has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
-            provider-available? (and (= redact-provider "mspresidio")
-                                     has-redact-credentials?)
+            ;; A DLP provider (gcp or mspresidio) is required to enforce guardrails;
+            ;; has_redact_credentials is true only when one of those is configured.
+            dlp-available? (boolean (-> @gateway-info :data :has_redact_credentials))
             connections-data @connections
             connections-results (:results connections-data)
             by-connection (if (nil? @selected-connection)
@@ -50,13 +49,13 @@
           loading?
           [loaders/page-loading-screen {:full-page false}]
 
-          ;; No DLP provider (Microsoft Presidio) configured: guardrails cannot
-          ;; be enforced, so present a provider-required screen instead of the
-          ;; setup UI, mirroring the Live Data Masking no-provider screen (EVL-62).
-          (not provider-available?)
+          ;; No DLP provider (GCP or Microsoft Presidio) configured: guardrails
+          ;; cannot be enforced, so present a provider-required screen instead of
+          ;; the setup UI, mirroring the Live Data Masking no-provider screen (EVL-62).
+          (not dlp-available?)
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/guardrails-promotion {:mode :empty-state
-                                            :provider-available? false}]]
+                                            :dlp-available? false}]]
 
           (empty? all-rules)
           [:> Box {:class "bg-gray-1 h-full"}

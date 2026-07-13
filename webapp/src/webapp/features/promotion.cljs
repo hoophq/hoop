@@ -141,14 +141,14 @@
 (defn guardrails-promotion
   "Specific component for Guardrails.
 
-   When provider-available? is explicitly false, renders the 'DLP provider
-   required' variant: a documentation link and an explanation instead of the
-   create CTA. This mirrors how Live Data Masking presents its screen when a
-   Microsoft Presidio DLP provider is not configured — guardrails are enforced
-   through Presidio, so without it the feature cannot be set up (EVL-62)."
-  [{:keys [mode installed? provider-available?]}]
+   When dlp-available? is explicitly false, renders the 'DLP provider required'
+   variant: a documentation link and an explanation instead of the create CTA.
+   This mirrors how Live Data Masking presents its screen when no DLP provider
+   is configured — guardrails are enforced through a DLP provider (GCP or
+   Microsoft Presidio), so without one the feature cannot be set up (EVL-62)."
+  [{:keys [mode installed? dlp-available?]}]
   (let [empty-state? (= mode :empty-state)
-        dlp-missing? (false? provider-available?)]
+        dlp-missing? (false? dlp-available?)]
     [feature-promotion
      (merge
       {:feature-name "Guardrails"
@@ -165,8 +165,9 @@
                         :title "Context-Aware Access"
                         :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]}
       (if dlp-missing?
-        {:extra-information (str "Guardrails require a Microsoft Presidio DLP provider to be "
-                                "enforced. Configure Presidio to create and manage guardrails.")
+        {:extra-information (str "Guardrails require a DLP provider (Microsoft Presidio or "
+                                "Google Cloud DLP) to be enforced. Configure a DLP provider "
+                                "to create and manage guardrails.")
          :link-button-href [:features :guardrails]
          :link-button-text "Go to Guardrails documentation"}
         {:on-primary-click (if empty-state?
