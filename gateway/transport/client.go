@@ -773,7 +773,7 @@ func handleSystemPacketRequests(pktType string) (handled bool) {
 	return
 }
 
-func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason string) {
+func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string) {
 	if reviewStatus == string(openapi.ReviewStatusApproved) {
 		pluginslack.SendApprovedMessage(
 			orgID,
@@ -789,10 +789,7 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 		packetType := pbclient.SessionOpenApproveOK
 		if reviewStatus == string(openapi.ReviewStatusRejected) {
 			packetType = pbclient.SessionClose
-			deniedMsg := "access to connection has been denied"
-			if rejectReason != "" {
-				deniedMsg = fmt.Sprintf("access to connection has been denied: %s", rejectReason)
-			}
+			deniedMsg := buildReviewDeniedMessage(rejectReason, rejectedBy)
 			payload = []byte(deniedMsg)
 			proxyStream.Close(fmt.Errorf("%s", deniedMsg))
 		}
@@ -804,6 +801,21 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 		})
 	}
 	log.With("sid", sid, "has-stream", proxyStream != nil).Infof("review status change")
+}
+
+// buildReviewDeniedMessage formats the message shown to the CLI when a review
+// is rejected. It mirrors the web UI's "Reject Details" panel: a denial line
+// followed by the reviewer's reason and who rejected the request, whenever
+// those are available. With neither, it degrades to the plain denial line.
+func buildReviewDeniedMessage(rejectReason, rejectedBy string) string {
+	msg := "Access to connection has been denied"
+	if rejectReason != "" {
+		msg += "\n  Reason: " + rejectReason
+	}
+	if rejectedBy != "" {
+		msg += "\n  Rejected by " + rejectedBy
+	}
+	return msg
 }
 
 func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
