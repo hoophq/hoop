@@ -5,7 +5,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
-import PageLoader from '@/components/PageLoader'
+import AuthPageLoader from '@/components/AuthPageLoader'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
@@ -106,7 +106,7 @@ function ProtectedRoute({ children, adminOnly = false }) {
   }
 
   if (initializing) {
-    return <PageLoader dark message="Verifying authentication..." />
+    return <AuthPageLoader message="Verifying authentication..." />
   }
 
   if (adminOnly && !isAdmin) {

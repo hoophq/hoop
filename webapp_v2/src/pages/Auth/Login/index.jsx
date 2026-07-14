@@ -15,7 +15,7 @@ import {
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
-import PageLoader from '@/components/PageLoader'
+import AuthPageLoader from '@/components/AuthPageLoader'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -160,7 +160,7 @@ function Login() {
   }
 
   if (loadingAuthMethod || (authMethod !== 'local' && !error)) {
-    return <PageLoader dark message="Redirecting to login..." />
+    return <AuthPageLoader message="Redirecting to login..." />
   }
 
   if (authMethod !== 'local' && error) {

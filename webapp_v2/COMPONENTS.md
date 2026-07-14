@@ -24,6 +24,19 @@ import PageLoader from '@/components/PageLoader'
 ```
 Use with `useMinDelay` to prevent flash on fast requests.
 
+### `AuthPageLoader`
+Full-screen dark loading state for auth-flow routes (login redirect, OAuth callbacks, session verification). Auth screens are always dark — there is no light variant — so the dark styling is baked in. For loaders inside the (light) app shell, use `PageLoader`.
+```jsx
+import AuthPageLoader from '@/components/AuthPageLoader'
+
+<AuthPageLoader message="Verifying authentication..." />
+<AuthPageLoader
+  error
+  message="Authentication failed"
+  description="Redirecting to login..."
+/>
+```
+
 ### `EmptyState` (`src/layout/EmptyState/`)
 Empty list / zero-data state with icon, title, description, and optional CTA.
 ```jsx

@@ -3,31 +3,28 @@
    [re-frame.core :as rf]
    [webapp.subs :as subs]))
 
-(defn- dots-loader [dark]
-  (let [dot-class (str "w-2 h-2 rounded-full animate-bounce "
-                       (if dark "bg-white" "bg-gray-12"))]
-    [:div {:class "flex gap-1.5"}
-     [:div {:class dot-class :style {:animation-delay "0ms"}}]
-     [:div {:class dot-class :style {:animation-delay "150ms"}}]
-     [:div {:class dot-class :style {:animation-delay "300ms"}}]]))
+(defn- dots-loader []
+  [:div {:class "flex gap-1.5"}
+   [:div {:class "w-2 h-2 rounded-full bg-gray-12 animate-bounce"
+          :style {:animation-delay "0ms"}}]
+   [:div {:class "w-2 h-2 rounded-full bg-gray-12 animate-bounce"
+          :style {:animation-delay "150ms"}}]
+   [:div {:class "w-2 h-2 rounded-full bg-gray-12 animate-bounce"
+          :style {:animation-delay "300ms"}}]])
 
-(defn- loader-content [{:keys [message description dark]}]
+(defn- loader-content [{:keys [message description]}]
   [:<>
-   [:img {:src (if dark
-                 "/images/hoop-branding/SVG/hoop-symbol_white.svg"
-                 "/images/hoop-branding/SVG/hoop-symbol_black.svg")
+   [:img {:src "/images/hoop-branding/SVG/hoop-symbol_black.svg"
           :height "40"
           :width "40"
           :alt "hoop"}]
-   [dots-loader dark]
+   [dots-loader]
    (when (or message description)
      [:div {:class "flex flex-col items-center gap-1 text-center"}
       (when message
-        [:p {:class (str "text-sm font-medium "
-                         (if dark "text-white" "text-gray-11"))} message])
+        [:p {:class "text-sm font-medium text-gray-11"} message])
       (when description
-        [:p {:class (str "text-xs opacity-70 "
-                         (if dark "text-white" "text-gray-11"))} description])])])
+        [:p {:class "text-xs text-gray-11 opacity-70"} description])])])
 
 (def spinner-lg
   [:div.w-12.h-12.rounded-full.border-8.border-t-gray-600.animate-spin])
@@ -55,9 +52,34 @@
                        " w-6 h-6"))}])
 
 (defn page-loading-screen
-  [{:keys [message description full-page dark]
+  [{:keys [message description full-page]
     :or {full-page true}}]
   [:div {:class (str (if full-page "min-h-screen" "h-full")
-                     " flex flex-col items-center justify-center gap-6"
-                     (when dark " bg-[#182449]"))}
-   [loader-content {:message message :description description :dark dark}]])
+                     " flex flex-col items-center justify-center gap-6")}
+   [loader-content {:message message :description description}]])
+
+(defn- dark-dots-loader []
+  [:div {:class "flex gap-1.5"}
+   [:div {:class "w-2 h-2 rounded-full bg-white animate-bounce"
+          :style {:animation-delay "0ms"}}]
+   [:div {:class "w-2 h-2 rounded-full bg-white animate-bounce"
+          :style {:animation-delay "150ms"}}]
+   [:div {:class "w-2 h-2 rounded-full bg-white animate-bounce"
+          :style {:animation-delay "300ms"}}]])
+
+(defn auth-loading-screen
+  "Full-page loading screen for auth-flow routes. Auth screens are always
+  dark -- there is no light variant -- so the dark styling is baked in."
+  [{:keys [message description]}]
+  [:div {:class "min-h-screen flex flex-col items-center justify-center gap-6 bg-[#182449]"}
+   [:img {:src "/images/hoop-branding/SVG/hoop-symbol_white.svg"
+          :height "40"
+          :width "40"
+          :alt "hoop"}]
+   [dark-dots-loader]
+   (when (or message description)
+     [:div {:class "flex flex-col items-center gap-1 text-center"}
+      (when message
+        [:p {:class "text-sm font-medium text-white"} message])
+      (when description
+        [:p {:class "text-xs opacity-70 text-white"} description])])])

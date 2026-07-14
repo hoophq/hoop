@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
-import PageLoader from '@/components/PageLoader'
+import AuthPageLoader from '@/components/AuthPageLoader'
 
 function SignupCallback() {
   const navigate = useNavigate()
@@ -41,15 +41,13 @@ function SignupCallback() {
   }, [navigate, initializeToken])
 
   return error ? (
-    <PageLoader
-      dark
+    <AuthPageLoader
       error
       message="Authentication failed"
       description="Redirecting to login..."
     />
   ) : (
-    <PageLoader
-      dark
+    <AuthPageLoader
       message="Setting up your account..."
       description="Please wait while we complete your sign up"
     />

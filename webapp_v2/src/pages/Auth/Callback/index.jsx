@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
-import PageLoader from '@/components/PageLoader'
+import AuthPageLoader from '@/components/AuthPageLoader'
 
 function AuthCallback() {
   const navigate = useNavigate()
@@ -48,15 +48,13 @@ function AuthCallback() {
   }, [navigate, initializeToken, getAndClearRedirectUrl])
 
   return error ? (
-    <PageLoader
-      dark
+    <AuthPageLoader
       error
       message="Authentication failed"
       description="Redirecting to login..."
     />
   ) : (
-    <PageLoader
-      dark
+    <AuthPageLoader
       message="Verifying authentication..."
       description="Please wait while we complete your sign in"
     />
