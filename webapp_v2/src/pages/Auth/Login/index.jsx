@@ -160,7 +160,7 @@ function Login() {
   }
 
   if (loadingAuthMethod || (authMethod !== 'local' && !error)) {
-    return <PageLoader message="Redirecting to login..." />
+    return <PageLoader dark message="Redirecting to login..." />
   }
 
   if (authMethod !== 'local' && error) {

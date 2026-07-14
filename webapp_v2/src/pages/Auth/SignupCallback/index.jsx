@@ -42,12 +42,14 @@ function SignupCallback() {
 
   return error ? (
     <PageLoader
+      dark
       error
       message="Authentication failed"
       description="Redirecting to login..."
     />
   ) : (
     <PageLoader
+      dark
       message="Setting up your account..."
       description="Please wait while we complete your sign up"
     />

@@ -19,4 +19,5 @@
      1500)
 
     [loaders/page-loading-screen {:message "Logging out..."
-                                   :description "You will be redirected in a few seconds."}]))
+                                   :description "You will be redirected in a few seconds."
+                                   :dark true}]))

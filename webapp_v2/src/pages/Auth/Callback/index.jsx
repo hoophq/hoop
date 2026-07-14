@@ -49,12 +49,14 @@ function AuthCallback() {
 
   return error ? (
     <PageLoader
+      dark
       error
       message="Authentication failed"
       description="Redirecting to login..."
     />
   ) : (
     <PageLoader
+      dark
       message="Verifying authentication..."
       description="Please wait while we complete your sign in"
     />

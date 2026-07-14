@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Center, Stack, Loader, Text, Transition } from '@mantine/core'
 import { XCircle } from 'lucide-react'
 
-function PageLoader({ message, description, error, overlay, h }) {
+function PageLoader({ message, description, error, overlay, h, dark }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -14,18 +14,24 @@ function PageLoader({ message, description, error, overlay, h }) {
     ? {
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'var(--mantine-color-body)',
+        backgroundColor: dark ? 'var(--sidebar-bg)' : 'var(--mantine-color-body)',
         zIndex: 200,
       }
     : undefined
 
   return (
-    <Center style={containerStyle} h={overlay ? undefined : (h ?? '100vh')}>
+    <Center
+      style={containerStyle}
+      h={overlay ? undefined : (h ?? '100vh')}
+      bg={!overlay && dark ? 'var(--sidebar-bg)' : undefined}
+    >
       <Transition mounted={visible} transition="fade" duration={300}>
         {(styles) => (
           <Stack align="center" gap="xl" style={{ ...styles, maxWidth: 320 }}>
             <img
-              src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
+              src={dark
+                ? '/images/hoop-branding/SVG/hoop-symbol_white.svg'
+                : '/images/hoop-branding/SVG/hoop-symbol_black.svg'}
               height={40}
               width={40}
               alt="hoop"
@@ -34,18 +40,18 @@ function PageLoader({ message, description, error, overlay, h }) {
             {error ? (
               <XCircle size={32} color="var(--mantine-color-red-6)" strokeWidth={1.5} />
             ) : (
-              <Loader size="sm" type="dots" color="dark" />
+              <Loader size="sm" type="dots" color={dark ? 'gray.0' : 'dark'} />
             )}
 
             {(message || description) && (
               <Stack align="center" gap={6}>
                 {message && (
-                  <Text size="sm" c="dimmed" ta="center" fw={500}>
+                  <Text size="sm" c={dark ? 'gray.0' : 'dimmed'} ta="center" fw={500}>
                     {message}
                   </Text>
                 )}
                 {description && (
-                  <Text size="xs" c="dimmed" ta="center">
+                  <Text size="xs" c={dark ? 'gray.5' : 'dimmed'} ta="center">
                     {description}
                   </Text>
                 )}

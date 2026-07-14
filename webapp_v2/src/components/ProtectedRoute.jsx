@@ -106,7 +106,7 @@ function ProtectedRoute({ children, adminOnly = false }) {
   }
 
   if (initializing) {
-    return <PageLoader message="Verifying authentication..." />
+    return <PageLoader dark message="Verifying authentication..." />
   }
 
   if (adminOnly && !isAdmin) {
