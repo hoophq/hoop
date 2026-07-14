@@ -13464,6 +13464,10 @@ const docTemplate = `{
                     "description": "The request type id that will be associated to the issue",
                     "type": "string"
                 },
+                "skip_transition_on_nonzero_exit_code": {
+                    "description": "When enabled, the issue transition is skipped if the session\nfinishes with a non-zero exit code",
+                    "type": "boolean"
+                },
                 "updated_at": {
                     "description": "The time when the template was updated",
                     "type": "string"
@@ -13520,6 +13524,10 @@ const docTemplate = `{
                 "request_type_id": {
                     "description": "The request type that will be associated to the issue",
                     "type": "string"
+                },
+                "skip_transition_on_nonzero_exit_code": {
+                    "description": "When enabled, the issue transition is skipped if the session\nfinishes with a non-zero exit code",
+                    "type": "boolean"
                 }
             }
         },

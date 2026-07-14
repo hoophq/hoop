@@ -91,18 +91,19 @@ func ListIssueTemplates(c *gin.Context) {
 	issues := []openapi.JiraIssueTemplate{}
 	for _, issue := range issueList {
 		issues = append(issues, openapi.JiraIssueTemplate{
-			ID:                         issue.ID,
-			Name:                       issue.Name,
-			Description:                issue.Description,
-			ProjectKey:                 issue.ProjectKey,
-			RequestTypeID:              issue.RequestTypeID,
-			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
-			MappingTypes:               issue.MappingTypes,
-			PromptTypes:                issue.PromptTypes,
-			CmdbTypes:                  issue.CmdbTypes,
-			ConnectionIDs:              issue.ConnectionIDs,
-			CreatedAt:                  issue.CreatedAt,
-			UpdatedAt:                  issue.UpdatedAt,
+			ID:                              issue.ID,
+			Name:                            issue.Name,
+			Description:                     issue.Description,
+			ProjectKey:                      issue.ProjectKey,
+			RequestTypeID:                   issue.RequestTypeID,
+			IssueTransitionNameOnClose:      issue.IssueTransitionNameOnClose,
+			SkipTransitionOnNonZeroExitCode: issue.SkipTransitionOnNonZeroExitCode,
+			MappingTypes:                    issue.MappingTypes,
+			PromptTypes:                     issue.PromptTypes,
+			CmdbTypes:                       issue.CmdbTypes,
+			ConnectionIDs:                   issue.ConnectionIDs,
+			CreatedAt:                       issue.CreatedAt,
+			UpdatedAt:                       issue.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, issues)
@@ -126,18 +127,19 @@ func GetIssueTemplatesByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
-			ID:                         issue.ID,
-			Name:                       issue.Name,
-			Description:                issue.Description,
-			ProjectKey:                 issue.ProjectKey,
-			RequestTypeID:              issue.RequestTypeID,
-			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
-			MappingTypes:               issue.MappingTypes,
-			PromptTypes:                issue.PromptTypes,
-			CmdbTypes:                  issue.CmdbTypes,
-			ConnectionIDs:              issue.ConnectionIDs,
-			CreatedAt:                  issue.CreatedAt,
-			UpdatedAt:                  issue.UpdatedAt,
+			ID:                              issue.ID,
+			Name:                            issue.Name,
+			Description:                     issue.Description,
+			ProjectKey:                      issue.ProjectKey,
+			RequestTypeID:                   issue.RequestTypeID,
+			IssueTransitionNameOnClose:      issue.IssueTransitionNameOnClose,
+			SkipTransitionOnNonZeroExitCode: issue.SkipTransitionOnNonZeroExitCode,
+			MappingTypes:                    issue.MappingTypes,
+			PromptTypes:                     issue.PromptTypes,
+			CmdbTypes:                       issue.CmdbTypes,
+			ConnectionIDs:                   issue.ConnectionIDs,
+			CreatedAt:                       issue.CreatedAt,
+			UpdatedAt:                       issue.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing issue templates: %v", err)
@@ -245,19 +247,20 @@ func CreateIssueTemplates(c *gin.Context) {
 	}
 
 	issue := &models.JiraIssueTemplate{
-		ID:                         uuid.NewString(),
-		OrgID:                      ctx.GetOrgID(),
-		Name:                       req.Name,
-		Description:                req.Description,
-		ProjectKey:                 req.ProjectKey,
-		RequestTypeID:              req.RequestTypeID,
-		IssueTransitionNameOnClose: req.IssueTransitionNameOnClose,
-		MappingTypes:               req.MappingTypes,
-		PromptTypes:                req.PromptTypes,
-		CmdbTypes:                  req.CmdbTypes,
-		ConnectionIDs:              req.ConnectionIDs,
-		CreatedAt:                  time.Now().UTC(),
-		UpdatedAt:                  time.Now().UTC(),
+		ID:                              uuid.NewString(),
+		OrgID:                           ctx.GetOrgID(),
+		Name:                            req.Name,
+		Description:                     req.Description,
+		ProjectKey:                      req.ProjectKey,
+		RequestTypeID:                   req.RequestTypeID,
+		IssueTransitionNameOnClose:      req.IssueTransitionNameOnClose,
+		SkipTransitionOnNonZeroExitCode: req.SkipTransitionOnNonZeroExitCode,
+		MappingTypes:                    req.MappingTypes,
+		PromptTypes:                     req.PromptTypes,
+		CmdbTypes:                       req.CmdbTypes,
+		ConnectionIDs:                   req.ConnectionIDs,
+		CreatedAt:                       time.Now().UTC(),
+		UpdatedAt:                       time.Now().UTC(),
 	}
 	err := models.CreateJiraIssueTemplates(issue)
 	switch err {
@@ -268,18 +271,19 @@ func CreateIssueTemplates(c *gin.Context) {
 		return
 	case nil:
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
-			ID:                         issue.ID,
-			Name:                       issue.Name,
-			Description:                issue.Description,
-			ProjectKey:                 issue.ProjectKey,
-			RequestTypeID:              issue.RequestTypeID,
-			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
-			MappingTypes:               issue.MappingTypes,
-			PromptTypes:                issue.PromptTypes,
-			CmdbTypes:                  req.CmdbTypes,
-			CreatedAt:                  issue.CreatedAt,
-			UpdatedAt:                  issue.UpdatedAt,
-			ConnectionIDs:              issue.ConnectionIDs,
+			ID:                              issue.ID,
+			Name:                            issue.Name,
+			Description:                     issue.Description,
+			ProjectKey:                      issue.ProjectKey,
+			RequestTypeID:                   issue.RequestTypeID,
+			IssueTransitionNameOnClose:      issue.IssueTransitionNameOnClose,
+			SkipTransitionOnNonZeroExitCode: issue.SkipTransitionOnNonZeroExitCode,
+			MappingTypes:                    issue.MappingTypes,
+			PromptTypes:                     issue.PromptTypes,
+			CmdbTypes:                       req.CmdbTypes,
+			CreatedAt:                       issue.CreatedAt,
+			UpdatedAt:                       issue.UpdatedAt,
+			ConnectionIDs:                   issue.ConnectionIDs,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating issue templates: %v", err)
@@ -313,18 +317,19 @@ func UpdateIssueTemplates(c *gin.Context) {
 	}
 
 	issue := &models.JiraIssueTemplate{
-		OrgID:                      ctx.GetOrgID(),
-		ID:                         c.Param("id"),
-		Name:                       req.Name,
-		Description:                req.Description,
-		ProjectKey:                 req.ProjectKey,
-		RequestTypeID:              req.RequestTypeID,
-		IssueTransitionNameOnClose: req.IssueTransitionNameOnClose,
-		MappingTypes:               req.MappingTypes,
-		PromptTypes:                req.PromptTypes,
-		CmdbTypes:                  req.CmdbTypes,
-		ConnectionIDs:              req.ConnectionIDs,
-		UpdatedAt:                  time.Now().UTC(),
+		OrgID:                           ctx.GetOrgID(),
+		ID:                              c.Param("id"),
+		Name:                            req.Name,
+		Description:                     req.Description,
+		ProjectKey:                      req.ProjectKey,
+		RequestTypeID:                   req.RequestTypeID,
+		IssueTransitionNameOnClose:      req.IssueTransitionNameOnClose,
+		SkipTransitionOnNonZeroExitCode: req.SkipTransitionOnNonZeroExitCode,
+		MappingTypes:                    req.MappingTypes,
+		PromptTypes:                     req.PromptTypes,
+		CmdbTypes:                       req.CmdbTypes,
+		ConnectionIDs:                   req.ConnectionIDs,
+		UpdatedAt:                       time.Now().UTC(),
 	}
 	err := models.UpdateJiraIssueTemplates(issue)
 	switch err {
@@ -332,18 +337,19 @@ func UpdateIssueTemplates(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 	case nil:
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
-			ID:                         issue.ID,
-			Name:                       issue.Name,
-			Description:                issue.Description,
-			ProjectKey:                 issue.ProjectKey,
-			RequestTypeID:              issue.RequestTypeID,
-			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
-			MappingTypes:               issue.MappingTypes,
-			PromptTypes:                issue.PromptTypes,
-			CmdbTypes:                  issue.CmdbTypes,
-			CreatedAt:                  issue.CreatedAt,
-			UpdatedAt:                  issue.UpdatedAt,
-			ConnectionIDs:              issue.ConnectionIDs,
+			ID:                              issue.ID,
+			Name:                            issue.Name,
+			Description:                     issue.Description,
+			ProjectKey:                      issue.ProjectKey,
+			RequestTypeID:                   issue.RequestTypeID,
+			IssueTransitionNameOnClose:      issue.IssueTransitionNameOnClose,
+			SkipTransitionOnNonZeroExitCode: issue.SkipTransitionOnNonZeroExitCode,
+			MappingTypes:                    issue.MappingTypes,
+			PromptTypes:                     issue.PromptTypes,
+			CmdbTypes:                       issue.CmdbTypes,
+			CreatedAt:                       issue.CreatedAt,
+			UpdatedAt:                       issue.UpdatedAt,
+			ConnectionIDs:                   issue.ConnectionIDs,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating jira issue templates: %v", err)

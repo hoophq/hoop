@@ -1,6 +1,8 @@
 package transportext
 
 import (
+	"strconv"
+
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
@@ -23,9 +25,13 @@ type Context struct {
 	ConnectionSubType                   string
 	ConnectionEnvs                      map[string]any
 	ConnectionJiraTransitionNameOnClose string
-	ConnectionReviewers                 []string
-	UserEmail                           string
-	Verb                                string
+	// ConnectionJiraSkipTransitionOnNonZeroExitCode, when enabled by the jira
+	// issue template, prevents transitioning the issue on session close if the
+	// session finished with a non-zero exit code.
+	ConnectionJiraSkipTransitionOnNonZeroExitCode bool
+	ConnectionReviewers                           []string
+	UserEmail                                     string
+	Verb                                          string
 }
 
 func OnReceive(ctx Context, pkt *proto.Packet) error {
@@ -53,6 +59,15 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 		if jiraIssueKey == "" {
 			break
 		}
+
+		if ctx.ConnectionJiraSkipTransitionOnNonZeroExitCode {
+			if ec, convErr := strconv.Atoi(string(pkt.Spec[proto.SpecClientExitCodeKey])); convErr == nil && ec != 0 {
+				log.With("sid", ctx.SID).Infof("skipping jira issue transition, session finished with a non-zero exit code, key=%v, exit_code=%v",
+					jiraIssueKey, ec)
+				break
+			}
+		}
+
 		err = jira.TransitionIssue(jiraConf, jiraIssueKey, ctx.ConnectionJiraTransitionNameOnClose)
 		if err != nil {
 			log.With("sid", ctx.SID).Warn(err)

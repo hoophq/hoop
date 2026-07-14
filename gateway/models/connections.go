@@ -64,16 +64,20 @@ type Connection struct {
 	MinReviewApprovals *int           `gorm:"column:min_review_approvals"`
 
 	// Read Only fields
-	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`
-	Reviewers                 pq.StringArray    `gorm:"column:reviewers;type:text[];->"`
-	RedactTypes               pq.StringArray    `gorm:"column:redact_types;type:text[];->"`
-	AgentMode                 string            `gorm:"column:agent_mode;->"`
-	AgentName                 string            `gorm:"column:agent_name;->"`
-	JiraTransitionNameOnClose sql.NullString    `gorm:"column:issue_transition_name_on_close;->"`
-	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
-	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
-	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
-	Attributes                pq.StringArray    `gorm:"column:attributes;type:text[];->"`
+	RedactEnabled             bool           `gorm:"column:redact_enabled;->"`
+	Reviewers                 pq.StringArray `gorm:"column:reviewers;type:text[];->"`
+	RedactTypes               pq.StringArray `gorm:"column:redact_types;type:text[];->"`
+	AgentMode                 string         `gorm:"column:agent_mode;->"`
+	AgentName                 string         `gorm:"column:agent_name;->"`
+	JiraTransitionNameOnClose sql.NullString `gorm:"column:issue_transition_name_on_close;->"`
+	// JiraSkipTransitionOnNonZeroExitCode mirrors the associated jira issue
+	// template configuration: when enabled, the issue must not be transitioned
+	// on session close if the session finished with a non-zero exit code.
+	JiraSkipTransitionOnNonZeroExitCode bool              `gorm:"column:skip_transition_on_nonzero_exit_code;->"`
+	Envs                                map[string]string `gorm:"column:envs;serializer:json;->"`
+	GuardRailRules                      pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
+	ConnectionTags                      map[string]string `gorm:"column:connection_tags;serializer:json;->"`
+	Attributes                          pq.StringArray    `gorm:"column:attributes;type:text[];->"`
 }
 
 func isAuditorContext(ctx UserContext) bool {
@@ -455,6 +459,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		COALESCE(it.skip_transition_on_nonzero_exit_code, FALSE) AS skip_transition_on_nonzero_exit_code,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -567,7 +572,8 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
-		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals, 
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals,
+		COALESCE(it.skip_transition_on_nonzero_exit_code, FALSE) AS skip_transition_on_nonzero_exit_code, 
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
