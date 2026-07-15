@@ -46,6 +46,13 @@ func CanonicalPort(subType string) (uint16, bool) {
 		return 27017, true
 	case pb.ConnectionTypeOracleDB:
 		return 1521, true
+	case pb.ConnectionTypeHttpProxy:
+		// Clients speak plain HTTP to the tunnel (the agent terminates
+		// TLS to the real upstream), so port 80 is the only valid
+		// target. 443 is deliberately rejected: the tunnel has no
+		// certificate for *.hoop, so an https:// URL can never work
+		// and should fail fast at the SYN.
+		return 80, true
 	}
 	return 0, false
 }

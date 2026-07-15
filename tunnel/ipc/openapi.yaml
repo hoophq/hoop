@@ -74,7 +74,7 @@ components:
           description: Hoop connection name (no domain suffix).
         subtype:
           type: string
-          enum: [postgres, mysql, mssql, mongodb, oracledb, tcp]
+          enum: [postgres, mysql, mssql, mongodb, oracledb, tcp, httpproxy]
         virtual_ip:
           type: string
           description: ULA IPv6 address inside the tunnel /48.

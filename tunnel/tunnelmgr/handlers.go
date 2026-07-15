@@ -69,6 +69,7 @@ func (m *Manager) makeTCPHandler(
 ) netstack.Handler {
 	logger := m.opts.Logger
 	userAgent := m.opts.UserAgent
+	tld := m.opts.TLD
 	return func(conn *gonet.TCPConn, localAddr netip.Addr, localPort uint16) {
 		defer conn.Close()
 		name, ok := alloc.LookupAddr(localAddr)
@@ -88,6 +89,10 @@ func (m *Manager) makeTCPHandler(
 			GatewayConfig:  flowCfg,
 			ConnectionName: name,
 			UserAgent:      userAgent,
+			// Only consumed by httpproxy sessions: the URL clients use
+			// to reach this connection, so the agent's HTTP proxy can
+			// rewrite redirects/absolute URLs back at the tunnel.
+			HttpProxyBaseURL: "http://" + name + "." + tld,
 		})
 		if err != nil {
 			logger.Printf("tunnelmgr: pipe %s closed: %v", name, err)

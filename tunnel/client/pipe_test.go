@@ -286,6 +286,117 @@ func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
 	}
 }
 
+func TestRunPipe_HappyPath_HttpProxyEcho(t *testing.T) {
+	ft := newFakeTransport()
+	const sessionID = "sess-http-1"
+	const wantClientBytes = "GET /v1/things HTTP/1.1\r\nHost: api-prod.hoop\r\n\r\n"
+	const wantServerBytes = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"
+	const wantBaseURL = "http://api-prod.hoop"
+
+	local := newFakeLocal([]byte(wantClientBytes))
+
+	// Drive the gateway's side of the protocol in a goroutine.
+	go func() {
+		pkts := waitForSent(t, ft, 1, 2*time.Second)
+		if pb.PacketType(pkts[0].Type) != pbagent.SessionOpen {
+			t.Errorf("first packet: want SessionOpen, got %s", pkts[0].Type)
+		}
+
+		ft.push(&pb.Packet{
+			Type: pbclient.SessionOpenOK,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID: []byte(sessionID),
+				pb.SpecConnectionType:   []byte(pb.ConnectionTypeHttpProxy.String()),
+			},
+		})
+
+		// Wait for the request bytes. Unlike TCP-style sessions there
+		// is NO open-handshake packet: the first HttpProxyConnectionWrite
+		// already carries payload.
+		var payloadSeen bool
+		deadline := time.After(2 * time.Second)
+		for !payloadSeen {
+			for _, p := range ft.sentPackets() {
+				if pb.PacketType(p.Type) == pbagent.HttpProxyConnectionWrite &&
+					string(p.Payload) == wantClientBytes {
+					payloadSeen = true
+				}
+			}
+			if payloadSeen {
+				break
+			}
+			select {
+			case <-deadline:
+				t.Errorf("timeout waiting for http proxy payload; got %d packets", len(ft.sentPackets()))
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+
+		// Respond, then close the connection.
+		ft.push(&pb.Packet{
+			Type: pbclient.HttpProxyConnectionWrite,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID:   []byte(sessionID),
+				pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
+			},
+			Payload: []byte(wantServerBytes),
+		})
+		ft.push(&pb.Packet{
+			Type: pbclient.TCPConnectionClose,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID:   []byte(sessionID),
+				pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
+			},
+		})
+	}()
+
+	err := runPipe(context.Background(), ft, local, PipeOptions{
+		ConnectionName:     "api-prod",
+		HttpProxyBaseURL:   wantBaseURL,
+		SessionOpenTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("runPipe returned error: %v", err)
+	}
+
+	if got := string(local.writtenBytes()); got != wantServerBytes {
+		t.Errorf("local writes: want %q, got %q", wantServerBytes, got)
+	}
+
+	pkts := ft.sentPackets()
+	if pb.PacketType(pkts[0].Type) != pbagent.SessionOpen {
+		t.Errorf("packet[0]: want SessionOpen, got %s", pkts[0].Type)
+	}
+	var sawData, sawClose bool
+	for _, p := range pkts {
+		switch pb.PacketType(p.Type) {
+		case pbagent.HttpProxyConnectionWrite:
+			// The false-positive guard: no TCP open handshake may leak
+			// into the httpproxy packet family.
+			if _, ok := p.Spec[pb.SpecTCPServerConnectKey]; ok {
+				t.Errorf("httpproxy write carries SpecTCPServerConnectKey (TCP open handshake)")
+			}
+			if got := string(p.Spec[pb.SpecHttpProxyBaseUrl]); got != wantBaseURL {
+				t.Errorf("SpecHttpProxyBaseUrl: want %q, got %q", wantBaseURL, got)
+			}
+			if string(p.Payload) == wantClientBytes {
+				sawData = true
+			}
+		case pbagent.TCPConnectionWrite:
+			t.Errorf("httpproxy session sent a TCPConnectionWrite packet")
+		case pbagent.TCPConnectionClose:
+			sawClose = true
+		}
+	}
+	if !sawData {
+		t.Errorf("request bytes never sent as HttpProxyConnectionWrite")
+	}
+	if !sawClose {
+		t.Errorf("pipe did not send TCPConnectionClose to the gateway")
+	}
+}
+
 func TestRunPipe_RejectedConnectionType(t *testing.T) {
 	ft := newFakeTransport()
 	go func() {
