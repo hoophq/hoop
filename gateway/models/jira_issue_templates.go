@@ -13,20 +13,23 @@ import (
 const tableJiraIssueTemplates = "private.jira_issue_templates"
 
 type JiraIssueTemplate struct {
-	OrgID                      string         `gorm:"column:org_id"`
-	ID                         string         `gorm:"column:id"`
-	JiraIntegrationID          string         `gorm:"column:jira_integration_id"`
-	Name                       string         `gorm:"column:name"`
-	Description                string         `gorm:"column:description"`
-	ProjectKey                 string         `gorm:"column:project_key"`
-	RequestTypeID              string         `gorm:"column:request_type_id"`
-	IssueTransitionNameOnClose string         `gorm:"column:issue_transition_name_on_close"`
-	MappingTypes               map[string]any `gorm:"column:mapping_types;serializer:json"`
-	PromptTypes                map[string]any `gorm:"column:prompt_types;serializer:json"`
-	CmdbTypes                  map[string]any `gorm:"column:cmdb_types;serializer:json"`
-	ConnectionIDs              pq.StringArray `gorm:"column:connection_ids;type:text[];->"`
-	CreatedAt                  time.Time      `gorm:"column:created_at"`
-	UpdatedAt                  time.Time      `gorm:"column:updated_at"`
+	OrgID                      string `gorm:"column:org_id"`
+	ID                         string `gorm:"column:id"`
+	JiraIntegrationID          string `gorm:"column:jira_integration_id"`
+	Name                       string `gorm:"column:name"`
+	Description                string `gorm:"column:description"`
+	ProjectKey                 string `gorm:"column:project_key"`
+	RequestTypeID              string `gorm:"column:request_type_id"`
+	IssueTransitionNameOnClose string `gorm:"column:issue_transition_name_on_close"`
+	// SkipTransitionOnNonZeroExitCode, when enabled, prevents transitioning the
+	// issue on session close if the session finished with a non-zero exit code.
+	SkipTransitionOnNonZeroExitCode bool           `gorm:"column:skip_transition_on_nonzero_exit_code"`
+	MappingTypes                    map[string]any `gorm:"column:mapping_types;serializer:json"`
+	PromptTypes                     map[string]any `gorm:"column:prompt_types;serializer:json"`
+	CmdbTypes                       map[string]any `gorm:"column:cmdb_types;serializer:json"`
+	ConnectionIDs                   pq.StringArray `gorm:"column:connection_ids;type:text[];->"`
+	CreatedAt                       time.Time      `gorm:"column:created_at"`
+	UpdatedAt                       time.Time      `gorm:"column:updated_at"`
 }
 
 type MappingType struct {
@@ -153,15 +156,21 @@ func UpdateJiraIssueTemplates(issue *JiraIssueTemplate) error {
 		res := tx.Table(tableJiraIssueTemplates).
 			Model(issue).
 			Clauses(clause.Returning{}).
+			// Select the columns explicitly so zero values (e.g. a false
+			// skip_transition_on_nonzero_exit_code) are persisted instead of
+			// being skipped by gorm's struct-based Updates.
+			Select("description", "project_key", "request_type_id", "issue_transition_name_on_close",
+				"skip_transition_on_nonzero_exit_code", "mapping_types", "prompt_types", "cmdb_types", "updated_at").
 			Updates(JiraIssueTemplate{
-				Description:                issue.Description,
-				ProjectKey:                 issue.ProjectKey,
-				RequestTypeID:              issue.RequestTypeID,
-				IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
-				MappingTypes:               issue.MappingTypes,
-				PromptTypes:                issue.PromptTypes,
-				CmdbTypes:                  issue.CmdbTypes,
-				UpdatedAt:                  issue.UpdatedAt,
+				Description:                     issue.Description,
+				ProjectKey:                      issue.ProjectKey,
+				RequestTypeID:                   issue.RequestTypeID,
+				IssueTransitionNameOnClose:      issue.IssueTransitionNameOnClose,
+				SkipTransitionOnNonZeroExitCode: issue.SkipTransitionOnNonZeroExitCode,
+				MappingTypes:                    issue.MappingTypes,
+				PromptTypes:                     issue.PromptTypes,
+				CmdbTypes:                       issue.CmdbTypes,
+				UpdatedAt:                       issue.UpdatedAt,
 			}).
 			Where("org_id = ? AND id = ?", issue.OrgID, issue.ID)
 		if res.Error == nil && res.RowsAffected == 0 {
@@ -183,7 +192,8 @@ func GetJiraIssueTemplatesByID(orgID, id string) (*JiraIssueTemplate, *JiraInteg
 	err = DB.Raw(`
 		SELECT
 			i.id, i.org_id, i.jira_integration_id, i.name, i.description, i.project_key, i.request_type_id,
-			i.issue_transition_name_on_close, i.mapping_types, i.prompt_types, i.cmdb_types, i.updated_at, i.created_at,
+			i.issue_transition_name_on_close, i.skip_transition_on_nonzero_exit_code,
+			i.mapping_types, i.prompt_types, i.cmdb_types, i.updated_at, i.created_at,
 			COALESCE((
 				SELECT array_agg(id::TEXT) FROM private.connections
 				WHERE private.connections.jira_issue_template_id = i.id
@@ -207,7 +217,8 @@ func ListJiraIssueTemplates(orgID string) ([]*JiraIssueTemplate, error) {
 	return issues, DB.Raw(`
 		SELECT
 			i.id, i.org_id, i.jira_integration_id, i.name, i.description, i.project_key, i.request_type_id,
-			i.issue_transition_name_on_close, i.mapping_types, i.prompt_types, i.cmdb_types, i.updated_at, i.created_at,
+			i.issue_transition_name_on_close, i.skip_transition_on_nonzero_exit_code,
+			i.mapping_types, i.prompt_types, i.cmdb_types, i.updated_at, i.created_at,
 			COALESCE((
 				SELECT array_agg(id::TEXT) FROM private.connections
 				WHERE private.connections.jira_issue_template_id = i.id

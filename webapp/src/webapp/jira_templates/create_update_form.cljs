@@ -49,7 +49,9 @@
 
          [workflow-info/main
           {:status (:issue_transition_name_on_close state)
-           :on-status-change #(reset! (:issue_transition_name_on_close state) %)}]
+           :on-status-change #(reset! (:issue_transition_name_on_close state) %)
+           :skip-transition-on-nonzero-exit-code (:skip_transition_on_nonzero_exit_code state)
+           :on-skip-transition-change #(reset! (:skip_transition_on_nonzero_exit_code state) %)}]
 
          ;; Connections section
          [connections-section/main

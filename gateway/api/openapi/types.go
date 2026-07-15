@@ -1415,6 +1415,9 @@ type JiraIssueTemplate struct {
 	// The name of the issue transition to change the state of the issue
 	// when the session closes
 	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" example:"done"`
+	// When enabled, the issue transition is skipped if the session
+	// finishes with a non-zero exit code
+	SkipTransitionOnNonZeroExitCode bool `json:"skip_transition_on_nonzero_exit_code"`
 	// The request type id that will be associated to the issue
 	RequestTypeID string         `json:"request_type_id"`
 	MappingTypes  map[string]any `json:"mapping_types"`
@@ -1440,6 +1443,9 @@ type JiraIssueTemplateRequest struct {
 	// The name of the issue transition to change the state of the issue
 	// when the session closes
 	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" default:"done"`
+	// When enabled, the issue transition is skipped if the session
+	// finishes with a non-zero exit code
+	SkipTransitionOnNonZeroExitCode bool `json:"skip_transition_on_nonzero_exit_code"`
 	// The automated fields that will be sent when creating the issue.
 	// There're two types
 	// - preset: obtain the value from a list of available fields that could be propagated

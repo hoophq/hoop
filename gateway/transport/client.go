@@ -263,9 +263,10 @@ func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 		ConnectionSubType:                   pctx.ConnectionSubType,
 		ConnectionEnvs:                      pctx.ConnectionSecret,
 		ConnectionJiraTransitionNameOnClose: pctx.ConnectionJiraTransitionNameOnClose,
-		ConnectionReviewers:                 pctx.ConnectionReviewers,
-		UserEmail:                           pctx.UserEmail,
-		Verb:                                pctx.ClientVerb,
+		ConnectionJiraSkipTransitionOnNonZeroExitCode: pctx.ConnectionJiraSkipTransitionOnNonZeroExitCode,
+		ConnectionReviewers:                           pctx.ConnectionReviewers,
+		UserEmail:                                     pctx.UserEmail,
+		Verb:                                          pctx.ClientVerb,
 	}
 
 	return transportext.OnReceive(extContext, pkt)

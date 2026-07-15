@@ -87,6 +87,7 @@
    :project_key (r/atom (or (:project_key initial-data) ""))
    :request_type_id (r/atom (or (:request_type_id initial-data) ""))
    :issue_transition_name_on_close (r/atom (or (:issue_transition_name_on_close initial-data) ""))
+   :skip_transition_on_nonzero_exit_code (r/atom (boolean (:skip_transition_on_nonzero_exit_code initial-data)))
    :connection_ids (r/atom (or (:connection_ids initial-data) []))
    :mapping (r/atom (format-mapping-rules (get-in initial-data [:mapping_types :items])))
    :prompts (r/atom (format-prompts (get-in initial-data [:prompt_types :items])))
@@ -232,6 +233,7 @@
    :project_key @(:project_key state)
    :request_type_id @(:request_type_id state)
    :issue_transition_name_on_close @(:issue_transition_name_on_close state)
+   :skip_transition_on_nonzero_exit_code @(:skip_transition_on_nonzero_exit_code state)
    :connection_ids @(:connection_ids state)
    :mapping_types {:items (vec (remove-empty-mapping @(:mapping state)))}
    :prompt_types {:items (vec (remove-empty-prompts @(:prompts state)))}

@@ -59,7 +59,11 @@ type Context struct {
 	ConnectionSecret                    map[string]any
 	ConnectionTags                      map[string]string
 	ConnectionJiraTransitionNameOnClose string
-	ConnectionReviewers                 []string
+	// ConnectionJiraSkipTransitionOnNonZeroExitCode, when enabled, prevents
+	// transitioning the jira issue on session close if the session finished
+	// with a non-zero exit code.
+	ConnectionJiraSkipTransitionOnNonZeroExitCode bool
+	ConnectionReviewers                           []string
 
 	// Agent attributes
 	AgentID   string

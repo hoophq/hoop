@@ -105,8 +105,9 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			ConnectionSubType:                   proxyStream.PluginContext().ConnectionSubType,
 			ConnectionEnvs:                      proxyStream.PluginContext().ConnectionSecret,
 			ConnectionJiraTransitionNameOnClose: proxyStream.PluginContext().ConnectionJiraTransitionNameOnClose,
-			UserEmail:                           proxyStream.PluginContext().UserEmail,
-			Verb:                                proxyStream.PluginContext().ClientVerb,
+			ConnectionJiraSkipTransitionOnNonZeroExitCode: proxyStream.PluginContext().ConnectionJiraSkipTransitionOnNonZeroExitCode,
+			UserEmail: proxyStream.PluginContext().UserEmail,
+			Verb:      proxyStream.PluginContext().ClientVerb,
 		}
 
 		if err := transportext.OnReceive(extContext, pkt); err != nil {

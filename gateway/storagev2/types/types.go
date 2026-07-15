@@ -92,4 +92,7 @@ type ConnectionInfo struct {
 	AccessSchema                     string
 	Reviewers                        []string
 	JiraTransitionNameOnSessionClose string
+	// JiraSkipTransitionOnNonZeroExitCode, when enabled, prevents transitioning
+	// the issue on session close if the session finished with a non-zero exit code.
+	JiraSkipTransitionOnNonZeroExitCode bool
 }
