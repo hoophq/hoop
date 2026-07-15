@@ -636,13 +636,44 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Wait for response with shorter timeout
-	httpTimeout := 60 * time.Second
+	// Wait for the first response packet from the agent. Non-streaming LLM
+	// calls (e.g. Anthropic/Vertex rawPredict) only produce headers after the
+	// full completion is generated, which routinely exceeds a minute, so this
+	// must be generous. The agent's transport enforces a ResponseHeaderTimeout
+	// slightly above this value as the backstop for when the close
+	// notification below never reaches it. An upstream failure on the agent
+	// side unblocks this wait immediately: the agent sends TCPConnectionClose,
+	// which closes responseChan.
+	const responseWaitTimeout = 5 * time.Minute
+
+	// The wait can outlast the server's absolute WriteTimeout (armed when the
+	// request was read), which would fail every write below with an i/o
+	// timeout. Push the connection write deadline past the wait window; the
+	// buffered/SSE writers take over and roll it forward per chunk from there.
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(responseWaitTimeout + 30*time.Second)); err != nil {
+		log.Debugf("could not extend write deadline for response wait, sid=%s, conn=%s: %v", sess.sid, connectionID, err)
+	}
+
+	// Explicit timer instead of time.After so the 5-minute timer is released
+	// deterministically when another case wins instead of lingering in the
+	// runtime timer heap until GC. No drain after Stop: timer channels are
+	// unbuffered since Go 1.23.
+	waitTimer := time.NewTimer(responseWaitTimeout)
+	defer waitTimer.Stop()
+
 	select {
 	case <-sess.ctx.Done():
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
-	case <-time.After(httpTimeout):
+	case <-r.Context().Done():
+		// The client went away while we were waiting (disconnect/abort), so
+		// nobody is left to receive the response. Tell the agent to abandon
+		// the upstream request; otherwise this wait would hold the handler
+		// goroutine and the upstream connection for the full timeout.
+		log.Infof("client disconnected while waiting for response, sid=%s, conn=%s", sess.sid, connectionID)
+		sess.notifyAgentConnectionClose(connectionID)
+		return
+	case <-waitTimer.C:
 		sess.notifyAgentConnectionClose(connectionID)
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 		return
