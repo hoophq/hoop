@@ -1,0 +1,4 @@
+/* Replace / Restore read as a quiet inline action, not a bold button. */
+.label {
+  font-weight: 400;
+}

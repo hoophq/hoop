@@ -1,0 +1,66 @@
+/* The picker carries the seam border (input drops its left) so the two
+ * components meet at one shared edge. Base values target Mantine's `sm`
+ * input; data-size selectors override per-size to track --input-height-*. */
+.pickerSibling {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-sm);
+  min-height: var(--input-height-sm);
+  background: var(--mantine-color-gray-0);
+  color: var(--mantine-color-text);
+  border: 1px solid var(--mantine-color-gray-4);
+  border-right: 0;
+  border-top-left-radius: var(--mantine-radius-sm);
+  border-bottom-left-radius: var(--mantine-radius-sm);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  font-size: var(--mantine-font-size-sm);
+  transition: background-color 100ms ease, border-color 100ms ease;
+}
+
+.pickerSibling[data-size='xs'] {
+  min-height: var(--input-height-xs);
+  padding: 0 var(--mantine-spacing-xs);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.pickerSibling[data-size='md'] {
+  min-height: var(--input-height-md);
+  padding: 0 var(--mantine-spacing-sm);
+  font-size: var(--mantine-font-size-sm);
+}
+
+.pickerSibling[data-size='lg'] {
+  min-height: var(--input-height-lg);
+  padding: 0 var(--mantine-spacing-md);
+  font-size: var(--mantine-font-size-md);
+}
+
+.pickerSibling[data-size='xl'] {
+  min-height: var(--input-height-xl);
+  padding: 0 var(--mantine-spacing-md);
+  font-size: var(--mantine-font-size-md);
+}
+
+.pickerSibling:hover {
+  background: var(--mantine-color-gray-1);
+  border-color: var(--mantine-color-gray-5);
+}
+
+.pickerSibling:focus-visible {
+  outline: 0;
+  border-color: var(--mantine-color-indigo-6);
+  box-shadow: -1px 0 0 0 var(--mantine-color-indigo-6);
+}
+
+.pickerSibling:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.inputSibling {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}

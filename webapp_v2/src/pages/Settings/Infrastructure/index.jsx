@@ -8,14 +8,15 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
 import { BarChart3, EyeOff, ShieldOff } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import SelectionCard from '@/components/SelectionCard'
-import infrastructure from '@/services/infrastructure'
+import Switch from '@/components/Switch'
 import { docsUrl } from '@/utils/docsUrl'
+import { showSnackbar } from '@/utils/snackbar'
+import { useInfrastructureStore } from './store'
 
 const ANALYTICS_OPTIONS = [
   {
@@ -42,6 +43,7 @@ const ANALYTICS_OPTIONS = [
 
 const EMPTY_FORM = {
   analyticsMode: '',
+  hideRoleInfo: false,
   grpcUrl: '',
   postgresPort: '',
   sshPort: '',
@@ -85,19 +87,19 @@ function SectionRow({ title, description, callout, children }) {
 
 function SettingsInfrastructure() {
   const [form, setForm] = useState(EMPTY_FORM)
-  const [initialAnalyticsMode, setInitialAnalyticsMode] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const loading = useInfrastructureStore((s) => s.loading)
+  const saving = useInfrastructureStore((s) => s.saving)
+  const load = useInfrastructureStore((s) => s.load)
+  const save = useInfrastructureStore((s) => s.save)
 
   const showLoader = useMinDelay(loading)
 
   useEffect(() => {
-    Promise.all([infrastructure.get(), infrastructure.getAnalyticsMode()])
-      .then(([misc, analytics]) => {
-        const mode = analytics?.analytics_mode ?? ''
-        setInitialAnalyticsMode(mode)
+    load()
+      .then(({ misc, analyticsMode, hideRoleInfo }) => {
         setForm({
-          analyticsMode: mode,
+          analyticsMode,
+          hideRoleInfo,
           grpcUrl: misc.grpc_server_url ?? '',
           postgresPort: extractPort(misc.postgres_server_config?.listen_address),
           sshPort: extractPort(misc.ssh_server_config?.listen_address),
@@ -106,41 +108,33 @@ function SettingsInfrastructure() {
         })
       })
       .catch(() => {
-        notifications.show({
-          color: 'red',
-          title: 'Error',
-          message: 'Failed to load infrastructure configuration',
+        showSnackbar({
+          level: 'error',
+          text: 'Failed to load infrastructure configuration',
         })
       })
-      .finally(() => setLoading(false))
-  }, [])
+  }, [load])
 
   function setField(field) {
     return (value) => setForm((prev) => ({ ...prev, [field]: value }))
   }
 
   async function handleSave() {
-    setSaving(true)
     try {
-      const requests = [infrastructure.update(buildMiscPayload(form))]
-      if (form.analyticsMode && form.analyticsMode !== initialAnalyticsMode) {
-        requests.push(infrastructure.updateAnalyticsMode(form.analyticsMode))
-      }
-      await Promise.all(requests)
-      setInitialAnalyticsMode(form.analyticsMode)
-      notifications.show({
-        color: 'green',
-        title: 'Saved',
-        message: 'Infrastructure configuration saved successfully!',
+      await save({
+        miscPayload: buildMiscPayload(form),
+        analyticsMode: form.analyticsMode,
+        hideRoleInfo: form.hideRoleInfo,
+      })
+      showSnackbar({
+        level: 'success',
+        text: 'Infrastructure configuration saved successfully!',
       })
     } catch {
-      notifications.show({
-        color: 'red',
-        title: 'Error',
-        message: 'Failed to save infrastructure configuration',
+      showSnackbar({
+        level: 'error',
+        text: 'Failed to save infrastructure configuration',
       })
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -172,6 +166,17 @@ function SettingsInfrastructure() {
               />
             ))}
           </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="Block reading secrets"
+          description="When enabled, connection and role secret values (environment variables) are no longer returned by the API. Existing secrets can be replaced but never read back. Secrets Manager and AWS IAM Role references stay visible and editable."
+        >
+          <Switch
+            label={form.hideRoleInfo ? 'Enabled' : 'Disabled'}
+            checked={form.hideRoleInfo}
+            onChange={(e) => setField('hideRoleInfo')(e.currentTarget.checked)}
+          />
         </SectionRow>
 
         <SectionRow

@@ -1,6 +1,6 @@
-import { createTheme, rem } from '@mantine/core'
-import { SpotlightTheme } from '@/components/Spotlight/theme'
-import { AppShellTheme } from '@/components/AppShell/theme'
+import { createTheme, rem } from '@mantine/core';
+import { SpotlightTheme } from '@/components/Spotlight/theme';
+import { AppShellTheme } from '@/components/AppShell/theme';
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -20,15 +20,15 @@ export function cssVariablesResolver() {
     variables: {
       '--sidebar-bg': '#182449',
       '--sidebar-border': 'rgba(255, 255, 255, 0.1)',
-      // slate11/12 are not in the gray array — wired here as semantic tokens.
-      '--mantine-color-body': '#fcfcfd',   // slate1  — page background (Mantine default is #fff)
-      '--mantine-color-text': '#1c2024',   // slate12 — body text, headings
-      '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
-      '--mantine-color-placeholder': '#b9bbc6' // slate8 — placeholder text
+      // gray[8] and gray[9] are not typical palette picks — wired here as semantic tokens.
+      '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f8f9fa is too tinted for body)
+      '--mantine-color-text': '#212529', // gray[9]  — body text, headings
+      '--mantine-color-dimmed': '#343a40', // gray[8]  — secondary text, icons
+      '--mantine-color-placeholder': '#868e96' // gray[6] — placeholder text
     },
     light: {},
     dark: {}
-  }
+  };
 }
 
 export const theme = createTheme({
@@ -60,16 +60,16 @@ export const theme = createTheme({
     //   --mantine-color-dimmed → slate11   (secondary text, icons, placeholders)
     //   --mantine-color-text   → slate12   (body text, headings)
     gray: [
-      '#fcfcfd', // slate1  — app background
-      '#f9f9fb', // slate2  — subtle background
-      '#f0f0f3', // slate3  — hovered background
-      '#e8e8ec', // slate4  — selected/active background
-      '#e0e1e6', // slate5  — subtle border
-      '#d9d9e0', // slate6  — border
-      '#cdced6', // slate7  — hovered border
-      '#b9bbc6', // slate8  — solid/contrast fills
-      '#8b8d98', // slate9  — tertiary icons, disabled text
-      '#82838e' // slate10 — secondary icons
+      '#f8f9fa', // 0 — app background
+      '#f1f3f5', // 1 — subtle background
+      '#e9ecef', // 2 — hovered background
+      '#dee2e6', // 3 — selected/active background
+      '#ced4da', // 4 — subtle border
+      '#adb5bd', // 5 — border
+      '#868e96', // 6 — hovered border / placeholder
+      '#495057', // 7 — solid/contrast fills
+      '#343a40', // 8 — secondary text, icons
+      '#212529' // 9 — body text, headings
     ],
 
     // Radix Green — success / positive feedback
@@ -181,4 +181,4 @@ export const theme = createTheme({
     Spotlight: SpotlightTheme,
     AppShell: AppShellTheme
   }
-})
+});

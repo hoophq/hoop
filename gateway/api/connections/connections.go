@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -69,6 +70,13 @@ func Post(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
+	envs := CoerceToMapString(req.Secrets)
+	var secretsUpdatedAt *time.Time
+	if len(envs) > 0 {
+		now := time.Now().UTC()
+		secretsUpdatedAt = &now
+	}
+
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                      req.ID,
 		OrgID:                   ctx.OrgID,
@@ -78,7 +86,7 @@ func Post(c *gin.Context) {
 		Command:                 req.Command,
 		Type:                    req.Type,
 		SubType:                 sql.NullString{String: req.SubType, Valid: true},
-		Envs:                    CoerceToMapString(req.Secrets),
+		Envs:                    envs,
 		Status:                  req.Status,
 		ManagedBy:               sql.NullString{},
 		Tags:                    req.Tags,
@@ -95,6 +103,7 @@ func Post(c *gin.Context) {
 		AccessMaxDuration:       req.AccessMaxDuration,
 		MinReviewApprovals:      req.MinReviewApprovals,
 		MandatoryMetadataFields: req.MandatoryMetadataFields,
+		SecretsUpdatedAt:        secretsUpdatedAt,
 	})
 
 	if err != nil {
@@ -113,7 +122,7 @@ func Post(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusCreated, ToOpenApi(resp))
+	c.JSON(http.StatusCreated, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
 // Put Connection
@@ -165,6 +174,24 @@ func Put(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
+	// PUT keeps replace-the-whole-map semantics for legacy clients. Track the
+	// timestamp only when the resulting envs actually differ from what we had.
+	var newEnvs map[string]string
+	// When the org blocks reading role secrets, the client receives masked
+	// envvars and cannot round-trip them. Overlay the incoming values onto
+	// the stored ones so only the fields that are not empty are updated.
+	if ctx.OrgHideRoleInfo {
+		updatedEnvs := CoerceToMapNullableString(req.Secrets)
+		newEnvs = overlaySecrets(conn.Envs, updatedEnvs)
+	} else {
+		newEnvs = CoerceToMapString(req.Secrets)
+	}
+	secretsUpdatedAt := conn.SecretsUpdatedAt
+	if !envsEqual(conn.Envs, newEnvs) {
+		now := time.Now().UTC()
+		secretsUpdatedAt = &now
+	}
+
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                      conn.ID,
 		OrgID:                   conn.OrgID,
@@ -174,7 +201,7 @@ func Put(c *gin.Context) {
 		Command:                 req.Command,
 		Type:                    req.Type,
 		SubType:                 sql.NullString{String: req.SubType, Valid: true},
-		Envs:                    CoerceToMapString(req.Secrets),
+		Envs:                    newEnvs,
 		Status:                  req.Status,
 		ManagedBy:               sql.NullString{},
 		Tags:                    req.Tags,
@@ -191,6 +218,7 @@ func Put(c *gin.Context) {
 		AccessMaxDuration:       req.AccessMaxDuration,
 		MinReviewApprovals:      req.MinReviewApprovals,
 		MandatoryMetadataFields: req.MandatoryMetadataFields,
+		SecretsUpdatedAt:        secretsUpdatedAt,
 	})
 
 	if err != nil {
@@ -214,7 +242,7 @@ func Put(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
 // Patch Connection
@@ -270,7 +298,18 @@ func Patch(c *gin.Context) {
 		conn.SubType = sql.NullString{String: *req.SubType, Valid: *req.SubType != ""}
 	}
 	if req.Secrets != nil {
-		conn.Envs = CoerceToMapString(*req.Secrets)
+		var secrets map[string]string
+		if ctx.OrgHideRoleInfo {
+			updatedEnvs := CoerceToMapNullableString(*req.Secrets)
+			secrets = overlaySecrets(conn.Envs, updatedEnvs)
+		} else {
+			secrets = CoerceToMapString(*req.Secrets)
+		}
+
+		conn.Envs = secrets
+
+		now := time.Now().UTC()
+		conn.SecretsUpdatedAt = &now
 	}
 	if req.AgentId != nil {
 		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
@@ -340,7 +379,7 @@ func Patch(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp))
+	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
 // DeleteConnection
@@ -440,7 +479,7 @@ func List(c *gin.Context) {
 			// it should return empty to avoid leaking sensitive content
 			// in the future we plan to know which entry is sensitive or not
 			conn.Envs = map[string]string{}
-			responseConnList[i] = ToOpenApi(&conn)
+			responseConnList[i] = ToOpenApi(&conn, ctx.OrgHideRoleInfo)
 		}
 
 		response := openapi.PaginatedResponse[openapi.Connection]{
@@ -467,7 +506,7 @@ func List(c *gin.Context) {
 		// it should return empty to avoid leaking sensitive content
 		// in the future we plan to know which entry is sensitive or not
 		conn.Envs = map[string]string{}
-		responseConnList = append(responseConnList, ToOpenApi(&conn))
+		responseConnList = append(responseConnList, ToOpenApi(&conn, ctx.OrgHideRoleInfo))
 
 	}
 	c.JSON(http.StatusOK, responseConnList)
@@ -495,7 +534,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	apiConn := ToOpenApi(conn)
+	apiConn := ToOpenApi(conn, ctx.OrgHideRoleInfo)
 	if orgID, err := uuid.Parse(ctx.OrgID); err == nil {
 		if rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit"); err == nil && rule != nil {
 			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
@@ -504,14 +543,27 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, apiConn)
 }
 
-func ToOpenApi(conn *models.Connection) openapi.Connection {
+func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 	var managedBy *string
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
 	}
-	defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
-	if len(defaultDB) == 0 {
-		defaultDB = []byte(``)
+	// default_database is derived from the secret env map (envvar:DB), so it
+	// is subject to the same write-only policy as Secrets: returning it while
+	// the map is masked would be a read-back path for an inline secret value.
+	var defaultDB []byte
+	if !hideRoleInfo {
+		defaultDB, _ = base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+		if len(defaultDB) == 0 {
+			defaultDB = []byte(``)
+		}
+	}
+
+	var publicEnvs map[string]any
+	if hideRoleInfo {
+		publicEnvs = stripInlineSecrets(conn.Envs)
+	} else {
+		publicEnvs = coerceToAnyMap(conn.Envs)
 	}
 
 	return openapi.Connection{
@@ -521,7 +573,7 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		Command:                 conn.Command,
 		Type:                    conn.Type,
 		SubType:                 conn.SubType.String,
-		Secrets:                 coerceToAnyMap(conn.Envs),
+		Secrets:                 publicEnvs,
 		DefaultDatabase:         string(defaultDB),
 		AgentId:                 conn.AgentID.String,
 		Status:                  conn.Status,
@@ -542,6 +594,7 @@ func ToOpenApi(conn *models.Connection) openapi.Connection {
 		MinReviewApprovals:      conn.MinReviewApprovals,
 		MandatoryMetadataFields: conn.MandatoryMetadataFields,
 		Attributes:              conn.Attributes,
+		SecretsUpdatedAt:        conn.SecretsUpdatedAt,
 	}
 }
 

@@ -63,6 +63,9 @@ type Connection struct {
 	AccessMaxDuration  *int           `gorm:"column:access_max_duration"`
 	MinReviewApprovals *int           `gorm:"column:min_review_approvals"`
 
+	// Secrets metadata
+	SecretsUpdatedAt *time.Time `gorm:"column:secrets_updated_at"`
+
 	// Read Only fields
 	RedactEnabled             bool           `gorm:"column:redact_enabled;->"`
 	Reviewers                 pq.StringArray `gorm:"column:reviewers;type:text[];->"`
@@ -128,6 +131,71 @@ type ConnectionJiraIssueTemplateTypes struct {
 	IssueTemplatesPromptTypes  []byte `gorm:"column:prompt_types;->"`
 }
 
+// resolveSecretsUpdatedAt loads the prior connection state from `tx` and
+// delegates the decision to the pure computeSecretsUpdatedAt helper.
+func resolveSecretsUpdatedAt(tx *gorm.DB, c *Connection) (*time.Time, error) {
+	var prevRow struct {
+		SecretsUpdatedAt *time.Time `gorm:"column:secrets_updated_at"`
+	}
+	err := tx.Table(tableConnections).
+		Select("secrets_updated_at").
+		Where("org_id = ? AND id = ?", c.OrgID, c.ID).
+		First(&prevRow).Error
+	isInsert := errors.Is(err, gorm.ErrRecordNotFound)
+	if !isInsert && err != nil {
+		return nil, fmt.Errorf("failed loading previous connection state, reason=%v", err)
+	}
+
+	var prevEnvs map[string]string
+	if !isInsert {
+		var prevEnvRow EnvVars
+		envErr := tx.Table("private.env_vars").
+			Where("org_id = ? AND id = ?", c.OrgID, c.ID).
+			First(&prevEnvRow).Error
+		if envErr != nil && !errors.Is(envErr, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed loading previous env vars, reason=%v", envErr)
+		}
+		prevEnvs = prevEnvRow.Envs
+	}
+
+	now := time.Now().UTC()
+	return computeSecretsUpdatedAt(isInsert, prevRow.SecretsUpdatedAt, prevEnvs, c.Envs, now), nil
+}
+
+// computeSecretsUpdatedAt is the pure stamping rule. Insert with envs →
+// stamp; update with unchanged or empty envs → preserve prev (so GORM
+// Save doesn't blank a previously-set value); update with changed envs
+// → stamp.
+func computeSecretsUpdatedAt(isInsert bool, prev *time.Time, prevEnvs, nextEnvs map[string]string, now time.Time) *time.Time {
+	if isInsert {
+		if len(nextEnvs) > 0 {
+			return &now
+		}
+		return nil
+	}
+	if len(nextEnvs) == 0 {
+		return prev
+	}
+	if envsMapEqual(prevEnvs, nextEnvs) {
+		return prev
+	}
+	return &now
+}
+
+// envsMapEqual mirrors apiconnections.envsEqual; duplicated because the
+// model package can't import the api package.
+func envsMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if other, ok := b[k]; !ok || other != v {
+			return false
+		}
+	}
+	return true
+}
+
 func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 	if c.JiraIssueTemplateID.String == "" {
 		c.JiraIssueTemplateID.Valid = false
@@ -168,6 +236,18 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 			if err != nil {
 				return fmt.Errorf("failed upserting resource, reason=%v", err)
 			}
+		}
+
+		// Centralized stamping so every caller (HTTP /connections,
+		// /resources, AWS provisioner, MCP, agent sync) gets it right.
+		// Without this, GORM Save would overwrite a previously-set
+		// timestamp with NULL whenever a caller forgot to populate it.
+		if c.SecretsUpdatedAt == nil {
+			stamp, err := resolveSecretsUpdatedAt(tx, c)
+			if err != nil {
+				return err
+			}
+			c.SecretsUpdatedAt = stamp
 		}
 
 		err = tx.Table(tableConnections).
@@ -287,6 +367,14 @@ func UpsertBatchConnections(db *gorm.DB, connections []*Connection) error {
 		connections[i].ID = connID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			connections[i].ID = uuid.NewString()
+		}
+
+		if c.SecretsUpdatedAt == nil {
+			stamp, err := resolveSecretsUpdatedAt(db, c)
+			if err != nil {
+				return err
+			}
+			c.SecretsUpdatedAt = stamp
 		}
 
 		err = db.Table(tableConnections).
@@ -458,7 +546,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
-		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.secrets_updated_at,
 		COALESCE(it.skip_transition_on_nonzero_exit_code, FALSE) AS skip_transition_on_nonzero_exit_code,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
@@ -572,7 +660,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
-		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals,
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals, c.secrets_updated_at,
 		COALESCE(it.skip_transition_on_nonzero_exit_code, FALSE) AS skip_transition_on_nonzero_exit_code, 
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,

@@ -88,3 +88,59 @@ func UpdateOrgAnalyticsMode(c *gin.Context) {
 		AnalyticsMode: openapi.AnalyticsModeType(mode),
 	})
 }
+
+// GetOrgHideRoleInfo
+//
+//	@Summary		Get Organization Hide Role Info
+//	@Description	Get whether the caller's organization blocks reading connection/role secrets (envvars) through the API
+//	@Tags			Server Management
+//	@Produce		json
+//	@Success		200	{object}	openapi.OrgHideRoleInfoResponse
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/orgs/hide-role-info [get]
+func GetOrgHideRoleInfo(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "organization not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to load organization: %v", err)
+		return
+	}
+	c.JSON(http.StatusOK, openapi.OrgHideRoleInfoResponse{
+		HideRoleInfo: org.HideRoleInfo,
+	})
+}
+
+// UpdateOrgHideRoleInfo
+//
+//	@Summary		Update Organization Hide Role Info
+//	@Description	Toggle whether the caller's organization blocks reading connection/role secrets (envvars) through the API
+//	@Tags			Server Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openapi.OrgHideRoleInfoRequest	true	"The new hide role info setting"
+//	@Success		200		{object}	openapi.OrgHideRoleInfoResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/orgs/hide-role-info [put]
+func UpdateOrgHideRoleInfo(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.OrgHideRoleInfoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	if err := models.UpdateOrgHideRoleInfo(models.DB, ctx.OrgID, *req.HideRoleInfo); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "organization not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update hide role info: %v", err)
+		return
+	}
+	c.JSON(http.StatusOK, openapi.OrgHideRoleInfoResponse{
+		HideRoleInfo: *req.HideRoleInfo,
+	})
+}

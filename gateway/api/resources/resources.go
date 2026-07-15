@@ -269,7 +269,7 @@ func ListResources(c *gin.Context) {
 		if conns, ok := connsByResource[r.Name]; ok {
 			roles := make([]openapi.Connection, len(conns))
 			for j, conn := range conns {
-				roles[j] = apiconnections.ToOpenApi(&conn)
+				roles[j] = apiconnections.ToOpenApi(&conn, ctx.OrgHideRoleInfo)
 			}
 			item.Roles = roles
 		}

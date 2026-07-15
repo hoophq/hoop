@@ -5354,6 +5354,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/hide-role-info": {
+            "get": {
+                "description": "Get whether the caller's organization blocks reading connection/role secrets (envvars) through the API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Hide Role Info",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgHideRoleInfoResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Toggle whether the caller's organization blocks reading connection/role secrets (envvars) through the API",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Organization Hide Role Info",
+                "parameters": [
+                    {
+                        "description": "The new hide role info setting",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgHideRoleInfoRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgHideRoleInfoResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/orgs/invitations": {
             "post": {
                 "description": "Accept or decline a pending organization invitation. On accept, the current user is migrated to the invited org and the old auto-created org is removed if empty. On decline, the invitation is dismissed permanently.",
@@ -11680,6 +11756,12 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "secrets_updated_at": {
+                    "description": "SecretsUpdatedAt is the timestamp of the last replacement of any inline\nsecret value for this connection. Null when no inline secret has been\nmodified since the write-only secrets feature was introduced. References\nto external providers (AWS Secrets Manager, Vault, IAM RDS) do not\naffect this field.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2025-01-15T10:30:00Z"
+                },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
                     "type": "string",
@@ -14003,6 +14085,27 @@ const docTemplate = `{
                         }
                     ],
                     "example": "identified"
+                }
+            }
+        },
+        "openapi.OrgHideRoleInfoRequest": {
+            "type": "object",
+            "required": [
+                "hide_role_info"
+            ],
+            "properties": {
+                "hide_role_info": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "openapi.OrgHideRoleInfoResponse": {
+            "type": "object",
+            "properties": {
+                "hide_role_info": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
