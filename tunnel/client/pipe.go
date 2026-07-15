@@ -17,12 +17,15 @@
 //	     plugin pipeline treats this stream as a plain `hoop connect`
 //	     session.
 //	  2. Sends pbagent.SessionOpen and waits for pbclient.SessionOpenOK.
-//	  3. Sends the initial pbagent.TCPConnectionWrite with
-//	     SpecTCPServerConnectKey to ask the agent to open its upstream
-//	     TCP socket.
-//	  4. Pumps bytes in both directions until either side closes:
-//	      local -> gateway via pbagent.TCPConnectionWrite packets
-//	      gateway -> local via pbclient.TCPConnectionWrite packets
+//	  3. For TCP-style connections, sends the initial
+//	     pbagent.TCPConnectionWrite with SpecTCPServerConnectKey to ask
+//	     the agent to open its upstream TCP socket. httpproxy
+//	     connections skip this step: the agent builds its HTTP proxy
+//	     lazily on the first data packet.
+//	  4. Pumps bytes in both directions until either side closes, using
+//	     the packet family for the connection type (see packetProfile):
+//	      local -> gateway via pbagent.{TCP,HttpProxy}ConnectionWrite
+//	      gateway -> local via pbclient.{TCP,HttpProxy}ConnectionWrite
 //	  5. On any termination, sends pbagent.TCPConnectionClose and tears
 //	     down the gRPC stream.
 //
@@ -67,6 +70,14 @@ type PipeOptions struct {
 	// gateway should route this stream to. Sent both as a gRPC metadata
 	// header and as the verb spec on SessionOpen.
 	ConnectionName string
+
+	// HttpProxyBaseURL is the URL clients use to reach this connection
+	// through the tunnel (e.g. "http://api-prod.hoop"). Only consumed
+	// when the session resolves to an httpproxy connection: libhoop
+	// rewrites absolute URLs / Location headers in upstream responses
+	// so redirects keep pointing at the proxy. Optional for TCP-style
+	// connections.
+	HttpProxyBaseURL string
 
 	// CorrelationID is an optional opaque ID the caller may set so logs
 	// on the gateway can be tied back to a single tunnel session.
@@ -159,18 +170,65 @@ func runPipe(ctx context.Context, transport pb.ClientTransport, local io.ReadWri
 		return err
 	}
 
-	// We only support TCP-style protocols on the tunnel. SSH, terminals,
-	// kubernetes/http proxies, etc. need protocol-specific clients and
-	// have no place in a transparent IP tunnel.
-	if !isTunnelableType(connType) {
-		return fmt.Errorf("connection %q has type %q which is not tunnelable; supported: postgres, mysql, mssql, mongodb, tcp",
+	// We only support connection types whose wire format is an opaque
+	// byte stream from the tunnel's point of view: TCP-style protocols
+	// and httpproxy (plain HTTP bytes; the agent parses and forwards
+	// them). SSH, terminals, kubernetes, etc. need protocol-specific
+	// clients and have no place in a transparent IP tunnel.
+	prof, ok := profileFor(connType)
+	if !ok {
+		return fmt.Errorf("connection %q has type %q which is not tunnelable; supported: postgres, mysql, mssql, mongodb, oracledb, tcp, httpproxy",
 			opts.ConnectionName, connType)
 	}
 
 	log.With("connection", opts.ConnectionName, "session", sessionID, "type", connType).
 		Debugf("tunnel pipe established")
 
-	return pumpBytes(ctx, transport, local, sessionID)
+	return pumpBytes(ctx, transport, local, sessionID, prof, opts)
+}
+
+// packetProfile captures how a connection type maps onto the gateway's
+// packet families. TCP-style protocols share one family; httpproxy has
+// its own (the agent routes it to the HTTP-parsing libhoop proxy
+// instead of a raw upstream socket).
+type packetProfile struct {
+	// agentWrite is the packet type for local -> gateway data.
+	agentWrite pb.PacketType
+	// clientWrite is the packet type for gateway -> local data.
+	clientWrite pb.PacketType
+	// sendTCPOpen indicates the agent needs an explicit "dial your
+	// upstream now" packet (SpecTCPServerConnectKey) before any data.
+	// The httpproxy handler has no such handshake: it lazily builds
+	// the proxy on the first data packet.
+	sendTCPOpen bool
+	// isHTTPProxy marks sessions whose spec must carry
+	// SpecHttpProxyBaseUrl on every write.
+	isHTTPProxy bool
+}
+
+// profileFor returns the packet profile for a hoop connection type, or
+// ok=false when the type is not tunnelable.
+func profileFor(connType string) (packetProfile, bool) {
+	switch pb.ConnectionType(connType) {
+	case pb.ConnectionTypePostgres,
+		pb.ConnectionTypeMySQL,
+		pb.ConnectionTypeMSSQL,
+		pb.ConnectionTypeMongoDB,
+		pb.ConnectionTypeOracleDB,
+		pb.ConnectionTypeTCP:
+		return packetProfile{
+			agentWrite:  pbagent.TCPConnectionWrite,
+			clientWrite: pbclient.TCPConnectionWrite,
+			sendTCPOpen: true,
+		}, true
+	case pb.ConnectionTypeHttpProxy:
+		return packetProfile{
+			agentWrite:  pbagent.HttpProxyConnectionWrite,
+			clientWrite: pbclient.HttpProxyConnectionWrite,
+			isHTTPProxy: true,
+		}, true
+	}
+	return packetProfile{}, false
 }
 
 // awaitSessionOpen reads packets from the transport until either a
@@ -240,25 +298,30 @@ func awaitSessionOpen(ctx context.Context, transport pb.ClientTransport, timeout
 
 // pumpBytes runs the bidirectional byte pump. It returns when either
 // direction terminates.
-func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadWriteCloser, sessionID string) error {
+func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadWriteCloser, sessionID string, prof packetProfile, opts PipeOptions) error {
 	spec := map[string][]byte{
 		pb.SpecGatewaySessionID:   []byte(sessionID),
 		pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
 	}
-
-	// Tell the agent to open its upstream socket. The TCPServerConnectKey
-	// spec marks this as a no-op write so the agent does not forward an
-	// empty payload to the database.
-	openSpec := make(map[string][]byte, len(spec)+1)
-	for k, v := range spec {
-		openSpec[k] = v
+	if prof.isHTTPProxy && opts.HttpProxyBaseURL != "" {
+		spec[pb.SpecHttpProxyBaseUrl] = []byte(opts.HttpProxyBaseURL)
 	}
-	openSpec[pb.SpecTCPServerConnectKey] = nil
-	if err := transport.Send(&pb.Packet{
-		Type: pbagent.TCPConnectionWrite,
-		Spec: openSpec,
-	}); err != nil {
-		return fmt.Errorf("send TCPConnectionWrite open: %w", err)
+
+	if prof.sendTCPOpen {
+		// Tell the agent to open its upstream socket. The
+		// TCPServerConnectKey spec marks this as a no-op write so the
+		// agent does not forward an empty payload to the database.
+		openSpec := make(map[string][]byte, len(spec)+1)
+		for k, v := range spec {
+			openSpec[k] = v
+		}
+		openSpec[pb.SpecTCPServerConnectKey] = nil
+		if err := transport.Send(&pb.Packet{
+			Type: prof.agentWrite.String(),
+			Spec: openSpec,
+		}); err != nil {
+			return fmt.Errorf("send %s open: %w", prof.agentWrite, err)
+		}
 	}
 
 	transport.StartKeepAlive()
@@ -281,7 +344,7 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 	// local -> gateway
 	go func() {
 		defer wg.Done()
-		writer := pb.NewStreamWriter(transport, pbagent.TCPConnectionWrite, spec)
+		writer := pb.NewStreamWriter(transport, prof.agentWrite, spec)
 		_, err := io.Copy(writer, local)
 		// Tell the agent to close its upstream socket. We send this
 		// regardless of how io.Copy ended (EOF, error, or peer close
@@ -301,7 +364,7 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 	// gateway -> local
 	go func() {
 		defer wg.Done()
-		err := readFromGateway(pumpCtx, transport, local)
+		err := readFromGateway(pumpCtx, transport, local, prof.clientWrite)
 		if err != nil && !errors.Is(err, io.EOF) && !isClosedConnErr(err) {
 			finish(fmt.Errorf("gateway->local: %w", err))
 		}
@@ -317,7 +380,9 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 
 // readFromGateway loops on Recv() and writes packet payloads to local.
 // It returns when the stream ends or a non-recoverable packet arrives.
-func readFromGateway(ctx context.Context, transport pb.ClientTransport, local io.Writer) error {
+// dataType is the packet family carrying gateway -> local data for this
+// session (TCP or httpproxy writes).
+func readFromGateway(ctx context.Context, transport pb.ClientTransport, local io.Writer, dataType pb.PacketType) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -330,7 +395,7 @@ func readFromGateway(ctx context.Context, transport pb.ClientTransport, local io
 			continue
 		}
 		switch pb.PacketType(pkt.Type) {
-		case pbclient.TCPConnectionWrite:
+		case dataType:
 			if len(pkt.Payload) == 0 {
 				continue
 			}
@@ -353,22 +418,6 @@ func readFromGateway(ctx context.Context, transport pb.ClientTransport, local io
 			// connections; we'd just drop them anyway).
 		}
 	}
-}
-
-// isTunnelableType reports whether a hoop connection type is suitable
-// for transparent IP-level tunneling. SSH/HTTP/Kubernetes connections
-// need protocol-aware clients and are excluded.
-func isTunnelableType(t string) bool {
-	switch pb.ConnectionType(t) {
-	case pb.ConnectionTypePostgres,
-		pb.ConnectionTypeMySQL,
-		pb.ConnectionTypeMSSQL,
-		pb.ConnectionTypeMongoDB,
-		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeTCP:
-		return true
-	}
-	return false
 }
 
 // isClosedConnErr suppresses noise from the routine close races between

@@ -46,10 +46,12 @@ type FetchConnectionsOptions struct {
 }
 
 // FetchConnections returns the list of connections available to the
-// current user that are tunnelable (TCP-style protocols). Connections
-// that are not tunnelable (SSH, command-line, http-proxy, kubernetes,
-// RDP, SSM, etc.) are silently filtered out — they need a protocol-
-// specific client, not a transparent IP tunnel.
+// current user that are tunnelable (TCP-style protocols plus
+// httpproxy, which speaks plain HTTP to the tunnel while the agent
+// terminates TLS to the upstream). Connections that are not tunnelable
+// (SSH, command-line, kubernetes, RDP, SSM, etc.) are silently
+// filtered out — they need a protocol-specific client, not a
+// transparent IP tunnel.
 func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Connection, error) {
 	if opts.APIBaseURL == "" {
 		return nil, errors.New("client.FetchConnections: APIBaseURL is required")
@@ -117,8 +119,8 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 	return out, nil
 }
 
-// isTunnelableSubType mirrors pipe.go's isTunnelableType but works on
-// the raw openapi subtype field.
+// isTunnelableSubType mirrors pipe.go's profileFor but works on the
+// raw openapi subtype field.
 func isTunnelableSubType(subtype string) bool {
 	switch pb.ConnectionType(subtype) {
 	case pb.ConnectionTypePostgres,
@@ -126,7 +128,8 @@ func isTunnelableSubType(subtype string) bool {
 		pb.ConnectionTypeMSSQL,
 		pb.ConnectionTypeMongoDB,
 		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeTCP:
+		pb.ConnectionTypeTCP,
+		pb.ConnectionTypeHttpProxy:
 		return true
 	}
 	return false
