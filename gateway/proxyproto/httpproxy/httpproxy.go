@@ -654,6 +654,13 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		log.Debugf("could not extend write deadline for response wait, sid=%s, conn=%s: %v", sess.sid, connectionID, err)
 	}
 
+	// Explicit timer instead of time.After so the 5-minute timer is released
+	// deterministically when another case wins instead of lingering in the
+	// runtime timer heap until GC. No drain after Stop: timer channels are
+	// unbuffered since Go 1.23.
+	waitTimer := time.NewTimer(responseWaitTimeout)
+	defer waitTimer.Stop()
+
 	select {
 	case <-sess.ctx.Done():
 		http.Error(w, "session expired", http.StatusUnauthorized)
@@ -666,7 +673,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		log.Infof("client disconnected while waiting for response, sid=%s, conn=%s", sess.sid, connectionID)
 		sess.notifyAgentConnectionClose(connectionID)
 		return
-	case <-time.After(responseWaitTimeout):
+	case <-waitTimer.C:
 		sess.notifyAgentConnectionClose(connectionID)
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 		return
