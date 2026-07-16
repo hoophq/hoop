@@ -109,6 +109,12 @@ type (
 		connectionString   string
 		httpProxyRemoteURL string
 		httpProxyHeaders   map[string]string
+		// httpProxyAllowClientAuth opts an httpproxy connection into per-user
+		// upstream identity (ALLOW_CLIENT_AUTHORIZATION=true): a client-supplied
+		// X-Hoop-Upstream-Authorization header is promoted to the upstream
+		// Authorization header. Only honored when the
+		// experimental.httpproxy_client_authorization flag is enabled.
+		httpProxyAllowClientAuth bool
 		// gcpServiceAccountJSON carries the GCP service-account key configured
 		// on a claude-code connection that federates to Google Vertex AI. When
 		// present (and the experimental.claude_code_vertex flag is on) the agent
@@ -774,10 +780,11 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
 		options:           envVarS.Getenv("OPTIONS"),
 		// this option is only used by mongodb at the momento
-		connectionString:      envVarS.Getenv("CONNECTION_STRING"),
-		httpProxyRemoteURL:    envVarS.Getenv("REMOTE_URL"),
-		httpProxyHeaders:      httpProxyHeaders,
-		gcpServiceAccountJSON: envVarS.Getenv("GCP_SERVICE_ACCOUNT_JSON"),
+		connectionString:         envVarS.Getenv("CONNECTION_STRING"),
+		httpProxyRemoteURL:       envVarS.Getenv("REMOTE_URL"),
+		httpProxyHeaders:         httpProxyHeaders,
+		httpProxyAllowClientAuth: envVarS.Getenv("ALLOW_CLIENT_AUTHORIZATION") == "true",
+		gcpServiceAccountJSON:    envVarS.Getenv("GCP_SERVICE_ACCOUNT_JSON"),
 
 		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
 		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),
