@@ -1,13 +1,13 @@
 (ns webapp.resources.setup.success-step
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Avatar Flex Heading Text]]
-   ["lucide-react" :refer [Cable Monitor PackagePlus ShieldCheck Wrench]]
+   ["lucide-react" :refer [Cable ChevronRight Monitor PackagePlus]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.resources.helpers :as helpers]
-   [webapp.resources.setup.guardrails-suggestions.views :as guardrails-suggestions]))
+   [webapp.features.activation-journey.views.feature-cards :as feature-cards]))
 
-(defn action-card [{:keys [icon title description on-click]}]
+(defn action-card [{:keys [icon title description badge on-click]}]
   [:> Card {:size "2"
             :variant "surface"
             :class "cursor-pointer hover:bg-gray-3 transition-colors"
@@ -20,25 +20,28 @@
                  :fallback (r/as-element
                             [:> icon {:size 20 :color "gray"}])}]]
     [:> Box {:class "flex-1"}
-     [:> Text {:as "div" :size "3" :weight "medium" :class "text-gray-12"}
-      title]
+     [:> Flex {:gap "2" :align "center"}
+      [:> Text {:as "div" :size "3" :weight "medium" :class "text-gray-12"}
+       title]
+      (when badge
+        [:> Badge {:size "1" :variant "soft" :color "indigo"}
+         badge])]
      [:> Text {:as "div" :size "2" :class "text-gray-11"}
-      description]]]])
+      description]]
+    [:> ChevronRight {:size 16 :class "shrink-0 text-gray-11" :aria-hidden true}]]])
 
 (defn main []
   (let [context @(rf/subscribe [:resource-setup/context])
         created-roles @(rf/subscribe [:resources->last-created-roles])
         processed-roles @(rf/subscribe [:resource-setup/processed-roles])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
-        postgres-proxy-enabled? (get-in @(rf/subscribe [:gateway->info]) [:data :postgres_proxy_enabled])
         onboarding? (helpers/is-onboarding-context?)
         ;; For add-role context, use created-roles; for setup, use processed-roles (from payload)
         actual-roles (if (= context :add-role) created-roles processed-roles)
         single-role? (= (count actual-roles) 1)
         first-role (first actual-roles)
         ;; Check capabilities of the first role
-        can-web-terminal? (helpers/can-open-web-terminal? first-role)
-        can-native-client? (helpers/can-access-native-client? first-role postgres-proxy-enabled?)]
+        can-web-terminal? (helpers/can-open-web-terminal? first-role)]
 
     [:> Box {:class "px-[98px] py-10"}
      ;; Success icon
@@ -65,41 +68,17 @@
             [:> Cable {:size 12}]
             (:name role)])])]
 
-     ;; Guardrails suggestions + existing guardrails
-     [guardrails-suggestions/main]
-
-     ;; What else you can do
+     ;; Next steps
      [:> Box {:class "mb-4"}
       [:> Heading {:as "h3" :size "3" :weight "bold" :class "text-[--gray-12]"}
-       "What else you can do"]]
-     [:> Box {:class "space-y-3"}
-      ;; 1. Configure additional features
-      (when single-role?
-        [action-card {:icon ShieldCheck
-                      :title "Configure additional features"
-                      :description "Advanced protections like Live Data Masking, Runbooks and more"
-                      :on-click (fn []
-                                  (rf/dispatch-sync [:plugins->get-my-plugins])
-                                  (rf/dispatch [:navigate :configure-role {} :connection-name (:name first-role)]))}])
-      ;; 2. Add another resource
-      [action-card {:icon PackagePlus
-                    :title "Add another resource"
-                    :description "Set up a new resource from scratch"
-                    :on-click (fn []
-                                (rf/dispatch [:navigate :resource-catalog]))}]
-      ;; 3. Setup Native Access (only single-role + native capable)
-      (when (and single-role? can-native-client?)
-        [action-card {:icon Wrench
-                      :title "Setup Native Access"
-                      :description "Connect your IDE or database tools"
-                      :on-click (fn []
-                                  (rf/dispatch-sync [:navigate :resources])
-                                  (rf/dispatch [:native-client-access->start-flow (:name first-role)]))}])
-      ;; 4. Test Connection on Web Terminal
+       "Next steps:"]]
+     [:> Box {:class "space-y-3 mb-12"}
+      ;; 1. Test Connection on Web Terminal
       (cond
         (and single-role? can-web-terminal?)
         [action-card {:icon Monitor
                       :title "Test Connection on Web Terminal"
+                      :badge "Recommended"
                       :description "Start using your resource immediately in your browser"
                       :on-click (fn []
                                   (rf/dispatch-sync [:database-schema->clear-schema])
@@ -108,11 +87,23 @@
         (not single-role?)
         [action-card {:icon Monitor
                       :title "Test Connection on Web Terminal"
+                      :badge "Recommended"
                       :description "Start using your resource immediately in your browser"
                       :on-click (fn []
                                   (rf/dispatch-sync [:primary-connection/clear-selected])
                                   (rf/dispatch-sync [:database-schema->clear-schema])
-                                  (rf/dispatch [:navigate :editor-plugin]))}])]
+                                  (rf/dispatch [:navigate :editor-plugin]))}])
+      ;; 2. Add another resource
+      [action-card {:icon PackagePlus
+                    :title "Add another resource"
+                    :description "Set up a new resource from scratch"
+                    :on-click (fn []
+                                (rf/dispatch [:navigate :resource-catalog]))}]]
+
+     ;; Activation journey feature cards
+     [feature-cards/main {:subtype resource-subtype
+                          :surface :resource-success
+                          :with-roles? true}]
 
      ;; Footer action — only the onboarding "Go Home" remains
      (when (and onboarding? (not single-role?))
