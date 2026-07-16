@@ -103,6 +103,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.httpproxy_client_authorization": {
+		Name:        "experimental.httpproxy_client_authorization",
+		Description: "Allow httpproxy connections that set ALLOW_CLIENT_AUTHORIZATION=true to receive the upstream Authorization credential from the client: the agent promotes a client-supplied X-Hoop-Upstream-Authorization header to the upstream Authorization header, so each user can authenticate to the backend (e.g. an MCP server) with their own token instead of a shared connection credential. When off, the header is forwarded unchanged and never promoted. Note the client-supplied credential is recorded verbatim in session audit records; use time-bounded tokens.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 	"experimental.claude_code_vertex": {
 		Name:        "experimental.claude_code_vertex",
 		Description: "Allow claude-code connections to authenticate against Google Vertex AI: the connection stores a GCP service-account key and the agent mints a short-lived, auto-refreshing OAuth bearer that it injects as the upstream Authorization header while transparently proxying Claude Code traffic to Vertex. Claude Code runs in Vertex mode (CLAUDE_CODE_USE_VERTEX) pointed at the hoop proxy. When off, the Vertex provider is hidden in the connection form and the agent does not mint GCP tokens.",

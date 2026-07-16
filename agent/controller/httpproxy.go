@@ -16,6 +16,13 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
+// httpProxyClientAuthorizationFlag gates per-user upstream identity on
+// httpproxy connections. When on, a connection with
+// ALLOW_CLIENT_AUTHORIZATION=true lets the client supply the upstream
+// Authorization credential via the X-Hoop-Upstream-Authorization header.
+// When off, the agent leaves request headers untouched.
+const httpProxyClientAuthorizationFlag = "experimental.httpproxy_client_authorization"
+
 // httpProxyResponseChunkSize bounds the size of each gRPC packet emitted for an
 // HTTP proxy response. libhoop fully buffers a response and writes it to the
 // client stream in a single Write; without chunking, a large response (e.g. a
@@ -137,6 +144,14 @@ func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	connenv.httpProxyHeaders["mspresidio_analyzer_url"] = connParams.DlpPresidioAnalyzerURL
 	connenv.httpProxyHeaders["guard_rail_rules"] = guardRailRules
 	connenv.httpProxyHeaders["data_masking_entity_data"] = dataMaskingEntityTypesData
+
+	// Per-user upstream identity: the connection opted in via
+	// ALLOW_CLIENT_AUTHORIZATION=true, so libhoop promotes a client-supplied
+	// X-Hoop-Upstream-Authorization header to the upstream Authorization
+	// header (superseding any header_* configured on the connection).
+	if connenv.httpProxyAllowClientAuth && featureflagstate.IsEnabled(httpProxyClientAuthorizationFlag) {
+		connenv.httpProxyHeaders["allow_client_authorization"] = "true"
+	}
 
 	// add default values for kubernetes type
 	if connParams.ConnectionType == pb.ConnectionTypeKubernetes.String() {
