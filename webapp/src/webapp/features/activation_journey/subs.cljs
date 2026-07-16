@@ -26,6 +26,15 @@
  (fn [state _]
    (:masking-rules state)))
 
+;; True once :activation-journey/init has actually run (admin user). Lets a
+;; surface that mounted before the current user finished loading re-dispatch
+;; init exactly once instead of never fetching.
+(rf/reg-sub
+ :activation-journey/requested?
+ :<- [:activation-journey/state]
+ (fn [state _]
+   (boolean (:requested? state))))
+
 ;; Roles available for the just-created resource. We try, in order:
 ;; 1. roles fetched explicitly via GET /connections?name=<role-name> (works
 ;;    for both setup and add-role flows)
@@ -137,3 +146,89 @@
                           :configured? (pos? (count data))
                           :configured-names (into #{} (map :name) data)})))
          templates/features)))
+
+(rf/reg-sub
+ :activation-journey/terminal-executed?
+ :<- [:editor-plugin->script]
+ (fn [script _]
+   (contains? #{:success :running :failure} (:status script))))
+
+(rf/reg-sub
+ :activation-journey/terminal-banner-dismissed?
+ :<- [:activation-journey/state]
+ (fn [state _]
+   (or (:terminal-banner-dismissed? state)
+       (boolean (.getItem (.-localStorage js/window)
+                          "activation-journey-terminal-banner-seen")))))
+
+(defn- template-banner
+  "Post-execution banner cycling through promotable feature templates in
+  order (Guardrails -> Live Data Masking -> AI Session Analyzer), skipping
+  provider-gated features. On the free plan a configured feature is skipped
+  (its card is locked, so advertising an applicable template would lie); on
+  enterprise each feature advances to the next template not yet configured."
+  [free? gates lists subtype index]
+  (let [candidates
+        (->> templates/features
+             (keep (fn [{:keys [feature label banner-cta]}]
+                     (let [feature-templates (templates/templates-for feature subtype)
+                           data (get-in lists [feature :data])
+                           configured-names (into #{} (map :name) data)
+                           configured? (pos? (count data))
+                           template (if free?
+                                      (when-not configured? (first feature-templates))
+                                      (first (remove #(contains? configured-names (:name %))
+                                                     feature-templates)))]
+                       (when (and (get gates feature) template)
+                         {:variant :template
+                          :feature feature
+                          :label label
+                          :banner-cta banner-cta
+                          :title (:title template)
+                          :description (:card-description template)
+                          :template-id (templates/template-link-id template)}))))
+             vec)]
+    (when (seq candidates)
+      (nth candidates (mod index (count candidates))))))
+
+;; Terminal banner model, or nil when no banner applies:
+;; - {:variant :unlock}   free-plan static "Unlock all protection controls"
+;; - {:variant :template ...} cycling feature-template banner (+ :secondary)
+;; - {:variant :protect}  enterprise generic "Protect your resource..."
+(rf/reg-sub
+ :activation-journey/terminal-banner
+ (fn [_]
+   [(rf/subscribe [:activation-journey/admin?])
+    (rf/subscribe [:activation-journey/free-license?])
+    (rf/subscribe [:activation-journey/terminal-executed?])
+    (rf/subscribe [:activation-journey/terminal-banner-dismissed?])
+    (rf/subscribe [:activation-journey/ready?])
+    (rf/subscribe [:activation-journey/provider-gates])
+    (rf/subscribe [:activation-journey/feature-lists])
+    (rf/subscribe [:activation-journey/state])])
+ (fn [[admin? free? executed? dismissed? ready? gates lists state] [_ subtype]]
+   (let [index (:terminal-banner-index state 0)]
+     (cond
+       (not admin?)
+       nil
+
+       ;; Free plan: persistent banner before and after execution. Before the
+       ;; first run (or while data is loading, or with nothing promotable)
+       ;; show the static unlock banner; after a run cycle the templates.
+       free?
+       (if (and executed? ready?)
+         (or (some-> (template-banner free? gates lists subtype index)
+                     (assoc :secondary :see-all))
+             {:variant :unlock})
+         {:variant :unlock})
+
+       ;; Enterprise: clean interface before execution; dismissible banner
+       ;; after. When no template banner applies (everything configured or
+       ;; gated) fall back to the generic protect banner.
+       (or (not executed?) dismissed? (not ready?))
+       nil
+
+       :else
+       (or (some-> (template-banner free? gates lists subtype index)
+                   (assoc :secondary :not-now))
+           {:variant :protect})))))

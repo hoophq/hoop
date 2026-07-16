@@ -41,7 +41,7 @@
    (if-not (admin? db)
      {}
      (let [role-names (when with-roles? (role-names-from-db db))]
-       {:db (cond-> db
+       {:db (cond-> (assoc-in db [:activation-journey :requested?] true)
               with-roles? (assoc-in [:activation-journey :roles] []))
         :fx (cond-> [[:dispatch [:guardrails->get-all]]
                      [:dispatch [:ai-session-analyzer/get-rules]]
@@ -50,6 +50,21 @@
                      [:dispatch [:gateway->get-info]]]
               (seq role-names)
               (conj [:dispatch [:activation-journey/fetch-roles role-names]]))}))))
+
+;; Rotates the post-execution terminal banner through the feature templates.
+;; The index lives in app-db on purpose: it advances once per execution and
+;; resets on page load — persisting it across sessions adds state with no
+;; UX payoff (the spec only asks that banners cycle in sequence).
+(rf/reg-event-db
+ :activation-journey/advance-terminal-banner
+ (fn [db _]
+   (update-in db [:activation-journey :terminal-banner-index] (fnil inc 0))))
+
+(rf/reg-event-db
+ :activation-journey/dismiss-terminal-banner
+ (fn [db _]
+   (.setItem (.-localStorage js/window) "activation-journey-terminal-banner-seen" "true")
+   (assoc-in db [:activation-journey :terminal-banner-dismissed?] true)))
 
 (rf/reg-event-fx
  :activation-journey/fetch-masking-rules

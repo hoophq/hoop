@@ -10,8 +10,9 @@
 (defn- feature-info [feature]
   (some #(when (= (:feature %) feature) %) templates/features))
 
-(defn- dispatch-cta!
-  "Resolves and fires the action of a feature card CTA.
+(defn dispatch-cta!
+  "Resolves and fires the action of a feature card CTA (also reused by the
+  terminal template banner).
 
   - :talk-to-sales opens the Intercom bubble (or hoop.dev/meet).
   - :list routes to the feature list page, which owns provider-required /
