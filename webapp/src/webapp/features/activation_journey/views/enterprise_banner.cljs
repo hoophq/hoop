@@ -1,6 +1,6 @@
 (ns webapp.features.activation-journey.views.enterprise-banner
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Flex Text]]))
+   ["@radix-ui/themes" :refer [Box Flex Text]]))
 
 (def default-title "Unlock all protection controls")
 (def default-subtitle "Unlock unlimited Guardrails, Masking Rules, AI Session Analyzer, and more.")
@@ -30,8 +30,9 @@
      [:> Flex {:align "center" :gap "2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-1]"}
        (or title default-title)]
-      [:> Badge {:size "1" :variant "soft" :color "gray" :highContrast true
-                 :class "bg-white/10 text-[--gray-1]"}
+      ;; Plain span instead of Radix Badge: this is a custom dark surface and
+      ;; the themed badge colors would fight the Tailwind overrides.
+      [:span {:class "rounded-sm bg-white/10 px-1.5 py-0.5 text-xs font-medium text-[--gray-1]"}
        (or badge-label "Enterprise")]]
      [:> Text {:as "p" :size "1" :class "text-[--gray-8]"}
       (or subtitle default-subtitle)]]

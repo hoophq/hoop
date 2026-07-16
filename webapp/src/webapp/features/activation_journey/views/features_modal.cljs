@@ -39,9 +39,9 @@
                     :on-click promotion/request-demo}}]])]))
 
 (defn open!
-  "Opens the See Features modal via the global Radix modal system."
+  "Opens the See Features modal via the global Radix modal system (default
+  916px max width fits the three cards side by side, matching the handoff)."
   [props]
   (rf/dispatch [:modal->open
                 {:id "activation-journey-features"
-                 :maxWidth "720px"
                  :content [main props]}]))
