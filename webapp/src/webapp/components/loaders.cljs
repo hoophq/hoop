@@ -57,3 +57,29 @@
   [:div {:class (str (if full-page "min-h-screen" "h-full")
                      " flex flex-col items-center justify-center gap-6")}
    [loader-content {:message message :description description}]])
+
+(defn- dark-dots-loader []
+  [:div {:class "flex gap-1.5"}
+   [:div {:class "w-2 h-2 rounded-full bg-white animate-bounce"
+          :style {:animation-delay "0ms"}}]
+   [:div {:class "w-2 h-2 rounded-full bg-white animate-bounce"
+          :style {:animation-delay "150ms"}}]
+   [:div {:class "w-2 h-2 rounded-full bg-white animate-bounce"
+          :style {:animation-delay "300ms"}}]])
+
+(defn auth-loading-screen
+  "Full-page loading screen for auth-flow routes. Auth screens are always
+  dark -- there is no light variant -- so the dark styling is baked in."
+  [{:keys [message description]}]
+  [:div {:class "min-h-screen flex flex-col items-center justify-center gap-6 bg-[#182449]"}
+   [:img {:src "/images/hoop-branding/SVG/hoop-symbol_white.svg"
+          :height "40"
+          :width "40"
+          :alt "hoop"}]
+   [dark-dots-loader]
+   (when (or message description)
+     [:div {:class "flex flex-col items-center gap-1 text-center"}
+      (when message
+        [:p {:class "text-sm font-medium text-white"} message])
+      (when description
+        [:p {:class "text-xs opacity-70 text-white"} description])])])
