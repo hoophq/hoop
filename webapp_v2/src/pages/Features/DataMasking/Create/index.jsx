@@ -16,7 +16,7 @@ import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
 import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
-import { findMaskingTemplate } from '../templates'
+import { clampRuleToFreePlan, findMaskingTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
 
 function SectionRow({ title, description, children }) {
@@ -272,19 +272,23 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 export default function DataMaskingForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
   // Activation-journey deep link: /features/data-masking/new?template=<id>
   // pre-applies a recommended template. An unknown or stale template id
   // falls back to the regular blank form. The URL is the source of truth,
-  // so a browser refresh re-seeds the same template.
+  // so a browser refresh re-seeds the same template. On the free plan the
+  // template is clamped to one entity type — the plan's per-rule limit.
   const [searchParams] = useSearchParams()
   const template = isEdit ? null : findMaskingTemplate(searchParams.get('template'))
   const templateConnectionIds = (searchParams.get('connections') ?? '')
     .split(',')
     .filter(Boolean)
-  const templateRule = template
+  const seededRule = template
     ? { ...template.rule, connection_ids: templateConnectionIds }
     : null
+  const templateRule =
+    seededRule && isFreeLicense ? clampRuleToFreePlan(seededRule) : seededRule
 
   const active = useDataMaskingStore((s) => s.active)
   const activeStatus = useDataMaskingStore((s) => s.activeStatus)
