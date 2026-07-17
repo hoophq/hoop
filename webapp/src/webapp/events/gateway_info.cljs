@@ -10,7 +10,16 @@
     :fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/serverinfo"
-                      :on-success #(rf/dispatch [::gateway->set-info %])}]]]}))
+                      :on-success #(rf/dispatch [::gateway->set-info %])
+                      :on-failure #(rf/dispatch [::gateway->set-info-failure %])}]]]}))
+
+;; Settle the loading state on failure so consumers gating on it (e.g. the
+;; activation-journey ready? sub) don't wait forever; any previously loaded
+;; data is kept.
+(rf/reg-event-db
+ ::gateway->set-info-failure
+ (fn [db [_ error]]
+   (update db :gateway->info merge {:loading false :error error})))
 
 (rf/reg-event-fx
  ::gateway->set-info
