@@ -1,7 +1,7 @@
 (ns webapp.resources.setup.guardrails-suggestions.subs
   (:require
    [re-frame.core :as rf]
-   [webapp.resources.setup.guardrails-suggestions.constants :as constants]))
+   [webapp.features.activation-journey.guardrail-templates :as constants]))
 
 (def ^:private state-path [:resource-setup :guardrails-suggestions])
 

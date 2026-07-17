@@ -90,6 +90,8 @@
    [webapp.features.machine-identities.subs]
    [webapp.features.machine-identities.views.identity-form :as identity-form]
    [webapp.features.machine-identities.views.identity-roles :as identity-roles]
+   [webapp.features.activation-journey.events]
+   [webapp.features.activation-journey.subs]
    [webapp.features.ai-session-analyzer.events]
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
