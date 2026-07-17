@@ -20,10 +20,6 @@ export function cssVariablesResolver() {
     variables: {
       '--sidebar-bg': '#182449',
       '--sidebar-border': 'rgba(255, 255, 255, 0.1)',
-      // Radix indigo-12 — the dark-navy surface of the Enterprise upsell
-      // banners. Matches var(--accent-12) used by the CLJS activation-journey
-      // banners so both stacks render the same visual.
-      '--enterprise-banner-bg': '#1f2d5c',
       // gray[8] and gray[9] are not typical palette picks — wired here as semantic tokens.
       '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f8f9fa is too tinted for body)
       '--mantine-color-text': '#212529', // gray[9]  — body text, headings
