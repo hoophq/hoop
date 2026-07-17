@@ -16,18 +16,18 @@
         user (:data @(rf/subscribe [:users->current-user]))]
     (if analytics-tracking
       (do
-        ;; Self-heal the messenger before opening it. The app-boot
-        ;; :initialize-intercom runs when the user loads and reads
-        ;; analytics_tracking from gateway->info; when the user resolves
-        ;; first it shuts Intercom down and skips the boot, leaving
-        ;; showNewMessage with a blank (unbooted) messenger window.
+        ;; Self-heal when the widget was never injected (app-boot race with
+        ;; gateway info): load the script and boot before opening.
         (when-not (.-Intercom js/window)
-          (rf/dispatch-sync [:tracking->load-scripts]))
-        (when (and (.-Intercom js/window)
-                   (not (.-booted js/window.Intercom)))
+          (rf/dispatch-sync [:tracking->load-scripts])
           (rf/dispatch-sync [:initialize-intercom user]))
         (if (.-Intercom js/window)
-          (js/window.Intercom "showNewMessage" "I want to upgrade my current plan")
+          ;; Open the messenger Home — the same call the sidebar's native
+          ;; launcher (custom_launcher_selector) performs. showNewMessage
+          ;; (prefilled composer) renders a blank messenger on workspaces
+          ;; that restrict programmatic conversation starts, so it is
+          ;; deliberately not used here.
+          (js/window.Intercom "show")
           (.open js/window "https://hoop.dev/meet" "_blank")))
       (.open js/window "https://hoop.dev/meet" "_blank"))))
 

@@ -98,17 +98,19 @@ export const useUserStore = create((set, get) => ({
     window.Intercom('boot', config)
   },
 
-  // Opens the Intercom messenger with a prefilled message, booting it first
-  // when the app-boot initialization was skipped or shut down (the CLJS boot
-  // races gateway info on load and can leave the messenger unbooted, which
-  // renders as a blank white window). Returns false when Intercom is
-  // unavailable so callers can fall back to the sales page.
-  showIntercomMessage: (message) => {
+  // Opens the Intercom messenger Home — the same call the sidebar's native
+  // launcher (custom_launcher_selector) performs. showNewMessage (prefilled
+  // composer) renders a blank messenger on workspaces that restrict
+  // programmatic conversation starts, so it is deliberately not used. When
+  // the widget was never injected (app-boot race with gateway info), boots
+  // it first. Returns false when Intercom is unavailable so callers can
+  // fall back to the sales page.
+  openIntercom: () => {
     const { analyticsTracking, user } = get()
     if (!analyticsTracking) return false
-    if (!window.Intercom?.booted) get().initIntercom(user)
+    if (!window.Intercom) get().initIntercom(user)
     if (!window.Intercom) return false
-    window.Intercom('showNewMessage', message)
+    window.Intercom('show')
     return true
   },
 

@@ -4,7 +4,6 @@ import Alert from '@/components/Alert'
 import { useUserStore } from '@/stores/useUserStore'
 
 const SALES_URL = 'https://hoop.dev/meet'
-const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 /**
  * Free-license callout shown on gated feature pages.
@@ -18,14 +17,14 @@ const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
  * page in a new tab.
  */
 export default function FreeLicenseCallout({ message, variant = 'info' }) {
-  const showIntercomMessage = useUserStore((state) => state.showIntercomMessage)
+  const openIntercom = useUserStore((state) => state.openIntercom)
   const limit = variant === 'limit'
   const color = limit ? 'red' : 'blue'
   const Icon = limit ? AlertCircle : Info
 
   const handleClick = (event) => {
     event.preventDefault()
-    if (showIntercomMessage(INTERCOM_MESSAGE)) return
+    if (openIntercom()) return
     window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   }
 

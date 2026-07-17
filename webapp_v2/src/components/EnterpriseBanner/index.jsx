@@ -4,7 +4,6 @@ import { useUserStore } from '@/stores/useUserStore'
 import classes from './EnterpriseBanner.module.css'
 
 const SALES_URL = 'https://hoop.dev/meet'
-const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 const DEFAULT_TITLE = 'Unlock all protection controls'
 const DEFAULT_SUBTITLE =
@@ -25,10 +24,10 @@ export default function EnterpriseBanner({
   subtitle = DEFAULT_SUBTITLE,
   badgeLabel = 'Enterprise',
 }) {
-  const showIntercomMessage = useUserStore((state) => state.showIntercomMessage)
+  const openIntercom = useUserStore((state) => state.openIntercom)
 
   const handleTalkToSales = () => {
-    if (showIntercomMessage(INTERCOM_MESSAGE)) return
+    if (openIntercom()) return
     window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   }
 
