@@ -1,0 +1,37 @@
+/* Dark enterprise upsell banner. Like Sidebar.module.css, this paints a
+   dark-on-dark surface where the light-calibrated gray palette does not fit,
+   so translucent whites are intentional here. The background comes from the
+   --enterprise-banner-bg semantic token (theme.js). */
+.root {
+  background-color: var(--enterprise-banner-bg);
+  border-radius: var(--mantine-radius-sm);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+}
+
+.title {
+  color: var(--mantine-color-white);
+}
+
+.subtitle {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.badge {
+  display: inline-block;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: var(--mantine-radius-xs);
+  padding: 2px var(--mantine-spacing-xs);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  color: var(--mantine-color-white);
+}
+
+.action {
+  background-color: var(--mantine-color-white);
+  color: var(--enterprise-banner-bg);
+}
+
+.action:hover {
+  background-color: var(--mantine-color-indigo-2);
+  color: var(--enterprise-banner-bg);
+}
