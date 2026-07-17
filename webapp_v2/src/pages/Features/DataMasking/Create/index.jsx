@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
@@ -13,6 +12,7 @@ import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { PAGE_PADDING } from '@/layout/PageLayout'
+import { showSnackbar } from '@/utils/snackbar'
 import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
 import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
@@ -75,17 +75,17 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
       ? await updateRule(id, payload)
       : await createRule(payload)
     if (ok) {
-      notifications.show({
-        message: isEdit ? 'Rule updated.' : 'Rule created.',
-        color: 'green',
+      showSnackbar({
+        level: 'success',
+        text: isEdit ? 'Rule updated.' : 'Rule created.',
       })
       navigate('/features/data-masking')
     } else {
-      notifications.show({
-        message:
+      showSnackbar({
+        level: 'error',
+        text:
           error?.response?.data?.message ||
           (isEdit ? 'Failed to update rule.' : 'Failed to create rule.'),
-        color: 'red',
       })
     }
   }
@@ -94,12 +94,12 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
     const { ok, error } = await deleteRule(id)
     deleteModal.close()
     if (ok) {
-      notifications.show({ message: 'Rule deleted.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'Rule deleted.' })
       navigate('/features/data-masking')
     } else {
-      notifications.show({
-        message: error?.response?.data?.message || 'Failed to delete rule.',
-        color: 'red',
+      showSnackbar({
+        level: 'error',
+        text: error?.response?.data?.message || 'Failed to delete rule.',
       })
     }
   }
