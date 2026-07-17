@@ -104,7 +104,13 @@ export class RemoteDesktopService {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.ctx.fillStyle = 'white';
-        this.ctx.font = '20px Arial';
+        // The backing store is sized in physical pixels (see index.js), so
+        // scale the status text by the actual backing-store/CSS ratio to
+        // keep it readable on HiDPI displays (including when the store is
+        // clamped below the device pixel ratio).
+        const rect = this.canvas.getBoundingClientRect();
+        const renderScale = rect.width > 0 ? this.canvas.width / rect.width : 1;
+        this.ctx.font = `${Math.round(20 * renderScale)}px Arial`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(text, this.canvas.width / 2, this.canvas.height / 2);
