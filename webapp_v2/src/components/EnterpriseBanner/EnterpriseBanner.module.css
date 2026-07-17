@@ -1,7 +1,7 @@
-/* Dark enterprise upsell banner. Like Sidebar.module.css, this paints a
-   dark-on-dark surface where the light-calibrated gray palette does not fit,
-   so translucent whites are intentional here. The background comes from the
-   --sidebar-bg semantic token (theme.js), the same dark navy as the sidebar. */
+/* Dark enterprise upsell banner. Every value derives from theme tokens: the
+   background is the --sidebar-bg semantic token (theme.js, the same dark
+   navy as the sidebar) and the muted subtitle is color-mixed from the white
+   token, so retheming propagates here automatically. */
 .root {
   background-color: var(--sidebar-bg);
   border-radius: var(--mantine-radius-sm);
@@ -13,7 +13,7 @@
 }
 
 .subtitle {
-  color: rgba(255, 255, 255, 0.7);
+  color: color-mix(in srgb, var(--mantine-color-white) 70%, transparent);
 }
 
 .badge {

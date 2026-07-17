@@ -10,7 +10,7 @@
             :on-click on-click
             :class (str "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors "
                         (if primary?
-                          "bg-white text-[#182449] hover:bg-[--accent-2]"
+                          "bg-white text-[--sidebar-bg] hover:bg-[--accent-2]"
                           "bg-white/10 text-white hover:bg-white/20"))}
    label])
 
@@ -24,9 +24,10 @@
   - :primary            {:label :on-click} light action button
   - :secondary          {:label :on-click} translucent action button"
   [{:keys [title subtitle badge-label primary secondary]}]
-  ;; #182449 is the app's dark navy, the same background the sidebar uses
-  ;; (React side mirrors it via the --sidebar-bg token).
-  [:> Box {:class "bg-[#182449] rounded-2 px-4 py-3"}
+  ;; --sidebar-bg is the app's dark navy, defined once in the React shell
+  ;; theme (webapp_v2/src/theme.js) and available on every route since the
+  ;; shell wraps the CLJS pages — changing the theme updates both stacks.
+  [:> Box {:class "bg-[--sidebar-bg] rounded-2 px-4 py-3"}
    [:> Flex {:align "center" :justify "between" :gap "4"}
     [:> Flex {:direction "column" :gap "1"}
      [:> Flex {:align "center" :gap "2"}
@@ -34,7 +35,7 @@
        (or title default-title)]
       ;; Plain span instead of Radix Badge: this is a custom dark surface and
       ;; the themed badge colors would fight the Tailwind overrides.
-      [:span {:class "rounded-sm bg-white px-1.5 py-0.5 text-xs font-medium text-[#182449]"}
+      [:span {:class "rounded-sm bg-white px-1.5 py-0.5 text-xs font-medium text-[--sidebar-bg]"}
        (or badge-label "Enterprise")]]
      [:> Text {:as "p" :size "1" :class "text-white/70"}
       (or subtitle default-subtitle)]]
