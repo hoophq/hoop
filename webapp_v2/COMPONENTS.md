@@ -327,6 +327,21 @@ const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 ```
 Props: `message` (string), `variant` (`'info'` | `'limit'`, default `'info'`). Always gate the render on `useUserStore.isFreeLicense` at the call site so it disappears for Enterprise users.
 
+### `EnterpriseBanner`
+Dark-navy enterprise upsell banner pinned to feature pages for free-plan users (activation journey). React counterpart of the CLJS `webapp.features.activation-journey.views.enterprise-banner`, sharing the same visual (`--enterprise-banner-bg`, Radix indigo-12). The built-in "Talk to Sales" button opens Intercom when analytics tracking is enabled, otherwise `https://hoop.dev/meet` in a new tab.
+```jsx
+import EnterpriseBanner from '@/components/EnterpriseBanner'
+import { useUserStore } from '@/stores/useUserStore'
+
+const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+
+{isFreeLicense && <EnterpriseBanner />}
+
+// Custom copy
+<EnterpriseBanner title="Protect your resource" subtitle="..." badgeLabel="Enterprise" />
+```
+Props (all optional): `title` (default `"Unlock all protection controls"`), `subtitle` (default `"Unlock unlimited Guardrails, Masking Rules, AI Session Analyzer, and more."`), `badgeLabel` (default `"Enterprise"`). Always gate the render on `useUserStore.isFreeLicense` at the call site. Use `FreeLicenseCallout` for inline informational/limit callouts; use this for the pinned dark upsell surface.
+
 ### `ValueFilter`
 Popover-backed single-value filter dropdown — icon trigger, search input, and a scrollable list. Used for filtering tables by a single column value (resource, type, attribute, tag, …).
 ```jsx

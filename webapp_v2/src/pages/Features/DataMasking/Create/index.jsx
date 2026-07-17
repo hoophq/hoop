@@ -11,16 +11,13 @@ import MultiSelect from '@/components/MultiSelect'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
-import FreeLicenseCallout from '@/components/FreeLicenseCallout'
+import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
 import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
 import { findMaskingTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
-
-const FREE_LICENSE_MESSAGE =
-  'Organizations with Free plan have limited data protection. Upgrade to Enterprise to have unlimited access to Live Data Masking.'
 
 function SectionRow({ title, description, children }) {
   return (
@@ -168,7 +165,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
       {isFreeLicense && (
         <Box mb="xl">
-          <FreeLicenseCallout message={FREE_LICENSE_MESSAGE} />
+          <EnterpriseBanner />
         </Box>
       )}
 
