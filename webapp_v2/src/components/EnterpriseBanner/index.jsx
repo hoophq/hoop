@@ -38,7 +38,7 @@ export default function EnterpriseBanner({
   return (
     <Box className={classes.root}>
       <Group justify="space-between" align="center" gap="md" wrap="nowrap">
-        <Stack gap={2}>
+        <Stack gap="xsAlt">
           <Group gap="xs" align="center">
             <Text size="sm" fw={700} className={classes.title} component="span">
               {title}
