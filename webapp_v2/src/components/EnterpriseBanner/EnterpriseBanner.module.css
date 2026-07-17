@@ -18,12 +18,12 @@
 
 .badge {
   display: inline-block;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--mantine-color-white);
   border-radius: var(--mantine-radius-xs);
   padding: 2px var(--mantine-spacing-xs);
   font-size: var(--mantine-font-size-xs);
   font-weight: 500;
-  color: var(--mantine-color-white);
+  color: var(--enterprise-banner-bg);
 }
 
 .action {

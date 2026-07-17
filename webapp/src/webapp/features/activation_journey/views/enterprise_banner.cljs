@@ -26,13 +26,13 @@
   [{:keys [title subtitle badge-label primary secondary]}]
   [:> Box {:class "bg-[--accent-12] rounded-2 px-4 py-3"}
    [:> Flex {:align "center" :justify "between" :gap "4"}
-    [:> Box
+    [:> Flex {:direction "column" :gap "1"}
      [:> Flex {:align "center" :gap "2"}
       [:> Text {:size "2" :weight "bold" :class "text-white"}
        (or title default-title)]
       ;; Plain span instead of Radix Badge: this is a custom dark surface and
       ;; the themed badge colors would fight the Tailwind overrides.
-      [:span {:class "rounded-sm bg-white/10 px-1.5 py-0.5 text-xs font-medium text-white"}
+      [:span {:class "rounded-sm bg-white px-1.5 py-0.5 text-xs font-medium text-[--accent-12]"}
        (or badge-label "Enterprise")]]
      [:> Text {:as "p" :size "1" :class "text-white/70"}
       (or subtitle default-subtitle)]]
