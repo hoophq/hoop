@@ -331,18 +331,9 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 	return guardRailRulesJsonData, nil
 }
 
-// connectionTypeSupportsGuardRails reports whether the agent-side proxy for the
-// given connection type actually evaluates guardrail rules. It is a session-open
-// admission policy: guarded sessions are only admitted for types with real
-// enforcement in libhoop. Guardrails are enforced for PostgreSQL, Oracle, HTTP
-// proxy, SSH and command-line (terminal console and exec, including the DB exec
-// drivers, which resolve to the command-line type). MySQL, MSSQL and MongoDB
-// native proxies do not yet evaluate guardrails, so a guarded session of those
-// types would run unguarded — we fail closed at session-open rather than
-// silently ignoring the configured rules (DEP-48).
-//
-// IMPORTANT: this list mirrors enforcement support in libhoop. When guardrail
-// evaluation is added to another protocol proxy there, add its type here.
+// connectionTypeSupportsGuardRails reports the connection types whose native
+// proxies evaluate guardrail rules. Database Web Exec is checked separately
+// because it uses the agent's terminal-exec path rather than the native proxy.
 func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
 	switch connType {
 	case pb.ConnectionTypePostgres,
@@ -354,6 +345,21 @@ func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
 	default:
 		return false
 	}
+}
+
+// sessionSupportsGuardRails reports whether this particular session has an
+// agent-side enforcement path. MSSQL is supported only for Web Exec: the
+// session API uses ClientAPI + exec and the agent's doExec path passes the
+// rules to the command/DB-exec redactor. Native MSSQL protocol sessions must
+// remain rejected because mssql.go does not inspect guardrails.
+func sessionSupportsGuardRails(pctx plugintypes.Context) bool {
+	if connectionTypeSupportsGuardRails(pctx.ProtoConnectionType()) {
+		return true
+	}
+
+	return pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
+		pctx.ClientVerb == pb.ClientVerbExec &&
+		pctx.ClientOrigin == pb.ConnectionOriginClientAPI
 }
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
@@ -540,7 +546,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// for plain-exec sessions.
 			if len(guardRailRulesJsonData) > 0 {
 				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
-				if connType := pctx.ProtoConnectionType(); !connectionTypeSupportsGuardRails(connType) {
+				if connType := pctx.ProtoConnectionType(); !sessionSupportsGuardRails(pctx) {
 					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
 					return status.Errorf(codes.FailedPrecondition,
 						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
