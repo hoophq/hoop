@@ -15,7 +15,7 @@
   handler invoked with the card when its action button is pressed."
   [{:keys [feature title description badge locked?] :as card} on-cta]
   (let [{:keys [icon color]} (get feature-icons feature)]
-    [:> Card {:size "3" :variant "surface" :class "h-full" :as "article"}
+    [:> Card {:size "3" :variant "surface" :class "h-full"}
      [:> Flex {:direction "column" :gap "4" :class "h-full"}
       [:> Flex {:justify "between" :align "start" :gap "3"}
        [:> Avatar {:size "4"
