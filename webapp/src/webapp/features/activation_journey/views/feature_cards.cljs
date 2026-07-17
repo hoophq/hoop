@@ -67,6 +67,7 @@
   (rf/dispatch [:activation-journey/init {:with-roles? with-roles?}])
   (fn [{:keys [subtype surface with-roles? connection-ids connection-names on-navigate]}]
     (let [admin? @(rf/subscribe [:activation-journey/admin?])
+          requested? @(rf/subscribe [:activation-journey/requested?])
           ready? @(rf/subscribe [:activation-journey/ready?])
           roles (when with-roles?
                   @(rf/subscribe [:activation-journey/roles-with-ids]))
@@ -78,6 +79,11 @@
                                 {:subtype subtype
                                  :connection-ids (:connection-ids ctx)
                                  :connection-names (:connection-names ctx)}])]
+      ;; The mount-time init above no-ops when the current user hasn't
+      ;; loaded yet (init is admin-gated); request once more when the admin
+      ;; flag settles so the cards recover from that race.
+      (when (and admin? (not requested?))
+        (rf/dispatch [:activation-journey/init {:with-roles? with-roles?}]))
       (when (and admin? ready?)
         [:> Grid {:columns "3" :gap "5"}
          (for [card cards]

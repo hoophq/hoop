@@ -91,7 +91,11 @@
          (contains? #{:success :error} (get-in lists [:masking :status]))
          (contains? #{:success :error} (get-in lists [:ai-analyzer :status]))
          (contains? #{:success :idle :error} (:status provider))
-         (some? (:data gateway-info))))))
+         ;; Gateway info settled: data present, or the fetch finished
+         ;; (a failed /serverinfo sets :loading false and the provider
+         ;; gates degrade to the feature list pages).
+         (or (some? (:data gateway-info))
+             (false? (:loading gateway-info)))))))
 
 ;; A feature counts as enabled for the current surface when any of its rules
 ;; already covers one of the surface's connections (guardrails/masking match
