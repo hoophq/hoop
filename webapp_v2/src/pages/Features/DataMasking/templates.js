@@ -114,3 +114,19 @@ export function findMaskingTemplate(id) {
   if (!id) return null
   return MASKING_TEMPLATES.find((template) => template.id === id) ?? null
 }
+
+// The free plan allows a single entity type per Live Data Masking rule.
+// Clamp a template rule to its first entity type so the seeded form matches
+// what the plan can actually save (the free-plan RulesTable already enforces
+// this on user edits; this keeps the pre-applied state consistent with it).
+export function clampRuleToFreePlan(rule) {
+  const [first] = rule.supported_entity_types ?? []
+  if (!first) return { ...rule, custom_entity_types: [] }
+  return {
+    ...rule,
+    supported_entity_types: [
+      { ...first, entity_types: (first.entity_types ?? []).slice(0, 1) },
+    ],
+    custom_entity_types: [],
+  }
+}
