@@ -9,6 +9,7 @@ import (
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
@@ -134,8 +135,8 @@ func TestConnectionTypeSupportsGuardRails(t *testing.T) {
 		}
 	}
 
-	// MySQL, MSSQL and MongoDB proxies do not evaluate guardrails yet, so a
-	// guarded session of these types must be refused (fail closed), not run
+	// MySQL, MSSQL and MongoDB native proxies do not evaluate guardrails, so
+	// native sessions of these types must be refused (fail closed), not run
 	// unguarded (DEP-48).
 	unsupported := []pb.ConnectionType{
 		pb.ConnectionTypeMySQL,
@@ -147,6 +148,53 @@ func TestConnectionTypeSupportsGuardRails(t *testing.T) {
 		if connectionTypeSupportsGuardRails(ct) {
 			t.Errorf("expected connection type %q to NOT support guardrails", ct)
 		}
+	}
+}
+
+func TestSessionSupportsGuardRails(t *testing.T) {
+	tests := []struct {
+		name string
+		ctx  plugintypes.Context
+		want bool
+	}{
+		{
+			name: "mssql web exec",
+			ctx: plugintypes.Context{
+				ConnectionType:    string(pb.ConnectionTypeMSSQL),
+				ConnectionSubType: "mssql",
+				ClientVerb:        pb.ClientVerbExec,
+				ClientOrigin:      pb.ConnectionOriginClientAPI,
+			},
+			want: true,
+		},
+		{
+			name: "mssql native session",
+			ctx: plugintypes.Context{
+				ConnectionType:    string(pb.ConnectionTypeMSSQL),
+				ConnectionSubType: "",
+				ClientVerb:        pb.ClientVerbExec,
+				ClientOrigin:      pb.ConnectionOriginClient,
+			},
+			want: false,
+		},
+		{
+			name: "mssql non-exec API session",
+			ctx: plugintypes.Context{
+				ConnectionType:    string(pb.ConnectionTypeMSSQL),
+				ConnectionSubType: "",
+				ClientVerb:        pb.ClientVerbPlainExec,
+				ClientOrigin:      pb.ConnectionOriginClientAPI,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sessionSupportsGuardRails(tt.ctx); got != tt.want {
+				t.Fatalf("sessionSupportsGuardRails() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
