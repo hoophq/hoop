@@ -116,6 +116,11 @@
         (.addEventListener js/window "scroll" handle-scroll)
         (if (= :loading (:status @guardrails->active-guardrail))
           [loading]
+          ;; guardrail-form derives its local state from the active guardrail
+          ;; once, on mount. Keying by the loaded data forces a remount when
+          ;; it settles (edit fetch or activation-journey template seed), so
+          ;; the form never keeps state from a stale first render.
+          ^{:key (str (name form-type) "-" (hash (:data @guardrails->active-guardrail)))}
           [guardrail-form form-type
            (:data @guardrails->active-guardrail)
            scroll-pos

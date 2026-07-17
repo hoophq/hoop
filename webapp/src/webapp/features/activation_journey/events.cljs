@@ -117,3 +117,19 @@
                            (assoc :id ""
                                   :connection_ids (parse-csv connections-csv)))]]]}
      {:fx [[:dispatch [:guardrails->clear-active-guardrail]]]})))
+
+;; Seeds the AI Session Analyzer create form
+;; (?template=<name>&connections=<csv of role names>).
+(rf/reg-event-fx
+ :activation-journey/seed-ai-analyzer-template
+ (fn [_ [_ template-id connections-csv]]
+   (if-let [template (templates/find-ai-analyzer-template template-id)]
+     (do
+       ;; A user deep-linked into rule creation has already seen the feature
+       ;; pitch; without this flag the post-save redirect to the analyzer list
+       ;; page would land on the first-visit promotion splash.
+       (.setItem (.-localStorage js/window) "ai-session-analyzer-promotion-seen" "true")
+       {:fx [[:dispatch [:ai-session-analyzer/set-active-rule
+                         (assoc (templates/ai-analyzer-payload template)
+                                :connection_names (parse-csv connections-csv))]]]})
+     {:fx [[:dispatch [:ai-session-analyzer/clear-active-rule]]]})))

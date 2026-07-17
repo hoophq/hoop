@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -16,6 +16,7 @@ import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
 import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
+import { findMaskingTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
 
 const FREE_LICENSE_MESSAGE =
@@ -275,6 +276,19 @@ export default function DataMaskingForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
 
+  // Activation-journey deep link: /features/data-masking/new?template=<id>
+  // pre-applies a recommended template. An unknown or stale template id
+  // falls back to the regular blank form. The URL is the source of truth,
+  // so a browser refresh re-seeds the same template.
+  const [searchParams] = useSearchParams()
+  const template = isEdit ? null : findMaskingTemplate(searchParams.get('template'))
+  const templateConnectionIds = (searchParams.get('connections') ?? '')
+    .split(',')
+    .filter(Boolean)
+  const templateRule = template
+    ? { ...template.rule, connection_ids: templateConnectionIds }
+    : null
+
   const active = useDataMaskingStore((s) => s.active)
   const activeStatus = useDataMaskingStore((s) => s.activeStatus)
   const fetchActive = useDataMaskingStore((s) => s.fetchActive)
@@ -294,8 +308,8 @@ export default function DataMaskingForm() {
 
   return (
     <DataMaskingFormFields
-      key={isEdit ? (active?.id ?? id) : 'new'}
-      rule={isEdit ? active : null}
+      key={isEdit ? (active?.id ?? id) : template ? `template-${template.id}` : 'new'}
+      rule={isEdit ? active : templateRule}
       id={id}
       isEdit={isEdit}
     />

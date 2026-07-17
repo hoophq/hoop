@@ -243,6 +243,15 @@
  (fn [db _]
    (assoc-in db [:ai-session-analyzer :active-rule] {:status :idle :data nil :error nil})))
 
+;; Seeds the create form with a full rule map (mirrors what
+;; :ai-session-analyzer/get-rule-by-name-success does for the edit flow).
+;; Used by the activation journey to pre-apply a recommended template.
+(rf/reg-event-db
+ :ai-session-analyzer/set-active-rule
+ (fn [db [_ rule]]
+   (assoc-in db [:ai-session-analyzer :active-rule]
+             {:status :success :data rule :error nil})))
+
 (rf/reg-event-fx
  :ai-session-analyzer/delete-rule
  (fn [{:keys [db]} [_ rule-name]]
