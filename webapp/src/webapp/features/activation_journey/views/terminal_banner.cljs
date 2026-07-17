@@ -34,8 +34,11 @@
         subtype (connection-subtype connection)
         admin? @(rf/subscribe [:activation-journey/admin?])
         requested? @(rf/subscribe [:activation-journey/requested?])
-        banner @(rf/subscribe [:activation-journey/terminal-banner subtype])
-        props (modal-props connection subtype)]
+        props (modal-props connection subtype)
+        banner @(rf/subscribe [:activation-journey/terminal-banner
+                               {:subtype subtype
+                                :connection-ids (:connection-ids props)
+                                :connection-names (:connection-names props)}])]
     ;; The terminal can mount before the current user finishes loading, in
     ;; which case the panel-level init was a no-op; request once when the
     ;; admin flag settles.

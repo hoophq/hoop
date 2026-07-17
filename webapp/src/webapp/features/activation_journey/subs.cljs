@@ -93,56 +93,85 @@
          (contains? #{:success :idle :error} (:status provider))
          (some? (:data gateway-info))))))
 
+;; A feature counts as enabled for the current surface when any of its rules
+;; already covers one of the surface's connections (guardrails/masking match
+;; by connection id, the AI analyzer by connection name). With no connection
+;; context there is nothing to match, so the feature reads as not enabled.
+(defn- enabled-for-connections?
+  [feature rules {:keys [connection-ids connection-names]}]
+  (let [ids (set connection-ids)
+        names (set connection-names)]
+    (boolean
+     (case feature
+       (:guardrails :masking)
+       (and (seq ids) (some #(some ids (:connection_ids %)) rules))
+
+       :ai-analyzer
+       (and (seq names) (some #(some names (:connection_names %)) rules))
+
+       false))))
+
 (defn- build-card
   "Decision matrix for one feature card. Evaluated in order:
-  1. provider gate fails            -> CTA to the feature list page, no template
-  2. free plan + feature configured -> locked card, Talk to Sales
-  3. free plan, not configured      -> first recommended template
-  4. enterprise                     -> next template not yet configured (by rule name)
-  5. enterprise, all configured     -> generic copy, CTA to create page, no template"
+  1. feature already enabled for this resource role -> done card, links back
+  2. provider gate fails            -> CTA to the feature list page, no template
+  3. free plan + feature configured -> locked card, Talk to Sales
+  4. free plan, not configured      -> first recommended template
+  5. enterprise                     -> next template not yet configured (by rule name)
+  6. enterprise, all configured     -> generic copy, CTA to create page, no template"
   [{:keys [feature label generic-description]} feature-templates
-   {:keys [free? gate-ok? configured? configured-names]}]
-  (let [display-template (if free?
-                           (first feature-templates)
-                           (first (remove #(contains? configured-names (:name %))
-                                          feature-templates)))
-        locked? (and gate-ok? free? configured?)
-        title (or (:title display-template) label)
-        description (or (:card-description display-template) generic-description)
-        cta (cond
-              (not gate-ok?) {:kind :list :label (str "Go to " label)}
-              locked? {:kind :talk-to-sales :label "Talk to Sales"}
-              display-template {:kind :create-with-template
-                                :label (str "Go to " label)
-                                :template-id (templates/template-link-id display-template)}
-              :else {:kind :create :label (str "Go to " label)})
-        badge (cond
-                locked? {:label "Upgrade to unlock" :color "gray"}
-                free? {:label "Included in free plan" :color "green"}
-                :else nil)]
+   {:keys [free? gate-ok? enabled? configured? configured-names]}]
+  (if enabled?
     {:feature feature
      :label label
-     :locked? locked?
-     :badge badge
-     :title title
-     :description description
-     :cta cta}))
+     :enabled? true
+     :badge {:label "Enabled" :color "green"}
+     :title label
+     :description "Already enabled for this resource role."
+     :cta {:kind :list :label (str "Go to " label)}}
+    (let [display-template (if free?
+                             (first feature-templates)
+                             (first (remove #(contains? configured-names (:name %))
+                                            feature-templates)))
+          locked? (and gate-ok? free? configured?)
+          title (or (:title display-template) label)
+          description (or (:card-description display-template) generic-description)
+          cta (cond
+                (not gate-ok?) {:kind :list :label (str "Go to " label)}
+                locked? {:kind :talk-to-sales :label "Talk to Sales"}
+                display-template {:kind :create-with-template
+                                  :label (str "Go to " label)
+                                  :template-id (templates/template-link-id display-template)}
+                :else {:kind :create :label (str "Go to " label)})
+          badge (cond
+                  locked? {:label "Upgrade to unlock" :color "gray"}
+                  free? {:label "Included in free plan" :color "green"}
+                  :else nil)]
+      {:feature feature
+       :label label
+       :locked? locked?
+       :badge badge
+       :title title
+       :description description
+       :cta cta})))
 
 ;; The three feature cards, always ordered Guardrails -> Live Data Masking ->
-;; AI Session Analyzer. `subtype` scopes the guardrail templates to the
-;; resource/connection at hand.
+;; AI Session Analyzer. `ctx` is {:subtype s :connection-ids [...]
+;; :connection-names [...]}: the subtype scopes guardrail/analyzer templates
+;; and the connections drive the per-role "already enabled" state.
 (rf/reg-sub
  :activation-journey/cards
  :<- [:activation-journey/free-license?]
  :<- [:activation-journey/provider-gates]
  :<- [:activation-journey/feature-lists]
- (fn [[free? gates lists] [_ subtype]]
+ (fn [[free? gates lists] [_ {:keys [subtype] :as ctx}]]
    (mapv (fn [{:keys [feature] :as info}]
            (let [data (get-in lists [feature :data])]
              (build-card info
                          (templates/templates-for feature subtype)
                          {:free? free?
                           :gate-ok? (boolean (get gates feature))
+                          :enabled? (enabled-for-connections? feature data ctx)
                           :configured? (pos? (count data))
                           :configured-names (into #{} (map :name) data)})))
          templates/features)))
@@ -164,10 +193,11 @@
 (defn- template-banner
   "Post-execution banner cycling through promotable feature templates in
   order (Guardrails -> Live Data Masking -> AI Session Analyzer), skipping
-  provider-gated features. On the free plan a configured feature is skipped
+  provider-gated features and features already enabled for the current
+  connection. On the free plan an org-configured feature is also skipped
   (its card is locked, so advertising an applicable template would lie); on
   enterprise each feature advances to the next template not yet configured."
-  [free? gates lists subtype index]
+  [free? gates lists {:keys [subtype] :as ctx} index]
   (let [candidates
         (->> templates/features
              (keep (fn [{:keys [feature label banner-cta]}]
@@ -179,7 +209,9 @@
                                       (when-not configured? (first feature-templates))
                                       (first (remove #(contains? configured-names (:name %))
                                                      feature-templates)))]
-                       (when (and (get gates feature) template)
+                       (when (and (get gates feature)
+                                  (not (enabled-for-connections? feature data ctx))
+                                  template)
                          {:variant :template
                           :feature feature
                           :label label
@@ -191,7 +223,14 @@
     (when (seq candidates)
       (nth candidates (mod index (count candidates))))))
 
-;; Terminal banner model, or nil when no banner applies:
+(defn- all-enabled-for-connections?
+  [lists ctx]
+  (every? (fn [{:keys [feature]}]
+            (enabled-for-connections? feature (get-in lists [feature :data]) ctx))
+          templates/features))
+
+;; Terminal banner model, or nil when no banner applies. `ctx` is
+;; {:subtype s :connection-ids [...] :connection-names [...]}.
 ;; - {:variant :unlock}   free-plan static "Unlock all protection controls"
 ;; - {:variant :template ...} cycling feature-template banner (+ :secondary)
 ;; - {:variant :protect}  enterprise generic "Protect your resource..."
@@ -206,7 +245,7 @@
     (rf/subscribe [:activation-journey/provider-gates])
     (rf/subscribe [:activation-journey/feature-lists])
     (rf/subscribe [:activation-journey/state])])
- (fn [[admin? free? executed? dismissed? ready? gates lists state] [_ subtype]]
+ (fn [[admin? free? executed? dismissed? ready? gates lists state] [_ ctx]]
    (let [index (:terminal-banner-index state 0)]
      (cond
        (not admin?)
@@ -217,18 +256,20 @@
        ;; show the static unlock banner; after a run cycle the templates.
        free?
        (if (and executed? ready?)
-         (or (some-> (template-banner free? gates lists subtype index)
+         (or (some-> (template-banner free? gates lists ctx index)
                      (assoc :secondary :see-all))
              {:variant :unlock})
          {:variant :unlock})
 
        ;; Enterprise: clean interface before execution; dismissible banner
-       ;; after. When no template banner applies (everything configured or
-       ;; gated) fall back to the generic protect banner.
+       ;; after. When no template banner applies fall back to the generic
+       ;; protect banner — unless every feature is already enabled for this
+       ;; connection, in which case there is nothing left to promote.
        (or (not executed?) dismissed? (not ready?))
        nil
 
        :else
-       (or (some-> (template-banner free? gates lists subtype index)
+       (or (some-> (template-banner free? gates lists ctx index)
                    (assoc :secondary :not-now))
-           {:variant :protect})))))
+           (when-not (all-enabled-for-connections? lists ctx)
+             {:variant :protect}))))))

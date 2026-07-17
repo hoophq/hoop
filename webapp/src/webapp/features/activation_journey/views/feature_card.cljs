@@ -1,7 +1,7 @@
 (ns webapp.features.activation-journey.views.feature-card
   (:require
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Flex Heading Text]]
-   ["lucide-react" :refer [ShieldCheck Sparkles VenetianMask]]
+   ["lucide-react" :refer [Check ShieldCheck Sparkles VenetianMask]]
    [reagent.core :as r]))
 
 (def ^:private feature-icons
@@ -12,17 +12,24 @@
 (defn main
   "One activation-journey feature card (success page and See Features modal).
   Takes a card model from the :activation-journey/cards sub and an on-cta
-  handler invoked with the card when its action button is pressed."
-  [{:keys [feature title description badge locked?] :as card} on-cta]
+  handler invoked with the card when its action button is pressed. A card
+  with :enabled? renders the done state (green check) instead of a setup CTA."
+  [{:keys [feature title description badge locked? enabled?] :as card} on-cta]
   (let [{:keys [icon color]} (get feature-icons feature)]
     [:> Card {:size "3" :variant "surface" :class "h-full"}
      [:> Flex {:direction "column" :gap "4" :class "h-full"}
       [:> Flex {:justify "between" :align "start" :gap "3"}
-       [:> Avatar {:size "4"
-                   :variant (if locked? "soft" "solid")
-                   :color (if locked? "gray" color)
-                   :radius "large"
-                   :fallback (r/as-element [:> icon {:size 20 :aria-hidden true}])}]
+       (if enabled?
+         [:> Avatar {:size "4"
+                     :variant "soft"
+                     :color "green"
+                     :radius "large"
+                     :fallback (r/as-element [:> Check {:size 20 :aria-hidden true}])}]
+         [:> Avatar {:size "4"
+                     :variant (if locked? "soft" "solid")
+                     :color (if locked? "gray" color)
+                     :radius "large"
+                     :fallback (r/as-element [:> icon {:size 20 :aria-hidden true}])}])
        (when badge
          [:> Badge {:size "1" :variant "soft" :color (:color badge)}
           (:label badge)])]
