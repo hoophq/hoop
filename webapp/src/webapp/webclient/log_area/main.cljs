@@ -7,6 +7,7 @@
             [webapp.audit.views.session-details :as session-details]
             [webapp.components.ag-grid-table :as ag-grid-table]
             [webapp.components.results-download-menu :as download-menu]
+            [webapp.features.activation-journey.views.terminal-banner :as terminal-banner]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
             [webapp.webclient.log-area.logs :as logs]))
 
@@ -108,6 +109,7 @@
            (when menu-props
              [:> Box {:class "mb-regular pt-small flex-shrink-0"}
               [download-menu/main menu-props]])]
+          [terminal-banner/main]
           [:> Box {:role "tabpanel"
                    :id (str "tabpanel-" (case @selected-tab
                                           "Tabular" :tabular
