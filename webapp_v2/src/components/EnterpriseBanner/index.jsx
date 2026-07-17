@@ -25,13 +25,10 @@ export default function EnterpriseBanner({
   subtitle = DEFAULT_SUBTITLE,
   badgeLabel = 'Enterprise',
 }) {
-  const analyticsTracking = useUserStore((state) => state.analyticsTracking)
+  const showIntercomMessage = useUserStore((state) => state.showIntercomMessage)
 
   const handleTalkToSales = () => {
-    if (analyticsTracking && window.Intercom) {
-      window.Intercom('showNewMessage', INTERCOM_MESSAGE)
-      return
-    }
+    if (showIntercomMessage(INTERCOM_MESSAGE)) return
     window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   }
 
