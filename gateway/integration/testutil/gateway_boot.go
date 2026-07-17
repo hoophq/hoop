@@ -272,7 +272,7 @@ func (g *Gateway) registerPlugins() error {
 	plugintypes.AuditPath = auditPath
 
 	apiURL := appconfig.Get().ApiURL()
-	noopRelease := func(_, _, _, _ string) {}
+	noopRelease := func(_, _, _, _, _, _ string) {}
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(apiURL),
 		pluginsaudit.New(),
@@ -350,7 +350,7 @@ func bootstrapDefaultOrg() (string, error) {
 func buildEngine() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	a := &api.Api{
-		ReleaseConnectionFn: func(_, _, _, _ string) {},
+		ReleaseConnectionFn: func(_, _, _, _, _, _ string) {},
 	}
 	return a.BuildEngine()
 }

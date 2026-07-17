@@ -243,116 +243,114 @@
     (if (map? v) (or (:value v) "") v)))
 
 (defn claude-code-role-form [role-index]
-  (let [credentials (rf/subscribe [:resource-setup/role-credentials role-index])
-        connection-method (rf/subscribe [:resource-setup/role-connection-method role-index])
-        vertex-flag? (rf/subscribe [:feature-flag/enabled? "experimental.claude_code_vertex"])]
-    (fn [role-index]
-      (let [creds @credentials
-            provider (let [p (claude-code-cred-display creds "provider")]
-                       (if (empty? p) "anthropic" p))
-            vertex? (= provider "vertex")
-            ;; Show the Vertex option when the feature is enabled, or when the
-            ;; role is already set to Vertex (so it never hides existing config).
-            show-vertex-option? (or @vertex-flag? vertex?)
-            api-url-value (claude-code-cred-display creds "remote_url")
-            api-key-value (claude-code-cred-display creds "HEADER_X_API_KEY")
-            region-value (claude-code-cred-display creds "GCP_REGION")
-            project-value (claude-code-cred-display creds "GCP_PROJECT_ID")
-            sa-json-value (claude-code-cred-display creds "GCP_SERVICE_ACCOUNT_JSON")
-            show-selector? (= @connection-method "secrets-manager")
-            update-cred (fn [k]
-                          (fn [e]
-                            (rf/dispatch [:resource-setup->update-role-credentials
-                                          role-index k (-> e .-target .-value)])))]
+  (let [creds @(rf/subscribe [:resource-setup/role-credentials role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        vertex-flag? @(rf/subscribe [:feature-flag/enabled? "experimental.claude_code_vertex"])
+        provider (let [p (claude-code-cred-display creds "provider")]
+                   (if (empty? p) "anthropic" p))
+        vertex? (= provider "vertex")
+        ;; Show the Vertex option when the feature is enabled, or when the
+        ;; role is already set to Vertex (so it never hides existing config).
+        show-vertex-option? (or vertex-flag? vertex?)
+        api-url-value (claude-code-cred-display creds "remote_url")
+        api-key-value (claude-code-cred-display creds "HEADER_X_API_KEY")
+        region-value (claude-code-cred-display creds "GCP_REGION")
+        project-value (claude-code-cred-display creds "GCP_PROJECT_ID")
+        sa-json-value (claude-code-cred-display creds "GCP_SERVICE_ACCOUNT_JSON")
+        show-selector? (= connection-method "secrets-manager")
+        update-cred (fn [k]
+                      (fn [e]
+                        (rf/dispatch [:resource-setup->update-role-credentials
+                                      role-index k (-> e .-target .-value)])))]
 
-        ;; Initialize default values. REMOTE_URL is only relevant for the
-        ;; Anthropic provider; Vertex derives it from the region at submit time.
-        (when (and (not vertex?) (empty? api-url-value))
-          (rf/dispatch [:resource-setup->update-role-credentials
-                        role-index
-                        "remote_url"
-                        "https://api.anthropic.com"]))
+    ;; Initialize default values. REMOTE_URL is only relevant for the
+    ;; Anthropic provider; Vertex derives it from the region at submit time.
+    (when (and (not vertex?) (empty? api-url-value))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "remote_url"
+                    "https://api.anthropic.com"]))
 
-        (when (nil? (get creds "insecure"))
-          (rf/dispatch [:resource-setup->update-role-credentials
-                        role-index
-                        "insecure"
-                        false]))
+    (when (nil? (get creds "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "insecure"
+                    false]))
 
-        [:> Box {:class "space-y-radix-6"}
-         [:> Box {:class "space-y-radix-4"}
-          [:> Heading {:size "3"} "Basic info"]
+    [:> Box {:class "space-y-radix-6"}
+     [:> Box {:class "space-y-radix-4"}
+      [:> Heading {:size "3"} "Basic info"]
 
-          (when show-vertex-option?
-            [forms/select
-             {:label "Provider"
-              :options [{:text "Anthropic API" :value "anthropic"}
-                        {:text "Google Vertex AI" :value "vertex"}]
-              :selected provider
-              :on-change #(rf/dispatch [:resource-setup->update-role-credentials
-                                        role-index "provider" %])}])
+      (when show-vertex-option?
+        [forms/select
+         {:label "Provider"
+          :options [{:text "Anthropic API" :value "anthropic"}
+                    {:text "Google Vertex AI" :value "vertex"}]
+          :selected provider
+          :on-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                    role-index "provider" %])}])
 
-          (if vertex?
-            [:<>
-             [:> Callout.Root {:size "1" :color "gray"}
-              [:> Callout.Text
-               "Claude Code runs in Vertex mode against hoop. hoop mints a short-lived "
-               "token from the service account below and proxies requests to Google Vertex AI."]]
+      (if vertex?
+        [:<>
+         [:> Callout.Root {:size "1" :color "gray"}
+          [:> Callout.Text
+           "Claude Code runs in Vertex mode against hoop. hoop mints a short-lived "
+           "token from the service account below and proxies requests to Google Vertex AI."]]
 
-             [forms/input {:label "GCP Region"
-                           :placeholder "us-east5"
-                           :value region-value
-                           :required true
-                           :type "text"
-                           :on-change (update-cred "GCP_REGION")}]
+         [forms/input {:label "GCP Region"
+                       :placeholder "us-east5"
+                       :value region-value
+                       :required true
+                       :type "text"
+                       :on-change (update-cred "GCP_REGION")}]
 
-             [forms/input {:label "GCP Project ID"
-                           :placeholder "my-gcp-project"
-                           :value project-value
-                           :required true
-                           :type "text"
-                           :on-change (update-cred "GCP_PROJECT_ID")}]
+         [forms/input {:label "GCP Project ID"
+                       :placeholder "my-gcp-project"
+                       :value project-value
+                       :required true
+                       :type "text"
+                       :on-change (update-cred "GCP_PROJECT_ID")}]
 
-             [forms/textarea {:label "Service Account JSON"
-                              :placeholder "{\n  \"type\": \"service_account\",\n  ...\n}"
-                              :value sa-json-value
-                              :required true
-                              :rows 8
-                              :on-change (update-cred "GCP_SERVICE_ACCOUNT_JSON")}]]
+         [forms/textarea {:label "Service Account JSON"
+                          :placeholder "{\n  \"type\": \"service_account\",\n  ...\n}"
+                          :value sa-json-value
+                          :required true
+                          :rows 8
+                          :on-change (update-cred "GCP_SERVICE_ACCOUNT_JSON")}]]
 
-            [:<>
-             [forms/input {:label "Anthropic API URL"
-                           :placeholder "https://api.anthropic.com"
-                           :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
-                           :required true
-                           :type "text"
-                           :on-change (update-cred "remote_url")
-                           :start-adornment (when show-selector?
-                                              [connection-method/source-selector role-index "remote_url"])}]
+        [:<>
+         [forms/input {:label "Anthropic API URL"
+                       :placeholder "https://api.anthropic.com"
+                       :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
+                       :required true
+                       :type "text"
+                       :on-change (update-cred "remote_url")
+                       :start-adornment (when show-selector?
+                                          [connection-method/source-selector role-index "remote_url"])}]
 
-             [forms/input {:label "Anthropic API Key"
-                           :placeholder "sk-ant-..."
-                           :value api-key-value
-                           :required true
-                           :type "password"
-                           :on-change (update-cred "HEADER_X_API_KEY")
-                           :start-adornment (when show-selector?
-                                              [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]])]
+         [forms/input {:label "Anthropic API Key"
+                       :placeholder "sk-ant-..."
+                       :value api-key-value
+                       :required true
+                       :type "password"
+                       :on-change (update-cred "HEADER_X_API_KEY")
+                       :start-adornment (when show-selector?
+                                          [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]])]
 
-         [configuration-inputs/http-headers-section role-index]
+     [configuration-inputs/http-headers-section role-index]
 
-         [:> Flex {:align "center" :gap "3"}
-          [:> Switch {:checked (get creds "insecure" false)
-                      :size "3"
-                      :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
-                                                      role-index
-                                                      "insecure"
-                                                      %])}]
-          [:> Box
-           [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-            "Allow insecure SSL"]
-           [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-            "Skip SSL certificate verification for HTTPS connections."]]]]))))
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get creds "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index
+                                                  "insecure"
+                                                  %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
 
 
 ;; MCP role form - HTTP proxy subtype whose endpoint is protected by OAuth

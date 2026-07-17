@@ -78,6 +78,22 @@ type ReviewGroups struct {
 	ForcedReview bool             `json:"forced_review"`
 }
 
+// RejectedByEmail returns the email of the reviewer whose group rejected the
+// review, or "" when no rejecting group with an email is recorded. It mirrors
+// the web UI, which resolves "Rejected by" from the review group whose status
+// is REJECTED.
+func (r *Review) RejectedByEmail() string {
+	if r == nil {
+		return ""
+	}
+	for _, rg := range r.ReviewGroups {
+		if rg.Status == ReviewStatusRejected && rg.OwnerEmail != nil {
+			return *rg.OwnerEmail
+		}
+	}
+	return ""
+}
+
 type ReviewJit struct {
 	ID                string     `gorm:"column:id"`
 	OrgID             string     `gorm:"column:org_id"`
