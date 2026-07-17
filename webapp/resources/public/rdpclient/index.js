@@ -51,8 +51,13 @@ async function initializeApp(rdpCredential) {
     // shadow canvas bound (maxCanvasDim in gateway/rdp/piigate.go and
     // MAX_CANVAS_DIM in agentrs/src/piigate/canvas.rs, both 4096). Beyond
     // that bound the guard skips redaction FAIL-OPEN, so oversized displays
-    // are scaled down proportionally instead (slightly soft, never
-    // unredacted). Keep the three values in lockstep.
+    // are scaled down proportionally instead. Keep the three values in
+    // lockstep.
+    //
+    // This clamp is best-effort: it bounds the size *requested* by this
+    // client, but the server may still negotiate a different desktop size.
+    // Authoritative enforcement at the gateway/agent boundary is tracked in
+    // DEP-70.
     const MAX_DESKTOP_DIM = 4096;
     const viewportWidth = Number.isFinite(window.innerWidth)
         ? Math.max(1, Math.floor(window.innerWidth)) : 1;
