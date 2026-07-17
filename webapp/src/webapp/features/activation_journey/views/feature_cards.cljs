@@ -68,13 +68,16 @@
   (fn [{:keys [subtype surface with-roles? connection-ids connection-names on-navigate]}]
     (let [admin? @(rf/subscribe [:activation-journey/admin?])
           ready? @(rf/subscribe [:activation-journey/ready?])
-          cards @(rf/subscribe [:activation-journey/cards subtype])
           roles (when with-roles?
                   @(rf/subscribe [:activation-journey/roles-with-ids]))
           ctx {:surface surface
                :connection-ids (or connection-ids (mapv :id roles))
                :connection-names (or connection-names (mapv :name roles))
-               :on-navigate on-navigate}]
+               :on-navigate on-navigate}
+          cards @(rf/subscribe [:activation-journey/cards
+                                {:subtype subtype
+                                 :connection-ids (:connection-ids ctx)
+                                 :connection-names (:connection-names ctx)}])]
       (when (and admin? ready?)
         [:> Grid {:columns "3" :gap "5"}
          (for [card cards]

@@ -10,37 +10,30 @@
   - Live Data Masking:   live-data-masking-templates.json -> webapp_v2 .../DataMasking/templates.js
                          (this ns keeps a lightweight metadata mirror; the full
                          rule bodies live on the React side, which owns the page)
-  - AI Session Analyzer: ai-session-analyzer-templates.json"
+  - AI Session Analyzer: ai-session-analyzer-templates.json -> ai-analyzer-templates ns"
   (:require
+   [webapp.features.activation-journey.ai-analyzer-templates :as ai-analyzer-templates]
    [webapp.features.activation-journey.guardrail-templates :as guardrail-templates]))
 
 ;; Deep-link contract: a feature page opened with ?template=<id> pre-applies
-;; the matching template. For guardrails and AI analyzer templates the id is
-;; the payload :name; masking templates carry an explicit :id kept in sync
-;; with MASKING_TEMPLATES in webapp_v2/src/pages/Features/DataMasking/templates.js.
+;; the matching template. The id is the template's :name for every feature;
+;; masking names are kept in sync with MASKING_TEMPLATES in
+;; webapp_v2/src/pages/Features/DataMasking/templates.js.
 
-;; TODO(EVL-69): replace with the content of live-data-masking-templates.json
-;; (Linear attachment). :name must match the rule name in the React
-;; MASKING_TEMPLATES entry with the same :id so configured-detection works.
+;; Metadata mirror of live-data-masking-templates.json, ordered by
+;; recommendation (developer access -> support team -> contractor). The full
+;; rule bodies live in the React module above; :name is what configured-rule
+;; detection matches against.
 (def masking-templates
-  [{:id "mask-sensitive-field-type"
-    :title "Mask 1 sensitive field type"
-    :card-description "Matches PII in query results and redacts it before the response reaches the client."
-    :name "Mask sensitive fields"}])
-
-;; TODO(EVL-69): replace with the content of ai-session-analyzer-templates.json
-;; (Linear attachment). Each entry is the POST /ai/session-analyzer/rules body
-;; plus the UI-only :title and :card-description keys.
-(def ai-analyzer-templates
-  [{:title "Sessions above risk levels"
-    :card-description "Reviews every session for suspicious activity. Stops operations that exceed your risk limit."
-    :name "block-high-risk-sessions"
-    :description "Reviews every session for suspicious activity and stops operations that exceed your risk limit."
-    :connection_names []
-    :risk_evaluation {:low_risk {:action "allow_execution"}
-                      :medium_risk {:action "allow_execution"}
-                      :high_risk {:action "block_execution"}}
-    :custom_prompt nil}])
+  [{:title "Mask PII for developer access"
+    :card-description "Masks names, emails, phone numbers, and addresses in production query results."
+    :name "prod-mask-pii-developer-access"}
+   {:title "Mask sensitive customer data"
+    :card-description "Masks PII, government IDs, and financial data in support-team account lookups."
+    :name "support-mask-sensitive-customer-data"}
+   {:title "Mask all sensitive data"
+    :card-description "Maximum masking coverage for external contractors: PII, government IDs, financial and medical data."
+    :name "contractor-mask-all-sensitive-data"}])
 
 (def features
   "Ordered catalog of the three activation-journey features. The order is a
@@ -69,14 +62,15 @@
     :connections-param :names}])
 
 (defn templates-for
-  "Ordered recommended templates for a feature. Guardrails templates are
-  curated per connection subtype; an unknown subtype yields [] and the card
-  degrades to the generic feature copy without a template deep link."
+  "Ordered recommended templates for a feature. Guardrails and AI analyzer
+  templates are curated per connection subtype; an unknown subtype yields []
+  and the card degrades to the generic feature copy without a template deep
+  link. Masking templates are per access scenario, not per subtype."
   [feature subtype]
   (case feature
     :guardrails (guardrail-templates/for-subtype subtype)
     :masking masking-templates
-    :ai-analyzer ai-analyzer-templates
+    :ai-analyzer (ai-analyzer-templates/for-subtype subtype)
     []))
 
 (defn template-link-id
@@ -88,7 +82,7 @@
   (guardrail-templates/find-by-name template-id))
 
 (defn find-ai-analyzer-template [template-id]
-  (some #(when (= (:name %) template-id) %) ai-analyzer-templates))
+  (ai-analyzer-templates/find-by-name template-id))
 
 (defn guardrail-payload
   "Strips UI-only keys, leaving the exact POST /guardrails body."
