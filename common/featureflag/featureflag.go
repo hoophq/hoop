@@ -33,6 +33,20 @@ type Flag struct {
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
+	"experimental.alcatraz_dlp": {
+		Name:        "experimental.alcatraz_dlp",
+		Description: "Use the in-process Alcatraz pattern-based DLP provider for this organization instead of the configured DLP_PROVIDER. Statistical entity types (PERSON, LOCATION, NRP) additionally require experimental.alcatraz_ner.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.alcatraz_ner": {
+		Name:        "experimental.alcatraz_ner",
+		Description: "Allow the agent to load the Alcatraz NER model (in-process ONNX) so data-masking rules with statistical entity types (PERSON, LOCATION, NRP) work with the Alcatraz DLP provider. The model loads lazily on the first session that requests such a type and costs hundreds of MB of agent memory once loaded (a later disable does not unload it until the agent restarts). When off, sessions requesting those types fail closed. Air-gapped agents can point ALCATRAZ_NER_MODEL_PATH at a local model directory.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 	"experimental.log_exec_input": {
 		Name:        "experimental.log_exec_input",
 		Description: "Include the truncated exec input as a structured log attribute on the agent (for SIEM export). May log sensitive content.",

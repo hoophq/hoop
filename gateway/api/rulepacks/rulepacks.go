@@ -27,7 +27,7 @@ const flagName = "experimental.rulepacks"
 // are not provider-gated: they are enforced by the built-in pattern-matching
 // engine. Returns true when the attach may proceed.
 func requireProvidersForRulepack(c *gin.Context, orgID string, rulepackID uuid.UUID) bool {
-	if err := services.CheckRedactProvider(); err != nil {
+	if err := services.CheckRedactProviderForOrg(orgID); err != nil {
 		dmRules, lerr := models.ListDataMaskingRules(orgID, models.DataMaskingListOption{RulepackID: &rulepackID})
 		if lerr != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, lerr, "failed listing rulepack data masking rules: %v", lerr)

@@ -184,6 +184,12 @@ func Load() error {
 			return isEnvSet("MSPRESIDIO_ANALYZER_URL") && isEnvSet("MSPRESIDIO_ANONYMIZER_URL")
 		}
 
+		// The alcatraz provider runs in-process on the agent and needs no
+		// credentials or service URLs.
+		if dlpProvider == "alcatraz" {
+			return true
+		}
+
 		return false
 	}()
 
