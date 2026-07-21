@@ -1,0 +1,81 @@
+name: Sync new issues to Linear
+
+# Fires whenever a new GitHub issue is opened in this repo and creates a
+# matching card in the Linear "Support" team (routed to Triage for review).
+# Requires an org- or repo-level secret named LINEAR_API_KEY.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write # needed to comment the Linear link back on the GitHub issue
+
+jobs:
+  create-linear-card:
+    runs-on: ubuntu-latest
+    # Skip if the API key isn't configured yet, so forks / unconfigured repos
+    # don't produce noisy failing runs.
+    if: ${{ github.event.issue != null }}
+    steps:
+      - name: Create Linear card
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          # Linear "Support" team + its "Triage" workflow state.
+          LINEAR_TEAM_ID: d2c87328-92a1-4fdb-b44c-e56f1bb21e86
+          LINEAR_STATE_ID: 41ea6aba-d92d-4369-8a58-2234b073fb4e
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LINEAR_API_KEY:-}" ]; then
+            echo "::warning::LINEAR_API_KEY is not set; skipping Linear sync."
+            exit 0
+          fi
+
+          # Build the Linear description (Markdown). jq handles all escaping.
+          description=$(jq -n \
+            --arg body "${ISSUE_BODY:-_No description provided._}" \
+            --arg url "$ISSUE_URL" \
+            --arg author "$ISSUE_AUTHOR" \
+            --arg repo "$REPO" \
+            --arg num "$ISSUE_NUMBER" \
+            '"**GitHub issue [\($repo)#\($num)](\($url))** — opened by @\($author)\n\n---\n\n" + $body')
+
+          # Build the GraphQL request payload.
+          payload=$(jq -n \
+            --arg teamId "$LINEAR_TEAM_ID" \
+            --arg stateId "$LINEAR_STATE_ID" \
+            --arg title "$ISSUE_TITLE" \
+            --argjson description "$description" \
+            '{
+               query: "mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url } } }",
+               variables: { input: { teamId: $teamId, stateId: $stateId, title: $title, description: $description } }
+             }')
+
+          response=$(curl -sS -X POST https://api.linear.app/graphql \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+
+          echo "Linear API response: $response"
+
+          success=$(echo "$response" | jq -r '.data.issueCreate.success // false')
+          if [ "$success" != "true" ]; then
+            echo "::error::Linear card creation failed. Response: $response"
+            exit 1
+          fi
+
+          linear_url=$(echo "$response" | jq -r '.data.issueCreate.issue.url')
+          linear_id=$(echo "$response" | jq -r '.data.issueCreate.issue.identifier')
+          echo "Created Linear card $linear_id -> $linear_url"
+
+          # Link back on the GitHub issue so both sides are cross-referenced.
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" \
+            --body "🔗 Synced to Linear: [$linear_id]($linear_url)"
