@@ -188,5 +188,8 @@ func (a *Agent) newDBExecProxy(driver string, connParams *pb.AgentConnectionPara
 	if connenv.insecure {
 		opts[dbexec.OptKeyInsecure] = "true"
 	}
+	if connenv.resultMetadata == "off" {
+		opts[dbexec.OptKeyResultMetadata] = "off"
+	}
 	return libhoop.NewAdHocDBExec(driver, payload, stdoutw, stderrw, opts)
 }

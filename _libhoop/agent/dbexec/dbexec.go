@@ -29,3 +29,9 @@ const (
 	OptKeyInsecure    = "insecure"
 	OptKeyServiceName = "service_name"
 )
+
+// OptKeyResultMetadata carries the connection-level RESULT_METADATA setting
+// through the libhoop opts map. The agent sets it to "off" when the connection
+// disables the MySQL interactive-style result feedback lines; any other value
+// (including absent) leaves them on.
+const OptKeyResultMetadata = "result_metadata"
