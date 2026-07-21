@@ -370,9 +370,39 @@ func sessionSupportsGuardRails(pctx plugintypes.Context) bool {
 		return true
 	}
 
+	return isMSSQLWebExec(pctx)
+}
+
+// isMSSQLWebExec reports whether the session is an MSSQL Web Exec run (session
+// API: exec verb + ClientAPI origin), which enforces guardrails through the
+// agent's db-exec redactor rather than the native TDS proxy.
+func isMSSQLWebExec(pctx plugintypes.Context) bool {
 	return pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
 		pctx.ClientVerb == pb.ClientVerbExec &&
 		pctx.ClientOrigin == pb.ConnectionOriginClientAPI
+}
+
+// guardRailRulesHaveOutputRules reports whether the encoded guardrail payload
+// contains at least one non-empty output rule set. Used to keep native MSSQL
+// admission input-only until result-path (output) enforcement exists.
+func guardRailRulesHaveOutputRules(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var parsed struct {
+		OutputRules []guardrails.DataRules `json:"output_rules"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		// Be conservative: if the payload cannot be parsed, do not claim it is
+		// output-free (the generic guardrail admission check still applies).
+		return true
+	}
+	for _, dr := range parsed.OutputRules {
+		if len(dr.Items) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
@@ -564,6 +594,19 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 					return status.Errorf(codes.FailedPrecondition,
 						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
 							"remove the guardrails from this connection or use a supported connection type", connType)
+				}
+				// Native MSSQL enforces INPUT guardrails only; result-set (output)
+				// masking is not implemented for the TDS proxy yet. Admitting a
+				// connection with output rules would run those rules silently
+				// unenforced, so refuse it fail-closed. Web Exec (handled via the
+				// db-exec redactor) does enforce output rules and is exempt.
+				if pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
+					!isMSSQLWebExec(pctx) &&
+					guardRailRulesHaveOutputRules(guardRailRulesJsonData) {
+					logCtx.Warnf("refusing session: native MSSQL enforces input guardrails only, but this connection has output rules")
+					return status.Errorf(codes.FailedPrecondition,
+						"this connection has output guardrail rules, but native MSSQL enforces input rules only; "+
+							"remove the output rules or use the connection via Web Exec until output enforcement is available")
 				}
 			}
 		}

@@ -462,6 +462,31 @@ func TestMSSQL_Guardrails_BlocksRPCExecuteSql(t *testing.T) {
 	}
 }
 
+// TestMSSQL_Guardrails_BlocksDynamicExecParam verifies the dynamic-SQL bypass is
+// closed: a harmless-looking statement (EXEC(@p1)) whose blocked SQL rides in a
+// string parameter is still blocked, because all character parameter values are
+// inspected — not just the statement text.
+func TestMSSQL_Guardrails_BlocksDynamicExecParam(t *testing.T) {
+	enableMSSQLGuardrailsFlag(t)
+	mc := testutil.StartMSSQL(t)
+	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
+	defer teardown()
+	db := client.DB
+
+	// go-mssqldb sends this as sp_executesql N'EXEC(@p1)', N'@p1 ...', @p1=<value>.
+	_, err := db.Exec("EXEC(@p1)", "SELECT 1 FROM secret_table")
+	if err == nil {
+		t.Fatal("expected guardrail to block the dynamic-exec parameter value, got nil")
+	}
+	var sqlErr mssql.Error
+	if !asMSSQLError(err, &sqlErr) {
+		t.Fatalf("expected mssql.Error, got %T: %v", err, err)
+	}
+	if sqlErr.Number != 50000 {
+		t.Errorf("expected guardrail error number 50000, got %d (%q)", sqlErr.Number, sqlErr.Message)
+	}
+}
+
 // TestMSSQL_Guardrails_AllowsCompliantQueries verifies that statements which do
 // not match any rule flow through the guardrail path unchanged, for both the
 // SQLBatch and the RPC sp_executesql paths.

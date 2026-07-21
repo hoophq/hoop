@@ -234,6 +234,27 @@ func TestSessionSupportsGuardRails(t *testing.T) {
 	}
 }
 
+func TestGuardRailRulesHaveOutputRules(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"empty payload", "", false},
+		{"input only", `{"input_rules":[{"rules":[{"type":"deny_words_list","words":["x"]}]}],"output_rules":[]}`, false},
+		{"empty output entry", `{"input_rules":[],"output_rules":[{"rules":[]}]}`, false},
+		{"has output rule", `{"input_rules":[],"output_rules":[{"rules":[{"type":"deny_words_list","words":["y"]}]}]}`, true},
+		{"unparseable is conservative", `not-json`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := guardRailRulesHaveOutputRules([]byte(tt.raw)); got != tt.want {
+				t.Errorf("guardRailRulesHaveOutputRules(%q) = %v, want %v", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEncodeGuardRailRules(t *testing.T) {
 	t.Run("nil rules yield no payload", func(t *testing.T) {
 		payload, err := encodeGuardRailRules(nil)
