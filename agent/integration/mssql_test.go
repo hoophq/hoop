@@ -4,13 +4,17 @@ package integration
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	mssql "github.com/microsoft/go-mssqldb"
+
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/agent/integration/testutil"
+	pb "github.com/hoophq/hoop/common/proto"
 )
 
 const mssqlTestTimeout = 30 * time.Second
@@ -350,6 +354,140 @@ func TestMSSQL_BadCredentials(t *testing.T) {
 
 	if err := client.PingWithTimeout(15 * time.Second); err == nil {
 		t.Fatal("expected ping to fail with bad upstream credentials, got nil")
+	}
+}
+
+// mssqlGuardRailRules blocks any statement containing the substring
+// "secret_table" via an input deny-word rule (the same JSON shape the gateway
+// ships to the agent).
+const mssqlGuardRailRules = `[{"id":"gr1","name":"block-secret-table","input_rules":[{"rules":[{"type":"deny_words_list","words":["secret_table"],"message":"blocked by hoop guardrail: secret_table is off limits"}]}],"output_rules":[]}]`
+
+// enableMSSQLGuardrailsFlag turns on beta.mssql_native_guardrails in the agent's
+// process-global feature-flag state for the duration of the test, restoring the
+// previous snapshot on cleanup.
+func enableMSSQLGuardrailsFlag(t *testing.T) {
+	t.Helper()
+	apply := func(flags map[string]bool) {
+		raw, err := json.Marshal(flags)
+		if err != nil {
+			t.Fatalf("marshal feature flags: %v", err)
+		}
+		featureflagstate.Update(map[string][]byte{pb.SpecFeatureFlagsKey: raw})
+	}
+	prev := featureflagstate.Snapshot()
+	next := map[string]bool{}
+	for k, v := range prev {
+		next[k] = v
+	}
+	next["beta.mssql_native_guardrails"] = true
+	apply(next)
+	t.Cleanup(func() { apply(prev) })
+}
+
+// dialMSSQLWithGuardRails is dialMSSQL with guardrail rules attached to the
+// session's connection params.
+func dialMSSQLWithGuardRails(t *testing.T, mc *testutil.MSSQLContainer, rules string) (*testutil.PipedMSSQLClient, func()) {
+	t.Helper()
+	agent, tr := startAgent(t)
+	sessionID := testutil.OpenMSSQLSessionWithGuardRails(t, tr, mc, []byte(rules))
+	demux := testutil.StartRecvDemux(t, tr)
+	client := testutil.DialPipedMSSQL(t, tr, demux, mc, sessionID, "conn-1")
+	return client, func() { shutdownAgent(t, agent, tr) }
+}
+
+// TestMSSQL_Guardrails_BlocksSQLBatch verifies a no-argument statement (sent as
+// a TDS SQLBatch) that matches an input guardrail rule is blocked before
+// reaching the server, surfaces to the client as a server error, and leaves the
+// connection usable.
+func TestMSSQL_Guardrails_BlocksSQLBatch(t *testing.T) {
+	enableMSSQLGuardrailsFlag(t)
+	mc := testutil.StartMSSQL(t)
+	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
+	defer teardown()
+	db := client.DB
+
+	// A no-arg Exec is sent as a SQLBatch.
+	_, err := db.Exec("SELECT 1 FROM secret_table")
+	if err == nil {
+		t.Fatal("expected guardrail to block the SQLBatch query, got nil error")
+	}
+	var sqlErr mssql.Error
+	if !asMSSQLError(err, &sqlErr) {
+		t.Fatalf("expected mssql.Error, got %T: %v", err, err)
+	}
+	if sqlErr.Number != 50000 {
+		t.Errorf("expected guardrail error number 50000, got %d (%q)", sqlErr.Number, sqlErr.Message)
+	}
+	if !strings.Contains(sqlErr.Message, "secret_table") {
+		t.Errorf("guardrail error should reference the rule, got %q", sqlErr.Message)
+	}
+
+	// The connection must survive a blocked statement.
+	var n int
+	if err := db.QueryRow("SELECT 1 AS n").Scan(&n); err != nil {
+		t.Fatalf("connection did not survive guardrail block: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 after block, got %d", n)
+	}
+}
+
+// TestMSSQL_Guardrails_BlocksRPCExecuteSql verifies a parameterized statement
+// (which the driver sends as an RPC sp_executesql, statement in parameter 0) is
+// blocked when it matches a rule — the RPC path, not just SQLBatch.
+func TestMSSQL_Guardrails_BlocksRPCExecuteSql(t *testing.T) {
+	enableMSSQLGuardrailsFlag(t)
+	mc := testutil.StartMSSQL(t)
+	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
+	defer teardown()
+	db := client.DB
+
+	// A parameterized Exec is sent as RPC sp_executesql.
+	_, err := db.Exec("SELECT id FROM secret_table WHERE id = @p1", 1)
+	if err == nil {
+		t.Fatal("expected guardrail to block the sp_executesql query, got nil error")
+	}
+	var sqlErr mssql.Error
+	if !asMSSQLError(err, &sqlErr) {
+		t.Fatalf("expected mssql.Error, got %T: %v", err, err)
+	}
+	if sqlErr.Number != 50000 {
+		t.Errorf("expected guardrail error number 50000, got %d (%q)", sqlErr.Number, sqlErr.Message)
+	}
+
+	// The connection must survive a blocked RPC statement too.
+	var n int
+	if err := db.QueryRow("SELECT 1 AS n").Scan(&n); err != nil {
+		t.Fatalf("connection did not survive guardrail block: %v", err)
+	}
+}
+
+// TestMSSQL_Guardrails_AllowsCompliantQueries verifies that statements which do
+// not match any rule flow through the guardrail path unchanged, for both the
+// SQLBatch and the RPC sp_executesql paths.
+func TestMSSQL_Guardrails_AllowsCompliantQueries(t *testing.T) {
+	enableMSSQLGuardrailsFlag(t)
+	mc := testutil.StartMSSQL(t)
+	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
+	defer teardown()
+	db := client.DB
+
+	// SQLBatch path.
+	var n int
+	if err := db.QueryRow("SELECT 7 AS n").Scan(&n); err != nil {
+		t.Fatalf("compliant SQLBatch was blocked unexpectedly: %v", err)
+	}
+	if n != 7 {
+		t.Errorf("expected 7, got %d", n)
+	}
+
+	// RPC sp_executesql path.
+	var m int
+	if err := db.QueryRow("SELECT @p1 AS m", 42).Scan(&m); err != nil {
+		t.Fatalf("compliant sp_executesql was blocked unexpectedly: %v", err)
+	}
+	if m != 42 {
+		t.Errorf("expected 42, got %d", m)
 	}
 }
 

@@ -348,12 +348,25 @@ func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
 }
 
 // sessionSupportsGuardRails reports whether this particular session has an
-// agent-side enforcement path. MSSQL is supported only for Web Exec: the
-// session API uses ClientAPI + exec and the agent's doExec path passes the
-// rules to the command/DB-exec redactor. Native MSSQL protocol sessions must
-// remain rejected because mssql.go does not inspect guardrails.
+// agent-side enforcement path. Beyond the always-supported native types
+// (connectionTypeSupportsGuardRails), two MSSQL cases are supported:
+//
+//   - Native MSSQL protocol, when beta.mssql_native_guardrails is enabled for
+//     the org: the agent's mssql proxy reconstructs SQLBatch/RPC statements and
+//     validates them against input rules. The flag is org-scoped and defaults
+//     on; when off the session is refused (fail-closed) so a guarded connection
+//     never runs unguarded. NOTE: enforcement lives in the agent proxy, so an
+//     agent older than this feature runs the session unguarded — upgrade agents
+//     before relying on it.
+//   - MSSQL Web Exec: the session API uses ClientAPI + exec and the agent's
+//     doExec path passes the rules to the command/DB-exec redactor.
 func sessionSupportsGuardRails(pctx plugintypes.Context) bool {
 	if connectionTypeSupportsGuardRails(pctx.ProtoConnectionType()) {
+		return true
+	}
+
+	if pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
+		featureflag.IsEnabled(pctx.OrgID, "beta.mssql_native_guardrails") {
 		return true
 	}
 

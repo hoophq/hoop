@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/common/featureflag"
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
@@ -135,9 +136,11 @@ func TestConnectionTypeSupportsGuardRails(t *testing.T) {
 		}
 	}
 
-	// MySQL, MSSQL and MongoDB native proxies do not evaluate guardrails, so
-	// native sessions of these types must be refused (fail closed), not run
-	// unguarded (DEP-48).
+	// MySQL, MSSQL and MongoDB native proxies are not unconditionally supported
+	// by connection type. MySQL/MongoDB native proxies do not evaluate
+	// guardrails at all (fail closed, DEP-48). MSSQL native IS supported, but
+	// only when its feature flag is on, which is decided per-session in
+	// sessionSupportsGuardRails (it needs the org id) rather than here.
 	unsupported := []pb.ConnectionType{
 		pb.ConnectionTypeMySQL,
 		pb.ConnectionTypeMSSQL,
@@ -152,45 +155,78 @@ func TestConnectionTypeSupportsGuardRails(t *testing.T) {
 }
 
 func TestSessionSupportsGuardRails(t *testing.T) {
+	const flag = "beta.mssql_native_guardrails"
 	tests := []struct {
-		name string
-		ctx  plugintypes.Context
-		want bool
+		name   string
+		orgID  string
+		flagOn bool
+		ctx    plugintypes.Context
+		want   bool
 	}{
 		{
-			name: "mssql web exec",
+			name:   "mssql native session, flag on",
+			orgID:  "org-mssql-on",
+			flagOn: true,
 			ctx: plugintypes.Context{
-				ConnectionType:    string(pb.ConnectionTypeMSSQL),
-				ConnectionSubType: "mssql",
-				ClientVerb:        pb.ClientVerbExec,
-				ClientOrigin:      pb.ConnectionOriginClientAPI,
+				OrgID:          "org-mssql-on",
+				ConnectionType: string(pb.ConnectionTypeMSSQL),
+				ClientVerb:     pb.ClientVerbConnect,
+				ClientOrigin:   pb.ConnectionOriginClient,
 			},
 			want: true,
 		},
 		{
-			name: "mssql native session",
+			name:   "mssql native session, flag off",
+			orgID:  "org-mssql-off",
+			flagOn: false,
 			ctx: plugintypes.Context{
-				ConnectionType:    string(pb.ConnectionTypeMSSQL),
-				ConnectionSubType: "",
-				ClientVerb:        pb.ClientVerbExec,
-				ClientOrigin:      pb.ConnectionOriginClient,
+				OrgID:          "org-mssql-off",
+				ConnectionType: string(pb.ConnectionTypeMSSQL),
+				ClientVerb:     pb.ClientVerbConnect,
+				ClientOrigin:   pb.ConnectionOriginClient,
 			},
 			want: false,
 		},
 		{
-			name: "mssql non-exec API session",
+			name:   "mssql web exec is supported regardless of flag",
+			orgID:  "org-mssql-off2",
+			flagOn: false,
 			ctx: plugintypes.Context{
-				ConnectionType:    string(pb.ConnectionTypeMSSQL),
-				ConnectionSubType: "",
-				ClientVerb:        pb.ClientVerbPlainExec,
-				ClientOrigin:      pb.ConnectionOriginClientAPI,
+				OrgID:          "org-mssql-off2",
+				ConnectionType: string(pb.ConnectionTypeMSSQL),
+				ClientVerb:     pb.ClientVerbExec,
+				ClientOrigin:   pb.ConnectionOriginClientAPI,
+			},
+			want: true,
+		},
+		{
+			name:   "mssql non-exec API session, flag off",
+			orgID:  "org-mssql-off3",
+			flagOn: false,
+			ctx: plugintypes.Context{
+				OrgID:          "org-mssql-off3",
+				ConnectionType: string(pb.ConnectionTypeMSSQL),
+				ClientVerb:     pb.ClientVerbPlainExec,
+				ClientOrigin:   pb.ConnectionOriginClientAPI,
 			},
 			want: false,
+		},
+		{
+			name:  "postgres native is supported by type",
+			orgID: "org-pg",
+			ctx: plugintypes.Context{
+				OrgID:          "org-pg",
+				ConnectionType: string(pb.ConnectionTypePostgres),
+				ClientVerb:     pb.ClientVerbConnect,
+				ClientOrigin:   pb.ConnectionOriginClient,
+			},
+			want: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			featureflag.Set(tt.orgID, flag, tt.flagOn)
 			if got := sessionSupportsGuardRails(tt.ctx); got != tt.want {
 				t.Fatalf("sessionSupportsGuardRails() = %v, want %v", got, tt.want)
 			}
