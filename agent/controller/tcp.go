@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"io"
+	"libhoop"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -21,6 +22,14 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 	if connParams == nil {
 		log.Printf("session=%s - connection params not found", sessionID)
 		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
+		return
+	}
+	// The raw TCP relay copies bytes verbatim and has no guardrail
+	// evaluation path; refuse guarded sessions instead of running them
+	// unguarded (DEP-48).
+	if err := libhoop.CheckGuardRailEnforcement(string(connParams.GuardRailRules), "tcp"); err != nil {
+		log.With("sid", sessionID).Warn(err)
+		a.sendClientSessionClose(sessionID, err.Error())
 		return
 	}
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
