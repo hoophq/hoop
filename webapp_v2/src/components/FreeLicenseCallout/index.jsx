@@ -18,17 +18,14 @@ const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
  * page in a new tab.
  */
 export default function FreeLicenseCallout({ message, variant = 'info' }) {
-  const analyticsTracking = useUserStore((state) => state.analyticsTracking)
+  const showIntercomMessage = useUserStore((state) => state.showIntercomMessage)
   const limit = variant === 'limit'
   const color = limit ? 'red' : 'blue'
   const Icon = limit ? AlertCircle : Info
 
   const handleClick = (event) => {
     event.preventDefault()
-    if (analyticsTracking && window.Intercom) {
-      window.Intercom('showNewMessage', INTERCOM_MESSAGE)
-      return
-    }
+    if (showIntercomMessage(INTERCOM_MESSAGE)) return
     window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   }
 

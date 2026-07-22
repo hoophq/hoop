@@ -46,22 +46,24 @@ func (a *Agent) processMSSQLProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting mssql connection at %v:%v", sessionID, connenv.host, connenv.port)
-	opts := map[string]string{
-		"sid":      sessionID,
-		"hostname": connenv.host,
-		"port":     connenv.port,
-		"username": connenv.user,
-		"password": connenv.pass,
-		"insecure": fmt.Sprintf("%v", connenv.insecure),
-	}
-	// The gateway is the sole admission authority for native MSSQL guardrails: it
-	// opens the session only when beta.mssql_native_guardrails is on for the org
-	// and refuses connections that carry output rules. Always forward the rules
-	// it attached, so enforcement cannot be skipped by an agent-side feature-flag
-	// sync race (the flag may not have propagated to the agent yet). Data masking
-	// on the result path is not yet supported for MSSQL, so no DLP opts are set.
+	// Forward the connection's guardrail rules to libhoop, which enforces input
+	// rules on the native TDS path (and fails closed at construction on what it
+	// cannot evaluate, e.g. output rules). The gateway drops the rules when the
+	// beta.mssql_native_guardrails flag is off for the org, so an empty value
+	// here means a plain passthrough. Output data masking is not yet supported
+	// for MSSQL, so no DLP opts are set.
+	var guardRailRules string
 	if connParams.GuardRailRules != nil {
-		opts["guard_rail_rules"] = string(connParams.GuardRailRules)
+		guardRailRules = string(connParams.GuardRailRules)
+	}
+	opts := map[string]string{
+		"sid":              sessionID,
+		"hostname":         connenv.host,
+		"port":             connenv.port,
+		"username":         connenv.user,
+		"password":         connenv.pass,
+		"insecure":         fmt.Sprintf("%v", connenv.insecure),
+		"guard_rail_rules": guardRailRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MSSQL()
 	if err != nil {

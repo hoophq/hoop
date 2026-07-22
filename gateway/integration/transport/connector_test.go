@@ -83,18 +83,6 @@ func (c *grpcConnector) PreConnect(_ context.Context, token string, req *pb.PreC
 }
 
 func (c *grpcConnector) DialAgent(_ context.Context, token string) (pb.ClientTransport, error) {
-	// Advertise the native MSSQL guardrails capability, matching a current agent
-	// linked against a libhoop that enforces it (the harness links the real
-	// libhoop). Tests that need to simulate an older, incapable agent use
-	// dialAgentWithoutCapabilities instead.
-	return commongrpc.Connect(c.clientConfig(token),
-		commongrpc.WithOption("origin", pb.ConnectionOriginAgent),
-		commongrpc.WithOption(commongrpc.OptionKey(pb.GRPCMetaAgentCapabilities), pb.AgentCapabilityMSSQLGuardRails))
-}
-
-// dialAgentWithoutCapabilities dials an agent stream that advertises no
-// capabilities, standing in for an agent older than capability advertisement.
-func (c *grpcConnector) dialAgentWithoutCapabilities(token string) (pb.ClientTransport, error) {
 	return commongrpc.Connect(c.clientConfig(token),
 		commongrpc.WithOption("origin", pb.ConnectionOriginAgent))
 }

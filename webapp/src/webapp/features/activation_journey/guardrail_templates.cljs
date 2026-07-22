@@ -1,9 +1,11 @@
-(ns webapp.resources.setup.guardrails-suggestions.constants)
+(ns webapp.features.activation-journey.guardrail-templates)
 
-;; Curated guardrail suggestions, indexed by connection subtype.
+;; Curated guardrail templates, indexed by connection subtype.
+;; Source of truth: default-guardrails.json (Linear, Feature Specs |
+;; Product Activation Journey / EVL-69).
 ;; Each entry already conforms to the POST /guardrails payload shape
 ;; (name, description, subtype, attributes, connection_ids, input.rules, output.rules).
-;; The :title and :card-description fields are UI-only labels for the suggestion card.
+;; The :title and :card-description fields are UI-only labels for cards and banners.
 (def suggestions-by-subtype
   {"postgres"
    [{:title "Reinforce WHERE clause"
@@ -880,6 +882,14 @@
      :output {:rules []}}]})
 
 (defn for-subtype
-  "Returns the curated list of suggestions for the given connection subtype, or [] if none."
+  "Returns the curated list of templates for the given connection subtype, or [] if none."
   [subtype]
   (get suggestions-by-subtype subtype []))
+
+(defn find-by-name
+  "Flat lookup of a guardrail template by its :name across all subtypes.
+  Template names are globally unique and double as deep-link ids (?template=)."
+  [template-name]
+  (->> (vals suggestions-by-subtype)
+       (apply concat)
+       (some #(when (= (:name %) template-name) %))))

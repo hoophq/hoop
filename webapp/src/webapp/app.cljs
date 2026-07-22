@@ -35,8 +35,6 @@
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.mcp-oauth]
    [webapp.resources.configure-role.mcp-oauth-edit]
-   [webapp.resources.setup.guardrails-suggestions.events]
-   [webapp.resources.setup.guardrails-suggestions.subs]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
    [webapp.resources.configure-role.main :as configure-role]
@@ -90,6 +88,8 @@
    [webapp.features.machine-identities.subs]
    [webapp.features.machine-identities.views.identity-form :as identity-form]
    [webapp.features.machine-identities.views.identity-roles :as identity-roles]
+   [webapp.features.activation-journey.events]
+   [webapp.features.activation-journey.subs]
    [webapp.features.ai-session-analyzer.events]
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
@@ -461,7 +461,12 @@
     [guardrails/panel]]])
 
 (defmethod routes/panels :create-guardrail-panel []
-  (rf/dispatch [:guardrails->clear-active-guardrail])
+  (let [params (js/URLSearchParams. (.. js/window -location -search))
+        template-id (.get params "template")]
+    (if template-id
+      (rf/dispatch [:activation-journey/seed-guardrail-template
+                    template-id (.get params "connections")])
+      (rf/dispatch [:guardrails->clear-active-guardrail])))
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
     [routes/wrap-admin-only
@@ -733,7 +738,12 @@
 
 (defmethod routes/panels :create-ai-session-analyzer-rule-panel []
   (rf/dispatch [:destroy-page-loader])
-  (rf/dispatch [:ai-session-analyzer/clear-active-rule])
+  (let [params (js/URLSearchParams. (.. js/window -location -search))
+        template-id (.get params "template")]
+    (if template-id
+      (rf/dispatch [:activation-journey/seed-ai-analyzer-template
+                    template-id (.get params "connections")])
+      (rf/dispatch [:ai-session-analyzer/clear-active-rule])))
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
     [routes/wrap-admin-only

@@ -6,11 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoop/common/featureflag"
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
@@ -122,139 +120,6 @@ func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
 	}
 }
 
-func TestConnectionTypeSupportsGuardRails(t *testing.T) {
-	supported := []pb.ConnectionType{
-		pb.ConnectionTypePostgres,
-		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeHttpProxy,
-		pb.ConnectionTypeSSH,
-		pb.ConnectionTypeCommandLine,
-	}
-	for _, ct := range supported {
-		if !connectionTypeSupportsGuardRails(ct) {
-			t.Errorf("expected connection type %q to support guardrails", ct)
-		}
-	}
-
-	// MySQL, MSSQL and MongoDB native proxies are not unconditionally supported
-	// by connection type. MySQL/MongoDB native proxies do not evaluate
-	// guardrails at all (fail closed, DEP-48). MSSQL native IS supported, but
-	// only when its feature flag is on, which is decided per-session in
-	// sessionSupportsGuardRails (it needs the org id) rather than here.
-	unsupported := []pb.ConnectionType{
-		pb.ConnectionTypeMySQL,
-		pb.ConnectionTypeMSSQL,
-		pb.ConnectionTypeMongoDB,
-		pb.ConnectionTypeTCP,
-	}
-	for _, ct := range unsupported {
-		if connectionTypeSupportsGuardRails(ct) {
-			t.Errorf("expected connection type %q to NOT support guardrails", ct)
-		}
-	}
-}
-
-func TestSessionSupportsGuardRails(t *testing.T) {
-	const flag = "beta.mssql_native_guardrails"
-	tests := []struct {
-		name   string
-		orgID  string
-		flagOn bool
-		ctx    plugintypes.Context
-		want   bool
-	}{
-		{
-			name:   "mssql native session, flag on",
-			orgID:  "org-mssql-on",
-			flagOn: true,
-			ctx: plugintypes.Context{
-				OrgID:          "org-mssql-on",
-				ConnectionType: string(pb.ConnectionTypeMSSQL),
-				ClientVerb:     pb.ClientVerbConnect,
-				ClientOrigin:   pb.ConnectionOriginClient,
-			},
-			want: true,
-		},
-		{
-			name:   "mssql native session, flag off",
-			orgID:  "org-mssql-off",
-			flagOn: false,
-			ctx: plugintypes.Context{
-				OrgID:          "org-mssql-off",
-				ConnectionType: string(pb.ConnectionTypeMSSQL),
-				ClientVerb:     pb.ClientVerbConnect,
-				ClientOrigin:   pb.ConnectionOriginClient,
-			},
-			want: false,
-		},
-		{
-			name:   "mssql web exec is supported regardless of flag",
-			orgID:  "org-mssql-off2",
-			flagOn: false,
-			ctx: plugintypes.Context{
-				OrgID:          "org-mssql-off2",
-				ConnectionType: string(pb.ConnectionTypeMSSQL),
-				ClientVerb:     pb.ClientVerbExec,
-				ClientOrigin:   pb.ConnectionOriginClientAPI,
-			},
-			want: true,
-		},
-		{
-			name:   "mssql non-exec API session, flag off",
-			orgID:  "org-mssql-off3",
-			flagOn: false,
-			ctx: plugintypes.Context{
-				OrgID:          "org-mssql-off3",
-				ConnectionType: string(pb.ConnectionTypeMSSQL),
-				ClientVerb:     pb.ClientVerbPlainExec,
-				ClientOrigin:   pb.ConnectionOriginClientAPI,
-			},
-			want: false,
-		},
-		{
-			name:  "postgres native is supported by type",
-			orgID: "org-pg",
-			ctx: plugintypes.Context{
-				OrgID:          "org-pg",
-				ConnectionType: string(pb.ConnectionTypePostgres),
-				ClientVerb:     pb.ClientVerbConnect,
-				ClientOrigin:   pb.ConnectionOriginClient,
-			},
-			want: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			featureflag.Set(tt.orgID, flag, tt.flagOn)
-			if got := sessionSupportsGuardRails(tt.ctx); got != tt.want {
-				t.Fatalf("sessionSupportsGuardRails() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGuardRailRulesHaveOutputRules(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want bool
-	}{
-		{"empty payload", "", false},
-		{"input only", `{"input_rules":[{"rules":[{"type":"deny_words_list","words":["x"]}]}],"output_rules":[]}`, false},
-		{"empty output entry", `{"input_rules":[],"output_rules":[{"rules":[]}]}`, false},
-		{"has output rule", `{"input_rules":[],"output_rules":[{"rules":[{"type":"deny_words_list","words":["y"]}]}]}`, true},
-		{"unparseable is conservative", `not-json`, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := guardRailRulesHaveOutputRules([]byte(tt.raw)); got != tt.want {
-				t.Errorf("guardRailRulesHaveOutputRules(%q) = %v, want %v", tt.raw, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestEncodeGuardRailRules(t *testing.T) {
 	t.Run("nil rules yield no payload", func(t *testing.T) {
 		payload, err := encodeGuardRailRules(nil)
@@ -327,6 +192,87 @@ func TestEncodeGuardRailRules(t *testing.T) {
 			t.Fatal("expected error for invalid rules JSON")
 		}
 	})
+}
+
+func TestDropNativeMSSQLGuardRails(t *testing.T) {
+	// This predicate is the single OSS-side policy switch for native MSSQL
+	// guardrails, so every branch of the carve-out is pinned here to guard
+	// against a future "simplification" turning it into a fail-open bug.
+	tests := []struct {
+		name         string
+		connType     pb.ConnectionType
+		clientVerb   string
+		clientOrigin string
+		flagEnabled  bool
+		want         bool
+	}{
+		{
+			name:         "native mssql connect, flag off -> drop rules",
+			connType:     pb.ConnectionTypeMSSQL,
+			clientVerb:   pb.ClientVerbConnect,
+			clientOrigin: pb.ConnectionOriginClient,
+			flagEnabled:  false,
+			want:         true,
+		},
+		{
+			name:         "native mssql connect, flag on -> ship rules",
+			connType:     pb.ConnectionTypeMSSQL,
+			clientVerb:   pb.ClientVerbConnect,
+			clientOrigin: pb.ConnectionOriginClient,
+			flagEnabled:  true,
+			want:         false,
+		},
+		{
+			name:         "web exec mssql (exec + client-api), flag off -> ship rules (exempt)",
+			connType:     pb.ConnectionTypeMSSQL,
+			clientVerb:   pb.ClientVerbExec,
+			clientOrigin: pb.ConnectionOriginClientAPI,
+			flagEnabled:  false,
+			want:         false,
+		},
+		{
+			name:         "web exec mssql (exec + client-api), flag on -> ship rules",
+			connType:     pb.ConnectionTypeMSSQL,
+			clientVerb:   pb.ClientVerbExec,
+			clientOrigin: pb.ConnectionOriginClientAPI,
+			flagEnabled:  true,
+			want:         false,
+		},
+		{
+			name:         "cli exec mssql (exec + client origin), flag off -> drop rules (only client-api is exempt)",
+			connType:     pb.ConnectionTypeMSSQL,
+			clientVerb:   pb.ClientVerbExec,
+			clientOrigin: pb.ConnectionOriginClient,
+			flagEnabled:  false,
+			want:         true,
+		},
+		{
+			name:         "postgres connect, flag off -> never affected",
+			connType:     pb.ConnectionTypePostgres,
+			clientVerb:   pb.ClientVerbConnect,
+			clientOrigin: pb.ConnectionOriginClient,
+			flagEnabled:  false,
+			want:         false,
+		},
+		{
+			name:         "mysql connect, flag on -> never affected",
+			connType:     pb.ConnectionTypeMySQL,
+			clientVerb:   pb.ClientVerbConnect,
+			clientOrigin: pb.ConnectionOriginClient,
+			flagEnabled:  true,
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dropNativeMSSQLGuardRails(tt.connType, tt.clientVerb, tt.clientOrigin, tt.flagEnabled)
+			if got != tt.want {
+				t.Fatalf("dropNativeMSSQLGuardRails(%q, %q, %q, %v) = %v, want %v",
+					tt.connType, tt.clientVerb, tt.clientOrigin, tt.flagEnabled, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestBuildLegacyGuardRailErrorMessage_InvalidPayload(t *testing.T) {

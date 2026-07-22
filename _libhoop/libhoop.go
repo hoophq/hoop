@@ -54,8 +54,3 @@ func NewSSHProxy(ctx context.Context, clientW io.Writer, opts map[string]string)
 func NewHttpProxy(ctx context.Context, clientW io.Writer, analyzer aianalyzer.Analyzer, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "httpproxy"}, nil
 }
-
-// SupportsMSSQLGuardRails reports whether this libhoop build enforces guardrails
-// on the native MSSQL (TDS) protocol. The OSS/noop build does not, so the agent
-// must not advertise the capability to the gateway.
-func SupportsMSSQLGuardRails() bool { return false }

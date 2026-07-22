@@ -32,23 +32,3 @@ func TestSessionOriginFromUserAgent(t *testing.T) {
 		}
 	}
 }
-
-func TestHasAgentCapability(t *testing.T) {
-	cases := []struct {
-		advertised string
-		token      string
-		want       bool
-	}{
-		{"", AgentCapabilityMSSQLGuardRails, false},
-		{AgentCapabilityMSSQLGuardRails, AgentCapabilityMSSQLGuardRails, true},
-		{"other,mssql_native_guardrails,more", AgentCapabilityMSSQLGuardRails, true},
-		{" mssql_native_guardrails , x", AgentCapabilityMSSQLGuardRails, true},
-		{"mssql_native_guardrail", AgentCapabilityMSSQLGuardRails, false},
-		{"other", AgentCapabilityMSSQLGuardRails, false},
-	}
-	for _, tc := range cases {
-		if got := HasAgentCapability(tc.advertised, tc.token); got != tc.want {
-			t.Errorf("HasAgentCapability(%q, %q) = %v, want %v", tc.advertised, tc.token, got, tc.want)
-		}
-	}
-}

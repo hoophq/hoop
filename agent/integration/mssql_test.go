@@ -4,7 +4,6 @@ package integration
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,9 +11,7 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/agent/integration/testutil"
-	pb "github.com/hoophq/hoop/common/proto"
 )
 
 const mssqlTestTimeout = 30 * time.Second
@@ -363,28 +360,6 @@ func TestMSSQL_BadCredentials(t *testing.T) {
 // with top-level input_rules/output_rules, not an array of {id,name,...}.
 const mssqlGuardRailRules = `{"input_rules":[{"rules":[{"type":"deny_words_list","words":["secret_table"],"pattern_regex":"","message":"blocked by hoop guardrail: secret_table is off limits"}]}],"output_rules":[]}`
 
-// enableMSSQLGuardrailsFlag turns on beta.mssql_native_guardrails in the agent's
-// process-global feature-flag state for the duration of the test, restoring the
-// previous snapshot on cleanup.
-func enableMSSQLGuardrailsFlag(t *testing.T) {
-	t.Helper()
-	apply := func(flags map[string]bool) {
-		raw, err := json.Marshal(flags)
-		if err != nil {
-			t.Fatalf("marshal feature flags: %v", err)
-		}
-		featureflagstate.Update(map[string][]byte{pb.SpecFeatureFlagsKey: raw})
-	}
-	prev := featureflagstate.Snapshot()
-	next := map[string]bool{}
-	for k, v := range prev {
-		next[k] = v
-	}
-	next["beta.mssql_native_guardrails"] = true
-	apply(next)
-	t.Cleanup(func() { apply(prev) })
-}
-
 // dialMSSQLWithGuardRails is dialMSSQL with guardrail rules attached to the
 // session's connection params.
 func dialMSSQLWithGuardRails(t *testing.T, mc *testutil.MSSQLContainer, rules string) (*testutil.PipedMSSQLClient, func()) {
@@ -401,7 +376,6 @@ func dialMSSQLWithGuardRails(t *testing.T, mc *testutil.MSSQLContainer, rules st
 // reaching the server, surfaces to the client as a server error, and leaves the
 // connection usable.
 func TestMSSQL_Guardrails_BlocksSQLBatch(t *testing.T) {
-	enableMSSQLGuardrailsFlag(t)
 	mc := testutil.StartMSSQL(t)
 	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
 	defer teardown()
@@ -437,7 +411,6 @@ func TestMSSQL_Guardrails_BlocksSQLBatch(t *testing.T) {
 // (which the driver sends as an RPC sp_executesql, statement in parameter 0) is
 // blocked when it matches a rule — the RPC path, not just SQLBatch.
 func TestMSSQL_Guardrails_BlocksRPCExecuteSql(t *testing.T) {
-	enableMSSQLGuardrailsFlag(t)
 	mc := testutil.StartMSSQL(t)
 	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
 	defer teardown()
@@ -468,7 +441,6 @@ func TestMSSQL_Guardrails_BlocksRPCExecuteSql(t *testing.T) {
 // string parameter is still blocked, because all character parameter values are
 // inspected — not just the statement text.
 func TestMSSQL_Guardrails_BlocksDynamicExecParam(t *testing.T) {
-	enableMSSQLGuardrailsFlag(t)
 	mc := testutil.StartMSSQL(t)
 	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
 	defer teardown()
@@ -492,7 +464,6 @@ func TestMSSQL_Guardrails_BlocksDynamicExecParam(t *testing.T) {
 // not match any rule flow through the guardrail path unchanged, for both the
 // SQLBatch and the RPC sp_executesql paths.
 func TestMSSQL_Guardrails_AllowsCompliantQueries(t *testing.T) {
-	enableMSSQLGuardrailsFlag(t)
 	mc := testutil.StartMSSQL(t)
 	client, teardown := dialMSSQLWithGuardRails(t, mc, mssqlGuardRailRules)
 	defer teardown()

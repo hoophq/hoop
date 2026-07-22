@@ -7,6 +7,14 @@
 
 <!-- Please provide a brief description of the changes in this PR -->
 
+## 📣 User-facing impact
+
+<!-- Optional. One or two sentences, in plain customer language, describing what users
+     gain from this PR — this feeds the public changelog at hoop.dev/docs/changelog.
+     Write "None" if this change is internal-only or gated behind a feature flag.
+     Leave the section untouched to let the changelog generator infer it from the
+     description. -->
+
 ## 🔗 Related Issue
 
 <!-- Link to the issue this PR addresses (if applicable) -->

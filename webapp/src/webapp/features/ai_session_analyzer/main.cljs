@@ -1,6 +1,7 @@
 (ns webapp.features.ai-session-analyzer.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Heading Flex Separator Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Heading Flex Link Separator Tabs Text]]
+   ["lucide-react" :refer [AlertCircle]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
@@ -14,6 +15,7 @@
         loading-rules? (rf/subscribe [:ai-session-analyzer/rules-loading])
         loading-config? (rf/subscribe [:ai-session-analyzer/provider-loading])
         provider-data (rf/subscribe [:ai-session-analyzer/provider])
+        user (rf/subscribe [:users->current-user])
         active-tab (r/atom "rules")
         min-loading-done (r/atom false)
         promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "ai-session-analyzer-promotion-seen")))]
@@ -26,6 +28,10 @@
     (fn []
       (let [has-rules? (and (:data @rules-data) (seq (:data @rules-data)))
             provider-configured? (= :success (:status @provider-data))
+            free-license? (-> @user :data :free-license?)
+            ;; Free-plan parity with Guardrails and Live Data Masking:
+            ;; one AI Session Analyzer rule per org.
+            limit-reached? (and free-license? (>= (count (:data @rules-data)) 1))
             loading? (or (= :loading (:status @rules-data))
                          (not @min-loading-done))]
 
@@ -53,8 +59,23 @@
              (when has-rules?
                [:> Button {:size "3"
                            :variant "solid"
+                           :disabled limit-reached?
                            :on-click #(rf/dispatch [:navigate :create-ai-session-analyzer-rule])}
                 "Create new rule"])]
+
+            (when limit-reached?
+              [:> Callout.Root {:color "red"}
+               [:> Callout.Icon
+                [:> AlertCircle {:size 16}]]
+               [:> Callout.Text
+                "Your organization has reached AI Session Analyzer free usage limits. Upgrade to Enterprise to keep your sensitive data protected. "
+                [:> Link {:href "#"
+                          :class "font-medium"
+                          :color "red"
+                          :on-click (fn [e]
+                                      (.preventDefault e)
+                                      (promotion/request-demo))}
+                 "Contact our Sales team ↗"]]])
 
             [:> Box {:class "flex flex-col"}
              [:> Tabs.Root {:value @active-tab

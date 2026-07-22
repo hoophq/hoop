@@ -205,53 +205,6 @@ func createGuardrailForConnection(t *testing.T, name, connectionID string) {
 	testutil.RequireStatus(t, resp, 201)
 }
 
-// createOutputGuardrailForConnection creates a guardrail rule with OUTPUT rules
-// bound to the given connection, used to exercise direction-aware admission.
-func createOutputGuardrailForConnection(t *testing.T, name, connectionID string) {
-	t.Helper()
-	body := openapi.GuardRailRuleRequest{
-		Name:  name,
-		Input: map[string]any{"rules": []map[string]any{}},
-		Output: map[string]any{
-			"rules": []map[string]any{
-				{"type": "deny_words_list", "words": []string{"secret"}, "pattern_regex": ""},
-			},
-		},
-		ConnectionIDs: []string{connectionID},
-	}
-	resp := gw.HTTP.Post(t, "/guardrails", adminToken(t), body)
-	defer resp.Body.Close()
-	testutil.RequireStatus(t, resp, 201)
-}
-
-// postMSSQLConnection creates an mssql connection via the HTTP API. The upstream
-// host need not be reachable: these tests exercise gateway-side admission, which
-// happens at session-open before any protocol proxy connects to the database.
-func postMSSQLConnection(t *testing.T, name, agentID string) {
-	t.Helper()
-	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
-	body := openapi.Connection{
-		Name:    name,
-		Type:    "database",
-		SubType: "mssql",
-		AgentId: agentID,
-		Command: []string{},
-		Secrets: map[string]any{
-			"envvar:HOST": b64("127.0.0.1"),
-			"envvar:PORT": b64("1433"),
-			"envvar:USER": b64("sa"),
-			"envvar:PASS": b64("unused-for-admission"),
-		},
-		AccessModeRunbooks: "enabled",
-		AccessModeExec:     "enabled",
-		AccessModeConnect:  "enabled",
-		AccessSchema:       "disabled",
-	}
-	resp := gw.HTTP.Post(t, "/connections", adminToken(t), body)
-	defer resp.Body.Close()
-	testutil.RequireStatus(t, resp, 201)
-}
-
 // startAgent dials the gateway as the given agent and runs a real agent
 // controller against the stream, exactly as the production agent does. It
 // registers a t.Cleanup that tears the controller (and its stream) down.
@@ -261,26 +214,6 @@ func startAgent(t *testing.T, c Connector, dsn string) {
 	if err != nil {
 		t.Fatalf("startAgent: dial: %v", err)
 	}
-	runAgentController(t, dsn, client)
-}
-
-// startAgentWithoutCapabilities runs an agent whose stream advertises no
-// capabilities, standing in for an agent older than capability advertisement.
-func startAgentWithoutCapabilities(t *testing.T, c Connector, dsn string) {
-	t.Helper()
-	gc, ok := c.(*grpcConnector)
-	if !ok {
-		t.Skipf("startAgentWithoutCapabilities requires the grpc connector, got %T", c)
-	}
-	client, err := gc.dialAgentWithoutCapabilities(dsn)
-	if err != nil {
-		t.Fatalf("startAgentWithoutCapabilities: dial: %v", err)
-	}
-	runAgentController(t, dsn, client)
-}
-
-func runAgentController(t *testing.T, dsn string, client pb.ClientTransport) {
-	t.Helper()
 	cfg := &config.Config{
 		Name:      "itest-agent",
 		Type:      clientconfig.ModeDsn,
