@@ -59,3 +59,47 @@ func TestGuardedConnectionOpensWithoutProvider(t *testing.T) {
 		t.Fatalf("guarded connection was not admitted without a Presidio provider: %v", err)
 	}
 }
+
+// openMSSQLSession dials the given connection and sends a SessionOpen, returning
+// the client so the caller can assert on admission.
+func openMSSQLSession(t *testing.T, c Connector, connName string) pb.ClientTransport {
+	t.Helper()
+	cli, err := c.DialClient(context.Background(), ClientDialConfig{
+		Token:          adminToken(t),
+		ConnectionName: connName,
+		Verb:           pb.ClientVerbConnect,
+	})
+	if err != nil {
+		t.Fatalf("DialClient: %v", err)
+	}
+	if err := cli.Send(&pb.Packet{
+		Type: pbagent.SessionOpen,
+		Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(uuid.NewString())},
+	}); err != nil {
+		cli.Close()
+		t.Fatalf("send SessionOpen: %v", err)
+	}
+	return cli
+}
+
+// TestMSSQLNativeGuarded_OutputRulesRefused verifies a native MSSQL session on a
+// connection that has output guardrail rules is refused fail-closed, because the
+// TDS proxy enforces input rules only.
+func TestMSSQLNativeGuarded_OutputRulesRefused(t *testing.T) {
+	c := transports()[0]
+
+	connName := uniqueName("mssql-out")
+	agentID, dsn := createAgent(t, uniqueName("agent"))
+	postMSSQLConnection(t, connName, agentID)
+	clearOrgGuardrails(t)
+	createOutputGuardrailForConnection(t, uniqueName("gr-out"), connectionID(t, connName))
+	startAgent(t, c, dsn)
+	waitConnectionOnline(t, connName)
+
+	cli := openMSSQLSession(t, c, connName)
+	defer cli.Close()
+	// Output rules cannot be enforced natively, so no SessionOpenOK arrives.
+	if _, err := recvUntil(cli, 10*time.Second, pbclient.SessionOpenOK); err == nil {
+		t.Fatal("native MSSQL with output guardrails must be refused, but the session was admitted")
+	}
+}
