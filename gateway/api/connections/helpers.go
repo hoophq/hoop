@@ -362,19 +362,11 @@ func parseDatabaseCommandOutput(output string) ([]string, error) {
 
 // validateDatabaseName returns an error if the database name contains invalid characters
 func validateDatabaseName(dbName string) error {
-	// Regular expression that allows only:
-	// - Letters (a-z, A-Z)
-	// - Numbers (0-9)
-	// - Underscores (_)
-	// - Hyphens (-)
-	// - Dots (.)
-	// With length between 1 and 128 characters
-	re := regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{1,128}$`)
-
-	if !re.MatchString(dbName) {
+	// Allows only letters, numbers, underscores, hyphens, and dots with
+	// length between 1 and 128 characters (see validateSchemaIdentifier).
+	if err := validateSchemaIdentifier("database name", dbName); err != nil {
 		return fmt.Errorf("invalid database name. Only alphanumeric characters, underscore, hyphen and dot are allowed with length between 1 and 128 characters")
 	}
-
 	return nil
 }
 
