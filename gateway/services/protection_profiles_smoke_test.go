@@ -103,12 +103,12 @@ func TestProtectionProfileLifecycleSmoke(t *testing.T) {
 	//     profile re-apply (materialize never rewrites existing rows).
 	mustExec(t, `UPDATE private.access_request_rules
 		SET reviewers_groups = '{sre,admin}', min_approvals = 2
-		WHERE org_id = ? AND name = 'Hoop_Command_approval'`, orgID)
+		WHERE org_id = ? AND name = 'Hoop-Command_approval'`, orgID)
 	if _, err := ApplyOrgProtectionProfile(ctx, orgID, &high, ""); err != nil {
 		t.Fatalf("re-apply high after customization: %v", err)
 	}
 	if got := scanStr(t, `SELECT min_approvals::text FROM private.access_request_rules
-		WHERE org_id = ? AND name = 'Hoop_Command_approval'`, orgID); got != "2" {
+		WHERE org_id = ? AND name = 'Hoop-Command_approval'`, orgID); got != "2" {
 		t.Fatalf("customized min_approvals = %s, want 2 (re-apply must not rewrite managed rules)", got)
 	}
 

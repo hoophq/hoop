@@ -1265,6 +1265,9 @@ type OrgProtectionProfileRequest struct {
 type OrgProtectionProfileResponse struct {
 	// The active protection profile id; null means manual configuration
 	Profile *string `json:"profile" example:"protection-medium"`
+	// The Hoop-managed attribute that binds the profile's rules to
+	// connections; null when no profile is active
+	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
 }
 
 var FeatureList = []string{"ask-ai"}

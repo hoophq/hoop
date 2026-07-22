@@ -30,6 +30,25 @@ func IsValidProtectionProfile(id string) bool {
 	return ok
 }
 
+// IsEnterpriseProtectionProfile reports whether the profile requires an
+// enterprise license. Unknown ids return false; validate first.
+func IsEnterpriseProtectionProfile(id string) bool {
+	spec, ok := protectionProfileCatalog[id]
+	return ok && spec.EnterpriseOnly
+}
+
+// ProtectionProfileAttributeName returns the managed attribute name for a
+// profile id, or nil when the id is nil/unknown (manual configuration).
+func ProtectionProfileAttributeName(id *string) *string {
+	if id == nil {
+		return nil
+	}
+	if spec, ok := protectionProfileCatalog[*id]; ok {
+		return &spec.AttributeName
+	}
+	return nil
+}
+
 // ProtectionProfileApplyResult summarizes an apply operation for tracking.
 type ProtectionProfileApplyResult struct {
 	PreviousProfile     *string

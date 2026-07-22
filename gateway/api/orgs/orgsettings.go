@@ -1,11 +1,13 @@
 package apiorgs
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -164,7 +166,8 @@ func GetOrgProtectionProfile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, openapi.OrgProtectionProfileResponse{
-		Profile: org.DefaultProtectionProfile,
+		Profile:       org.DefaultProtectionProfile,
+		AttributeName: services.ProtectionProfileAttributeName(org.DefaultProtectionProfile),
 	})
 }
 
@@ -177,7 +180,7 @@ func GetOrgProtectionProfile(c *gin.Context) {
 //	@Produce		json
 //	@Param			request	body		openapi.OrgProtectionProfileRequest	true	"The protection profile selection"
 //	@Success		200		{object}	openapi.OrgProtectionProfileResponse
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Failure		400,403,404,500	{object}	openapi.HTTPError
 //	@Router			/orgs/protection-profile [put]
 func UpdateOrgProtectionProfile(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -188,6 +191,12 @@ func UpdateOrgProtectionProfile(c *gin.Context) {
 	}
 	if req.Source != "onboarding" && req.Source != "settings" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid source, accepted values are 'onboarding', 'settings'"})
+		return
+	}
+	if req.Profile != nil &&
+		services.IsEnterpriseProtectionProfile(*req.Profile) &&
+		getLicenseType(ctx) != license.EnterpriseType {
+		c.JSON(http.StatusForbidden, gin.H{"message": "this protection profile requires an enterprise license, contact our support at https://help.hoop.dev"})
 		return
 	}
 	orgID, err := uuid.Parse(ctx.OrgID)
@@ -227,6 +236,18 @@ func UpdateOrgProtectionProfile(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, openapi.OrgProtectionProfileResponse{
-		Profile: req.Profile,
+		Profile:       req.Profile,
+		AttributeName: services.ProtectionProfileAttributeName(req.Profile),
 	})
+}
+
+func getLicenseType(ctx *storagev2.Context) string {
+	licenseType := license.OSSType
+	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+		var l license.License
+		if err := json.Unmarshal(*ctx.OrgLicenseData, &l); err == nil {
+			licenseType = l.Payload.Type
+		}
+	}
+	return licenseType
 }

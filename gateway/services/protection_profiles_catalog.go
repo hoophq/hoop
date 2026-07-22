@@ -45,10 +45,12 @@ type protectionProfileSpec struct {
 	ID            string
 	DisplayName   string
 	AttributeName string
-	Guardrails    []string
-	Masking       []string
-	AccessRules   []string
-	Analyzers     []string
+	// EnterpriseOnly profiles are rejected on an OSS license.
+	EnterpriseOnly bool
+	Guardrails     []string
+	Masking        []string
+	AccessRules    []string
+	Analyzers      []string
 }
 
 var protectionGuardrailCatalog = map[string]protectionGuardrailSpec{
@@ -223,48 +225,52 @@ var protectionAnalyzerCatalog = map[string]protectionAnalyzerSpec{
 // Order follows the onboarding page: compliance profiles first, then protection levels.
 var protectionProfileCatalog = map[string]protectionProfileSpec{
 	"hipaa-ready": {
-		ID:            "hipaa-ready",
-		DisplayName:   "HIPAA Ready",
-		AttributeName: "hoop_protection_profile_hipaa_ready",
-		Guardrails:    []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Select star on sensitive tables", "Hoop - PHI columns", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands", "Hoop - Risky kubectl", "Hoop - Pipe to shell", "Hoop - IAM escalation", "Hoop - SSN in output"},
-		Masking:       []string{"Hoop - PHI strict"},
-		AccessRules:   []string{"Hoop-JIT_4_hours", "Hoop-Command_approval"},
-		Analyzers:     []string{"Hoop - Block high risk PHI"},
+		ID:             "hipaa-ready",
+		DisplayName:    "HIPAA Ready",
+		AttributeName:  "hoop_protection_profile-hipaa_ready",
+		EnterpriseOnly: true,
+		Guardrails:     []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Select star on sensitive tables", "Hoop - PHI columns", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands", "Hoop - Risky kubectl", "Hoop - Pipe to shell", "Hoop - IAM escalation", "Hoop - SSN in output"},
+		Masking:        []string{"Hoop - PHI strict"},
+		AccessRules:    []string{"Hoop-JIT_4_hours", "Hoop-Command_approval"},
+		Analyzers:      []string{"Hoop - Block high risk PHI"},
 	},
 	"soc2-type2": {
-		ID:            "soc2-type2",
-		DisplayName:   "SOC 2 Type II",
-		AttributeName: "hoop_protection_profile_soc2_type2",
-		Guardrails:    []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands", "Hoop - Risky kubectl", "Hoop - Pipe to shell", "Hoop - IAM escalation"},
-		Masking:       []string{"Hoop - Confidential data"},
-		AccessRules:   []string{"Hoop-JIT_8_hours", "Hoop-Command_approval"},
-		Analyzers:     []string{"Hoop - Review high risk"},
+		ID:             "soc2-type2",
+		DisplayName:    "SOC 2 Type II",
+		AttributeName:  "hoop_protection_profile-soc2_type2",
+		EnterpriseOnly: true,
+		Guardrails:     []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands", "Hoop - Risky kubectl", "Hoop - Pipe to shell", "Hoop - IAM escalation"},
+		Masking:        []string{"Hoop - Confidential data"},
+		AccessRules:    []string{"Hoop-JIT_8_hours", "Hoop-Command_approval"},
+		Analyzers:      []string{"Hoop - Review high risk"},
 	},
 	"protection-permissive": {
 		ID:            "protection-permissive",
 		DisplayName:   "Essential Guardrails",
-		AttributeName: "hoop_protection_profile_protection_permissive",
+		AttributeName: "hoop_protection_profile-protection_permissive",
 		Guardrails:    []string{"Hoop - Unsafe update and delete"},
 		Masking:       []string{"Hoop - API Keys"},
 		AccessRules:   []string{},
 		Analyzers:     []string{},
 	},
 	"protection-medium": {
-		ID:            "protection-medium",
-		DisplayName:   "Balanced",
-		AttributeName: "hoop_protection_profile_protection_medium",
-		Guardrails:    []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Select star on sensitive tables", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands"},
-		Masking:       []string{"Hoop - Confidential data"},
-		AccessRules:   []string{"Hoop-JIT_8_hours", "Hoop-Command_approval"},
-		Analyzers:     []string{"Hoop - Review high risk"},
+		ID:             "protection-medium",
+		DisplayName:    "Balanced",
+		AttributeName:  "hoop_protection_profile-protection_medium",
+		EnterpriseOnly: true,
+		Guardrails:     []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Select star on sensitive tables", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands"},
+		Masking:        []string{"Hoop - Confidential data"},
+		AccessRules:    []string{"Hoop-JIT_8_hours", "Hoop-Command_approval"},
+		Analyzers:      []string{"Hoop - Review high risk"},
 	},
 	"protection-high": {
-		ID:            "protection-high",
-		DisplayName:   "Maximum",
-		AttributeName: "hoop_protection_profile_protection_high",
-		Guardrails:    []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Select without limit", "Hoop - Select star on sensitive tables", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands", "Hoop - Risky kubectl", "Hoop - Pipe to shell", "Hoop - IAM escalation", "Hoop - SSN in output"},
-		Masking:       []string{"Hoop - Full masking"},
-		AccessRules:   []string{"Hoop-JIT_2_hours", "Hoop-Command_approval"},
-		Analyzers:     []string{"Hoop - Block high risk"},
+		ID:             "protection-high",
+		DisplayName:    "Maximum",
+		AttributeName:  "hoop_protection_profile-protection_high",
+		EnterpriseOnly: true,
+		Guardrails:     []string{"Hoop - Unsafe update and delete", "Hoop - Destructive DDL", "Hoop - Select without limit", "Hoop - Select star on sensitive tables", "Hoop - Bulk export", "Hoop - Redis flush", "Hoop - MongoDB drops", "Hoop - Dangerous shell commands", "Hoop - Risky kubectl", "Hoop - Pipe to shell", "Hoop - IAM escalation", "Hoop - SSN in output"},
+		Masking:        []string{"Hoop - Full masking"},
+		AccessRules:    []string{"Hoop-JIT_2_hours", "Hoop-Command_approval"},
+		Analyzers:      []string{"Hoop - Block high risk"},
 	},
 }
