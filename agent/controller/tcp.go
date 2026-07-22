@@ -24,14 +24,6 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
 		return
 	}
-	// The raw TCP relay copies bytes verbatim and has no guardrail
-	// evaluation path; refuse guarded sessions instead of running them
-	// unguarded (DEP-48).
-	if err := libhoop.CheckGuardRailEnforcement(string(connParams.GuardRailRules), "tcp"); err != nil {
-		log.With("sid", sessionID).Warn(err)
-		a.sendClientSessionClose(sessionID, err.Error())
-		return
-	}
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
 	if tcpServer, ok := a.connStore.Get(clientConnectionIDKey).(io.WriteCloser); ok {
 		if _, err := tcpServer.Write(pkt.Payload); err != nil {
@@ -46,6 +38,15 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 	if err != nil {
 		log.Printf("session=%s - missing connection credentials in memory, err=%v", sessionID, err)
 		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
+		return
+	}
+	// The raw TCP relay copies bytes verbatim and has no guardrail
+	// evaluation path; refuse guarded sessions instead of running them
+	// unguarded (DEP-48). Checked only when establishing the relay
+	// connection to keep the per-packet write path cheap.
+	if err := libhoop.CheckGuardRailEnforcement(string(connParams.GuardRailRules), "tcp"); err != nil {
+		log.With("sid", sessionID).Warn(err)
+		a.sendClientSessionClose(sessionID, err.Error())
 		return
 	}
 	tcpServer, err := newTCPConn(connenv)
