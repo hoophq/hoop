@@ -342,11 +342,15 @@
  (fn
    [{:keys [db]} [_ session]]
    (let [session-id (:id session)]
-     {:db (assoc-in db [:audit->execution session-id] {:status :executing})
-      :fx [[:dispatch [:fetch {:method "POST"
-                               :uri (str "/sessions/" session-id "/exec")
-                               :on-success #(rf/dispatch [:audit->execute-session-success session-id %])
-                               :on-failure #(rf/dispatch [:audit->execute-session-failure session-id %])}]]]})))
+     ;; no-op when an execution is already tracked for this session, so a
+     ;; double click never issues a duplicate POST
+     (if (contains? #{:executing :running} (get-in db [:audit->execution session-id :status]))
+       {}
+       {:db (assoc-in db [:audit->execution session-id] {:status :executing})
+        :fx [[:dispatch [:fetch {:method "POST"
+                                 :uri (str "/sessions/" session-id "/exec")
+                                 :on-success #(rf/dispatch [:audit->execute-session-success session-id %])
+                                 :on-failure #(rf/dispatch [:audit->execute-session-failure session-id %])}]]]}))))
 
 (rf/reg-event-fx
  :audit->execute-session-success
@@ -373,13 +377,19 @@
                                      :level :error
                                      :details error}]]]}))
 
+;; poll every 5s for the first ~5 minutes, then back off to 30s so an
+;; execution that never settles does not keep a tight polling loop forever
+(defn- watch-poll-interval-ms [attempts]
+  (if (< attempts 60) 5000 30000))
+
 (rf/reg-event-fx
  :audit->watch-running-session
  (fn
    [{:keys [db]} [_ session-id]]
    ;; the :running guard stops the loop when the execution state changes
    (if (= :running (get-in db [:audit->execution session-id :status]))
-     {:fx [[:dispatch [:fetch {:method "GET"
+     {:db (update-in db [:audit->execution session-id :attempts] (fnil inc 0))
+      :fx [[:dispatch [:fetch {:method "GET"
                                :uri (str "/sessions/" session-id)
                                :on-success #(rf/dispatch [:audit->watch-running-session-check session-id %])
                                ;; transient errors: keep polling
@@ -394,7 +404,9 @@
      {:db (assoc-in db [:audit->execution session-id] {:status :done})
       :fx [[:dispatch [:audit->get-sessions]]
            [:dispatch [:audit->get-session-by-id {:id session-id :verb "exec"}]]]}
-     {:fx [[:dispatch-later {:ms 5000 :dispatch [:audit->watch-running-session session-id]}]]})))
+     (let [attempts (get-in db [:audit->execution session-id :attempts] 0)]
+       {:fx [[:dispatch-later {:ms (watch-poll-interval-ms attempts)
+                               :dispatch [:audit->watch-running-session session-id]}]]}))))
 
 (rf/reg-event-fx
  :audit->ensure-running-session-watch
