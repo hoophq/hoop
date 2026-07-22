@@ -139,16 +139,13 @@ func RunReviewedExec(c *gin.Context) {
 		review.ID, review.ConnectionName, review.OwnerEmail, len(session.BlobInput))
 
 	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
-	reviewStatus := models.ReviewStatusExecuted
-	defer func() {
-		cancelFn()
-		if err := models.UpdateReviewStatus(review.OrgID, review.ID, reviewStatus); err != nil {
-			log.Warnf("failed updating review to status=%v, err=%v", review.Status, err)
-		}
-	}()
+	defer cancelFn()
 	select {
 	case resp := <-respCh:
 		log.Infof("review exec response, %v", resp)
+		if err := models.UpdateReviewStatus(review.OrgID, review.ID, models.ReviewStatusExecuted); err != nil {
+			log.Warnf("failed updating review to status=%v, err=%v", models.ReviewStatusExecuted, err)
+		}
 		c.JSON(http.StatusOK, resp)
 	case <-timeoutCtx.Done():
 		log.Infof("review exec timeout (50s), it will return async")
@@ -156,9 +153,10 @@ func RunReviewedExec(c *gin.Context) {
 		// and the result will return async
 		client.Close()
 
-		// we do not know the status of this in the future.
-		// replaces the current "PROCESSING" status
-		reviewStatus = models.ReviewStatusUnknown
+		// the review stays PROCESSING while the execution continues in the
+		// agent; it settles as EXECUTED when the session finishes (audit
+		// plugin on session close, or the startup reconciliation after a
+		// gateway restart)
 		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(session.ID))
 	}
 }

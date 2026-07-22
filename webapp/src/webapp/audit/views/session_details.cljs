@@ -129,7 +129,6 @@
     session-stream-result (rf/subscribe [:audit->session-stream-result])
     connection-details (rf/subscribe [:connections->connection-details])
     clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
-    executing-status (r/atom :ready)
     current-path (.-pathname (.-location js/window))
     is-dedicated-page? (cs/starts-with? current-path "/sessions/")
     ;; tracks the session id we have an SSE subscription open for, so we
@@ -161,6 +160,29 @@
                   (rf/dispatch [:connections->get-connection-details connection-name]))
               ready? (= (:status session) "ready")
               open? (= (:status session) "open")
+              exec-verb? (= (:verb session) "exec")
+              exec-status (:status @(rf/subscribe [:audit->execution-by-id (:id session)]))
+              ;; server-side signal that the reviewed exec is running: the
+              ;; review is PROCESSING while executing and UNKNOWN after the
+              ;; gateway stopped waiting (50s) with the agent still running.
+              ;; The session status itself stays "ready" during the execution,
+              ;; so only the review status tells the execution is in flight.
+              server-exec-running? (contains? #{"PROCESSING" "UNKNOWN"} review-status)
+              ;; reviewed exec still running in the agent: local state from
+              ;; the Execute click onwards, or the server signal when there is
+              ;; no local state (e.g. modal reopened after a page reload)
+              running-async? (and exec-verb?
+                                  has-review?
+                                  (not= (:status session) "done")
+                                  (or (contains? #{:executing :running :done} exec-status)
+                                      (and server-exec-running? (nil? exec-status))))
+              review-approved? (or (not has-review?) (= review-status "APPROVED"))
+              _ (when (and exec-verb?
+                           has-review?
+                           server-exec-running?
+                           (not= (:status session) "done")
+                           (nil? exec-status))
+                  (rf/dispatch [:audit->ensure-running-session-watch (:id session)]))
               ;; Interactive connect-verb sessions (postgres/ssh/tcp/http-proxy/…)
               ;; stream their audit events; exec/runbook keep their table views.
               connect? (= (:verb session) "connect")
@@ -335,6 +357,7 @@
             ;; response logs area
             (when-not (or credentials-expire-at
                           ready?
+                          running-async?
                           (and (some #(= "PENDING" (:status %))
                                      review-groups)
                                (= "PENDING" review-status)))
@@ -436,7 +459,9 @@
 
             ;; execution schedule information (time window)
             (when (and ready?
-                       (= (:verb session) "exec")
+                       exec-verb?
+                       review-approved?
+                       (not running-async?)
                        (get-in session [:review :time_window :configuration :start_time])
                        (get-in session [:review :time_window :configuration :end_time]))
               (let [start-time-utc (get-in session [:review :time_window :configuration :start_time])
@@ -455,29 +480,31 @@
                   "."]
                  (when is-session-owner?
                    [:> Flex {:justify "end" :gap "2"}
-                    [:> Button {:loading (when (= @executing-status :loading)
-                                           true)
-                                :disabled (not within-window?)
-                                :on-click (fn []
-                                            (reset! executing-status :loading)
-                                            (rf/dispatch [:audit->execute-session session]))}
+                    [:> Button {:disabled (not within-window?)
+                                :on-click #(rf/dispatch [:audit->execute-session session])}
                      "Execute"]])]))
 
             ;; Execute button (when no time window is configured)
             (when (and ready?
-                       (= (:verb session) "exec")
+                       exec-verb?
+                       review-approved?
+                       (not running-async?)
                        is-session-owner?
                        (not (get-in session [:review :time_window :configuration :start_time])))
               [:> Flex {:align "center" :justify "end" :gap "4"}
                [:> Text {:size "2" :class "text-gray-11"}
                 "This session is ready to be executed."]
 
-               [:> Button {:loading (when (= @executing-status :loading)
-                                      true)
-                           :on-click (fn []
-                                       (reset! executing-status :loading)
-                                       (rf/dispatch [:audit->execute-session session]))}
+               [:> Button {:on-click #(rf/dispatch [:audit->execute-session session])}
                 "Execute"]])
+
+            ;; reviewed exec running in the agent beyond the API wait window;
+            ;; polling renders the result here as soon as the session finishes
+            (when running-async?
+              [:> Flex {:align "center" :justify "end" :gap "2"}
+               [loaders/simple-loader {:size 4}]
+               [:> Text {:size "2" :class "text-gray-11"}
+                "Execution in progress. The result will appear here when it finishes."]])
 
             ;; Connect button for approved credential requests (verb = connect).
             (when (and (= (:verb session) "connect")

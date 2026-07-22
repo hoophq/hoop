@@ -12,6 +12,9 @@
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
    :audit->session-stream {}
+   ;; reviewed exec state per session id ({:status :executing|:running|:done}),
+   ;; kept outside the modal so it survives closing and reopening it
+   :audit->execution {}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
    :audit-logs {:status :idle
                 :data []

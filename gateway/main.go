@@ -213,6 +213,14 @@ func Run() {
 	connectionstatus.InitConciliationProcess()
 	streamclient.InitProxyMemoryCleanup()
 
+	// Settle reviews left in PROCESSING/UNKNOWN by executions whose session
+	// finished while the gateway was down.
+	if reconciled, err := models.ReconcileStaleReviews(models.DB); err != nil {
+		log.Warnf("failed reconciling stale reviews, reason=%v", err)
+	} else if reconciled > 0 {
+		log.Infof("reconciled %d stale review(s) to executed status", reconciled)
+	}
+
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()
 	}
