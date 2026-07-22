@@ -133,7 +133,13 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 				pkt.Spec[pb.SpecAgentVersion] = []byte(agentVersion)
 			}
 		case pbclient.PGConnectionWrite:
+			// A guardrail block keeps the session open, so persist the violation
+			// metadata here (it is not carried on SessionClose for native
+			// protocols). No-op when the packet carries no guardrails info.
+			updateGuardRailsInfoFromPacket(pctx, pkt)
 			rewritePGGuardRailsErrorPacket(pkt)
+		case pbclient.MSSQLConnectionWrite:
+			updateGuardRailsInfoFromPacket(pctx, pkt)
 		}
 
 		if err = proxyStream.Send(pkt); err != nil {
@@ -142,13 +148,18 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 	}
 }
 
+// updateGuardRailsInfoFromPacket appends any guardrails violation metadata
+// carried on a packet to the session record. It is called both on SessionClose
+// and on native protocol error replies (which keep the session open), and is a
+// no-op when the packet carries no guardrails info. UpdateSessionGuardRailsInfo
+// appends (jsonb ||), so multiple violations across a session accumulate.
 func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) {
 	if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
 		var guardRailsData []models.SessionGuardRailsInfo
 		if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
-			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from session close, reason=%v", err)
+			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info, reason=%v", err)
 		} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
-			log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
+			log.With("sid", pctx.SID).Errorf("unable to save guardrails info, reason=%v", err)
 		}
 	}
 }

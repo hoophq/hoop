@@ -6,7 +6,6 @@ import (
 	"io"
 	"libhoop"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -55,12 +54,13 @@ func (a *Agent) processMSSQLProtocol(pkt *pb.Packet) {
 		"password": connenv.pass,
 		"insecure": fmt.Sprintf("%v", connenv.insecure),
 	}
-	// Native MSSQL guardrails are gated behind a feature flag. When enabled, pass
-	// the connection's guardrail rules to the proxy so it validates SQLBatch/RPC
-	// statements against the input rules (the gateway also refuses guarded MSSQL
-	// sessions unless this flag is on, so this is defense-in-depth). Data masking
+	// The gateway is the sole admission authority for native MSSQL guardrails: it
+	// opens the session only when beta.mssql_native_guardrails is on for the org
+	// and refuses connections that carry output rules. Always forward the rules
+	// it attached, so enforcement cannot be skipped by an agent-side feature-flag
+	// sync race (the flag may not have propagated to the agent yet). Data masking
 	// on the result path is not yet supported for MSSQL, so no DLP opts are set.
-	if featureflagstate.IsEnabled("beta.mssql_native_guardrails") && connParams.GuardRailRules != nil {
+	if connParams.GuardRailRules != nil {
 		opts["guard_rail_rules"] = string(connParams.GuardRailRules)
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MSSQL()
