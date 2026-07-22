@@ -358,9 +358,10 @@ func TestMSSQL_BadCredentials(t *testing.T) {
 }
 
 // mssqlGuardRailRules blocks any statement containing the substring
-// "secret_table" via an input deny-word rule (the same JSON shape the gateway
-// ships to the agent).
-const mssqlGuardRailRules = `[{"id":"gr1","name":"block-secret-table","input_rules":[{"rules":[{"type":"deny_words_list","words":["secret_table"],"message":"blocked by hoop guardrail: secret_table is off limits"}]}],"output_rules":[]}]`
+// "secret_table" via an input deny-word rule. This is the exact JSON shape the
+// gateway ships to the agent (see gateway encodeGuardRailRules): a single object
+// with top-level input_rules/output_rules, not an array of {id,name,...}.
+const mssqlGuardRailRules = `{"input_rules":[{"rules":[{"type":"deny_words_list","words":["secret_table"],"pattern_regex":"","message":"blocked by hoop guardrail: secret_table is off limits"}]}],"output_rules":[]}`
 
 // enableMSSQLGuardrailsFlag turns on beta.mssql_native_guardrails in the agent's
 // process-global feature-flag state for the duration of the test, restoring the
