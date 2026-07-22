@@ -331,36 +331,13 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 	return guardRailRulesJsonData, nil
 }
 
-// connectionTypeSupportsGuardRails reports the connection types whose native
-// proxies evaluate guardrail rules. Database Web Exec is checked separately
-// because it uses the agent's terminal-exec path rather than the native proxy.
-func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
-	switch connType {
-	case pb.ConnectionTypePostgres,
-		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeHttpProxy,
-		pb.ConnectionTypeSSH,
-		pb.ConnectionTypeCommandLine:
-		return true
-	default:
-		return false
-	}
-}
-
-// sessionSupportsGuardRails reports whether this particular session has an
-// agent-side enforcement path. MSSQL is supported only for Web Exec: the
-// session API uses ClientAPI + exec and the agent's doExec path passes the
-// rules to the command/DB-exec redactor. Native MSSQL protocol sessions must
-// remain rejected because mssql.go does not inspect guardrails.
-func sessionSupportsGuardRails(pctx plugintypes.Context) bool {
-	if connectionTypeSupportsGuardRails(pctx.ProtoConnectionType()) {
-		return true
-	}
-
-	return pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
-		pctx.ClientVerb == pb.ClientVerbExec &&
-		pctx.ClientOrigin == pb.ConnectionOriginClientAPI
-}
+// Guardrail enforcement admission is NOT checked here. The authoritative
+// fail-closed check (DEP-48) lives in libhoop at proxy construction: native
+// proxies without a guardrail evaluation path (mysql, mssql, mongodb, ssm,
+// raw tcp) refuse guarded sessions at the agent, at the point of
+// enforcement. Gateways and agents are upgraded together, so a
+// gateway-side duplicate of that list would only drift (it did: DEP-48 →
+// #1611 → the mysql/mongodb web terminal regression).
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
@@ -525,16 +502,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				return err
 			}
 
-			// Fail closed for connection types whose agent proxy does not
-			// evaluate guardrails (mysql, mssql, mongodb): a guarded session of
-			// those types would run unguarded, so refuse it at session-open
-			// (DEP-48).
-			//
-			// Guardrails are enforced by the agent's built-in pattern-matching
-			// engine (deny-word / regex — see gateway/guardrails), NOT by a DLP
-			// provider, so Presidio is NOT required to enforce them. The earlier
-			// Presidio requirement here refused sessions on deployments that rely
-			// on that built-in engine and is intentionally not enforced.
+			// Guardrail rules are shipped to the agent, which enforces them
+			// in-process (deny-word / RE2 via localguardrails; no DLP service
+			// required) and fails closed at proxy construction for protocol
+			// paths that cannot evaluate them — see libhoop's
+			// CheckGuardRailEnforcement (DEP-48).
 			//
 			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
 			// plain-exec is a gateway-internal verb gated by a per-process secret in
@@ -544,15 +516,6 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// input, so guardrail rules are not fetched nor enforced for it — the
 			// same long-standing behavior as DLP redaction, which is also disabled
 			// for plain-exec sessions.
-			if len(guardRailRulesJsonData) > 0 {
-				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
-				if connType := pctx.ProtoConnectionType(); !sessionSupportsGuardRails(pctx) {
-					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
-					return status.Errorf(codes.FailedPrecondition,
-						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
-							"remove the guardrails from this connection or use a supported connection type", connType)
-				}
-			}
 		}
 
 		// Resolve the AI session analyzer config for HTTP-family connections.

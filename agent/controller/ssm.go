@@ -65,12 +65,17 @@ func (a *Agent) processSSMProtocol(pkt *pb.Packet) {
 		return
 	}
 
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
 	opts := map[string]string{
 		"sid":                   sessionID,
 		"aws_access_key_id":     connenv.awsAccessKeyID,
 		"aws_secret_access_key": connenv.awsSecretAccessKey,
 		"aws_region":            connenv.awsRegion,
 		"aws_instance_id":       targetInstance,
+		"guard_rail_rules":      guardRailRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).SSM()
 	if err != nil {
