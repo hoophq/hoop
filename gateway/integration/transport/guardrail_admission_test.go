@@ -111,9 +111,8 @@ func TestMSSQLNativeGuarded_OutputRulesRefused(t *testing.T) {
 
 // TestMSSQLNativeGuarded_AgentWithoutCapabilityRefused verifies a native MSSQL
 // session is refused fail-closed when the selected agent does not advertise the
-// MSSQL guardrails capability. The harness agent connects without advertising it
-// (via the plain test connector), standing in for an older agent that would run
-// the session unguarded — the refusal is what makes the default-on flag safe.
+// MSSQL guardrails capability, standing in for an older agent that would run the
+// session unguarded — the refusal is what makes the default-on flag safe.
 func TestMSSQLNativeGuarded_AgentWithoutCapabilityRefused(t *testing.T) {
 	c := transports()[0]
 
@@ -122,7 +121,7 @@ func TestMSSQLNativeGuarded_AgentWithoutCapabilityRefused(t *testing.T) {
 	postMSSQLConnection(t, connName, agentID)
 	clearOrgGuardrails(t)
 	createGuardrailForConnection(t, uniqueName("gr-in"), connectionID(t, connName)) // input-only
-	startAgent(t, c, dsn)
+	startAgentWithoutCapabilities(t, c, dsn)
 	waitConnectionOnline(t, connName)
 
 	cli := openMSSQLSession(t, c, connName)
@@ -133,5 +132,38 @@ func TestMSSQLNativeGuarded_AgentWithoutCapabilityRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not support native MSSQL guardrail enforcement") {
 		t.Errorf("expected a capability refusal, got: %v", err)
+	}
+}
+
+// TestMSSQLNativeGuarded_CapableAgentAdmitted verifies the happy path: a native
+// MSSQL session on an input-only guarded connection, served by an agent that
+// advertises the capability, PASSES gateway admission. It is not refused at
+// session-open; it proceeds and fails only later on the upstream dial (there is
+// no real SQL Server here), proving it cleared the guardrail admission gate.
+// This guards against a routing/metadata regression silently failing every
+// guarded session closed.
+func TestMSSQLNativeGuarded_CapableAgentAdmitted(t *testing.T) {
+	c := transports()[0]
+
+	connName := uniqueName("mssql-ok")
+	agentID, dsn := createAgent(t, uniqueName("agent"))
+	postMSSQLConnection(t, connName, agentID)
+	clearOrgGuardrails(t)
+	createGuardrailForConnection(t, uniqueName("gr-in"), connectionID(t, connName)) // input-only
+	startAgent(t, c, dsn)                                                           // advertises the capability
+	waitConnectionOnline(t, connName)
+
+	cli := openMSSQLSession(t, c, connName)
+	defer cli.Close()
+	_, err := recvUntil(cli, 15*time.Second, pbclient.SessionOpenOK)
+	// Either SessionOpenOK arrived, or the session got past admission and failed
+	// on the upstream dial. Both mean admission succeeded. A guardrail/capability
+	// refusal (FailedPrecondition) must NOT appear.
+	if err != nil {
+		if strings.Contains(err.Error(), "guardrail") ||
+			strings.Contains(err.Error(), "does not support") ||
+			strings.Contains(err.Error(), "output guardrail rules") {
+			t.Fatalf("capable agent must pass admission, but was refused: %v", err)
+		}
 	}
 }

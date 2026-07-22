@@ -261,6 +261,26 @@ func startAgent(t *testing.T, c Connector, dsn string) {
 	if err != nil {
 		t.Fatalf("startAgent: dial: %v", err)
 	}
+	runAgentController(t, dsn, client)
+}
+
+// startAgentWithoutCapabilities runs an agent whose stream advertises no
+// capabilities, standing in for an agent older than capability advertisement.
+func startAgentWithoutCapabilities(t *testing.T, c Connector, dsn string) {
+	t.Helper()
+	gc, ok := c.(*grpcConnector)
+	if !ok {
+		t.Skipf("startAgentWithoutCapabilities requires the grpc connector, got %T", c)
+	}
+	client, err := gc.dialAgentWithoutCapabilities(dsn)
+	if err != nil {
+		t.Fatalf("startAgentWithoutCapabilities: dial: %v", err)
+	}
+	runAgentController(t, dsn, client)
+}
+
+func runAgentController(t *testing.T, dsn string, client pb.ClientTransport) {
+	t.Helper()
 	cfg := &config.Config{
 		Name:      "itest-agent",
 		Type:      clientconfig.ModeDsn,
