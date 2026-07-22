@@ -1,0 +1,101 @@
+name: Sync new issues to Linear
+
+# Fires whenever a new GitHub issue is opened in this repo and creates a
+# matching card in the Linear "Support" team (routed to Triage for review).
+# Requires an org- or repo-level secret named LINEAR_API_KEY.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write # needed to comment the Linear link back on the GitHub issue
+
+jobs:
+  create-linear-card:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.issue != null }}
+    steps:
+      - name: Create Linear card
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          # Linear "Support" team + its "Triage" workflow state.
+          LINEAR_TEAM_ID: d2c87328-92a1-4fdb-b44c-e56f1bb21e86
+          LINEAR_STATE_ID: 41ea6aba-d92d-4369-8a58-2234b073fb4e
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LINEAR_API_KEY:-}" ]; then
+            echo "::warning::LINEAR_API_KEY is not set; skipping Linear sync."
+            exit 0
+          fi
+
+          # Idempotency: if this issue already has a Linear backlink comment
+          # (e.g. from a manual job re-run), do nothing.
+          if gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
+               --jq '.comments[].body' 2>/dev/null | grep -q "Synced to Linear:"; then
+            echo "Issue already synced to Linear (marker found); skipping."
+            exit 0
+          fi
+
+          # Build the Linear description (Markdown). jq handles all escaping.
+          description=$(jq -n \
+            --arg body "${ISSUE_BODY:-_No description provided._}" \
+            --arg url "$ISSUE_URL" \
+            --arg author "$ISSUE_AUTHOR" \
+            --arg repo "$REPO" \
+            --arg num "$ISSUE_NUMBER" \
+            '"**GitHub issue [\($repo)#\($num)](\($url))** — opened by @\($author)\n\n---\n\n" + $body')
+
+          # Build the GraphQL request payload.
+          payload=$(jq -n \
+            --arg teamId "$LINEAR_TEAM_ID" \
+            --arg stateId "$LINEAR_STATE_ID" \
+            --arg title "$ISSUE_TITLE" \
+            --argjson description "$description" \
+            '{
+               query: "mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url } } }",
+               variables: { input: { teamId: $teamId, stateId: $stateId, title: $title, description: $description } }
+             }')
+
+          # Call Linear. Retry transient failures; fail loudly on HTTP errors.
+          # (Linear returns HTTP 200 even for GraphQL errors, so we also inspect .errors.)
+          http_code=$(curl -sS -o response.json -w '%{http_code}' \
+            --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 \
+            -X POST https://api.linear.app/graphql \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data "$payload") || { echo "::error::Could not reach the Linear API."; exit 1; }
+
+          response=$(cat response.json)
+          echo "Linear HTTP $http_code"
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Linear returned HTTP $http_code: $response"; exit 1
+          fi
+          if echo "$response" | jq -e 'has("errors")' >/dev/null 2>&1; then
+            echo "::error::Linear GraphQL errors: $(echo "$response" | jq -c '.errors')"; exit 1
+          fi
+          if [ "$(echo "$response" | jq -r '.data.issueCreate.success // false')" != "true" ]; then
+            echo "::error::Linear issueCreate did not succeed: $response"; exit 1
+          fi
+
+          linear_url=$(echo "$response" | jq -er '.data.issueCreate.issue.url') \
+            || { echo "::error::Linear response missing issue url: $response"; exit 1; }
+          linear_id=$(echo "$response" | jq -er '.data.issueCreate.issue.identifier') \
+            || { echo "::error::Linear response missing issue identifier: $response"; exit 1; }
+          echo "Created Linear card $linear_id -> $linear_url"
+
+          # Link back on the GitHub issue. A failure here must NOT orphan the
+          # card silently: surface the URL so it can be recovered.
+          if ! gh issue comment "$ISSUE_NUMBER" --repo "$REPO" \
+                 --body "🔗 Synced to Linear: [$linear_id]($linear_url)"; then
+            echo "::warning::Linear card $linear_id ($linear_url) was created, but posting the backlink comment failed."
+          fi
