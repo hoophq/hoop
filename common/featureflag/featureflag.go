@@ -77,7 +77,7 @@ var catalog = map[string]Flag{
 	},
 	"beta.mssql_native_guardrails": {
 		Name:        "beta.mssql_native_guardrails",
-		Description: "Enforce guardrails on native MSSQL (TDS) protocol sessions: SQLBatch and RPC sp_executesql/sp_prepare/sp_prepexec statements are reconstructed (across TDS packet boundaries) and validated against input rules before reaching the server; a match blocks the query and returns a TDS error to the client. When off, the gateway refuses guarded native MSSQL sessions (fail-closed) as before. Gateway and agent must both be upgraded: an older agent runs the session unguarded, so upgrade agents before enabling.",
+		Description: "Enforce guardrails on native MSSQL (TDS) protocol sessions: SQLBatch and RPC sp_executesql/sp_prepare/sp_prepexec statements are reconstructed (across TDS packet boundaries) and validated against input rules before reaching the server; a match blocks the query and returns a TDS error to the client. When off, the gateway refuses guarded native MSSQL sessions (fail-closed) as before. Enforcement lives in the agent, so the gateway only admits a guarded native MSSQL session to an agent that advertises the capability — an older agent is refused (fail-closed), never run unguarded. Output (result-set) rules are not yet enforced natively; a connection carrying them is refused.",
 		Default:     true,
 		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway, ComponentAgent},

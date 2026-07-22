@@ -4,6 +4,7 @@ package transport
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,8 +99,39 @@ func TestMSSQLNativeGuarded_OutputRulesRefused(t *testing.T) {
 
 	cli := openMSSQLSession(t, c, connName)
 	defer cli.Close()
-	// Output rules cannot be enforced natively, so no SessionOpenOK arrives.
-	if _, err := recvUntil(cli, 10*time.Second, pbclient.SessionOpenOK); err == nil {
+	// Output rules cannot be enforced natively, so admission is refused.
+	_, err := recvUntil(cli, 10*time.Second, pbclient.SessionOpenOK)
+	if err == nil {
 		t.Fatal("native MSSQL with output guardrails must be refused, but the session was admitted")
+	}
+	if !strings.Contains(err.Error(), "output guardrail rules") {
+		t.Errorf("expected an output-rules refusal, got: %v", err)
+	}
+}
+
+// TestMSSQLNativeGuarded_AgentWithoutCapabilityRefused verifies a native MSSQL
+// session is refused fail-closed when the selected agent does not advertise the
+// MSSQL guardrails capability. The harness agent connects without advertising it
+// (via the plain test connector), standing in for an older agent that would run
+// the session unguarded — the refusal is what makes the default-on flag safe.
+func TestMSSQLNativeGuarded_AgentWithoutCapabilityRefused(t *testing.T) {
+	c := transports()[0]
+
+	connName := uniqueName("mssql-cap")
+	agentID, dsn := createAgent(t, uniqueName("agent"))
+	postMSSQLConnection(t, connName, agentID)
+	clearOrgGuardrails(t)
+	createGuardrailForConnection(t, uniqueName("gr-in"), connectionID(t, connName)) // input-only
+	startAgent(t, c, dsn)
+	waitConnectionOnline(t, connName)
+
+	cli := openMSSQLSession(t, c, connName)
+	defer cli.Close()
+	_, err := recvUntil(cli, 10*time.Second, pbclient.SessionOpenOK)
+	if err == nil {
+		t.Fatal("native MSSQL on an agent without the guardrails capability must be refused")
+	}
+	if !strings.Contains(err.Error(), "does not support native MSSQL guardrail enforcement") {
+		t.Errorf("expected a capability refusal, got: %v", err)
 	}
 }

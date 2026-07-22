@@ -138,7 +138,14 @@ func runAgentController(conf *agentconfig.Config, cc grpc.ClientConfig, req *pb.
 
 func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connectionName string, runtimeEnvs map[string]string) {
 	log.Infof("connecting to grpc server %v", config.URL)
-	grpcOptions := []*grpc.ClientOptions{grpc.WithOption("origin", pb.ConnectionOriginAgent)}
+	grpcOptions := []*grpc.ClientOptions{
+		grpc.WithOption("origin", pb.ConnectionOriginAgent),
+		// Advertise this build's capabilities so the gateway only admits
+		// sessions whose agent-side controls this agent can actually enforce
+		// (e.g. native MSSQL guardrails). Older agents omit this and are treated
+		// as not-capable, keeping guarded sessions fail-closed.
+		grpc.WithOption(grpc.OptionKey(pb.GRPCMetaAgentCapabilities), pb.AgentAdvertisedCapabilities()),
+	}
 	if connectionName != "" {
 		grpcOptions = append(grpcOptions, grpc.WithOption("connection-name", connectionName))
 	}
@@ -188,7 +195,10 @@ func runDefaultMode(config *agentconfig.Config) error {
 		clientConfig.Token = config.Token
 		log.With("version", vi.Version, "backoff", v.String()).
 			Infof("connecting to %v, tls=%v", clientConfig.ServerAddress, !config.IsInsecure())
-		client, err := grpc.Connect(clientConfig, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+		client, err := grpc.Connect(clientConfig,
+			grpc.WithOption("origin", pb.ConnectionOriginAgent),
+			grpc.WithOption(grpc.OptionKey(pb.GRPCMetaAgentCapabilities), pb.AgentAdvertisedCapabilities()),
+		)
 		if err != nil {
 			log.With("version", vi.Version, "backoff", v.String()).
 				Warnf("failed to connect to %s, reason=%v", config.URL, err.Error())

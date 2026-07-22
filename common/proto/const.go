@@ -1,11 +1,35 @@
 package proto
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type ConnectionType string
 
 func (c ConnectionType) String() string { return string(c) }
 func (c ConnectionType) Bytes() []byte  { return []byte(c) }
+
+// AgentAdvertisedCapabilities returns the comma-separated capability list this
+// agent build advertises to the gateway (via GRPCMetaAgentCapabilities). New
+// capability tokens are added here as features that require agent-side
+// enforcement ship.
+func AgentAdvertisedCapabilities() string {
+	return strings.Join([]string{
+		AgentCapabilityMSSQLGuardRails,
+	}, ",")
+}
+
+// HasAgentCapability reports whether a comma-separated advertised-capability
+// list (as read from GRPCMetaAgentCapabilities) contains the given token.
+func HasAgentCapability(advertised, token string) bool {
+	for _, c := range strings.Split(advertised, ",") {
+		if strings.TrimSpace(c) == token {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	SpecGatewaySessionID         string = "gateway.session_id"
@@ -38,11 +62,22 @@ const (
 
 	SpecFeatureFlagsKey     string = "feature-flags"
 	SpecTCPServerConnectKey string = "tcp.server_connect"
-	SpecReviewDataKey       string = "review.data"
-	SpecGatewayReviewID     string = "review.id"
-	SpecGatewayJitID        string = "jit.id"
-	SpecJitStatus           string = "jit.status"
-	SpecJitTimeout          string = "jit.timeout"
+
+	// GRPCMetaAgentCapabilities is the gRPC connect-metadata key an agent uses to
+	// advertise its capabilities as a comma-separated list. The gateway reads it
+	// from the agent stream (AgentStream.GetMeta) to gate features whose
+	// enforcement lives in the agent, so a session is never admitted to an agent
+	// that cannot enforce the control. Absent on agents predating capability
+	// advertisement, which are therefore treated as not-capable (fail closed).
+	GRPCMetaAgentCapabilities string = "agent-capabilities"
+	// AgentCapabilityMSSQLGuardRails marks an agent build that enforces guardrails
+	// on the native MSSQL (TDS) protocol path.
+	AgentCapabilityMSSQLGuardRails string = "mssql_native_guardrails"
+	SpecReviewDataKey              string = "review.data"
+	SpecGatewayReviewID            string = "review.id"
+	SpecGatewayJitID               string = "jit.id"
+	SpecJitStatus                  string = "jit.status"
+	SpecJitTimeout                 string = "jit.timeout"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 

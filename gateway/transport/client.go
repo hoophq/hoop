@@ -34,6 +34,7 @@ import (
 	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -355,9 +356,9 @@ func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
 //     the org: the agent's mssql proxy reconstructs SQLBatch/RPC statements and
 //     validates them against input rules. The flag is org-scoped and defaults
 //     on; when off the session is refused (fail-closed) so a guarded connection
-//     never runs unguarded. NOTE: enforcement lives in the agent proxy, so an
-//     agent older than this feature runs the session unguarded — upgrade agents
-//     before relying on it.
+//     never runs unguarded. Enforcement lives in the agent proxy, so admission
+//     additionally requires the selected agent to advertise the capability (see
+//     the caller): an older agent is refused, never run unguarded.
 //   - MSSQL Web Exec: the session API uses ClientAPI + exec and the agent's
 //     doExec path passes the rules to the command/DB-exec redactor.
 func sessionSupportsGuardRails(pctx plugintypes.Context) bool {
@@ -380,6 +381,24 @@ func isMSSQLWebExec(pctx plugintypes.Context) bool {
 	return pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
 		pctx.ClientVerb == pb.ClientVerbExec &&
 		pctx.ClientOrigin == pb.ConnectionOriginClientAPI
+}
+
+// agentSupportsMSSQLGuardRails reports whether the agent selected for this
+// session advertises the native MSSQL guardrails capability. It resolves the
+// agent's live stream the same way the proxy does and reads the capability from
+// its connect metadata. Fail-closed: an agent that is offline, or an older one
+// that does not advertise the capability, returns false — so a guarded native
+// MSSQL session is never admitted to an agent that would run it unguarded.
+func agentSupportsMSSQLGuardRails(pctx plugintypes.Context) bool {
+	streamAgentID := streamtypes.NewStreamID(pctx.AgentID, "")
+	if pctx.AgentMode == pb.AgentModeMultiConnectionType {
+		streamAgentID = streamtypes.NewStreamID(pctx.AgentID, pctx.ConnectionName)
+	}
+	st := streamclient.GetAgentStream(streamAgentID)
+	if st == nil {
+		return false
+	}
+	return pb.HasAgentCapability(st.GetMeta(pb.GRPCMetaAgentCapabilities), pb.AgentCapabilityMSSQLGuardRails)
 }
 
 // guardRailRulesHaveOutputRules reports whether the encoded guardrail payload
@@ -600,13 +619,24 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				// connection with output rules would run those rules silently
 				// unenforced, so refuse it fail-closed. Web Exec (handled via the
 				// db-exec redactor) does enforce output rules and is exempt.
-				if pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
-					!isMSSQLWebExec(pctx) &&
-					guardRailRulesHaveOutputRules(guardRailRulesJsonData) {
-					logCtx.Warnf("refusing session: native MSSQL enforces input guardrails only, but this connection has output rules")
-					return status.Errorf(codes.FailedPrecondition,
-						"this connection has output guardrail rules, but native MSSQL enforces input rules only; "+
-							"remove the output rules or use the connection via Web Exec until output enforcement is available")
+				if pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL && !isMSSQLWebExec(pctx) {
+					if guardRailRulesHaveOutputRules(guardRailRulesJsonData) {
+						logCtx.Warnf("refusing session: native MSSQL enforces input guardrails only, but this connection has output rules")
+						return status.Errorf(codes.FailedPrecondition,
+							"this connection has output guardrail rules, but native MSSQL enforces input rules only; "+
+								"remove the output rules or use the connection via Web Exec until output enforcement is available")
+					}
+					// Enforcement lives in the agent proxy, so require the selected
+					// agent to advertise the capability. An older agent that cannot
+					// enforce is refused (fail-closed) rather than silently running
+					// the session unguarded — this is what makes the default-on flag
+					// safe across mixed-version rollouts.
+					if !agentSupportsMSSQLGuardRails(pctx) {
+						logCtx.Warnf("refusing session: selected agent does not advertise native MSSQL guardrails capability (upgrade the agent)")
+						return status.Errorf(codes.FailedPrecondition,
+							"this connection has guardrails configured, but the selected agent does not support native MSSQL guardrail enforcement; "+
+								"upgrade the agent to a version that supports it")
+					}
 				}
 			}
 		}
