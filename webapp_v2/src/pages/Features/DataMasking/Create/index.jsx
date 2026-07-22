@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
@@ -11,15 +10,14 @@ import MultiSelect from '@/components/MultiSelect'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
-import FreeLicenseCallout from '@/components/FreeLicenseCallout'
+import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { PAGE_PADDING } from '@/layout/PageLayout'
+import { showSnackbar } from '@/utils/snackbar'
 import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
 import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
+import { clampRuleToFreePlan, findMaskingTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
-
-const FREE_LICENSE_MESSAGE =
-  'Organizations with Free plan have limited data protection. Upgrade to Enterprise to have unlimited access to Live Data Masking.'
 
 function SectionRow({ title, description, children }) {
   return (
@@ -77,17 +75,17 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
       ? await updateRule(id, payload)
       : await createRule(payload)
     if (ok) {
-      notifications.show({
-        message: isEdit ? 'Rule updated.' : 'Rule created.',
-        color: 'green',
+      showSnackbar({
+        level: 'success',
+        text: isEdit ? 'Rule updated.' : 'Rule created.',
       })
       navigate('/features/data-masking')
     } else {
-      notifications.show({
-        message:
+      showSnackbar({
+        level: 'error',
+        text:
           error?.response?.data?.message ||
           (isEdit ? 'Failed to update rule.' : 'Failed to create rule.'),
-        color: 'red',
       })
     }
   }
@@ -96,12 +94,12 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
     const { ok, error } = await deleteRule(id)
     deleteModal.close()
     if (ok) {
-      notifications.show({ message: 'Rule deleted.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'Rule deleted.' })
       navigate('/features/data-masking')
     } else {
-      notifications.show({
-        message: error?.response?.data?.message || 'Failed to delete rule.',
-        color: 'red',
+      showSnackbar({
+        level: 'error',
+        text: error?.response?.data?.message || 'Failed to delete rule.',
       })
     }
   }
@@ -167,7 +165,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
       {isFreeLicense && (
         <Box mb="xl">
-          <FreeLicenseCallout message={FREE_LICENSE_MESSAGE} />
+          <EnterpriseBanner />
         </Box>
       )}
 
@@ -274,6 +272,23 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 export default function DataMaskingForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+
+  // Activation-journey deep link: /features/data-masking/new?template=<id>
+  // pre-applies a recommended template. An unknown or stale template id
+  // falls back to the regular blank form. The URL is the source of truth,
+  // so a browser refresh re-seeds the same template. On the free plan the
+  // template is clamped to one entity type — the plan's per-rule limit.
+  const [searchParams] = useSearchParams()
+  const template = isEdit ? null : findMaskingTemplate(searchParams.get('template'))
+  const templateConnectionIds = (searchParams.get('connections') ?? '')
+    .split(',')
+    .filter(Boolean)
+  const seededRule = template
+    ? { ...template.rule, connection_ids: templateConnectionIds }
+    : null
+  const templateRule =
+    seededRule && isFreeLicense ? clampRuleToFreePlan(seededRule) : seededRule
 
   const active = useDataMaskingStore((s) => s.active)
   const activeStatus = useDataMaskingStore((s) => s.activeStatus)
@@ -294,8 +309,8 @@ export default function DataMaskingForm() {
 
   return (
     <DataMaskingFormFields
-      key={isEdit ? (active?.id ?? id) : 'new'}
-      rule={isEdit ? active : null}
+      key={isEdit ? (active?.id ?? id) : template ? `template-${template.id}` : 'new'}
+      rule={isEdit ? active : templateRule}
       id={id}
       isEdit={isEdit}
     />

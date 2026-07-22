@@ -30,14 +30,6 @@
        [:> (.-Panel ui/Disclosure) {:as "ul"
                                     :class "mt-1 px-2"}
         [:li
-         [:a {:target "_blank"
-              :href "https://github.com/hoophq/hoop/issues"
-              :rel "noopener noreferrer"
-              :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
-          [:> MessageSquarePlus {:size 24
-                                 :aria-hidden "true"}]
-          "Feature request"]]
-        [:li
          [:button {:id "intercom-support-trigger"
                    :onClick (fn []
                               (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]

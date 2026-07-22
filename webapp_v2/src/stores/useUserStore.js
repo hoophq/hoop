@@ -98,6 +98,20 @@ export const useUserStore = create((set, get) => ({
     window.Intercom('boot', config)
   },
 
+  // Opens the Intercom messenger with a prefilled message, booting it first
+  // when the app-boot initialization was skipped or shut down (the CLJS boot
+  // races gateway info on load and can leave the messenger unbooted, which
+  // renders as a blank white window). Returns false when Intercom is
+  // unavailable so callers can fall back to the sales page.
+  showIntercomMessage: (message) => {
+    const { analyticsTracking, user } = get()
+    if (!analyticsTracking) return false
+    if (!window.Intercom?.booted) get().initIntercom(user)
+    if (!window.Intercom) return false
+    window.Intercom('showNewMessage', message)
+    return true
+  },
+
   initAnalytics: (user) => {
     const { analyticsTracking, analyticsMode } = get()
     if (!analyticsTracking) return
