@@ -10,16 +10,6 @@ type ConnectionType string
 func (c ConnectionType) String() string { return string(c) }
 func (c ConnectionType) Bytes() []byte  { return []byte(c) }
 
-// AgentAdvertisedCapabilities returns the comma-separated capability list this
-// agent build advertises to the gateway (via GRPCMetaAgentCapabilities). New
-// capability tokens are added here as features that require agent-side
-// enforcement ship.
-func AgentAdvertisedCapabilities() string {
-	return strings.Join([]string{
-		AgentCapabilityMSSQLGuardRails,
-	}, ",")
-}
-
 // HasAgentCapability reports whether a comma-separated advertised-capability
 // list (as read from GRPCMetaAgentCapabilities) contains the given token.
 func HasAgentCapability(advertised, token string) bool {

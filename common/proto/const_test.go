@@ -52,9 +52,3 @@ func TestHasAgentCapability(t *testing.T) {
 		}
 	}
 }
-
-func TestAgentAdvertisedCapabilities(t *testing.T) {
-	if !HasAgentCapability(AgentAdvertisedCapabilities(), AgentCapabilityMSSQLGuardRails) {
-		t.Errorf("advertised capabilities %q must include %q", AgentAdvertisedCapabilities(), AgentCapabilityMSSQLGuardRails)
-	}
-}

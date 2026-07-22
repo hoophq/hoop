@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
+	"libhoop"
 	llog "libhoop/llog"
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
@@ -136,6 +138,19 @@ func runAgentController(conf *agentconfig.Config, cc grpc.ClientConfig, req *pb.
 	return cancelFn
 }
 
+// advertisedAgentCapabilities returns the comma-separated capability list this
+// agent advertises to the gateway. Each entry is gated on the LINKED libhoop
+// actually enforcing it, so a build against the OSS/noop libhoop (or a libhoop
+// whose MSSQL proxy is a passthrough) advertises nothing and the gateway keeps
+// its guarded native sessions fail-closed instead of trusting a false claim.
+func advertisedAgentCapabilities() string {
+	var caps []string
+	if libhoop.SupportsMSSQLGuardRails() {
+		caps = append(caps, pb.AgentCapabilityMSSQLGuardRails)
+	}
+	return strings.Join(caps, ",")
+}
+
 func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connectionName string, runtimeEnvs map[string]string) {
 	log.Infof("connecting to grpc server %v", config.URL)
 	grpcOptions := []*grpc.ClientOptions{
@@ -144,7 +159,7 @@ func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connec
 		// sessions whose agent-side controls this agent can actually enforce
 		// (e.g. native MSSQL guardrails). Older agents omit this and are treated
 		// as not-capable, keeping guarded sessions fail-closed.
-		grpc.WithOption(grpc.OptionKey(pb.GRPCMetaAgentCapabilities), pb.AgentAdvertisedCapabilities()),
+		grpc.WithOption(grpc.OptionKey(pb.GRPCMetaAgentCapabilities), advertisedAgentCapabilities()),
 	}
 	if connectionName != "" {
 		grpcOptions = append(grpcOptions, grpc.WithOption("connection-name", connectionName))
@@ -197,7 +212,7 @@ func runDefaultMode(config *agentconfig.Config) error {
 			Infof("connecting to %v, tls=%v", clientConfig.ServerAddress, !config.IsInsecure())
 		client, err := grpc.Connect(clientConfig,
 			grpc.WithOption("origin", pb.ConnectionOriginAgent),
-			grpc.WithOption(grpc.OptionKey(pb.GRPCMetaAgentCapabilities), pb.AgentAdvertisedCapabilities()),
+			grpc.WithOption(grpc.OptionKey(pb.GRPCMetaAgentCapabilities), advertisedAgentCapabilities()),
 		)
 		if err != nil {
 			log.With("version", vi.Version, "backoff", v.String()).
