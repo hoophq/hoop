@@ -723,6 +723,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		apiorgs.UpdateOrgHideRoleInfo)
 
+	r.GET("/orgs/protection-profile",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.GetOrgProtectionProfile)
+	r.PUT("/orgs/protection-profile",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiorgs.UpdateOrgProtectionProfile)
+
 	r.PUT("/orgs/features",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

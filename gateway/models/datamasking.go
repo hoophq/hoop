@@ -23,6 +23,7 @@ type DataMaskingRule struct {
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
 	RulepackID           sql.NullString           `gorm:"column:rulepack_id"`
+	ManagedBy            *string                  `gorm:"column:managed_by"`
 	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
 	Attributes           pq.StringArray           `gorm:"column:attributes;type:text[];->"`
 	UpdatedAt            time.Time                `gorm:"column:updated_at"`

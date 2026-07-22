@@ -127,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// The organization's default protection profile id; null means manual
+	// configuration or that no profile was ever selected.
+	DefaultProtectionProfile *string `json:"default_protection_profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high"`
 	// Pending organization invitations for this user. When non-empty, the user can migrate
 	// to one of these organizations. Only populated in multi-tenant environments.
 	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
@@ -1247,6 +1250,21 @@ type OrgHideRoleInfoRequest struct {
 
 type OrgHideRoleInfoResponse struct {
 	HideRoleInfo bool `json:"hide_role_info" example:"true"`
+}
+
+// OrgProtectionProfileRequest selects the organization's default protection
+// profile. Pass null to switch to manual configuration: all Hoop-managed
+// protection rules and the profile attribute are removed.
+type OrgProtectionProfileRequest struct {
+	// The protection profile id, or null for manual configuration
+	Profile *string `json:"profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high" example:"protection-medium"`
+	// Where the selection happened; used for analytics only
+	Source string `json:"source" binding:"required" enums:"onboarding,settings" example:"onboarding"`
+}
+
+type OrgProtectionProfileResponse struct {
+	// The active protection profile id; null means manual configuration
+	Profile *string `json:"profile" example:"protection-medium"`
 }
 
 var FeatureList = []string{"ask-ai"}
