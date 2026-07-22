@@ -133,12 +133,12 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 				pkt.Spec[pb.SpecAgentVersion] = []byte(agentVersion)
 			}
 		case pbclient.PGConnectionWrite:
-			// A guardrail block keeps the session open, so persist the violation
-			// metadata here (it is not carried on SessionClose for native
-			// protocols). No-op when the packet carries no guardrails info.
-			updateGuardRailsInfoFromPacket(pctx, pkt)
 			rewritePGGuardRailsErrorPacket(pkt)
 		case pbclient.MSSQLConnectionWrite:
+			// A native MSSQL guardrail block returns a TDS error but keeps the
+			// session open, so the violation metadata rides this packet rather
+			// than SessionClose. Persist it here; no-op when the packet carries
+			// no guardrails info.
 			updateGuardRailsInfoFromPacket(pctx, pkt)
 		}
 

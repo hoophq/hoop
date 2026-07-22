@@ -48,10 +48,10 @@ func (a *Agent) processMSSQLProtocol(pkt *pb.Packet) {
 	log.Infof("session=%v - starting mssql connection at %v:%v", sessionID, connenv.host, connenv.port)
 	// Forward the connection's guardrail rules to libhoop, which enforces input
 	// rules on the native TDS path (and fails closed at construction on what it
-	// cannot evaluate, e.g. output rules). The gateway drops the rules when the
-	// beta.mssql_native_guardrails flag is off for the org, so an empty value
-	// here means a plain passthrough. Output data masking is not yet supported
-	// for MSSQL, so no DLP opts are set.
+	// cannot evaluate, e.g. output rules). The gateway ships rules only when the
+	// connection has them configured, so an empty value here means a plain
+	// passthrough. Output data masking is not yet supported for MSSQL, so no DLP
+	// opts are set.
 	var guardRailRules string
 	if connParams.GuardRailRules != nil {
 		guardRailRules = string(connParams.GuardRailRules)

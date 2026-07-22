@@ -15,13 +15,12 @@ import (
 )
 
 // NOTE: This file no longer contains native-MSSQL guardrail admission tests.
-// Under the DEP-74 delegate model the gateway performs NO guardrail admission
-// or agent-capability gating for MSSQL: libhoop is the sole authority and fails
-// closed at proxy construction when it cannot enforce the rules. The gateway
-// only chooses whether to SHIP rules (see dropNativeMSSQLGuardRails in
-// gateway/transport/client.go, unit-tested in agent_guardrails_test.go). The
-// remaining test below covers the one gateway-side admission invariant that
-// still exists: a guarded connection opens without a DLP provider configured.
+// Under the DEP-74 delegate model the gateway performs NO guardrail admission,
+// feature-flag gating, or agent-capability gating for MSSQL: it ships the
+// connection's configured rules and libhoop is the sole authority, failing
+// closed at proxy construction when it cannot enforce them. The remaining test
+// below covers the one gateway-side admission invariant that still exists: a
+// guarded connection opens without a DLP provider configured.
 
 // TestGuardedConnectionOpensWithoutProvider verifies the gateway admits a
 // session on a guarded connection even when no Presidio provider is configured.

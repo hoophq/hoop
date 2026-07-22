@@ -75,13 +75,6 @@ var catalog = map[string]Flag{
 		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
 	},
-	"beta.mssql_native_guardrails": {
-		Name:        "beta.mssql_native_guardrails",
-		Description: "Enforce guardrails on native MSSQL (TDS) protocol sessions: SQLBatch and RPC sp_executesql/sp_prepare/sp_prepexec statements are reconstructed (across TDS packet boundaries) and validated against input rules in the agent (libhoop) before reaching the server; a match blocks the query and returns a TDS error to the client. Fail-closed by design: dynamic string execution (EXEC(...)/sp_executesql), unsupported RPC parameter types (TVP, XML, UDT, TEXT/NTEXT/IMAGE, SQL_VARIANT), and connections carrying output rules (only input is enforced) are refused at proxy construction rather than forwarded. Stored-procedure bodies are not inspected (only the invocation). Version skew stays fail-closed: an older agent whose libhoop cannot evaluate the rules refuses the guarded session. When off, the gateway ships no guardrail rules for native MSSQL, so the session runs as a plain passthrough.",
-		Default:     true,
-		Stability:   StabilityBeta,
-		Components:  []Component{ComponentGateway, ComponentAgent},
-	},
 	"experimental.http_session_analyzer": {
 		Name:        "experimental.http_session_analyzer",
 		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code). Each request is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",

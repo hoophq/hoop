@@ -38,10 +38,9 @@ func OpenMSSQLSession(t *testing.T, tr *MockTransport, mc *MSSQLContainer) strin
 
 // OpenMSSQLSessionWithGuardRails is OpenMSSQLSession with guardrail rules
 // attached to the connection params. When rules are present, libhoop's MSSQL
-// proxy enforces them (or fails closed if it cannot evaluate them) — the agent
-// does not gate on any feature flag. In production the gateway's
-// beta.mssql_native_guardrails flag decides whether those rules are shipped for
-// native MSSQL sessions in the first place; this harness injects them directly.
+// proxy enforces them (or fails closed if it cannot evaluate them). In
+// production the gateway ships these rules whenever the connection has them
+// configured; this harness injects them directly.
 func OpenMSSQLSessionWithGuardRails(t *testing.T, tr *MockTransport, mc *MSSQLContainer, guardRailRules []byte) string {
 	t.Helper()
 	sessionID := uuid.New().String()

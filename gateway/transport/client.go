@@ -280,33 +280,6 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	return encodeGuardRailRules(connGuardRailRules)
 }
 
-// dropNativeMSSQLGuardRails reports whether the gateway must withhold guardrail
-// rules from the agent for this session because native MSSQL guardrails are
-// disabled for the org via the beta.mssql_native_guardrails feature flag.
-//
-// It is deliberately narrow and returns true ONLY for a native MSSQL session
-// while the flag is off:
-//   - Non-MSSQL protocols are never affected — they carry their own enforcement
-//     and are outside this flag's scope.
-//   - Web Exec MSSQL (exec verb + ClientAPI origin) is a separate, pre-existing
-//     path and is never gated by this flag.
-//
-// This is a rule-shipping gate, not a connection-type admission list, so it
-// cannot drift the way the DEP-48 admission list did: when it returns true the
-// caller simply ships no rules and the agent runs a plain passthrough; libhoop
-// remains the sole authority whenever rules ARE shipped (it enforces the input
-// rules and fails closed on anything it cannot evaluate).
-func dropNativeMSSQLGuardRails(connType pb.ConnectionType, clientVerb, clientOrigin string, flagEnabled bool) bool {
-	if connType != pb.ConnectionTypeMSSQL {
-		return false
-	}
-	// Web Exec MSSQL guardrails are a distinct, pre-existing path.
-	if clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI {
-		return false
-	}
-	return !flagEnabled
-}
-
 // encodeGuardRailRules turns the connection's stored guardrail rules into the
 // JSON payload shipped to the agent (AgentConnectionParams.GuardRailRules).
 // It returns nil — meaning "no guardrails" — when the connection has no rules
@@ -368,10 +341,9 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 //
 // MSSQL is no longer in that fail-closed list: its native proxy evaluates INPUT
 // guardrails (DEP-69), and refuses at construction when only output rules are
-// configured (which it cannot enforce). The one gateway-side knob is the
-// beta.mssql_native_guardrails feature flag, applied where the rules are
-// resolved (not as a connection-type list), so an org can disable native MSSQL
-// enforcement without relying on agent flag propagation.
+// configured (which it cannot enforce). There is no gateway-side knob — native
+// MSSQL enforcement is driven purely by whether the connection has guardrail
+// rules configured, exactly like Postgres and MySQL.
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
@@ -550,25 +522,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// input, so guardrail rules are not fetched nor enforced for it — the
 			// same long-standing behavior as DLP redaction, which is also disabled
 			// for plain-exec sessions.
-			// beta.mssql_native_guardrails is the single gateway-side knob for
-			// native MSSQL guardrails. Reading the org flag on the gateway (once,
-			// here) keeps the decision free of agent flag-sync races; the actual
-			// carve-out logic lives in dropNativeMSSQLGuardRails so it can be
-			// unit-tested in isolation. When it reports true we ship no rules and
-			// the agent runs a plain passthrough; otherwise the rules are shipped
-			// and libhoop enforces the input rules / fails closed on what it
-			// cannot evaluate.
-			if len(guardRailRulesJsonData) > 0 &&
-				dropNativeMSSQLGuardRails(
-					pctx.ProtoConnectionType(),
-					pctx.ClientVerb,
-					pctx.ClientOrigin,
-					featureflag.IsEnabled(pctx.OrgID, "beta.mssql_native_guardrails"),
-				) {
-				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
-					Infof("native MSSQL guardrails disabled for org (beta.mssql_native_guardrails=off); shipping no guardrail rules")
-				guardRailRulesJsonData = nil
-			}
+			//
+			// The rules are shipped as-is when the connection has them; there is no
+			// gateway-side connection-type or feature-flag gate. libhoop is the sole
+			// authority — it enforces the input rules in-process and fails closed at
+			// proxy construction for protocol paths that cannot evaluate them.
 		}
 
 		// Resolve the AI session analyzer config for HTTP-family connections.
