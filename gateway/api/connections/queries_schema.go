@@ -236,6 +236,10 @@ ORDER BY c.column_id;`, dbName, schemaName, tableName)
 }
 
 func getMySQLColumnsQuery(dbName, tableName, schemaName string) string {
+	// The database identifier must be backtick-quoted: names with hyphens or
+	// dots (allowed by validateDatabaseName) are invalid as bare identifiers.
+	// validateDatabaseName rejects backticks, so quoting here is injection-safe.
+	quotedDBName := "`" + dbName + "`"
 	return fmt.Sprintf(`
 USE %s;
 SELECT
@@ -250,7 +254,7 @@ SELECT
     c.IS_NULLABLE = 'NO' as not_null
 FROM INFORMATION_SCHEMA.COLUMNS c
 WHERE c.TABLE_SCHEMA = '%s' AND c.TABLE_NAME = '%s'
-ORDER BY c.ORDINAL_POSITION;`, dbName, schemaName, tableName)
+ORDER BY c.ORDINAL_POSITION;`, quotedDBName, schemaName, tableName)
 }
 
 func getOracleDBColumnsQuery(tableName, schemaName string) string {
