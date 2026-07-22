@@ -3,6 +3,7 @@ import CatalogRenderer from '@/pages/Roles/Configure/sections/credentials/Catalo
 import SshRenderer from '@/pages/Roles/Configure/sections/credentials/SshRenderer'
 import ClaudeCodeRenderer from '@/pages/Roles/Configure/sections/credentials/ClaudeCodeRenderer'
 import HttpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/HttpProxyRenderer'
+import McpRenderer from '@/pages/Roles/Configure/sections/credentials/McpRenderer'
 import KubernetesTokenRenderer from '@/pages/Roles/Configure/sections/credentials/KubernetesTokenRenderer'
 import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
 
@@ -36,6 +37,12 @@ const RENDERER_RULES = [
     requiresCatalog: false,
     matches: (c) => c.type === 'httpproxy' && c.subtype === 'claude-code',
     render: (props) => <ClaudeCodeRenderer {...props} />,
+  },
+  {
+    name: 'httpproxy-mcp',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'httpproxy' && c.subtype === 'mcp',
+    render: (props) => <McpRenderer {...props} />,
   },
   {
     name: 'httpproxy-generic',
