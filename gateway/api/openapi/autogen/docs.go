@@ -11789,6 +11789,17 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1800
                 },
+                "managed_attributes": {
+                    "description": "Hoop-managed attributes associated with this connection (e.g. the\nactive protection profile attribute). Read only — managed attributes\ncannot be set or removed through this resource.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "hoop_protection_profile-soc2_type2"
+                    ]
+                },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
                     "type": "string",

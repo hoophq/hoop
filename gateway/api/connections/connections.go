@@ -604,6 +604,7 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 		MinReviewApprovals:      conn.MinReviewApprovals,
 		MandatoryMetadataFields: conn.MandatoryMetadataFields,
 		Attributes:              conn.Attributes,
+		ManagedAttributes:       conn.ManagedAttributes,
 		SecretsUpdatedAt:        conn.SecretsUpdatedAt,
 	}
 }

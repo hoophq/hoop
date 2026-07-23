@@ -1,7 +1,9 @@
 import { Stack, Title, Text, Group } from '@mantine/core'
+import { Award } from 'lucide-react'
 import Badge from '@/components/Badge'
 import TextInput from '@/components/TextInput'
 import MultiSelect from '@/components/MultiSelect'
+import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import ConnectionTagsEditor from '@/pages/Roles/Configure/sections/ConnectionTagsEditor'
 
@@ -43,6 +45,25 @@ export default function DetailsTab({ connection }) {
             evaluated by rules you configure.
           </Text>
         </Stack>
+        {connection.managed_attributes?.length > 0 && (
+          <Group gap="xs">
+            {connection.managed_attributes.map((name) => (
+              <Badge
+                key={name}
+                variant="light"
+                color="indigo"
+                radius="xl"
+                tt="none"
+                leftSection={<Award size={12} aria-hidden="true" />}
+              >
+                {labelForManagedAttribute(name)}
+              </Badge>
+            ))}
+            <Text size="xs" c="dimmed">
+              Applied by your protection profile — managed by Hoop.
+            </Text>
+          </Group>
+        )}
         <MultiSelect
           placeholder="Select or type to create"
           searchable

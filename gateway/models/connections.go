@@ -81,6 +81,7 @@ type Connection struct {
 	GuardRailRules                      pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	ConnectionTags                      map[string]string `gorm:"column:connection_tags;serializer:json;->"`
 	Attributes                          pq.StringArray    `gorm:"column:attributes;type:text[];->"`
+	ManagedAttributes                   pq.StringArray    `gorm:"column:managed_attributes;type:text[];->"`
 }
 
 func isAuditorContext(ctx UserContext) bool {
@@ -569,7 +570,12 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
 			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
 			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.rulepack_id IS NULL AND a.managed_by IS NULL
-		), ARRAY[]::TEXT[]) AS attributes
+		), ARRAY[]::TEXT[]) AS attributes,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.managed_by IS NOT NULL
+		), ARRAY[]::TEXT[]) AS managed_attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -858,7 +864,12 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
 			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
 			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.rulepack_id IS NULL AND a.managed_by IS NULL
-		), ARRAY[]::TEXT[]) AS attributes
+		), ARRAY[]::TEXT[]) AS attributes,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.managed_by IS NOT NULL
+		), ARRAY[]::TEXT[]) AS managed_attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -1103,6 +1114,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
 			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.rulepack_id IS NULL AND a.managed_by IS NULL
 		), ARRAY[]::TEXT[]) AS attributes,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.managed_by IS NOT NULL
+		), ARRAY[]::TEXT[]) AS managed_attributes,
 		COUNT(*) OVER() AS total
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?

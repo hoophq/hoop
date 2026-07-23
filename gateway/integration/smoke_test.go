@@ -380,6 +380,31 @@ func TestProtectionProfileManagedRules(t *testing.T) {
 	if got := countProfileAttrs(skippedRole); got != 0 {
 		t.Errorf("connection %q: expected 0 profile attribute associations (skip_protection_profile), got %d", skippedRole, got)
 	}
+
+	// The managed attribute is exposed read-only via managed_attributes on
+	// connection reads (the regular attributes array keeps hiding it).
+	managedAttrsOf := func(connName string) []any {
+		resp := testServer.Get(t, "/connections/"+connName, token)
+		defer resp.Body.Close()
+		testutil.RequireStatus(t, resp, http.StatusOK)
+		var conn map[string]any
+		testutil.DecodeJSON(t, resp, &conn)
+		if attrs, ok := conn["attributes"].([]any); ok {
+			for _, a := range attrs {
+				if s, _ := a.(string); strings.HasPrefix(s, "hoop_protection_profile-") {
+					t.Errorf("connection %q: managed attribute leaked into attributes: %v", connName, attrs)
+				}
+			}
+		}
+		managed, _ := conn["managed_attributes"].([]any)
+		return managed
+	}
+	if managed := managedAttrsOf(taggedRole); len(managed) != 1 {
+		t.Errorf("connection %q: expected 1 managed attribute in managed_attributes, got %v", taggedRole, managed)
+	}
+	if managed := managedAttrsOf(skippedRole); len(managed) != 0 {
+		t.Errorf("connection %q: expected empty managed_attributes, got %v", skippedRole, managed)
+	}
 }
 
 // T7 — unknown connection returns 404.

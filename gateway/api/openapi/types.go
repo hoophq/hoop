@@ -439,6 +439,10 @@ type Connection struct {
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
 	// Attributes associated with this connection
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// Hoop-managed attributes associated with this connection (e.g. the
+	// active protection profile attribute). Read only — managed attributes
+	// cannot be set or removed through this resource.
+	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
 	// When true, the connection is not tagged with the organization's active
 	// protection profile attribute at creation time, opting it out of the
 	// profile's rules. Only meaningful on creation; ignored on updates.

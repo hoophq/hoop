@@ -88,6 +88,20 @@ export const GENERAL_PROFILES = [
   },
 ]
 
+// Display labels for the Hoop-managed protection-profile attributes
+// (gateway/services/protection_profiles_catalog.go AttributeName values).
+export const MANAGED_ATTRIBUTE_LABELS = {
+  'hoop_protection_profile-hipaa_ready': 'HIPAA Ready',
+  'hoop_protection_profile-soc2_type2': 'SOC2 Type II',
+  'hoop_protection_profile-protection_permissive': 'Essential guardrails',
+  'hoop_protection_profile-protection_medium': 'Balanced',
+  'hoop_protection_profile-protection_high': 'Maximum',
+}
+
+export function labelForManagedAttribute(name) {
+  return MANAGED_ATTRIBUTE_LABELS[name] ?? name
+}
+
 export const MANUAL_CARD = {
   id: MANUAL_PROFILE,
   title: 'Manual configuration',
