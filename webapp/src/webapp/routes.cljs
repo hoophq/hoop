@@ -72,6 +72,9 @@
      "/organization" [["/users" :users]]
      "/onboarding" [["" :onboarding]
                     ["/aws-connect" :onboarding-aws-connect]
+                    ;; Rendered by the React shell (webapp_v2) — the bidi entry
+                    ;; exists only so CLJS events can navigate to it.
+                    ["/protection-rules" :onboarding-protection-rules]
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]
                     ["/setup/agent" :onboarding-setup-agent]

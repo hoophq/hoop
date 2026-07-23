@@ -222,6 +222,22 @@ import MultiSelect from '@/components/MultiSelect'
 />
 ```
 
+### `Radio`
+Radio input. Re-exports `Radio.Group` and `Radio.Indicator` so call sites never import from Mantine directly. `Radio.Indicator` renders the radio visual without an `<input>` — use it inside buttons/cards (e.g. selectable option cards) where a nested input would be invalid markup.
+```jsx
+import Radio from '@/components/Radio'
+
+<Radio.Group value={value} onChange={setValue} label="Mode">
+  <Radio value="a" label="Option A" />
+  <Radio value="b" label="Option B" />
+</Radio.Group>
+
+// Inside a selectable card (no real input):
+<UnstyledButton role="radio" aria-checked={selected} onClick={onSelect}>
+  <Radio.Indicator checked={selected} size="sm" />
+</UnstyledButton>
+```
+
 ### `Switch`
 Toggle switch for boolean settings.
 ```jsx
@@ -567,6 +583,7 @@ useAuthStore.getState().token
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 | `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
+| `protectionProfiles.js` | GET/PUT `/orgs/protection-profile` (protection rules profile; `profile: null` = manual) |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
 

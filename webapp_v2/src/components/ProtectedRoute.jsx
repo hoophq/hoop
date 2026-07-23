@@ -69,7 +69,14 @@ function ProtectedRoute({ children, adminOnly = false }) {
           try {
             const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
             if ((pages?.total ?? 0) === 0) {
-              setRedirectTo('/onboarding/setup')
+              // Protection rules come first: until a profile has been applied
+              // (default_protection_profile is null for both "never chose" and
+              // "manual"), onboarding starts at the protection-rules step.
+              setRedirectTo(
+                currentUser.default_protection_profile
+                  ? '/onboarding/setup'
+                  : '/onboarding/protection-rules'
+              )
               return
             }
           } catch {

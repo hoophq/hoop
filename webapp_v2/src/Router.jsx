@@ -21,6 +21,8 @@ import SettingsApiKeysForm from '@/pages/Settings/ApiKeys/Form'
 import SettingsApiKeysCreated from '@/pages/Settings/ApiKeys/Created'
 import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
+import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
+import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
@@ -213,6 +215,20 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsAttributesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Protection Rules */}
+      <Route
+        path="/settings/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsProtectionRules />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
@@ -425,6 +441,14 @@ function Router() {
       />
 
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
+      <Route
+        path="/onboarding/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <OnboardingProtectionRules />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/onboarding/*"
         element={
