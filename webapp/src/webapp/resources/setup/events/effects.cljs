@@ -118,6 +118,7 @@
                    :connection-method "manual-input"
                    :credentials {}
                    :attributes []
+                   :skip-protection-profile? false
                    :environment-variables []
                    :configuration-files []}]
      (update-in db [:resource-setup :roles] (fnil conj []) new-role))))
@@ -139,6 +140,11 @@
  :resource-setup->update-role-attributes
  (fn [db [_ role-index names]]
    (assoc-in db [:resource-setup :roles role-index :attributes] (vec names))))
+
+(rf/reg-event-db
+ :resource-setup->set-role-skip-protection-profile
+ (fn [db [_ role-index skip?]]
+   (assoc-in db [:resource-setup :roles role-index :skip-protection-profile?] (boolean skip?))))
 
 ;; Role helper functions
 (defn update-role-credentials-source

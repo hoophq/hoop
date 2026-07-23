@@ -545,11 +545,14 @@
 
 (defn role-attributes-field
   "Per-role Attributes selector. While a protection profile is active, its
-  managed attribute is shown as a fixed (non-removable) pill that never
-  reaches the role state or the payload — the backend applies it on its own."
+  managed attribute appears as a distinct blue pill. Removing it opts the
+  role out of the profile (skip_protection_profile in the payload); it can
+  be re-added from the dropdown before submitting. The managed attribute
+  itself is never sent — the backend applies it on its own."
   [role-index]
   (let [attributes-data @(rf/subscribe [:attributes/list-data])
         selected @(rf/subscribe [:resource-setup/role-attributes role-index])
+        skip-profile? @(rf/subscribe [:resource-setup/role-skip-protection-profile? role-index])
         managed-pill @(rf/subscribe [:protection-profile/managed-pill])]
     [:> Box {:class "mt-4"}
      [multi-select/creatable-select
@@ -559,9 +562,15 @@
        :placeholder "Select or type to create"
        :options (mapv #(hash-map :value (:name %) :label (:name %)) attributes-data)
        :default-value (mapv #(hash-map :value % :label %) selected)
-       :fixed-options (when managed-pill
-                        [{:value (:attribute-name managed-pill)
-                          :label (:display-name managed-pill)}])
+       :managed-options (when managed-pill
+                          [{:value (:attribute-name managed-pill)
+                            :label (:display-name managed-pill)}])
+       :managed-value (when (and managed-pill (not skip-profile?))
+                        [(:attribute-name managed-pill)])
+       :on-managed-change (fn [managed-values]
+                            (rf/dispatch [:resource-setup->set-role-skip-protection-profile
+                                          role-index
+                                          (empty? managed-values)]))
        :on-change (fn [selected-options]
                     (rf/dispatch [:resource-setup->update-role-attributes role-index
                                   (mapv :value (js->clj selected-options :keywordize-keys true))]))

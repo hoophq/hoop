@@ -196,6 +196,7 @@
      :secret secret
      :command command
      :attributes (vec (or (:attributes role) []))
+     :skip_protection_profile (boolean (:skip-protection-profile? role))
      :access_mode_runbooks "enabled"
      :access_mode_exec "enabled"
      :access_mode_connect "enabled"

@@ -124,8 +124,11 @@
                   [:> Box
                    [:> Text {:size "4" :weight "bold"} (:name rules)]
                    [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rules)]]
-                  [:> Button {:variant "soft"
-                              :color "gray"
-                              :size "3"
-                              :on-click #(rf/dispatch [:navigate :edit-guardrail {} :guardrail-id (:id rules)])}
-                   "Configure"]]]))]])))))
+                  ;; Hoop-managed rules (protection profiles) are immutable —
+                  ;; the API rejects updates, so there is nothing to configure.
+                  (when-not (:managed_by rules)
+                    [:> Button {:variant "soft"
+                                :color "gray"
+                                :size "3"
+                                :on-click #(rf/dispatch [:navigate :edit-guardrail {} :guardrail-id (:id rules)])}
+                     "Configure"])]]))]])))))

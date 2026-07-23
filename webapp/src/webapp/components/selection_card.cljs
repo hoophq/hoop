@@ -2,12 +2,13 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Card Flex Text]]))
 
-(defn selection-card [{:keys [icon title description selected? on-click badge icon-class]}]
+(defn selection-card [{:keys [icon title description selected? on-click badge icon-class disabled?]}]
   [:> Card {:size "1"
             :variant "surface"
-            :class (str "w-full cursor-pointer "
+            :class (str "w-full "
+                        (if disabled? "cursor-not-allowed opacity-60 " "cursor-pointer ")
                         (when selected? "before:bg-primary-12"))
-            :on-click on-click}
+            :on-click (when-not disabled? on-click)}
    [:> Flex {:align "center" :gap "3" :class (str (when selected? "text-[--gray-1]"))}
     (when icon
       [:> Avatar {:size "4"

@@ -91,6 +91,10 @@
 
 (defn rule-form [form-type rule-data scroll-pos]
   (let [state (create-form-state rule-data)
+        ;; Hoop-managed rules (protection profiles): the API only accepts
+        ;; changes to approval settings and group lists — everything else is
+        ;; locked in the form and the rule cannot be deleted.
+        managed? (some? (:managed_by rule-data))
         resource-roles (rf/subscribe [:connections->pagination])
         user-groups (rf/subscribe [:user-groups])
         current-user (rf/subscribe [:users->current-user])
@@ -137,13 +141,17 @@
                               (when (or (= form-type :edit) can-create?)
                                 (let [rule-data (cond-> {:name @(:rule-name state)
                                                          :access_type @(:access-type state)
-                                                         :connection_names @(:connection-names state)
-                                                         :attributes @(:attribute-names state)
+                                                         :connection_names (if managed? [] @(:connection-names state))
                                                          :approval_required_groups (mapv :value @(:approval-required-groups state))
                                                          :all_groups_must_approve @(:all-groups-must-approve state)
                                                          :reviewers_groups (mapv :value @(:reviewers-groups state))
                                                          :force_approval_groups (mapv :value @(:force-approval-groups state))
                                                          :min_approvals (js/parseInt @(:min-approvals state))}
+                                                  ;; Managed rules must not send attributes — the API
+                                                  ;; requires them omitted or byte-identical.
+                                                  (not managed?)
+                                                  (assoc :attributes @(:attribute-names state))
+
                                                   (seq @(:description state))
                                                   (assoc :description @(:description state))
 
@@ -166,7 +174,7 @@
                 "Create new Access Request rule"
                 "Edit Access Request rule")]
              [:> Flex {:gap "5" :align "center"}
-              (when (= form-type :edit)
+              (when (and (= form-type :edit) (not managed?))
                 [:> Button {:size "4"
                             :variant "ghost"
                             :color "red"
@@ -189,6 +197,13 @@
             [:> Box {:class "mx-7 mt-4"}
              [free-license-callout]])
 
+          (when managed?
+            [:> Box {:class "mx-7 mt-4"}
+             [:> Callout.Root {:size "1" :color "blue"}
+              [:> Callout.Icon [:> Info {:size 16}]]
+              [:> Callout.Text
+               "This rule is managed by Hoop as part of your protection profile. Only approval settings and group lists can be changed."]]])
+
           [:> Box {:p "7" :class "space-y-radix-9"}
            [form-section {:title "Set new rule information"
                           :description "Used to identify your Access Request rule in your resources."}
@@ -207,6 +222,7 @@
               :label "Description (Optional)"
               :value @(:description state)
               :class "w-full"
+              :disabled managed?
               :on-change #(reset! (:description state) (-> % .-target .-value))}]]
 
            [form-section {:title "Access request type"
@@ -217,12 +233,14 @@
                :title "Just-in-Time"
                :description "For temporary access expiring automatically after defined time range"
                :selected? (= @(:access-type state) "jit")
+               :disabled? managed?
                :on-click #(switch-access-type! all-resource-roles "jit")}]
              [selection-card
               {:icon (r/as-element [:> CodeXml {:size 20}])
                :title "by Command"
                :description "For execution-based with approval workflow"
                :selected? (= @(:access-type state) "command")
+               :disabled? managed?
                :on-click #(switch-access-type! all-resource-roles "command")}]
 
              [:> Callout.Root {:size "1" :color "gray" :class "bg-transparent p-0"}
@@ -244,6 +262,7 @@
                   :id "access-duration-input"
                   :name "access-duration-input"
                   :default-value selected-option
+                  :disabled? managed?
                   :clearable? true
                   :required? true
                   :on-change #(let [selected (js->clj %)]
@@ -265,7 +284,8 @@
               [connections-select/main
                {:id "connections-required-input"
                 :name "connections-required-input"
-                :required? (empty? @(:attribute-names state))
+                :required? (and (not managed?) (empty? @(:attribute-names state)))
+                :disabled? managed?
                 :connection-ids resource-role-ids
                 :selected-connections selected-resource-roles-data
                 :connection-filter-fn #(eligible-for-type? @(:access-type state) %)
@@ -281,7 +301,8 @@
               :id "attribute-names-input"
               :name "attribute-names-input"
               :options (mapv #(hash-map :value (:name %) :label (:name %)) all-attributes)
-              :required? (empty? @(:connection-names state))
+              :required? (and (not managed?) (empty? @(:connection-names state)))
+              :disabled? managed?
               :default-value (mapv #(hash-map :value % :label %) @(:attribute-names state))
               :placeholder "Select attributes..."
               :on-change (fn [selected-options]

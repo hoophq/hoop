@@ -33,7 +33,7 @@
       (reset! initialized true)
       (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}]))
 
-    (fn [{:keys [id name required? connection-filter-fn connection-ids selected-connections
+    (fn [{:keys [id name required? disabled? connection-filter-fn connection-ids selected-connections
                  on-connections-change label placeholder]
           :or {label "Resource Roles"
                placeholder "Select resource roles..."}}]
@@ -60,6 +60,7 @@
           :id id
           :name name
           :required? required?
+          :disabled? disabled?
           :options connections-options
           :default-value (if (empty? selected-values) nil (vec selected-values))
           :loading? connections-loading?

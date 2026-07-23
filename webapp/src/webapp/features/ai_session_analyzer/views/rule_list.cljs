@@ -35,8 +35,11 @@
                   [:> Text {:size "4" :weight "bold"} (or (:name rule) "Unnamed Rule")]
                   [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
                    (or (:description rule) "")]]
-                 [:> Button {:variant "soft"
-                             :color "gray"
-                             :size "3"
-                             :on-click #(rf/dispatch [:navigate :edit-ai-session-analyzer-rule {} :rule-name (:name rule)])}
-                  "Configure"]]])))]]))))
+                 ;; Hoop-managed rules (protection profiles) are immutable —
+                 ;; the API rejects updates, so there is nothing to configure.
+                 (when-not (:managed_by rule)
+                   [:> Button {:variant "soft"
+                               :color "gray"
+                               :size "3"
+                               :on-click #(rf/dispatch [:navigate :edit-ai-session-analyzer-rule {} :rule-name (:name rule)])}
+                    "Configure"])]])))]]))))

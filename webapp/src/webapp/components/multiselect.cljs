@@ -13,9 +13,12 @@
   #js {"multiValue" (fn [style]
                       (clj->js (into (js->clj style)
                                      {"padding" "4px"
-                                      "borderRadius" "6px"
+                                      "borderRadius" "12px"
                                       "fontSize" "16px"
-                                      "backgroundColor" "#E1E5EB"})))
+                                      "backgroundColor" "rgba(0, 0, 51, 0.06)"})))
+       "multiValueLabel" (fn [style]
+                           (clj->js (into (js->clj style)
+                                          {"color" "#60646c"})))
        "option" (fn [style]
                   (clj->js (into (js->clj style)
                                  {"fontSize" "16px"})))
@@ -91,34 +94,40 @@
 ;; remove button and get a distinct neutral background. The style fns receive
 ;; (base, state) — react-select always passes both; the shared `styles` def
 ;; simply ignores the second argument.
-(defn- fixed-option-state?
-  "True when a react-select style-fn state refers to an option tagged isFixed."
+(defn- managed-option-state?
+  "True when a react-select style-fn state refers to an option tagged isManaged."
   [state]
-  (boolean (some-> state (gobj/getValueByKeys "data" "isFixed"))))
+  (boolean (some-> state (gobj/getValueByKeys "data" "isManaged"))))
 
-(def ^:private fixed-options-styles
+;; Managed pills (e.g. the protection-profile attribute) follow the Figma
+;; accent style: light blue chip with blue label/icon. They stay removable.
+(def ^:private managed-options-styles
   (clj->js
    (merge (js->clj styles)
           {"multiValue" (fn [style state]
                           (let [base (into (js->clj style)
                                            {"padding" "4px"
-                                            "borderRadius" "6px"
+                                            "borderRadius" "12px"
                                             "fontSize" "16px"
-                                            "backgroundColor" "#E1E5EB"})]
-                            (if (fixed-option-state? state)
-                              (clj->js (into base {"backgroundColor" "#F0F0F3"
-                                                   "border" "1px solid #D9D9E0"}))
+                                            "backgroundColor" "rgba(0, 0, 51, 0.06)"})]
+                            (if (managed-option-state? state)
+                              (clj->js (into base {"backgroundColor" "#edf2fe"}))
                               (clj->js base))))
+           "multiValueLabel" (fn [style state]
+                               (clj->js (into (js->clj style)
+                                              {"color" (if (managed-option-state? state)
+                                                         "#3a5bc7"
+                                                         "#60646c")})))
            "multiValueRemove" (fn [style state]
-                                (if (fixed-option-state? state)
-                                  (clj->js (into (js->clj style) {"display" "none"}))
+                                (if (managed-option-state? state)
+                                  (clj->js (into (js->clj style) {"color" "#3a5bc7"}))
                                   style))})))
 
-(defn- format-option-with-fixed-icon
-  "Renders fixed options (e.g. the managed protection-profile attribute) with
-  an award icon; regular options render as plain labels."
+(defn- format-option-with-managed-icon
+  "Renders managed options (pills and menu entries) with an award icon;
+  regular options render as plain labels."
   [opt _ctx]
-  (if (gobj/get opt "isFixed")
+  (if (gobj/get opt "isManaged")
     (r/as-element
      [:span {:class "flex items-center gap-1"}
       [:> Award {:size 12 :aria-hidden true}]
@@ -126,25 +135,38 @@
     (gobj/get opt "label")))
 
 (defn creatable-select
-  "Creatable multi-select. Extra optional prop:
+  "Creatable multi-select. Extra optional props for managed options (e.g. the
+  protection-profile attribute in the role creation wizard):
 
-  - :fixed-options — vector of {:value v :label l} rendered as non-removable
-    pills (react-select's documented \"Fixed Options\" pattern). Fixed entries
-    are display-only: they are prepended to the rendered value and stripped
-    before `on-change` is called, so they never reach the caller's state."
-  [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder fixed-options]}]
-  (let [fixed (mapv #(assoc % :isFixed true) fixed-options)
-        has-fixed? (seq fixed)
-        value (if has-fixed?
-                (into fixed default-value)
+  - :managed-options — vector of {:value v :label l} available managed entries.
+    They render with a distinct blue style + award icon, appear in the
+    dropdown, and are removable like any pill.
+  - :managed-value — vector of currently selected managed values.
+  - :on-managed-change — (fn [managed-values]) called with the selected
+    managed values whenever they change.
+
+  Managed entries never reach the regular `on-change` — callers keep user
+  values and managed values in separate state."
+  [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder
+           managed-options managed-value on-managed-change]}]
+  (let [managed (mapv #(assoc % :isManaged true) managed-options)
+        has-managed? (seq managed)
+        managed-selected (filterv #(some #{(:value %)} (or managed-value [])) managed)
+        value (if has-managed?
+                (into managed-selected default-value)
                 default-value)
-        handle-change (if has-fixed?
+        ;; Managed entries not currently selected stay available in the menu.
+        options* (if has-managed?
+                   (into (vec (remove #(some #{(:value %)} (or managed-value [])) managed))
+                         options)
+                   options)
+        handle-change (if has-managed?
                         (fn [js-value _action-meta]
-                          ;; A controlled value re-injects the fixed entries on
-                          ;; every render, so stripping them here is enough to
-                          ;; keep them both visible and un-removable.
-                          (let [user-options (->> (js->clj js-value :keywordize-keys true)
-                                                  (remove :isFixed))]
+                          (let [values (js->clj js-value :keywordize-keys true)
+                                managed-values (mapv :value (filter :isManaged values))
+                                user-options (vec (remove :isManaged values))]
+                            (when on-managed-change
+                              (on-managed-change managed-values))
                             (on-change (clj->js user-options))))
                         on-change)]
     [:div {:class "mb-regular text-sm"}
@@ -159,7 +181,7 @@
               :isDisabled disabled?
               :required required?
               :onChange handle-change
-              :options options
+              :options options*
               :isClearable false
               :theme (fn [theme]
                        (clj->js
@@ -171,8 +193,8 @@
               :menuPortalTarget (.-body js/document)
               :className "react-select-container"
               :classNamePrefix "react-select"
-              :styles (if has-fixed? fixed-options-styles styles)}
-             (when has-fixed? {:formatOptionLabel format-option-with-fixed-icon})
+              :styles (if has-managed? managed-options-styles styles)}
+             (when has-managed? {:formatOptionLabel format-option-with-managed-icon})
              (when placeholder {:placeholder placeholder})
              (when on-create-option {:onCreateOption on-create-option}))]]))
 

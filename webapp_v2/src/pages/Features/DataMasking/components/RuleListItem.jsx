@@ -160,9 +160,13 @@ export default function RuleListItem({
               Resource Roles
             </Button>
           )}
-          <Button variant="default" onClick={() => onConfigure(rule.id)}>
-            Configure
-          </Button>
+          {/* Hoop-managed rules (protection profiles) are immutable — the API
+              rejects updates, so there is nothing to configure. */}
+          {!rule.managed_by && (
+            <Button variant="default" onClick={() => onConfigure(rule.id)}>
+              Configure
+            </Button>
+          )}
         </Group>
       </Flex>
       {showConnections && (

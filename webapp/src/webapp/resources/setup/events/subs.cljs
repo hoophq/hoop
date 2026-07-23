@@ -92,6 +92,11 @@
    (get-in db [:resource-setup :roles role-index :attributes] [])))
 
 (rf/reg-sub
+ :resource-setup/role-skip-protection-profile?
+ (fn [db [_ role-index]]
+   (boolean (get-in db [:resource-setup :roles role-index :skip-protection-profile?]))))
+
+(rf/reg-sub
  :resource-setup/role-command-args
  (fn [db [_ role-index]]
    (get-in db [:resource-setup :roles role-index :command-args] [])))
