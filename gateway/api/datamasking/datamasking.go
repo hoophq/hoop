@@ -462,7 +462,8 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 	}
 
 	return &openapi.DataMaskingRule{
-		ID: obj.ID,
+		ID:        obj.ID,
+		ManagedBy: obj.ManagedBy,
 		DataMaskingRuleRequest: openapi.DataMaskingRuleRequest{
 			Name:                    obj.Name,
 			Description:             obj.Description,

@@ -545,6 +545,7 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		Description:     r.Description,
 		ConnectionNames: r.ConnectionNames,
 		CustomPrompt:    r.CustomPrompt,
+		ManagedBy:       r.ManagedBy,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
 			LowRiskAction:    string(lowTier.Action),
 			MediumRiskAction: string(mediumTier.Action),

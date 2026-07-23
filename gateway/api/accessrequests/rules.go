@@ -501,6 +501,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		ID:                     rule.ID.String(),
 		Name:                   rule.Name,
 		Description:            rule.Description,
+		ManagedBy:              rule.ManagedBy,
 		AccessType:             rule.AccessType,
 		ConnectionNames:        rule.ConnectionNames,
 		Attributes:             attrs,
