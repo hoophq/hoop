@@ -10664,6 +10664,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "Unique name for the rule",
                     "type": "string",
@@ -11145,6 +11151,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; only approval settings and group lists can be\nchanged on managed rules, and they cannot be deleted",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "min_approvals": {
                     "description": "Minimum number of approvals required",
                     "type": "integer",
@@ -11608,6 +11620,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the attribute is owned by a protection profile;\nmanaged attributes are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
                 },
                 "name": {
                     "description": "The name of the attribute",
@@ -12761,6 +12779,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
@@ -13365,6 +13389,12 @@ const docTemplate = `{
                     "description": "The input rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
                 },
                 "name": {
                     "description": "Unique name for the rule",
