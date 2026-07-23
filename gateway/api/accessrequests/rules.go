@@ -504,6 +504,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		AccessType:             rule.AccessType,
 		ConnectionNames:        rule.ConnectionNames,
 		Attributes:             attrs,
+		ManagedBy:              rule.ManagedBy,
 		ApprovalRequiredGroups: rule.ApprovalRequiredGroups,
 		ReviewersGroups:        rule.ReviewersGroups,
 		AllGroupsMustApprove:   rule.AllGroupsMustApprove,

@@ -10664,6 +10664,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "Unique name for the rule",
                     "type": "string",
@@ -11144,6 +11150,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), only approval settings\nand group lists can be changed and the rule cannot be deleted.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
                 },
                 "min_approvals": {
                     "description": "Minimum number of approvals required",
@@ -11843,6 +11855,10 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2025-01-15T10:30:00Z"
+                },
+                "skip_protection_profile": {
+                    "description": "When true, the connection is not tagged with the organization's active\nprotection profile attribute at creation time, opting it out of the\nprofile's rules. Only meaningful on creation; ignored on updates.",
+                    "type": "boolean"
                 },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
@@ -12761,6 +12777,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
@@ -13365,6 +13387,12 @@ const docTemplate = `{
                     "description": "The input rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
                 },
                 "name": {
                     "description": "Unique name for the rule",
@@ -15210,6 +15238,10 @@ const docTemplate = `{
                     "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "skip_protection_profile": {
+                    "description": "When true, the connection is not tagged with the organization's active\nprotection profile attribute at creation time, opting this role out of\nthe profile's rules. Only meaningful on creation.",
+                    "type": "boolean"
                 },
                 "subtype": {
                     "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",

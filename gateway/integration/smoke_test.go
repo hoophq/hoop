@@ -9,6 +9,7 @@ import (
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 // These smoke tests run serially against one shared gateway + DB initialized
@@ -263,6 +264,121 @@ func TestResourceCreateWithRoleAttributes(t *testing.T) {
 	testutil.DecodeJSON(t, gotBare, &bare)
 	if bareAttrs, ok := bare["attributes"].([]any); ok && len(bareAttrs) > 0 {
 		t.Errorf("connection %q: expected no attributes, got %v", roleWithoutAttrs, bareAttrs)
+	}
+}
+
+// T6c — protection profile: managed rules expose managed_by, managed masking
+// rules are immutable, and skip_protection_profile opts a role out of tagging.
+func TestProtectionProfileManagedRules(t *testing.T) {
+	token := adminToken(t)
+
+	applied := testServer.Put(t, "/orgs/protection-profile", token, map[string]any{
+		"profile": "protection-permissive",
+		"source":  "settings",
+	})
+	defer applied.Body.Close()
+	testutil.RequireStatus(t, applied, http.StatusOK)
+	defer func() {
+		// Back to manual configuration: tears down all managed rules/attributes
+		// so later tests see a clean org.
+		reset := testServer.Put(t, "/orgs/protection-profile", token, map[string]any{
+			"profile": nil,
+			"source":  "settings",
+		})
+		reset.Body.Close()
+	}()
+
+	// Managed guardrail is listed with managed_by set.
+	grList := testServer.Get(t, "/guardrails", token)
+	defer grList.Body.Close()
+	testutil.RequireStatus(t, grList, http.StatusOK)
+	var guardrails []map[string]any
+	testutil.DecodeJSON(t, grList, &guardrails)
+	managedGuardrails := 0
+	for _, g := range guardrails {
+		if g["managed_by"] == "hoop" {
+			managedGuardrails++
+		}
+	}
+	if managedGuardrails == 0 {
+		t.Errorf("guardrails list: expected at least one rule with managed_by=hoop, got none")
+	}
+
+	// Managed masking rule is listed with managed_by set and refuses updates.
+	dmList := testServer.Get(t, "/datamasking-rules", token)
+	defer dmList.Body.Close()
+	testutil.RequireStatus(t, dmList, http.StatusOK)
+	var maskingRules []map[string]any
+	testutil.DecodeJSON(t, dmList, &maskingRules)
+	var managedMasking map[string]any
+	for _, r := range maskingRules {
+		if r["managed_by"] == "hoop" {
+			managedMasking = r
+			break
+		}
+	}
+	if managedMasking == nil {
+		t.Fatalf("datamasking list: expected a rule with managed_by=hoop, got none")
+	}
+	blocked := testServer.Put(t, "/datamasking-rules/"+managedMasking["id"].(string), token, map[string]any{
+		"name":                   managedMasking["name"],
+		"description":            "tampered",
+		"connection_ids":         []string{},
+		"attributes":             []string{},
+		"supported_entity_types": []map[string]any{},
+		"custom_entity_types":    []map[string]any{},
+		"score_threshold":        0.6,
+	})
+	defer blocked.Body.Close()
+	if blocked.StatusCode != http.StatusBadRequest {
+		t.Errorf("update managed masking rule: expected 400, got %d (body: %s)",
+			blocked.StatusCode, testutil.ReadBody(t, blocked))
+	}
+
+	// skip_protection_profile opts a role out of the profile attribute.
+	agentID := createAgentReturningID(t, token, "profile-skip-agent")
+	defer deleteAgent(t, token, "profile-skip-agent")
+	const resourceName = "smoke-profile-skip"
+	const taggedRole = "smoke-profile-skip-role-tagged"
+	const skippedRole = "smoke-profile-skip-role-skipped"
+	created := testServer.Post(t, "/resources", token, openapi.ResourceRequest{
+		Name:    resourceName,
+		Type:    "database",
+		SubType: "postgres",
+		AgentID: agentID,
+		EnvVars: map[string]string{},
+		Roles: []openapi.ResourceRoleRequest{
+			{Name: taggedRole, Type: "database", SubType: "postgres", Command: []string{"psql"}},
+			{Name: skippedRole, Type: "database", SubType: "postgres", Command: []string{"psql"},
+				SkipProtectionProfile: true},
+		},
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	defer func() {
+		for _, name := range []string{taggedRole, skippedRole} {
+			del := testServer.Delete(t, "/connections/"+name, token)
+			del.Body.Close()
+		}
+		del := testServer.Delete(t, "/resources/"+resourceName, token)
+		del.Body.Close()
+	}()
+
+	countProfileAttrs := func(connName string) int64 {
+		var count int64
+		err := models.DB.Raw(`SELECT COUNT(*) FROM private.connections_attributes
+			WHERE connection_name = ? AND attribute_name LIKE 'hoop_protection_profile-%'`, connName).
+			Scan(&count).Error
+		if err != nil {
+			t.Fatalf("querying connections_attributes for %s: %v", connName, err)
+		}
+		return count
+	}
+	if got := countProfileAttrs(taggedRole); got != 1 {
+		t.Errorf("connection %q: expected 1 profile attribute association, got %d", taggedRole, got)
+	}
+	if got := countProfileAttrs(skippedRole); got != 0 {
+		t.Errorf("connection %q: expected 0 profile attribute associations (skip_protection_profile), got %d", skippedRole, got)
 	}
 }
 

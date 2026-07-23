@@ -120,8 +120,11 @@ func Post(c *gin.Context) {
 	// While a protection profile is active, new connections inherit its
 	// attribute so profile rules apply immediately. Managed attributes are
 	// omitted from API payloads, so this cannot clash with req.Attributes.
-	if err := services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, resp.Name); err != nil {
-		log.Warnf("failed tagging connection %s with active protection profile: %v", resp.Name, err)
+	// skip_protection_profile lets the client opt this connection out.
+	if !req.SkipProtectionProfile {
+		if err := services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, resp.Name); err != nil {
+			log.Warnf("failed tagging connection %s with active protection profile: %v", resp.Name, err)
+		}
 	}
 
 	// Reconcile machine identity credentials based on attribute overlap

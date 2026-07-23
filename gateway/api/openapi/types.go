@@ -439,6 +439,10 @@ type Connection struct {
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
 	// Attributes associated with this connection
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// When true, the connection is not tagged with the organization's active
+	// protection profile attribute at creation time, opting it out of the
+	// profile's rules. Only meaningful on creation; ignored on updates.
+	SkipProtectionProfile bool `json:"skip_protection_profile"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References
@@ -1667,6 +1671,10 @@ type GuardRailRuleResponse struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), the rule cannot be
+	// modified or deleted directly.
+	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2027,7 +2035,11 @@ type SecurityAuditLogResponse struct {
 
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
-	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	ID string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), the rule cannot be
+	// modified or deleted directly.
+	ManagedBy              *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	DataMaskingRuleRequest `json:",inline"`
 }
 
@@ -2708,6 +2720,10 @@ type ResourceRoleRequest struct {
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Attributes associated with this connection
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// When true, the connection is not tagged with the organization's active
+	// protection profile attribute at creation time, opting this role out of
+	// the profile's rules. Only meaningful on creation.
+	SkipProtectionProfile bool `json:"skip_protection_profile"`
 }
 
 type ResourceRequest struct {
@@ -3125,6 +3141,10 @@ type AccessRequestRule struct {
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), only approval settings
+	// and group lists can be changed and the rule cannot be deleted.
+	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -3246,6 +3266,10 @@ type AISessionAnalyzerRule struct {
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
 	// Connection names this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), the rule cannot be
+	// modified or deleted directly.
+	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt

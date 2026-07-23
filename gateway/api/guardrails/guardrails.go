@@ -243,6 +243,7 @@ func List(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
+			ManagedBy:     rule.ManagedBy,
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -276,6 +277,7 @@ func Get(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
+			ManagedBy:     rule.ManagedBy,
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})

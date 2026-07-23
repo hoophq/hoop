@@ -203,9 +203,12 @@ func CreateResource(c *gin.Context) {
 				}
 			}
 			// While a protection profile is active, new connections inherit its
-			// attribute so profile rules apply immediately (mirror of POST /connections).
-			if err := services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, connName); err != nil {
-				log.Warnf("failed tagging connection %s with active protection profile: %v", connName, err)
+			// attribute so profile rules apply immediately (mirror of POST /connections),
+			// unless the role explicitly opted out of the profile.
+			if !role.SkipProtectionProfile {
+				if err := services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, connName); err != nil {
+					log.Warnf("failed tagging connection %s with active protection profile: %v", connName, err)
+				}
 			}
 		}
 	}
