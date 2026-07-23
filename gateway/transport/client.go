@@ -424,6 +424,7 @@ func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyze
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
+		dlpProvider := services.DLPProviderForOrg(pctx.OrgID)
 		spec := map[string][]byte{
 			pb.SpecGatewaySessionID: []byte(pctx.SID),
 			pb.SpecConnectionType:   pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).Bytes(),
@@ -436,7 +437,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(jsonCred)
 		}
 
-		if dlpProvider := s.AppConfig.DlpProvider(); dlpProvider != "" {
+		if dlpProvider != "" {
 			spec[pb.SpecAgentDlpProvider] = []byte(dlpProvider)
 		}
 
@@ -457,8 +458,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			return pb.ErrAgentOffline
 		}
 
+		// Data-masking rule sets apply to providers that understand entity
+		// type selections and custom entity types: mspresidio (service) and
+		// alcatraz (in-process pattern engine).
 		var entityTypesJsonData json.RawMessage
-		if s.AppConfig.DlpProvider() == "mspresidio" {
+		if provider := dlpProvider; provider == "mspresidio" || provider == "alcatraz" {
 			var err error
 			entityTypesJsonData, err = services.GetDataMaskingRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 			if err != nil {
@@ -554,7 +558,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			ClientArgs:                 clientArgs,
 			ClientVerb:                 pctx.ClientVerb,
 			ClientOrigin:               pctx.ClientOrigin,
-			DlpProvider:                s.AppConfig.DlpProvider(),
+			DlpProvider:                dlpProvider,
 			DlpMode:                    s.AppConfig.DlpMode(),
 			DlpGcpRawCredentialsJSON:   s.AppConfig.GcpDLPJsonCredentials(),
 			DlpPresidioAnalyzerURL:     s.AppConfig.MSPresidioAnalyzerURL(),
