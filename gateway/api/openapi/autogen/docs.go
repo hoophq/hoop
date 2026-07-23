@@ -5632,6 +5632,88 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/protection-profile": {
+            "get": {
+                "description": "Get the organization's default protection profile. A null profile means manual configuration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Protection Profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Select the organization's default protection profile. The backend materializes the profile's managed rules and attribute and tags every connection. Passing a null profile switches to manual configuration and deletes all Hoop-managed protection rules.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Organization Protection Profile",
+                "parameters": [
+                    {
+                        "description": "The protection profile selection",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/plugins": {
             "get": {
                 "description": "List all Plugin resources",
@@ -14141,6 +14223,50 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.OrgProtectionProfileRequest": {
+            "type": "object",
+            "required": [
+                "source"
+            ],
+            "properties": {
+                "profile": {
+                    "description": "The protection profile id, or null for manual configuration",
+                    "type": "string",
+                    "enum": [
+                        "hipaa-ready",
+                        "soc2-type2",
+                        "protection-permissive",
+                        "protection-medium",
+                        "protection-high"
+                    ],
+                    "example": "protection-medium"
+                },
+                "source": {
+                    "description": "Where the selection happened; used for analytics only",
+                    "type": "string",
+                    "enum": [
+                        "onboarding",
+                        "settings"
+                    ],
+                    "example": "onboarding"
+                }
+            }
+        },
+        "openapi.OrgProtectionProfileResponse": {
+            "type": "object",
+            "properties": {
+                "attribute_name": {
+                    "description": "The Hoop-managed attribute that binds the profile's rules to\nconnections; null when no profile is active",
+                    "type": "string",
+                    "example": "hoop_protection_profile-protection_medium"
+                },
+                "profile": {
+                    "description": "The active protection profile id; null means manual configuration",
+                    "type": "string",
+                    "example": "protection-medium"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_AISessionAnalyzerRule": {
             "type": "object",
             "properties": {
@@ -17648,6 +17774,17 @@ const docTemplate = `{
                 "email"
             ],
             "properties": {
+                "default_protection_profile": {
+                    "description": "The organization's default protection profile id; null means manual\nconfiguration or that no profile was ever selected.",
+                    "type": "string",
+                    "enum": [
+                        "hipaa-ready",
+                        "soc2-type2",
+                        "protection-permissive",
+                        "protection-medium",
+                        "protection-high"
+                    ]
+                },
                 "email": {
                     "description": "Email address of the user",
                     "type": "string",
