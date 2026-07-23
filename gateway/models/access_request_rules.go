@@ -15,6 +15,7 @@ type AccessRequestRule struct {
 	Name        string  `gorm:"column:name;index:idx_access_request_rules_org_name,unique"`
 	Description *string `gorm:"column:description"`
 	AccessType  string  `gorm:"column:access_type"`
+	ManagedBy   *string `gorm:"column:managed_by"`
 
 	ConnectionNames        pq.StringArray `gorm:"column:connection_names;type:text[]"`
 	ApprovalRequiredGroups pq.StringArray `gorm:"column:approval_required_groups;type:text[]"`

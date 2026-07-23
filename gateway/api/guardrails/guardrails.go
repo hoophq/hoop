@@ -149,21 +149,23 @@ func Put(c *gin.Context) {
 	}
 
 	ruleID := c.Param("id")
-	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
-		existing, err := models.GetGuardRailRules(ctx.GetOrgID(), ruleID)
-		switch err {
-		case models.ErrNotFound:
-			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-			return
-		case nil:
-			if existing.RulepackID.Valid {
-				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
-				return
-			}
-		default:
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching guardrail rule: %v", err)
+	existing, err := models.GetGuardRailRules(ctx.GetOrgID(), ruleID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	case nil:
+		if existing.ManagedBy != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be modified directly"})
 			return
 		}
+		if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) && existing.RulepackID.Valid {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
+			return
+		}
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching guardrail rule: %v", err)
+		return
 	}
 
 	if getLicenseType(ctx) == license.OSSType {
@@ -187,7 +189,7 @@ func Put(c *gin.Context) {
 	}
 
 	// Update guardrail and associate connections in a single transaction
-	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
+	err = models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -237,6 +239,7 @@ func List(c *gin.Context) {
 			ID:            rule.ID,
 			Name:          rule.Name,
 			Description:   rule.Description,
+			ManagedBy:     rule.ManagedBy,
 			Input:         rule.Input,
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
@@ -270,6 +273,7 @@ func Get(c *gin.Context) {
 			ID:            rule.ID,
 			Name:          rule.Name,
 			Description:   rule.Description,
+			ManagedBy:     rule.ManagedBy,
 			Input:         rule.Input,
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
@@ -296,21 +300,23 @@ func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleID := c.Param("id")
 
-	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
-		existing, err := models.GetGuardRailRules(ctx.GetOrgID(), ruleID)
-		switch err {
-		case models.ErrNotFound:
-			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-			return
-		case nil:
-			if existing.RulepackID.Valid {
-				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
-				return
-			}
-		default:
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching guardrail rule: %v", err)
+	existing, gerr := models.GetGuardRailRules(ctx.GetOrgID(), ruleID)
+	switch gerr {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	case nil:
+		if existing.ManagedBy != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be deleted directly"})
 			return
 		}
+		if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) && existing.RulepackID.Valid {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
+			return
+		}
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, gerr, "failed fetching guardrail rule: %v", gerr)
+		return
 	}
 
 	err := models.DeleteGuardRailRules(ctx.GetOrgID(), ruleID)

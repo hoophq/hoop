@@ -14,14 +14,16 @@ type Attribute struct {
 	Name        string     `gorm:"column:name;index:idx_attributes_org_name,unique"`
 	Description *string    `gorm:"column:description"`
 	RulepackID  *uuid.UUID `gorm:"column:rulepack_id"`
+	ManagedBy   *string    `gorm:"column:managed_by"`
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime"`
 
-	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	GuardrailRules      []GuardrailRuleAttribute      `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	DatamaskingRules    []DatamaskingRuleAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	MachineIdentities   []MachineIdentityAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessControlGroups []AccessControlGroupAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	Connections         []ConnectionAttribute            `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessRequestRules  []AccessRequestRuleAttribute     `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	GuardrailRules      []GuardrailRuleAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	DatamaskingRules    []DatamaskingRuleAttribute       `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	MachineIdentities   []MachineIdentityAttribute       `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessControlGroups []AccessControlGroupAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AnalyzerRules       []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 }
 
 func (Attribute) TableName() string {
@@ -58,6 +60,17 @@ type GuardrailRuleAttribute struct {
 
 func (GuardrailRuleAttribute) TableName() string {
 	return "private.guardrail_rules_attributes"
+}
+
+// AI Session Analyzer Rule and Attribute
+type AISessionAnalyzerRuleAttribute struct {
+	OrgID            uuid.UUID `gorm:"column:org_id;primaryKey"`
+	AttributeName    string    `gorm:"column:attribute_name;primaryKey"`
+	AnalyzerRuleName string    `gorm:"column:analyzer_rule_name;primaryKey"`
+}
+
+func (AISessionAnalyzerRuleAttribute) TableName() string {
+	return "private.ai_session_analyzer_rules_attributes"
 }
 
 // Data Masking Rule and Attribute
@@ -195,9 +208,9 @@ func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 }
 
 type AttributeFilterOption struct {
-	Search   string
-	Page     int
-	PageSize int
+	Search               string
+	Page                 int
+	PageSize             int
 	IncludeRulepackOwned bool
 }
 
@@ -288,11 +301,11 @@ func GetConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string
 }
 
 // UpsertConnectionAttributes replaces the user-owned attribute associations for the given
-// connection. Rulepack-owned attribute associations (those whose attribute row has a non-null
-// rulepack_id) are preserved across the update so that a round-trip from the list endpoint
-// (which omits rulepack-owned attributes from the response) cannot accidentally remove them.
-// If an attribute name in the request does not exist in the attributes table, it is created
-// automatically as a non-rulepack attribute.
+// connection. Rulepack-owned and Hoop-managed attribute associations (those whose attribute
+// row has a non-null rulepack_id or managed_by) are preserved across the update so that a
+// round-trip from the list endpoint (which omits them from the response) cannot accidentally
+// remove them. If an attribute name in the request does not exist in the attributes table,
+// it is created automatically as a plain user attribute.
 func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string, attributeNames []string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Exec(`
@@ -302,7 +315,7 @@ func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName str
 			    SELECT 1 FROM private.attributes a
 			    WHERE a.org_id = ca.org_id
 			      AND a.name = ca.attribute_name
-			      AND a.rulepack_id IS NOT NULL
+			      AND (a.rulepack_id IS NOT NULL OR a.managed_by IS NOT NULL)
 			  )
 		`, orgID, connectionName).Error
 		if err != nil {

@@ -21,6 +21,7 @@ type GuardRailRules struct {
 	Input         map[string]any `gorm:"column:input;serializer:json"`
 	Output        map[string]any `gorm:"column:output;serializer:json"`
 	RulepackID    sql.NullString `gorm:"column:rulepack_id"`
+	ManagedBy     *string        `gorm:"column:managed_by"`
 	CreatedAt     time.Time      `gorm:"column:created_at"`
 	UpdatedAt     time.Time      `gorm:"column:updated_at"`
 	ConnectionIDs []string       `gorm:"-"` // Not stored in DB, populated from join query

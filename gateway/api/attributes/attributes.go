@@ -164,6 +164,10 @@ func Put(c *gin.Context) {
 		return
 	}
 
+	if existentAttr.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this attribute is managed by Hoop and cannot be modified directly"})
+		return
+	}
 	if featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName) {
 		if guardManagedAttribute(c, existentAttr, orgID) {
 			return
@@ -205,9 +209,12 @@ func Delete(c *gin.Context) {
 		return
 	}
 
-	if featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName) {
-		existentAttr, gerr := models.GetAttribute(models.DB, orgID, c.Param("name"))
-		if gerr == nil {
+	if existentAttr, gerr := models.GetAttribute(models.DB, orgID, c.Param("name")); gerr == nil {
+		if existentAttr.ManagedBy != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this attribute is managed by Hoop and cannot be deleted directly"})
+			return
+		}
+		if featureflag.IsEnabled(ctx.GetOrgID(), rulepackFlagName) {
 			if guardManagedAttribute(c, existentAttr, orgID) {
 				return
 			}
@@ -341,6 +348,7 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		OrgID:                   a.OrgID.String(),
 		Name:                    a.Name,
 		Description:             a.Description,
+		ManagedBy:               a.ManagedBy,
 		ConnectionNames:         connections,
 		AccessRequestRuleNames:  accessRequest,
 		GuardrailRuleNames:      guardrail,

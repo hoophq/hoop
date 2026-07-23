@@ -127,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// The organization's default protection profile id; null means manual
+	// configuration or that no profile was ever selected.
+	DefaultProtectionProfile *string `json:"default_protection_profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high"`
 	// Pending organization invitations for this user. When non-empty, the user can migrate
 	// to one of these organizations. Only populated in multi-tenant environments.
 	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
@@ -1249,6 +1252,24 @@ type OrgHideRoleInfoResponse struct {
 	HideRoleInfo bool `json:"hide_role_info" example:"true"`
 }
 
+// OrgProtectionProfileRequest selects the organization's default protection
+// profile. Pass null to switch to manual configuration: all Hoop-managed
+// protection rules and the profile attribute are removed.
+type OrgProtectionProfileRequest struct {
+	// The protection profile id, or null for manual configuration
+	Profile *string `json:"profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high" example:"protection-medium"`
+	// Where the selection happened; used for analytics only
+	Source string `json:"source" binding:"required" enums:"onboarding,settings" example:"onboarding"`
+}
+
+type OrgProtectionProfileResponse struct {
+	// The active protection profile id; null means manual configuration
+	Profile *string `json:"profile" example:"protection-medium"`
+	// The Hoop-managed attribute that binds the profile's rules to
+	// connections; null when no profile is active
+	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -1602,6 +1623,9 @@ type GuardRailRuleResponse struct {
 	Name string `json:"name" example:"my-strict-rule"`
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 
 	// The input rule. Each rule entry accepts an optional "message" field that
 	// is shown to the user when that specific rule is hit.
@@ -2006,7 +2030,10 @@ type SecurityAuditLogResponse struct {
 
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
-	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	ID string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy              *string `json:"managed_by" readonly:"true" example:"hoop"`
 	DataMaskingRuleRequest `json:",inline"`
 }
 
@@ -3114,6 +3141,10 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; only approval settings and group lists can be
+	// changed on managed rules, and they cannot be deleted
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3227,6 +3258,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3242,6 +3276,9 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Set to "hoop" when the attribute is owned by a protection profile;
+	// managed attributes are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute
