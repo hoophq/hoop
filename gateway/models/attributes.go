@@ -17,12 +17,12 @@ type Attribute struct {
 	ManagedBy   *string    `gorm:"column:managed_by"`
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime"`
 
-	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	GuardrailRules      []GuardrailRuleAttribute      `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	DatamaskingRules    []DatamaskingRuleAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	MachineIdentities   []MachineIdentityAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessControlGroups []AccessControlGroupAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	Connections         []ConnectionAttribute            `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessRequestRules  []AccessRequestRuleAttribute     `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	GuardrailRules      []GuardrailRuleAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	DatamaskingRules    []DatamaskingRuleAttribute       `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	MachineIdentities   []MachineIdentityAttribute       `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessControlGroups []AccessControlGroupAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 	AnalyzerRules       []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 }
 
@@ -208,9 +208,9 @@ func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 }
 
 type AttributeFilterOption struct {
-	Search   string
-	Page     int
-	PageSize int
+	Search               string
+	Page                 int
+	PageSize             int
 	IncludeRulepackOwned bool
 }
 
@@ -219,7 +219,7 @@ func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([
 	query := db.Model(&Attribute{}).Where("org_id = ?", orgID)
 
 	if !opts.IncludeRulepackOwned {
-		query = query.Where("rulepack_id IS NULL AND managed_by IS NULL")
+		query = query.Where("rulepack_id IS NULL")
 	}
 
 	if opts.Search != "" {
