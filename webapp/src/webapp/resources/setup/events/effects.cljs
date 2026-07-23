@@ -117,6 +117,7 @@
                    :command command
                    :connection-method "manual-input"
                    :credentials {}
+                   :attributes []
                    :environment-variables []
                    :configuration-files []}]
      (update-in db [:resource-setup :roles] (fnil conj []) new-role))))
@@ -133,6 +134,11 @@
  :resource-setup->update-role-name
  (fn [db [_ role-index name]]
    (assoc-in db [:resource-setup :roles role-index :name] name)))
+
+(rf/reg-event-db
+ :resource-setup->update-role-attributes
+ (fn [db [_ role-index names]]
+   (assoc-in db [:resource-setup :roles role-index :attributes] (vec names))))
 
 ;; Role helper functions
 (defn update-role-credentials-source

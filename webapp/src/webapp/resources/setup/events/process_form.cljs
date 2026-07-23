@@ -195,6 +195,7 @@
      :agent_id agent-id
      :secret secret
      :command command
+     :attributes (vec (or (:attributes role) []))
      :access_mode_runbooks "enabled"
      :access_mode_exec "enabled"
      :access_mode_connect "enabled"

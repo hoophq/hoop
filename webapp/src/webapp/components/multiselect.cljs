@@ -1,6 +1,6 @@
 (ns webapp.components.multiselect
   (:require
-   ["lucide-react" :refer [HelpCircle]]
+   ["lucide-react" :refer [Award HelpCircle]]
    ["react-select" :default Select]
    ["react-select/creatable" :default CreatableSelect]
    ["@radix-ui/themes" :refer [Text Tooltip]]
@@ -87,34 +87,94 @@
          :ref #(reset! container-ref %)
          :styles styles}]])))
 
-(defn creatable-select [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder]}]
-  [:div {:class "mb-regular text-sm"}
-   [:div {:class "flex items-center gap-2 mb-1"}
-    (when label
-      [form-label label])]
-   [:> CreatableSelect
-    (merge {:value default-value
-            :id id
-            :name name
-            :isMulti true
-            :isDisabled disabled?
-            :required required?
-            :onChange on-change
-            :options options
-            :isClearable false
-            :theme (fn [theme]
-                     (clj->js
-                      (-> (js->clj theme :keywordize-keys true)
-                          (update :colors merge {:primary "#3358d4"
-                                                 :primary25 "#d2deff"
-                                                 :primary50 "#abbdf9"
-                                                 :primary75 "#3e63dd"}))))
-            :menuPortalTarget (.-body js/document)
-            :className "react-select-container"
-            :classNamePrefix "react-select"
-            :styles styles}
-           (when placeholder {:placeholder placeholder})
-           (when on-create-option {:onCreateOption on-create-option}))]])
+;; Styles for the react-select "Fixed Options" pattern: fixed pills hide the
+;; remove button and get a distinct neutral background. The style fns receive
+;; (base, state) — react-select always passes both; the shared `styles` def
+;; simply ignores the second argument.
+(defn- fixed-option-state?
+  "True when a react-select style-fn state refers to an option tagged isFixed."
+  [state]
+  (boolean (some-> state (gobj/getValueByKeys "data" "isFixed"))))
+
+(def ^:private fixed-options-styles
+  (clj->js
+   (merge (js->clj styles)
+          {"multiValue" (fn [style state]
+                          (let [base (into (js->clj style)
+                                           {"padding" "4px"
+                                            "borderRadius" "6px"
+                                            "fontSize" "16px"
+                                            "backgroundColor" "#E1E5EB"})]
+                            (if (fixed-option-state? state)
+                              (clj->js (into base {"backgroundColor" "#F0F0F3"
+                                                   "border" "1px solid #D9D9E0"}))
+                              (clj->js base))))
+           "multiValueRemove" (fn [style state]
+                                (if (fixed-option-state? state)
+                                  (clj->js (into (js->clj style) {"display" "none"}))
+                                  style))})))
+
+(defn- format-option-with-fixed-icon
+  "Renders fixed options (e.g. the managed protection-profile attribute) with
+  an award icon; regular options render as plain labels."
+  [opt _ctx]
+  (if (gobj/get opt "isFixed")
+    (r/as-element
+     [:span {:class "flex items-center gap-1"}
+      [:> Award {:size 12 :aria-hidden true}]
+      (gobj/get opt "label")])
+    (gobj/get opt "label")))
+
+(defn creatable-select
+  "Creatable multi-select. Extra optional prop:
+
+  - :fixed-options — vector of {:value v :label l} rendered as non-removable
+    pills (react-select's documented \"Fixed Options\" pattern). Fixed entries
+    are display-only: they are prepended to the rendered value and stripped
+    before `on-change` is called, so they never reach the caller's state."
+  [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder fixed-options]}]
+  (let [fixed (mapv #(assoc % :isFixed true) fixed-options)
+        has-fixed? (seq fixed)
+        value (if has-fixed?
+                (into fixed default-value)
+                default-value)
+        handle-change (if has-fixed?
+                        (fn [js-value _action-meta]
+                          ;; A controlled value re-injects the fixed entries on
+                          ;; every render, so stripping them here is enough to
+                          ;; keep them both visible and un-removable.
+                          (let [user-options (->> (js->clj js-value :keywordize-keys true)
+                                                  (remove :isFixed))]
+                            (on-change (clj->js user-options))))
+                        on-change)]
+    [:div {:class "mb-regular text-sm"}
+     [:div {:class "flex items-center gap-2 mb-1"}
+      (when label
+        [form-label label])]
+     [:> CreatableSelect
+      (merge {:value value
+              :id id
+              :name name
+              :isMulti true
+              :isDisabled disabled?
+              :required required?
+              :onChange handle-change
+              :options options
+              :isClearable false
+              :theme (fn [theme]
+                       (clj->js
+                        (-> (js->clj theme :keywordize-keys true)
+                            (update :colors merge {:primary "#3358d4"
+                                                   :primary25 "#d2deff"
+                                                   :primary50 "#abbdf9"
+                                                   :primary75 "#3e63dd"}))))
+              :menuPortalTarget (.-body js/document)
+              :className "react-select-container"
+              :classNamePrefix "react-select"
+              :styles (if has-fixed? fixed-options-styles styles)}
+             (when has-fixed? {:formatOptionLabel format-option-with-fixed-icon})
+             (when placeholder {:placeholder placeholder})
+             (when on-create-option {:onCreateOption on-create-option}))]]))
 
 (defn text-input
   "Renders a text input that supports multiple values.

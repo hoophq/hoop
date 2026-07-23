@@ -98,6 +98,8 @@
    [webapp.features.attributes.main :as attributes-main]
    [webapp.features.attributes.subs]
    [webapp.features.attributes.views.form :as attributes-form]
+   [webapp.features.protection-profiles.events]
+   [webapp.features.protection-profiles.subs]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]

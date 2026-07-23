@@ -87,6 +87,11 @@
    (get-in db [:resource-setup :roles role-index :configuration-files] [])))
 
 (rf/reg-sub
+ :resource-setup/role-attributes
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :attributes] [])))
+
+(rf/reg-sub
  :resource-setup/role-command-args
  (fn [db [_ role-index]]
    (get-in db [:resource-setup :roles role-index :command-args] [])))
