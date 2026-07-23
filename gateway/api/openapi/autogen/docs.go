@@ -15180,6 +15180,17 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
+                "attributes": {
+                    "description": "Attributes associated with this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
+                },
                 "command": {
                     "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
                     "type": "array",

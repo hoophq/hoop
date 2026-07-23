@@ -2706,6 +2706,8 @@ type ResourceRoleRequest struct {
 	Secrets map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ResourceRequest struct {

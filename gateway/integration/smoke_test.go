@@ -193,6 +193,79 @@ func TestConnectionCRUD(t *testing.T) {
 	}
 }
 
+// T6b — POST /resources persists per-role attributes on the created connections.
+func TestResourceCreateWithRoleAttributes(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "resource-attrs-agent")
+	defer deleteAgent(t, token, "resource-attrs-agent")
+
+	const resourceName = "smoke-resource-attrs"
+	const roleWithAttrs = "smoke-resource-attrs-role-1"
+	const roleWithoutAttrs = "smoke-resource-attrs-role-2"
+
+	created := testServer.Post(t, "/resources", token, openapi.ResourceRequest{
+		Name:    resourceName,
+		Type:    "database",
+		SubType: "postgres",
+		AgentID: agentID,
+		EnvVars: map[string]string{},
+		Roles: []openapi.ResourceRoleRequest{
+			{
+				Name:       roleWithAttrs,
+				Type:       "database",
+				SubType:    "postgres",
+				Command:    []string{"psql"},
+				Attributes: []string{"evl87-team", "evl87-pii"},
+			},
+			{
+				Name:    roleWithoutAttrs,
+				Type:    "database",
+				SubType: "postgres",
+				Command: []string{"psql"},
+			},
+		},
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	defer func() {
+		// Connections must go before the resource.
+		for _, name := range []string{roleWithAttrs, roleWithoutAttrs} {
+			del := testServer.Delete(t, "/connections/"+name, token)
+			del.Body.Close()
+		}
+		del := testServer.Delete(t, "/resources/"+resourceName, token)
+		del.Body.Close()
+	}()
+
+	got := testServer.Get(t, "/connections/"+roleWithAttrs, token)
+	defer got.Body.Close()
+	testutil.RequireStatus(t, got, http.StatusOK)
+	var conn map[string]any
+	testutil.DecodeJSON(t, got, &conn)
+	attrs, _ := conn["attributes"].([]any)
+	for _, want := range []string{"evl87-team", "evl87-pii"} {
+		found := false
+		for _, a := range attrs {
+			if a == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("connection %q: expected attribute %q in %v", roleWithAttrs, want, attrs)
+		}
+	}
+
+	gotBare := testServer.Get(t, "/connections/"+roleWithoutAttrs, token)
+	defer gotBare.Body.Close()
+	testutil.RequireStatus(t, gotBare, http.StatusOK)
+	var bare map[string]any
+	testutil.DecodeJSON(t, gotBare, &bare)
+	if bareAttrs, ok := bare["attributes"].([]any); ok && len(bareAttrs) > 0 {
+		t.Errorf("connection %q: expected no attributes, got %v", roleWithoutAttrs, bareAttrs)
+	}
+}
+
 // T7 — unknown connection returns 404.
 func TestConnectionNotFound(t *testing.T) {
 	token := adminToken(t)
