@@ -543,6 +543,49 @@
      [:> Text {:size "2" :color "gray" :mt "2"}
       "Example: 'python', '-m', 'http.server', '8000'"]]]])
 
+(defn role-attributes-field
+  "Per-role Attributes selector. While a protection profile is active, its
+  managed attribute appears pre-selected as a distinct blue pill. Removing
+  it opts the role out of the profile (the attribute is not sent); it can
+  be re-added from the dropdown before submitting. When kept, the attribute
+  is included in the role's attributes at submit time."
+  [role-index]
+  (let [attributes-data @(rf/subscribe [:attributes/list-data])
+        selected @(rf/subscribe [:resource-setup/role-attributes role-index])
+        skip-profile? @(rf/subscribe [:resource-setup/role-skip-protection-profile? role-index])
+        managed-pill @(rf/subscribe [:protection-profile/managed-pill])]
+    [:> Box {:class "mt-4"}
+     [multi-select/creatable-select
+      {:id (str "role-attributes-" role-index)
+       :name (str "role-attributes-" role-index)
+       :label "Attributes"
+       :placeholder "Select or type to create"
+       ;; Managed attributes come through :managed-options with their own
+       ;; styling — drop them from the regular option list to avoid duplicates.
+       :options (into []
+                      (comp (remove :managed_by)
+                            (map #(hash-map :value (:name %) :label (:name %))))
+                      attributes-data)
+       :default-value (mapv #(hash-map :value % :label %) selected)
+       :managed-options (when managed-pill
+                          [{:value (:attribute-name managed-pill)
+                            :label (:display-name managed-pill)}])
+       :managed-value (when (and managed-pill (not skip-profile?))
+                        [(:attribute-name managed-pill)])
+       :on-managed-change (fn [managed-values]
+                            (rf/dispatch [:resource-setup->set-role-skip-protection-profile
+                                          role-index
+                                          (empty? managed-values)]))
+       :on-change (fn [selected-options]
+                    (rf/dispatch [:resource-setup->update-role-attributes role-index
+                                  (mapv :value (js->clj selected-options :keywordize-keys true))]))
+       :on-create-option (fn [input-value]
+                           (rf/dispatch [:attributes/create-inline {:name input-value}])
+                           (rf/dispatch [:resource-setup->update-role-attributes role-index
+                                         (conj selected input-value)]))}]
+     [:> Text {:size "2" :class "text-[--gray-11]"}
+      "Determine how protection rules and access policies apply to this role."]]))
+
 (defn role-configuration [role-index]
   (let [roles @(rf/subscribe [:resource-setup/roles])
         role (get roles role-index)
@@ -580,7 +623,8 @@
                      :required true
                      :on-change #(rf/dispatch [:resource-setup->update-role-name
                                                role-index
-                                               (-> % .-target .-value)])}]]
+                                               (-> % .-target .-value)])}]
+       [role-attributes-field role-index]]
       (when should-show-connection-method?
         [connection-method/main role-index])
 
@@ -629,10 +673,16 @@
 
 ;; Main roles step component
 (defn main []
-  (let [roles @(rf/subscribe [:resource-setup/roles])
-        context @(rf/subscribe [:resource-setup/context])]
+  ;; One fetch per wizard mount, regardless of how many roles are added:
+  ;; the attribute catalog feeds every role's Attributes field and the
+  ;; active protection profile feeds its fixed pill.
+  (rf/dispatch [:attributes/list])
+  (rf/dispatch [:protection-profile/fetch])
+  (fn []
+    (let [roles @(rf/subscribe [:resource-setup/roles])
+          context @(rf/subscribe [:resource-setup/context])]
 
-    [:form {:id "roles-form"
+      [:form {:id "roles-form"
             :on-submit (fn [e]
                          (.preventDefault e)
                          ;; Add pending env vars for all roles before submitting
@@ -692,4 +742,4 @@
                        :type "button"
                        :on-click #(rf/dispatch [:resource-setup->add-role])}
             [:> Plus {:size 16}]
-            "Add New Role"]]]])]]))
+            "Add New Role"]]]])]])))

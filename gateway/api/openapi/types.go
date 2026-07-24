@@ -437,8 +437,14 @@ type Connection struct {
 	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
 	// When set, the user cannot choose a custom duration and must request access for this exact window.
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
-	// Attributes associated with this connection
+	// Attributes associated with this connection. Includes Hoop-managed
+	// attributes (e.g. the active protection profile attribute); omitting a
+	// managed name on update detaches the connection from it.
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// Hoop-managed attributes associated with this connection (e.g. the
+	// active protection profile attribute). Computed on reads; manage the
+	// association through the attributes field.
+	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References
@@ -2031,8 +2037,9 @@ type SecurityAuditLogResponse struct {
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
 	ID string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
-	// protection profile; managed rules are read-only through this API
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), the rule cannot be
+	// modified or deleted directly.
 	ManagedBy              *string `json:"managed_by" readonly:"true" example:"hoop"`
 	DataMaskingRuleRequest `json:",inline"`
 }
@@ -2712,6 +2719,8 @@ type ResourceRoleRequest struct {
 	Secrets map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ResourceRequest struct {
@@ -3276,8 +3285,9 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
-	// Set to "hoop" when the attribute is owned by a protection profile;
-	// managed attributes are read-only through this API
+	// Managed By is a read only field that indicates who manages this
+	// attribute. When set (e.g. "hoop" for protection profiles), the
+	// attribute cannot be modified or deleted directly.
 	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`

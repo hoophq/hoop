@@ -156,6 +156,9 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
 
+### `Pill` (theme-level, no wrapper)
+Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
+
 ### `Badge`
 Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
 ```jsx
@@ -220,6 +223,22 @@ import MultiSelect from '@/components/MultiSelect'
   searchable
   clearable
 />
+```
+
+### `Radio`
+Radio input. Re-exports `Radio.Group` and `Radio.Indicator` so call sites never import from Mantine directly. `Radio.Indicator` renders the radio visual without an `<input>` — use it inside buttons/cards (e.g. selectable option cards) where a nested input would be invalid markup.
+```jsx
+import Radio from '@/components/Radio'
+
+<Radio.Group value={value} onChange={setValue} label="Mode">
+  <Radio value="a" label="Option A" />
+  <Radio value="b" label="Option B" />
+</Radio.Group>
+
+// Inside a selectable card (no real input):
+<UnstyledButton role="radio" aria-checked={selected} onClick={onSelect}>
+  <Radio.Indicator checked={selected} size="sm" />
+</UnstyledButton>
 ```
 
 ### `Switch`
@@ -489,6 +508,18 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
+> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
+> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
+> protection-profile attributes render as indigo award pills (removable and
+> re-addable like any other — removing one detaches the role from the
+> profile on save), user attributes as plain pills. Deliberately NOT built on
+> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
+> individual selected pills) nor on `components/PaginatedMultiSelect` (its
+> contract is pagination/server-search specific, and it also only renders
+> uniform pills). When the React resource-creation wizard needs the same
+> control, graduate this to `src/components/` and consider extracting a
+> shared PillsInput base with `PaginatedMultiSelect`.
+
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
 
@@ -567,6 +598,7 @@ useAuthStore.getState().token
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 | `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
+| `protectionProfiles.js` | GET/PUT `/orgs/protection-profile` (protection rules profile; `profile: null` = manual) |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
 

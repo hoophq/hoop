@@ -300,12 +300,14 @@ func GetConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string
 	return attributeNames, nil
 }
 
-// UpsertConnectionAttributes replaces the user-owned attribute associations for the given
-// connection. Rulepack-owned and Hoop-managed attribute associations (those whose attribute
-// row has a non-null rulepack_id or managed_by) are preserved across the update so that a
-// round-trip from the list endpoint (which omits them from the response) cannot accidentally
-// remove them. If an attribute name in the request does not exist in the attributes table,
-// it is created automatically as a plain user attribute.
+// UpsertConnectionAttributes replaces the attribute associations for the given connection.
+// Hoop-managed attributes (e.g. the protection-profile attribute) round-trip through the
+// connection's `attributes` field on reads, so they are replaceable like any user attribute —
+// omitting one from the request detaches it. Only rulepack-owned associations (attribute rows
+// with a non-null rulepack_id) are preserved across the update, because the read path omits
+// them and a round-trip would otherwise silently drop them. If an attribute name in the
+// request does not exist in the attributes table, it is created automatically as a plain
+// user attribute.
 func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string, attributeNames []string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Exec(`
@@ -315,7 +317,7 @@ func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName str
 			    SELECT 1 FROM private.attributes a
 			    WHERE a.org_id = ca.org_id
 			      AND a.name = ca.attribute_name
-			      AND (a.rulepack_id IS NOT NULL OR a.managed_by IS NOT NULL)
+			      AND a.rulepack_id IS NOT NULL
 			  )
 		`, orgID, connectionName).Error
 		if err != nil {

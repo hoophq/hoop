@@ -143,30 +143,6 @@ func lockOrgProfile(tx *gorm.DB, orgID uuid.UUID) (*models.Organization, error) 
 	return &org, err
 }
 
-// TagConnectionWithActiveProfile attaches the org's active protection profile
-// attribute to a newly created connection. No-op when the org has no profile
-// selected (manual configuration). Errors are returned for the caller to log;
-// they must not abort connection creation.
-func TagConnectionWithActiveProfile(ctx context.Context, orgID, connectionName string) error {
-	var profile *string
-	err := models.DB.WithContext(ctx).
-		Raw(`SELECT default_protection_profile FROM private.orgs WHERE id = ?`, orgID).
-		Scan(&profile).Error
-	if err != nil || profile == nil {
-		return err
-	}
-	spec, ok := protectionProfileCatalog[*profile]
-	if !ok {
-		return fmt.Errorf("org %s references unknown protection profile %q", orgID, *profile)
-	}
-	return models.DB.WithContext(ctx).Exec(`
-		INSERT INTO private.connections_attributes (org_id, connection_name, attribute_name)
-		SELECT ?, ?, ?
-		WHERE EXISTS (SELECT 1 FROM private.attributes WHERE org_id = ? AND name = ?)
-		ON CONFLICT DO NOTHING`,
-		orgID, connectionName, spec.AttributeName, orgID, spec.AttributeName).Error
-}
-
 // materializeProfile creates the profile attribute and every referenced rule
 // when absent, and tags each rule to the attribute. Existing rows are reused
 // untouched, so re-applying is idempotent and rule content is never rewritten.

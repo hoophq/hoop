@@ -14,4 +14,12 @@ export const useBridgeStore = create(() => ({
   showSnackbar: ({ level, text, details, description }) => {
     clojureDispatch('show-snackbar', { level, text, details, description })
   },
+
+  // Refetch the current user in the CLJS app-db. Needed after React mutates
+  // user-affecting state (e.g. applying a protection profile) so CLJS events
+  // like :onboarding/check-user don't act on a stale cached user. No-op when
+  // the CLJS bundle isn't loaded — it fetches fresh data on first mount.
+  refreshLegacyUser: () => {
+    clojureDispatch('users->get-user')
+  },
 }))

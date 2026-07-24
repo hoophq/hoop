@@ -11622,7 +11622,7 @@ const docTemplate = `{
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "managed_by": {
-                    "description": "Set to \"hoop\" when the attribute is owned by a protection profile;\nmanaged attributes are read-only through this API",
+                    "description": "Managed By is a read only field that indicates who manages this\nattribute. When set (e.g. \"hoop\" for protection profiles), the\nattribute cannot be modified or deleted directly.",
                     "type": "string",
                     "readOnly": true,
                     "example": "hoop"
@@ -11722,7 +11722,7 @@ const docTemplate = `{
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "attributes": {
-                    "description": "Attributes associated with this connection",
+                    "description": "Attributes associated with this connection. Includes Hoop-managed\nattributes (e.g. the active protection profile attribute); omitting a\nmanaged name on update detaches the connection from it.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -11794,6 +11794,17 @@ const docTemplate = `{
                     "description": "JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.\nWhen set, the user cannot choose a custom duration and must request access for this exact window.",
                     "type": "integer",
                     "example": 1800
+                },
+                "managed_attributes": {
+                    "description": "Hoop-managed attributes associated with this connection (e.g. the\nactive protection profile attribute). Computed on reads; manage the\nassociation through the attributes field.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "hoop_protection_profile-soc2_type2"
+                    ]
                 },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
@@ -12780,7 +12791,7 @@ const docTemplate = `{
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "managed_by": {
-                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
                     "type": "string",
                     "readOnly": true,
                     "example": "hoop"
@@ -15209,6 +15220,17 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "attributes": {
+                    "description": "Attributes associated with this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
                 },
                 "command": {
                     "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",

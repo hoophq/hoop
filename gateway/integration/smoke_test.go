@@ -193,6 +193,148 @@ func TestConnectionCRUD(t *testing.T) {
 	}
 }
 
+// T6b — POST /resources persists per-role attributes on the created connections.
+func TestResourceCreateWithRoleAttributes(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "resource-attrs-agent")
+	defer deleteAgent(t, token, "resource-attrs-agent")
+
+	const resourceName = "smoke-resource-attrs"
+	const roleWithAttrs = "smoke-resource-attrs-role-1"
+	const roleWithoutAttrs = "smoke-resource-attrs-role-2"
+
+	created := testServer.Post(t, "/resources", token, openapi.ResourceRequest{
+		Name:    resourceName,
+		Type:    "database",
+		SubType: "postgres",
+		AgentID: agentID,
+		EnvVars: map[string]string{},
+		Roles: []openapi.ResourceRoleRequest{
+			{
+				Name:       roleWithAttrs,
+				Type:       "database",
+				SubType:    "postgres",
+				Command:    []string{"psql"},
+				Attributes: []string{"evl87-team", "evl87-pii"},
+			},
+			{
+				Name:    roleWithoutAttrs,
+				Type:    "database",
+				SubType: "postgres",
+				Command: []string{"psql"},
+			},
+		},
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	defer func() {
+		// Connections must go before the resource.
+		for _, name := range []string{roleWithAttrs, roleWithoutAttrs} {
+			del := testServer.Delete(t, "/connections/"+name, token)
+			del.Body.Close()
+		}
+		del := testServer.Delete(t, "/resources/"+resourceName, token)
+		del.Body.Close()
+	}()
+
+	got := testServer.Get(t, "/connections/"+roleWithAttrs, token)
+	defer got.Body.Close()
+	testutil.RequireStatus(t, got, http.StatusOK)
+	var conn map[string]any
+	testutil.DecodeJSON(t, got, &conn)
+	attrs, _ := conn["attributes"].([]any)
+	for _, want := range []string{"evl87-team", "evl87-pii"} {
+		found := false
+		for _, a := range attrs {
+			if a == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("connection %q: expected attribute %q in %v", roleWithAttrs, want, attrs)
+		}
+	}
+
+	gotBare := testServer.Get(t, "/connections/"+roleWithoutAttrs, token)
+	defer gotBare.Body.Close()
+	testutil.RequireStatus(t, gotBare, http.StatusOK)
+	var bare map[string]any
+	testutil.DecodeJSON(t, gotBare, &bare)
+	if bareAttrs, ok := bare["attributes"].([]any); ok && len(bareAttrs) > 0 {
+		t.Errorf("connection %q: expected no attributes, got %v", roleWithoutAttrs, bareAttrs)
+	}
+}
+
+// T6c — protection profile: managed rules expose managed_by and managed
+// masking rules are immutable.
+func TestProtectionProfileManagedRules(t *testing.T) {
+	token := adminToken(t)
+
+	applied := testServer.Put(t, "/orgs/protection-profile", token, map[string]any{
+		"profile": "protection-permissive",
+		"source":  "settings",
+	})
+	defer applied.Body.Close()
+	testutil.RequireStatus(t, applied, http.StatusOK)
+	defer func() {
+		// Back to manual configuration: tears down all managed rules/attributes
+		// so later tests see a clean org.
+		reset := testServer.Put(t, "/orgs/protection-profile", token, map[string]any{
+			"profile": nil,
+			"source":  "settings",
+		})
+		reset.Body.Close()
+	}()
+
+	// Managed guardrail is listed with managed_by set.
+	grList := testServer.Get(t, "/guardrails", token)
+	defer grList.Body.Close()
+	testutil.RequireStatus(t, grList, http.StatusOK)
+	var guardrails []map[string]any
+	testutil.DecodeJSON(t, grList, &guardrails)
+	managedGuardrails := 0
+	for _, g := range guardrails {
+		if g["managed_by"] == "hoop" {
+			managedGuardrails++
+		}
+	}
+	if managedGuardrails == 0 {
+		t.Errorf("guardrails list: expected at least one rule with managed_by=hoop, got none")
+	}
+
+	// Managed masking rule is listed with managed_by set and refuses updates.
+	dmList := testServer.Get(t, "/datamasking-rules", token)
+	defer dmList.Body.Close()
+	testutil.RequireStatus(t, dmList, http.StatusOK)
+	var maskingRules []map[string]any
+	testutil.DecodeJSON(t, dmList, &maskingRules)
+	var managedMasking map[string]any
+	for _, r := range maskingRules {
+		if r["managed_by"] == "hoop" {
+			managedMasking = r
+			break
+		}
+	}
+	if managedMasking == nil {
+		t.Fatalf("datamasking list: expected a rule with managed_by=hoop, got none")
+	}
+	blocked := testServer.Put(t, "/datamasking-rules/"+managedMasking["id"].(string), token, map[string]any{
+		"name":                   managedMasking["name"],
+		"description":            "tampered",
+		"connection_ids":         []string{},
+		"attributes":             []string{},
+		"supported_entity_types": []map[string]any{},
+		"custom_entity_types":    []map[string]any{},
+		"score_threshold":        0.6,
+	})
+	defer blocked.Body.Close()
+	if blocked.StatusCode != http.StatusBadRequest {
+		t.Errorf("update managed masking rule: expected 400, got %d (body: %s)",
+			blocked.StatusCode, testutil.ReadBody(t, blocked))
+	}
+}
+
 // T7 — unknown connection returns 404.
 func TestConnectionNotFound(t *testing.T) {
 	token := adminToken(t)
