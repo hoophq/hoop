@@ -53,6 +53,8 @@ type SignRequest struct {
 	AllowedHosts []string `json:"allowed_hosts"`
 	Description  string   `json:"description"`
 	ExpireAt     string   `json:"expire_at"`
+	// Features enabled by the license. Empty means all features are enabled.
+	Features []string `json:"features"`
 }
 
 // SignLicense
@@ -90,9 +92,9 @@ func SignLicense(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid expire_at value, accept (s, m, h)"})
 		return
 	}
-	log.With("user", ctx.UserEmail).Infof("generating new license, type=%v, hosts=%v, description=%v, expire-at=%v",
-		req.LicenseType, req.AllowedHosts, req.Description, req.ExpireAt)
-	l, err := license.Sign(signingKey, req.LicenseType, req.Description, req.AllowedHosts, expireAt)
+	log.With("user", ctx.UserEmail).Infof("generating new license, type=%v, hosts=%v, description=%v, expire-at=%v, features=%v",
+		req.LicenseType, req.AllowedHosts, req.Description, req.ExpireAt, req.Features)
+	l, err := license.Sign(signingKey, req.LicenseType, req.Description, req.AllowedHosts, req.Features, expireAt)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed sign license: %v", err)
 		return

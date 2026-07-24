@@ -13785,6 +13785,17 @@ const docTemplate = `{
                     "format": "timestamp",
                     "example": 1722997969
                 },
+                "features": {
+                    "description": "Features enabled by this license. Null or empty means all features are enabled",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "guardrails",
+                        "data-masking"
+                    ]
+                },
                 "issued_at": {
                     "description": "The time in timestamp the license was issued",
                     "type": "integer",
@@ -16895,6 +16906,17 @@ const docTemplate = `{
                     "description": "The timestamp value when this license is valid",
                     "type": "integer",
                     "example": 1722261422
+                },
+                "features": {
+                    "description": "Features enabled by the license. Null means all features are enabled",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "guardrails",
+                        "data-masking"
+                    ]
                 },
                 "is_valid": {
                     "description": "Report if the license is valid",
