@@ -1,5 +1,9 @@
-# Dockerfile.tools
-FROM hoophq/agent-tools:noble-20260709-6890906
+# hoopdev image (agent + bundled DB tooling), built on the agent-tools base.
+# AGENT_TOOLS_TAG selects the train: the pinned tag is the legacy (default)
+# train; the clean (AGPL/SSPL-free) train passes the same tag suffixed with
+# "-clean". Kept in sync by the agent-tools workflow's bump-consumers job.
+ARG AGENT_TOOLS_TAG=noble-20260709-6890906
+FROM hoophq/agent-tools:${AGENT_TOOLS_TAG}
 
 COPY rootfs /
 # SQL migrations are embedded in the gateway binary; the on-disk copy is
