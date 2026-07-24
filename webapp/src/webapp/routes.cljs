@@ -61,9 +61,6 @@
      "/integrations" [["/aws-connect" :integrations-aws-connect]
                       ["/aws-connect/setup" :integrations-aws-connect-setup]
                       ["/authentication" :integrations-authentication]]
-     "/jira-templates" [["" :jira-templates]
-                        ["/new" :create-jira-template]
-                        [["/edit/" :jira-template-id] :edit-jira-template]]
      "/login" :login-hoop
      "/logout" :logout-hoop
      "/plugins" [["/manage/jira" :manage-jira]
@@ -90,7 +87,6 @@
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
                   ["/attributes/edit" :settings-attributes-edit]
-                  ["/jira" :settings-jira]
                   ["/api-keys" :settings-api-keys]
                   ["/api-keys/new" :settings-api-keys-new]
                   ["/api-keys/created" :settings-api-keys-created]

@@ -141,12 +141,6 @@
     :uri (routes/url-for :guardrails)
     :navigate :guardrails
     :admin-only? true}
-   {:name "JiraTemplates"
-    :label "Jira Templates"
-    :icon (get icons-registry "JiraTemplates")
-    :uri (routes/url-for :jira-templates)
-    :navigate :jira-templates
-    :admin-only? true}
    {:name "AISessionAnalyzer"
     :label "AI Session Analyzer"
     :icon (get icons-registry "AISessionAnalyzer")
@@ -204,13 +198,6 @@
     :navigate :integrations-authentication
     :admin-only? true
     :selfhosted-only? true}
-   {:name "jira"
-    :label "Jira"
-    :plugin? false
-    :uri (routes/url-for :settings-jira)
-    :navigate :settings-jira
-    :admin-only? true
-    :selfhosted-only? false}
    {:name "webhooks"
     :label "Webhooks"
     :plugin? true
