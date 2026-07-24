@@ -6,6 +6,7 @@ import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
 import { userGroupsService } from '@/services/userGroups'
 import infrastructure from '@/services/infrastructure'
+import { protectionProfilesService } from '@/services/protectionProfiles'
 import {
   decodeForDisplay,
   decodeSecretValue,
@@ -85,6 +86,7 @@ function freshDrafts() {
   }
   out.redact_enabled = false
   out.redact_types = []
+  out.protection_profile_enabled = false
   return out
 }
 
@@ -99,6 +101,10 @@ function draftsFromConnection(conn) {
   }
   drafts.redact_enabled = !!conn.redact_enabled
   drafts.redact_types = conn.redact_types || []
+  // UI-only: whether the connection carries the protection profile's
+  // managed attribute. Toggled by removing/re-adding the managed pill;
+  // translated to `skip_protection_profile` at save time.
+  drafts.protection_profile_enabled = (conn.managed_attributes || []).length > 0
   return drafts
 }
 
@@ -182,6 +188,11 @@ function buildDraftsPatch(drafts, baseline) {
   if (!arraysEqual(desiredRedact, baselineRedact)) {
     patch.redact_types = desiredRedact
   }
+  // protection_profile_enabled is UI-only — the wire uses the tri-state
+  // skip_protection_profile flag (true detaches, false re-attaches).
+  if (drafts.protection_profile_enabled !== baseline.protection_profile_enabled) {
+    patch.skip_protection_profile = !drafts.protection_profile_enabled
+  }
   return patch
 }
 
@@ -220,6 +231,9 @@ const initialState = {
   // true, the API masks every inline secret value (keys preserved, provider
   // references untouched), so credential renderers switch to write-only.
   hideRoleInfo: false,
+  // Active protection-profile attribute name for the org (null = manual
+  // configuration). Feeds the managed pill in the Attributes selector.
+  orgProfileAttribute: null,
   auxLoading: false,
 }
 
@@ -258,13 +272,14 @@ export const useConfigureRoleStore = create((set, get) => ({
   loadAuxiliaryData: async () => {
     set({ auxLoading: true })
     try {
-      const [guardrails, jiraTemplates, attributesRes, connectionTags, userGroups, hideRole] = await Promise.allSettled([
+      const [guardrails, jiraTemplates, attributesRes, connectionTags, userGroups, hideRole, orgProfile] = await Promise.allSettled([
         guardrailsService.list(),
         jiraTemplatesService.list(),
         attributesService.list(),
         connectionTagsService.list(),
         userGroupsService.list(),
         infrastructure.getHideRoleInfo(),
+        protectionProfilesService.get(),
       ])
       // /guardrails and /integrations/jira/issuetemplates return bare arrays
       // (the service unwraps res.data for us). /attributes returns a
@@ -286,6 +301,13 @@ export const useConfigureRoleStore = create((set, get) => ({
         hideRole.status === 'fulfilled'
           ? hideRole.value?.data?.hide_role_info ?? false
           : false
+      // The org's active protection profile attribute (null when the org is
+      // on manual configuration or the fetch fails). Lets the managed pill
+      // be re-added after being removed from a detached connection.
+      const orgProfileAttribute =
+        orgProfile.status === 'fulfilled'
+          ? orgProfile.value?.attribute_name ?? null
+          : null
       set({
         guardrailsList:
           guardrails.status === 'fulfilled' ? guardrails.value || [] : [],
@@ -295,6 +317,7 @@ export const useConfigureRoleStore = create((set, get) => ({
         connectionTagsPool,
         userGroupsList,
         hideRoleInfo,
+        orgProfileAttribute,
         auxLoading: false,
       })
     } catch {
@@ -590,7 +613,15 @@ export const useConfigureRoleStore = create((set, get) => ({
       if (Object.keys(stagedSecrets).length > 0 || Object.keys(renames).length > 0) {
         payload.secret = get().buildSecretsPatch()
       }
-      const updated = await connectionsService.patchConnection(connection.name, payload)
+      let updated = await connectionsService.patchConnection(connection.name, payload)
+      // The PATCH response doesn't hydrate managed_attributes. Refetch when
+      // the association changed; otherwise carry the previous value over so
+      // the rebuilt baseline doesn't mistake the connection for detached.
+      if ('skip_protection_profile' in payload) {
+        updated = await connectionsService.getConnection(connection.name)
+      } else {
+        updated = { ...updated, managed_attributes: connection.managed_attributes }
+      }
       const newDrafts = draftsFromConnection(updated)
       // Re-seed per-field sources from the saved connection (same as
       // loadConnection) so renamed keys don't leave stale entries around.

@@ -405,6 +405,25 @@ func TestProtectionProfileManagedRules(t *testing.T) {
 	if managed := managedAttrsOf(skippedRole); len(managed) != 0 {
 		t.Errorf("connection %q: expected empty managed_attributes, got %v", skippedRole, managed)
 	}
+
+	// PATCH skip_protection_profile toggles the association: true detaches,
+	// false re-attaches.
+	detach := testServer.Patch(t, "/connections/"+taggedRole, token, map[string]any{
+		"skip_protection_profile": true,
+	})
+	detach.Body.Close()
+	testutil.RequireStatus(t, detach, http.StatusOK)
+	if managed := managedAttrsOf(taggedRole); len(managed) != 0 {
+		t.Errorf("connection %q: expected empty managed_attributes after detach, got %v", taggedRole, managed)
+	}
+	attach := testServer.Patch(t, "/connections/"+taggedRole, token, map[string]any{
+		"skip_protection_profile": false,
+	})
+	attach.Body.Close()
+	testutil.RequireStatus(t, attach, http.StatusOK)
+	if managed := managedAttrsOf(taggedRole); len(managed) != 1 {
+		t.Errorf("connection %q: expected 1 managed attribute after re-attach, got %v", taggedRole, managed)
+	}
 }
 
 // T7 — unknown connection returns 404.

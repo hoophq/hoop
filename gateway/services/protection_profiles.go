@@ -167,6 +167,20 @@ func TagConnectionWithActiveProfile(ctx context.Context, orgID, connectionName s
 		orgID, connectionName, spec.AttributeName, orgID, spec.AttributeName).Error
 }
 
+// UntagConnectionFromProfile removes every Hoop-managed attribute association
+// from the connection, detaching it from the protection profile's rules.
+// Removing all managed associations (rather than only the active profile's)
+// also clears stale attributes left by previous profiles.
+func UntagConnectionFromProfile(ctx context.Context, orgID, connectionName string) error {
+	return models.DB.WithContext(ctx).Exec(`
+		DELETE FROM private.connections_attributes ca
+		USING private.attributes a
+		WHERE a.org_id = ca.org_id AND a.name = ca.attribute_name
+			AND a.managed_by IS NOT NULL
+			AND ca.org_id = ? AND ca.connection_name = ?`,
+		orgID, connectionName).Error
+}
+
 // materializeProfile creates the profile attribute and every referenced rule
 // when absent, and tags each rule to the attribute. Existing rows are reused
 // untouched, so re-applying is idempotent and rule content is never rewritten.

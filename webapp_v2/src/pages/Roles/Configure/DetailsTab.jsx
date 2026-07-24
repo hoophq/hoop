@@ -1,6 +1,7 @@
 import { Stack, Title, Text, Group } from '@mantine/core'
 import Badge from '@/components/Badge'
 import TextInput from '@/components/TextInput'
+import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import AttributesSelect from '@/pages/Roles/Configure/sections/AttributesSelect'
 import ConnectionTagsEditor from '@/pages/Roles/Configure/sections/ConnectionTagsEditor'
@@ -21,15 +22,26 @@ export default function DetailsTab({ connection }) {
   const drafts = useConfigureRoleStore((s) => s.drafts)
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
   const attributesList = useConfigureRoleStore((s) => s.attributesList)
+  const orgProfileAttribute = useConfigureRoleStore((s) => s.orgProfileAttribute)
 
-  // Hoop-managed attributes (protection profiles) are never selectable —
-  // they render as read-only pills inside the selector instead.
+  // Hoop-managed attributes (protection profiles) flow through the managed
+  // pill instead of the regular options.
   const attributeOptions = attributesList
     .filter((a) => !a.managed_by)
     .map((a) => ({
       value: a.name,
       label: labelForAttribute(a.name),
     }))
+
+  // The managed entry offered by the selector: the org's active profile
+  // attribute, falling back to whatever managed attribute the connection
+  // already carries (covers a stale profile or a failed org-profile fetch).
+  const managedSource = orgProfileAttribute ?? connection.managed_attributes?.[0] ?? null
+  const managedOptions = managedSource
+    ? [{ value: managedSource, label: labelForManagedAttribute(managedSource) }]
+    : []
+  const managedValue =
+    drafts.protection_profile_enabled && managedSource ? [managedSource] : []
 
   return (
     <Stack gap="xl" maw={720}>
@@ -52,12 +64,16 @@ export default function DetailsTab({ connection }) {
           options={attributeOptions}
           value={drafts.attributes}
           onChange={(value) => setDraft({ attributes: value })}
-          managedAttributes={connection.managed_attributes ?? []}
+          managedOptions={managedOptions}
+          managedValue={managedValue}
+          onManagedChange={(names) =>
+            setDraft({ protection_profile_enabled: names.length > 0 })
+          }
         />
-        {connection.managed_attributes?.length > 0 && (
+        {managedOptions.length > 0 && (
           <Text size="xs" c="dimmed">
-            Attributes with the award icon are applied by your protection
-            profile and managed by Hoop.
+            The award pill is your protection profile attribute, managed by
+            Hoop. Removing it opts this role out of the profile rules.
           </Text>
         )}
       </Stack>

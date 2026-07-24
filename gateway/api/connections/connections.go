@@ -121,7 +121,7 @@ func Post(c *gin.Context) {
 	// attribute so profile rules apply immediately. Managed attributes are
 	// omitted from API payloads, so this cannot clash with req.Attributes.
 	// skip_protection_profile lets the client opt this connection out.
-	if !req.SkipProtectionProfile {
+	if req.SkipProtectionProfile == nil || !*req.SkipProtectionProfile {
 		if err := services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, resp.Name); err != nil {
 			log.Warnf("failed tagging connection %s with active protection profile: %v", resp.Name, err)
 		}
@@ -247,12 +247,30 @@ func Put(c *gin.Context) {
 	}
 	resp.Attributes = req.Attributes
 
+	if err := applyProtectionProfileFlag(ctx, resp.Name, req.SkipProtectionProfile); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating protection profile association: %v", err)
+		return
+	}
+
 	// Reconcile machine identity credentials based on attribute overlap
 	if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
 
 	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+}
+
+// applyProtectionProfileFlag applies the tri-state skip_protection_profile
+// update semantics: nil leaves the association unchanged, true detaches the
+// connection from the protection profile, false (re-)attaches it.
+func applyProtectionProfileFlag(ctx *storagev2.Context, connectionName string, skip *bool) error {
+	if skip == nil {
+		return nil
+	}
+	if *skip {
+		return services.UntagConnectionFromProfile(context.Background(), ctx.OrgID, connectionName)
+	}
+	return services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, connectionName)
 }
 
 // Patch Connection
@@ -387,6 +405,11 @@ func Patch(c *gin.Context) {
 		if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
 			log.Warnf("failed reconciling MI credentials after patching connection %s: %v", resp.Name, err)
 		}
+	}
+
+	if err := applyProtectionProfileFlag(ctx, resp.Name, req.SkipProtectionProfile); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating protection profile association: %v", err)
+		return
 	}
 
 	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))

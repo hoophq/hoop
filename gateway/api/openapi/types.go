@@ -443,10 +443,12 @@ type Connection struct {
 	// active protection profile attribute). Read only — managed attributes
 	// cannot be set or removed through this resource.
 	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
-	// When true, the connection is not tagged with the organization's active
-	// protection profile attribute at creation time, opting it out of the
-	// profile's rules. Only meaningful on creation; ignored on updates.
-	SkipProtectionProfile bool `json:"skip_protection_profile"`
+	// Controls the association with the organization's active protection
+	// profile attribute. On creation: true skips the automatic tagging
+	// (opting the connection out of the profile's rules); false/absent tags
+	// normally. On updates: true detaches the connection from the profile,
+	// false re-attaches it, absent leaves the association unchanged.
+	SkipProtectionProfile *bool `json:"skip_protection_profile,omitempty"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References
@@ -522,6 +524,10 @@ type ConnectionPatch struct {
 	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
 	// Attributes associated with this connection
 	Attributes *[]string `json:"attributes" example:"production,pii"`
+	// Controls the association with the organization's active protection
+	// profile attribute: true detaches the connection from the profile,
+	// false re-attaches it, absent leaves the association unchanged.
+	SkipProtectionProfile *bool `json:"skip_protection_profile,omitempty"`
 }
 
 type ConnectionTagCreateRequest struct {
