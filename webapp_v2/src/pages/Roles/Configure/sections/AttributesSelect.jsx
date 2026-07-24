@@ -56,7 +56,8 @@ export default function AttributesSelect({
       withRemoveButton
       onRemove={() => handleManagedRemove(val)}
       className={classes.managedPill}
-      radius="xl"
+      bg="indigo.3"
+      c="indigo.9"
     >
       <Group gap={4} wrap="nowrap" component="span" display="inline-flex">
         <Award size={12} aria-hidden="true" />

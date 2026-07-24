@@ -1,6 +1,7 @@
 import { createTheme, rem } from '@mantine/core';
 import { SpotlightTheme } from '@/components/Spotlight/theme';
 import { AppShellTheme } from '@/components/AppShell/theme';
+import { PillTheme } from '@/components/Pill/theme';
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -179,6 +180,7 @@ export const theme = createTheme({
 
   components: {
     Spotlight: SpotlightTheme,
-    AppShell: AppShellTheme
+    AppShell: AppShellTheme,
+    Pill: PillTheme
   }
 });

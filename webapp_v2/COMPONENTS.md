@@ -156,6 +156,9 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
 
+### `Pill` (theme-level, no wrapper)
+Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
+
 ### `Badge`
 Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
 ```jsx
