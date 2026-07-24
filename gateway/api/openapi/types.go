@@ -1629,6 +1629,9 @@ type GuardRailRuleResponse struct {
 	Name string `json:"name" example:"my-strict-rule"`
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 
 	// The input rule. Each rule entry accepts an optional "message" field that
 	// is shown to the user when that specific rule is hit.
@@ -3155,6 +3158,10 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; only approval settings and group lists can be
+	// changed on managed rules, and they cannot be deleted
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3272,6 +3279,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
