@@ -214,6 +214,22 @@ func TestBuildLegacyGuardRailErrorMessage_InvalidPayload(t *testing.T) {
 	}
 }
 
+func TestUpdateGuardRailsInfoFromPacketSkipsEmptyData(t *testing.T) {
+	for name, raw := range map[string][]byte{
+		"absent":     nil,
+		"empty list": []byte("[]"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			pkt := &pb.Packet{Spec: map[string][]byte{
+				pb.SpecClientGuardRailsInfoKey: raw,
+			}}
+			if updateGuardRailsInfoFromPacket(nil, pkt) {
+				t.Fatal("empty guardrails metadata must not be persisted")
+			}
+		})
+	}
+}
+
 func TestRewritePGGuardRailsErrorPacket(t *testing.T) {
 	items := []models.SessionGuardRailsInfo{
 		{

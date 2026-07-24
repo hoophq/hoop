@@ -153,15 +153,25 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 // and on native protocol error replies (which keep the session open), and is a
 // no-op when the packet carries no guardrails info. UpdateSessionGuardRailsInfo
 // appends (jsonb ||), so multiple violations across a session accumulate.
-func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) {
-	if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
-		var guardRailsData []models.SessionGuardRailsInfo
-		if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
-			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info, reason=%v", err)
-		} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
-			log.With("sid", pctx.SID).Errorf("unable to save guardrails info, reason=%v", err)
-		}
+// It reports whether non-empty metadata was persisted.
+func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) bool {
+	rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]
+	if len(rawInfo) == 0 {
+		return false
 	}
+	var guardRailsData []models.SessionGuardRailsInfo
+	if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info, reason=%v", err)
+		return false
+	}
+	if len(guardRailsData) == 0 {
+		return false
+	}
+	if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to save guardrails info, reason=%v", err)
+		return false
+	}
+	return true
 }
 
 func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {
