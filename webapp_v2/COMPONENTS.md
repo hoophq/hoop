@@ -505,6 +505,19 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
+> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
+> Combobox+PillsInput attribute picker with mixed pill types: Hoop-managed
+> protection-profile attributes render as removable indigo award pills wired
+> to a separate callback (`onManagedChange` → `skip_protection_profile`),
+> user attributes as regular pills. Deliberately NOT built on
+> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
+> individual selected pills) nor on `components/PaginatedMultiSelect` (its
+> contract is pagination/server-search specific, and it also only renders
+> uniform pills). When the React resource-creation wizard needs the same
+> control (its roles step has the identical managed-pill UX), graduate this
+> to `src/components/` and consider extracting a shared PillsInput base with
+> `PaginatedMultiSelect`.
+
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
 
