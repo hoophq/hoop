@@ -1676,10 +1676,6 @@ type GuardRailRuleResponse struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
-	// Managed By is a read only field that indicates who manages this rule.
-	// When set (e.g. "hoop" for protection profiles), the rule cannot be
-	// modified or deleted directly.
-	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2044,7 +2040,7 @@ type DataMaskingRule struct {
 	// Managed By is a read only field that indicates who manages this rule.
 	// When set (e.g. "hoop" for protection profiles), the rule cannot be
 	// modified or deleted directly.
-	ManagedBy              *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
+	ManagedBy              *string `json:"managed_by" readonly:"true" example:"hoop"`
 	DataMaskingRuleRequest `json:",inline"`
 }
 
@@ -3142,10 +3138,6 @@ type AccessRequestRule struct {
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
-	// Managed By is a read only field that indicates who manages this rule.
-	// When set (e.g. "hoop" for protection profiles), only approval settings
-	// and group lists can be changed and the rule cannot be deleted.
-	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -3271,10 +3263,6 @@ type AISessionAnalyzerRule struct {
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
 	// Connection names this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
-	// Managed By is a read only field that indicates who manages this rule.
-	// When set (e.g. "hoop" for protection profiles), the rule cannot be
-	// modified or deleted directly.
-	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// Risk evaluation actions per level
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt

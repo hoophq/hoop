@@ -10665,7 +10665,7 @@ const docTemplate = `{
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "managed_by": {
-                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
                     "type": "string",
                     "readOnly": true,
                     "example": "hoop"
@@ -11152,7 +11152,7 @@ const docTemplate = `{
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "managed_by": {
-                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), only approval settings\nand group lists can be changed and the rule cannot be deleted.",
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; only approval settings and group lists can be\nchanged on managed rules, and they cannot be deleted",
                     "type": "string",
                     "readOnly": true,
                     "example": "hoop"
@@ -13402,7 +13402,7 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "managed_by": {
-                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
                     "type": "string",
                     "readOnly": true,
                     "example": "hoop"
