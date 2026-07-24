@@ -24,8 +24,45 @@ jobs:
       - name: Test
         run: make test-oss
 
+  resolve-libhoop:
+    name: Resolve libhoop Revision
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+
+    steps:
+      - name: Checkout libhoop default branch
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Cross-repository changes use the same branch name in Hoop and libhoop.
+      # Pin its current commit once for every dependent job. A missing paired
+      # branch falls back to the default branch checked out above; remote
+      # failures remain fatal rather than silently testing the wrong revision.
+      - name: Resolve paired libhoop revision
+        id: resolve
+        env:
+          HOOP_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          set +e
+          paired_ref="$(git ls-remote --exit-code --heads origin "refs/heads/${HOOP_HEAD_REF}")"
+          status=$?
+          set -e
+
+          case "${status}" in
+            0) sha="${paired_ref%%[[:space:]]*}" ;;
+            2) sha="$(git rev-parse HEAD)" ;;
+            *) exit "${status}" ;;
+          esac
+
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+
   integration-test:
     name: Integration Test
+    needs: resolve-libhoop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -46,6 +83,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -74,6 +112,7 @@ jobs:
 
   transport-test:
     name: Transport Integration Test
+    needs: resolve-libhoop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -97,6 +136,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
