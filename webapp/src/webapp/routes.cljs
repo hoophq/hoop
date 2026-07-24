@@ -206,6 +206,38 @@
 (defn wrap-selfhosted-only [component]
   [selfhosted-only component])
 
+;; Component wrapper to check if a feature is enabled by the gateway
+;; license. A nil/empty license feature list means every feature is
+;; enabled (see /serverinfo license_info.features contract).
+;; While the server info is still loading nothing is rendered, so a
+;; page refresh on a gated route doesn't flash or redirect prematurely.
+(defn license-feature-only []
+  (let [gateway-info (rf/subscribe [:gateway->info])]
+    (fn [feature component]
+      (let [info @gateway-info
+            features (get-in info [:data :license_info :features])
+            enabled? (or (empty? features)
+                         (boolean (some #(= % feature) features)))]
+        (cond
+          (and (:loading info) (nil? (:data info)))
+          [:<>]
+
+          enabled?
+          component
+
+          :else
+          (do
+            (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
+            [:div {:class "flex items-center justify-center h-full"}
+             [:div {:class "text-center"}
+              [loaders/page-loading-screen {:full-page false
+                                            :message "Redirecting..."
+                                            :description "This feature is not enabled by your license."}]]]))))))
+
+;; Function wrapper to wrap license-gated components
+(defn wrap-license-feature [feature component]
+  [license-feature-only feature component])
+
 ;; Example of usage:
 ;; Instead of:
 ;; (defmethod routes/panels :users-panel []

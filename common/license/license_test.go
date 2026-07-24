@@ -120,33 +120,39 @@ func TestSignVerify(t *testing.T) {
 		{
 			msg: "it should be able to sign and verify",
 			key: loadTestPrivKey(),
-			p:   Payload{OSSType, newTime(10, 0).Unix(), newTime(10, 30).Unix(), []string{"*"}, "desc"},
+			p:   Payload{Type: OSSType, IssuedAt: newTime(10, 0).Unix(), ExpireAt: newTime(10, 30).Unix(), AllowedHosts: []string{"*"}, Description: "desc"},
+			now: newTime(10, 15),
+		},
+		{
+			msg: "it should be able to sign and verify with features",
+			key: loadTestPrivKey(),
+			p:   Payload{Type: EnterpriseType, IssuedAt: newTime(10, 0).Unix(), ExpireAt: newTime(10, 30).Unix(), AllowedHosts: []string{"*"}, Description: "desc", Features: []string{FeatureAccessControl, FeatureProvisioningHub}},
 			now: newTime(10, 15),
 		},
 		{
 			msg: "it should return license expired error",
 			key: loadTestPrivKey(),
-			p:   Payload{OSSType, newTime(10, 0).Unix(), newTime(10, 30).Unix(), []string{"*"}, "desc"},
+			p:   Payload{Type: OSSType, IssuedAt: newTime(10, 0).Unix(), ExpireAt: newTime(10, 30).Unix(), AllowedHosts: []string{"*"}, Description: "desc"},
 			now: newTime(10, 40),
 			err: ErrExpired,
 		},
 		{
 			msg: "it should return issued before used error",
 			key: loadTestPrivKey(),
-			p:   Payload{OSSType, newTime(10, 0).Unix(), newTime(10, 30).Unix(), []string{"*"}, "desc"},
+			p:   Payload{Type: OSSType, IssuedAt: newTime(10, 0).Unix(), ExpireAt: newTime(10, 30).Unix(), AllowedHosts: []string{"*"}, Description: "desc"},
 			now: newTime(9, 59),
 			err: ErrUsedBeforeIssued,
 		},
 		{
 			msg: "it should return verification error when validating the signature",
 			key: loadTestPrivKey2(),
-			p:   Payload{EnterpriseType, newTime(10, 0).Unix(), newTime(10, 30).Unix(), []string{"*"}, "desc"},
+			p:   Payload{Type: EnterpriseType, IssuedAt: newTime(10, 0).Unix(), ExpireAt: newTime(10, 30).Unix(), AllowedHosts: []string{"*"}, Description: "desc"},
 			now: newTime(10, 15),
 			err: fmt.Errorf("failed verifying license signature: crypto/rsa: verification error"),
 		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
-			l, err := sign(tt.key, tt.p.Type, tt.p.Description, tt.p.AllowedHosts, time.Unix(tt.p.IssuedAt, 0), time.Unix(tt.p.ExpireAt, 0))
+			l, err := sign(tt.key, tt.p.Type, tt.p.Description, tt.p.AllowedHosts, tt.p.Features, time.Unix(tt.p.IssuedAt, 0), time.Unix(tt.p.ExpireAt, 0))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -156,6 +162,39 @@ func TestSignVerify(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSignFeatures(t *testing.T) {
+	key := loadTestPrivKey()
+	issuedAt, expireAt := time.Unix(newTime(10, 0).Unix(), 0), time.Unix(newTime(10, 30).Unix(), 0)
+
+	t.Run("it should reject unknown features", func(t *testing.T) {
+		_, err := sign(key, OSSType, "desc", []string{"*"}, []string{"no-such-feature"}, issuedAt, expireAt)
+		assert.ErrorContains(t, err, `unknown feature: "no-such-feature"`)
+	})
+
+	t.Run("it should detect tampered features", func(t *testing.T) {
+		l, err := sign(key, EnterpriseType, "desc", []string{"*"}, []string{FeatureAccessControl}, issuedAt, expireAt)
+		assert.NoError(t, err)
+		l.Payload.Features = append(l.Payload.Features, FeatureProvisioningHub)
+		assert.ErrorContains(t, l.verify(time.Unix(newTime(10, 15).Unix(), 0)), "failed verifying license signature")
+	})
+
+	t.Run("it should detect features stripped from a restricted license", func(t *testing.T) {
+		l, err := sign(key, EnterpriseType, "desc", []string{"*"}, []string{FeatureAccessControl}, issuedAt, expireAt)
+		assert.NoError(t, err)
+		l.Payload.Features = nil
+		assert.ErrorContains(t, l.verify(time.Unix(newTime(10, 15).Unix(), 0)), "failed verifying license signature")
+	})
+}
+
+func TestIsFeatureEnabled(t *testing.T) {
+	empty := License{}
+	assert.True(t, empty.IsFeatureEnabled(FeatureAccessControl), "empty features must enable everything")
+
+	restricted := License{Payload: Payload{Features: []string{FeatureAccessControl, FeatureProvisioningHub}}}
+	assert.True(t, restricted.IsFeatureEnabled(FeatureAccessControl))
+	assert.False(t, restricted.IsFeatureEnabled(FeatureResourceDiscovery))
 }
 
 func TestVerifyHost(t *testing.T) {

@@ -251,7 +251,7 @@ function Router() {
       <Route
         path="/rulepacks"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="rulepacks">
             <Layout>
               <PageLayout>
                 <Rulepacks />
@@ -263,7 +263,7 @@ function Router() {
       <Route
         path="/rulepacks/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="rulepacks">
             <Layout>
               <PageLayout>
                 <RulepackDetail />
@@ -291,7 +291,7 @@ function Router() {
       <Route
         path="/features/event-routing"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRouting />
@@ -303,7 +303,7 @@ function Router() {
       <Route
         path="/features/event-routing/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingForm />
@@ -315,7 +315,7 @@ function Router() {
       <Route
         path="/features/event-routing/:id/edit"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingForm />
@@ -327,7 +327,7 @@ function Router() {
       <Route
         path="/features/event-routing/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingDetail />
@@ -340,7 +340,7 @@ function Router() {
       <Route
         path="/features/data-masking"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMasking />
@@ -352,7 +352,7 @@ function Router() {
       <Route
         path="/features/data-masking/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
@@ -364,7 +364,7 @@ function Router() {
       <Route
         path="/features/data-masking/edit/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
@@ -378,7 +378,7 @@ function Router() {
       <Route
         path="/ai-agents-identities"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentities />
@@ -390,7 +390,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
@@ -402,7 +402,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/created"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesCreated />
@@ -414,7 +414,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/:id/configure"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
