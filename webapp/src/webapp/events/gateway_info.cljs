@@ -93,3 +93,17 @@
  :gateway->feature-flag-enabled?
  (fn [db [_ flag-name]]
    (boolean (get-in db [:gateway->info :data :feature_flags (keyword flag-name)] false))))
+
+;; Features enabled by the gateway license. nil/empty means every
+;; feature is enabled (see /serverinfo license_info.features contract).
+(rf/reg-sub
+ :gateway->license-features
+ (fn [db _]
+   (get-in db [:gateway->info :data :license_info :features])))
+
+(rf/reg-sub
+ :gateway->license-feature-enabled?
+ :<- [:gateway->license-features]
+ (fn [features [_ feature]]
+   (or (empty? features)
+       (boolean (some #(= % (name feature)) features)))))
