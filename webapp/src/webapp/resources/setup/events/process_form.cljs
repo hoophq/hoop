@@ -196,7 +196,6 @@
      :secret secret
      :command command
      :attributes (vec (or (:attributes role) []))
-     :skip_protection_profile (boolean (:skip-protection-profile? role))
      :access_mode_runbooks "enabled"
      :access_mode_exec "enabled"
      :access_mode_connect "enabled"
@@ -204,6 +203,18 @@
      :redact_enabled false
      :redact_types []
      :reviewers []}))
+
+(defn with-profile-attribute
+  "While a protection profile is active, new roles carry its attribute so the
+  profile rules apply immediately. The managed pill in the wizard is
+  pre-selected; removing it (skip-protection-profile?) opts the role out and
+  the attribute is simply not sent."
+  [processed-role role db]
+  (let [attr (get-in db [:protection-profile :active :attribute-name])]
+    (if (and attr (not (:skip-protection-profile? role)))
+      (update processed-role :attributes
+              (fn [attrs] (vec (distinct (conj (or attrs []) attr)))))
+      processed-role)))
 
 (defn finalize-role-current-values
   "Add current (uncommitted) env vars and config files to a role before processing"
@@ -298,7 +309,8 @@
                                                 resource-metadata
                                                 (:subtype role))
                                       command-role (get-in metadata [:resourceConfiguration :command])]
-                                  (process-role role agent-id command-role)))
+                                  (-> (process-role role agent-id command-role)
+                                      (with-profile-attribute role db))))
                               roles)]
 
     {:name resource-name

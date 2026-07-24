@@ -545,10 +545,10 @@
 
 (defn role-attributes-field
   "Per-role Attributes selector. While a protection profile is active, its
-  managed attribute appears as a distinct blue pill. Removing it opts the
-  role out of the profile (skip_protection_profile in the payload); it can
-  be re-added from the dropdown before submitting. The managed attribute
-  itself is never sent — the backend applies it on its own."
+  managed attribute appears pre-selected as a distinct blue pill. Removing
+  it opts the role out of the profile (the attribute is not sent); it can
+  be re-added from the dropdown before submitting. When kept, the attribute
+  is included in the role's attributes at submit time."
   [role-index]
   (let [attributes-data @(rf/subscribe [:attributes/list-data])
         selected @(rf/subscribe [:resource-setup/role-attributes role-index])
