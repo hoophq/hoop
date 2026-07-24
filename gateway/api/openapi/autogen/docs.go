@@ -13792,8 +13792,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "guardrails",
-                        "data-masking"
+                        "access-control",
+                        "provisioning-hub"
                     ]
                 },
                 "issued_at": {
@@ -16914,8 +16914,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "guardrails",
-                        "data-masking"
+                        "access-control",
+                        "provisioning-hub"
                     ]
                 },
                 "is_valid": {
