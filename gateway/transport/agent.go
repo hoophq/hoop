@@ -134,6 +134,12 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			}
 		case pbclient.PGConnectionWrite:
 			rewritePGGuardRailsErrorPacket(pkt)
+		case pbclient.MSSQLConnectionWrite:
+			// A native MSSQL guardrail block returns a TDS error but keeps the
+			// session open, so the violation metadata rides this packet rather
+			// than SessionClose. Persist it here; no-op when the packet carries
+			// no guardrails info.
+			updateGuardRailsInfoFromPacket(pctx, pkt)
 		}
 
 		if err = proxyStream.Send(pkt); err != nil {
@@ -142,15 +148,30 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 	}
 }
 
-func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) {
-	if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
-		var guardRailsData []models.SessionGuardRailsInfo
-		if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
-			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from session close, reason=%v", err)
-		} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
-			log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
-		}
+// updateGuardRailsInfoFromPacket appends any guardrails violation metadata
+// carried on a packet to the session record. It is called both on SessionClose
+// and on native protocol error replies (which keep the session open), and is a
+// no-op when the packet carries no guardrails info. UpdateSessionGuardRailsInfo
+// appends (jsonb ||), so multiple violations across a session accumulate.
+// It reports whether non-empty metadata was persisted.
+func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) bool {
+	rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]
+	if len(rawInfo) == 0 {
+		return false
 	}
+	var guardRailsData []models.SessionGuardRailsInfo
+	if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info, reason=%v", err)
+		return false
+	}
+	if len(guardRailsData) == 0 {
+		return false
+	}
+	if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to save guardrails info, reason=%v", err)
+		return false
+	}
+	return true
 }
 
 func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {

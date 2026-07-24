@@ -148,6 +148,19 @@ func TestEncodeGuardRailRules(t *testing.T) {
 		}
 	})
 
+	t.Run("attached rules with empty directions yield no payload", func(t *testing.T) {
+		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
+			GuardRailInputRules:  []byte(`[{"rules":[]}]`),
+			GuardRailOutputRules: []byte(`[{"rules":[]}]`),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if payload != nil {
+			t.Fatalf("expected nil payload for empty rule directions, got %q", string(payload))
+		}
+	})
+
 	t.Run("absent rule columns yield no payload", func(t *testing.T) {
 		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{})
 		if err != nil {
@@ -159,10 +172,10 @@ func TestEncodeGuardRailRules(t *testing.T) {
 	})
 
 	t.Run("real rules yield a payload", func(t *testing.T) {
-		inputRules := []byte(`[{"items":[{"type":"deny_words_list","words":["DENYWORD"]}]}]`)
+		inputRules := []byte(`[{"rules":[{"type":"deny_words_list","words":["DENYWORD"]}]}]`)
 		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
 			GuardRailInputRules:  inputRules,
-			GuardRailOutputRules: []byte("[]"),
+			GuardRailOutputRules: []byte(`[{"rules":[]}]`),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -198,6 +211,22 @@ func TestBuildLegacyGuardRailErrorMessage_InvalidPayload(t *testing.T) {
 	msg, ok := buildLegacyGuardRailErrorMessage([]byte("{bad-json"))
 	if ok || msg != "" {
 		t.Fatalf("expected no message for invalid payload, got ok=%v msg=%q", ok, msg)
+	}
+}
+
+func TestUpdateGuardRailsInfoFromPacketSkipsEmptyData(t *testing.T) {
+	for name, raw := range map[string][]byte{
+		"absent":     nil,
+		"empty list": []byte("[]"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			pkt := &pb.Packet{Spec: map[string][]byte{
+				pb.SpecClientGuardRailsInfoKey: raw,
+			}}
+			if updateGuardRailsInfoFromPacket(nil, pkt) {
+				t.Fatal("empty guardrails metadata must not be persisted")
+			}
+		})
 	}
 }
 

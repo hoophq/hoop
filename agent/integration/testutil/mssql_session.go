@@ -33,10 +33,19 @@ func BuildMSSQLEnvVars(host, port, user, pass string) map[string]any {
 // directly from the transport, so it must be called before StartRecvDemux
 // to avoid the demux swallowing the open reply.
 func OpenMSSQLSession(t *testing.T, tr *MockTransport, mc *MSSQLContainer) string {
+	return OpenMSSQLSessionWithGuardRails(t, tr, mc, nil)
+}
+
+// OpenMSSQLSessionWithGuardRails is OpenMSSQLSession with guardrail rules
+// attached to the connection params. When rules are present, libhoop's MSSQL
+// proxy enforces them (or fails closed if it cannot evaluate them). In
+// production the gateway ships these rules whenever the connection has them
+// configured; this harness injects them directly.
+func OpenMSSQLSessionWithGuardRails(t *testing.T, tr *MockTransport, mc *MSSQLContainer, guardRailRules []byte) string {
 	t.Helper()
 	sessionID := uuid.New().String()
 	envVars := BuildMSSQLEnvVars(mc.Host, mc.Port, mc.User, mc.Password)
-	pkt := BuildSessionOpenPacket(sessionID, string(pb.ConnectionTypeMSSQL), envVars)
+	pkt := BuildSessionOpenPacketWithGuardRails(sessionID, string(pb.ConnectionTypeMSSQL), envVars, guardRailRules)
 	tr.Inject(pkt)
 
 	deadline := time.After(10 * time.Second)

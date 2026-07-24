@@ -289,6 +289,18 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 // into an empty NON-nil slice. A nil-ness check made every ruleless
 // connection look guarded, which the fail-closed admission check (DEP-48)
 // then refused for connection types without guardrail enforcement.
+func configuredGuardRailRules(rules []guardrails.DataRules) []guardrails.DataRules {
+	n := 0
+	for _, rule := range rules {
+		if len(rule.Items) == 0 {
+			continue
+		}
+		rules[n] = rule
+		n++
+	}
+	return rules[:n]
+}
+
 func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
@@ -311,7 +323,8 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 		}
 	}
 
-	// no rules to enforce -> no guardrail payload
+	inputRules = configuredGuardRailRules(inputRules)
+	outputRules = configuredGuardRailRules(outputRules)
 	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
@@ -333,11 +346,17 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 
 // Guardrail enforcement admission is NOT checked here. The authoritative
 // fail-closed check (DEP-48) lives in libhoop at proxy construction: native
-// proxies without a guardrail evaluation path (mysql, mssql, mongodb, ssm,
-// raw tcp) refuse guarded sessions at the agent, at the point of
-// enforcement. Gateways and agents are upgraded together, so a
-// gateway-side duplicate of that list would only drift (it did: DEP-48 →
-// #1611 → the mysql/mongodb web terminal regression).
+// proxies without a guardrail evaluation path (mysql, mongodb, ssm, raw tcp)
+// refuse guarded sessions at the agent, at the point of enforcement. Gateways
+// and agents are upgraded together, so a gateway-side duplicate of that list
+// would only drift (it did: DEP-48 → #1611 → the mysql/mongodb web terminal
+// regression).
+//
+// MSSQL is no longer in that fail-closed list: its native proxy evaluates INPUT
+// guardrails (DEP-69), and refuses at construction when only output rules are
+// configured (which it cannot enforce). There is no gateway-side knob — native
+// MSSQL enforcement is driven purely by whether the connection has guardrail
+// rules configured, exactly like Postgres and MySQL.
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
@@ -516,6 +535,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// input, so guardrail rules are not fetched nor enforced for it — the
 			// same long-standing behavior as DLP redaction, which is also disabled
 			// for plain-exec sessions.
+			//
+			// The rules are shipped as-is when the connection has them; there is no
+			// gateway-side connection-type or feature-flag gate. libhoop is the sole
+			// authority — it enforces the input rules in-process and fails closed at
+			// proxy construction for protocol paths that cannot evaluate them.
 		}
 
 		// Resolve the AI session analyzer config for HTTP-family connections.

@@ -2,6 +2,8 @@ PUBLIC_IMAGE := "hoophq/hoop"
 VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
+MSSQL_JDBC_FIXTURE := agent/integration/testdata/mssql-jdbc
+MSSQL_JDBC_CLASSPATH_FILE := $(CURDIR)/$(MSSQL_JDBC_FIXTURE)/target/classpath.txt
 
 DATE ?= $(shell date -u "+%Y-%m-%dT%H:%M:%SZ")
 
@@ -87,12 +89,16 @@ test-oss: libhoop-map generate-wasm
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
+prepare-mssql-jdbc:
+	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)
+	mvn -q -f $(MSSQL_JDBC_FIXTURE)/pom.xml dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(MSSQL_JDBC_CLASSPATH_FILE)
+
 # Integration tests drive the real controller.Agent against upstream
 # containers via libhoop. Needs the enterprise libhoop (the OSS _libhoop stub
 # returns "missing protocol hoop library" for every protocol) — the CI job
 # checks it out at ./libhoop.
-test-integration: libhoop-map generate-wasm
-	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
+test-integration: libhoop-map generate-wasm prepare-mssql-jdbc
+	env CGO_ENABLED=1 MSSQL_JDBC_CLASSPATH_FILE="$(MSSQL_JDBC_CLASSPATH_FILE)" go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
 # Agent↔gateway transport harness. Runs against the real gateway gRPC
 # transport; the PG round-trip needs the enterprise libhoop proxy (skips on
@@ -319,4 +325,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

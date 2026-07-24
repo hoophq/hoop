@@ -24,8 +24,107 @@ jobs:
       - name: Test
         run: make test-oss
 
+  resolve-libhoop:
+    name: Resolve libhoop Revision
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      paired: ${{ steps.resolve.outputs.paired }}
+      base: ${{ steps.resolve.outputs.base }}
+
+    steps:
+      - name: Checkout libhoop default branch
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Cross-repository changes use the same branch name in Hoop and libhoop.
+      # Pin its current commit once for every dependent job. A missing paired
+      # branch falls back to the default branch checked out above; remote
+      # failures remain fatal rather than silently testing the wrong revision.
+      - name: Resolve paired libhoop revision
+        id: resolve
+        env:
+          HOOP_HEAD_REF: ${{ github.head_ref }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -euo pipefail
+          base="$(gh api repos/hoophq/libhoop --jq .default_branch)"
+          set +e
+          paired_ref="$(git ls-remote --exit-code --heads origin "refs/heads/${HOOP_HEAD_REF}")"
+          status=$?
+          set -e
+
+          case "${status}" in
+            0)
+              sha="${paired_ref%%[[:space:]]*}"
+              paired=true
+              ;;
+            2)
+              sha="$(git rev-parse HEAD)"
+              paired=false
+              ;;
+            *)
+              exit "${status}"
+              ;;
+          esac
+
+          {
+            echo "sha=${sha}"
+            echo "paired=${paired}"
+            echo "base=${base}"
+          } >> "${GITHUB_OUTPUT}"
+
+  libhoop-dependency:
+    name: Libhoop Dependency Merge
+    needs: resolve-libhoop
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require paired libhoop revision to be merged
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          HOOP_HEAD_REF: ${{ github.head_ref }}
+          LIBHOOP_PAIRED: ${{ needs.resolve-libhoop.outputs.paired }}
+          LIBHOOP_SHA: ${{ needs.resolve-libhoop.outputs.sha }}
+          LIBHOOP_BASE: ${{ needs.resolve-libhoop.outputs.base }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${LIBHOOP_PAIRED}" != "true" ]]; then
+            echo "No paired libhoop branch; testing its default branch."
+            exit 0
+          fi
+
+          pulls="$(
+            gh api --method GET "repos/hoophq/libhoop/commits/${LIBHOOP_SHA}/pulls" \
+              -H "Accept: application/vnd.github+json" \
+              -F per_page=100
+          )"
+          merged_pr_url="$(
+            jq -r --arg base "${LIBHOOP_BASE}" \
+              '[.[] | select(.base.ref == $base and .merged_at != null) | .html_url][0] // empty' \
+              <<<"${pulls}"
+          )"
+
+          if [[ -n "${merged_pr_url}" ]]; then
+            echo "Paired libhoop revision is merged: ${merged_pr_url}"
+            exit 0
+          fi
+
+          dependency_pr_url="$(
+            jq -r --arg base "${LIBHOOP_BASE}" \
+              '[.[] | select(.base.ref == $base) | .html_url][0] // empty' \
+              <<<"${pulls}"
+          )"
+          dependency_target="${dependency_pr_url:-https://github.com/hoophq/libhoop/tree/${HOOP_HEAD_REF}}"
+          echo "::error title=Unmerged libhoop dependency::Merge ${dependency_target} before this Hoop pull request."
+          exit 1
+
   integration-test:
     name: Integration Test
+    needs: resolve-libhoop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -46,11 +145,19 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: '>=1.26.0'
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: agent/integration/testdata/mssql-jdbc/pom.xml
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -67,6 +174,7 @@ jobs:
 
   transport-test:
     name: Transport Integration Test
+    needs: resolve-libhoop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -90,6 +198,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
