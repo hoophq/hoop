@@ -348,11 +348,18 @@ ORDER BY total_amount DESC;")
  :connections->quickstart-create-postgres-demo
  (fn [{:keys [db]} [_]]
    (let [agents (get-in db [:agents :data])
-         agent (first agents)]
+         agent (first agents)
+         ;; While a protection profile is active, the demo connection carries
+         ;; its attribute so the profile rules apply to the evaluator's first
+         ;; query — the payload is authoritative, nothing is tagged
+         ;; automatically (same model as the setup wizard's
+         ;; with-profile-attribute). Fetched at onboarding setup mount.
+         profile-attr (get-in db [:protection-profile :active :attribute-name])]
      (if agent
        ;; If agent exists in app state, use it directly
-       (let [connection (merge constants/connection-postgres-demo
-                               {:agent_id (:id agent)})
+       (let [connection (cond-> (merge constants/connection-postgres-demo
+                                       {:agent_id (:id agent)})
+                          profile-attr (assoc :attributes [profile-attr]))
              code-tmp-db {:date (.now js/Date)
                           :code quickstart-query}
              code-tmp-db-json (.stringify js/JSON (clj->js code-tmp-db))]
