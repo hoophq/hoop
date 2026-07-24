@@ -47,22 +47,30 @@ standard flow.
 
 ## 5. Draft PR
 
-Open with `gh pr create --draft`. Title: `<ID>: <summary>`. Body must contain:
+Open with `gh pr create --draft`. Title: `<ID>: <summary>`.
 
-```
-## Ticket
-<Linear URL>
+**Body: fill the repository template** — read `.github/PULL_REQUEST_TEMPLATE.md`
+and produce the body with its exact sections (`gh pr create --body` bypasses
+GitHub's auto-template, so you must fill it yourself). Map content like this:
 
-## What & why
-<2-6 lines>
+- **📝 Description** — what changed and why, plus the Linear ticket URL.
+- **📣 User-facing impact** — one plain-language sentence, or "None".
+- **🔗 Related Issue** — the Linear URL (leave `Fixes #` alone unless there is
+  a GitHub issue).
+- **🚀 Type of Change** — mark exactly the ones that apply.
+- **📋 Changes Made** — bullet list of the main changes.
+- **🧪 Testing** — exact commands + steps + expected results, written so a
+  teammate can validate the flow without asking anything. Fill Test
+  Configuration and check the boxes that are true (never check what you did
+  not run).
+- **✅ Checklist / 📄 Additional Notes** — check honestly; put risks and
+  review-focus points in Additional Notes.
 
-## How to test
-<exact commands + steps + expected result — write it so a teammate
- can validate the flow without asking anything>
-
-## Risks
-<what could break, or "low">
-```
+**Release label (merge is blocked without exactly one):** add it on create,
+e.g. `gh pr create --draft --label patch …`. Choose: `patch` = bug fix,
+`minor` = new feature/UI addition, `major` = breaking change,
+`skip-release` = docs/CI/refactor/chore. If unsure, say so in the PR and pick
+the more conservative option.
 
 ## 6. Close the loop
 
