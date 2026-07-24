@@ -4,3 +4,15 @@
 .managedPill {
   color: var(--mantine-color-indigo-9);
 }
+
+.managedPill svg {
+  color: var(--mantine-color-indigo-9);
+}
+
+.managedPill button {
+  color: var(--mantine-color-indigo-9);
+}
+
+.managedOption {
+  color: var(--mantine-color-indigo-9);
+}

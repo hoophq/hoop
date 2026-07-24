@@ -590,10 +590,7 @@ export const useConfigureRoleStore = create((set, get) => ({
       if (Object.keys(stagedSecrets).length > 0 || Object.keys(renames).length > 0) {
         payload.secret = get().buildSecretsPatch()
       }
-      let updated = await connectionsService.patchConnection(connection.name, payload)
-      // The PATCH response doesn't hydrate managed_attributes; carry the
-      // previous value over so the rebuilt state keeps showing them.
-      updated = { ...updated, managed_attributes: connection.managed_attributes }
+      const updated = await connectionsService.patchConnection(connection.name, payload)
       const newDrafts = draftsFromConnection(updated)
       // Re-seed per-field sources from the saved connection (same as
       // loadConnection) so renamed keys don't leave stale entries around.

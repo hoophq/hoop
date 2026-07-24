@@ -65,6 +65,21 @@ func TestProtectionProfileLifecycleSmoke(t *testing.T) {
 		t.Fatalf("org profile = %q, want %q", got, medium)
 	}
 
+	// 1b. Detach via the connection attribute upsert: omitting the managed
+	//     attribute from the list deletes the association (the profile
+	//     attribute is user-controllable), then re-adding restores it.
+	profileAttr := protectionProfileCatalog[medium].AttributeName
+	if err := models.UpsertConnectionAttributes(models.DB, orgID, "conn-a", []string{}); err != nil {
+		t.Fatalf("detach conn-a: %v", err)
+	}
+	assertCount(t, 1, `SELECT COUNT(*) FROM private.connections_attributes WHERE org_id = ? AND attribute_name = ?`,
+		orgID, profileAttr)
+	if err := models.UpsertConnectionAttributes(models.DB, orgID, "conn-a", []string{profileAttr}); err != nil {
+		t.Fatalf("re-attach conn-a: %v", err)
+	}
+	assertCount(t, 2, `SELECT COUNT(*) FROM private.connections_attributes WHERE org_id = ? AND attribute_name = ?`,
+		orgID, profileAttr)
+
 	// 2. Re-apply same profile: idempotent no-op.
 	if _, err := ApplyOrgProtectionProfile(ctx, orgID, &medium, ""); err != nil {
 		t.Fatalf("re-apply medium: %v", err)

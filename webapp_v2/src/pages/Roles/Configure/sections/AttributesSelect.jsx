@@ -4,16 +4,17 @@ import { Award } from 'lucide-react'
 import classes from './AttributesSelect.module.css'
 
 /**
- * Attributes selector for the Details tab. Hoop-managed attributes (the
- * protection-profile attribute) render as read-only indigo award pills
- * inside the field — the API manages the association, so they cannot be
- * added or removed here. User attributes are regular removable pills.
+ * Attributes selector for the Details tab. Every selected attribute is a
+ * removable pill. Options flagged `managed: true` (the protection-profile
+ * attribute) render with the indigo award styling — in the field and in the
+ * dropdown — but behave like any other attribute: removing the pill detaches
+ * the role from the profile on save, and it can be re-added from the
+ * dropdown, where managed entries are listed first.
  */
 export default function AttributesSelect({
   options = [],
   value = [],
   onChange,
-  managedOptions = [],
   placeholder,
 }) {
   const combobox = useCombobox({
@@ -22,8 +23,8 @@ export default function AttributesSelect({
   const [search, setSearch] = useState('')
 
   const selectedSet = useMemo(() => new Set(value), [value])
-  const labelByValue = useMemo(
-    () => new Map(options.map((o) => [o.value, o.label])),
+  const optionByValue = useMemo(
+    () => new Map(options.map((o) => [o.value, o])),
     [options],
   )
 
@@ -35,31 +36,56 @@ export default function AttributesSelect({
 
   const handleValueRemove = (val) => onChange?.(value.filter((v) => v !== val))
 
-  const managedPills = managedOptions.map((o) => (
-    <Pill key={o.value} className={classes.managedPill} bg="indigo.3" c="indigo.9">
-      <Group gap={4} wrap="nowrap" component="span" display="inline-flex">
-        <Award size={12} aria-hidden="true" />
-        {o.label}
-      </Group>
-    </Pill>
-  ))
-
-  const pills = value.map((val) => (
-    <Pill key={val} withRemoveButton onRemove={() => handleValueRemove(val)}>
-      {labelByValue.get(val) ?? val}
-    </Pill>
-  ))
+  const pills = value.map((val) => {
+    const option = optionByValue.get(val)
+    if (option?.managed) {
+      return (
+        <Pill
+          key={val}
+          withRemoveButton
+          onRemove={() => handleValueRemove(val)}
+          className={classes.managedPill}
+          bg="indigo.3"
+          c="indigo.9"
+        >
+          <Group gap={4} wrap="nowrap" component="span" display="inline-flex">
+            <Award size={12} aria-hidden="true" />
+            {option.label}
+          </Group>
+        </Pill>
+      )
+    }
+    return (
+      <Pill key={val} withRemoveButton onRemove={() => handleValueRemove(val)}>
+        {option?.label ?? val}
+      </Pill>
+    )
+  })
 
   const searchTerm = search.trim().toLowerCase()
 
-  const optionNodes = options
+  const visibleOptions = options
     .filter((o) => !selectedSet.has(o.value))
     .filter((o) => o.label.toLowerCase().includes(searchTerm))
-    .map((o) => (
+
+  // Managed entries come first in the menu, with the award styling.
+  const optionNodes = [
+    ...visibleOptions.filter((o) => o.managed),
+    ...visibleOptions.filter((o) => !o.managed),
+  ].map((o) =>
+    o.managed ? (
+      <Combobox.Option value={o.value} key={o.value} className={classes.managedOption}>
+        <Group gap={4} wrap="nowrap">
+          <Award size={12} aria-hidden="true" />
+          {o.label}
+        </Group>
+      </Combobox.Option>
+    ) : (
       <Combobox.Option value={o.value} key={o.value}>
         {o.label}
       </Combobox.Option>
-    ))
+    ),
+  )
 
   const empty = optionNodes.length === 0
 
@@ -72,22 +98,18 @@ export default function AttributesSelect({
           rightSectionPointerEvents="none"
         >
           <Pill.Group>
-            {managedPills}
             {pills}
             <Combobox.EventsTarget>
               <PillsInput.Field
                 value={search}
-                placeholder={
-                  value.length === 0 && managedOptions.length === 0 ? placeholder : ''
-                }
+                placeholder={value.length === 0 ? placeholder : ''}
                 onFocus={() => combobox.openDropdown()}
                 onChange={(event) => {
                   combobox.openDropdown()
                   setSearch(event.currentTarget.value)
                 }}
                 onKeyDown={(event) => {
-                  // Backspace removes the last user pill; managed pills are
-                  // read-only and never removed.
+                  // Backspace removes the last pill, managed or not.
                   if (event.key === 'Backspace' && search.length === 0 && value.length > 0) {
                     event.preventDefault()
                     handleValueRemove(value[value.length - 1])

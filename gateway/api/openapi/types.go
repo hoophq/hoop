@@ -437,11 +437,13 @@ type Connection struct {
 	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
 	// When set, the user cannot choose a custom duration and must request access for this exact window.
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
-	// Attributes associated with this connection
+	// Attributes associated with this connection. Includes Hoop-managed
+	// attributes (e.g. the active protection profile attribute); omitting a
+	// managed name on update detaches the connection from it.
 	Attributes []string `json:"attributes" example:"production,pii"`
 	// Hoop-managed attributes associated with this connection (e.g. the
-	// active protection profile attribute). Read only — managed attributes
-	// cannot be set or removed through this resource.
+	// active protection profile attribute). Computed on reads; manage the
+	// association through the attributes field.
 	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been

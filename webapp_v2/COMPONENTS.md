@@ -509,9 +509,10 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
 > **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
-> Combobox+PillsInput attribute picker with mixed pill types: Hoop-managed
-> protection-profile attributes render as read-only indigo award pills,
-> user attributes as regular removable pills. Deliberately NOT built on
+> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
+> protection-profile attributes render as indigo award pills (removable and
+> re-addable like any other — removing one detaches the role from the
+> profile on save), user attributes as plain pills. Deliberately NOT built on
 > `components/MultiSelect` (Mantine's MultiSelect can't custom-render
 > individual selected pills) nor on `components/PaginatedMultiSelect` (its
 > contract is pagination/server-search specific, and it also only renders

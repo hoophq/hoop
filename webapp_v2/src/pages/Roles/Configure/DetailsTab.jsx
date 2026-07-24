@@ -23,21 +23,18 @@ export default function DetailsTab({ connection }) {
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
   const attributesList = useConfigureRoleStore((s) => s.attributesList)
 
-  // Hoop-managed attributes (protection profiles) flow through the managed
-  // pill instead of the regular options.
-  const attributeOptions = attributesList
-    .filter((a) => !a.managed_by)
-    .map((a) => ({
-      value: a.name,
-      label: labelForAttribute(a.name),
-    }))
-
-  // Hoop-managed attributes the connection carries render as read-only
-  // award pills — the association is managed by the backend.
-  const managedOptions = (connection.managed_attributes || []).map((name) => ({
-    value: name,
-    label: labelForManagedAttribute(name),
+  // Hoop-managed attributes (the protection-profile attribute) are regular
+  // members of the connection's attribute list — removable and re-addable
+  // like any other — but carry the award styling and the profile label.
+  const attributeOptions = attributesList.map((a) => ({
+    value: a.name,
+    label: a.managed_by ? labelForManagedAttribute(a.name) : labelForAttribute(a.name),
+    managed: !!a.managed_by,
   }))
+
+  const hasManagedSelected = attributeOptions.some(
+    (o) => o.managed && drafts.attributes.includes(o.value),
+  )
 
   return (
     <Stack gap="xl" maw={720}>
@@ -60,12 +57,11 @@ export default function DetailsTab({ connection }) {
           options={attributeOptions}
           value={drafts.attributes}
           onChange={(value) => setDraft({ attributes: value })}
-          managedOptions={managedOptions}
         />
-        {managedOptions.length > 0 && (
+        {hasManagedSelected && (
           <Text size="xs" c="dimmed">
-            The award pill is your protection profile attribute, managed by
-            Hoop.
+            The award pill is your protection profile attribute. Removing it
+            opts this role out of the profile's rules.
           </Text>
         )}
       </Stack>

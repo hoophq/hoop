@@ -11722,7 +11722,7 @@ const docTemplate = `{
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "attributes": {
-                    "description": "Attributes associated with this connection",
+                    "description": "Attributes associated with this connection. Includes Hoop-managed\nattributes (e.g. the active protection profile attribute); omitting a\nmanaged name on update detaches the connection from it.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -11796,7 +11796,7 @@ const docTemplate = `{
                     "example": 1800
                 },
                 "managed_attributes": {
-                    "description": "Hoop-managed attributes associated with this connection (e.g. the\nactive protection profile attribute). Read only — managed attributes\ncannot be set or removed through this resource.",
+                    "description": "Hoop-managed attributes associated with this connection (e.g. the\nactive protection profile attribute). Computed on reads; manage the\nassociation through the attributes field.",
                     "type": "array",
                     "items": {
                         "type": "string"
