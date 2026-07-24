@@ -7,6 +7,13 @@ set -eo pipefail
 
 # legacy mongo cli
 MONGO_BIN=/usr/local/bin/mongo
+# The clean image train ships without the legacy SSPL mongo 5.0 shell; fall back
+# to mongosh (Apache-2.0) when it is absent so this wrapper works on both trains.
+# Resolve via command -v rather than hardcoding a path, so it survives packaging
+# changes to where mongosh lands.
+if [ ! -x "$MONGO_BIN" ]; then
+    MONGO_BIN="$(command -v mongosh || true)"
+fi
 if [ ! -f "$HOME/.mongoshrc.js" ]; then
     # https://www.mongodb.com/docs/mongodb-shell/reference/customize-prompt/#std-label-customize-the-mongosh-prompt
     echo 'prompt = function() { return ""; }' > $HOME/.mongoshrc.js
@@ -15,7 +22,14 @@ fi
 # it's inject by the agent if it contains the comment hoop.dev/runtime=mongosh
 # the user is indicating that they want to use the mongosh runtime
 if [ "$HOOP_EXEC_MONGOSH_RUNTIME" == "1" ]; then
-    MONGO_BIN=/usr/bin/mongosh
+    MONGO_BIN="$(command -v mongosh || true)"
+fi
+
+# Fail fast with a clear message rather than a confusing "command not found"
+# if no usable client is present in this image.
+if [ -z "$MONGO_BIN" ] || [ ! -x "$MONGO_BIN" ]; then
+    echo "mongo: no mongo/mongosh client found in this image" >&2
+    exit 1
 fi
 
 $MONGO_BIN "$@"

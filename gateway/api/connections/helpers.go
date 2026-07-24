@@ -687,10 +687,20 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 	case pb.ConnectionTypeCloudWatch, pb.ConnectionTypeDynamoDB:
 		return []string{"bash"}
 	case pb.ConnectionTypeMongoDB:
-		// Force the execution using the legacy mongo cli
-		// It avoids using any wrapper scripts (.e.g: /opt/hoop/bin/mongo) to perform system queries
+		// System/introspection queries deliberately bypass the
+		// /opt/hoop/bin/mongo wrapper (which requires a session context).
+		// Resolve the shell at runtime on the agent so this works on both image
+		// trains: the legacy SSPL mongo 5.0 shell when present (legacy train),
+		// otherwise mongosh (Apache-2.0) on the clean train — mongosh is also
+		// MongoDB's supported shell going forward.
+		// mongosh reads a piped script as a REPL and echoes "test>" prompts to
+		// stdout, which would corrupt the JSON the caller parses; --file
+		// /dev/stdin runs the same piped script in file mode, producing output
+		// byte-identical to the legacy shell (verified against a live server).
 		if len(connectionCmd) > 1 {
-			cmd = append(cmd, "/usr/local/bin/mongo")
+			cmd = append(cmd, "/bin/sh", "-c",
+				`if [ -x /usr/local/bin/mongo ]; then exec /usr/local/bin/mongo "$@"; else exec mongosh "$@" --file /dev/stdin; fi`,
+				"mongo")
 			cmd = append(cmd, connectionCmd[1:]...)
 		}
 	}

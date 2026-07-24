@@ -1,0 +1,8 @@
+# hoopagent-ng: bright-line clean image line (DEP-66).
+#
+# This chart only overrides the default agent image repository of hoopagent-chart
+# to the clean-only hoophq/hoopdev-ng repo. Every other value is inherited from
+# hoopagent-chart and can be set here under the "hoopagent-chart:" key.
+hoopagent-chart:
+  image:
+    repository: hoophq/hoopdev-ng
