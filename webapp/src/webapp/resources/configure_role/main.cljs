@@ -197,7 +197,7 @@
             [:div
              [page-wrapper/main
               {:children
-               [:> Box {:class "bg-gray-1 min-h-screen px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
+               [:> Box {:class "bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
                 [header conn-data @test-connection-state]
 
                 [:> Tabs.Root {:value @active-tab
