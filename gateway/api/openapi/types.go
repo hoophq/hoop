@@ -3288,7 +3288,7 @@ type Attributes struct {
 	// Managed By is a read only field that indicates who manages this
 	// attribute. When set (e.g. "hoop" for protection profiles), the
 	// attribute cannot be modified or deleted directly.
-	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute
