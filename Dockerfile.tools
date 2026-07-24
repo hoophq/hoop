@@ -6,6 +6,12 @@ ARG AWS_CLI_VERSION=2.28.6
 ARG GCLOUD_VERSION=533.0.0-0
 ARG GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0
 ARG NODE_VERSION=22.18.0
+# The legacy MongoDB 5.0 shell (/usr/local/bin/mongo) is SSPL-licensed. It is
+# kept on the default "legacy" image train for backward compatibility, and
+# excluded from the "clean" train (INCLUDE_LEGACY_MONGO=false), which ships only
+# mongosh (Apache-2.0). This default will flip to false once the legacy train is
+# retired. Declared and license-gated in licenses/manual-binaries.toml.
+ARG INCLUDE_LEGACY_MONGO=true
 
 # Common
 RUN mkdir -p /app && \
@@ -100,7 +106,8 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$ARCH.zip" -o awscli-exe-linux.zip && \
     unzip -q awscli-exe-linux.zip && \
     aws/install && \
-    aws --version
+    aws --version && \
+    rm -rf awscli-exe-linux.zip aws
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
@@ -109,7 +116,8 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
   && curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/$ARCH/session-manager-plugin.deb" -o session-manager-plugin.deb && \
-    dpkg -i session-manager-plugin.deb
+    dpkg -i session-manager-plugin.deb && \
+    rm -f session-manager-plugin.deb
 
 RUN LIBSSL_1_1_REPO= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
@@ -124,19 +132,25 @@ RUN LIBSSL_1_1_REPO= && dpkgArch="$(dpkg --print-architecture)" \
     curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
     curl -sL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
 
-# legacy mongo client
-RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
-  && case "${dpkgArch##*-}" in \
-  amd64) ARCH='x86_64';; \
-  arm64) ARCH='aarch64';; \
-  *) echo "unsupported architecture"; exit 1 ;; \
-  esac \
-  && curl -fsSLO --compressed https://fastdl.mongodb.org/linux/mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz && \
-  apt update -y && apt install libssl1.1 -y && \
-    tar -xzf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz && \
-    mv mongodb-linux-$ARCH-ubuntu2004-5.0.31/bin/mongo /usr/local/bin/mongo && \
-    rm mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz && \
-    mongo --version
+# legacy mongo client (MongoDB 5.0 shell, SSPL). Included only on the legacy
+# train; the clean train ships mongosh (Apache-2.0) instead. libssl1.1 is a
+# dependency of this shell alone, so it is installed inside the same guard.
+RUN if [ "$INCLUDE_LEGACY_MONGO" = "true" ]; then \
+      ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+      && case "${dpkgArch##*-}" in \
+      amd64) ARCH='x86_64';; \
+      arm64) ARCH='aarch64';; \
+      *) echo "unsupported architecture"; exit 1 ;; \
+      esac \
+      && curl -fsSLO --compressed https://fastdl.mongodb.org/linux/mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz \
+      && apt update -y && apt install libssl1.1 -y \
+      && tar -xzf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz \
+      && mv mongodb-linux-$ARCH-ubuntu2004-5.0.31/bin/mongo /usr/local/bin/mongo \
+      && rm -rf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz mongodb-linux-$ARCH-ubuntu2004-5.0.31 \
+      && mongo --version ; \
+    else \
+      echo "INCLUDE_LEGACY_MONGO=false: skipping legacy SSPL mongo 5.0 shell (clean train)"; \
+    fi
 
 RUN apt update -y && apt install -y \
     mongodb-mongosh=2.5.6 \
