@@ -14,6 +14,7 @@ var (
 	licenseSignAllowedHostsFlag []string
 	licenseSignDescFlag         string
 	licenseSignExpireAtFlag     string
+	licenseSignFeaturesFlag     []string
 )
 
 const (
@@ -27,6 +28,7 @@ func init() {
 	licenseSignCmd.Flags().StringSliceVar(&licenseSignAllowedHostsFlag, "allowed-hosts", nil, "The allowed hosts allowed to use this license. The value * allows all hosts")
 	licenseSignCmd.Flags().StringVar(&licenseSignDescFlag, "description", "", "A description why this license was issued")
 	licenseSignCmd.Flags().StringVar(&licenseSignExpireAtFlag, "expire-at", "8640h", "The license expiration time")
+	licenseSignCmd.Flags().StringSliceVar(&licenseSignFeaturesFlag, "features", nil, "The features enabled by this license. Empty enables all features")
 
 	licenseCmd.AddCommand(licenseSignCmd)
 	licenseCmd.AddCommand(licenseInstallCmd)
@@ -58,6 +60,7 @@ var licenseSignCmd = &cobra.Command{
 			"allowed_hosts": licenseSignAllowedHostsFlag,
 			"description":   licenseSignDescFlag,
 			"expire_at":     licenseSignExpireAtFlag,
+			"features":      licenseSignFeaturesFlag,
 		}
 		resp, err := httpBodyRequest(apir, "POST", req)
 		if err != nil {

@@ -1193,6 +1193,8 @@ type LicensePayload struct {
 	AllowedHosts []string `json:"allowed_hosts" example:"johnwick.org,homolog.jhonwick.org,*.system.johnwick.org"`
 	// The description containing information about the license
 	Description string `json:"description" example:"John Wick's Bad Organization"`
+	// Features enabled by this license. Null or empty means all features are enabled
+	Features []string `json:"features,omitempty" example:"access-control,provisioning-hub"`
 }
 
 type License struct {
@@ -1282,6 +1284,8 @@ type ServerLicenseInfo struct {
 	VerifyError string `json:"verify_error" example:"unable to verify license"`
 	// The verified host (API_URL env)
 	VerifiedHost string `json:"verified_host" example:"homolog.johnwick.org"`
+	// Features enabled by the license. Null means all features are enabled
+	Features []string `json:"features" example:"access-control,provisioning-hub"`
 }
 
 type PublicServerInfo struct {

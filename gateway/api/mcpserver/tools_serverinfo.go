@@ -83,6 +83,12 @@ func serverInfoGetHandler(ctx context.Context, _ *mcp.CallToolRequest, _ serverI
 			licenseInfo["issued_at"] = l.Payload.IssuedAt
 			licenseInfo["expire_at"] = l.Payload.ExpireAt
 			licenseInfo["allowed_hosts"] = l.Payload.AllowedHosts
+			// null means all features are enabled
+			if len(l.Payload.Features) > 0 {
+				licenseInfo["features"] = l.Payload.Features
+			} else {
+				licenseInfo["features"] = nil
+			}
 		}
 	} else {
 		// Default OSS license
@@ -90,6 +96,7 @@ func serverInfoGetHandler(ctx context.Context, _ *mcp.CallToolRequest, _ serverI
 		licenseInfo["issued_at"] = time.Now().UTC().Unix()
 		licenseInfo["expire_at"] = time.Now().UTC().AddDate(10, 0, 0).Unix()
 		licenseInfo["allowed_hosts"] = []string{"*"}
+		licenseInfo["features"] = nil
 	}
 
 	result["license_info"] = licenseInfo
