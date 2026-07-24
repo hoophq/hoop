@@ -100,7 +100,12 @@ func (s *MSSQLServer) CloseTCPConnection(connectionID string) {
 }
 
 func (s *MSSQLServer) Close() error { return s.listener.Close() }
-func (s *MSSQLServer) Host() Host   { return getListenAddr(s.listenAddr) }
+func (s *MSSQLServer) Host() Host {
+	if s.listener != nil {
+		return getListenAddr(s.listener.Addr().String())
+	}
+	return getListenAddr(s.listenAddr)
+}
 
 func (s *MSSQLServer) getConnection(connectionID string) (io.WriteCloser, error) {
 	connWrapperObj := s.connectionStore.Get(connectionID)
