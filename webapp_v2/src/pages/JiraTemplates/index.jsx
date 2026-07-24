@@ -4,11 +4,13 @@ import { Group, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
 import Tabs from '@/components/Tabs'
 import PageLoader from '@/components/PageLoader'
+import FullBleed from '@/layout/FullBleed'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
 import { useJiraTemplatesStore } from './store'
 import TemplatesTab from './TemplatesTab'
 import ConfigurationTab from './ConfigurationTab'
+import JiraPromotion from './sections/JiraPromotion'
 
 export default function JiraTemplates() {
   const navigate = useNavigate()
@@ -50,6 +52,17 @@ export default function JiraTemplates() {
     return <Text c="red">Failed to load Jira templates.</Text>
   }
 
+  // Promotion gate: like other features, the full-page promotion replaces the
+  // tabbed page while the org has no Jira integration. Its primary action (and
+  // the sidebar deep-link) opens the page on the Configuration tab.
+  if (!integration && tab !== 'configuration') {
+    return (
+      <FullBleed>
+        <JiraPromotion onConfigure={() => setTab('configuration')} />
+      </FullBleed>
+    )
+  }
+
   const atFreeLimit = isFreeLicense && list.length >= 1
   const showCreate = Boolean(integration) && list.length > 0
 
@@ -79,7 +92,7 @@ export default function JiraTemplates() {
         </Tabs.List>
 
         <Tabs.Panel value="templates" pt="md">
-          <TemplatesTab onGoConfiguration={() => setTab('configuration')} />
+          <TemplatesTab />
         </Tabs.Panel>
         <Tabs.Panel value="configuration" pt="md">
           <ConfigurationTab />

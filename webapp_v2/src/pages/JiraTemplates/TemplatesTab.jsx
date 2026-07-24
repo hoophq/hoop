@@ -10,7 +10,6 @@ import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import { useUserStore } from '@/stores/useUserStore'
 import { useJiraTemplatesStore } from './store'
-import JiraPromotion from './sections/JiraPromotion'
 import TemplateListItem from './sections/TemplateListItem'
 
 const FREE_LICENSE_INFO_MESSAGE =
@@ -18,12 +17,11 @@ const FREE_LICENSE_INFO_MESSAGE =
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Jira Templates free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
-export default function TemplatesTab({ onGoConfiguration }) {
+export default function TemplatesTab() {
   const navigate = useNavigate()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
   const list = useJiraTemplatesStore((s) => s.list)
-  const integration = useJiraTemplatesStore((s) => s.integration)
   const submitting = useJiraTemplatesStore((s) => s.submitting)
   const deleteTemplate = useJiraTemplatesStore((s) => s.deleteTemplate)
 
@@ -48,10 +46,6 @@ export default function TemplatesTab({ onGoConfiguration }) {
         text: error?.response?.data?.message || 'Failed to delete Jira template.',
       })
     }
-  }
-
-  if (!integration) {
-    return <JiraPromotion onConfigure={onGoConfiguration} />
   }
 
   if (list.length === 0) {
