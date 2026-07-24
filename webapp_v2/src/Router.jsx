@@ -34,6 +34,8 @@ import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
+import JiraTemplates from '@/pages/JiraTemplates'
+import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 
 /**
  * Routing strategy:
@@ -418,6 +420,44 @@ function Router() {
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Jira Templates (includes the Jira integration Configuration tab) */}
+      <Route
+        path="/jira-templates"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplates />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/edit/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
