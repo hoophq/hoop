@@ -560,7 +560,12 @@
        :name (str "role-attributes-" role-index)
        :label "Attributes"
        :placeholder "Select or type to create"
-       :options (mapv #(hash-map :value (:name %) :label (:name %)) attributes-data)
+       ;; Managed attributes come through :managed-options with their own
+       ;; styling — drop them from the regular option list to avoid duplicates.
+       :options (into []
+                      (comp (remove :managed_by)
+                            (map #(hash-map :value (:name %) :label (:name %))))
+                      attributes-data)
        :default-value (mapv #(hash-map :value % :label %) selected)
        :managed-options (when managed-pill
                           [{:value (:attribute-name managed-pill)

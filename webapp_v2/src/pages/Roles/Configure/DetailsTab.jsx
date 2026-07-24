@@ -1,10 +1,8 @@
 import { Stack, Title, Text, Group } from '@mantine/core'
-import { Award } from 'lucide-react'
 import Badge from '@/components/Badge'
 import TextInput from '@/components/TextInput'
-import MultiSelect from '@/components/MultiSelect'
-import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import AttributesSelect from '@/pages/Roles/Configure/sections/AttributesSelect'
 import ConnectionTagsEditor from '@/pages/Roles/Configure/sections/ConnectionTagsEditor'
 
 // Display labels for attribute names strip the `hoop.dev/<category>.`
@@ -24,10 +22,14 @@ export default function DetailsTab({ connection }) {
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
   const attributesList = useConfigureRoleStore((s) => s.attributesList)
 
-  const attributeOptions = attributesList.map((a) => ({
-    value: a.name,
-    label: labelForAttribute(a.name),
-  }))
+  // Hoop-managed attributes (protection profiles) are never selectable —
+  // they render as read-only pills inside the selector instead.
+  const attributeOptions = attributesList
+    .filter((a) => !a.managed_by)
+    .map((a) => ({
+      value: a.name,
+      label: labelForAttribute(a.name),
+    }))
 
   return (
     <Stack gap="xl" maw={720}>
@@ -45,33 +47,19 @@ export default function DetailsTab({ connection }) {
             evaluated by rules you configure.
           </Text>
         </Stack>
-        {connection.managed_attributes?.length > 0 && (
-          <Group gap="xs">
-            {connection.managed_attributes.map((name) => (
-              <Badge
-                key={name}
-                variant="light"
-                color="indigo"
-                radius="xl"
-                tt="none"
-                leftSection={<Award size={12} aria-hidden="true" />}
-              >
-                {labelForManagedAttribute(name)}
-              </Badge>
-            ))}
-            <Text size="xs" c="dimmed">
-              Applied by your protection profile — managed by Hoop.
-            </Text>
-          </Group>
-        )}
-        <MultiSelect
-          placeholder="Select or type to create"
-          searchable
-          nothingFoundMessage="No attributes created yet. Go to Settings → Attributes to add one."
-          data={attributeOptions}
+        <AttributesSelect
+          placeholder="Select attributes"
+          options={attributeOptions}
           value={drafts.attributes}
           onChange={(value) => setDraft({ attributes: value })}
+          managedAttributes={connection.managed_attributes ?? []}
         />
+        {connection.managed_attributes?.length > 0 && (
+          <Text size="xs" c="dimmed">
+            Attributes with the award icon are applied by your protection
+            profile and managed by Hoop.
+          </Text>
+        )}
       </Stack>
 
       <Stack gap="md">

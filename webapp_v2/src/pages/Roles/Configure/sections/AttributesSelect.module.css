@@ -1,0 +1,8 @@
+.managedPill {
+  background: var(--mantine-color-indigo-0);
+  color: var(--mantine-color-indigo-8);
+}
+
+.managedPill svg {
+  color: var(--mantine-color-indigo-8);
+}

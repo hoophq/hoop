@@ -11621,6 +11621,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this\nattribute. When set (e.g. \"hoop\" for protection profiles), the\nattribute cannot be modified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The name of the attribute",
                     "type": "string",

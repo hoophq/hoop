@@ -348,6 +348,7 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		OrgID:                   a.OrgID.String(),
 		Name:                    a.Name,
 		Description:             a.Description,
+		ManagedBy:               a.ManagedBy,
 		ConnectionNames:         connections,
 		AccessRequestRuleNames:  accessRequest,
 		GuardrailRuleNames:      guardrail,

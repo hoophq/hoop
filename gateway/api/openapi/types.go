@@ -3293,6 +3293,10 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Managed By is a read only field that indicates who manages this
+	// attribute. When set (e.g. "hoop" for protection profiles), the
+	// attribute cannot be modified or deleted directly.
+	ManagedBy *string `json:"managed_by,omitempty" readonly:"true" example:"hoop"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute
