@@ -133,14 +133,10 @@
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
                            ^{:key (:name plugin)}
                            [:li
-                            [:a {:href (if (:plugin? plugin)
-                                         (str "/plugins/manage/" (:name plugin))
-                                         (:uri plugin))
+                            [:a {:href (:uri plugin)
                                  :on-click (fn [e]
                                              (.preventDefault e)
-                                             (if (:plugin? plugin)
-                                               (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
-                                               (rf/dispatch [:navigate (:navigate plugin)]))
+                                             (rf/dispatch [:navigate (:navigate plugin)])
                                              (when is-mobile?
                                                (rf/dispatch [:sidebar-mobile->close])))
                                  :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "

@@ -77,6 +77,8 @@ Gateway backend (port 8009)
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |
+| `/integrations/slack` | React | Done |
+| `/integrations/webhooks` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -109,7 +111,7 @@ Gateway backend (port 8009)
 /guardrails/*
 /jira-templates/*
 /settings/jira  (belongs to Integrations — route will be renamed when migrated)
-/plugins/*
+/plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
 /client (SQL editor)
@@ -207,6 +209,7 @@ Steps to migrate a page:
 - Vite proxy setup for CLJS and backend
 - Onboarding flow 
 - Auth pages
+- Slack & Webhooks integration pages (`/integrations/slack`, `/integrations/webhooks`) — legacy `/plugins/manage/*` route removed from CLJS
 
 ### In Progress / Known Gaps 🔄
 - Modal/Snackbar/Dialog system not yet in React (CLJS still owns this)

@@ -57,10 +57,6 @@
                              "w-6 h-6")]
               [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
                      :class css-size}]))
-   "webhooks" (fn [& [{:keys [size] :or {size 24}}]]
-                [:> PackageSearch {:size size}])
-   "slack" (fn [& [{:keys [size] :or {size 24}}]]
-             [:> PackageSearch {:size size}])
    "infrastructure" (fn [& [{:keys [size] :or {size 24}}]]
                       [:> LayoutDashboard {:size size}])
    "license" (fn [& [{:keys [size] :or {size 24}}]]
@@ -199,26 +195,14 @@
 (def integrations-management
   [{:name "authentication"
     :label "Authentication"
-    :plugin? false
     :uri (routes/url-for :integrations-authentication)
     :navigate :integrations-authentication
     :admin-only? true
     :selfhosted-only? true}
    {:name "jira"
     :label "Jira"
-    :plugin? false
     :uri (routes/url-for :settings-jira)
     :navigate :settings-jira
-    :admin-only? true
-    :selfhosted-only? false}
-   {:name "webhooks"
-    :label "Webhooks"
-    :plugin? true
-    :admin-only? true
-    :selfhosted-only? false}
-   {:name "slack"
-    :label "Slack"
-    :plugin? true
     :admin-only? true
     :selfhosted-only? false}])
 

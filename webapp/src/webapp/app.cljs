@@ -75,7 +75,6 @@
    [webapp.events.reviews-plugin]
    [webapp.events.routes]
    [webapp.events.segment]
-   [webapp.events.slack-plugin]
    [webapp.events.tracking]
    [webapp.events.users]
    [webapp.shared-ui.cmdk.events.command-palette]
@@ -129,7 +128,6 @@
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
-   [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.routes :as routes]
    [webapp.settings.api-keys.events]
    [webapp.settings.api-keys.main :as api-keys-main]
@@ -510,16 +508,6 @@
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "h-full"}
                              [runbooks-runner/main]]])
-
-(defmethod routes/panels :manage-plugin-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        plugin-name (:plugin-name (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:plugins->get-plugin-by-name plugin-name])
-    [layout :application-hoop
-     [routes/wrap-admin-only
-      [manage-plugin/main plugin-name]]]))
 
 (defmethod routes/panels :settings-jira-panel []
   (rf/dispatch [:destroy-page-loader])

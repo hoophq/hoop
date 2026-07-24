@@ -28,6 +28,8 @@ import RulepackDetail from '@/pages/Rulepacks/Detail'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
+import IntegrationsSlack from '@/pages/Integrations/Slack'
+import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 
 /**
  * Routing strategy:
@@ -311,6 +313,32 @@ function Router() {
             <Layout>
               <PageLayout>
                 <EventRoutingDetail />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Integrations */}
+      <Route
+        path="/integrations/slack"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsSlack />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/integrations/webhooks"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsWebhooks />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
