@@ -106,7 +106,8 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$ARCH.zip" -o awscli-exe-linux.zip && \
     unzip -q awscli-exe-linux.zip && \
     aws/install && \
-    aws --version
+    aws --version && \
+    rm -rf awscli-exe-linux.zip aws
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
@@ -115,7 +116,8 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
   && curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/$ARCH/session-manager-plugin.deb" -o session-manager-plugin.deb && \
-    dpkg -i session-manager-plugin.deb
+    dpkg -i session-manager-plugin.deb && \
+    rm -f session-manager-plugin.deb
 
 RUN LIBSSL_1_1_REPO= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
@@ -144,7 +146,7 @@ RUN if [ "$INCLUDE_LEGACY_MONGO" = "true" ]; then \
       && apt update -y && apt install libssl1.1 -y \
       && tar -xzf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz \
       && mv mongodb-linux-$ARCH-ubuntu2004-5.0.31/bin/mongo /usr/local/bin/mongo \
-      && rm mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz \
+      && rm -rf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz mongodb-linux-$ARCH-ubuntu2004-5.0.31 \
       && mongo --version ; \
     else \
       echo "INCLUDE_LEGACY_MONGO=false: skipping legacy SSPL mongo 5.0 shell (clean train)"; \

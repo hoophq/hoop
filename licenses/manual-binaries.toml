@@ -7,19 +7,25 @@
 # enforced in CI by scripts/ci/check-manual-binaries.py.
 #
 # Rules enforced against a built image, for a given train:
-#   1. Every path under `scan_dirs` that dpkg does NOT own must match an entry
-#      below (by exact `path`, or by a `path` prefix ending in "/"). An
-#      undeclared hand-installed binary fails CI — you cannot add a curl/tarball
-#      install without declaring its license here.
+#   1. Every file/symlink under `scan_dirs` that is not in the dpkg package file
+#      lists must match an entry below (by exact `path`, or by a `path` prefix
+#      ending in "/"). An undeclared hand-installed artifact fails CI — you
+#      cannot add a curl/tarball install without declaring its license here.
+#      (Would-be violations are re-confirmed with `dpkg -S` before failing, so a
+#      dpkg-owned file is never misreported.)
 #   2. An entry whose `license` matches the forbidden pattern (AGPL/SSPL family)
 #      may only be present on the trains listed in its `trains` array. It is a
 #      failure for such a binary to appear on a train not listed.
 #   => The "clean" train therefore must contain no AGPL/SSPL-licensed binary.
 #
+# `scan_dirs` must cover every directory where Dockerfile.tools drops
+# hand-installed (non-dpkg) artifacts; if you add a curl/tar/zip install to a new
+# location, add it here (and a covering entry) or the gate cannot see it.
+#
 # Licenses use SPDX identifiers where one exists; proprietary licenses use a
 # LicenseRef- prefix. `trains` values are "legacy" and "clean".
 
-scan_dirs = ["/usr/local/bin", "/opt/oracle/instantclient"]
+scan_dirs = ["/usr/local/bin", "/usr/local/aws-cli", "/opt/oracle/instantclient"]
 
 # --- MongoDB legacy shell: the SSPL artifact this whole effort is about -------
 [[binaries]]
@@ -77,6 +83,14 @@ trains = ["legacy", "clean"]
 [[binaries]]
 path = "/usr/local/bin/aws_completer"
 name = "AWS CLI v2 completer (symlink)"
+license = "Apache-2.0"
+trains = ["legacy", "clean"]
+
+# The /usr/local/bin/aws* entries are symlinks into this install tree (the
+# `aws/install` target). Directory prefix covers the real binary + bundled libs.
+[[binaries]]
+path = "/usr/local/aws-cli/"
+name = "AWS CLI v2 (install tree)"
 license = "Apache-2.0"
 trains = ["legacy", "clean"]
 

@@ -10,13 +10,16 @@ the SSPL shell shipped while the AGPL/SSPL gate reported "clean".
 
 This script closes it. For a built image and a named train it:
 
-  1. enumerates every path under the manifest's `scan_dirs` that dpkg does NOT
-     own (i.e. the hand-installed artifacts Trivy can't see);
+  1. finds every file/symlink under the manifest's `scan_dirs` that is absent
+     from the dpkg package file lists (a fast bulk pre-filter);
   2. requires each to match an entry in licenses/manual-binaries.toml — an
-     undeclared binary fails, so no curl/tarball install can be added without
+     undeclared artifact fails, so no curl/tarball install can be added without
      declaring its license;
   3. fails if a forbidden-licensed (AGPL/SSPL) entry is present on a train not
-     listed in its `trains` — so the clean train must carry no AGPL/SSPL binary.
+     listed in its `trains` — so the clean train must carry no AGPL/SSPL binary;
+  4. before failing, confirms each would-be violation with `dpkg -S` (the
+     authoritative ownership check), so a file-list pre-filter miss — e.g. a
+     dpkg diversion — can never spuriously block CI.
 
 Usage:
     check-manual-binaries.py --image IMAGE --train {legacy|clean} \
@@ -45,15 +48,15 @@ def load_manifest(path: str) -> tuple[list[str], list[dict]]:
     scan_dirs = data.get("scan_dirs")
     if not isinstance(scan_dirs, list) or not scan_dirs:
         raise ManifestError(f"{path}: 'scan_dirs' must be a non-empty array")
-    # These are embedded into a shell script (defended by shlex.quote); require
-    # absolute paths with no newlines/NUL so the manifest can never smuggle in
-    # shell control characters even if the trust model changes later.
+    # scan_dirs are embedded into a shell `set --` list; require absolute paths
+    # with no whitespace or shell metacharacters so word-splitting/globbing can
+    # never reinterpret them, even if the trust model changes later.
     for d in scan_dirs:
         if not isinstance(d, str) or not d.startswith("/") or any(
-                c in d for c in "\n\r\0"):
+                c in d for c in "\n\r\0\t *?[]{}"):
             raise ManifestError(
-                f"{path}: scan_dir {d!r} must be an absolute path "
-                f"without newlines")
+                f"{path}: scan_dir {d!r} must be an absolute path without "
+                f"whitespace or shell metacharacters")
     entries = data.get("binaries", [])
     for entry in entries:
         for field in ("path", "license", "trains"):
@@ -80,23 +83,28 @@ def match_entry(path: str, entries: list[dict]) -> dict | None:
     return best
 
 
-def enumerate_image(image: str, scan_dirs: list[str]) -> list[tuple[str, bool]]:
-    """Return (path, dpkg_managed) for every entry under scan_dirs in IMAGE."""
+def enumerate_candidates(image: str, scan_dirs: list[str]) -> list[str]:
+    """Files/symlinks under scan_dirs absent from the dpkg package file lists.
+
+    This is a fast bulk pre-filter (diff against the union of
+    /var/lib/dpkg/info/*.list), NOT full dpkg ownership resolution — callers
+    confirm any resulting policy violation with `dpkg -S` (see `dpkg_owned`) so a
+    file-list miss (e.g. a dpkg diversion) cannot cause a false CI failure.
+    Directories and __pycache__ are excluded.
+    """
     dirs = " ".join(shlex.quote(d) for d in scan_dirs)
-    # Recurse (no -maxdepth) so nested artifacts are covered, and restrict to
-    # regular files and symlinks so directories themselves are not flagged.
     script = f"""
 set -eu
-for d in {dirs}; do
+set -- {dirs}
+managed="$(mktemp)"; found="$(mktemp)"
+find /var/lib/dpkg/info -name '*.list' -exec cat {{}} + 2>/dev/null \\
+  | LC_ALL=C sort -u > "$managed"
+for d in "$@"; do
   [ -d "$d" ] || continue
-  find "$d" -mindepth 1 -name __pycache__ -prune -o \\( -type f -o -type l \\) -print | while IFS= read -r p; do
-    if dpkg -S "$p" >/dev/null 2>&1; then
-      printf 'MANAGED\\t%s\\n' "$p"
-    else
-      printf 'UNMANAGED\\t%s\\n' "$p"
-    fi
-  done
-done
+  find "$d" -mindepth 1 -name __pycache__ -prune -o \\( -type f -o -type l \\) -print
+done | LC_ALL=C sort -u > "$found"
+LC_ALL=C comm -23 "$found" "$managed"
+rm -f "$managed" "$found"
 """
     proc = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", script],
@@ -105,32 +113,52 @@ done
     if proc.returncode != 0:
         raise RuntimeError(
             f"failed to inspect image {image!r}:\n{proc.stderr.strip()}")
-    results: list[tuple[str, bool]] = []
-    for line in proc.stdout.splitlines():
-        if not line.strip():
-            continue
-        state, _, path = line.partition("\t")
-        results.append((path, state == "MANAGED"))
-    return results
+    return [line for line in proc.stdout.splitlines() if line.strip()]
 
 
-def evaluate(paths: list[tuple[str, bool]], entries: list[dict],
-             train: str) -> list[str]:
-    """Pure policy check. Returns a list of human-readable violations."""
-    violations: list[str] = []
-    for path, managed in sorted(paths):
-        if managed:
-            continue  # dpkg-owned: covered by Trivy's package license scan
+def dpkg_owned(image: str, paths: list[str]) -> set[str]:
+    """Return the subset of `paths` that dpkg authoritatively reports as owned.
+
+    Runs inside the image. Only called on would-be violations (normally none),
+    so per-path `dpkg -S` is cheap here. Paths are passed on argv, never
+    interpolated into the shell program.
+    """
+    if not paths:
+        return set()
+    script = ('for p in "$@"; do '
+              'if dpkg -S "$p" >/dev/null 2>&1; then printf "%s\\n" "$p"; fi; '
+              'done')
+    proc = subprocess.run(
+        ["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", script,
+         "sh", *paths],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"failed to confirm dpkg ownership in {image!r}:\n"
+            f"{proc.stderr.strip()}")
+    return {line for line in proc.stdout.splitlines() if line.strip()}
+
+
+def evaluate(candidate_paths: list[str], entries: list[dict],
+             train: str) -> list[tuple[str, str]]:
+    """Pure policy check. Returns (path, message) for each would-be violation.
+
+    Every candidate must be declared in the manifest, and a forbidden-licensed
+    entry may only appear on a train that allows it.
+    """
+    violations: list[tuple[str, str]] = []
+    for path in sorted(candidate_paths):
         entry = match_entry(path, entries)
         if entry is None:
-            violations.append(
+            violations.append((path, (
                 f"undeclared hand-installed artifact: {path} — add it to the "
-                f"manifest with its license (or a covering path prefix)")
+                f"manifest with its license (or a covering path prefix)")))
             continue
         if FORBIDDEN.search(entry["license"]) and train not in entry["trains"]:
-            violations.append(
+            violations.append((path, (
                 f"{path}: {entry['license']} is forbidden on train "
-                f"'{train}' (allowed only on: {', '.join(entry['trains'])})")
+                f"'{train}' (allowed only on: {', '.join(entry['trains'])})")))
     return violations
 
 
@@ -144,16 +172,24 @@ def main() -> int:
     args = parser.parse_args()
 
     scan_dirs, entries = load_manifest(args.manifest)
-    paths = enumerate_image(args.image, scan_dirs)
-    violations = evaluate(paths, entries, args.train)
+    candidates = enumerate_candidates(args.image, scan_dirs)
+    violations = evaluate(candidates, entries, args.train)
 
-    unmanaged = sum(1 for _, managed in paths if not managed)
-    print(f"scanned {len(paths)} paths under {scan_dirs} "
-          f"({unmanaged} hand-installed) on train '{args.train}'")
-    if violations:
-        for v in violations:
-            print(f"FORBIDDEN {args.image}: {v}", file=sys.stderr)
-        print(f"manual-binary check: {len(violations)} violation(s)")
+    # Confirm would-be violations with authoritative dpkg ownership: drop any
+    # path dpkg actually owns (a file-list pre-filter miss), so CI never fails
+    # on a dpkg-managed file.
+    owned = dpkg_owned(args.image, [p for p, _ in violations])
+    confirmed = [(p, msg) for p, msg in violations if p not in owned]
+
+    print(f"scanned {len(candidates)} candidate artifact(s) under {scan_dirs} "
+          f"on train '{args.train}'")
+    for p in sorted(owned):
+        print(f"note: {p} is dpkg-owned (file-list pre-filter miss); "
+              f"not a violation")
+    if confirmed:
+        for _, msg in confirmed:
+            print(f"FORBIDDEN {args.image}: {msg}", file=sys.stderr)
+        print(f"manual-binary check: {len(confirmed)} violation(s)")
         return 1
     print("manual-binary check: ok")
     return 0
