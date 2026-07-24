@@ -569,7 +569,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		COALESCE((
 			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
 			JOIN private.attributes a ON a.org_id = ca.org_id AND a.name = ca.attribute_name
-			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.rulepack_id IS NULL AND a.managed_by IS NULL
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name AND a.rulepack_id IS NULL
 		), ARRAY[]::TEXT[]) AS attributes,
 		COALESCE((
 			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca

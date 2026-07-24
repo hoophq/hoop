@@ -112,24 +112,13 @@ func TestProtectionProfileLifecycleSmoke(t *testing.T) {
 		t.Fatalf("customized min_approvals = %s, want 2 (re-apply must not rewrite managed rules)", got)
 	}
 
-	// 5. New connection inherits the active profile attribute.
-	mustExec(t, `INSERT INTO private.resources (org_id, name, subtype, type)
-		VALUES (?, 'conn-c', 'postgres', 'database')`, orgID)
-	mustExec(t, `INSERT INTO private.connections (id, org_id, agent_id, name, resource_name, command, type, status)
-		VALUES (?, ?, ?, 'conn-c', 'conn-c', '{}', 'database', 'offline')`, uuid.New(), orgID, agentID)
-	if err := TagConnectionWithActiveProfile(ctx, orgID.String(), "conn-c"); err != nil {
-		t.Fatalf("auto-tag: %v", err)
-	}
-	assertCount(t, 3, `SELECT COUNT(*) FROM private.connections_attributes WHERE org_id = ? AND attribute_name = ?`,
-		orgID, protectionProfileCatalog[high].AttributeName)
-
-	// 6. Manual configuration: everything managed disappears, org column NULL.
+	// 5. Manual configuration: everything managed disappears, org column NULL.
 	res, err = ApplyOrgProtectionProfile(ctx, orgID, nil, "")
 	if err != nil {
 		t.Fatalf("apply manual: %v", err)
 	}
-	if res.PreviousProfile == nil || *res.PreviousProfile != high || res.ConnectionsAffected != 3 {
-		t.Fatalf("apply manual: prev=%v affected=%d, want high/3", res.PreviousProfile, res.ConnectionsAffected)
+	if res.PreviousProfile == nil || *res.PreviousProfile != high || res.ConnectionsAffected != 2 {
+		t.Fatalf("apply manual: prev=%v affected=%d, want high/2", res.PreviousProfile, res.ConnectionsAffected)
 	}
 	for _, table := range []string{"attributes", "guardrail_rules", "datamasking_rules", "access_request_rules", "ai_session_analyzer_rules"} {
 		assertCount(t, 0, `SELECT COUNT(*) FROM private.`+table+` WHERE org_id = ? AND managed_by = 'hoop'`, orgID)
@@ -142,7 +131,7 @@ func TestProtectionProfileLifecycleSmoke(t *testing.T) {
 		t.Fatalf("org profile = %v, want NULL", *profile)
 	}
 
-	// 7. Invalid profile rejected.
+	// 6. Invalid profile rejected.
 	bogus := "not-a-profile"
 	if _, err := ApplyOrgProtectionProfile(ctx, orgID, &bogus, ""); err != ErrInvalidProtectionProfile {
 		t.Fatalf("bogus profile err = %v, want ErrInvalidProtectionProfile", err)

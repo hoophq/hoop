@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -200,14 +198,6 @@ func CreateResource(c *gin.Context) {
 					evt.Err(err)
 					httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting connection attributes: %v", err)
 					return
-				}
-			}
-			// While a protection profile is active, new connections inherit its
-			// attribute so profile rules apply immediately (mirror of POST /connections),
-			// unless the role explicitly opted out of the profile.
-			if !role.SkipProtectionProfile {
-				if err := services.TagConnectionWithActiveProfile(context.Background(), ctx.OrgID, connName); err != nil {
-					log.Warnf("failed tagging connection %s with active protection profile: %v", connName, err)
 				}
 			}
 		}
