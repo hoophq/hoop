@@ -105,10 +105,12 @@
                           :surface :resource-success
                           :with-roles? true}]
 
-     ;; Footer action — only the onboarding "Go Home" remains
-     (when (and onboarding? (not single-role?))
+     ;; Footer action — in onboarding there is no sidebar, so this button is
+     ;; the only guaranteed exit (native-only roles don't render the web
+     ;; terminal card, leaving "Add another resource" as the sole action).
+     (when onboarding?
        [:> Flex {:justify "center" :class "mt-10"}
         [:> Button {:size "3"
                     :variant "soft"
-                    :on-click #(rf/dispatch [:navigate :home])}
-         "Go Home"]])]))
+                    :on-click #(rf/dispatch [:navigate :resources])}
+         "Go to Resources"]])]))

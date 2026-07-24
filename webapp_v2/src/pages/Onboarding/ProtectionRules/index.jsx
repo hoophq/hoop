@@ -63,7 +63,10 @@ function OnboardingProtectionRules() {
 
   return (
     <Box mih="100vh" bg="white">
-      <Box maw={1200} mx="auto" p="xl">
+      {/* Full width with the same 32px padding as the CLJS onboarding
+          screens that follow — no centered max-width, so the pages read
+          as one continuous flow. */}
+      <Box p="xl">
         <Stack gap="xl">
           <Group justify="space-between" align="center">
             <Image
