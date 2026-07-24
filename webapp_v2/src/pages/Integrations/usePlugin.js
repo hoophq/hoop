@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar'
 import { pluginsService } from '@/services/plugins'
+import { connectionsService } from '@/services/connections'
 
-function errorMessage(error, fallback) {
-  return error?.response?.data?.message || error?.message || fallback
+function errorDescription(error) {
+  return error?.response?.data?.message || error?.message
 }
 
 /**
- * State and mutations for a single plugin (slack, webhooks).
+ * State and mutations for a single plugin page (slack, webhooks). Loads the
+ * plugin and the workspace connections together so pages render one loader.
  *
  * A 404 on GET means the plugin was never installed for this org: the page
  * still renders (empty connections) and the first mutation creates the
@@ -15,6 +17,7 @@ function errorMessage(error, fallback) {
  */
 export function usePlugin(pluginName) {
   const [plugin, setPlugin] = useState(null)
+  const [connections, setConnections] = useState([])
   const [installed, setInstalled] = useState(false)
   const [status, setStatus] = useState('loading')
   const [mutating, setMutating] = useState(false)
@@ -24,28 +27,51 @@ export function usePlugin(pluginName) {
       const res = await pluginsService.get(pluginName)
       setPlugin(res.data)
       setInstalled(true)
-      setStatus('ready')
     } catch (error) {
       if (error?.response?.status === 404) {
         setPlugin({ name: pluginName, connections: [] })
         setInstalled(false)
-        setStatus('ready')
       } else {
-        setStatus('error')
-        notifications.show({
-          message: errorMessage(error, 'Failed to load plugin.'),
-          color: 'red',
-        })
+        throw error
       }
     }
   }, [pluginName])
 
   useEffect(() => {
-    fetchPlugin()
+    async function loadPage() {
+      try {
+        const [, connectionsData] = await Promise.all([
+          fetchPlugin(),
+          connectionsService.getConnections(),
+        ])
+        setConnections(Array.isArray(connectionsData) ? connectionsData : [])
+        setStatus('ready')
+      } catch (error) {
+        setStatus('error')
+        showSnackbar({
+          level: 'error',
+          text: 'Failed to load plugin.',
+          description: errorDescription(error),
+        })
+      }
+    }
+    loadPage()
+  }, [fetchPlugin])
+
+  const refreshPlugin = useCallback(async () => {
+    try {
+      await fetchPlugin()
+    } catch (error) {
+      showSnackbar({
+        level: 'error',
+        text: 'Failed to refresh plugin.',
+        description: errorDescription(error),
+      })
+    }
   }, [fetchPlugin])
 
   const saveConnections = useCallback(
-    async (nextConnections, successMessage) => {
+    async (nextConnections, successText) => {
       setMutating(true)
       try {
         const payload = { name: pluginName, connections: nextConnections }
@@ -55,20 +81,21 @@ export function usePlugin(pluginName) {
           await pluginsService.create(payload)
           setInstalled(true)
         }
-        notifications.show({ message: successMessage, color: 'green' })
-        await fetchPlugin()
+        showSnackbar({ level: 'success', text: successText })
+        await refreshPlugin()
         return true
       } catch (error) {
-        notifications.show({
-          message: errorMessage(error, 'Failed to update plugin.'),
-          color: 'red',
+        showSnackbar({
+          level: 'error',
+          text: 'Failed to update plugin.',
+          description: errorDescription(error),
         })
         return false
       } finally {
         setMutating(false)
       }
     },
-    [pluginName, installed, fetchPlugin]
+    [pluginName, installed, refreshPlugin]
   )
 
   // PUT replaces the whole connections array, so every entry must be resent
@@ -96,7 +123,7 @@ export function usePlugin(pluginName) {
   )
 
   const saveEnvvars = useCallback(
-    async (envvars, successMessage = 'Configuration saved.') => {
+    async (envvars, successText = 'Configuration saved.') => {
       setMutating(true)
       try {
         if (!installed) {
@@ -104,24 +131,26 @@ export function usePlugin(pluginName) {
           setInstalled(true)
         }
         await pluginsService.updateConfig(pluginName, envvars)
-        notifications.show({ message: successMessage, color: 'green' })
-        await fetchPlugin()
+        showSnackbar({ level: 'success', text: successText })
+        await refreshPlugin()
         return true
       } catch (error) {
-        notifications.show({
-          message: errorMessage(error, 'Failed to save configuration.'),
-          color: 'red',
+        showSnackbar({
+          level: 'error',
+          text: 'Failed to save configuration.',
+          description: errorDescription(error),
         })
         return false
       } finally {
         setMutating(false)
       }
     },
-    [pluginName, installed, fetchPlugin]
+    [pluginName, installed, refreshPlugin]
   )
 
   return {
     plugin,
+    connections,
     installed,
     status,
     mutating,

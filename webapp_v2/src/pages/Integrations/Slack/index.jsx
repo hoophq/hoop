@@ -10,15 +10,22 @@ import SlackChannelsModal from './components/SlackChannelsModal'
 import SlackConfigurationsTab from './components/SlackConfigurationsTab'
 
 function IntegrationsSlack() {
-  const { plugin, status, mutating, toggleConnection, updateConnectionConfig, saveEnvvars } =
-    usePlugin('slack')
+  const {
+    plugin,
+    connections,
+    status,
+    mutating,
+    toggleConnection,
+    updateConnectionConfig,
+    saveEnvvars,
+  } = usePlugin('slack')
   const [tab, setTab] = useState('connections')
   const [configConnection, setConfigConnection] = useState(null)
 
   const showLoader = useMinDelay(status === 'loading')
 
-  if (showLoader) return <PageLoader h={400} />
-  if (status === 'error') return <Text c="red">Failed to load the Slack plugin.</Text>
+  if (showLoader) return <PageLoader />
+  if (status === 'error') return <PageLoader error message="Failed to load the Slack plugin." />
 
   return (
     <Stack gap="xl">
@@ -38,6 +45,7 @@ function IntegrationsSlack() {
         <Tabs.Panel value="connections" pt="md">
           <PluginConnectionsList
             plugin={plugin}
+            connections={connections}
             mutating={mutating}
             onToggle={toggleConnection}
             renderAction={(connection, enabled) => (

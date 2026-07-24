@@ -383,15 +383,34 @@ When adding a new service file, follow the pattern in `services/agents.js`.
 
 ---
 
-## Notifications
+## Notifications — `showSnackbar`
 
-Use `@mantine/notifications` directly in page components after async actions:
+Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
+same library the legacy CLJS app uses — and renders through
+`src/components/Snackbar/Toast.jsx`, a one-to-one port of the legacy toast, so
+snackbars appear at the **top-right** and look identical across React and CLJS routes.
+The single `<Toaster>` is mounted in `src/App.jsx`.
+
 ```js
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar'
 
-notifications.show({ message: 'Agent deleted.', color: 'green' })
-notifications.show({ message: 'Failed to delete agent.', color: 'red' })
+showSnackbar({ level: 'success', text: 'Agent deleted.' })
+showSnackbar({ level: 'error',   text: 'Failed to delete agent.', description: err.message })
+showSnackbar({ level: 'info',    text: 'Heads up.' })
+
+// Error toasts can expand to show a `details` panel (object → key/value lines)
+showSnackbar({
+  level: 'error',
+  text: 'Validation failed.',
+  details: { field: 'name', reason: 'required' },
+})
 ```
+
+Error toasts auto-dismiss after 10 seconds (mirrors v1); other levels use sonner's
+default. Do NOT import `notifications` from `@mantine/notifications` in new code — it
+renders a completely different visual (bottom of the screen) and breaks parity with
+v1. Pre-existing pages that still use it must be migrated to `showSnackbar` whenever
+you touch them. See the "Snackbars / Toasts" section of `CLAUDE.md` for the full rule.
 
 ---
 

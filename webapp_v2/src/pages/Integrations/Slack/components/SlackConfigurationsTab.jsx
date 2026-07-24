@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Anchor, Grid, Group, Stack, Text, Title } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar'
 import PasswordInput from '@/components/PasswordInput'
 import Button from '@/components/Button'
 
@@ -39,7 +39,7 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
 
   function handleSave() {
     if (!botToken.trim() || !appToken.trim()) {
-      notifications.show({ message: 'Both tokens are required.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Both tokens are required.' })
       return
     }
     let payload
@@ -49,7 +49,7 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
         SLACK_APP_TOKEN: btoa(appToken.trim()),
       }
     } catch {
-      notifications.show({ message: 'Tokens must contain only ASCII characters.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Tokens must contain only ASCII characters.' })
       return
     }
     onSave(payload, 'Slack app configured!')

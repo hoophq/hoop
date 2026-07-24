@@ -109,6 +109,31 @@ src/
   <Text>{'Hello ' + name + '!'}</Text>
   ```
 
+## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
+
+The legacy CLJS app shows toasts through `sonner` at the **top-right** of the screen.
+The React side uses the **same library** (`sonner`) through a thin wrapper at
+`src/utils/snackbar.jsx`, rendered by `src/components/Snackbar/Toast.jsx` (a
+one-to-one port of the legacy toast), so users see one consistent toast style
+across CLJS and React routes.
+
+```jsx
+import { showSnackbar } from '@/utils/snackbar'
+
+showSnackbar({ level: 'success', text: 'Connection enabled.' })
+showSnackbar({ level: 'error',   text: 'Failed to update.', description: err.message })
+showSnackbar({ level: 'info',    text: 'Heads up.' })
+```
+
+**Rules:**
+- Do NOT import `notifications` from `@mantine/notifications` in new code — it renders
+  a completely different visual (bottom of the screen) and breaks parity with v1.
+- Whenever you find a `notifications.show()` call in code you are touching, migrate it
+  to `showSnackbar` in the same change.
+- The `<Toaster>` is mounted once at `src/App.jsx`. Do not add additional Toaster instances.
+- The wrapper accepts the same `{ level, text, description }` shape as the CLJS
+  `:show-snackbar` event so the mental model stays identical on both sides.
+
 ## Authentication Flow
 
 ### Overview

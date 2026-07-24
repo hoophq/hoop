@@ -5,12 +5,12 @@ import { usePlugin } from '../usePlugin'
 import PluginConnectionsList from '../components/PluginConnectionsList'
 
 function IntegrationsWebhooks() {
-  const { plugin, status, mutating, toggleConnection } = usePlugin('webhooks')
+  const { plugin, connections, status, mutating, toggleConnection } = usePlugin('webhooks')
 
   const showLoader = useMinDelay(status === 'loading')
 
-  if (showLoader) return <PageLoader h={400} />
-  if (status === 'error') return <Text c="red">Failed to load the Webhooks plugin.</Text>
+  if (showLoader) return <PageLoader />
+  if (status === 'error') return <PageLoader error message="Failed to load the Webhooks plugin." />
 
   return (
     <Stack gap="xl">
@@ -19,7 +19,12 @@ function IntegrationsWebhooks() {
         <Text c="dimmed">Enable webhook events for your connections.</Text>
       </Stack>
 
-      <PluginConnectionsList plugin={plugin} mutating={mutating} onToggle={toggleConnection} />
+      <PluginConnectionsList
+        plugin={plugin}
+        connections={connections}
+        mutating={mutating}
+        onToggle={toggleConnection}
+      />
     </Stack>
   )
 }
