@@ -49,6 +49,7 @@
                           :icon (:icon route)
                           :label (:name route)
                           :feature-flag (:feature-flag route)
+                          :license-feature (:license-feature route)
                           :free-feature? (:free-feature? route)
                           :admin-only? (:admin-only? route)
                           :admin? admin?
@@ -78,6 +79,7 @@
                             :icon (:icon route)
                             :label (:label route)
                             :feature-flag (:feature-flag route)
+                            :license-feature (:license-feature route)
                             :free-feature? (:free-feature? route)
                             :admin-only? (:admin-only? route)
                             :admin? admin?
@@ -99,6 +101,7 @@
                             :icon (:icon route)
                             :label (:label route)
                             :feature-flag (:feature-flag route)
+                            :license-feature (:license-feature route)
                             :free-feature? (:free-feature? route)
                             :admin-only? (:admin-only? route)
                             :admin? admin?
@@ -129,7 +132,12 @@
                                            :aria-hidden "true"}])]
                       [:> (.-Panel ui/Disclosure) {:as "ul"
                                                    :class "mt-1 px-2"}
-                       (for [plugin sidebar-constants/integrations-management]
+                       (for [plugin sidebar-constants/integrations-management
+                             :let [lf (:license-feature plugin)
+                                   features (get-in (:data @gateway-info) [:license_info :features])]
+                             :when (or (nil? lf)
+                                       (empty? features)
+                                       (some #(= % lf) features))]
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
                            ^{:key (:name plugin)}
                            [:li

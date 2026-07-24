@@ -34,8 +34,9 @@ export function NavItem({ item, isAdmin, isSelfHosted }) {
   const location = useLocation()
   const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
+  const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
-  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled)) return null
+  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)) return null
 
   const active = item.path ? isActive(item.path, location.pathname) : false
   const closeMobile = () => setSidebarOpen(false)

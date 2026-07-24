@@ -27,6 +27,8 @@ export const useUserStore = create((set, get) => ({
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
+  // Features enabled by the gateway license; null/empty = all enabled.
+  licenseFeatures: null,
   apiUrl: null,
   hasRedactCredentials: false,
   loading: false,
@@ -41,6 +43,7 @@ export const useUserStore = create((set, get) => ({
     const featureFlags = serverInfo?.feature_flags || {}
     const redactProvider = serverInfo?.redact_provider || null
     const apiUrl = serverInfo?.api_url || null
+    const licenseFeatures = serverInfo?.license_info?.features || null
     set({ 
       isFreeLicense, 
       gatewayVersion: serverInfo?.version || null, 
@@ -50,11 +53,16 @@ export const useUserStore = create((set, get) => ({
       featureFlags, 
       redactProvider, 
       apiUrl,
+      licenseFeatures,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
+  isLicenseFeatureEnabled: (name) => {
+    const features = get().licenseFeatures
+    return !features?.length || features.includes(name)
+  },
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
@@ -68,6 +76,7 @@ export const useUserStore = create((set, get) => ({
       disableClipboard: false, 
       gatewayVersion: null, 
       featureFlags: {}, 
+      licenseFeatures: null,
       redactProvider: null, 
       apiUrl: null,
       hasRedactCredentials: false,
