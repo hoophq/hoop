@@ -65,10 +65,15 @@ deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 
 **/.claude/settings.local.json
 **/.mcp.json
+# the root .mcp.json is versioned team config (Linear/Figma MCP servers)
+!/.mcp.json
 
 # rust build
 target/
 webapp/resources/public/data/connections-metadata.json
-.claude
+# .claude/ is versioned team config (settings, skills, hooks) — only
+# per-engineer state stays ignored
+.claude/worktrees/
+.worktrees/
 # WASM build output
 gateway/rdp/wasm/target/
