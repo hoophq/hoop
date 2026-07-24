@@ -1,8 +1,6 @@
 package proto
 
-import (
-	"time"
-)
+import "time"
 
 type ConnectionType string
 

@@ -21,9 +21,9 @@ func (p *noopProxy) Run(onErr func(int, string)) {
 	onErr(1, errMsg)
 }
 func (p *noopProxy) FlushMetrics(client io.Writer) error { return nil }
-func (p *noopProxy) Write(data []byte) (int, error)      { return len(data), nil }
-func (p *noopProxy) Done() <-chan struct{}               { return nil }
-func (p *noopProxy) Close() error                        { return nil }
+func (p *noopProxy) Write(data []byte) (int, error) { return len(data), nil }
+func (p *noopProxy) Done() <-chan struct{}          { return nil }
+func (p *noopProxy) Close() error                   { return nil }
 
 func (c *core) MySQL() (Proxy, error)    { return &noopProxy{connectionType: "mysql"}, nil }
 func (c *core) MSSQL() (Proxy, error)    { return &noopProxy{connectionType: "mssql"}, nil }

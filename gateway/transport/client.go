@@ -289,6 +289,18 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 // into an empty NON-nil slice. A nil-ness check made every ruleless
 // connection look guarded, which the fail-closed admission check (DEP-48)
 // then refused for connection types without guardrail enforcement.
+func configuredGuardRailRules(rules []guardrails.DataRules) []guardrails.DataRules {
+	n := 0
+	for _, rule := range rules {
+		if len(rule.Items) == 0 {
+			continue
+		}
+		rules[n] = rule
+		n++
+	}
+	return rules[:n]
+}
+
 func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
@@ -311,7 +323,8 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 		}
 	}
 
-	// no rules to enforce -> no guardrail payload
+	inputRules = configuredGuardRailRules(inputRules)
+	outputRules = configuredGuardRailRules(outputRules)
 	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
