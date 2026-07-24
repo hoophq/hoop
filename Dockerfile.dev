@@ -2,7 +2,7 @@
 # AGENT_TOOLS_TAG selects the train: the pinned tag is the legacy (default)
 # train; the clean (AGPL/SSPL-free) train passes the same tag suffixed with
 # "-clean". Kept in sync by the agent-tools workflow's bump-consumers job.
-ARG AGENT_TOOLS_TAG=noble-20260709-6890906
+ARG AGENT_TOOLS_TAG=noble-20260724-0899b10
 FROM hoophq/agent-tools:${AGENT_TOOLS_TAG}
 
 COPY rootfs /
