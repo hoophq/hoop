@@ -83,7 +83,7 @@ export const ORGANIZATION_ITEMS = [
     adminOnly: true,
     children: [
       { label: 'Authentication', path: '/integrations/authentication', adminOnly: true },
-      { label: 'Jira', path: '/settings/jira', adminOnly: true },
+      { label: 'Jira', path: '/jira-templates?tab=configuration', adminOnly: true },
       { label: 'Webhooks', path: '/plugins/manage/webhooks', adminOnly: true },
       { label: 'Slack', path: '/plugins/manage/slack', adminOnly: true }
     ]
