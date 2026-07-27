@@ -30,7 +30,7 @@ navigation of touched routes.
 
 ## Phase 0 — Quick Wins (2 PRs, no dependencies)
 
-### PR 0.1 — Shell bug fixes (S)
+### PR 0.1 — Shell bug fixes (S) — EVL-105, PR #1641 (in review)
 
 Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
 
@@ -43,9 +43,10 @@ Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
 - Fix Integrations > Jira sidebar highlight: `helpers.js isActive()` compares only
   pathname, but the target is `/jira-templates?tab=configuration`, so the item never
   activates.
-- Enforce `experimental.rulepacks` on the `/rulepacks` routes in `Router.jsx`
-  (the sidebar and the page's `FeatureFlagGate` check it; the Router does not, so
-  the page is reachable by direct URL with the flag off).
+- ~~Enforce `experimental.rulepacks` on the `/rulepacks` routes in `Router.jsx`~~ —
+  verified non-issue: both Rulepacks pages already gate themselves with
+  `FeatureFlagGate` (loader + redirect home when the flag is off), which is the
+  established gate point. No Router change needed.
 - Fix the attributes edit param mismatch: CLJS navigates to
   `/settings/attributes/edit?name=x` (query param —
   `webapp/src/webapp/features/attributes/views/list.cljs:48`) but the React route is
