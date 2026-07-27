@@ -12,10 +12,19 @@ one draft PR, branch names from Linear. Every PR gates on: webapp compiles
 (shadow-cljs release), `npm run lint && npm run build` in `webapp_v2`, and smoke
 navigation of touched routes.
 
-**Excluded — in flight elsewhere:** `/plugins/manage/:name` (Slack + Webhooks) is
-being migrated on EVL-101 (`rogerio/evl-101-slack-webhooks`), which adds
-`pages/Integrations/{Slack,Webhooks}` and deletes the `Plugins/` stub. Nothing in
-this roadmap touches `pages/Integrations` or `pages/Plugins` until EVL-101 merges.
+**Excluded — in flight elsewhere:**
+- `/plugins/manage/:name` (Slack + Webhooks) is being migrated on EVL-101
+  (PR #1633): adds `pages/Integrations/{Slack,Webhooks}` at
+  `/integrations/{slack,webhooks}` with legacy redirects for
+  `/plugins/manage/{slack,webhooks}`, deletes the `Plugins/` stub, and removes the
+  CLJS `:manage-plugin` route/panel + plugin views + `events/slack_plugin.cljs`.
+  It does **not** redirect `/plugins/manage/jira` (still PR 0.1) and keeps the
+  `:manage-jira`/`:reviews-plugin-details` bidi entries (still Track A2). Nothing
+  in this roadmap touches `pages/Integrations` or `pages/Plugins` until it merges.
+- Snackbar unification is done on EVL-104 (PR #1638): all
+  `@mantine/notifications` call sites moved to `showSnackbar`, the dependency
+  removed, and `useBridgeStore.showSnackbar` deleted (the `show-snackbar` bridge
+  event no longer exists).
 
 ---
 
@@ -45,20 +54,21 @@ Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
   form.
 - `/plugins/manage/jira` hangs forever: the bidi route exists but its panel was
   deleted (`:default` renders an infinite spinner). Add a React redirect →
-  `/jira-templates?tab=configuration`. **Coordinate with EVL-101**: if it lands
-  `/plugins/manage/*` redirects first, rebase and fill only the jira gap.
+  `/jira-templates?tab=configuration`. EVL-101 (PR #1633) redirects only
+  `/plugins/manage/{slack,webhooks}` — the jira gap is ours; expect a trivial
+  `Router.jsx` merge conflict with #1633 in the redirect block.
 
-### PR 0.2 — Scaffolding deletion + bridge snackbar fix + doc refresh (S)
+### PR 0.2 — Scaffolding deletion + doc refresh (S)
 
 - Delete the unrouted, unreferenced 7-line stubs from the initial shell commit:
   `pages/{Connections (incl. Setup/), Dashboard, Sessions, Reviews, Guardrails,
   Resources}`. Verified: zero imports anywhere; Sidebar/CommandPalette reference
   those features by *path* only (they land in the CLJS catch-all).
   Integrations/Plugins stubs are EVL-101 turf — untouched.
-- Switch the two React pages still sending snackbars through the CLJS bridge to
-  `@/utils/snackbar`: `pages/Roles/Configure/index.jsx` and
-  `pages/Onboarding/ProtectionRules/index.jsx` (Parity item, done here because it's
-  trivial).
+- ~~Switch the bridge snackbar call sites to `@/utils/snackbar`~~ — resolved:
+  `Roles/Configure` by EVL-104 (PR #1638, which also deletes
+  `useBridgeStore.showSnackbar`), `Onboarding/ProtectionRules` already local since
+  PR #1627.
 - Refresh `CONTEXT_MIGRATION.md` (routing table, global components table) — done in
   the same PR that introduces this roadmap.
 
@@ -243,7 +253,7 @@ dies silently).
 
 | Item | When | Notes |
 |---|---|---|
-| Bridge snackbar fixes | Phase 0 (PR 0.2) | Trivial |
+| Bridge snackbar fixes | ✅ Done | EVL-104 (PR #1638) unified everything on `showSnackbar` and deleted `useBridgeStore.showSnackbar` |
 | Shared ConfirmDialog | Wave 1 (B1.3) | Needed by every CRUD wave |
 | Sentry init in React | Wave 1 (own S ticket) | Today errors on React routes go unreported unless a CLJS route loaded the bundle. Replicate the CLJS condition from `events/tracking.cljs` (init when gateway `analytics_tracking` is NOT enabled) |
 | Segment `track()` | Wave 2 (own S ticket) | Add a `track()` util next to the existing `identify()` in `services/analytics.js`; wire the 8 CLJS `:segment->track` equivalents per page as each page migrates. The util must exist before Wave 3's CRUD pages land |
@@ -255,7 +265,9 @@ dies silently).
 **Bridge teardown inventory** (deleted in the Endgame): `utils/clojureDispatch.js`,
 `stores/useBridgeStore.js`, `components/ClojureApp.jsx`, the CLJS branch in
 `features/CommandPalette/spotlight.js`, `window.__hoopReactShellPresent` /
-`__hoopReactShellCljsVisible`, `localStorage react-shell`.
+`__hoopReactShellCljsVisible`, `localStorage react-shell`. Remaining bridge events
+after EVL-104: `users->get-user` (refreshLegacyUser), `command-palette->toggle`
+(spotlight CLJS branch), `native-client-access->start-flow` (blocked on B4.0).
 
 ---
 
@@ -309,8 +321,9 @@ Now ──► Wave 1 + Sentry ────┘
 ## Top Risks
 
 1. **EVL-101 collisions** — PR 0.1's jira redirect, B3.7 and B4.4 touch Integrations
-   territory; all are gated on the EVL-101 merge, everything else avoids those
-   directories.
+   territory; all are gated on the EVL-101 merge (PR #1633, in review), everything
+   else avoids those directories. Both #1633 and #1638 also edit
+   `CONTEXT_MIGRATION.md` — whoever merges last rebases the doc tables.
 2. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
    4-way PR split and reusing the already-React `/roles/:name/configure` patterns.
 3. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are

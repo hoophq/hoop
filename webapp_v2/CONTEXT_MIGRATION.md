@@ -264,7 +264,7 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - No shared ConfirmDialog component yet (pages build ad-hoc confirmations)
 - Native-client-access flow still lives in CLJS and the React CommandPalette depends on it via the bridge
 - Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
-- Slack/Webhooks plugin pages are being migrated on EVL-101 (`pages/Integrations/`)
+- Slack/Webhooks plugin pages are being migrated on EVL-101 (PR #1633, in review — adds `/integrations/{slack,webhooks}` + legacy redirects)
 
 ### Migration order
 
