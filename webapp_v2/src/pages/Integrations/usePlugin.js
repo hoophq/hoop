@@ -44,7 +44,9 @@ export function usePlugin(pluginName) {
           fetchPlugin(),
           connectionsService.getConnections(),
         ])
-        setConnections(Array.isArray(connectionsData) ? connectionsData : [])
+        setConnections(
+          Array.isArray(connectionsData) ? connectionsData : (connectionsData?.items ?? [])
+        )
         setStatus('ready')
       } catch (error) {
         setStatus('error')

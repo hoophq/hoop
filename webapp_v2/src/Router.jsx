@@ -488,6 +488,15 @@ function Router() {
       />
 
       {/* Integrations */}
+      {/* Legacy plugin-manage URLs — keep old bookmarks working */}
+      <Route
+        path="/plugins/manage/slack"
+        element={<Navigate to="/integrations/slack" replace />}
+      />
+      <Route
+        path="/plugins/manage/webhooks"
+        element={<Navigate to="/integrations/webhooks" replace />}
+      />
       <Route
         path="/integrations/slack"
         element={
