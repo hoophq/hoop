@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { Box, Collapse, Text, UnstyledButton } from '@mantine/core'
-import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { CircleCheckBig, ChevronDown, ChevronUp } from 'lucide-react'
 import { SubItem } from './SubItem'
 import classes from './ConfigStatus.module.css'
 
@@ -11,9 +11,7 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
     <Box className={classes.step}>
       <UnstyledButton className={classes.stepHeader} aria-expanded={opened} onClick={onToggle}>
         {step.done ? (
-          <Box className={classes.stepDoneIcon} aria-hidden="true">
-            <Check size={14} strokeWidth={3} />
-          </Box>
+          <CircleCheckBig size={24} aria-hidden="true" className={classes.stepIconDone} />
         ) : (
           <step.icon size={24} aria-hidden="true" className={classes.stepIcon} />
         )}

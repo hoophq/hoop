@@ -25,7 +25,7 @@ export default function RingProgress({
       sections={[{ value, color }]}
       label={
         label ?? (
-          <Text fz={9} ta="center" lh={1}>
+          <Text fz={8} ta="center" lh={1} p={2}>
             {`${Math.round(value)}%`}
           </Text>
         )

@@ -55,15 +55,8 @@
   flex-shrink: 0;
 }
 
-.stepDoneIcon {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: var(--mantine-color-green-8);
-  color: var(--mantine-color-white);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.stepIconDone {
+  color: var(--mantine-color-green-8);
   flex-shrink: 0;
 }
 

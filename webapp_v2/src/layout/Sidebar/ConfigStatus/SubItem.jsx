@@ -1,9 +1,9 @@
 import { UnstyledButton, Text } from '@mantine/core'
-import { CircleDashed, CircleCheckBig, ArrowRight } from 'lucide-react'
+import { CircleDashed, BadgeCheck, ArrowRight } from 'lucide-react'
 import classes from './ConfigStatus.module.css'
 
 export function SubItem({ item, onNavigate }) {
-  const Icon = item.done ? CircleCheckBig : item.icon ?? CircleDashed
+  const Icon = item.done ? BadgeCheck : item.icon ?? CircleDashed
 
   return (
     <UnstyledButton

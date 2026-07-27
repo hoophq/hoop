@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Box, Collapse, Text, UnstyledButton } from '@mantine/core'
-import { useClickOutside } from '@mantine/hooks'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import RingProgress from '@/components/RingProgress'
 import { useUserStore } from '@/stores/useUserStore'
@@ -12,10 +11,10 @@ import { computeProgress } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
 
-// Admin setup checklist (EVL-98). Figma behavior annotations:
+// Admin setup checklist (EVL-98). Behavior:
 // - only one step open at a time; opening another closes the rest
 // - opening the widget auto-opens the first incomplete step
-// - interacting with anything outside the widget collapses it
+// - stays open across navigation; only the header chevron closes it
 export function ConfigStatus() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -31,7 +30,6 @@ export function ConfigStatus() {
 
   const [opened, setOpened] = useState(false)
   const [activeStepId, setActiveStepId] = useState(null)
-  const cardRef = useClickOutside(() => setOpened(false))
 
   // Initial fetch + TTL-respecting refresh when the admin navigates (returning
   // from "Create a Resource" & friends should update the ring without polling).
@@ -63,8 +61,9 @@ export function ConfigStatus() {
   }
 
   const handleNavigate = (item) => {
-    setOpened(false)
-    setSidebarOpen(false) // close the mobile drawer when open; no-op on desktop
+    // The widget itself stays open — only the mobile drawer closes, matching
+    // every other sidebar navigation.
+    setSidebarOpen(false)
 
     if (item.action === 'run-first-session') {
       if (execConnectionName) {
@@ -88,7 +87,7 @@ export function ConfigStatus() {
   }
 
   return (
-    <Box ref={cardRef} className={classes.card} mb="lg">
+    <Box className={classes.card} mb="lg">
       <UnstyledButton className={classes.headerBtn} aria-expanded={opened} onClick={toggleOpened}>
         <RingProgress value={progress.percent} />
         <Text component="span" className={classes.headerLabel}>
