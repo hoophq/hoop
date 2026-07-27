@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
@@ -178,6 +179,28 @@ func CreateResource(c *gin.Context) {
 		evt.Err(err)
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating resource: %v", err)
 		return
+	}
+
+	if len(connections) > 0 {
+		orgUUID, uerr := uuid.Parse(ctx.OrgID)
+		if uerr != nil {
+			evt.Err(uerr)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, uerr, "invalid organization id: %v", uerr)
+			return
+		}
+		// Attributes are persisted after the resource/connections transaction,
+		// mirroring POST /connections: a failure here leaves the resource and
+		// connections in place and returns 500.
+		for i, role := range req.Roles {
+			connName := connections[i].Name
+			if len(role.Attributes) > 0 {
+				if err := models.UpsertConnectionAttributes(models.DB, orgUUID, connName, role.Attributes); err != nil {
+					evt.Err(err)
+					httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting connection attributes: %v", err)
+					return
+				}
+			}
+		}
 	}
 
 	if len(connections) > 0 && ctx.UserEmail != "" && ctx.OrgID != "" {

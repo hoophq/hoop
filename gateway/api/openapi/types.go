@@ -127,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// The organization's default protection profile id; null means manual
+	// configuration or that no profile was ever selected.
+	DefaultProtectionProfile *string `json:"default_protection_profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high"`
 	// Pending organization invitations for this user. When non-empty, the user can migrate
 	// to one of these organizations. Only populated in multi-tenant environments.
 	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
@@ -434,8 +437,14 @@ type Connection struct {
 	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
 	// When set, the user cannot choose a custom duration and must request access for this exact window.
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
-	// Attributes associated with this connection
+	// Attributes associated with this connection. Includes Hoop-managed
+	// attributes (e.g. the active protection profile attribute); omitting a
+	// managed name on update detaches the connection from it.
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// Hoop-managed attributes associated with this connection (e.g. the
+	// active protection profile attribute). Computed on reads; manage the
+	// association through the attributes field.
+	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References
@@ -1249,6 +1258,24 @@ type OrgHideRoleInfoResponse struct {
 	HideRoleInfo bool `json:"hide_role_info" example:"true"`
 }
 
+// OrgProtectionProfileRequest selects the organization's default protection
+// profile. Pass null to switch to manual configuration: all Hoop-managed
+// protection rules and the profile attribute are removed.
+type OrgProtectionProfileRequest struct {
+	// The protection profile id, or null for manual configuration
+	Profile *string `json:"profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high" example:"protection-medium"`
+	// Where the selection happened; used for analytics only
+	Source string `json:"source" binding:"required" enums:"onboarding,settings" example:"onboarding"`
+}
+
+type OrgProtectionProfileResponse struct {
+	// The active protection profile id; null means manual configuration
+	Profile *string `json:"profile" example:"protection-medium"`
+	// The Hoop-managed attribute that binds the profile's rules to
+	// connections; null when no profile is active
+	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -1602,6 +1629,9 @@ type GuardRailRuleResponse struct {
 	Name string `json:"name" example:"my-strict-rule"`
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 
 	// The input rule. Each rule entry accepts an optional "message" field that
 	// is shown to the user when that specific rule is hit.
@@ -2006,7 +2036,11 @@ type SecurityAuditLogResponse struct {
 
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
-	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	ID string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), the rule cannot be
+	// modified or deleted directly.
+	ManagedBy              *string `json:"managed_by" readonly:"true" example:"hoop"`
 	DataMaskingRuleRequest `json:",inline"`
 }
 
@@ -2685,6 +2719,8 @@ type ResourceRoleRequest struct {
 	Secrets map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ResourceRequest struct {
@@ -3114,6 +3150,10 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; only approval settings and group lists can be
+	// changed on managed rules, and they cannot be deleted
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3227,6 +3267,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3242,6 +3285,10 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Managed By is a read only field that indicates who manages this
+	// attribute. When set (e.g. "hoop" for protection profiles), the
+	// attribute cannot be modified or deleted directly.
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute

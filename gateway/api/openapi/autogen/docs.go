@@ -5632,6 +5632,88 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/protection-profile": {
+            "get": {
+                "description": "Get the organization's default protection profile. A null profile means manual configuration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Protection Profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Select the organization's default protection profile. The backend materializes the profile's managed rules and attribute and tags every connection. Passing a null profile switches to manual configuration and deletes all Hoop-managed protection rules.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Organization Protection Profile",
+                "parameters": [
+                    {
+                        "description": "The protection profile selection",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/plugins": {
             "get": {
                 "description": "List all Plugin resources",
@@ -10582,6 +10664,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "Unique name for the rule",
                     "type": "string",
@@ -11063,6 +11151,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; only approval settings and group lists can be\nchanged on managed rules, and they cannot be deleted",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "min_approvals": {
                     "description": "Minimum number of approvals required",
                     "type": "integer",
@@ -11527,6 +11621,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this\nattribute. When set (e.g. \"hoop\" for protection profiles), the\nattribute cannot be modified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The name of the attribute",
                     "type": "string",
@@ -11622,7 +11722,7 @@ const docTemplate = `{
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "attributes": {
-                    "description": "Attributes associated with this connection",
+                    "description": "Attributes associated with this connection. Includes Hoop-managed\nattributes (e.g. the active protection profile attribute); omitting a\nmanaged name on update detaches the connection from it.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -11694,6 +11794,17 @@ const docTemplate = `{
                     "description": "JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.\nWhen set, the user cannot choose a custom duration and must request access for this exact window.",
                     "type": "integer",
                     "example": 1800
+                },
+                "managed_attributes": {
+                    "description": "Hoop-managed attributes associated with this connection (e.g. the\nactive protection profile attribute). Computed on reads; manage the\nassociation through the attributes field.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "hoop_protection_profile-soc2_type2"
+                    ]
                 },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
@@ -12679,6 +12790,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
@@ -13283,6 +13400,12 @@ const docTemplate = `{
                     "description": "The input rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
                 },
                 "name": {
                     "description": "Unique name for the rule",
@@ -14138,6 +14261,50 @@ const docTemplate = `{
                     "type": "string",
                     "format": "dsn",
                     "example": "grpcs://default:\u003csecret-key\u003e@127.0.0.1:8010"
+                }
+            }
+        },
+        "openapi.OrgProtectionProfileRequest": {
+            "type": "object",
+            "required": [
+                "source"
+            ],
+            "properties": {
+                "profile": {
+                    "description": "The protection profile id, or null for manual configuration",
+                    "type": "string",
+                    "enum": [
+                        "hipaa-ready",
+                        "soc2-type2",
+                        "protection-permissive",
+                        "protection-medium",
+                        "protection-high"
+                    ],
+                    "example": "protection-medium"
+                },
+                "source": {
+                    "description": "Where the selection happened; used for analytics only",
+                    "type": "string",
+                    "enum": [
+                        "onboarding",
+                        "settings"
+                    ],
+                    "example": "onboarding"
+                }
+            }
+        },
+        "openapi.OrgProtectionProfileResponse": {
+            "type": "object",
+            "properties": {
+                "attribute_name": {
+                    "description": "The Hoop-managed attribute that binds the profile's rules to\nconnections; null when no profile is active",
+                    "type": "string",
+                    "example": "hoop_protection_profile-protection_medium"
+                },
+                "profile": {
+                    "description": "The active protection profile id; null means manual configuration",
+                    "type": "string",
+                    "example": "protection-medium"
                 }
             }
         },
@@ -15053,6 +15220,17 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "attributes": {
+                    "description": "Attributes associated with this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
                 },
                 "command": {
                     "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
@@ -17648,6 +17826,17 @@ const docTemplate = `{
                 "email"
             ],
             "properties": {
+                "default_protection_profile": {
+                    "description": "The organization's default protection profile id; null means manual\nconfiguration or that no profile was ever selected.",
+                    "type": "string",
+                    "enum": [
+                        "hipaa-ready",
+                        "soc2-type2",
+                        "protection-permissive",
+                        "protection-medium",
+                        "protection-high"
+                    ]
+                },
                 "email": {
                     "description": "Email address of the user",
                     "type": "string",

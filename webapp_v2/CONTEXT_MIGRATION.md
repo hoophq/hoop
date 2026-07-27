@@ -74,6 +74,8 @@ Gateway backend (port 8009)
 | `/settings/attributes` | React | Done |
 | `/settings/attributes/new` | React | Done |
 | `/settings/attributes/edit/:name` | React | Done |
+| `/settings/protection-rules` | React | Done |
+| `/onboarding/protection-rules` | React | Done (chrome-less, above the `/onboarding/*` splat) |
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |

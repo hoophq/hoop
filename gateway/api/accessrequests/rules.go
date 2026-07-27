@@ -310,6 +310,14 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
+	// Hoop-managed rules (protection profiles) allow tuning WHO approves and
+	// HOW MANY approvals are needed, but their identity, targeting, and access
+	// window stay locked: those define the profile itself.
+	if existingRule.ManagedBy != nil {
+		updateManagedAccessRequestRule(c, existingRule, &req)
+		return
+	}
+
 	if foundRule != nil && foundRule.ID != existingRule.ID {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an access request rule with the same connection names and access type already exists"})
 		return
@@ -365,6 +373,77 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(existingRule))
 }
 
+// updateManagedAccessRequestRule applies the restricted update path for
+// Hoop-managed rules: only approval settings and group lists may change.
+// Any attempt to alter name, access type, duration, or targeting is rejected.
+func updateManagedAccessRequestRule(c *gin.Context, rule *models.AccessRequestRule, req *openapi.AccessRequestRuleRequest) {
+	switch {
+	case req.Name != rule.Name,
+		req.AccessType != rule.AccessType,
+		!intPtrEqual(req.AccessMaxDuration, rule.AccessMaxDuration),
+		len(req.ConnectionNames) != 0,
+		req.Attributes != nil && !sameStringSet(req.Attributes, attributeNames(rule)):
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop; only approval settings and group lists can be changed"})
+		return
+	}
+
+	if len(req.ApprovalRequiredGroups) == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "approval_required_groups must have at least 1 entry"})
+		return
+	}
+	if len(req.ReviewersGroups) == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "reviewers_groups must have at least 1 entry"})
+		return
+	}
+	if !req.AllGroupsMustApprove && (req.MinApprovals == nil || *req.MinApprovals < 1) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "min_approvals must be at least 1 when all_groups_must_approve is false"})
+		return
+	}
+
+	rule.ApprovalRequiredGroups = req.ApprovalRequiredGroups
+	rule.ReviewersGroups = req.ReviewersGroups
+	rule.ForceApprovalGroups = req.ForceApprovalGroups
+	rule.AllGroupsMustApprove = req.AllGroupsMustApprove
+	rule.MinApprovals = req.MinApprovals
+
+	if err := models.UpdateAccessRequestRule(models.DB, rule); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update access request rule")
+		return
+	}
+	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule))
+}
+
+func attributeNames(rule *models.AccessRequestRule) []string {
+	names := make([]string, len(rule.RuleAttributes))
+	for i, ra := range rule.RuleAttributes {
+		names[i] = ra.AttributeName
+	}
+	return names
+}
+
+func intPtrEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]struct{}, len(a))
+	for _, s := range a {
+		set[s] = struct{}{}
+	}
+	for _, s := range b {
+		if _, ok := set[s]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // DeleteAccessRequestRule
 //
 //	@Summary		Delete Access Request Rule
@@ -383,6 +462,20 @@ func DeleteAccessRequestRule(c *gin.Context) {
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid organization ID")
+		return
+	}
+
+	existingRule, err := models.GetAccessRequestRuleByName(models.DB, name, orgID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get access request rule")
+		return
+	}
+	if existingRule.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be deleted directly"})
 		return
 	}
 
@@ -408,6 +501,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		ID:                     rule.ID.String(),
 		Name:                   rule.Name,
 		Description:            rule.Description,
+		ManagedBy:              rule.ManagedBy,
 		AccessType:             rule.AccessType,
 		ConnectionNames:        rule.ConnectionNames,
 		Attributes:             attrs,
