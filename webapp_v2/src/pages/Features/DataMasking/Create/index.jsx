@@ -55,7 +55,10 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   const [form, setForm] = useState(() => ({
     name: rule?.name ?? '',
     description: rule?.description ?? '',
-    scoreThreshold: scoreToPercent(rule?.score_threshold),
+    // New blank rules start at 85%. Template/edited rules keep their own
+    // value — a stored NULL stays empty so saving doesn't silently add a
+    // threshold to a rule that masks every detection today.
+    scoreThreshold: rule ? scoreToPercent(rule.score_threshold) : 85,
     connectionIds: rule?.connection_ids ?? [],
     attributes: rule?.attributes ?? [],
   }))
@@ -201,7 +204,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
                 const value = e.currentTarget.value
                 setField({ scoreThreshold: value === '' ? '' : Number(value) })
               }}
-              description="Minimum confidence level required to detect and mask sensitive data. Default 85% works well for most use cases."
+              description="Minimum confidence level (1-100) a detection needs to be masked. Defaults to 85% for new rules. Leave empty to mask every detection regardless of confidence. Custom entity types with a score below this value are never masked."
             />
           </Stack>
         </SectionRow>
