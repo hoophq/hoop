@@ -104,8 +104,8 @@ func (b *jdbcMSSQLBridge) recordError(err error) {
 	b.errOnce.Do(func() { b.err = err })
 }
 
-func (b *jdbcMSSQLBridge) Addr() string {
-	return b.server.Host().Addr()
+func (b *jdbcMSSQLBridge) Addr() (string, error) {
+	return clientproxy.MSSQLServerListenerAddrForIntegration(b.server)
 }
 
 func (b *jdbcMSSQLBridge) Close() error {
@@ -170,7 +170,11 @@ func TestMSSQL_JDBCGuardrails(t *testing.T) {
 	bridge := startJDBCMSSQLBridge(t, tr, demux, sessionID)
 	defer shutdownAgent(t, agent, tr)
 
-	runMSSQLJDBCSmoke(t, bridge.Addr(), mc.Database, "noop", "noop")
+	address, err := bridge.Addr()
+	if err != nil {
+		t.Fatalf("JDBC MSSQL bridge address: %v", err)
+	}
+	runMSSQLJDBCSmoke(t, address, mc.Database, "noop", "noop")
 	if err := bridge.Close(); err != nil {
 		t.Fatalf("JDBC MSSQL bridge failed: %v", err)
 	}
