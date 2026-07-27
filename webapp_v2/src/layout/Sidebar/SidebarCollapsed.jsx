@@ -24,7 +24,7 @@ export function SidebarCollapsed({ skipLink }) {
 
       <Box mb="xl" mt="xl" className={classes.logoCollapsed}>
         <img
-          src="/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
+          src="/images/hoop-branding/SVG/hoop-symbol+text_black.svg"
           alt="Hoop"
           height={24}
           style={{ display: 'block' }}
@@ -34,7 +34,6 @@ export function SidebarCollapsed({ skipLink }) {
       <ScrollArea
         scrollbars="y"
         type="hover"
-        data-mantine-color-scheme="dark"
         scrollbarSize={10}
         classNames={{ root: classes.collapsedScrollArea }}
       >

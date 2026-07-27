@@ -135,6 +135,15 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`.
 
+### `RingProgress`
+Compact progress ring with a built-in percentage label, sized for inline/sidebar use (e.g. the Config Status checklist). `value` is 0–100. Arc color defaults to `indigo.5` (the Figma main accent), track to `gray.2`.
+```jsx
+import RingProgress from '@/components/RingProgress'
+
+<RingProgress value={33} />                    // 32px ring, "33%" label
+<RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
+```
+
 ### `StepAccordion`
 Multi-step accordion that mirrors the CLJS wizard pattern.
 ```jsx
@@ -347,7 +356,7 @@ const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 Props: `message` (string), `variant` (`'info'` | `'limit'`, default `'info'`). Always gate the render on `useUserStore.isFreeLicense` at the call site so it disappears for Enterprise users.
 
 ### `EnterpriseBanner`
-Dark-navy enterprise upsell banner pinned to feature pages for free-plan users (activation journey). React counterpart of the CLJS `webapp.features.activation-journey.views.enterprise-banner`, sharing the same visual (`--sidebar-bg`, the app's sidebar navy). The built-in "Talk to Sales" button opens Intercom when analytics tracking is enabled (booting it first if needed, via `useUserStore.showIntercomMessage`), otherwise `https://hoop.dev/meet` in a new tab.
+Dark-navy enterprise upsell banner pinned to feature pages for free-plan users (activation journey). React counterpart of the CLJS `webapp.features.activation-journey.views.enterprise-banner`, sharing the same visual (`--brand-navy`, the brand's dark navy). The built-in "Talk to Sales" button opens Intercom when analytics tracking is enabled (booting it first if needed, via `useUserStore.showIntercomMessage`), otherwise `https://hoop.dev/meet` in a new tab.
 ```jsx
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { useUserStore } from '@/stores/useUserStore'
@@ -573,6 +582,8 @@ Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, 
 | `useAuthStore` | JWT token lifecycle | `token`, `setToken()`, `logout()`, `redirectUrl` |
 | `useUserStore` | Current user data | `user`, `isAdmin`, `isFreeLicense`, `fetchUser()` |
 | `useUIStore` | Sidebar open/collapsed | `sidebarOpened`, `toggle()`, `pendingSection` |
+| `useBridgeStore` | Cross-cutting CLJS re-frame dispatches | `showSnackbar()`, `refreshLegacyUser()`, `openNativeClientAccess()`, `openNativeClientAccessWhenReady()` |
+| `useConfigStatusStore` | Sidebar setup-checklist snapshot (admin only) | `status`, `checks`, `execConnectionName`, `fetchStatus({force})` |
 | `useAgentStore` | Agents CRUD | `agents`, `loading`, `error`, `agentKey`, `fetchAgents()`, `createAgent()`, `deleteAgent()` |
 | `useCommandPaletteStore` | Command palette state | `page`, `context`, `searchStatus`, `results`, `search()` |
 
@@ -593,6 +604,7 @@ useAuthStore.getState().token
 | `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
 | `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
 | `guardrails.js` | GET `/guardrails` |
+| `sessions.js` | GET `/sessions` (`list(params)` — e.g. `{ limit: 1 }` as a cheap existence/total probe) |
 | `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
 | `attributes.js` | CRUD `/attributes` |
 | `search.js` | GET `/search?term=` |

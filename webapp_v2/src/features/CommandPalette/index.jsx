@@ -9,8 +9,8 @@ import CommandPaletteRoot from './CommandPaletteRoot';
 import MainPage from './MainPage';
 import ResourceRolesPage from './ResourceRolesPage';
 import ConnectionActionsPage, { ACTION_TYPES } from './ConnectionActionsPage';
-import { notifications } from '@mantine/notifications'
-import { clojureDispatch } from '@/utils/clojureDispatch';
+import { showSnackbar } from '@/utils/snackbar'
+import { useBridgeStore } from '@/stores/useBridgeStore';
 
 function ConnectedCommandPalette() {
   const navigate = useNavigate();
@@ -63,23 +63,27 @@ function ConnectedCommandPalette() {
     navigate(path);
   };
 
-  const handleConnectionAction = (actionType, connection, resource) => {
+  const handleConnectionAction = (actionType, connection) => {
     spotlight.close();
 
     switch (actionType) {
       case ACTION_TYPES.WEB_TERMINAL:
+        // The CLJS editor only reads ?role= on panel mount — nudge an already
+        // mounted/parked editor to re-read the URL after navigating.
         navigate(`/client?role=${connection?.name}`);
+        useBridgeStore.getState().syncPrimaryConnectionFromUrl();
         break;
 
-      case ACTION_TYPES.HOOP_CLI:
+      case ACTION_TYPES.HOOP_CLI: {
         const cmd = `hoop connect ${connection?.name}`;
         navigator.clipboard.writeText(cmd).then(() => {
-          notifications.show({ message: `Copied: ${cmd}`, color: 'green' });
+          showSnackbar({ level: 'success', text: `Copied: ${cmd}` });
         });
         break;
+      }
 
       case ACTION_TYPES.NATIVE_CLIENT:
-        clojureDispatch('native-client-access->start-flow', connection?.name)
+        useBridgeStore.getState().openNativeClientAccess(connection?.name)
         break;
 
       case ACTION_TYPES.TEST:

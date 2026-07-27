@@ -19,13 +19,16 @@ import { PillTheme } from '@/components/Pill/theme';
 export function cssVariablesResolver() {
   return {
     variables: {
-      '--sidebar-bg': '#182449',
-      '--sidebar-border': 'rgba(255, 255, 255, 0.1)',
-      // gray[8] and gray[9] are not typical palette picks — wired here as semantic tokens.
-      '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f8f9fa is too tinted for body)
-      '--mantine-color-text': '#212529', // gray[9]  — body text, headings
-      '--mantine-color-dimmed': '#343a40', // gray[8]  — secondary text, icons
-      '--mantine-color-placeholder': '#868e96' // gray[6] — placeholder text
+      // Brand navy — dark surface color for auth/upsell visuals (MethodCard,
+      // SelectionCard, EnterpriseBanner, AuthPageLoader). Not tied to the
+      // sidebar, which uses the gray scale.
+      '--brand-navy': '#182449',
+      // Radix Slate steps 11/12 are not in the 10-slot gray array — wired here
+      // as semantic tokens (see the gray scale comment below).
+      '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f0f0f3 is too tinted for body)
+      '--mantine-color-text': '#1c2024', // slate12 — body text, headings
+      '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
+      '--mantine-color-placeholder': '#807f8f' // gray[5] — placeholder text
     },
     light: {},
     dark: {}
@@ -43,34 +46,35 @@ export const theme = createTheme({
   colors: {
     // Radix Indigo — primary action color
     indigo: [
-      '#fdfdfe', // shade 1  — near-white tint
-      '#f7f9ff', // shade 2
-      '#edf2fe', // shade 3
-      '#e1e9ff', // shade 4
-      '#d2deff', // shade 5
-      '#c1d0ff', // shade 6
-      '#abbdf9', // shade 7
-      '#8da4ef', // shade 8
-      '#3e63dd', // shade 9  ← primaryShade (index 8)
-      '#3358d4' // shade 10
+      '#eaf1ff',
+      '#d5defd',
+      '#a9bbf3',
+      '#7b95e9',
+      '#5475e1',
+      '#3e63dd',
+      '#2c56db',
+      '#1d47c3',
+      '#153fb0',
+      '#02359c'
     ],
 
-    // Radix Slate — neutral scale (light mode), slate1–10 mapped sequentially.
-    // slate11 (#60646c) and slate12 (#1c2024) are not in this array — they are
-    // wired as semantic tokens in cssVariablesResolver:
-    //   --mantine-color-dimmed → slate11   (secondary text, icons, placeholders)
-    //   --mantine-color-text   → slate12   (body text, headings)
+    // Slate-tinted neutral ramp (light mode), anchored on the Figma hoop/colors
+    // gray tokens (gray/0 #f0f0f3 … gray/9 #4d4d60). The Radix Slate text steps
+    // are not in this array — they are wired as semantic tokens in
+    // cssVariablesResolver:
+    //   --mantine-color-dimmed → slate11 #60646c (secondary text, icons)
+    //   --mantine-color-text   → slate12 #1c2024 (body text, headings)
     gray: [
-      '#f8f9fa', // 0 — app background
-      '#f1f3f5', // 1 — subtle background
-      '#e9ecef', // 2 — hovered background
-      '#dee2e6', // 3 — selected/active background
-      '#ced4da', // 4 — subtle border
-      '#adb5bd', // 5 — border
-      '#868e96', // 6 — hovered border / placeholder
-      '#495057', // 7 — solid/contrast fills
-      '#343a40', // 8 — secondary text, icons
-      '#212529' // 9 — body text, headings
+      '#f0f0f3',
+      '#e5e5e5',
+      '#c8c8cb',
+      '#aaaab2',
+      '#90909c',
+      '#807f8f',
+      '#77778a',
+      '#666577',
+      '#5a5a6c',
+      '#4d4d60'
     ],
 
     // Radix Green — success / positive feedback

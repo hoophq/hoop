@@ -1,9 +1,9 @@
 /* Dark enterprise upsell banner. Every value derives from theme tokens: the
-   background is the --sidebar-bg semantic token (theme.js, the same dark
-   navy as the sidebar) and the muted subtitle is color-mixed from the white
-   token, so retheming propagates here automatically. */
+   background is the --brand-navy semantic token (theme.js) and the muted
+   subtitle is color-mixed from the white token, so retheming propagates
+   here automatically. */
 .root {
-  background-color: var(--sidebar-bg);
+  background-color: var(--brand-navy);
   border-radius: var(--mantine-radius-sm);
   padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
 }
@@ -23,15 +23,15 @@
   padding: calc(var(--mantine-spacing-xs) / 2) var(--mantine-spacing-xs);
   font-size: var(--mantine-font-size-xs);
   font-weight: 500;
-  color: var(--sidebar-bg);
+  color: var(--brand-navy);
 }
 
 .action {
   background-color: var(--mantine-color-white);
-  color: var(--sidebar-bg);
+  color: var(--brand-navy);
 }
 
 .action:hover {
   background-color: var(--mantine-color-indigo-2);
-  color: var(--sidebar-bg);
+  color: var(--brand-navy);
 }

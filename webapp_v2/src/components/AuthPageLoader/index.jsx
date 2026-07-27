@@ -14,7 +14,7 @@ function AuthPageLoader({ message, description, error }) {
   }, [])
 
   return (
-    <Center h="100vh" bg="var(--sidebar-bg)">
+    <Center h="100vh" bg="var(--brand-navy)">
       <Transition mounted={visible} transition="fade" duration={300}>
         {(styles) => (
           <Stack align="center" gap="xl" maw={320} style={styles}>
