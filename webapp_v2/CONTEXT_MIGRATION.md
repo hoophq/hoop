@@ -131,7 +131,7 @@ Gateway backend (port 8009)
 | Sidebar | `shared_ui/sidebar/main.cljs` | ✅ Yes — `layout/Sidebar.jsx` |
 | Command Palette (cmd+k) | `shared_ui/cmdk/command_palette.cljs` | ✅ Yes — `features/CommandPalette/` |
 | Modal system | `components/modal.cljs` | ❌ Not yet |
-| Snackbar / Toast | `components/snackbar.cljs` | ❌ Not yet |
+| Snackbar / Toast | `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
 | Confirmation Dialog | `components/dialog.cljs` | ❌ Not yet |
 | Page loader | Re-frame `:page-loader-status` | ❌ Not yet |
 
@@ -235,8 +235,8 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - Auth pages
 
 ### In Progress / Known Gaps 🔄
-- Modal/Snackbar/Dialog system not yet in React (CLJS still owns this)
-- No notification/toast system in React
+- Modal/Dialog system not yet in React (CLJS still owns this). Snackbar/Toast is done —
+  `showSnackbar` from `utils/snackbar.jsx` (sonner, top-right), see `CLAUDE.md`.
 
 ### Pages Prioritized for Migration (rough order)
 1. Dashboard

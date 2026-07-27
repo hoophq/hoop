@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Group, Stack, Switch, Text, Title } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
 import Badge from '@/components/Badge'
 import { featureFlagsService } from '@/services/featureFlags'
+import { showSnackbar } from '@/utils/snackbar'
 
 const STABILITY_COLOR = {
   experimental: 'orange',
@@ -25,10 +25,9 @@ export default function SettingsExperimental() {
       .list()
       .then((res) => setFlags(res.data ?? []))
       .catch(() => {
-        notifications.show({
-          color: 'red',
-          title: 'Error',
-          message: 'Failed to load feature flags',
+        showSnackbar({
+          level: 'error',
+          text: 'Failed to load feature flags',
         })
       })
       .finally(() => setLoading(false))
@@ -51,10 +50,9 @@ export default function SettingsExperimental() {
       setFlags((prev) =>
         prev.map((f) => (f.name === flagName ? { ...f, enabled: previous } : f))
       )
-      notifications.show({
-        color: 'red',
-        title: 'Error',
-        message: `Failed to update flag "${flagName}"`,
+      showSnackbar({
+        level: 'error',
+        text: `Failed to update flag "${flagName}"`,
       })
     } finally {
       setPending((prev) => {
