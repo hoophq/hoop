@@ -114,11 +114,12 @@ func Get(c *gin.Context) {
 		serverInfoData.LicenseInfo.Type = l.Payload.Type
 		serverInfoData.LicenseInfo.IssuedAt = l.Payload.IssuedAt
 		serverInfoData.LicenseInfo.ExpireAt = l.Payload.ExpireAt
-		// null means all features are enabled; normalize empty to null
+		// empty means all features are enabled; keep the field a JSON array
+		// (never null) so it matches the OpenAPI non-nullable array schema
 		if len(l.Payload.Features) > 0 {
 			serverInfoData.LicenseInfo.Features = l.Payload.Features
 		} else {
-			serverInfoData.LicenseInfo.Features = nil
+			serverInfoData.LicenseInfo.Features = []string{}
 		}
 	}
 	c.JSON(http.StatusOK, serverInfoData)

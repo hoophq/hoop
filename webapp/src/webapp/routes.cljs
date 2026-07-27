@@ -206,20 +206,32 @@
   [selfhosted-only component])
 
 ;; Component wrapper to check if a feature is enabled by the gateway
-;; license. A nil/empty license feature list means every feature is
+;; license. An empty license feature list means every feature is
 ;; enabled (see /serverinfo license_info.features contract).
-;; While the server info is still loading nothing is rendered, so a
-;; page refresh on a gated route doesn't flash or redirect prematurely.
+;; Until /serverinfo has loaded successfully nothing is rendered:
+;; an absent payload is NOT treated as an unrestricted license, so a
+;; page refresh (or a serverinfo failure) never fails open.
 (defn license-feature-only []
   (let [gateway-info (rf/subscribe [:gateway->info])]
     (fn [feature component]
       (let [info @gateway-info
-            features (get-in info [:data :license_info :features])
-            enabled? (or (empty? features)
-                         (boolean (some #(= % feature) features)))]
+            data (:data info)
+            features (get-in data [:license_info :features])
+            enabled? (and (some? data)
+                          (or (empty? features)
+                              (boolean (some #(= % feature) features))))]
         (cond
-          (and (:loading info) (nil? (:data info)))
-          [:<>]
+          ;; serverinfo unknown (still loading or failed): fail closed.
+          ;; While a fetch is in-flight render nothing to avoid flashes;
+          ;; after a failure show a loader instead of granting access.
+          (nil? data)
+          (if (:loading info)
+            [:<>]
+            [:div {:class "flex items-center justify-center h-full"}
+             [:div {:class "text-center"}
+              [loaders/page-loading-screen {:full-page false
+                                            :message "Loading..."
+                                            :description "Waiting for the gateway server information."}]]])
 
           enabled?
           component

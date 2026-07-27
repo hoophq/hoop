@@ -94,16 +94,26 @@
  (fn [db [_ flag-name]]
    (boolean (get-in db [:gateway->info :data :feature_flags (keyword flag-name)] false))))
 
-;; Features enabled by the gateway license. nil/empty means every
+;; Features enabled by the gateway license. An empty list means every
 ;; feature is enabled (see /serverinfo license_info.features contract).
 (rf/reg-sub
  :gateway->license-features
  (fn [db _]
    (get-in db [:gateway->info :data :license_info :features])))
 
+;; True once /serverinfo has been loaded at least once. Gating decisions
+;; must not be made before this — an absent payload is NOT the same as
+;; an unrestricted license (fail closed while unknown).
+(rf/reg-sub
+ :gateway->license-features-known?
+ (fn [db _]
+   (some? (get-in db [:gateway->info :data]))))
+
 (rf/reg-sub
  :gateway->license-feature-enabled?
- :<- [:gateway->license-features]
- (fn [features [_ feature]]
-   (or (empty? features)
-       (boolean (some #(= % (name feature)) features)))))
+ (fn [db [_ feature]]
+   (let [data (get-in db [:gateway->info :data])
+         features (get-in data [:license_info :features])]
+     (and (some? data)
+          (or (empty? features)
+              (boolean (some #(= % (name feature)) features)))))))

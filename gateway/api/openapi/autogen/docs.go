@@ -13786,7 +13786,7 @@ const docTemplate = `{
                     "example": 1722997969
                 },
                 "features": {
-                    "description": "Features enabled by this license. Null or empty means all features are enabled",
+                    "description": "Features enabled by this license. Omitted or empty means all features are enabled",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -16908,7 +16908,7 @@ const docTemplate = `{
                     "example": 1722261422
                 },
                 "features": {
-                    "description": "Features enabled by the license. Null means all features are enabled",
+                    "description": "Features enabled by the license. Empty means all features are enabled",
                     "type": "array",
                     "items": {
                         "type": "string"

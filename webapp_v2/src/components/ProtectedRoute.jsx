@@ -59,6 +59,14 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
           currentUser = userData
         }
 
+        // Retry /serverinfo when a previous fetch failed or was skipped:
+        // license gating fails closed without it, so gated routes would
+        // otherwise stay blocked until a full reload.
+        if (!useUserStore.getState().serverInfoLoaded) {
+          const serverInfo = await authService.getServerInfo().catch(() => null)
+          if (serverInfo) setServerInfo(serverInfo)
+        }
+
         // Get feature flag
         const { data: featureFlagsData } = await featureFlagsService.list()
         const featureFlags = Object.fromEntries(featureFlagsData.map(flag => [flag.name, flag.enabled]))
@@ -121,7 +129,8 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
     return <Navigate to="/" replace />
   }
 
-  // License gating: null/empty license feature list means everything is
+  // License gating: fails closed — while /serverinfo is unknown the check
+  // returns false. Once loaded, an empty feature list means everything is
   // enabled; otherwise the feature key must be present.
   if (licenseFeature && !isLicenseFeatureEnabled(licenseFeature)) {
     return <Navigate to="/" replace />

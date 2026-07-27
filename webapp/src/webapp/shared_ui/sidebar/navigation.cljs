@@ -134,10 +134,14 @@
                                                    :class "mt-1 px-2"}
                        (for [plugin sidebar-constants/integrations-management
                              :let [lf (:license-feature plugin)
-                                   features (get-in (:data @gateway-info) [:license_info :features])]
+                                   data (:data @gateway-info)
+                                   features (get-in data [:license_info :features])]
+                             ;; fail closed: gated entries stay hidden until
+                             ;; /serverinfo has loaded successfully
                              :when (or (nil? lf)
-                                       (empty? features)
-                                       (some #(= % lf) features))]
+                                       (and (some? data)
+                                            (or (empty? features)
+                                                (some #(= % lf) features))))]
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
                            ^{:key (:name plugin)}
                            [:li

@@ -27,8 +27,11 @@ export const useUserStore = create((set, get) => ({
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
-  // Features enabled by the gateway license; null/empty = all enabled.
+  // Features enabled by the gateway license; empty/null = all enabled.
+  // Only meaningful once serverInfoLoaded is true — gating fails closed
+  // while /serverinfo hasn't been fetched successfully.
   licenseFeatures: null,
+  serverInfoLoaded: false,
   apiUrl: null,
   hasRedactCredentials: false,
   loading: false,
@@ -54,14 +57,18 @@ export const useUserStore = create((set, get) => ({
       redactProvider, 
       apiUrl,
       licenseFeatures,
+      serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   isLicenseFeatureEnabled: (name) => {
-    const features = get().licenseFeatures
-    return !features?.length || features.includes(name)
+    const { serverInfoLoaded, licenseFeatures } = get()
+    // Unknown license state (serverinfo missing or failed) never grants
+    // access to a gated feature.
+    if (!serverInfoLoaded) return false
+    return !licenseFeatures?.length || licenseFeatures.includes(name)
   },
   setLoading: (loading) => set({ loading }),
   clear: () => {
@@ -77,6 +84,7 @@ export const useUserStore = create((set, get) => ({
       gatewayVersion: null, 
       featureFlags: {}, 
       licenseFeatures: null,
+      serverInfoLoaded: false,
       redactProvider: null, 
       apiUrl: null,
       hasRedactCredentials: false,
