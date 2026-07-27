@@ -542,19 +542,6 @@ func RunbookExec(c *gin.Context) {
 		userAgent = "webapp.runbook.exec"
 	}
 
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		SessionID:      sessionID,
-		ConnectionName: connectionName,
-		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
-		UserAgent:      userAgent,
-		Origin:         proto.ConnectionOriginClientAPIRunbooks,
-	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution: %v", err)
-		return
-	}
-
 	newSession := models.Session{
 		ID:                   sessionID,
 		OrgID:                ctx.GetOrgID(),
@@ -574,8 +561,30 @@ func RunbookExec(c *gin.Context) {
 		SessionBatchID:       req.SessionBatchID,
 		CorrelationID:        req.CorrelationID,
 		ExitCode:             nil,
+		Origin:               proto.SessionOriginRunbooks,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
+	}
+
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(c, orgID, connectionName, string(runbook.InputFile))
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing runbook session")
+		return
+	}
+	decision, aiResp, err := sessionapi.ApplyAIAnalysisDecision(ctx, &newSession, connection, analyzeRes, aiAccessRule,
+		runbook.EnvVars, req.ClientArgs)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed enforcing ai analysis for runbook")
+		return
+	}
+	switch decision {
+	case sessionapi.AIDecisionBlocked:
+		c.JSON(http.StatusOK, aiResp)
+		return
+	case sessionapi.AIDecisionReview:
+		c.JSON(http.StatusAccepted, aiResp)
+		return
 	}
 
 	if connection.JiraIssueTemplateID.String != "" {
@@ -635,6 +644,19 @@ func RunbookExec(c *gin.Context) {
 	log.Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		runbook.CommitSHA[:8], req.FileName, connectionName, strings.TrimSpace(params))
 
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		SessionID:      sessionID,
+		ConnectionName: connectionName,
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
+		UserAgent:      userAgent,
+		Origin:         proto.ConnectionOriginClientAPIRunbooks,
+	})
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution: %v", err)
+		return
+	}
+
 	respCh := make(chan *clientexec.Response)
 	go func() {
 		defer func() { close(respCh); client.Close() }()
@@ -649,11 +671,14 @@ func RunbookExec(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		log.Infof("runbook exec response, %v", outcome)
+		outcome.AIAnalysis = sessionapi.ToOpenApiSessionAIAnalysis(analyzeRes)
 		c.JSON(http.StatusOK, outcome)
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Infof("runbook exec timeout (50s), it will return async")
-		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sessionID))
+		timeoutResp := clientexec.NewTimeoutResponse(sessionID)
+		timeoutResp.AIAnalysis = sessionapi.ToOpenApiSessionAIAnalysis(analyzeRes)
+		c.JSON(http.StatusAccepted, timeoutResp)
 	}
 }
 

@@ -96,6 +96,19 @@ func CoerceToMapString(src map[string]any) map[string]string {
 	return dst
 }
 
+func CoerceToMapNullableString(src map[string]any) map[string]*string {
+	dst := map[string]*string{}
+	for k, v := range src {
+		if v == nil {
+			dst[k] = nil
+		} else {
+			strVal := fmt.Sprintf("%v", v)
+			dst[k] = &strVal
+		}
+	}
+	return dst
+}
+
 func coerceToAnyMap(src map[string]string) map[string]any {
 	dst := map[string]any{}
 	for k, v := range src {

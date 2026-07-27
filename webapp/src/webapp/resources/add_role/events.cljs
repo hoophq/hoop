@@ -47,7 +47,8 @@
                                     resource-metadata
                                     (:subtype role))
                           command-role (get-in metadata [:resourceConfiguration :command])
-                          processed-role (process-form/process-role role agent-id command-role)
+                          processed-role (-> (process-form/process-role role agent-id command-role)
+                                             (process-form/with-profile-attribute role db))
                           body (assoc processed-role :resource_name resource-name)]
                       [:dispatch [:fetch {:method "POST"
                                           :uri "/connections"

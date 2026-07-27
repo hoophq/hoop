@@ -67,7 +67,7 @@
       (let [all-connections (or (:data @connections) [])
             connections-loading? (= :loading (:loading @connections))
             valid-connections (filter #(and
-                                        (not (or (#{"tcp" "ssh"} (:subtype %))
+                                        (not (or (#{"tcp" "ssh" "ssh-local"} (:subtype %))
                                                  (http-proxy-subtypes (:subtype %))))
                                         (= "enabled" (:access_mode_exec %)))
                                       all-connections)]

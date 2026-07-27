@@ -20,15 +20,14 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
-	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
-	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -64,25 +63,16 @@ func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
 	}
-	if aiAnalyzerRule == nil {
+	if aiAnalyzerRule == nil || script == "" {
 		return nil, nil, nil
 	}
 
-	analyzerRes, err := apiai.AnalyzeSession(ctx, orgID, script, aiAnalyzerRule.CustomPrompt)
+	analyzerRes, err := aianalyzer.AnalyzeSession(ctx, orgID, script, aiAnalyzerRule.CustomPrompt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
 
-	var levelKey models.RiskLevelKey
-	switch analyzerRes.RiskLevel {
-	case apiai.RiskLevelHigh:
-		levelKey = models.RiskLevelKeyHigh
-	case apiai.RiskLevelMedium:
-		levelKey = models.RiskLevelKeyMedium
-	case apiai.RiskLevelLow:
-		levelKey = models.RiskLevelKeyLow
-	}
-	tier := aiAnalyzerRule.RiskEvaluation.Tier(levelKey)
+	tier := aiAnalyzerRule.RiskEvaluation.Tier(aianalyzer.RiskLevelKey(analyzerRes.RiskLevel))
 
 	analysis := &models.SessionAIAnalysis{
 		RiskLevel:   string(analyzerRes.RiskLevel),
@@ -174,6 +164,12 @@ func Post(c *gin.Context) {
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	// Attribute the session to the calling surface via the User-Client/User-Agent
+	// header: the webapp (CLJS) sends "webapp.core", the CLI sends "hoopcli", and
+	// everything else is treated as a raw API consumer. Once webapp_v2 (React)
+	// issues its own session calls it must send the same header to keep being
+	// attributed as `webapp`.
+	sessionOrigin := proto.SessionOriginFromUserAgent(userAgent)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.editor.exec"
 	}
@@ -198,53 +194,31 @@ func Post(c *gin.Context) {
 		IdentityType:         "user",
 		SessionBatchID:       req.SessionBatchID,
 		CorrelationID:        req.CorrelationID,
+		Origin:               sessionOrigin,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
 
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	needsAiReview := false
 	analyzeRes, aiAccessRule, err := AIAnalyze(c, orgID, conn.Name, req.Script)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
 		return
 	}
-	if analyzeRes != nil {
-		newSession.AIAnalysis = analyzeRes
 
-		shouldBlock := analyzeRes.Action == string(models.BlockExecution)
-		needsAiReview = analyzeRes.Action == string(models.RequireAccessRequest)
-		if shouldBlock {
-			newSession.Status = string(openapi.SessionStatusDone)
-			newSession.ExitCode = &InternalExitCode
-			endTime := time.Now().UTC()
-			newSession.EndSession = &endTime
-		}
-
-		if err := models.UpsertSession(newSession); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
-			return
-		}
-
-		if shouldBlock {
-			// AI-blocked sessions never reach the create path below, so we publish the full
-			// session lifecycle (started + closed) here to keep downstream event consumers
-			// consistent.
-			events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
-			events.DeriveFromSessionEnd(ctx.OrgID, &newSession)
-
-			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
-
-			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sid,
-				Output:            "Session blocked by AI risk analyzer",
-				OutputStatus:      "blocked",
-				ExitCode:          InternalExitCode,
-				ExecutionTimeMili: 0,
-				AIAnalysis:        ToOpenApiSessionAIAnalysis(analyzeRes),
-			})
-			return
-		}
+	decision, aiResp, err := ApplyAIAnalysisDecision(ctx, &newSession, conn, analyzeRes, aiAccessRule,
+		req.EnvVars, req.ClientArgs)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed enforcing ai analysis")
+		return
+	}
+	switch decision {
+	case AIDecisionBlocked:
+		c.JSON(http.StatusOK, aiResp)
+		return
+	case AIDecisionReview:
+		c.JSON(http.StatusAccepted, aiResp)
+		return
 	}
 
 	if conn.JiraIssueTemplateID.String != "" {
@@ -277,36 +251,6 @@ func Post(c *gin.Context) {
 				"jira_issue_url": resp.Links.Agent,
 			}
 		}
-	}
-
-	if needsAiReview {
-		if aiAccessRule == nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError,
-				fmt.Errorf("ai analyzer requested review without resolving access request rule"),
-				"failed creating ai-driven review")
-			return
-		}
-		review, err := CreateReviewFromAIAnalysis(orgID, sid, conn.Name,
-			AIReviewRequester{
-				UserID:       ctx.UserID,
-				UserEmail:    ctx.UserEmail,
-				UserName:     ctx.UserName,
-				UserSlackID:  ctx.SlackID,
-				ConnectionID: conn.ID,
-			},
-			aiAccessRule, req.Script, req.EnvVars, req.ClientArgs)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating ai-driven review")
-			return
-		}
-		events.DeriveFromSessionStart(ctx.OrgID, &newSession, conn)
-		c.JSON(http.StatusAccepted, clientexec.Response{
-			HasReview:  true,
-			Output:     fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
-			SessionID:  sid,
-			AIAnalysis: ToOpenApiSessionAIAnalysis(analyzeRes),
-		})
-		return
 	}
 
 	if err := services.CreateSession(c, newSession, conn); err != nil {

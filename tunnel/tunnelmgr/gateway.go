@@ -21,7 +21,7 @@ import (
 // pinned via cfg.GrpcURL. TLSSkipVerify / TLSServerName come from
 // the manager opts so the same envs the legacy code honoured
 // continue to work.
-func (m *Manager) buildGatewayConfig(ctx context.Context, cfg daemonconfig.Config) (grpc.ClientConfig, string, error) {
+func (m *Manager) buildGatewayConfig(ctx context.Context, cfg daemonconfig.Config, tokens TokenSource) (grpc.ClientConfig, string, error) {
 	if cfg.APIURL == "" || cfg.Token == "" {
 		return grpc.ClientConfig{}, "", errors.New("api_url and token are required")
 	}
@@ -29,9 +29,11 @@ func (m *Manager) buildGatewayConfig(ctx context.Context, cfg daemonconfig.Confi
 
 	grpcURL := cfg.GrpcURL
 	if grpcURL == "" {
+		token, epoch := tokens.Snapshot()
 		si, err := client.FetchServerInfo(ctx, client.FetchServerInfoOptions{
 			APIBaseURL: apiBase,
-			Token:      cfg.Token,
+			Token:      token,
+			OnNewToken: func(newToken string) { tokens.Rotate(newToken, epoch) },
 		})
 		if err != nil {
 			return grpc.ClientConfig{}, "", fmt.Errorf("fetch serverinfo: %w", err)
@@ -43,10 +45,14 @@ func (m *Manager) buildGatewayConfig(ctx context.Context, cfg daemonconfig.Confi
 	if err != nil {
 		return grpc.ClientConfig{}, "", fmt.Errorf("parse gRPC URL %q: %w", grpcURL, err)
 	}
+	currentToken, _ := tokens.Snapshot()
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
-		Token:         cfg.Token,
-		Insecure:      isInsecureScheme(grpcURL),
+		// Token here is the bring-up snapshot; per-flow dials overwrite
+		// it with a fresh snapshot so rotations apply to new streams
+		// (see makeTCPHandler).
+		Token:    currentToken,
+		Insecure: isInsecureScheme(grpcURL),
 		// Honour the same env-var escape hatches the daemon honoured
 		// pre-refactor. Wiring them through Options would be cleaner
 		// but for dev/integration runs the env is what people set.

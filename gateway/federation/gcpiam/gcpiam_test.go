@@ -247,8 +247,8 @@ func TestResolve_PreflightRejectsBrokenSAPrincipal(t *testing.T) {
 	if !strings.Contains(err.Error(), "invalid GCP service-account name") {
 		t.Errorf("error %q should call out the invalid SA name", err.Error())
 	}
-	if !strings.Contains(err.Error(), "{user.email_local}") {
-		t.Errorf("error %q should hint at the {user.email_local} placeholder", err.Error())
+	if !strings.Contains(err.Error(), "{user.email}") {
+		t.Errorf("error %q should hint at the {user.email} placeholder", err.Error())
 	}
 	if issuer.calledPrincipal != "" {
 		t.Errorf("issuer must not be called when preflight rejects; got principal=%q", issuer.calledPrincipal)
@@ -257,7 +257,7 @@ func TestResolve_PreflightRejectsBrokenSAPrincipal(t *testing.T) {
 
 // TestResolve_PreflightRejectsDottedSALocalPart guards against the silent
 // failure mode where a dotted email (e.g. first.last@example.com) is fed into
-// {user.email_local} verbatim. SA names can't carry dots; GCP would refuse and
+// {user.email} verbatim. SA names can't carry dots; GCP would refuse and
 // the preflight should surface the rule before the API call.
 func TestResolve_PreflightRejectsDottedSALocalPart(t *testing.T) {
 	issuer := &fakeIssuer{}
@@ -279,8 +279,37 @@ func TestResolve_PreflightRejectsDottedSALocalPart(t *testing.T) {
 	}
 }
 
+// TestResolve_PreflightRejectsShortSALocalPart covers the most common SA-name
+// mistake: a user with a short email local part (e.g. "al@acme.com") fed into
+// "{user.email}@<project>.iam.gserviceaccount.com" renders a 2-char SA name,
+// which is below GCP's 6-char minimum. The preflight must reject it locally
+// with a message that names the length problem and points at the prefix fix,
+// rather than deferring to GCP's opaque "400 Invalid form of account ID".
+func TestResolve_PreflightRejectsShortSALocalPart(t *testing.T) {
+	issuer := &fakeIssuer{token: "should-not-be-issued"}
+	r := newResolverWithIssuer(issuer)
+
+	_, err := r.Resolve(context.Background(), federation.ResolveRequest{
+		Config:                newCfg("my-proj", 3600),
+		AdminCredentialsPlain: fakeAdminSAJSON(),
+		ResolvedPrincipal:     "al@my-proj.iam.gserviceaccount.com",
+	})
+	if err == nil {
+		t.Fatalf("expected preflight to reject a too-short SA local part")
+	}
+	if !strings.Contains(err.Error(), "at least 6 characters") {
+		t.Errorf("error %q should call out the 6-character minimum", err.Error())
+	}
+	if !strings.Contains(err.Error(), "{user.email}") {
+		t.Errorf("error %q should hint at the {user.email} placeholder", err.Error())
+	}
+	if issuer.calledPrincipal != "" {
+		t.Errorf("issuer must not be called when preflight rejects; got principal=%q", issuer.calledPrincipal)
+	}
+}
+
 // TestResolve_PreflightAcceptsWellFormedSAPrincipal documents the happy case:
-// a template that uses {user.email_local} cleanly produces a valid SA email,
+// a template that uses {user.email} cleanly produces a valid SA email,
 // preflight is a no-op, and the issuer is invoked with the principal verbatim.
 func TestResolve_PreflightAcceptsWellFormedSAPrincipal(t *testing.T) {
 	issuer := &fakeIssuer{token: "ya29.ok", expiresAt: time.Now().Add(time.Hour)}

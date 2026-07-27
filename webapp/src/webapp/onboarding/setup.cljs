@@ -123,6 +123,9 @@
   (let [agents (rf/subscribe [:agents])
         transition-state (r/atom :loading)]
     (rf/dispatch [:agents->get-agents])
+    ;; Warm up the active protection profile so the quickstart demo payload
+    ;; can carry its attribute (see :connections->quickstart-create-postgres-demo).
+    (rf/dispatch [:protection-profile/fetch])
     (fn []
       (let [agents-status (:status @agents)
             agents-data (:data @agents)

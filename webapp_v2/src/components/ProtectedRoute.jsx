@@ -5,7 +5,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
-import PageLoader from '@/components/PageLoader'
+import AuthPageLoader from '@/components/AuthPageLoader'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
@@ -67,10 +67,16 @@ function ProtectedRoute({ children, adminOnly = false }) {
         // Skip if already on onboarding routes to avoid a redirect loop.
         if (currentUser.is_admin && !isOnboardingRoute) {
           try {
-            const data = await connectionsService.getConnections()
-            const list = Array.isArray(data) ? data : (data?.items ?? data?.data ?? [])
-            if (list.length === 0) {
-              setRedirectTo('/onboarding/setup')
+            const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
+            if ((pages?.total ?? 0) === 0) {
+              // Protection rules come first: until a profile has been applied
+              // (default_protection_profile is null for both "never chose" and
+              // "manual"), onboarding starts at the protection-rules step.
+              setRedirectTo(
+                currentUser.default_protection_profile
+                  ? '/onboarding/setup'
+                  : '/onboarding/protection-rules'
+              )
               return
             }
           } catch {
@@ -107,7 +113,7 @@ function ProtectedRoute({ children, adminOnly = false }) {
   }
 
   if (initializing) {
-    return <PageLoader message="Verifying authentication..." />
+    return <AuthPageLoader message="Verifying authentication..." />
   }
 
   if (adminOnly && !isAdmin) {

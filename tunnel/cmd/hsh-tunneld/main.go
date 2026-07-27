@@ -127,6 +127,11 @@ func runDaemon(logger *log.Logger) error {
 	tld := flag.String("tld", resolver.DefaultTLD, "TLD owned by the tunnel (HSH_TUNNEL_DOMAIN overrides)")
 	devName := flag.String("dev", "", "TUN device name (kernel picks if empty)")
 	sessionSeed := flag.String("session", "spike-session", "session seed (controls the /48 prefix)")
+	// refreshInterval drives the periodic connection-list refresh while
+	// the tunnel is up. 0 disables auto-refresh (manual
+	// /v1/connections/refresh still works). HSH_TUNNELD_REFRESH_INTERVAL
+	// (a Go duration like "30s") overrides.
+	refreshInterval := flag.Duration("refresh-interval", defaultRefreshInterval, "how often to auto-refresh the connection list while up (0 disables; HSH_TUNNELD_REFRESH_INTERVAL overrides)")
 	// ipcSocket and ipcTokenFile control the local control plane (RD-215).
 	// Empty `--ipc-socket` skips the IPC layer entirely, which keeps the
 	// daemon usable for standalone dev / integration tests where the
@@ -148,18 +153,32 @@ func runDaemon(logger *log.Logger) error {
 	if *configFile == "" {
 		*configFile = daemonconfig.DefaultConfigPathPlatform()
 	}
+	if env := os.Getenv("HSH_TUNNELD_REFRESH_INTERVAL"); env != "" {
+		if d, err := time.ParseDuration(env); err == nil {
+			*refreshInterval = d
+		} else {
+			logger.Printf("ignoring invalid HSH_TUNNELD_REFRESH_INTERVAL=%q: %v", env, err)
+		}
+	}
 
 	cfg := runOptions{
-		tld:          *tld,
-		devName:      *devName,
-		sessionSeed:  *sessionSeed,
-		ipcSocket:    *ipcSocket,
-		ipcTokenFile: *ipcTokenFile,
-		ipcGroup:     *ipcGroup,
-		configFile:   *configFile,
+		tld:             *tld,
+		devName:         *devName,
+		sessionSeed:     *sessionSeed,
+		ipcSocket:       *ipcSocket,
+		ipcTokenFile:    *ipcTokenFile,
+		ipcGroup:        *ipcGroup,
+		configFile:      *configFile,
+		refreshInterval: *refreshInterval,
 	}
 	return run(logger, cfg)
 }
+
+// defaultRefreshInterval is how often the daemon auto-refreshes the
+// connection list while the tunnel is up. A minute keeps newly-created
+// connections discoverable within a bounded delay without hammering the
+// gateway's /api/connections endpoint.
+const defaultRefreshInterval = time.Minute
 
 // runOptions groups every configurable knob `run` cares about. Using a
 // struct here keeps the function signature stable as we add more
@@ -176,6 +195,10 @@ type runOptions struct {
 
 	// configFile is the path of the daemon-managed TOML config file.
 	configFile string
+
+	// refreshInterval is how often to auto-refresh the connection list
+	// while the tunnel is up. Zero disables the background refresh.
+	refreshInterval time.Duration
 }
 
 func run(logger *log.Logger, opts runOptions) error {
@@ -206,6 +229,11 @@ func run(logger *log.Logger, opts runOptions) error {
 	// Build the lifecycle owner. The Manager handles every operation
 	// that touches the netstack / gateway / route table; main.go only
 	// triggers it via the daemonService.
+	// Shared token state (DEP-24): the manager reads the current token
+	// per flow and reports gateway-driven rotations; the service (built
+	// below) persists rotations and swaps the token on login/logout.
+	tokens := newTokenState()
+
 	mgr, err := tunnelmgr.New(tunnelmgr.Options{
 		Logger:        logger,
 		SessionSeed:   opts.sessionSeed,
@@ -214,6 +242,7 @@ func run(logger *log.Logger, opts runOptions) error {
 		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		UserAgent:     userAgent(),
+		TokenSource:   tokens,
 	})
 	if err != nil {
 		return fmt.Errorf("init tunnelmgr: %w", err)
@@ -235,6 +264,7 @@ func run(logger *log.Logger, opts runOptions) error {
 		OnTunnelDown: func() {
 			logger.Printf("tunnel torn down — netstack and routes released")
 		},
+		Tokens: tokens,
 	})
 	if err != nil {
 		return fmt.Errorf("init service: %w", err)
@@ -260,6 +290,18 @@ func run(logger *log.Logger, opts runOptions) error {
 		logger.Printf("not logged in — netstack will not start.")
 		logger.Printf("  run `hsh tunnel login` (the tunnel will come up automatically when you finish).")
 	}
+
+	// Start the background connection-list refresh. It runs for the
+	// whole daemon lifetime (parented to ctx) and no-ops while the
+	// tunnel is down, so it covers both "tunnel already up at startup"
+	// and "tunnel comes up later via login" without extra wiring.
+	svc.StartAutoRefresh(ctx, opts.refreshInterval, logger.Printf)
+
+	// Start the silent token-renewal scheduler (DEP-24). Like the
+	// auto-refresh loop it runs for the whole daemon lifetime and
+	// no-ops while logged out, so it covers login-before-startup and
+	// login-after-startup identically.
+	svc.StartTokenRenewal(ctx, logger.Printf)
 
 	// Block on signal. TearDown on shutdown is best-effort: the
 	// per-tunnel ctx is parented to ctx, so closing it cancels the
@@ -301,18 +343,18 @@ func mergeConfigWithEnv(file daemonconfig.Config) daemonconfig.Config {
 // Branches on snap.ResolvedConfigured:
 //
 //   - true:  tunnelmgr already wired the TUN device into
-//            systemd-resolved at bring-up. The banner reports that
-//            *.<tld> names resolve natively now and skips the
-//            manual-hint block entirely. Users can run `psql -h
-//            foo.hoop` immediately.
+//     systemd-resolved at bring-up. The banner reports that
+//     *.<tld> names resolve natively now and skips the
+//     manual-hint block entirely. Users can run `psql -h
+//     foo.hoop` immediately.
 //
 //   - false: either the host doesn't run systemd-resolved (the
-//            common Alpine/FreeBSD/whatever case) or resolvectl
-//            failed. The banner prints the historical manual-hint
-//            block so the operator can wire DNS through whatever
-//            resolver they do use. tunnelmgr already logged the
-//            specific failure to the journal; we don't repeat it
-//            here.
+//     common Alpine/FreeBSD/whatever case) or resolvectl
+//     failed. The banner prints the historical manual-hint
+//     block so the operator can wire DNS through whatever
+//     resolver they do use. tunnelmgr already logged the
+//     specific failure to the journal; we don't repeat it
+//     here.
 func printTunnelUpBanner(logger *log.Logger, snap tunnelmgr.Snapshot, tld string) {
 	logger.Printf("tunnel is up.")
 	logger.Printf("  host addr: %s (%s)", snap.HostAddr, snap.DeviceName)
@@ -444,5 +486,3 @@ func startIPCServer(ctx context.Context, logger *log.Logger, opts runOptions, sv
 		}
 	}
 }
-
-

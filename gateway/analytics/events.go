@@ -22,10 +22,18 @@ const (
 	EventCreateMachineIdentity        = "hoop-create-machine-identity"
 	EventUpdateMachineIdentity        = "hoop-update-machine-identity"
 	EventDeleteMachineIdentity        = "hoop-delete-machine-identity"
-	EventCreateApiKey                 = "hoop-create-apikey"
-	EventUpdateApiKey                 = "hoop-update-apikey"
-	EventRevokeApiKey                 = "hoop-revoke-apikey"
-	EventReactivateApiKey             = "hoop-reactivate-apikey"
+
+	// api keys
+	EventCreateApiKey     = "hoop-create-apikey"
+	EventUpdateApiKey     = "hoop-update-apikey"
+	EventRevokeApiKey     = "hoop-revoke-apikey"
+	EventReactivateApiKey = "hoop-reactivate-apikey"
+
+	// ai agents
+	EventCreateAIAgent     = "hoop-create-ai-agent"
+	EventUpdateAIAgent     = "hoop-update-ai-agent"
+	EventRevokeAIAgent     = "hoop-revoke-ai-agent"
+	EventReactivateAIAgent = "hoop-reactivate-ai-agent"
 
 	// review
 	EventUpdateReview = "hoop-update-review"
@@ -60,7 +68,8 @@ const (
 	EventFeatureAskAIChatCompletions = "hoop-feature-askai-chat-completions"
 
 	// org settings
-	EventUpdateOrgAnalyticsMode = "hoop-update-org-analytics-mode"
+	EventUpdateOrgAnalyticsMode    = "hoop-update-org-analytics-mode"
+	EventProtectionProfileSelected = "hoop-protection-profile-selected"
 
 	// search api
 	EventSearch = "hoop-search"

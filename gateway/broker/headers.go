@@ -25,7 +25,35 @@ type WebSocketMessage struct {
 const (
 	MessageTypeSessionStarted = "session_started"
 	MessageTypeData           = "data"
+	// MessageTypeGuardrailsViolation is sent by the agent (agentrs) when its
+	// PII guard detects a violation or fails closed. The payload carries
+	// entity metadata only (types, scores, bounding boxes) — no pixels or
+	// recognized text.
+	MessageTypeGuardrailsViolation = "guardrails_violation"
+	// MessageTypeCapabilities is sent by the agent (agentrs) once, as the
+	// first frame after connecting. It is connection-scoped (no session id):
+	// it advertises what this agent can do so the gateway can decide, at
+	// session-creation time, whether to delegate work like the PII guard. It
+	// is addressed with ControlSentinelSID, not a session id.
+	MessageTypeCapabilities = "capabilities"
 )
+
+// CapabilitySupportsPIIGuard is the capability key an agent sets to "true"
+// when it can honor a delegated PII guard (it has both the Presidio analyzer
+// and OCR sidecar endpoints configured).
+const CapabilitySupportsPIIGuard = "supports_pii_guard"
+
+// ControlSentinelSID is the well-known sid used for connection-scoped control
+// frames (those that describe the agent connection, not a session). The wire
+// format requires a non-nil, versioned UUID in every header, so these frames
+// borrow this fixed v4 UUID. The gateway dispatches them by message type at
+// the connection level — the sid never identifies a real session.
+//
+// Keep this byte-for-byte identical to the agent constant
+// `ws::control::CONTROL_SENTINEL_SID`.
+var ControlSentinelSID = uuid.UUID{
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+}
 
 const HeaderSize = 20 // 16 bytes for UUID + 4 bytes for length
 

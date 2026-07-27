@@ -229,16 +229,16 @@
          script-size (:script_size session)
          has-large-event? (and event-size (> event-size size-threshold))
          has-large-input? (and script-size (> script-size size-threshold))
-         live-machine? (and (= "machine" (:identity_type session))
+         live-connect? (and (= "connect" (:verb session))
                             (= "open" (:status session)))
          event-stream (cond
                         (= "exec" (:verb session))
                         "event_stream=base64"
 
-                        ;; Live machine session: keep raw wire frames so the
+                        ;; Live connect session: keep raw wire frames so the
                         ;; client-side decoder used by session-live-tail can
                         ;; render historical and streamed events uniformly.
-                        live-machine?
+                        live-connect?
                         ""
 
                         (= "postgres" (:connection_subtype session))
@@ -341,24 +341,83 @@
  :audit->execute-session
  (fn
    [{:keys [db]} [_ session]]
-   (let [success (fn [res]
-                   (js/setTimeout
-                    (fn []
-                      (rf/dispatch [:audit->get-sessions])
-                      (rf/dispatch [:audit->get-session-by-id {:id (:session_id res) :verb "exec"}]))
-                    800))
-         failure (fn [error res]
-                   (let [session-id (:session_id res)]
-                     (if (and session-id (> (count session-id) 0))
-                       (success res)
-                       (rf/dispatch [:show-snackbar {:text "Failed to execute script"
-                                                     :level :error
-                                                     :details error}]))))]
-     {:fx [[:dispatch [:fetch (merge
-                               {:method "POST"
-                                :uri (str "/sessions/" (:id session) "/exec")
-                                :on-success success
-                                :on-failure failure})]]]})))
+   (let [session-id (:id session)]
+     ;; no-op when an execution is already tracked for this session, so a
+     ;; double click never issues a duplicate POST
+     (if (contains? #{:executing :running} (get-in db [:audit->execution session-id :status]))
+       {}
+       {:db (assoc-in db [:audit->execution session-id] {:status :executing})
+        :fx [[:dispatch [:fetch {:method "POST"
+                                 :uri (str "/sessions/" session-id "/exec")
+                                 :on-success #(rf/dispatch [:audit->execute-session-success session-id %])
+                                 :on-failure #(rf/dispatch [:audit->execute-session-failure session-id %])}]]]}))))
+
+(rf/reg-event-fx
+ :audit->execute-session-success
+ (fn
+   [{:keys [db]} [_ session-id res]]
+   (if (= (:output_status res) "running")
+     ;; HTTP 202: the gateway stopped waiting after 50s but the execution
+     ;; keeps running in the agent; poll the session until it finishes
+     {:db (assoc-in db [:audit->execution session-id] {:status :running})
+      :fx [[:dispatch-later {:ms 5000 :dispatch [:audit->watch-running-session session-id]}]]}
+     {:db (assoc-in db [:audit->execution session-id] {:status :done})
+      :fx [[:dispatch-later {:ms 800 :dispatch [:audit->get-sessions]}]
+           [:dispatch-later {:ms 800 :dispatch [:audit->get-session-by-id {:id session-id :verb "exec"}]}]]})))
+
+(rf/reg-event-fx
+ :audit->execute-session-failure
+ (fn
+   [{:keys [db]} [_ session-id error]]
+   ;; refetch the session so the Execute gate re-evaluates against the
+   ;; server state (e.g. a 403 after the review left the APPROVED status)
+   {:db (update db :audit->execution dissoc session-id)
+    :fx [[:dispatch [:audit->get-session-by-id {:id session-id :verb "exec"}]]
+         [:dispatch [:show-snackbar {:text "Failed to execute script"
+                                     :level :error
+                                     :details error}]]]}))
+
+;; poll every 5s for the first ~5 minutes, then back off to 30s so an
+;; execution that never settles does not keep a tight polling loop forever
+(defn- watch-poll-interval-ms [attempts]
+  (if (< attempts 60) 5000 30000))
+
+(rf/reg-event-fx
+ :audit->watch-running-session
+ (fn
+   [{:keys [db]} [_ session-id]]
+   ;; the :running guard stops the loop when the execution state changes
+   (if (= :running (get-in db [:audit->execution session-id :status]))
+     {:db (update-in db [:audit->execution session-id :attempts] (fnil inc 0))
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/sessions/" session-id)
+                               :on-success #(rf/dispatch [:audit->watch-running-session-check session-id %])
+                               ;; transient errors: keep polling
+                               :on-failure #(rf/dispatch [:audit->watch-running-session-check session-id nil])}]]]}
+     {})))
+
+(rf/reg-event-fx
+ :audit->watch-running-session-check
+ (fn
+   [{:keys [db]} [_ session-id session]]
+   (if (= "done" (:status session))
+     {:db (assoc-in db [:audit->execution session-id] {:status :done})
+      :fx [[:dispatch [:audit->get-sessions]]
+           [:dispatch [:audit->get-session-by-id {:id session-id :verb "exec"}]]]}
+     (let [attempts (get-in db [:audit->execution session-id :attempts] 0)]
+       {:fx [[:dispatch-later {:ms (watch-poll-interval-ms attempts)
+                               :dispatch [:audit->watch-running-session session-id]}]]}))))
+
+(rf/reg-event-fx
+ :audit->ensure-running-session-watch
+ (fn
+   [{:keys [db]} [_ session-id]]
+   ;; resumes tracking a reviewed exec that is running server-side but has no
+   ;; local state (e.g. after a page reload); no-op when already tracked
+   (if (get-in db [:audit->execution session-id])
+     {}
+     {:db (assoc-in db [:audit->execution session-id] {:status :running})
+      :fx [[:dispatch [:audit->watch-running-session session-id]]]})))
 
 (rf/reg-event-fx
  :audit->re-run-session
@@ -591,11 +650,11 @@
    [db [_]]
    (assoc-in db [:audit->session-logs] {:status :error :data nil})))
 
-;; ─── Server-Sent Events for live machine sessions ──────────────────────────
+;; ─── Server-Sent Events for live connect sessions ──────────────────────────
 ;;
-;; Machine sessions (identity_type=machine) with status=open stream their
-;; audit events in real time via GET /sessions/<id>/stream (SSE). We open the
-;; stream when the session-details modal is rendered for a live machine
+;; Interactive connect-verb sessions with status=open stream their audit
+;; events in real time via GET /sessions/<id>/stream (SSE). We open the
+;; stream when the session-details modal is rendered for a live connect
 ;; session and close it on unmount / when the backend signals session_end.
 
 (rf/reg-fx

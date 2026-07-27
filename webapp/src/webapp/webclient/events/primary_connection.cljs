@@ -44,7 +44,12 @@
            [:dispatch [:primary-connection/persist-selected]]
            [:dispatch [:primary-connection/update-url-with-role (:name new-primary)]]
            [:dispatch [:database-schema->clear-schema]]
-           [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]]})))
+           [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]
+           ;; BigQuery is the only federation-capable subtype today; fetch the
+           ;; user's per-user OAuth status so the editor can prompt them to
+           ;; connect their Google account before running (gcp_oauth).
+           (when (= (:subtype new-primary) "bigquery")
+             [:dispatch [:federation/oauth-status (:name new-primary)]])]})))
 
 (rf/reg-event-fx
  :primary-connection/persist-selected
@@ -94,7 +99,9 @@
      (if enabled?
        {:db (assoc-in db [:editor :connections :selected] connection)
         :fx [[:dispatch [:ai-session-analyzer/get-role-rule (or (:name connection) (:id connection))]]
-             [:dispatch [:primary-connection/update-url-with-role (or (:name connection) (:id connection))]]]}
+             [:dispatch [:primary-connection/update-url-with-role (or (:name connection) (:id connection))]]
+             (when (= (:subtype connection) "bigquery")
+               [:dispatch [:federation/oauth-status (:name connection)]])]}
        {:db (assoc-in db [:editor :connections :selected] nil)
         :fx [[:dispatch [:primary-connection/clear-selected]]]}))))
 

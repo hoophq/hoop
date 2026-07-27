@@ -22,12 +22,17 @@
 ;; localStorage key for native client access data (multiple sessions)
 (def native-client-access-storage-key "hoop-native-client-access")
 
-;; Check if native client access data is still valid
+;; Check if native client access data is still valid.
+;; Credentials without an expire_at (persistent credentials issued via the
+;; machine-identity-style flow) are always considered valid.
 (defn native-client-access-valid? [native-client-access-data]
   (when native-client-access-data
-    (let [expire-at (new js/Date (:expire_at native-client-access-data))
-          now (new js/Date)]
-      (> (.getTime expire-at) (.getTime now)))))
+    (let [expire-at-raw (:expire_at native-client-access-data)]
+      (if (nil? expire-at-raw)
+        true
+        (let [expire-at (new js/Date expire-at-raw)
+              now (new js/Date)]
+          (> (.getTime expire-at) (.getTime now)))))))
 
 ;; Normalize sessions to a map of connection names to session data
 (defn normalize-sessions [parsed]

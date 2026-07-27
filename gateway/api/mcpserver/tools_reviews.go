@@ -172,15 +172,22 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancelFn()
 
-	reviewStatus := models.ReviewStatusExecuted
-	defer func() {
-		if err := models.UpdateReviewStatus(review.OrgID, review.ID, reviewStatus); err != nil {
-			log.With("sid", sid).Warnf("failed updating review to status=%v, err=%v", reviewStatus, err)
+	setReviewStatus := func(status models.ReviewStatusType) {
+		if err := models.UpdateReviewStatus(review.OrgID, review.ID, status); err != nil {
+			log.With("sid", sid).Warnf("failed updating review to status=%v, err=%v", status, err)
 		}
-	}()
+	}
 
 	select {
 	case resp := <-respCh:
+		// Session-open federation gate: the user must connect their per-user
+		// account (gcp_oauth) before this approved query can run. Keep the
+		// review APPROVED (not EXECUTED) so it can be retried after consent.
+		if oauthEnv, ok := federationConsentEnvelopeFromResponse(sc, resp); ok {
+			setReviewStatus(models.ReviewStatusApproved)
+			return jsonResult(oauthEnv)
+		}
+		setReviewStatus(models.ReviewStatusExecuted)
 		env := map[string]any{
 			"session_id":        resp.SessionID,
 			"output":            resp.Output,
@@ -197,7 +204,8 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 		return jsonResult(env)
 	case <-timeoutCtx.Done():
 		client.Close()
-		reviewStatus = models.ReviewStatusUnknown
+		// the review stays PROCESSING while the execution continues in the
+		// agent; it settles as EXECUTED when the session finishes
 		return jsonResult(map[string]any{
 			"session_id": session.ID,
 			"status":     "running",
@@ -322,6 +330,8 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 						rev.SessionID,
 						ptr.ToString(rev.OwnerSlackID),
 						rev.Status.Str(),
+						ptr.ToString(rev.RejectionReason),
+						rev.RejectedByEmail(),
 					)
 				} else {
 					log.Warnf("mcp: review update succeeded but transport release function is nil, sid=%v", rev.SessionID)
@@ -334,7 +344,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 	}
 }
 
-func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args reviewsWaitInput) (*mcp.CallToolResult, any, error) {
+func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args reviewsWaitInput) (*mcp.CallToolResult, any, error) {
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
@@ -361,7 +371,8 @@ func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args review
 		return reviewsWaitResult(initial, false, 0), nil, nil
 	}
 
-	rev, timedOut, waited, err := waitUntil(ctx, resolveWaitTimeout(args.TimeoutSeconds),
+	timeout := resolveWaitTimeout(args.TimeoutSeconds)
+	rev, timedOut, waited, err := waitUntil(ctx, timeout,
 		func() (*models.Review, bool, error) {
 			r, err := models.GetReviewByIdOrSid(orgID, args.ID)
 			if err != nil {
@@ -371,7 +382,8 @@ func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args review
 				return nil, false, models.ErrNotFound
 			}
 			return r, isReviewTerminal(r.Status), nil
-		})
+		},
+		newWaitHeartbeat(ctx, req, timeout))
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if rev == nil {

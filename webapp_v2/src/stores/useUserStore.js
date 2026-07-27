@@ -25,7 +25,10 @@ export const useUserStore = create((set, get) => ({
   analyticsMode: 'anonymous',
   disableClipboard: false,
   gatewayVersion: null,
+  redactProvider: null,
   featureFlags: {},
+  apiUrl: null,
+  hasRedactCredentials: false,
   loading: false,
 
   setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
@@ -36,14 +39,39 @@ export const useUserStore = create((set, get) => ({
     const analyticsMode = serverInfo?.analytics_mode || 'anonymous'
     const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
     const featureFlags = serverInfo?.feature_flags || {}
-    set({ isFreeLicense, gatewayVersion: serverInfo?.version || null, analyticsTracking, analyticsMode, disableClipboard, featureFlags })
+    const redactProvider = serverInfo?.redact_provider || null
+    const apiUrl = serverInfo?.api_url || null
+    set({ 
+      isFreeLicense, 
+      gatewayVersion: serverInfo?.version || null, 
+      analyticsTracking, 
+      analyticsMode, 
+      disableClipboard, 
+      featureFlags, 
+      redactProvider, 
+      apiUrl,
+      hasRedactCredentials: !!serverInfo?.has_redact_credentials
+    })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, analyticsMode: 'anonymous', disableClipboard: false, gatewayVersion: null, featureFlags: {} })
+    set({ 
+      user: null, 
+      isAdmin: false, 
+      isSelfHosted: false, 
+      isFreeLicense: true, 
+      analyticsTracking: false, 
+      analyticsMode: 'anonymous', 
+      disableClipboard: false, 
+      gatewayVersion: null, 
+      featureFlags: {}, 
+      redactProvider: null, 
+      apiUrl: null,
+      hasRedactCredentials: false,
+    })
   },
 
   initIntercom: (user) => {
@@ -68,6 +96,20 @@ export const useUserStore = create((set, get) => ({
 
     // Script creates a stub immediately — safe to call boot right away
     window.Intercom('boot', config)
+  },
+
+  // Opens the Intercom messenger with a prefilled message, booting it first
+  // when the app-boot initialization was skipped or shut down (the CLJS boot
+  // races gateway info on load and can leave the messenger unbooted, which
+  // renders as a blank white window). Returns false when Intercom is
+  // unavailable so callers can fall back to the sales page.
+  showIntercomMessage: (message) => {
+    const { analyticsTracking, user } = get()
+    if (!analyticsTracking) return false
+    if (!window.Intercom?.booted) get().initIntercom(user)
+    if (!window.Intercom) return false
+    window.Intercom('showNewMessage', message)
+    return true
   },
 
   initAnalytics: (user) => {

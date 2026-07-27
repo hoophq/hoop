@@ -1,0 +1,12 @@
+# hoop-ng: bright-line clean image line (DEP-66).
+#
+# This chart only overrides the default image repositories of hoop-chart to the
+# clean-only hoophq/*-ng repos. Every other value is inherited from hoop-chart
+# and can be set here under the "hoop-chart:" key exactly as documented for the
+# gateway chart (e.g. hoop-chart.postgres.enabled, hoop-chart.config.*, ...).
+hoop-chart:
+  image:
+    gw:
+      repository: hoophq/hoop-ng
+  defaultAgent:
+    imageRepository: hoophq/hoopdev-ng

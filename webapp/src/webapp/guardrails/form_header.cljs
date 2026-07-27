@@ -1,9 +1,9 @@
 (ns webapp.guardrails.form-header
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link]]
-   ["lucide-react" :refer [Info]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading]]
    [webapp.components.button :as button]
    [re-frame.core :as rf]
+   [webapp.features.activation-journey.views.enterprise-banner :as enterprise-banner]
    [webapp.features.promotion :as promotion]))
 
 (defn main [_]
@@ -34,16 +34,9 @@
                         :type "submit"}
              "Save"]]]]
 
+         ;; Free-plan upsell pinned below the header, non-dismissible.
          (when free-license?
-           [:> Callout.Root {:size "1" :color "blue" :class "mx-7 mt-4" :highContrast true}
-            [:> Callout.Icon
-             [:> Info {:size 16}]]
-            [:> Callout.Text
-             "Organizations with Free plan have limited data protection. Upgrade to Enterprise to have unlimited access to Guardrails. "
-             [:> Link {:href "#"
-                       :class "font-medium"
-                       :style {:color "var(--blue-12)"}
-                       :on-click (fn [e]
-                                   (.preventDefault e)
-                                   (promotion/request-demo))}
-              "Contact our Sales team \u2197"]]])]))))
+           [:> Box {:class "mx-7 mt-4"}
+            [enterprise-banner/main
+             {:primary {:label "Talk to Sales"
+                        :on-click promotion/request-demo}}]])]))))

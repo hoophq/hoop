@@ -60,7 +60,7 @@ const iamCredentialsScope = "https://www.googleapis.com/auth/cloud-platform"
 // naming rules; otherwise iamcredentials.GenerateAccessToken returns a
 // generic "400 Invalid form of account ID" that obscures the real problem
 // (almost always a template that concatenated a full email into the local
-// part; see {user.email_local} in gateway/federation/identity.go).
+// part; see {user.email} in gateway/federation/identity.go).
 const saEmailSuffix = ".iam.gserviceaccount.com"
 
 // saLocalPartRegex enforces GCP's documented service-account ID rules:
@@ -205,13 +205,11 @@ type adminServiceAccountJSON struct {
 // regex check on the local part so the operator sees a precise, actionable
 // error instead of GCP's generic "400 Invalid form of account ID".
 //
-// The typical trigger for this path is a template like
-// "{user.email}@<project>.iam.gserviceaccount.com" applied to a user whose
-// email is "alice@acme.com", producing the obviously-broken double-"@"
-// principal "alice@acme.com@<project>.iam.gserviceaccount.com". The
-// {user.email_local} placeholder exists to avoid that mistake; this preflight
-// catches templates that still produce something illegal (e.g. emails with
-// dots or plus signs that no SA name can carry).
+// {user.email} resolves to the email local part, so the standard template
+// "{user.email}@<project>.iam.gserviceaccount.com" applied to "alice@acme.com"
+// correctly produces "alice@<project>.iam.gserviceaccount.com". This preflight
+// catches the cases that still produce something illegal — e.g. local parts
+// with dots or plus signs that no SA name can carry.
 func preflightServiceAccountPrincipal(principal string) error {
 	if !strings.HasSuffix(principal, saEmailSuffix) {
 		return nil
@@ -223,11 +221,29 @@ func preflightServiceAccountPrincipal(principal string) error {
 		// name; GCP SA emails are "<name>@<project>.iam.gserviceaccount.com".
 		localPart = localPart[:at]
 	}
+	// A too-short local part is the single most common SA-name failure, so
+	// call it out explicitly instead of folding it into the generic regex
+	// message below. {user.email} expands to the local part of the user's
+	// email (everything before the @), so a user like "al@acme.com" yields a
+	// 2-char SA name. GCP requires service-account names to be at least 6
+	// characters; the regex's {4,28} middle quantifier enforces the same
+	// floor, but the operator-facing message is far clearer when it names the
+	// length problem directly and points at the prefix fix.
+	if n := len(localPart); n < 6 {
+		return fmt.Errorf(
+			"resolved principal %q has a GCP service-account name %q that is only %d character(s) long: "+
+				"GCP requires service-account names to be at least 6 characters. The {user.email} portion of your "+
+				"identity template expands to the local part of the user's email (before the @), which is too short "+
+				"here. Add a literal prefix to pad it (e.g. \"hoop-{user.email}@<project>%s\") or map the user to a "+
+				"longer handle",
+			principal, localPart, n, saEmailSuffix,
+		)
+	}
 	if !saLocalPartRegex.MatchString(localPart) {
 		return fmt.Errorf(
 			"resolved principal %q has an invalid GCP service-account name %q: "+
 				"must be 6-30 chars, start with a lowercase letter, contain only [a-z0-9-], and end with a letter or digit "+
-				"(hint: chain {user.email_local} with @<project>.iam.gserviceaccount.com and avoid dots/plus in the user's email)",
+				"(hint: chain {user.email} with @<project>.iam.gserviceaccount.com and avoid dots/plus in the user's email)",
 			principal, localPart,
 		)
 	}

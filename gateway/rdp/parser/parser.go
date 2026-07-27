@@ -7,6 +7,8 @@ package parser
 import (
 	"context"
 	_ "embed"
+	"fmt"
+	"sync"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/tetratelabs/wazero"
@@ -15,6 +17,58 @@ import (
 
 //go:embed rdp_parser.wasm
 var wasmBinary []byte
+
+// The WASM module keeps parse state in module-global memory (parsed bitmaps,
+// the bump allocator, and — critically — Fast-Path fragment reassembly state).
+// That state is per-instance, NOT safe to share across concurrent callers, so
+// every RDP session MUST get its own Parser instance. To avoid recompiling the
+// 50KB module on every session, the module is compiled ONCE into a shared,
+// immutable CompiledModule and each Parser is a cheap, fully isolated instance
+// (its own linear memory and globals) created from it.
+var (
+	sharedRuntime  wazero.Runtime
+	sharedCompiled wazero.CompiledModule
+	sharedInitErr  error
+	sharedInitOnce sync.Once
+)
+
+// initShared compiles the WASM module once for the whole process and registers
+// the host "env" module it imports. It is safe to call concurrently; only the
+// first call does the work. The shared runtime lives for the process lifetime
+// (like any compiled program) and is intentionally never closed.
+func initShared() error {
+	sharedInitOnce.Do(func() {
+		// Use a background context: the shared runtime and compiled module
+		// outlive any single request/session, so they must not be tied to a
+		// cancelable caller context.
+		ctx := context.Background()
+		runtime := wazero.NewRuntime(ctx)
+
+		if _, err := runtime.NewHostModuleBuilder("env").
+			NewFunctionBuilder().WithFunc(logString).Export("log").
+			Instantiate(ctx); err != nil {
+			_ = runtime.Close(ctx)
+			sharedInitErr = fmt.Errorf("failed instantiating host module: %w", err)
+			return
+		}
+
+		compiled, err := runtime.CompileModule(ctx, wasmBinary)
+		if err != nil {
+			_ = runtime.Close(ctx)
+			sharedInitErr = fmt.Errorf("failed compiling rdp parser wasm: %w", err)
+			return
+		}
+
+		sharedRuntime = runtime
+		sharedCompiled = compiled
+	})
+	return sharedInitErr
+}
+
+// Warmup compiles the WASM module ahead of time so the first session does not
+// pay the compile cost and a broken module fails fast at startup. Optional:
+// NewParser triggers the same one-time compile lazily.
+func Warmup() error { return initShared() }
 
 // BitmapRect represents a bitmap rectangle extracted from RDP stream
 type BitmapRect struct {
@@ -30,11 +84,11 @@ type BitmapRect struct {
 	Compressed   bool   // True if data is RLE compressed
 }
 
-// Parser wraps the WASM RDP parser
+// Parser wraps one isolated instance of the WASM RDP parser. It is NOT safe for
+// concurrent use: confine each Parser to a single goroutine (one per session).
 type Parser struct {
-	ctx     context.Context
-	runtime wazero.Runtime
-	module  api.Module
+	ctx    context.Context
+	module api.Module
 
 	// Exported functions
 	fnParserVersion  api.Function
@@ -77,25 +131,27 @@ func logString(ctx context.Context, m api.Module, level, offset, byteCount uint3
 	}
 }
 
-// NewParser creates a new RDP parser instance
+// NewParser creates a new, fully isolated RDP parser instance. Each instance
+// has its own WASM linear memory and globals, so distinct instances are safe to
+// use concurrently from different goroutines (one per RDP session). A single
+// instance is NOT safe for concurrent use and must be confined to one goroutine
+// (or externally synchronized), because it carries mutable per-instance parse
+// and fragment-reassembly state.
+//
+// The provided ctx is retained and used for every subsequent WASM call on this
+// instance; pass a context that outlives the parser (e.g. context.Background()
+// or context.WithoutCancel) so a canceled request context does not disable the
+// parser mid-session.
 func NewParser(ctx context.Context) (*Parser, error) {
-	// Create a new runtime
-	runtime := wazero.NewRuntime(ctx)
-	// Instantiate a Go-defined module named "env" that exports a function to
-	// log to the console.
-	_, err := runtime.NewHostModuleBuilder("env").
-		NewFunctionBuilder().WithFunc(logString).Export("log").
-		Instantiate(ctx)
-	if err != nil {
-		runtime.Close(ctx)
+	if err := initShared(); err != nil {
 		return nil, err
 	}
 
-	// Instantiate the WASM module
-	module, err := runtime.Instantiate(ctx, wasmBinary)
+	// Anonymous instance (empty name): lets us instantiate the same compiled
+	// module many times, each in its own sandbox. See wazero ModuleConfig.WithName.
+	module, err := sharedRuntime.InstantiateModule(ctx, sharedCompiled, wazero.NewModuleConfig().WithName(""))
 	if err != nil {
-		runtime.Close(ctx)
-		return nil, err
+		return nil, fmt.Errorf("failed instantiating rdp parser module: %w", err)
 	}
 
 	// Get exported functions
@@ -113,32 +169,29 @@ func NewParser(ctx context.Context) (*Parser, error) {
 	deallocate := module.ExportedFunction("deallocate")
 
 	if fnParserVersion == nil || fnParseRdpOutput == nil || fnGetBitmapCount == nil ||
-		fnGetBitmap == nil || fnGetBitmapData == nil || fnGetError == nil || fnClearParsed == nil ||
-		fnGetPduSize == nil || allocate == nil || deallocate == nil {
-		module.Close(ctx)
-		runtime.Close(ctx)
-		return nil, err
+		fnGetBitmap == nil || fnGetBitmapData == nil || fnGetError == nil || fnGetErrorLen == nil ||
+		fnClearParsed == nil || fnGetPduSize == nil || allocate == nil || deallocate == nil {
+		_ = module.Close(ctx)
+		return nil, fmt.Errorf("rdp parser module is missing required exports")
 	}
 
 	// Get memory
 	memory := module.ExportedMemory("memory")
 	if memory == nil {
-		module.Close(ctx)
-		runtime.Close(ctx)
-		return nil, err
+		_ = module.Close(ctx)
+		return nil, fmt.Errorf("rdp parser module is missing exported memory")
 	}
 
-	// Call initModule
-	_, err = initModule.Call(ctx)
-	if err != nil {
-		module.Close(ctx)
-		runtime.Close(ctx)
-		return nil, err
+	// Reactor modules expose _initialize instead of _start; run it explicitly.
+	if initModule != nil {
+		if _, err = initModule.Call(ctx); err != nil {
+			_ = module.Close(ctx)
+			return nil, fmt.Errorf("failed initializing rdp parser module: %w", err)
+		}
 	}
 
 	return &Parser{
 		ctx:              ctx,
-		runtime:          runtime,
 		module:           module,
 		fnParserVersion:  fnParserVersion,
 		fnParseRdpOutput: fnParseRdpOutput,
@@ -155,9 +208,13 @@ func NewParser(ctx context.Context) (*Parser, error) {
 	}, nil
 }
 
-// Close releases the parser resources
+// Close releases this parser instance. The shared runtime and compiled module
+// are process-lifetime and are intentionally not closed here.
 func (p *Parser) Close() error {
-	return p.runtime.Close(p.ctx)
+	if p.module == nil {
+		return nil
+	}
+	return p.module.Close(p.ctx)
 }
 
 // Version returns the parser version
@@ -188,7 +245,7 @@ func (p *Parser) GetPduSize(data []byte) (uint32, error) {
 
 	// Write data to the allocated WASM memory
 	if !p.memory.Write(dataPtr, data) {
-		return 0, err
+		return 0, fmt.Errorf("rdp parser memory write out of range: ptr=%d size=%d", dataPtr, len(data))
 	}
 
 	// Call get_pdu_size
@@ -222,7 +279,7 @@ func (p *Parser) Parse(data []byte) (*ParseResult, error) {
 
 	// Write data to the allocated WASM memory
 	if !p.memory.Write(dataPtr, data) {
-		return nil, err
+		return nil, fmt.Errorf("rdp parser memory write out of range: ptr=%d size=%d", dataPtr, len(data))
 	}
 
 	// Call parse_rdp_output
@@ -280,14 +337,14 @@ func (p *Parser) getBitmap(index uint32) (BitmapRect, error) {
 
 	ptr := uint32(results[0])
 	if ptr == 0 {
-		return BitmapRect{}, err
+		return BitmapRect{}, fmt.Errorf("rdp parser returned null bitmap pointer for index %d", index)
 	}
 
 	// Read BitmapRect struct from memory (26 bytes)
 	const bitmapSize = 26
 	buf, ok := p.memory.Read(ptr, bitmapSize)
 	if !ok {
-		return BitmapRect{}, err
+		return BitmapRect{}, fmt.Errorf("rdp parser bitmap struct read out of range: ptr=%d", ptr)
 	}
 
 	compressed := uint16(buf[22]) | uint16(buf[23])<<8

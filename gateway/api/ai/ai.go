@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -404,6 +405,11 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
+	if existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name")); gerr == nil && existing.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be modified directly"})
+		return
+	}
+
 	lowTier, mediumTier, highTier, err := validateAnalyzerRuleRequest(orgID, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -470,6 +476,11 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
+	if existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name")); gerr == nil && existing.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be deleted directly"})
+		return
+	}
+
 	err = models.DeleteAISessionAnalyzerRule(orgID, c.Param("name"))
 	switch err {
 	case gorm.ErrRecordNotFound:
@@ -533,6 +544,7 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		Name:            r.Name,
 		Description:     r.Description,
 		ConnectionNames: r.ConnectionNames,
+		ManagedBy:       r.ManagedBy,
 		CustomPrompt:    r.CustomPrompt,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
 			LowRiskAction:    string(lowTier.Action),
@@ -557,6 +569,6 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 //	@Router			/ai/session-analyzer/system-prompt [get]
 func GetSessionAnalyzerSystemPrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.AISessionAnalyzerSystemPrompt{
-		Prompt: SessionAnalyzerSystemPrompt,
+		Prompt: aianalyzer.SessionAnalyzerSystemPrompt,
 	})
 }

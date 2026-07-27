@@ -93,6 +93,11 @@ func (c *Context) WithOrgAnalyticsMode(mode string) *Context {
 	return c
 }
 
+func (c *Context) WithOrgHideRoleInfo(hideRoleInfo bool) *Context {
+	c.OrgHideRoleInfo = hideRoleInfo
+	return c
+}
+
 func (c *Context) WithApiURL(apiURL string) *Context {
 	c.ApiURL = apiURL
 	return c

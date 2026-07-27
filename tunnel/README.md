@@ -50,7 +50,7 @@ supported. Windows (Wintun) TUN setup is still tracked under Phase 2.
 | `netstack/`           | gVisor stack + TUN device wiring (Linux `/dev/net/tun`, macOS `utun`). |
 | `resolved/`           | Host DNS routing for `*.<tld>` (Linux systemd-resolved, macOS `/etc/resolver`). |
 | `service/`            | System-service install/uninstall (Linux systemd, macOS LaunchDaemon). |
-| `client/pipe.go`      | Per-flow gRPC pipe; sends SessionOpen + TCPConnectionWrite.   |
+| `client/pipe.go`      | Per-flow gRPC pipe; sends SessionOpen + TCP/HttpProxy ConnectionWrite. |
 | `client/connections.go` | Lists tunnelable connections via `GET /api/connections`.    |
 | `cmd/hsh-tunneld/`    | Daemon binary entry point.                                    |
 
@@ -153,11 +153,19 @@ per-flow session open / close events tagged with the connection name.
 
 ## Which connections are tunnelable?
 
-Only TCP-style protocols: **postgres, mysql, mssql, mongodb, oracledb,
-tcp**. SSH, HTTP-proxy, kubernetes, RDP, SSM, and command-line
+TCP-style protocols — **postgres, mysql, mssql, mongodb, oracledb,
+tcp** — plus **httpproxy**. SSH, kubernetes, RDP, SSM, and command-line
 connections need protocol-specific clients (or interactive shells) and
 are intentionally filtered out of the resolver. Use `hoop connect <name>`
 for those.
+
+httpproxy connections are served on port **80** only: the client speaks
+plain HTTP to the tunnel (`curl http://api-prod.hoop/path`) and the
+agent terminates TLS to the connection's `REMOTE_URL` upstream. Because
+the bytes cross the agent in cleartext, guardrails and DLP inspection
+apply exactly as they do for `hoop connect`. `https://<name>.hoop` can
+never work — the tunnel has no certificate for `*.hoop` — so port 443
+is rejected at the SYN.
 
 ## Addressing (dual-stack)
 

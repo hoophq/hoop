@@ -58,8 +58,6 @@ func TestSSH_PasswordAuth_Connect(t *testing.T) {
 	ssh := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, ssh.Host, ssh.Port, ssh.User, ssh.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-1",
@@ -83,8 +81,6 @@ func TestSSH_PubkeyAuth_Connect(t *testing.T) {
 	sshC := testutil.StartSSHWithPublicKey(t, key.AuthorizedKey)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSessionWithKey(t, tr, sshC.Host, sshC.Port, sshC.User, key.PrivateKeyPEM)
 	demux := testutil.StartRecvDemux(t, tr)
 
@@ -136,8 +132,6 @@ func TestSSH_BadCredentials(t *testing.T) {
 	sshC := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	// Open the session with a bad password baked into env vars. The
 	// agent stores these in connection params and replays them to
 	// libhoop's ssh.Dial.
@@ -202,8 +196,6 @@ func TestSSH_ExecCommand(t *testing.T) {
 	sshC := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, sshC.Host, sshC.Port, sshC.User, sshC.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-exec",
@@ -239,8 +231,6 @@ func TestSSH_ExitStatus_Forwarding(t *testing.T) {
 	sshC := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, sshC.Host, sshC.Port, sshC.User, sshC.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-exit",
@@ -276,8 +266,6 @@ func TestSSH_InteractiveShell_PTY(t *testing.T) {
 	sshC := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, sshC.Host, sshC.Port, sshC.User, sshC.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-pty",
@@ -337,8 +325,6 @@ func TestSSH_MultipleChannels(t *testing.T) {
 	sshC := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, sshC.Host, sshC.Port, sshC.User, sshC.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-multi",
@@ -379,8 +365,6 @@ func TestSSH_SessionClose_CleanShutdown(t *testing.T) {
 	sshC := testutil.StartSSH(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, sshC.Host, sshC.Port, sshC.User, sshC.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-close",
@@ -419,8 +403,6 @@ func TestSSH_DirectTCPIP_PortForward(t *testing.T) {
 	httpTarget := testutil.StartHTTPTarget(t)
 	agent, tr := startAgent(t)
 	defer shutdownAgent(t, agent, tr)
-	testutil.SetAgentFeatureFlags(t, tr, map[string]bool{asyncSSHFlag: true})
-
 	sid := testutil.OpenSSHSession(t, tr, sshC.Host, sshC.Port, sshC.User, sshC.Password)
 	demux := testutil.StartRecvDemux(t, tr)
 	pc, err := testutil.DialPipedSSH(t, tr, demux, sid, "piped-fwd",

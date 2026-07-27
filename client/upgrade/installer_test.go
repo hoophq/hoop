@@ -51,7 +51,7 @@ func TestExtractHoopBinary(t *testing.T) {
 	})
 
 	dst := filepath.Join(dir, "hoop")
-	if err := extractHoopBinary(tarballPath, dst); err != nil {
+	if err := extractHoopBinary(tarballPath, dst, "hoop"); err != nil {
 		t.Fatalf("extractHoopBinary failed: %v", err)
 	}
 	got, err := os.ReadFile(dst)
@@ -63,13 +63,43 @@ func TestExtractHoopBinary(t *testing.T) {
 	}
 }
 
+// TestExtractHoopBinaryWindows guards the Windows release layout: the
+// tarball carries hoop.exe (Go appends .exe for GOOS=windows), so the
+// extractor must match that name rather than the bare "hoop".
+func TestExtractHoopBinaryWindows(t *testing.T) {
+	dir := t.TempDir()
+	tarballPath := filepath.Join(dir, "hoop-win.tar.gz")
+	binaryContent := []byte("MZ\x90\x00fake-windows-binary")
+	writeTarball(t, tarballPath, map[string][]byte{
+		"hoop.exe":  binaryContent,
+		"README.md": []byte("ignored"),
+	})
+
+	dst := filepath.Join(dir, "hoop.exe")
+	if err := extractHoopBinary(tarballPath, dst, "hoop.exe"); err != nil {
+		t.Fatalf("extractHoopBinary(windows) failed: %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read extracted binary: %v", err)
+	}
+	if !bytes.Equal(got, binaryContent) {
+		t.Fatalf("extracted content mismatch: got %q want %q", got, binaryContent)
+	}
+
+	// The Unix name must NOT match a Windows artifact.
+	if err := extractHoopBinary(tarballPath, dst, "hoop"); err == nil {
+		t.Fatalf("expected miss when looking for bare 'hoop' inside a Windows tarball")
+	}
+}
+
 func TestExtractHoopBinaryMissing(t *testing.T) {
 	dir := t.TempDir()
 	tarballPath := filepath.Join(dir, "no-hoop.tar.gz")
 	writeTarball(t, tarballPath, map[string][]byte{
 		"README.md": []byte("nothing useful here"),
 	})
-	err := extractHoopBinary(tarballPath, filepath.Join(dir, "out"))
+	err := extractHoopBinary(tarballPath, filepath.Join(dir, "out"), "hoop")
 	if err == nil {
 		t.Fatalf("expected error when no hoop binary inside tarball")
 	}
@@ -128,6 +158,50 @@ func TestInstallerEndToEnd(t *testing.T) {
 	}
 	if entry2.Version != version {
 		t.Fatalf("second install entry version=%s", entry2.Version)
+	}
+}
+
+// TestInstallerWindowsArtifact exercises the full download+extract path
+// against a Windows release artifact (which contains hoop.exe). It is the
+// regression test for the bug where `hoop versions install` on Windows
+// failed with "hoop binary not found inside ...tar.gz" because the
+// extractor only ever looked for the bare name "hoop".
+func TestInstallerWindowsArtifact(t *testing.T) {
+	binaryContent := []byte("MZ\x90\x00fake-windows-binary-v1.99.0")
+	tarball := buildTarball(t, map[string][]byte{"hoop.exe": binaryContent})
+	sum := sha256Hex(tarball)
+
+	version := "1.99.0"
+	platform := Platform{OS: "Windows", Arch: "x86_64"}
+	artifactName := ArtifactName(version, platform)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/release/"+version+"/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, "%s  %s\n", sum, artifactName)
+	})
+	mux.HandleFunc("/release/"+version+"/"+artifactName, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarball)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	layout := LayoutFromHome(t.TempDir())
+	store := &Store{}
+	inst := &Installer{Layout: layout, Client: srv.Client(), BaseURL: srv.URL + "/release"}
+
+	entry, err := inst.Install(version, platform, store)
+	if err != nil {
+		t.Fatalf("Install(windows): %v", err)
+	}
+	got, err := os.ReadFile(layout.VersionBinary(version))
+	if err != nil {
+		t.Fatalf("read installed binary: %v", err)
+	}
+	if !bytes.Equal(got, binaryContent) {
+		t.Fatalf("installed binary mismatch")
+	}
+	if entry.SHA256 != sum {
+		t.Fatalf("entry sha=%s want %s", entry.SHA256, sum)
 	}
 }
 

@@ -72,6 +72,16 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 
 	isMachine := pctx.IdentityType == identityTypeMachine
 
+	// client-api sessions are created by the HTTP layer before connecting, so
+	// the full upsert below is skipped for them. Reviewed sessions arrive here
+	// in the ready status set at approval time; flip them to open so the
+	// session reports the execution in flight (no-op for any other status).
+	if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
+		if _, err := models.SetSessionStatusOpenIfReady(models.DB, pctx.OrgID, pctx.SID); err != nil {
+			log.With("sid", pctx.SID).Warnf("failed setting session status to open, reason=%v", err)
+		}
+	}
+
 	// persist session for public gRPC clients
 	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
 		ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
@@ -89,6 +99,19 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		var sessionMetadata map[string]any
 		if pctx.CredentialSessionID != "" {
 			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
+		}
+
+		// Native clients connect through a protocol proxy, which stamps the
+		// generic ConnectionOriginClient regardless of how the credential was
+		// minted. When the connection is credential-backed, inherit the origin
+		// recorded on the issuing credential session (e.g. webapp) so the proxy
+		// session is attributed to the surface that granted access; otherwise
+		// fall back to the transport origin.
+		sessionOrigin := pb.SessionOriginFromClientOrigin(pctx.ClientOrigin)
+		if pctx.CredentialSessionID != "" {
+			if credSession, err := models.GetSessionByID(pctx.OrgID, pctx.CredentialSessionID); err == nil && credSession.Origin != "" {
+				sessionOrigin = credSession.Origin
+			}
 		}
 
 		sessionIdentityType := identityTypeUser
@@ -119,6 +142,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ExitCode:             nil,
 			IdentityType:         sessionIdentityType,
 			MachineIdentityID:    machineIdentityID,
+			Origin:               sessionOrigin,
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
@@ -138,10 +162,8 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
 
-	if isMachine {
-		if err := p.startMachineFlushTicker(pctx); err != nil {
-			return fmt.Errorf("failed starting machine flush ticker, reason=%v", err)
-		}
+	if err := p.startFlushTicker(pctx); err != nil {
+		return fmt.Errorf("failed starting flush ticker, reason=%v", err)
 	}
 
 	p.mu = sync.RWMutex{}
@@ -204,13 +226,20 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 						return nil, plugintypes.InternalErr("ai analyzer requested review without resolving access request rule",
 							fmt.Errorf("aiAccessRule is nil for sid=%s", pctx.SID))
 					}
-					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, pctx.ConnectionName,
+					ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
+					ctx.WithUserInfo(pctx.UserName, pctx.UserEmail, "active", "", pctx.UserGroups)
+
+					conn, err := models.GetBareConnectionByNameOrID(ctx, pctx.ConnectionName, models.DB)
+					if err != nil {
+						return nil, plugintypes.InternalErr("failed retrieving connection for ai-driven review", err)
+					}
+					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, conn,
 						sessionapi.AIReviewRequester{
-							UserID:       pctx.UserID,
-							UserEmail:    pctx.UserEmail,
-							UserName:     pctx.UserName,
-							UserSlackID:  pctx.UserSlackID,
-							ConnectionID: pctx.ConnectionID,
+							UserID:      pctx.UserID,
+							UserEmail:   pctx.UserEmail,
+							UserName:    pctx.UserName,
+							UserSlackID: pctx.UserSlackID,
+							UserGroups:  pctx.UserGroups,
 						},
 						aiAccessRule, string(pkt.Payload), nil, nil)
 					if err != nil {
@@ -219,7 +248,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 					pkt.Spec[pb.SpecHasReviewKey] = []byte("true")
 					return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 						Type:    pbclient.SessionOpenWaitingApproval,
-						Payload: fmt.Appendf(nil, "%s/reviews/%s", appconfig.Get().FullApiURL(), review.ID),
+						Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), review.ID),
 						Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 					}}, nil
 				}
@@ -270,6 +299,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if decJSONPayload != nil {
 			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
+	case pbagent.OracleConnectionWrite:
+		// native Oracle clients (sqlplus, DBeaver, …) stream raw TNS bytes; log
+		// the printable text (SQL and text fields) extracted from each packet.
+		if queryText := decodeOracleClientQuery(pkt.Payload); queryText != nil {
+			return nil, p.writeOnReceive(pctx, eventlogv1.InputType, queryText, eventMetadata)
+		}
 	case pbclient.WriteStdout, pbclient.WriteStderr:
 		err := p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {
@@ -316,17 +351,20 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 	go func() {
 		defer memorySessionStore.Del(pctx.SID)
 
-		if pctx.IdentityType == identityTypeMachine {
-			if cerr := p.closeMachineSession(pctx, err); cerr != nil {
-				log.With("sid", pctx.SID).Warnf("failed closing machine session: %v", cerr)
-			}
-			eventbroker.Default.Remove(pctx.SID)
-		} else {
-			if err := p.writeOnClose(pctx, err); err != nil {
-				log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-					Warnf("failed closing session, reason=%v", err)
-			}
+		if cerr := p.closeSessionWAL(pctx, err); cerr != nil {
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Warnf("failed closing session, reason=%v", cerr)
 		}
+
+		// A one-time review stays PROCESSING while its execution runs in the
+		// agent; the finished session is what marks it consumed. The update
+		// only applies when the session was effectively marked done.
+		if updated, rerr := models.SetReviewStatusExecutedIfFinished(models.DB, pctx.OrgID, pctx.SID); rerr != nil {
+			log.With("sid", pctx.SID).Warnf("failed settling review status, reason=%v", rerr)
+		} else if updated {
+			log.With("sid", pctx.SID).Infof("review status settled as EXECUTED")
+		}
+		eventbroker.Default.Remove(pctx.SID)
 
 		trackClient := analytics.New()
 		defer trackClient.Close()
@@ -343,8 +381,32 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 func (p *auditPlugin) OnShutdown() {}
 
 func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
+	metadata := map[string][]byte{}
+
+	// Per-request AI session analyzer verdict (HTTP proxy). An empty value means
+	// the request was not analyzed (analysis skipped or failed open) — the spec
+	// is shared across requests on a connection, so a present-but-empty value is
+	// libhoop clearing a stale verdict and must be treated as absent.
+	if verdict, ok := pkt.Spec[spectypes.AIAnalyzerInfoKey]; ok && len(verdict) > 0 {
+		metadata[spectypes.AIAnalyzerInfoKey] = verdict
+	}
+
+	if maskingInfo := parseDataMaskingInfo(pkt); maskingInfo != nil {
+		metadata[spectypes.DataMaskingInfoKey] = maskingInfo
+	}
+
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
+}
+
+// parseDataMaskingInfo extracts the DLP data-masking summary from a packet spec,
+// supporting both the current msgpack encoding and the legacy gob-encoded
+// transformation summary from older clients.
+func parseDataMaskingInfo(pkt *pb.Packet) []byte {
 	if dataMaskingInfo, ok := pkt.Spec[spectypes.DataMaskingInfoKey]; ok {
-		return map[string][]byte{spectypes.DataMaskingInfoKey: dataMaskingInfo}
+		return dataMaskingInfo
 	}
 	tsEnc := pkt.Spec[pb.SpecDLPTransformationSummary]
 	if tsEnc == nil {
@@ -386,7 +448,7 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 	}
 	infoEnc, _ := (&spectypes.DataMaskingInfo{Items: overviewItems}).Encode()
 	if len(infoEnc) > 0 {
-		return map[string][]byte{spectypes.DataMaskingInfoKey: infoEnc}
+		return infoEnc
 	}
 	return nil
 }

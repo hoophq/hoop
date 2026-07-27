@@ -33,7 +33,7 @@ var (
 	ErrUnknownStatus        = errors.New("unknown status")
 )
 
-type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus string)
+type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
 
 type handler struct {
 	TransportReleaseConnection TransportReleaseConnectionFunc
@@ -174,6 +174,8 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 				rev.SessionID,
 				ptr.ToString(rev.OwnerSlackID),
 				rev.Status.Str(),
+				ptr.ToString(rev.RejectionReason),
+				rev.RejectedByEmail(),
 			)
 		}
 		c.JSON(http.StatusOK, toOpenApiReview(rev))

@@ -1,5 +1,5 @@
 <h4 align="center">
-<sub><b>NEW</b>  ·  User MCP server — How AI coding agents get production access safely.  <a href="#whats-new"><b>Read more →</b></a></sub>
+<sub><b>NEW</b>  ·  Agent in the loop — Using AI to assess the risk of one-off operations.  <a href="#whats-new"><b>Read more →</b></a></sub>
 </h4>
 <h1 align="center">
 One Gateway Between Your Team and Your Infrastructure.
@@ -255,15 +255,15 @@ docker compose up
  
 ## What's New
  
-### May 18, 2026 — User MCP server
+### June 1, 2026 — Agent in the loop
  
-Now, when AI coding agents connect to your databases, servers, and services, they are tagged as the human user running them, not just as a shared service account. When you connect Claude Code, Cursor, or any MCP-compatible client, the agent authenticates over OAuth 2.1 and inherits the user's permissions, group memberships, and ABAC rules.
+When an agent acts on production, hoop uses agents to evaluate the risk of the action in real time. You describe what counts as sensitive, what context matters, and what should escalate. The Session Analyzer reads that prompt and analyzes the live stream of commands flowing through the gateway.
 
-Every query flows through the same policy engine, data masking, and approval routing as a human session. When a query needs review, the agent waits. Reviewers see the user's name on the request, not an opaque agent identity. Then, the approved query is the only one that runs.
+It evaluates each session as it happens, against the actual command. When the analyzer deems an action warrants review, it flags it for a human, blocks it, or lets it run.
 
-Audit logs record the human user as the source. One timeline for humans and agents.
+The dev team's agent and the security team's agent operate at the same speed, on the same model class. No static rule has to anticipate what the dev agent will try next.
  
-[Read the full breakdown →](https://hoop.dev/blog/how-ai-coding-agents-get-production-access-safely)
+[Read the full breakdown →](https://hoop.dev/blog/this-is-what-agent-on-agent-governance-looks-like)
  
 ---
  

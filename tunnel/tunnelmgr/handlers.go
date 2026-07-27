@@ -25,7 +25,7 @@ import (
 // MySQL connection; we reject before opening the upstream).
 func (m *Manager) makeAcceptFunc(
 	alloc *addressing.Allocator,
-	subTypeByName map[string]string,
+	registry *connRegistry,
 ) netstack.AcceptFunc {
 	logger := m.opts.Logger
 	return func(localAddr netip.Addr, localPort uint16) bool {
@@ -34,9 +34,13 @@ func (m *Manager) makeAcceptFunc(
 			logger.Printf("tunnelmgr: reject SYN %s:%d — unmapped address", localAddr, localPort)
 			return false
 		}
-		subType, ok := subTypeByName[name]
+		// subTypeOf returns ok=false for unknown names AND for
+		// connections that were deleted on the gateway (marked inactive
+		// by a refresh). Either way we refuse to open a pipe to a
+		// connection the gateway no longer offers.
+		subType, ok := registry.subTypeOf(name)
 		if !ok {
-			logger.Printf("tunnelmgr: reject SYN %s:%d -> %s — no subtype recorded", localAddr, localPort, name)
+			logger.Printf("tunnelmgr: reject SYN %s:%d -> %s — connection unknown or no longer active", localAddr, localPort, name)
 			return false
 		}
 		if !portmap.IsAcceptedPort(subType, localPort) {
@@ -59,11 +63,13 @@ func (m *Manager) makeAcceptFunc(
 // per-flow gRPC pipe.
 func (m *Manager) makeTCPHandler(
 	alloc *addressing.Allocator,
-	subTypeByName map[string]string,
+	registry *connRegistry,
 	gatewayCfg grpc.ClientConfig,
+	tokens TokenSource,
 ) netstack.Handler {
 	logger := m.opts.Logger
 	userAgent := m.opts.UserAgent
+	tld := m.opts.TLD
 	return func(conn *gonet.TCPConn, localAddr netip.Addr, localPort uint16) {
 		defer conn.Close()
 		name, ok := alloc.LookupAddr(localAddr)
@@ -72,12 +78,21 @@ func (m *Manager) makeTCPHandler(
 			logger.Printf("tunnelmgr: inbound TCP to unmapped address %s — dropping", localAddr)
 			return
 		}
-		subType := subTypeByName[name]
+		subType, _ := registry.subTypeOf(name)
 		logger.Printf("tunnelmgr: accept %s:%d -> %s (%s)", localAddr, localPort, name, subType)
+		// Re-snapshot the token per flow: gatewayCfg is a value copy, so
+		// a token rotated mid-session (DEP-24) is picked up by every new
+		// stream while in-flight pipes keep their original credentials.
+		flowCfg := gatewayCfg
+		flowCfg.Token, _ = tokens.Snapshot()
 		err := client.DialAndPipe(context.Background(), conn, client.PipeOptions{
-			GatewayConfig:  gatewayCfg,
+			GatewayConfig:  flowCfg,
 			ConnectionName: name,
 			UserAgent:      userAgent,
+			// Only consumed by httpproxy sessions: the URL clients use
+			// to reach this connection, so the agent's HTTP proxy can
+			// rewrite redirects/absolute URLs back at the tunnel.
+			HttpProxyBaseURL: "http://" + name + "." + tld,
 		})
 		if err != nil {
 			logger.Printf("tunnelmgr: pipe %s closed: %v", name, err)

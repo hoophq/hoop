@@ -12,6 +12,7 @@ import (
 
 	"libhoop/redactor"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/grpc"
@@ -22,6 +23,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/federation"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -35,6 +37,7 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 // federationResolveTimeout caps the SessionOpen-time blocking call to the
@@ -202,6 +205,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -230,6 +236,9 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				pctx.Context = connectResponse.Context
 			}
 			if connectResponse.ClientPacket != nil {
+				// propagate the review state to the stream
+				// to avoid clearing the state of the session on a disconnect
+				stream.SetReviewed()
 				_ = stream.Send(connectResponse.ClientPacket)
 				shouldProcessClientPacket = false
 			}
@@ -254,9 +263,10 @@ func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 		ConnectionSubType:                   pctx.ConnectionSubType,
 		ConnectionEnvs:                      pctx.ConnectionSecret,
 		ConnectionJiraTransitionNameOnClose: pctx.ConnectionJiraTransitionNameOnClose,
-		ConnectionReviewers:                 pctx.ConnectionReviewers,
-		UserEmail:                           pctx.UserEmail,
-		Verb:                                pctx.ClientVerb,
+		ConnectionJiraSkipTransitionOnNonZeroExitCode: pctx.ConnectionJiraSkipTransitionOnNonZeroExitCode,
+		ConnectionReviewers:                           pctx.ConnectionReviewers,
+		UserEmail:                                     pctx.UserEmail,
+		Verb:                                          pctx.ClientVerb,
 	}
 
 	return transportext.OnReceive(extContext, pkt)
@@ -267,12 +277,25 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
+	return encodeGuardRailRules(connGuardRailRules)
+}
 
+// encodeGuardRailRules turns the connection's stored guardrail rules into the
+// JSON payload shipped to the agent (AgentConnectionParams.GuardRailRules).
+// It returns nil — meaning "no guardrails" — when the connection has no rules
+// to enforce. Emptiness MUST be judged by rule count, not slice nil-ness:
+// services.GetGuardRailRulesForConnection fabricates "[]" (JSON empty array)
+// rule sets for connections without guardrails, and json.Unmarshal turns "[]"
+// into an empty NON-nil slice. A nil-ness check made every ruleless
+// connection look guarded, which the fail-closed admission check (DEP-48)
+// then refused for connection types without guardrail enforcement.
+func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
 	}
 
 	var inputRules, outputRules []guardrails.DataRules
+	var err error
 
 	// decode input rules
 	if connGuardRailRules.GuardRailInputRules != nil {
@@ -288,8 +311,8 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 		}
 	}
 
-	// check if there are no rules
-	if inputRules == nil && outputRules == nil {
+	// no rules to enforce -> no guardrail payload
+	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
 
@@ -308,6 +331,14 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 	return guardRailRulesJsonData, nil
 }
 
+// Guardrail enforcement admission is NOT checked here. The authoritative
+// fail-closed check (DEP-48) lives in libhoop at proxy construction: native
+// proxies without a guardrail evaluation path (mysql, mssql, mongodb, ssm,
+// raw tcp) refuse guarded sessions at the agent, at the point of
+// enforcement. Gateways and agents are upgraded together, so a
+// gateway-side duplicate of that list would only drift (it did: DEP-48 →
+// #1611 → the mysql/mongodb web terminal regression).
+
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
 		{
@@ -325,6 +356,69 @@ func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	}
 
 	return analyzerMetricsRulesJsonData, nil
+}
+
+// getAISessionAnalyzerParams resolves the per-connection AI session analyzer
+// configuration shipped to the agent so its HTTP proxy can classify and enforce
+// requests inline.
+//
+// It returns (nil, nil) — analysis disabled — when:
+//   - the experimental.http_session_analyzer flag is off for the org,
+//   - the connection is not an HTTP-family type (the agent only enforces
+//     analysis in the HTTP proxy path; DB/exec analysis runs gateway-side),
+//   - the connection has no analyzer rule (the feature is opt-in), or
+//   - no AI provider is configured for the org (can't analyze without one).
+func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyzerParams, error) {
+	if !featureflag.IsEnabled(pctx.OrgID, "experimental.http_session_analyzer") {
+		return nil, nil
+	}
+	switch pctx.ProtoConnectionType() {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
+	default:
+		return nil, nil
+	}
+
+	orgID, err := uuid.Parse(pctx.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid org id %q: %w", pctx.OrgID, err)
+	}
+
+	rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, pctx.ConnectionName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed obtaining ai session analyzer rule: %w", err)
+	}
+
+	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("ai session analyzer rule %q is configured but no ai provider is set; skipping analysis", rule.Name)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed obtaining ai provider: %w", err)
+	}
+
+	params := &pb.AISessionAnalyzerParams{
+		RuleName:         rule.Name,
+		Provider:         provider.Provider,
+		Model:            provider.Model,
+		LowRiskAction:    string(rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action),
+		MediumRiskAction: string(rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action),
+		HighRiskAction:   string(rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action),
+	}
+	if provider.ApiUrl != nil {
+		params.APIURL = *provider.ApiUrl
+	}
+	if provider.ApiKey != nil {
+		params.APIKey = *provider.ApiKey
+	}
+	if rule.CustomPrompt != nil {
+		params.CustomPrompt = *rule.CustomPrompt
+	}
+	return params, nil
 }
 
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
@@ -407,21 +501,44 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf(err.Error())
 				return err
 			}
+
+			// Guardrail rules are shipped to the agent, which enforces them
+			// in-process (deny-word / RE2 via localguardrails; no DLP service
+			// required) and fails closed at proxy construction for protocol
+			// paths that cannot evaluate them — see libhoop's
+			// CheckGuardRailEnforcement (DEP-48).
+			//
+			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
+			// plain-exec is a gateway-internal verb gated by a per-process secret in
+			// the auth interceptor (see interceptors/auth: plain-exec-key). It is
+			// only used for gateway-generated introspection scripts (connection
+			// test, database explorer, MCP schema) and never carries user-authored
+			// input, so guardrail rules are not fetched nor enforced for it — the
+			// same long-standing behavior as DLP redaction, which is also disabled
+			// for plain-exec sessions.
+		}
+
+		// Resolve the AI session analyzer config for HTTP-family connections.
+		// Fail-open: a resolution glitch must never break the session, so on
+		// error we log and ship no analyzer config (analysis is skipped).
+		aiAnalyzerParams, err := getAISessionAnalyzerParams(&pctx)
+		if err != nil {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("failed resolving ai session analyzer params, skipping analysis: %v", err)
 		}
 
 		clientArgs := clientArgsDecode(pkt.Spec)
 
-		// Federation resolution. Runs only when the experimental.iam_federation
-		// flag is enabled for the org and a federation row exists for the
+		// Federation resolution. Runs when a federation row exists for the
 		// connection. Resolved env vars are merged into pctx.ConnectionSecret
 		// in the format the agent's secretsmanager.Decode expects
 		// (envvar:NAME → base64(plaintext)). Failure semantics are governed by
 		// the per-connection fallback_policy: "deny" aborts the session with a
 		// SessionOpenAgentOffline-style error packet so the client surfaces a
-		// human-readable reason; "readonly" retries once with the configured
-		// readonly_principal and proceeds. Either path writes audit metadata
-		// to sessions.metadata.federation so admins can correlate sessions
-		// with the cloud-side identity used.
+		// human-readable reason; "static" skips federation and lets the session
+		// run on the connection's existing static credentials. Either path
+		// writes audit metadata to sessions.metadata.federation so admins can
+		// correlate sessions with the cloud-side identity used.
 		if err := resolveFederationForSession(&pctx, stream); err != nil {
 			return err
 		}
@@ -429,6 +546,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
 			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			ConnectionSubType:          pctx.ConnectionSubType,
 			UserID:                     pctx.UserID,
 			UserEmail:                  pctx.UserEmail,
 			EnvVars:                    pctx.ConnectionSecret,
@@ -445,6 +563,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			DataMaskingEntityTypesData: entityTypesJsonData,
 			GuardRailRules:             guardRailRulesJsonData,
 			AnalyzerMetricsRules:       analyzerMetricsRulesJsonData,
+			AISessionAnalyzer:          aiAnalyzerParams,
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)
@@ -468,20 +587,17 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 }
 
 // resolveFederationForSession looks up the federation config for the
-// session's connection and, if one is present and the org has the feature
-// flag enabled, calls services.ResolveFederation. On success it mutates
-// pctx.ConnectionSecret in place to inject the resolved env vars and writes
-// the audit metadata to the session row.
+// session's connection and, if one is present, calls
+// services.ResolveFederation. On success it mutates pctx.ConnectionSecret in
+// place to inject the resolved env vars and writes the audit metadata to the
+// session row.
 //
 // Returning a non-nil error from this function aborts the session-open
 // flow: the caller bails out before sending the AgentConnectionParams to
-// the agent. Use this for "deny" semantics. For "readonly" semantics this
-// function never returns an error; it retries internally and only fails if
-// the retry also fails.
+// the agent. Use this for "deny" semantics. For "static" semantics this
+// function returns nil without mutating pctx.ConnectionSecret, leaving the
+// connection's existing static credentials in place for the session.
 func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient.ProxyStream) error {
-	if !featureflag.IsEnabled(pctx.OrgID, "experimental.iam_federation") {
-		return nil
-	}
 	cfg, err := models.GetConnectionFederationConfig(models.DB, pctx.OrgID, pctx.ConnectionID)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
@@ -502,26 +618,42 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	defer cancel()
 
 	res, resolveErr := services.ResolveFederation(ctx, cfg, in)
-	fallbackApplied := false
 	if resolveErr != nil {
 		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
 			Warnf("federation: primary resolve failed (policy=%s): %v", cfg.FallbackPolicy, resolveErr)
 		switch cfg.FallbackPolicy {
-		case models.FederationFallbackReadonly:
-			fallbackCtx, fallbackCancel := context.WithTimeout(context.Background(), federationResolveTimeout)
-			defer fallbackCancel()
-			fallbackRes, fbErr := services.ResolveFederationFallback(fallbackCtx, cfg, in)
-			if fbErr != nil {
-				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
-					Errorf("federation: fallback (readonly) also failed: %v", fbErr)
-				return status.Errorf(codes.FailedPrecondition,
-					"federation failed and fallback also failed: primary=%v fallback=%v",
-					resolveErr, fbErr)
+		case models.FederationFallbackStatic:
+			// Static fallback: do not federate this session. Leave the
+			// connection's existing static credentials in pctx.ConnectionSecret
+			// untouched (nothing injected, nothing superseded) so the session
+			// runs the pre-federation flow. We still write an audit entry so
+			// operators can see federation was attempted and fell back.
+			log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+				Infof("federation: primary resolve failed; falling back to static connection credentials (policy=static)")
+			provider := cfg.HookSource
+			if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
+				provider = *cfg.BuiltinProvider
 			}
-			res = fallbackRes
-			fallbackApplied = true
+			if auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
+				Provider:        provider,
+				HookSource:      cfg.HookSource,
+				FallbackApplied: true,
+			}); auditErr != nil {
+				log.With("sid", pctx.SID).Warnf("federation: failed writing static-fallback audit metadata: %v", auditErr)
+			}
+			return nil
 		default:
 			// deny is the secure default for any unrecognized policy too.
+			// When the failure is specifically "the user has not connected a
+			// per-user account" (e.g. gcp_oauth consent not completed), tag the
+			// message with a stable, machine-readable code and the connection
+			// name so clients can render an actionable "connect your account"
+			// affordance instead of a raw error string.
+			if errors.Is(resolveErr, federation.ErrUserNotConnected) {
+				return status.Errorf(codes.FailedPrecondition,
+					"federation failed %s: %v",
+					federation.FormatOAuthNotConnected(pctx.ConnectionName), resolveErr)
+			}
 			return status.Errorf(codes.FailedPrecondition, "federation failed: %v", resolveErr)
 		}
 	}
@@ -563,13 +695,16 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 	if cfg.HookSource == models.FederationHookSourceBuiltin && cfg.BuiltinProvider != nil {
 		provider = *cfg.BuiltinProvider
 	}
+	// Reaching here means the primary resolve succeeded; the static-fallback
+	// path returns earlier without injecting anything, so FallbackApplied is
+	// always false at this point.
 	auditErr := models.SetSessionFederationMetadata(pctx.OrgID, pctx.SID, models.SessionFederationMetadata{
 		Provider:          provider,
 		HookSource:        cfg.HookSource,
 		ResolvedPrincipal: res.ResolvedPrincipal,
 		AdminPrincipal:    res.AdminPrincipal,
 		TokenExpiresAt:    res.TokenExpiresAt,
-		FallbackApplied:   fallbackApplied,
+		FallbackApplied:   false,
 	})
 	if auditErr != nil {
 		log.With("sid", pctx.SID).Warnf("federation: failed writing session audit metadata: %v", auditErr)
@@ -580,7 +715,6 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 		"connection-id", pctx.ConnectionID,
 		"provider", provider,
 		"principal", res.ResolvedPrincipal,
-		"fallback", fallbackApplied,
 		"expires-at", res.TokenExpiresAt.Format(time.RFC3339),
 		"superseded", supersededRemoved,
 	).Infof("federation: injected %d env var(s) into session, superseded %d static env(s)",
@@ -609,7 +743,7 @@ func handleSystemPacketRequests(pktType string) (handled bool) {
 	return
 }
 
-func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus string) {
+func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string) {
 	if reviewStatus == string(openapi.ReviewStatusApproved) {
 		pluginslack.SendApprovedMessage(
 			orgID,
@@ -621,21 +755,65 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 
 	proxyStream := streamclient.GetProxyStream(sid)
 	if proxyStream != nil {
-		var payload []byte
-		packetType := pbclient.SessionOpenApproveOK
 		if reviewStatus == string(openapi.ReviewStatusRejected) {
-			packetType = pbclient.SessionClose
-			payload = []byte(`access to connection has been denied`)
-			proxyStream.Close(fmt.Errorf("access to connection has been denied"))
+			deniedMsg := buildReviewDeniedMessage(rejectReason, rejectedBy)
+			// Deliver the denial (reason + reviewer) to the client BEFORE tearing
+			// the stream down. Close cancels the stream context, so sending after
+			// it can race the client's Recv and drop the payload, leaving the CLI
+			// with a generic error instead of the reject details.
+			if err := proxyStream.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
+				Payload: []byte(deniedMsg),
+			}); err != nil {
+				log.With("sid", sid).Warnf("failed sending session close to client on review rejection: %v", err)
+			}
+			proxyStream.Close(fmt.Errorf("%s", deniedMsg))
+		} else {
+			if err := proxyStream.Send(&pb.Packet{
+				Type: pbclient.SessionOpenApproveOK,
+				Spec: map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
+			}); err != nil {
+				log.With("sid", sid).Warnf("failed sending approval to client: %v", err)
+			}
 		}
-		// TODO: return erroo to caller
-		_ = proxyStream.Send(&pb.Packet{
-			Type:    packetType,
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
-			Payload: payload,
-		})
 	}
 	log.With("sid", sid, "has-stream", proxyStream != nil).Infof("review status change")
+}
+
+// buildReviewDeniedMessage formats the message shown to the CLI when a review
+// is rejected. It mirrors the web UI's "Reject Details" panel: a denial line
+// followed by the reviewer's reason and who rejected the request, whenever
+// those are available. With neither, it degrades to the plain denial line.
+func buildReviewDeniedMessage(rejectReason, rejectedBy string) string {
+	msg := "Access to connection has been denied"
+	if reason := sanitizeTerminalText(rejectReason); reason != "" {
+		msg += "\n  Reason: " + reason
+	}
+	if by := sanitizeTerminalText(rejectedBy); by != "" {
+		msg += "\n  Rejected by " + by
+	}
+	return msg
+}
+
+// sanitizeTerminalText neutralizes reviewer-provided text before it is embedded
+// into the CLI-facing denial message (and the stream close error). Control
+// characters (ANSI escapes, CR, LF, etc.) are replaced with spaces so a crafted
+// rejection reason cannot spoof or corrupt terminal output, and the length is
+// bounded to keep the payload small.
+func sanitizeTerminalText(s string) string {
+	const maxRunes = 500
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			r = ' '
+		}
+		out = append(out, r)
+		if len(out) >= maxRunes {
+			break
+		}
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {

@@ -36,7 +36,7 @@ const (
 	SpecAgentMSPresidioAnonymizerURL string = "agent.mspresidio_anonymizer_url"
 	SpecAgentGCPRawCredentialsKey    string = "agent.gcp_credentials"
 
-	SpecFeatureFlagsKey    string = "feature-flags"
+	SpecFeatureFlagsKey     string = "feature-flags"
 	SpecTCPServerConnectKey string = "tcp.server_connect"
 	SpecReviewDataKey       string = "review.data"
 	SpecGatewayReviewID     string = "review.id"
@@ -48,6 +48,7 @@ const (
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
 	ConnectionTypeClaudeCode  ConnectionType = "claude-code"
+	ConnectionTypeMcp         ConnectionType = "mcp"
 	ConnectionTypeDynamoDB    ConnectionType = "dynamodb"
 	ConnectionTypeCloudWatch  ConnectionType = "cloudwatch"
 	ConnectionTypePostgres    ConnectionType = "postgres"
@@ -76,6 +77,21 @@ const (
 	ClientVerbExec      = "exec"
 	ClientVerbPlainExec = "plain-exec"
 
+	// SessionOrigin* are the product-level origins of a session. They are
+	// persisted on the session record (sessions.origin) and emitted on the
+	// session analytics events so we can tell how a session was initiated.
+	// Unlike ConnectionOrigin* (a transport-level concept), these distinguish
+	// product surfaces that share the same transport origin (e.g. MCP and the
+	// REST API both connect with ConnectionOriginClientAPI).
+	SessionOriginCLI          = "cli"
+	SessionOriginWebApp       = "webapp"
+	SessionOriginAPI          = "api"
+	SessionOriginMCP          = "mcp"
+	SessionOriginRunbooks     = "runbooks"
+	SessionOriginProxyManager = "proxymanager"
+	SessionOriginAgent        = "agent"
+	SessionOriginUnknown      = "unknown"
+
 	SessionPhaseClientConnect       = "client-connect"
 	SessionPhaseClientConnected     = "client-connected"
 	SessionPhaseClientSessionOpen   = "client-session-open"
@@ -93,6 +109,45 @@ const (
 	PreConnectStatusConnectType string = "CONNECT"
 	PreConnectStatusBackoffType string = "BACKOFF"
 )
+
+// SessionOriginFromClientOrigin maps a transport-level client origin to the
+// product-level session origin. It is used by the gRPC session-creation path,
+// which only sees the transport origin. API-driven surfaces (REST, MCP,
+// runbooks) declare their SessionOrigin explicitly at the call site instead.
+func SessionOriginFromClientOrigin(clientOrigin string) string {
+	switch clientOrigin {
+	case ConnectionOriginClient:
+		return SessionOriginCLI
+	case ConnectionOriginClientProxyManager:
+		return SessionOriginProxyManager
+	case ConnectionOriginClientAPI:
+		return SessionOriginAPI
+	case ConnectionOriginClientAPIRunbooks:
+		return SessionOriginRunbooks
+	case ConnectionOriginAgent:
+		return SessionOriginAgent
+	default:
+		return SessionOriginUnknown
+	}
+}
+
+// SessionOriginFromUserAgent maps a normalized user-agent token (as produced by
+// apiutils.NormalizeUserAgent — i.e. the leading "product" of the User-Client
+// or User-Agent header) to the product-level session origin. It is used by HTTP
+// entry points that only know the caller through that header, such as the
+// connection-credentials mint and the REST exec endpoint. The webapp sends
+// "webapp.core" and the CLI sends "hoopcli"; anything else is treated as a raw
+// API consumer.
+func SessionOriginFromUserAgent(normalizedUserAgent string) string {
+	switch normalizedUserAgent {
+	case "webapp.core":
+		return SessionOriginWebApp
+	case "hoopcli":
+		return SessionOriginCLI
+	default:
+		return SessionOriginAPI
+	}
+}
 
 var DefaultInfoTypes = []string{
 	"PHONE_NUMBER",

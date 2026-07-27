@@ -36,18 +36,46 @@
 
 ;; Sanitize guardrail rules before sending to the server
 (defn convert-preset-rules [rules]
-  (mapv (fn [{:keys [type words pattern_regex]}]
+  (mapv (fn [{:keys [type words pattern_regex message]}]
           {:type type
            :words words
-           :pattern_regex pattern_regex})
+           :pattern_regex pattern_regex
+           :message (or message "")})
         rules))
 
+(defn- empty-rule-config?
+  "True when a rule has no effective configuration and will not be persisted."
+  [rule]
+  (or (and (empty? (:words rule))
+           (empty? (:pattern_regex rule)))
+      (empty? (:type rule))))
+
 (defn remove-empty-rules [rules]
-  (remove (fn [rule]
-            (or (and (empty? (:words rule))
-                     (empty? (:pattern_regex rule)))
-                (empty? (:type rule))))
+  (remove empty-rule-config? rules))
+
+(defn rules-with-orphan-message
+  "Rules that would be dropped by remove-empty-rules while still carrying an
+  admin-written custom error message. Saving would silently discard that
+  message, so callers must surface an error instead."
+  [rules]
+  (filter #(and (empty-rule-config? %)
+                (not (cs/blank? (:message %))))
           rules))
+
+(defn- orphan-message-error
+  "Returns an effects map with a visible error when any input/output rule has
+  a custom error message but no configuration, nil otherwise."
+  [guardrails]
+  (let [orphans (concat (rules-with-orphan-message (:input guardrails))
+                        (rules-with-orphan-message (:output guardrails)))
+        n (count orphans)]
+    (when (pos? n)
+      {:fx [[:dispatch
+             [:show-snackbar
+              {:level :error
+               :text (if (= n 1)
+                       "A rule has a custom error message but no configured words or pattern. Configure the rule or clear its message before saving."
+                       (str n " rules have a custom error message but no configured words or pattern. Configure the rules or clear their messages before saving."))}]]]})))
 
 (defn  process-rules [rules]
   {:rules (-> rules
@@ -57,38 +85,42 @@
 (rf/reg-event-fx
  :guardrails->create
  (fn [_ [_ guardrails]]
-   (let [sanitize-guardrail (fn [guardrail]
-                              (-> guardrail
-                                  (update :input process-rules)
-                                  (update :output process-rules)))]
-     {:fx [[:dispatch
-            [:fetch {:method "POST"
-                     :uri "/guardrails"
-                     :body (sanitize-guardrail guardrails)
-                     :on-success (fn []
-                                   (rf/dispatch [:guardrails->get-all])
-                                   (rf/dispatch [:navigate :guardrails]))
-                     :on-failure (fn [error]
-                                   (let [error-message (or (:message error) (str error))]
-                                     (rf/dispatch [:show-snackbar {:level :error
-                                                                   :text error-message}])))}]]]})))
+   (or
+    (orphan-message-error guardrails)
+    (let [sanitize-guardrail (fn [guardrail]
+                               (-> guardrail
+                                   (update :input process-rules)
+                                   (update :output process-rules)))]
+      {:fx [[:dispatch
+             [:fetch {:method "POST"
+                      :uri "/guardrails"
+                      :body (sanitize-guardrail guardrails)
+                      :on-success (fn []
+                                    (rf/dispatch [:guardrails->get-all])
+                                    (rf/dispatch [:navigate :guardrails]))
+                      :on-failure (fn [error]
+                                    (let [error-message (or (:message error) (str error))]
+                                      (rf/dispatch [:show-snackbar {:level :error
+                                                                    :text error-message}])))}]]]}))))
 
 (rf/reg-event-fx
  :guardrails->update-by-id
  (fn [_ [_ guardrails]]
-   (let [sanitize-guardrail (fn [guardrail]
-                              (-> guardrail
-                                  (update :input process-rules)
-                                  (update :output process-rules)))]
-     {:fx [[:dispatch
-            [:fetch {:method "PUT"
-                     :uri (str "/guardrails/" (:id guardrails))
-                     :body (sanitize-guardrail guardrails)
-                     :on-success (fn []
-                                   (rf/dispatch [:guardrails->get-all])
-                                   (rf/dispatch [:navigate :guardrails]))
-                     :on-failure (fn [error]
-                                   (println :guardrails->update-by-id guardrails error))}]]]}))) 
+   (or
+    (orphan-message-error guardrails)
+    (let [sanitize-guardrail (fn [guardrail]
+                               (-> guardrail
+                                   (update :input process-rules)
+                                   (update :output process-rules)))]
+      {:fx [[:dispatch
+             [:fetch {:method "PUT"
+                      :uri (str "/guardrails/" (:id guardrails))
+                      :body (sanitize-guardrail guardrails)
+                      :on-success (fn []
+                                    (rf/dispatch [:guardrails->get-all])
+                                    (rf/dispatch [:navigate :guardrails]))
+                      :on-failure (fn [error]
+                                    (println :guardrails->update-by-id guardrails error))}]]]}))))
 
 (rf/reg-event-fx
  :guardrails->delete-by-id
@@ -101,6 +133,12 @@
                                  (rf/dispatch [:navigate :guardrails]))
                    :on-failure (fn [error]
                                  (println :guardrails->delete-by-id id error))}]]]}))
+
+;; Empty rule placeholder used to seed the form with one blank row.
+;; Must mirror the rule shape produced by rule-builder below (minus :_id,
+;; which webapp.guardrails.helpers/format-rule generates when absent).
+(def ^:private empty-rule
+  {:type "" :rule "" :pattern_regex "" :words [] :message ""})
 
 ;; This event manages the state for when editing
 ;; or creating a new guardrails rule
@@ -115,7 +153,8 @@
                         {:_id (or (:_id rule) (random-uuid)) ;; internal use
                          :type (:type rule) ; :deny_words_list or :pattern
                          :words (:words rule)
-                         :pattern_regex (:pattern_regex rule)})
+                         :pattern_regex (:pattern_regex rule)
+                         :message (or (:message rule) "")})
          rule-schema (merge
                       {:id (or id "")
                        :name (or name "")
@@ -124,10 +163,10 @@
                        :attributes (or attributes [])}
                       (if (seq (:rules input))
                         {:input (mapv rule-builder (:rules input))}
-                        {:input [{:type "" :rule "" :details ""}]})
+                        {:input [empty-rule]})
                       (if (seq (:rules output))
                         {:output (mapv rule-builder (:rules output))}
-                        {:output [{:type "" :rule "" :details ""}]}))]
+                        {:output [empty-rule]}))]
      {:db (assoc db :guardrails->active-guardrail
                  {:status :ready
                   :data (merge {:connections nil :connections-load-state {:loading false :remaining 0 :acc [] :errors []} :connections-error nil} rule-schema)})})))
@@ -145,8 +184,8 @@
                                               :connection_ids []
                                               :attributes []
                                               :connections []
-                                              :input [{:type "" :rule "" :details ""}]
-                                              :output [{:type "" :rule "" :details ""}]}]]]}))
+                                              :input [empty-rule]
+                                              :output [empty-rule]}]]]}))
 
 ;; SUBSCRIPTIONS
 (rf/reg-sub

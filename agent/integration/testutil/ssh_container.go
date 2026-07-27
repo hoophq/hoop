@@ -103,7 +103,7 @@ func startSSHContainer(t T, publicKey string) *SSHContainer {
 		t.Fatalf("failed to get mapped ssh port: %v", err)
 	}
 
-	host, err := container.Host(ctx)
+	host, err := ContainerHost(ctx, container)
 	if err != nil {
 		t.Fatalf("failed to get ssh container host: %v", err)
 	}

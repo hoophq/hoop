@@ -37,7 +37,6 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
-	"golang.org/x/sync/singleflight"
 )
 
 type (
@@ -65,17 +64,34 @@ type (
 		// closed=true under RLock instead of racing through a fresh state.
 		sessionStates sync.Map
 
-		// connWriteLocks serializes writes per (sessionID, connectionID).
-		// Required when packet dispatch is async (see Run) so that two
-		// goroutines handling consecutive packets for the same connection
-		// don't reorder writes to the upstream proxy.
-		connWriteLocks sync.Map
+		// sshWriteQueues holds one packetQueue per (sessionID,
+		// connectionID), keyed "sid:connID" like the connStore. The recv
+		// loop enqueues SSHConnectionWrite packets here and a per-queue
+		// worker drains them in order (see processSSHWriteQueued): SSH
+		// framing requires per-connection stream order — a per-connection
+		// mutex is NOT sufficient, since goroutines contending on a mutex
+		// acquire it in arbitrary order. Entries are removed in
+		// sessionCleanup, mirroring httpProxyQueues.
+		sshWriteQueues sync.Map
 
-		// sshFlightGroup deduplicates concurrent first-packet handling for
-		// the same (sessionID, connectionID) in processSSHProtocol. Without
-		// it, async-dispatched goroutines could each miss the connStore
-		// cache and dial duplicate upstream SSH connections.
-		sshFlightGroup singleflight.Group
+		// httpProxyQueues holds one packetQueue per (sessionID,
+		// connectionID), keyed "sid:connID" like the connStore. The recv
+		// loop enqueues HttpProxyConnectionWrite packets here and a per-queue
+		// worker drains them in order, so a blocking upstream request never
+		// stalls packet dispatch (see processHttpProxyWriteServer). Entries
+		// are removed in sessionCleanup; they are intentionally NOT removed
+		// on TCPConnectionClose so a late packet cannot race a mid-drain
+		// worker into a second, concurrent worker for the same connection.
+		httpProxyQueues sync.Map
+
+		// gcpTokenSources caches one oauth2.TokenSource per session (keyed by
+		// gateway session ID) for claude-code connections that federate to
+		// Google Vertex AI. The source is built once from the connection's
+		// service-account key and reused for the life of the session so the
+		// bearer is minted lazily and auto-refreshed by the oauth2 library
+		// shortly before expiry — rather than re-minted on every proxied
+		// request. Entries are removed in sessionCleanup.
+		gcpTokenSources sync.Map
 	}
 	connEnv struct {
 		scheme             string
@@ -86,21 +102,40 @@ type (
 		port               string
 		authorizedSSHKeys  string
 		dbname             string
+		serviceName        string
 		insecure           bool
 		options            string
 		postgresSSLMode    string
 		connectionString   string
 		httpProxyRemoteURL string
 		httpProxyHeaders   map[string]string
-		awsRegion          string
-		awsSecretAccessKey string
-		awsAccessKeyID     string
+		// httpProxyAllowClientAuth opts an httpproxy connection into per-user
+		// upstream identity (ALLOW_CLIENT_AUTHORIZATION=true): a client-supplied
+		// X-Hoop-Upstream-Authorization header is promoted to the upstream
+		// Authorization header. Only honored when the
+		// experimental.httpproxy_client_authorization flag is enabled.
+		httpProxyAllowClientAuth bool
+		// gcpServiceAccountJSON carries the GCP service-account key configured
+		// on a claude-code connection that federates to Google Vertex AI. When
+		// present (and the experimental.claude_code_vertex flag is on) the agent
+		// mints a short-lived OAuth bearer from it and injects it as the upstream
+		// Authorization header. Empty for every other connection.
+		gcpServiceAccountJSON string
+		awsRegion             string
+		awsSecretAccessKey    string
+		awsAccessKeyID        string
 
 		kubernetesClusterURL         string
 		kubernetesToken              string
 		kubernetesInsecureSkipVerify bool
 
 		experimentalRedactRows string
+
+		// resultMetadata carries the connection's RESULT_METADATA setting for
+		// the driver-based SQL exec path. Normalized to "on"/"off" by
+		// parseConnectionEnvVars; only MySQL consumes it (the other engines'
+		// CLIs already print result metadata in batch mode).
+		resultMetadata string
 	}
 	ioMetricFlush struct {
 		client pb.ClientTransport
@@ -167,19 +202,6 @@ func (a *Agent) sessionStateFor(sessionID string) *sessionState {
 	return actual.(*sessionState)
 }
 
-// connWriteLockFor returns the per-connection write mutex. It serializes
-// writes to a single upstream proxy when packet dispatch is async, so
-// consecutive packets for the same (sessionID, connectionID) do not
-// reorder at the libhoop layer.
-func (a *Agent) connWriteLockFor(key string) *sync.Mutex {
-	if v, ok := a.connWriteLocks.Load(key); ok {
-		return v.(*sync.Mutex)
-	}
-	mu := &sync.Mutex{}
-	actual, _ := a.connWriteLocks.LoadOrStore(key, mu)
-	return actual.(*sync.Mutex)
-}
-
 func (a *Agent) Close(cause error) {
 	log.Infof("shutting down agent controller")
 	for _, obj := range a.connStore.List() {
@@ -225,6 +247,10 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	case pbagent.MongoDBConnectionWrite:
 		a.processMongoDBProtocol(pkt)
 
+	// Oracle Protocol
+	case pbagent.OracleConnectionWrite:
+		a.processOracleProtocol(pkt)
+
 	// raw tcp
 	case pbagent.TCPConnectionWrite:
 		a.processTCPWriteServer(pkt)
@@ -235,7 +261,7 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 	// SSH protocol
 	case pbagent.SSHConnectionWrite:
-		a.processSSHProtocol(pkt)
+		a.processSSHWriteQueued(pkt)
 
 	// terminal
 	case pbagent.TerminalWriteStdin:
@@ -282,18 +308,20 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// SSH connection writes and the SessionClose that ends them can be
-		// dispatched concurrently when the async flag is enabled, so a
-		// slow upstream on one session does not stall packet processing
-		// for other sessions on this agent. processSSHProtocol uses the
-		// session RW lock, per-connection write mutex, and singleflight
-		// group on the Agent to keep concurrent handlers correct.
+		// SSHConnectionWrite is enqueued into a per-(session, connection)
+		// FIFO drained by a worker goroutine (see processSSHWriteQueued),
+		// exactly like HttpProxyConnectionWrite: the recv loop never
+		// blocks on a slow upstream, connections proceed independently,
+		// and packets for one connection keep their stream arrival order.
+		// Order matters: dispatching each packet with `go` (the previous
+		// model) let an exec request overtake the OpenChannel it belongs
+		// to, and libhoop's proxy drops requests for unknown channels —
+		// the client then waits forever for an exit-status (DEP-57).
 		//
-		// SessionClose is included so the recv loop is not blocked when
-		// it has to wait for an in-flight SSH handler to drain before
-		// running session cleanup.
-		if featureflagstate.IsEnabled("experimental.agent_async_ssh") &&
-			(pkt.Type == pbagent.SSHConnectionWrite || pkt.Type == pbagent.SessionClose) {
+		// SessionClose is dispatched concurrently so the recv loop is not
+		// blocked while it waits for in-flight SSH handlers to drain
+		// (it takes the session RW write lock) before cleanup.
+		if pkt.Type == pbagent.SessionClose {
 			go a.processPacket(pkt)
 			continue
 		}
@@ -307,43 +335,43 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionIDKey := string(sessionID)
 	log.With("sid", sessionIDKey).Infof("received connect request")
 
-	connParams, err := a.buildConnectionParams(pkt)
-	if err != nil {
-		log.Warnf("failed building connection params, err=%v", err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(err.Error()),
-			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(internalExitCode),
-				pb.SpecGatewaySessionID:  sessionID,
-			},
-		})
-		return
-	}
-
-	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
-	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
-	connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
-	connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
-	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
-	connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
-	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
-
-	// Embedded mode usually has the context of the application.
-	// By having all environment variables in the context of execution
-	// permits a more seamless integration with internal language tooling.
-	if a.config.AgentMode == pb.AgentModeEmbeddedType {
-		for _, envKeyVal := range os.Environ() {
-			envKey, envVal, found := strings.Cut(envKeyVal, "=")
-			if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
-				continue
-			}
-			key := fmt.Sprintf("envvar:%s", envKey)
-			connParams.EnvVars[key] = b64Enc([]byte(envVal))
-		}
-	}
-
 	go func() {
+		connParams, err := a.buildConnectionParams(pkt)
+		if err != nil {
+			log.Warnf("failed building connection params, err=%v", err)
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(err.Error()),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+			return
+		}
+
+		connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
+		connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
+		connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
+		connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
+		connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
+		connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
+		connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
+
+		// Embedded mode usually has the context of the application.
+		// By having all environment variables in the context of execution
+		// permits a more seamless integration with internal language tooling.
+		if a.config.AgentMode == pb.AgentModeEmbeddedType {
+			for _, envKeyVal := range os.Environ() {
+				envKey, envVal, found := strings.Cut(envKeyVal, "=")
+				if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
+					continue
+				}
+				key := fmt.Sprintf("envvar:%s", envKey)
+				connParams.EnvVars[key] = b64Enc([]byte(envVal))
+			}
+		}
+
 		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
@@ -353,6 +381,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})
+			return
 		}
 
 		requestCommand := connParams.CmdList
@@ -433,8 +462,32 @@ func (a *Agent) sessionCleanup(sessionID string) {
 			}()
 		}
 		a.connStore.Del(key)
-		a.connWriteLocks.Delete(key)
 	}
+	// Drop the session's HTTP proxy and SSH packet queues. Iterated
+	// separately from the connStore because a queue can outlive its
+	// connStore entry (e.g. a connection whose first write failed and was
+	// deleted from the store).
+	a.httpProxyQueues.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
+			a.httpProxyQueues.Delete(key)
+		}
+		return true
+	})
+	// Deleting an SSH queue entry while its drain worker may still be alive
+	// is safe only because session closure is terminal: closed=true was
+	// stored above under the write lock, so both the surviving worker and
+	// any replacement queue/worker created by a late packet find closed=true
+	// in processSSHProtocol and no-op. Without that invariant, a late packet
+	// could resurrect a second live worker for the same connection.
+	a.sshWriteQueues.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
+			a.sshWriteQueues.Delete(key)
+		}
+		return true
+	})
+	// Drop any cached Vertex token source so the service-account-derived
+	// credential does not outlive the session in agent memory.
+	a.gcpTokenSources.Delete(sessionID)
 }
 
 func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
@@ -728,13 +781,16 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		port:              envVarS.Getenv("PORT"),
 		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_SERVER_KEYS"),
 		dbname:            envVarS.Getenv("DB"),
+		serviceName:       envVarS.Getenv("SID"),
 		insecure:          envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
 		options:           envVarS.Getenv("OPTIONS"),
 		// this option is only used by mongodb at the momento
-		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
-		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
-		httpProxyHeaders:   httpProxyHeaders,
+		connectionString:         envVarS.Getenv("CONNECTION_STRING"),
+		httpProxyRemoteURL:       envVarS.Getenv("REMOTE_URL"),
+		httpProxyHeaders:         httpProxyHeaders,
+		httpProxyAllowClientAuth: envVarS.Getenv("ALLOW_CLIENT_AUTHORIZATION") == "true",
+		gcpServiceAccountJSON:    envVarS.Getenv("GCP_SERVICE_ACCOUNT_JSON"),
 
 		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
 		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),
@@ -765,12 +821,32 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, errors.New("missing required secrets for mysql connection [HOST, USER, PASS]")
 		}
+		// RESULT_METADATA toggles the interactive-style result feedback lines
+		// ("N rows in set", "Query OK, N rows affected") on the driver-based
+		// exec path. Defaults to on; "off" keeps the clean batch TSV output
+		// for scripting consumers.
+		switch strings.ToLower(envVarS.Getenv("RESULT_METADATA")) {
+		case "", "on", "true", "1":
+			env.resultMetadata = "on"
+		case "off", "false", "0":
+			env.resultMetadata = "off"
+		default:
+			return nil, fmt.Errorf("wrong option (%q) for RESULT_METADATA, accept only: %v",
+				envVarS.Getenv("RESULT_METADATA"), []string{"on", "off", "true", "false", "1", "0"})
+		}
 	case pb.ConnectionTypeMSSQL:
 		if env.port == "" {
 			env.port = "1433"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, errors.New("missing required secrets for mssql connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeOracleDB:
+		if env.port == "" {
+			env.port = "1521"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" || env.serviceName == "" {
+			return nil, errors.New("missing required secrets for oracledb connection [HOST, USER, PASS, SID]")
 		}
 	case pb.ConnectionTypeMongoDB:
 		if env.connectionString != "" {
@@ -865,7 +941,7 @@ func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSes
 			cluster = string(val)
 		case "envvar:EKS_AWS_REGION":
 			awsRegion = string(val)
-		case "envvar:EKS_ROLE_SESSION":
+		case "envvar:EKS_ROLE_SESSION", "envvar:EKS_BINDING_USER_ROLE":
 			roleSession = string(val)
 		case "envvar:EKS_ROLE_ARN":
 			roleArn = string(val)

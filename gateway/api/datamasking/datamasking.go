@@ -20,6 +20,18 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+// requireRedactProvider aborts rule creation/updates with 422 when the
+// server has no DLP provider configured (the invariant and remediation text
+// live in services.CheckRedactProvider). Read/list/delete stay available so
+// existing rules remain visible and removable.
+func requireRedactProvider(c *gin.Context) bool {
+	if err := services.CheckRedactProvider(); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return false
+	}
+	return true
+}
+
 func getLicenseType(ctx *storagev2.Context) string {
 	licenseType := license.OSSType
 	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
@@ -138,11 +150,14 @@ func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
 //	@Tags			Data Masking Rules
 //	@Accept			json
 //	@Produce		json
-//	@Param			request		body		openapi.DataMaskingRuleRequest	true	"The request body resource"
-//	@Success		201			{object}	openapi.DataMaskingRule
-//	@Failure		400,409,500	{object}	openapi.HTTPError
+//	@Param			request			body		openapi.DataMaskingRuleRequest	true	"The request body resource"
+//	@Success		201				{object}	openapi.DataMaskingRule
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules [post]
 func Post(c *gin.Context) {
+	if !requireRedactProvider(c) {
+		return
+	}
 	ctx := storagev2.ParseContext(c)
 	req := parseRequestPayload(c)
 	if req == nil {
@@ -235,11 +250,14 @@ func Post(c *gin.Context) {
 //	@Tags			Data Masking Rules
 //	@Accept			json
 //	@Produce		json
-//	@Param			request		body		openapi.DataMaskingRuleRequest	true	"The request body resource"
-//	@Success		200			{object}	openapi.DataMaskingRule
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Param			request			body		openapi.DataMaskingRuleRequest	true	"The request body resource"
+//	@Success		200				{object}	openapi.DataMaskingRule
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules/{id} [put]
 func Put(c *gin.Context) {
+	if !requireRedactProvider(c) {
+		return
+	}
 	ctx := storagev2.ParseContext(c)
 	req := parseRequestPayload(c)
 	if req == nil {
@@ -247,21 +265,23 @@ func Put(c *gin.Context) {
 	}
 
 	ruleID := c.Param("id")
-	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
-		existing, err := models.GetDataMaskingRuleByID(ctx.GetOrgID(), ruleID)
-		switch err {
-		case models.ErrNotFound:
-			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-			return
-		case nil:
-			if existing.RulepackID.Valid {
-				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
-				return
-			}
-		default:
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
+	existing, err := models.GetDataMaskingRuleByID(ctx.GetOrgID(), ruleID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	case nil:
+		if existing.ManagedBy != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be modified directly"})
 			return
 		}
+		if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) && existing.RulepackID.Valid {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be modified directly"})
+			return
+		}
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
+		return
 	}
 
 	licenseType := getLicenseType(ctx)
@@ -389,21 +409,23 @@ func Get(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleID := c.Param("id")
-	if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) {
-		existing, err := models.GetDataMaskingRuleByID(ctx.GetOrgID(), ruleID)
-		switch err {
-		case models.ErrNotFound:
-			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-			return
-		case nil:
-			if existing.RulepackID.Valid {
-				c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
-				return
-			}
-		default:
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
+	existing, gerr := models.GetDataMaskingRuleByID(ctx.GetOrgID(), ruleID)
+	switch gerr {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	case nil:
+		if existing.ManagedBy != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be deleted directly"})
 			return
 		}
+		if featureflag.IsEnabled(ctx.GetOrgID(), services.RulepackFlagName) && existing.RulepackID.Valid {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is owned by a rulepack and cannot be deleted directly"})
+			return
+		}
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, gerr, "failed fetching data masking rule: %v", gerr)
+		return
 	}
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionDelete).
 		Resource(ruleID, "")
@@ -440,7 +462,8 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 	}
 
 	return &openapi.DataMaskingRule{
-		ID: obj.ID,
+		ID:        obj.ID,
+		ManagedBy: obj.ManagedBy,
 		DataMaskingRuleRequest: openapi.DataMaskingRuleRequest{
 			Name:                    obj.Name,
 			Description:             obj.Description,

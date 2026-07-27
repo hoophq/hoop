@@ -66,9 +66,16 @@ func (m *MockTransport) Close() (error, error) {
 		return nil, nil
 	}
 	m.closed = true
+	// Cancel the context but deliberately do NOT close sendCh/recvCh.
+	// Long-lived helpers (the agent recv loop, the bridge pumps for the
+	// DB protocols, the demux) send on these channels and only stop when
+	// they observe ctx.Done(). Closing the channels here races those
+	// still in-flight sends — `close()` on a channel another goroutine is
+	// writing to is a data race and can panic. All readers/writers
+	// already select on m.ctx.Done(), so cancellation alone unblocks
+	// them; the channels are reclaimed by GC once the transport is
+	// unreferenced.
 	m.cancel()
-	close(m.sendCh)
-	close(m.recvCh)
 	return nil, nil
 }
 
@@ -79,15 +86,25 @@ func (m *MockTransport) Shutdown() {
 func (m *MockTransport) Inject(pkt *pb.Packet) {
 	select {
 	case m.recvCh <- pkt:
+	case <-m.ctx.Done():
+		// Transport closed/cancelled — drop the inject rather than
+		// block. Bridge pumps racing teardown rely on this.
 	case <-time.After(10 * time.Second):
 		panic(fmt.Sprintf("testutil: inject timed out: type=%s", pkt.Type))
 	}
 }
 
 func (m *MockTransport) Expect(t T, timeout time.Duration) *pb.Packet {
+	t.Helper()
+	// Close() no longer closes sendCh, so a closed transport would
+	// otherwise make Expect block until the timeout. Observe ctx.Done()
+	// to fail fast with a clear teardown reason instead.
 	select {
 	case pkt := <-m.sendCh:
 		return pkt
+	case <-m.ctx.Done():
+		t.Fatalf("testutil: transport closed while waiting for packet: %v", m.ctx.Err())
+		return nil
 	case <-time.After(timeout):
 		t.Fatalf("testutil: expected packet, got none (timeout %v)", timeout)
 		return nil

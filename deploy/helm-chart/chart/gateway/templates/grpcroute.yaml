@@ -1,0 +1,23 @@
+{{- if .Values.gatewayApiGrpc.enabled -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: {{ .Values.gatewayApiGrpc.grpcRoute.name }}
+  {{- with .Values.gatewayApiGrpc.grpcRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.gatewayApiGrpc.grpcRoute.parentRefs }}
+  parentRefs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.gatewayApiGrpc.grpcRoute.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+  {{- with .Values.gatewayApiGrpc.grpcRoute.rules }}
+  rules:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

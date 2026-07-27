@@ -9,11 +9,12 @@ import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { attributesService } from '@/services/attributes'
 import { connectionsService } from '@/services/connections'
-import { getConnectionIcon } from '@/utils/connectionIcons'
+import { useConnectionIconGetter } from '@/utils/connectionIcons'
 
 function ConnectionFilter({ value, onChange, connections }) {
   const [search, setSearch] = useState('')
   const [opened, setOpened] = useState(false)
+  const getConnectionIcon = useConnectionIconGetter()
 
   const filtered = search
     ? connections.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))

@@ -61,7 +61,10 @@
            (assoc-in [:runbooks :execution-requirements-callout :dismissed?] false))
     :fx [[:dispatch [:runbooks/persist-selected-connection]]
          [:dispatch [:runbooks/clear-active-runbooks]]
-         [:dispatch [:runbooks/update-runbooks-for-connection]]]}))
+         [:dispatch [:runbooks/update-runbooks-for-connection]]
+         (if connection
+           [:dispatch [:ai-session-analyzer/get-role-rule (:name connection)]]
+           [:dispatch [:ai-session-analyzer/clear-role-rule]])]}))
 
 (rf/reg-event-fx
  :runbooks/persist-selected-connection
@@ -102,10 +105,12 @@
                        (not= "disabled" (:access_mode_runbooks connection)))]
      (if enabled?
        {:db (assoc-in db [:runbooks :selected-connection] connection)
-        :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
+        :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]
+             [:dispatch [:ai-session-analyzer/get-role-rule connection-name]]]}
        {:db (assoc-in db [:runbooks :selected-connection] nil)
         :fx [[:dispatch [:runbooks/clear-persisted-connection]]
-             [:dispatch [:runbooks/list nil]]]}))))
+             [:dispatch [:runbooks/list nil]]
+             [:dispatch [:ai-session-analyzer/clear-role-rule]]]}))))
 
 (rf/reg-event-db
  :runbooks/dismiss-execution-requirements-callout
@@ -192,7 +197,16 @@
                                   (when on-failure
                                     (on-failure _error-message error)))
              default-on-success (fn [res]
-                                  (if (= "running" (:output_status res))
+                                  (cond
+                                    (:has_review res)
+                                    (rf/dispatch
+                                     [:show-snackbar
+                                      {:level :info
+                                       :text "Runbook sent for review"
+                                       :description (str "The AI Session Analyzer flagged this runbook. "
+                                                         "It needs approval before it runs.")}])
+
+                                    (= "running" (:output_status res))
                                     (rf/dispatch
                                      [:show-snackbar
                                       {:level :info
@@ -200,6 +214,11 @@
                                        :description (str "The gateway timed out after 50s. "
                                                          "Your runbook keeps executing in the background, "
                                                          "open session details to track progress.")}])
+
+                                    ;; Stay silent when the analyzer blocked the run: the
+                                    ;; ai-block-card communicates the outcome (mirrors the
+                                    ;; Web Terminal behavior).
+                                    (not= "block_execution" (get-in res [:ai_analysis :action]))
                                     (rf/dispatch
                                      [:show-snackbar {:level :success
                                                       :text "Runbook was executed!"}]))

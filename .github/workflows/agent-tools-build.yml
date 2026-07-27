@@ -1,0 +1,344 @@
+# Builds and publishes hoophq/agent-tools from Dockerfile.tools whenever the
+# recipe changes, gated by the forbidden-license scan (DEP-58) and the
+# hand-installed binary provenance gate (DEP-66).
+#
+# Why this exists: Dockerfile.tools was fixed to stop pulling AGPL packages
+# (ghostscript chain via groff Recommends), but the published image was never
+# rebuilt — the recipe and the registry drifted for weeks while every
+# hoophq/hoopdev preview build kept inheriting AGPL packages from the stale
+# base. This workflow makes that drift impossible:
+#
+#   - pull_request touching the recipe/gates: build (amd64, both trains) +
+#     license/provenance gates, no push — a recipe reintroducing AGPL/SSPL
+#     fails CI here, at the source.
+#   - push to main (or manual dispatch): build both arches natively for both
+#     trains, gate, push hoophq/agent-tools:noble-<date>-<sha>{,-clean} per-arch
+#     tags + multi-arch manifests, then open a PR bumping the base references in
+#     Dockerfile.dev and scripts/dev/Dockerfile.
+#
+# Two image trains (DEP-66):
+#   - legacy (default tag): INCLUDE_LEGACY_MONGO=true — ships the SSPL MongoDB
+#     5.0 shell, kept for a customer that depends on it.
+#   - clean (-clean tag suffix): INCLUDE_LEGACY_MONGO=false — no AGPL/SSPL.
+name: agent-tools
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile.tools
+      - licenses/manual-binaries.toml
+      - scripts/ci/check-manual-binaries.py
+      - scripts/ci/check-forbidden-licenses.py
+      - .github/workflows/agent-tools-build.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile.tools
+      - licenses/manual-binaries.toml
+      - scripts/ci/check-manual-binaries.py
+      - scripts/ci/check-forbidden-licenses.py
+      - .github/workflows/agent-tools-build.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: agent-tools-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    name: Compute image tag
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      publish: ${{ steps.tag.outputs.publish }}
+    steps:
+      - id: tag
+        run: |
+          short_sha=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          echo "tag=noble-$(date -u +%Y%m%d)-${short_sha}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fail fast on publish runs: bump-consumers needs the PAT at the very
+      # end of the pipeline, and discovering it is missing only after the
+      # image was already published leaves the registry and the consumers
+      # out of sync — the exact drift this workflow exists to prevent.
+      - name: Verify GH_TOKEN secret is present
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::secrets.GH_TOKEN (PAT) is required so the FROM-bump PR can be created after publishing. Add it in repo settings."
+            exit 1
+          fi
+
+  build-amd64:
+    runs-on: ubuntu-latest
+    name: Build ${{ matrix.train }} (amd64)
+    needs: [meta]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        train: [legacy, clean]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Compute train build parameters
+        id: p
+        run: |
+          if [ "${{ matrix.train }}" = "clean" ]; then
+            echo "include_legacy_mongo=false" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ needs.meta.outputs.tag }}-clean-amd64" >> "$GITHUB_OUTPUT"
+          else
+            echo "include_legacy_mongo=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ needs.meta.outputs.tag }}-amd64" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build image
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.tools
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          load: true
+          push: false
+          build-args: |
+            INCLUDE_LEGACY_MONGO=${{ steps.p.outputs.include_legacy_mongo }}
+          tags: hoophq/agent-tools:${{ steps.p.outputs.tag }}
+
+      # Regression guard for the train split: legacy must contain the legacy
+      # shell; clean must not, and must still ship mongosh.
+      - name: Assert train contents
+        run: |
+          img="hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+          if [ "${{ matrix.train }}" = "legacy" ]; then
+            docker run --rm --entrypoint sh "$img" -c 'test -x /usr/local/bin/mongo' \
+              || { echo "::error::legacy train is missing the legacy mongo shell"; exit 1; }
+          else
+            docker run --rm --entrypoint sh "$img" -c '! test -e /usr/local/bin/mongo' \
+              || { echo "::error::clean train unexpectedly contains the legacy SSPL mongo shell"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c 'command -v mongosh >/dev/null' \
+              || { echo "::error::clean train is missing mongosh"; exit 1; }
+          fi
+
+      # License gate BEFORE anything is pushed: agent-tools is the base of
+      # hoophq/hoopdev, so a forbidden license here propagates to everything.
+      # Trivy covers the apt/language layer...
+      - name: Scan licenses (Trivy)
+        run: |
+          mkdir -p /tmp/license-scan
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /tmp/license-scan:/scan \
+            aquasec/trivy:0.72.0 image \
+            --scanners license \
+            --format json \
+            --quiet \
+            --output /scan/agent-tools.json \
+            "hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+      - name: Gate on forbidden licenses (packages)
+        id: check
+        run: |
+          python3 scripts/ci/check-forbidden-licenses.py \
+            --comment-out /tmp/license-scan/comment.json \
+            hoophq/agent-tools=/tmp/license-scan/agent-tools.json
+      - name: Fail on forbidden licenses (packages)
+        if: steps.check.outputs.found == 'true'
+        run: |
+          echo "::error::forbidden licenses detected in agent-tools ${{ matrix.train }} (amd64); refusing to publish (see scan output above)"
+          exit 1
+      # ...and the provenance gate covers hand-installed binaries Trivy can't
+      # see (curl/tarball/zip), enforcing the per-train license policy.
+      - name: Gate on hand-installed binaries (provenance)
+        run: |
+          python3 scripts/ci/check-manual-binaries.py \
+            --image "hoophq/agent-tools:${{ steps.p.outputs.tag }}" \
+            --train "${{ matrix.train }}"
+
+      - name: Login to Docker Hub
+        if: needs.meta.outputs.publish == 'true'
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Push
+        if: needs.meta.outputs.publish == 'true'
+        run: docker push "hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    name: Build ${{ matrix.train }} (arm64)
+    needs: [meta]
+    if: needs.meta.outputs.publish == 'true'
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        train: [legacy, clean]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Compute train build parameters
+        id: p
+        run: |
+          if [ "${{ matrix.train }}" = "clean" ]; then
+            echo "include_legacy_mongo=false" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ needs.meta.outputs.tag }}-clean-arm64" >> "$GITHUB_OUTPUT"
+          else
+            echo "include_legacy_mongo=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ needs.meta.outputs.tag }}-arm64" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build image
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.tools
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          load: true
+          push: false
+          build-args: |
+            INCLUDE_LEGACY_MONGO=${{ steps.p.outputs.include_legacy_mongo }}
+          tags: hoophq/agent-tools:${{ steps.p.outputs.tag }}
+
+      - name: Assert train contents
+        run: |
+          img="hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+          if [ "${{ matrix.train }}" = "legacy" ]; then
+            docker run --rm --entrypoint sh "$img" -c 'test -x /usr/local/bin/mongo' \
+              || { echo "::error::legacy train is missing the legacy mongo shell"; exit 1; }
+          else
+            docker run --rm --entrypoint sh "$img" -c '! test -e /usr/local/bin/mongo' \
+              || { echo "::error::clean train unexpectedly contains the legacy SSPL mongo shell"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c 'command -v mongosh >/dev/null' \
+              || { echo "::error::clean train is missing mongosh"; exit 1; }
+          fi
+
+      # Same gates as amd64: package sets can differ per-arch, so scan both.
+      - name: Scan licenses (Trivy)
+        run: |
+          mkdir -p /tmp/license-scan
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /tmp/license-scan:/scan \
+            aquasec/trivy:0.72.0 image \
+            --scanners license \
+            --format json \
+            --quiet \
+            --output /scan/agent-tools.json \
+            "hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+      - name: Gate on forbidden licenses (packages)
+        id: check
+        run: |
+          python3 scripts/ci/check-forbidden-licenses.py \
+            --comment-out /tmp/license-scan/comment.json \
+            hoophq/agent-tools=/tmp/license-scan/agent-tools.json
+      - name: Fail on forbidden licenses (packages)
+        if: steps.check.outputs.found == 'true'
+        run: |
+          echo "::error::forbidden licenses detected in agent-tools ${{ matrix.train }} (arm64); refusing to publish"
+          exit 1
+      - name: Gate on hand-installed binaries (provenance)
+        run: |
+          python3 scripts/ci/check-manual-binaries.py \
+            --image "hoophq/agent-tools:${{ steps.p.outputs.tag }}" \
+            --train "${{ matrix.train }}"
+
+      - name: Push
+        run: docker push "hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+
+  manifest:
+    runs-on: ubuntu-latest
+    name: Push multi-arch manifest (${{ matrix.train }})
+    needs: [meta, build-amd64, build-arm64]
+    if: needs.meta.outputs.publish == 'true'
+    strategy:
+      matrix:
+        train: [legacy, clean]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Compute train tag
+        id: p
+        run: |
+          if [ "${{ matrix.train }}" = "clean" ]; then
+            echo "tag=${{ needs.meta.outputs.tag }}-clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ needs.meta.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create manifest and push
+        run: |
+          T="hoophq/agent-tools:${{ steps.p.outputs.tag }}"
+          docker manifest create "$T" "$T-amd64" "$T-arm64"
+          docker manifest push "$T"
+
+  bump-consumers:
+    runs-on: ubuntu-latest
+    name: Open base-bump PR
+    needs: [meta, manifest]
+    if: needs.meta.outputs.publish == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Bump base references and open PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        # Idempotent by construction: TAG is deterministic per commit+day, so
+        # a rerun after a partial failure reuses the same branch (checkout -B
+        # + force push) and skips PR creation when one is already open.
+        # Only the legacy base tag is pinned here. The clean base is published
+        # as "${TAG}-clean" by this workflow; any consumer that wants the clean
+        # train references it explicitly (e.g. via --build-arg AGENT_TOOLS_TAG),
+        # so it needs no separate pin in these files.
+        run: |
+          set -euo pipefail
+          branch="ci/agent-tools-bump-${TAG}"
+          sed -i "s|^ARG AGENT_TOOLS_TAG=.*|ARG AGENT_TOOLS_TAG=${TAG}|" Dockerfile.dev
+          sed -i "s|^FROM hoophq/agent-tools:.*|FROM hoophq/agent-tools:${TAG}|" scripts/dev/Dockerfile
+
+          if git diff --quiet; then
+            echo "consumers already reference ${TAG}; nothing to bump"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git commit -am "build: bump agent-tools base image to ${TAG}"
+          # The branch is owned by this workflow and derived from TAG; force
+          # push makes reruns converge on the same content.
+          git push --force -u origin "$branch"
+
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "bump PR for ${TAG} already open; nothing to create"
+            exit 0
+          fi
+
+          gh pr create \
+            --title "build: bump agent-tools base image to ${TAG}" \
+            --label patch \
+            --body "Auto-generated by the agent-tools workflow after publishing \`hoophq/agent-tools:${TAG}\` and \`hoophq/agent-tools:${TAG}-clean\` (license-gated: no AGPL/SSPL on the clean train). Bumps the base reference of \`Dockerfile.dev\` (ARG AGENT_TOOLS_TAG) and \`scripts/dev/Dockerfile\` so hoopdev preview and dev images pick up the rebuilt base. Automated by MisterMal"

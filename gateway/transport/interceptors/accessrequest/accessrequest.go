@@ -61,7 +61,7 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 			"status", otrev.Status).Info("one time review")
 
 		if !(otrev.Status == models.ReviewStatusApproved || otrev.Status == models.ReviewStatusProcessing) {
-			reviewURL := fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), otrev.ID)
+			reviewURL := fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), otrev.ID)
 			return false, &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
@@ -170,13 +170,15 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 	}
 
 	// 2. check if there's an existing jit review for this connection, if yes validate and return it
-	resp, err = getValidatedJitReview(pctx)
-	if err != nil {
-		return nil, err
-	}
-	if resp != nil {
-		setSpecReview(pkt)
-		return resp, nil
+	if pctx.ClientVerb == pb.ClientVerbConnect {
+		resp, err = getValidatedJitReview(pctx)
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			setSpecReview(pkt)
+			return resp, nil
+		}
 	}
 
 	// 3. if no existing review, create a new review
@@ -262,7 +264,7 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: fmt.Appendf(nil, "%s/reviews/%s", appconfig.Get().FullApiURL(), newRev.ID),
+		Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), newRev.ID),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }

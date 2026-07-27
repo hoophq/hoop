@@ -28,9 +28,9 @@ func (p *Plugin) GetName() string               { return p.Name }
 func (p *Plugin) GetOrgID() string              { return p.OrgID }
 func (p *Plugin) GetEnvVars() map[string]string { return p.EnvVars }
 
-func GetPluginByName(orgID, name string) (*Plugin, error) {
+func GetPluginByName(db *gorm.DB, orgID, name string) (*Plugin, error) {
 	var p Plugin
-	err := DB.Raw(`
+	err := db.Raw(`
 			SELECT
 				p.id, p.org_id, p.name,
 				( SELECT jsonb_agg(

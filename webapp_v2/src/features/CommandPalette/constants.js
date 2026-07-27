@@ -13,6 +13,7 @@ import {
   PackageSearch,
   BrainCog,
   ExternalLink,
+  Layers,
   Users,
 } from 'lucide-react'
 
@@ -29,12 +30,13 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request' },
   { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails' },
-  { id: 'data-masking', label: 'AI Data Masking', description: 'Configure AI data masking', icon: VenetianMask, path: '/features/data-masking' },
+  { id: 'data-masking', label: 'Live Data Masking', description: 'Configure live data masking', icon: VenetianMask, path: '/features/data-masking' },
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control' },
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents' },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication' },
-  { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/settings/jira' },
+  { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration' },
+  { id: 'jira-templates', label: 'Jira Templates', description: 'Manage Jira issue templates', icon: Layers, path: '/jira-templates' },
   { id: 'settings-infra', label: 'Infrastructure', description: 'Infrastructure settings', icon: LayoutDashboard, path: '/settings/infrastructure' },
   { id: 'license', label: 'License', description: 'License management', icon: ShieldCheck, path: '/settings/license' },
   { id: 'users', label: 'Users', description: 'Manage organization users', icon: Users, path: '/organization/users' },

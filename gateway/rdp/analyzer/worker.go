@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -43,7 +44,8 @@ func resolveWorkerCount() int {
 
 // IsEnabled reports whether the RDP PII analysis pipeline is currently active.
 // It is enabled only when Presidio is configured and the worker pool is running
-// (analyzerURL is set, RDP_ANALYSIS_WORKERS resolves to > 0, and tesseract is in PATH).
+// (analyzerURL is set, RDP_ANALYSIS_WORKERS resolves to > 0, and an OCR engine
+// is available: RDP_OCR_SERVER_URL or tesseract in PATH).
 //
 // Callers should gate any work that depends on the pipeline (e.g. enqueueing
 // analysis jobs on session close) to avoid leaving sessions stuck in 'pending'.
@@ -65,15 +67,15 @@ type BitmapEvent struct {
 
 // wordRange tracks a word's character range in the reconstructed text string.
 type wordRange struct {
-	start int // inclusive byte offset in full text
-	end   int // exclusive byte offset in full text
+	start int // inclusive code-point (char) offset in full text
+	end   int // exclusive code-point (char) offset in full text
 	word  ocr.Word
 }
 
 // StartWorkerPool launches the RDP analysis worker pool.
 // It reads the worker count from RDP_ANALYSIS_WORKERS env var.
 // Workers are started only if analyzerURL is non-empty (Presidio is configured),
-// RDP_ANALYSIS_WORKERS resolves to a positive count, and tesseract is in PATH.
+// RDP_ANALYSIS_WORKERS resolves to a positive count, and an OCR engine is available.
 //
 // Call this once at gateway boot. The pool runs until ctx is cancelled.
 func StartWorkerPool(ctx context.Context, analyzerURL string) {
@@ -89,7 +91,7 @@ func StartWorkerPool(ctx context.Context, analyzerURL string) {
 	}
 
 	if !ocr.IsAvailable() {
-		log.Warnf("rdp-analyzer: tesseract not found in PATH, skipping worker pool startup")
+		log.Warnf("rdp-analyzer: no OCR engine available (set RDP_OCR_SERVER_URL or install tesseract), skipping worker pool startup")
 		return
 	}
 
@@ -189,6 +191,19 @@ type AnalysisParams struct {
 	ScoreThreshold   float64  // Minimum Presidio score (env: RDP_PII_SCORE_THRESHOLD, default 0.9)
 	EntityDenylist   []string // Entity types to exclude (env: RDP_PII_ENTITY_DENYLIST, default "DATE_TIME,NRP")
 	SnapshotInterval float64  // Seconds between snapshots (env: RDP_PII_SNAPSHOT_INTERVAL, default 0.25)
+	// BandPadding is the vertical padding (pixels) applied around dirty
+	// rects when accumulating bands AND as the overlap between parallel OCR
+	// chunks. The two uses share one value on purpose: the chunk overlap
+	// must be at least the band padding policy so a text line owned by a
+	// chunk is always fully visible in its OCR window. Values <= 0 fall
+	// back to DefaultBandPadding.
+	BandPadding int
+	// MaxOCRConcurrency caps the number of concurrent OCR executions
+	// for chunked band analysis. Values <= 0 fall back to
+	// min(DefaultMaxOCRConcurrency, NumCPU). Deployments with CPU quotas
+	// (cgroups) should set this explicitly: NumCPU overstates usable
+	// compute under container limits.
+	MaxOCRConcurrency int
 }
 
 // DefaultAnalysisParams returns the analysis parameters from appconfig (env vars).
@@ -238,6 +253,7 @@ func DefaultAnalysisParams() AnalysisParams {
 		ScoreThreshold:   cfg.RDPPIIScoreThreshold(),
 		EntityDenylist:   cfg.RDPPIIEntityDenylist(),
 		SnapshotInterval: cfg.RDPPIISnapshotInterval(),
+		BandPadding:      DefaultBandPadding,
 	}
 }
 
@@ -285,8 +301,21 @@ func getCanvasDimensions(session *models.Session) (int, int) {
 	return w, h
 }
 
-// compositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer at (dstX, dstY).
-func compositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) {
+// CompositeBitmap draws a decoded RGBA bitmap patch onto the full framebuffer
+// at (dstX, dstY) and reports whether any pixel actually CHANGED.
+//
+// RDP routinely resends byte-identical tiles (idle repaints, unchanged
+// backgrounds); a paint that changes nothing has no new content to analyze, so
+// the realtime gate uses the return value to skip marking that region dirty.
+// Callers that don't care (full-frame analysis, rdpbench) simply ignore it.
+//
+// Contract: framebuffer must be RGBA (4 bytes/pixel, top-down) with
+// len >= fbWidth*fbHeight*4, and patch must be RGBA with len >= patchW*patchH*4
+// (as produced by rle.ToRGBA / rle.DecompressToRGBA). Out-of-bounds regions are
+// clipped. The function does no locking: callers sharing the framebuffer across
+// goroutines must synchronize externally.
+func CompositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, patchW, patchH, dstX, dstY int) bool {
+	changed := false
 	for row := 0; row < patchH; row++ {
 		fbY := dstY + row
 		if fbY < 0 || fbY >= fbHeight {
@@ -302,19 +331,31 @@ func compositeBitmap(framebuffer []byte, fbWidth, fbHeight int, patch []byte, pa
 			si := srcOff + col*4
 			di := dstOff + col*4
 			if si+3 < len(patch) && di+3 < len(framebuffer) {
-				framebuffer[di] = patch[si]
-				framebuffer[di+1] = patch[si+1]
-				framebuffer[di+2] = patch[si+2]
-				framebuffer[di+3] = patch[si+3]
+				if framebuffer[di] != patch[si] ||
+					framebuffer[di+1] != patch[si+1] ||
+					framebuffer[di+2] != patch[si+2] ||
+					framebuffer[di+3] != patch[si+3] {
+					framebuffer[di] = patch[si]
+					framebuffer[di+1] = patch[si+1]
+					framebuffer[di+2] = patch[si+2]
+					framebuffer[di+3] = patch[si+3]
+					changed = true
+				}
 			}
 		}
 	}
+	return changed
 }
 
-// sampleFramebuffer extracts every 64th scanline from the framebuffer for fast hashing.
+// SampleFramebuffer extracts every 64th scanline from the framebuffer for fast hashing.
 // This captures enough visual information to detect meaningful screen changes while
 // avoiding the cost of hashing the entire framebuffer (which can be 8MB+ for 2048x1083).
-func sampleFramebuffer(fb []byte, width, height int) []byte {
+//
+// Contract: fb must be RGBA (4 bytes/pixel, top-down) with len >= width*height*4.
+// The returned slice aliases freshly allocated memory and is safe to retain.
+// The function does no locking: callers sharing fb across goroutines must
+// synchronize externally.
+func SampleFramebuffer(fb []byte, width, height int) []byte {
 	stride := width * 4
 	var sample []byte
 	for y := 0; y < height; y += 64 {
@@ -328,9 +369,29 @@ func sampleFramebuffer(fb []byte, width, height int) []byte {
 	return sample
 }
 
-// analyzeSnapshot runs OCR + Presidio on the full framebuffer and returns detections.
+// SnapshotResult is the outcome of analyzing a single framebuffer snapshot,
+// including per-stage timings so callers (job worker, realtime analyzer,
+// rdpbench) can report where the time is spent.
+type SnapshotResult struct {
+	Detections []models.RDPEntityDetection
+	Counts     map[string]int64
+
+	// Stage timings and OCR stats.
+	OCRDuration      time.Duration
+	PresidioDuration time.Duration
+	OCRWords         int
+	OCRTextLen       int
+	// Bands is the number of dirty bands OCR'd (0 for full-frame analysis).
+	Bands int
+}
+
+// AnalyzeFramebuffer runs OCR + Presidio on the full framebuffer and returns detections.
 // The params control score threshold and entity denylist filtering.
-func analyzeSnapshot(
+//
+// This is the single analysis entrypoint shared by the async job worker, the
+// realtime analyzer, and the rdpbench benchmarking tool — keep it free of any
+// job/session lifecycle concerns.
+func AnalyzeFramebuffer(
 	ctx context.Context,
 	framebuffer []byte,
 	fbWidth, fbHeight int,
@@ -339,18 +400,45 @@ func analyzeSnapshot(
 	timestamp float64,
 	presidio *PresidioClient,
 	params AnalysisParams,
-) ([]models.RDPEntityDetection, map[string]int64, error) {
+) (*SnapshotResult, error) {
+	res := &SnapshotResult{}
+
+	ocrStart := time.Now()
 	ocrResult, err := ocr.ExtractWords(ctx, framebuffer, fbWidth, fbHeight)
+	res.OCRDuration = time.Since(ocrStart)
 	if err != nil {
-		return nil, nil, fmt.Errorf("OCR failed: %w", err)
+		return res, fmt.Errorf("OCR failed: %w", err)
 	}
+	res.OCRWords = len(ocrResult.Words)
+	res.OCRTextLen = len(ocrResult.Text)
 	if ocrResult.Text == "" || len(ocrResult.Words) == 0 {
-		return nil, nil, nil
+		return res, nil
 	}
 
-	results, err := presidio.Analyze(ctx, ocrResult.Text, params.ScoreThreshold)
+	return analyzeText(ctx, res, ocrResult.Text, ocrResult.Words, sessionID, frameIndex, timestamp, presidio, params)
+}
+
+// analyzeText runs the post-OCR stage shared by AnalyzeFramebuffer and
+// AnalyzeFramebufferBands: Presidio analysis, denylist filtering, and mapping
+// entity character ranges back to pixel bounding boxes. Word coordinates must
+// already be in full-screen space and text must be the words joined by single
+// spaces (so Presidio character offsets line up with word ranges).
+func analyzeText(
+	ctx context.Context,
+	res *SnapshotResult,
+	text string,
+	words []ocr.Word,
+	sessionID string,
+	frameIndex int,
+	timestamp float64,
+	presidio *PresidioClient,
+	params AnalysisParams,
+) (*SnapshotResult, error) {
+	presidioStart := time.Now()
+	results, err := presidio.Analyze(ctx, text, params.ScoreThreshold)
+	res.PresidioDuration = time.Since(presidioStart)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Presidio failed: %w", err)
+		return res, fmt.Errorf("Presidio failed: %w", err)
 	}
 
 	// Filter out denied entity types
@@ -368,7 +456,7 @@ func analyzeSnapshot(
 
 	var detections []models.RDPEntityDetection
 	if len(results) > 0 {
-		wordRanges := buildWordRanges(ocrResult.Words)
+		wordRanges := buildWordRanges(words)
 		for _, result := range results {
 			bbox := mapEntityToPixelBBox(result, wordRanges)
 			if bbox == nil {
@@ -389,7 +477,9 @@ func analyzeSnapshot(
 		}
 	}
 
-	return detections, counts, nil
+	res.Detections = detections
+	res.Counts = counts
+	return res, nil
 }
 
 // processJob does the actual analysis work for a single job.
@@ -504,7 +594,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 		}
 
 		// Composite the patch onto the full framebuffer
-		compositeBitmap(framebuffer, fbWidth, fbHeight, rgba, patchW, patchH, int(bmpEvent.X), int(bmpEvent.Y))
+		CompositeBitmap(framebuffer, fbWidth, fbHeight, rgba, patchW, patchH, int(bmpEvent.X), int(bmpEvent.Y))
 		fbDirty = true
 		lastEventTimestamp = timestamp
 		bitmapsComposited++
@@ -521,7 +611,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 		// Quick framebuffer dedup: sample a few scanlines and hash them.
 		// This avoids expensive OCR+Presidio calls when only minor changes
 		// happened (cursor blink, clock tick, etc.)
-		fbSample := sampleFramebuffer(framebuffer, fbWidth, fbHeight)
+		fbSample := SampleFramebuffer(framebuffer, fbWidth, fbHeight)
 		fbHash := sha256.Sum256(fbSample)
 		if fbHash == prevFBHash {
 			continue
@@ -531,7 +621,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 		// Text dedup: hash the full framebuffer is too expensive, so we still
 		// dedup based on OCR text output. We run OCR and if the text is identical
 		// to the previous snapshot, skip the Presidio call.
-		detections, counts, analyzeErr := analyzeSnapshot(
+		snapResult, analyzeErr := AnalyzeFramebuffer(
 			ctx, framebuffer, fbWidth, fbHeight,
 			job.SessionID, currentFrameIndex, timestamp, presidio, params,
 		)
@@ -553,6 +643,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 
 		snapshotsRun++
 
+		detections, counts := snapResult.Detections, snapResult.Counts
 		if len(detections) == 0 && len(counts) == 0 {
 			continue
 		}
@@ -580,7 +671,7 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 
 	// Final snapshot: if the framebuffer was modified after the last snapshot, analyze it
 	if fbDirty {
-		detections, counts, analyzeErr := analyzeSnapshot(
+		snapResult, analyzeErr := AnalyzeFramebuffer(
 			ctx, framebuffer, fbWidth, fbHeight,
 			job.SessionID, frameIndex-1, lastEventTimestamp, presidio, params,
 		)
@@ -591,12 +682,12 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 			}
 			// Non-Presidio errors are silently ignored on the final snapshot,
 			// matching the per-snapshot loop above.
-		} else if len(detections) > 0 || len(counts) > 0 {
+		} else if len(snapResult.Detections) > 0 || len(snapResult.Counts) > 0 {
 			snapshotsRun++
-			for infoType, count := range counts {
+			for infoType, count := range snapResult.Counts {
 				aggregatedCounts[infoType] += count
 			}
-			allDetections = append(allDetections, detections...)
+			allDetections = append(allDetections, snapResult.Detections...)
 		}
 	}
 
@@ -627,17 +718,23 @@ func processJob(ctx context.Context, job *models.RDPAnalysisJob, presidio *Presi
 // buildWordRanges constructs a character-offset index from OCR words.
 // The full text is reconstructed as "word1 word2 word3..." (space-separated),
 // and each wordRange records the start/end byte offsets of each word in that string.
+// Offsets are UNICODE CODE POINT (rune) counts, not byte lengths: Presidio runs
+// on Python str and reports entity start/end as code-point indices. Using byte
+// lengths drifts by one per extra byte of every earlier multi-byte character
+// (smart quotes, em-dashes, accented letters, stray OCR glyphs), mapping an
+// entity onto the wrong words and redacting the wrong line. Counting runes keeps
+// this index in Presidio's domain.
 func buildWordRanges(words []ocr.Word) []wordRange {
 	ranges := make([]wordRange, 0, len(words))
 	offset := 0
 	for _, w := range words {
-		end := offset + len(w.Text)
+		end := offset + utf8.RuneCountInString(w.Text)
 		ranges = append(ranges, wordRange{
 			start: offset,
 			end:   end,
 			word:  w,
 		})
-		offset = end + 1 // +1 for the space separator
+		offset = end + 1 // +1 for the single-rune space separator
 	}
 	return ranges
 }

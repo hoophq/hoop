@@ -30,7 +30,7 @@ CHANGED_FILES=$(cat /tmp/changed_files.txt)
 SYSTEM_PROMPT='You are a database migration safety analyzer for a Go application that uses golang-migrate (v4) with PostgreSQL.
 
 Context about this project'\''s migration system:
-- SQL migrations live in rootfs/app/migrations/ with sequential numbering (000001, 000002, etc.)
+- SQL migrations live in gateway/migrations/ with sequential numbering (000001, 000002, etc.)
 - Each migration MUST have both a .up.sql and .down.sql file
 - The gateway runs migrations automatically on startup via golang-migrate'\''s m.Up()
 - Production builds only ship .up.sql files (down migrations are dev-only)

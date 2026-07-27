@@ -44,6 +44,31 @@ helm upgrade --install hoopagent https://releases.hoop.dev/release/$VERSION/hoop
     --set 'config.HOOP_KEY='
 ```
 
+## Installing the clean (AGPL/SSPL-free) line
+
+`hoop-ng-chart` and `hoopagent-ng-chart` are drop-in equivalents of
+`hoop-chart` and `hoopagent-chart` that default their images to the clean-only
+`hoophq/hoop-ng` and `hoophq/hoopdev-ng` repositories. Those repositories have
+no dirty history, so a deployment can never accidentally pull an image that
+contains AGPL/SSPL packages. They accept the same values as the base charts
+(nested under the `hoop-chart:` / `hoopagent-chart:` key).
+
+> `hoop-ng-chart` / `hoopagent-ng-chart` are the packaged artifact names only;
+> the installed Helm release name (`hoop` / `hoopagent` below) is unchanged, so
+> switching an existing install to the clean line is an in-place upgrade.
+
+```sh
+VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
+# gateway
+helm upgrade --install hoop \
+  https://releases.hoop.dev/release/$VERSION/hoop-ng-chart-$VERSION.tgz \
+  -f values.yaml
+# agent
+helm upgrade --install hoopagent \
+  https://releases.hoop.dev/release/$VERSION/hoopagent-ng-chart-$VERSION.tgz \
+  --set 'hoopagent-chart.config.HOOP_KEY='
+```
+
 ## Development
 
 To add new configuration(s)

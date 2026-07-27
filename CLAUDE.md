@@ -2,9 +2,7 @@
 
 ## Project Overview
 
-This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`.
-
- with five modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
+This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`, with six modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`, and `tunnel/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
 
  `_libhoop/` is a symlink target; the build uses `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
 
@@ -76,6 +74,12 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 - Source: `agentrs/src/` — `main.rs`, `proxy.rs`, `rdp_proxy.rs`, `session.rs`, `tls.rs`, `ws/`.
 - Cross-compile for dev: `make build-dev-rust` (uses `cross` for Linux targets from macOS).
 
+### Tunnel (`tunnel/`)
+- Client-side tunnel daemon (`hsh-tunneld`) that lets a developer reach any hoop connection by name (e.g. `psql -h pg-prod.hoop`) as if it were on the local network.
+- Own Go module (`github.com/hoophq/hoop/tunnel`); entrypoint `tunnel/cmd/hsh-tunneld/`.
+- Per TCP flow it opens a fresh gRPC `Transport.Connect` stream to the existing gateway — **no new gateway protocol/endpoint**; the gateway sees ordinary client sessions.
+- Shipped with the unprivileged `hsh` CLI (separate `hoophq/hsh` repo).
+
 ## Transport Plugin System
 Plugins are registered in `gateway/main.go` in a **fixed, intentional order** — do not reorder casually:
 1. `review` (`gateway/transport/plugins/review/`)
@@ -105,10 +109,9 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - Auth provider resolution: dynamic (`gateway/idp/core.go`): DB `server_auth_config` overrides env; providers are `local`, `oidc`, `saml` with 30-minute cached verifier instances.
 
 ## Database & Migrations
-- SQL migrations live in `rootfs/app/migrations/`.
+- SQL migrations live in `gateway/migrations/` and are embedded into the gateway binary (`go:embed` + golang-migrate iofs); deployments never read them from disk.
 - File-based migrations run first via `golang-migrate`, then Go-coded migrations run via `modelsbootstrap.RunGolangMigrations()`.
-- Startup requires at least `000001_init.up.sql` to exist at the configured migration path.
-- Create new migrations: `migrate create -ext sql -dir rootfs/app/migrations -seq <description>`.
+- Create new migrations: `migrate create -ext sql -dir gateway/migrations -seq <description>`.
 - Always provide both `.up.sql` and `.down.sql`; test rollback with `migrate ... down 1`.
 
 - **IMPORTANT**: Migration numbering must to be sequential. Check existing migrations before creating new ones to avoid conflicts. If a migration with the same number already exists in `origin/main`, it migration needs to be renamed to a higher number during merge conflict resolution.
@@ -127,7 +130,7 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
 | Format Swagger annotations | `swag fmt` | Run in `gateway/` |
-| Create new SQL migration | `migrate create -ext sql -dir rootfs/app/migrations -seq name` | |
+| Create new SQL migration | `migrate create -ext sql -dir gateway/migrations -seq name` | |
 | Publish release | `make publish` | Requires GitHub CLI (`gh`) |
 
 ## External Integrations
@@ -188,6 +191,13 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Run `make generate-openapi-docs` to regenerate `gateway/api/openapi/autogen/`.
 - OpenAPI specs are served at `/api/openapiv2.json` and `/api/openapiv3.json`.
 
+### Product Analytics Events
+Analytics events are business KPIs measured downstream in PostHog/Mixpanel. Dropping or orphaning one fails **silently** — no compile error, no test failure, just a metric that quietly goes to zero. Treat them as a contract, not as incidental code.
+- Event names are constants in `gateway/analytics/events.go`. Emit them either via the `api.TrackRequest(analytics.EventX)` middleware in the route registration (`gateway/api/server.go`) or via `analytics.Track*` inside the handler. Never use a string literal — always the constant.
+- **When you add, duplicate, or supersede a route that performs an already-tracked action** (exec, session create, connect, resource CRUD), carry the same tracking onto the new route. A new path that replaces a tracked one MUST emit the same event (or a documented successor) — otherwise the metric silently dies on the old path. This is exactly how `hoop-exec-runbook` was lost: the V2 `POST /runbooks/exec` route superseded the tracked `POST /plugins/runbooks/connections/:name/exec` without `TrackRequest`.
+- **Never remove or rename an `Event*` constant, or delete its only emission site, without calling it out explicitly in the PR description** — state which metric/dashboard is affected and the successor event, if any. Event removal must be a deliberate, reviewed decision, never a side effect of a refactor.
+- When reviewing or refactoring routes/handlers that emit events, verify the `TrackRequest`/`Track*` call is preserved.
+
 ### Environment variables
 - Whenever a new env var is added, removed, or renamed in `gateway/appconfig/appconfig.go` (or anywhere read via `os.Getenv` in the gateway), **update the helm chart in the same PR**:
   - `deploy/helm-chart/chart/gateway/templates/secret-configs.yaml` — pass-through entry, e.g. `MY_VAR: '{{ .Values.config.MY_VAR | default "..." }}'`.
@@ -240,7 +250,7 @@ When merging `main` into a feature branch:
 | API route registration | `gateway/api/server.go` → `buildRoutes()` |
 | Role definitions | `gateway/api/apiroutes/roles.go` |
 | Plugin registration | `gateway/main.go` (search `RegisteredPlugins`) |
-| SQL migrations | `rootfs/app/migrations/` |
+| SQL migrations | `gateway/migrations/` |
 | Dev run script | `scripts/dev/run.sh` |
 | Env sample | `.env.sample` |
 | Webapp entry (legacy CLJS) | `webapp/src/webapp/core.cljs` |

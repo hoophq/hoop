@@ -35,7 +35,7 @@ func TestWaitUntil_AlreadyDone(t *testing.T) {
 	val, timedOut, waited, err := waitUntil(context.Background(), 5*time.Second, func() (string, bool, error) {
 		calls++
 		return "ready", true, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestWaitUntil_DoneAfterFewTicks(t *testing.T) {
 	val, timedOut, _, err := waitUntil(context.Background(), 30*time.Second, func() (int, bool, error) {
 		calls++
 		return calls, calls >= flipAt, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestWaitUntil_Timeout(t *testing.T) {
 	val, timedOut, waited, err := waitUntil(context.Background(), timeout, func() (string, bool, error) {
 		calls++
 		return "still-pending", false, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestWaitUntil_FnErrorPropagates(t *testing.T) {
 	sentinel := errors.New("db blew up")
 	val, _, _, err := waitUntil(context.Background(), 30*time.Second, func() (string, bool, error) {
 		return "", false, sentinel
-	})
+	}, nil)
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel error, got %v", err)
 	}
@@ -119,7 +119,7 @@ func TestWaitUntil_CtxCancelled(t *testing.T) {
 	_, timedOut, waited, err := waitUntil(ctx, 30*time.Second, func() (string, bool, error) {
 		calls++
 		return "pending", false, nil
-	})
+	}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -128,6 +128,50 @@ func TestWaitUntil_CtxCancelled(t *testing.T) {
 	}
 	if waited > 5*time.Second {
 		t.Errorf("expected fast cancellation, waited %v", waited)
+	}
+}
+
+func TestWaitUntil_OnTickFiresPerPendingPoll(t *testing.T) {
+	calls := 0
+	flipAt := 4
+	var ticks []time.Duration
+	_, timedOut, _, err := waitUntil(context.Background(), 30*time.Second,
+		func() (int, bool, error) {
+			calls++
+			return calls, calls >= flipAt, nil
+		},
+		func(elapsed time.Duration) { ticks = append(ticks, elapsed) },
+	)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if timedOut {
+		t.Errorf("expected timedOut=false")
+	}
+	// Eager call (pending) and the terminal poll do not tick; every pending
+	// poll in between does. With flipAt=4: eager + 3 ticker polls, the last of
+	// which is terminal, so 2 ticks fire.
+	if want := flipAt - 2; len(ticks) != want {
+		t.Fatalf("expected %d heartbeat ticks, got %d", want, len(ticks))
+	}
+	for i := 1; i < len(ticks); i++ {
+		if ticks[i] <= ticks[i-1] {
+			t.Errorf("expected monotonically increasing elapsed, got %v then %v", ticks[i-1], ticks[i])
+		}
+	}
+}
+
+func TestWaitUntil_OnTickNotCalledWhenAlreadyDone(t *testing.T) {
+	ticked := false
+	_, _, _, err := waitUntil(context.Background(), 5*time.Second,
+		func() (string, bool, error) { return "ready", true, nil },
+		func(time.Duration) { ticked = true },
+	)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if ticked {
+		t.Errorf("expected no heartbeat tick for an already-terminal state")
 	}
 }
 
@@ -140,7 +184,7 @@ func TestWaitUntil_FnErrorDuringPoll(t *testing.T) {
 			return "pending", false, nil
 		}
 		return "", false, sentinel
-	})
+	}, nil)
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel from poll iteration, got %v", err)
 	}

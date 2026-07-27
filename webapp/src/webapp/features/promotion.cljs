@@ -2,9 +2,9 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Callout Flex Heading Link
                                Text]]
-   ["lucide-react" :refer [ArrowUpRight Combine Database FastForward FileLock2
-                           FolderLock Laptop ListCheck ListTodo Lock MonitorCheck
-                           SearchCode Settings2 ShieldCheck SlidersHorizontal
+   ["lucide-react" :refer [ArrowUpRight Database FastForward FileLock2
+                           Laptop ListCheck ListTodo Lock MonitorCheck
+                           SearchCode Settings2 ShieldCheck
                            Sparkles TextSearch UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -12,10 +12,23 @@
 
 (defn request-demo
   []
-  (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+  (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])
+        user (:data @(rf/subscribe [:users->current-user]))]
     (if analytics-tracking
-      (when js/window.Intercom
-        (js/window.Intercom "showNewMessage" "I want to upgrade my current plan"))
+      (do
+        ;; Self-heal the messenger before opening it. The app-boot
+        ;; :initialize-intercom runs when the user loads and reads
+        ;; analytics_tracking from gateway->info; when the user resolves
+        ;; first it shuts Intercom down and skips the boot, leaving
+        ;; showNewMessage with a blank (unbooted) messenger window.
+        (when-not (.-Intercom js/window)
+          (rf/dispatch-sync [:tracking->load-scripts]))
+        (when (and (.-Intercom js/window)
+                   (not (.-booted js/window.Intercom)))
+          (rf/dispatch-sync [:initialize-intercom user]))
+        (if (.-Intercom js/window)
+          (js/window.Intercom "showNewMessage" "I want to upgrade my current plan")
+          (.open js/window "https://hoop.dev/meet" "_blank")))
       (.open js/window "https://hoop.dev/meet" "_blank"))))
 
 (defn feature-item
@@ -139,52 +152,43 @@
                     "Request demo")}])
 
 (defn guardrails-promotion
-  "Specific component for Guardrails"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "Guardrails"
-    :mode mode
-    :image "guardrails-promotion.png"
-    :description "Create custom rules to guide and protect usage within your resource roles."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Automated Policy Enforcement"
-                     :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}
-                    {:icon [:> ShieldCheck {:size 20}]
-                     :title "Smart Command Filtering"
-                     :description "Block potentially dangerous commands before execution and prevent accidental data modifications or deletions."}
-                    {:icon [:> TextSearch {:size 20}]
-                     :title "Context-Aware Access"
-                     :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]
-    :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :create-guardrail])
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Create new Guardrails"
-                    "Request demo")}])
+  "Specific component for Guardrails.
 
-(defn jira-templates-promotion
-  "Specific component for Jira templates"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "JIRA Templates"
-    :mode mode
-    :image "jira-pomotion.png"
-    :description "Automate change management and security workflows."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Automated Change Management"
-                     :description "Reduce manual documentation and administrative overhead by automatically creating and tracking Jira tickets for every infrastructure access request."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Seamless Workflow Integration"
-                     :description "Link access requests directly to Jira projects and request types with contextual information."}
-                    {:icon [:> FileLock2 {:size 20}]
-                     :title "Flexible User Prompts & Data Collection"
-                     :description "Request additional information from users during access workflows. Map manual or automated data to Jira fields."}]
-    :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :settings-jira])
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Configure Jira Integration"
-                    "Request demo")}])
+   When dlp-available? is explicitly false, renders the 'DLP provider required'
+   variant: a documentation link and an explanation instead of the create CTA.
+   This mirrors how Live Data Masking presents its screen when no DLP provider
+   is configured — guardrails are enforced through a DLP provider (GCP or
+   Microsoft Presidio), so without one the feature cannot be set up (EVL-62)."
+  [{:keys [mode installed? dlp-available?]}]
+  (let [empty-state? (= mode :empty-state)
+        dlp-missing? (false? dlp-available?)]
+    [feature-promotion
+     (merge
+      {:feature-name "Guardrails"
+       :mode mode
+       :image "guardrails-promotion.png"
+       :description "Create custom rules to guide and protect usage within your resource roles."
+       :feature-items [{:icon [:> ListCheck {:size 20}]
+                        :title "Automated Policy Enforcement"
+                        :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}
+                       {:icon [:> ShieldCheck {:size 20}]
+                        :title "Smart Command Filtering"
+                        :description "Block potentially dangerous commands before execution and prevent accidental data modifications or deletions."}
+                       {:icon [:> TextSearch {:size 20}]
+                        :title "Context-Aware Access"
+                        :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]}
+      (if dlp-missing?
+        {:extra-information (str "Guardrails require a DLP provider (Microsoft Presidio or "
+                                "Google Cloud DLP) to be enforced. Configure a DLP provider "
+                                "to create and manage guardrails.")
+         :link-button-href [:features :guardrails]
+         :link-button-text "Go to Guardrails documentation"}
+        {:on-primary-click (if empty-state?
+                             #(rf/dispatch [:navigate :create-guardrail])
+                             request-demo)
+         :primary-text (if empty-state?
+                         "Create new Guardrails"
+                         "Request demo")}))]))
 
 (defn runbooks-promotion
   "Specific component for Runbooks"
@@ -253,40 +257,6 @@
                      :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
     :primary-text "Get Started"}])
-
-(defn ai-data-masking-promotion
-  "Specific component for AI Data Masking"
-  [{:keys [mode redact-provider]}]
-  [feature-promotion
-   (merge
-    {:feature-name "AI Data Masking"
-     :mode mode
-     :image "data-masking-promotion.png"
-     :description "Zero-config DLP policies that automatically mask sensitive data in real-time at the protocol layer."
-     :feature-items [{:icon [:> FolderLock {:size 20}]
-                      :title "No Configuration Required"
-                      :description "Automatically masks sensitive data in the data stream of any connection where AI Data Masking is enabled."}
-                     {:icon [:> Combine {:size 20}]
-                      :title "Real-Time Protection"
-                      :description "Sensitive data is masked in real-time, ensuring that no unprotected data is exposed during access sessions."}
-                     {:icon [:> SlidersHorizontal {:size 20}]
-                      :title "Customizable Setup"
-                      :description "Easily add or remove fields to tailor the masking setup to your specific needs."}]}
-    (case redact-provider
-      "mspresidio"
-      {:on-primary-click (if (= mode :empty-state)
-                           #(rf/dispatch [:navigate :create-ai-data-masking])
-                           request-demo)
-       :primary-text (if (= mode :empty-state)
-                       "Configure AI Data Masking"
-                       "Request demo")}
-      "gcp"
-      {:link-button-href [:features :ai-datamasking]
-       :link-button-text "Go to AI Data Masking Docs"
-       :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}
-      {:link-button-href [:features :ai-datamasking]
-       :link-button-text "Go to AI Data Masking Docs"
-       :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}))])
 
 (defn access-request-promotion
   "Specific component for Access Request"

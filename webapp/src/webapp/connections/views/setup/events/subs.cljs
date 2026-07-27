@@ -266,6 +266,11 @@
                 {}
                 credentials))))
 
+(rf/reg-sub
+ :connection-setup/ssh-connection-type
+ (fn [db]
+   (get-in db [:connection-setup :ssh-connection-type] "proxy")))
+
 ;; Resource Subtype Override subscription
 (rf/reg-sub
  :connection-setup/resource-subtype-override

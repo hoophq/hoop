@@ -1,0 +1,26 @@
+{{- if and .Values.gatewayApiGrpc.enabled .Values.gatewayApiGrpc.createGateway -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gatewayApiGrpc.gateway.name }}
+  {{- with .Values.gatewayApiGrpc.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.gatewayApiGrpc.gateway.gatewayClassName }}
+  listeners:
+    {{- toYaml .Values.gatewayApiGrpc.gateway.listeners | nindent 4 }}
+  {{- with .Values.gatewayApiGrpc.gateway.addresses }}
+  addresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.gatewayApiGrpc.gateway.infrastructure }}
+  infrastructure:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.gatewayApiGrpc.gateway.backendTLS }}
+  backendTLS:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -26,7 +26,7 @@
            sidebar-constants/settings-management]))
 
 ;; Generate connection actions dynamically based on connection permissions
-(defn get-connection-actions [connection admin?]
+(defn get-connection-actions [connection admin? postgres-proxy-enabled?]
   (let [actions []]
     (cond-> actions
       ;; Web Terminal - only if can open web terminal
@@ -43,7 +43,7 @@
              :icon (fn [] [:> SquareCode {:size 16}])
              :action :local-terminal})
 
-      (can-access-native-client? connection)
+      (can-access-native-client? connection postgres-proxy-enabled?)
       (conj {:id "open-native-client"
              :label "Open in Native Client"
              :icon (fn [] [:> SquareCode {:size 16}])

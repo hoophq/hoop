@@ -137,12 +137,6 @@
     :uri (routes/url-for :guardrails)
     :navigate :guardrails
     :admin-only? true}
-   {:name "JiraTemplates"
-    :label "Jira Templates"
-    :icon (get icons-registry "JiraTemplates")
-    :uri (routes/url-for :jira-templates)
-    :navigate :jira-templates
-    :admin-only? true}
    {:name "AISessionAnalyzer"
     :label "AI Session Analyzer"
     :icon (get icons-registry "AISessionAnalyzer")
@@ -150,7 +144,7 @@
     :navigate :ai-session-analyzer
     :admin-only? true}
    {:name "AIDataMasking"
-    :label "AI Data Masking"
+    :label "Live Data Masking"
     :icon (get icons-registry "AIDataMasking")
     :uri (routes/url-for :ai-data-masking)
     :navigate :ai-data-masking
@@ -198,13 +192,7 @@
     :uri (routes/url-for :integrations-authentication)
     :navigate :integrations-authentication
     :admin-only? true
-    :selfhosted-only? true}
-   {:name "jira"
-    :label "Jira"
-    :uri (routes/url-for :settings-jira)
-    :navigate :settings-jira
-    :admin-only? true
-    :selfhosted-only? false}])
+    :selfhosted-only? true}])
 
 ;; Settings
 (def settings-management

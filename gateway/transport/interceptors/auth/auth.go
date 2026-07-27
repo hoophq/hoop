@@ -150,16 +150,34 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	// client proxy authentication (access token)
 	default:
 		if isApiKey && strings.HasPrefix(bearerToken, "hpk_") {
+			isAIAgent := false
 			keyHash := models.HashAPIKey(bearerToken)
+
 			ctx, err := models.GetAPIKeyContext(keyHash)
 			if err != nil {
 				log.Errorf("failed looking up api key, err=%v", err)
 				return status.Errorf(codes.Internal, "internal error")
 			}
+
 			if ctx == nil {
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				ctx, err = models.GetAIAgentContext(keyHash)
+				if err != nil {
+					log.Errorf("failed looking up ai agent, err=%v", err)
+					return status.Errorf(codes.Internal, "internal error")
+				}
+
+				if ctx == nil {
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+				isAIAgent = true
 			}
-			go models.UpdateAPIKeyLastUsed(ctx.UserID)
+
+			if isAIAgent {
+				go models.UpdateAIAgentLastUsed(ctx.UserID)
+			} else {
+				go models.UpdateAPIKeyLastUsed(ctx.UserID)
+			}
+
 			ctx.UserID = ctx.UserSubject
 			gwctx := &GatewayContext{
 				UserContext:  *ctx,
@@ -302,22 +320,23 @@ func (i *interceptor) getConnection(name string, userCtx *models.Context) (*type
 		return nil, nil
 	}
 	return &types.ConnectionInfo{
-		ID:                               conn.ID,
-		Name:                             conn.Name,
-		Type:                             string(conn.Type),
-		SubType:                          conn.SubType.String,
-		Command:                          conn.Command,
-		Secrets:                          conn.AsSecrets(),
-		Tags:                             conn.ConnectionTags,
-		AgentID:                          conn.AgentID.String,
-		AgentMode:                        conn.AgentMode,
-		AgentName:                        conn.AgentName,
-		AccessModeRunbooks:               conn.AccessModeRunbooks,
-		AccessModeExec:                   conn.AccessModeExec,
-		AccessModeConnect:                conn.AccessModeConnect,
-		AccessSchema:                     conn.AccessSchema,
-		Reviewers:                        conn.Reviewers,
-		JiraTransitionNameOnSessionClose: conn.JiraTransitionNameOnClose.String,
+		ID:                                  conn.ID,
+		Name:                                conn.Name,
+		Type:                                string(conn.Type),
+		SubType:                             conn.SubType.String,
+		Command:                             conn.Command,
+		Secrets:                             conn.AsSecrets(),
+		Tags:                                conn.ConnectionTags,
+		AgentID:                             conn.AgentID.String,
+		AgentMode:                           conn.AgentMode,
+		AgentName:                           conn.AgentName,
+		AccessModeRunbooks:                  conn.AccessModeRunbooks,
+		AccessModeExec:                      conn.AccessModeExec,
+		AccessModeConnect:                   conn.AccessModeConnect,
+		AccessSchema:                        conn.AccessSchema,
+		Reviewers:                           conn.Reviewers,
+		JiraTransitionNameOnSessionClose:    conn.JiraTransitionNameOnClose.String,
+		JiraSkipTransitionOnNonZeroExitCode: conn.JiraSkipTransitionOnNonZeroExitCode,
 	}, nil
 }
 

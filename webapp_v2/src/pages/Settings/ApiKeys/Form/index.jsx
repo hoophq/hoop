@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Grid, Group, Stack, Text, Title, Box } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar'
 import { ArrowLeft } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
@@ -54,7 +54,7 @@ export default function ApiKeysForm() {
           setGroups(key.groups ?? [])
         }
       } catch {
-        notifications.show({ message: 'Failed to load data.', color: 'red' })
+        showSnackbar({ level: 'error', text: 'Failed to load data.' })
       } finally {
         setLoading(false)
       }
@@ -64,21 +64,21 @@ export default function ApiKeysForm() {
 
   async function handleSubmit() {
     if (!name.trim()) {
-      notifications.show({ message: 'Name is required.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Name is required.' })
       return
     }
     setSaving(true)
     try {
       if (isEdit) {
         await apiKeysService.update(id, { name, groups })
-        notifications.show({ message: 'API key updated.', color: 'green' })
+        showSnackbar({ level: 'success', text: 'API key updated.' })
         navigate('/settings/api-keys')
       } else {
         const res = await apiKeysService.create({ name, groups })
         navigate('/settings/api-keys/created', { state: { key: res.data } })
       }
     } catch {
-      notifications.show({ message: `Failed to ${isEdit ? 'update' : 'create'} API key.`, color: 'red' })
+      showSnackbar({ level: 'error', text: `Failed to ${isEdit ? 'update' : 'create'} API key.` })
     } finally {
       setSaving(false)
     }

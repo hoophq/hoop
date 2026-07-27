@@ -140,7 +140,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -167,6 +167,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -190,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -217,6 +226,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -240,7 +258,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Amd64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -267,6 +285,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -290,7 +317,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Arm64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -317,6 +344,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -340,7 +376,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Amd64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -367,6 +403,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -398,7 +443,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Arm64
     environment: production
-    needs: [test]
+    needs: [test, build-webapp]
 
     steps:
       - name: Checkout Hoop
@@ -425,6 +470,15 @@ jobs:
 
       - name: Generate WASM
         run: make generate-wasm
+
+      - name: Download Webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-build-webapp
+          path: dist/
+
+      - name: Embed Webapp
+        run: make embed-webapp
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -652,6 +706,75 @@ jobs:
           docker manifest push hoophq/hoop:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoop:latest
 
+  # Agent image with a bundled OCR engine for the realtime RDP PII guard
+  # (see Dockerfile.agent-ocr). Built FROM the just-published hoop image, so
+  # it depends on the gateway multiarch publish. CPU flavor is multiarch;
+  # the GPU flavor (-gpu tag) is amd64-only (CUDA).
+  docker-publish-hoopagent-ocr:
+    runs-on: ubuntu-latest
+    name: Publish Agent OCR Image (CPU)
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-multiarch
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (CPU, multiarch)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-ocr
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoop:${{ env.GIT_TAG }}
+          tags: |
+            hoophq/hoop-agent-ocr:${{ env.GIT_TAG }}
+            hoophq/hoop-agent-ocr:latest
+
+  docker-publish-hoopagent-ocr-gpu:
+    runs-on: ubuntu-latest
+    name: Publish Agent OCR Image (GPU)
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-multiarch
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (GPU, amd64-only)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-ocr-gpu
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoop:${{ env.GIT_TAG }}
+          tags: |
+            hoophq/hoop-agent-ocr:${{ env.GIT_TAG }}-gpu
+
 
   docker-publish-hoopagent-arm64:
     runs-on: GitHub-Linux-Arm-Runner
@@ -765,6 +888,202 @@ jobs:
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoopdev:latest
+
+  # --- Clean image line (DEP-66): hoophq/hoop-ng + hoophq/hoopdev-ng ----------
+  # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart
+  # points at. Every job here is continue-on-error and NOT a dependency of
+  # publish-release: a hiccup, or a clean base that isn't published yet, must
+  # never fail the release workflow (which would also block auto-deploy). The
+  # authoritative AGPL/SSPL gating lives in agent-tools-build.yml.
+  docker-publish-hoop-ng:
+    runs-on: ubuntu-latest
+    name: Publish clean gateway (hoop-ng)
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-multiarch
+    continue-on-error: true
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Mirror gateway to clean-only hoop-ng repo
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          # hoophq/hoop is already AGPL/SSPL-clean; copy its multiarch manifest
+          # verbatim (no rebuild) into the bright-line clean-only repo. Retry to
+          # ride out registry eventual consistency right after the source push,
+          # and skip (not fail) if the source never becomes visible.
+          src="hoophq/hoop:${GIT_TAG}"
+          ok=""
+          for i in 1 2 3 4 5; do
+            if docker manifest inspect "$src" >/dev/null 2>&1; then ok=1; break; fi
+            echo "waiting for $src to be visible ($i/5)"; sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "::warning::$src not visible; skipping hoop-ng mirror"; exit 0
+          fi
+          docker buildx imagetools create -t "hoophq/hoop-ng:${GIT_TAG}" "$src"
+          docker buildx imagetools create -t hoophq/hoop-ng:latest "$src"
+
+  docker-publish-hoopdev-ng-arm64:
+    runs-on: GitHub-Linux-Arm-Runner
+    name: Publish clean agent hoopdev-ng (arm64)
+    environment: production
+    needs:
+      - build-tar-files
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Resolve clean base and check availability
+        id: base
+        run: |
+          base="$(awk -F= '/^ARG[[:space:]]+AGENT_TOOLS_TAG=/{print $2; exit}' Dockerfile.dev)"
+          if [ -z "$base" ]; then
+            echo "::warning::could not resolve AGENT_TOOLS_TAG from Dockerfile.dev; skipping hoopdev-ng (arm64)"
+            echo "exists=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          clean_base="${base}-clean"
+          echo "tag=${clean_base}" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "hoophq/agent-tools:${clean_base}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::clean base hoophq/agent-tools:${clean_base} not published yet; skipping hoopdev-ng (arm64)"
+          fi
+      - name: Build and push
+        if: steps.base.outputs.exists == 'true'
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.dev
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            AGENT_TOOLS_TAG=${{ steps.base.outputs.tag }}
+          tags: |
+            hoophq/hoopdev-ng:${{ github.sha }}-arm64
+
+  docker-publish-hoopdev-ng-amd64:
+    runs-on: ubuntu-latest
+    name: Publish clean agent hoopdev-ng (amd64)
+    environment: production
+    needs:
+      - build-tar-files
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Resolve clean base and check availability
+        id: base
+        run: |
+          base="$(awk -F= '/^ARG[[:space:]]+AGENT_TOOLS_TAG=/{print $2; exit}' Dockerfile.dev)"
+          if [ -z "$base" ]; then
+            echo "::warning::could not resolve AGENT_TOOLS_TAG from Dockerfile.dev; skipping hoopdev-ng (amd64)"
+            echo "exists=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          clean_base="${base}-clean"
+          echo "tag=${clean_base}" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "hoophq/agent-tools:${clean_base}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::clean base hoophq/agent-tools:${clean_base} not published yet; skipping hoopdev-ng (amd64)"
+          fi
+      - name: Build and push
+        if: steps.base.outputs.exists == 'true'
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.dev
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            AGENT_TOOLS_TAG=${{ steps.base.outputs.tag }}
+          tags: |
+            hoophq/hoopdev-ng:${{ github.sha }}-amd64
+
+  docker-publish-hoopdev-ng-multiarch:
+    runs-on: ubuntu-latest
+    name: Publish clean agent hoopdev-ng (manifest)
+    environment: production
+    needs:
+      - docker-publish-hoopdev-ng-amd64
+      - docker-publish-hoopdev-ng-arm64
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Check clean per-arch images availability
+        id: imgs
+        run: |
+          # Gate on the per-arch images actually existing, not on the base:
+          # the build jobs are continue-on-error, so one arch may be missing.
+          ready=true
+          for arch in amd64 arm64; do
+            if ! docker manifest inspect "hoophq/hoopdev-ng:${{ github.sha }}-${arch}" >/dev/null 2>&1; then
+              echo "::warning::missing hoophq/hoopdev-ng:${{ github.sha }}-${arch}; skipping hoopdev-ng manifest"
+              ready=false
+            fi
+          done
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+      - name: Create manifest and push
+        if: steps.imgs.outputs.ready == 'true'
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          docker manifest create hoophq/hoopdev-ng:${GIT_TAG} \
+            --amend hoophq/hoopdev-ng:${{ github.sha }}-amd64 \
+            --amend hoophq/hoopdev-ng:${{ github.sha }}-arm64
+          docker manifest create hoophq/hoopdev-ng:latest \
+            --amend hoophq/hoopdev-ng:${{ github.sha }}-amd64 \
+            --amend hoophq/hoopdev-ng:${{ github.sha }}-arm64
+          docker manifest push hoophq/hoopdev-ng:${GIT_TAG}
+          docker manifest push hoophq/hoopdev-ng:latest
 
   publish-release:
     runs-on: ubuntu-latest
@@ -884,3 +1203,36 @@ jobs:
         run: |
           git tag "$GIT_TAG" 2>/dev/null || true
           git push origin "$GIT_TAG"
+
+  # Create a Linear release once the version has actually shipped. This job runs
+  # only after `publish-release` succeeds, so a Linear release is never created
+  # for a version that failed to publish.
+  #
+  # The official Linear action (command defaults to `sync`) scans the commits
+  # that landed since the previous release for Linear issue identifiers (e.g.
+  # ENG-123) in the squash-merge subjects/bodies, creates a release named after
+  # the semver tag in the configured pipeline, attaches those issues, and marks
+  # it complete. fetch-depth: 0 is required so the action can walk history back
+  # to the previous release commit to determine the scan range.
+  #
+  # Requires the `LINEAR_ACCESS_KEY` repository secret (a Linear pipeline access
+  # key generated from Linear's release settings).
+  publish-linear-release:
+    runs-on: ubuntu-latest
+    name: Publish Linear Release
+    needs:
+      - publish-release
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Create Linear Release
+        uses: linear/linear-release-action@v0
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+          version: ${{ env.GIT_TAG }}

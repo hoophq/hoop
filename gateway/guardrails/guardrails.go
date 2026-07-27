@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -39,6 +40,9 @@ type Rule struct {
 	Type         string   `json:"type"`
 	Words        []string `json:"words"`
 	PatternRegex string   `json:"pattern_regex"`
+	// Message is an optional, admin-defined message shown to the user when this
+	// specific rule entry is hit. When empty, the generic validation message is used.
+	Message string `json:"message"`
 }
 
 func (r *Rule) validate(streamDirection string, data []byte) error {
@@ -78,6 +82,32 @@ func Decode(data []byte) ([]DataRules, error) {
 		return dataRules, fmt.Errorf("unable to decode rules, reason=%v", err)
 	}
 	return dataRules, nil
+}
+
+// MatchMessage returns the admin-defined message configured for the rule entry
+// that matches the given rule type and words/pattern within the provided rule
+// sets. It is used gateway-side to correlate a guardrail hit reported by the
+// agent back to the originating rule configuration. It returns an empty string
+// when no matching entry is found or the matched entry has no message.
+func MatchMessage(dataRules []DataRules, ruleType string, words []string, patternRegex string) string {
+	for _, dataRule := range dataRules {
+		for _, rule := range dataRule.Items {
+			if rule.Type != ruleType || rule.Message == "" {
+				continue
+			}
+			switch ruleType {
+			case denyWordListType:
+				if slices.Equal(rule.Words, words) {
+					return rule.Message
+				}
+			case patternMatchRegexType:
+				if rule.PatternRegex == patternRegex {
+					return rule.Message
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func Validate(streamDirection string, ruleData, data []byte) error {

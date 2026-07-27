@@ -42,12 +42,32 @@ func GenerateSecureRandomKey(prefixKey string, size uint16) (secretKey, secretKe
 
 // NewJwtToken generates a new JWT token signed with HMAC using the provided secret key.
 func NewJwtToken(privKey ed25519.PrivateKey, subject, email string, tokenDuration time.Duration) (string, error) {
+	return NewJwtTokenWithAuthTime(privKey, subject, email, tokenDuration, time.Now().UTC())
+}
+
+// NewJwtTokenWithAuthTime generates a JWT like NewJwtToken but pins the
+// auth_time claim (RFC 9470 / OIDC core: time of the original end-user
+// authentication) to the provided value instead of now.
+//
+// Sliding-session renewal uses this to preserve the original login time
+// across re-mints so the absolute session cap can be enforced: each renewed
+// token carries a fresh iat/exp but the same auth_time as the first token
+// of the session.
+func NewJwtTokenWithAuthTime(privKey ed25519.PrivateKey, subject, email string, tokenDuration time.Duration, authTime time.Time) (string, error) {
 	now := time.Now().UTC()
+	// auth_time is the anchor of the absolute session cap: a future value
+	// would make the session age negative and the cap unenforceable, so
+	// refuse to mint such a token regardless of the caller.
+	if authTime.After(now.Add(time.Minute)) {
+		return "", fmt.Errorf("auth_time cannot be in the future")
+	}
 	var claims = struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		AuthTime int64  `json:"auth_time"`
 		jwt.RegisteredClaims
 	}{
-		Email: email,
+		Email:    email,
+		AuthTime: authTime.UTC().Unix(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -57,6 +77,69 @@ func NewJwtToken(privKey ed25519.PrivateKey, subject, email string, tokenDuratio
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	return token.SignedString(privKey)
+}
+
+// SessionClaims is the subset of claims needed to renew a sliding-session
+// token: identity, original authentication time, and current expiry.
+type SessionClaims struct {
+	Subject  string
+	Email    string
+	AuthTime time.Time
+	ExpireAt time.Time
+}
+
+// VerifySessionClaims verifies the token signature and returns the claims
+// that drive sliding-session renewal. Tokens minted before auth_time was
+// introduced fall back to iat as the original authentication time, which is
+// correct for them: they were never renewed, so iat is the login time.
+func VerifySessionClaims(tokenString string, pubKey ed25519.PublicKey) (*SessionClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return pubKey, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse access token: %v", err)
+	}
+	if !token.Valid {
+		return nil, fmt.Errorf("access token is invalid")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
+	}
+	subject, ok := claims["sub"].(string)
+	if !ok || subject == "" {
+		return nil, fmt.Errorf("'sub' not found or has an empty value")
+	}
+	exp, err := claims.GetExpirationTime()
+	if err != nil || exp == nil {
+		return nil, fmt.Errorf("'exp' not found or invalid")
+	}
+	out := &SessionClaims{Subject: subject, ExpireAt: exp.Time}
+	if email, ok := claims["email"].(string); ok {
+		out.Email = email
+	}
+	switch authTime := claims["auth_time"].(type) {
+	case float64:
+		out.AuthTime = time.Unix(int64(authTime), 0).UTC()
+	default:
+		// Pre-auth_time token: iat is the original login time.
+		iat, err := claims.GetIssuedAt()
+		if err != nil || iat == nil {
+			return nil, fmt.Errorf("neither 'auth_time' nor 'iat' present in token")
+		}
+		out.AuthTime = iat.Time
+	}
+	// Defense in depth mirroring the mint-side guard: a future auth_time
+	// would defeat the absolute session cap (negative session age), so
+	// treat it as an invalid session token even though the signature is
+	// good.
+	if out.AuthTime.After(time.Now().UTC().Add(time.Minute)) {
+		return nil, fmt.Errorf("'auth_time' is in the future")
+	}
+	return out, nil
 }
 
 // VerifyAccessToken verifies the access token and returns the subject if valid.

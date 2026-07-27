@@ -58,7 +58,7 @@
 
 (defn step-indicator [current-step]
   (let [cur-idx (.indexOf step-keys current-step)]
-    [:> Flex {:align "center" :gap "1"}
+    [:> Flex {:align "center" :gap "2"}
      (for [[i s] (map-indexed vector steps)]
        ^{:key (:key s)}
        [step-segment {:index i
@@ -145,10 +145,10 @@
                    :detail    (str row-count " rows detected \u00b7 "
                                    (format-file-size file-size*))
                    :on-remove clear-file!})}]
-   [:> Flex
+   [:> Flex {:justify "end"}
     [:> Button {:size "2" :disabled (not file-selected)
                 :on-click start-parse!}
-     "Parse file \u2192"]]])
+     "Import"]]])
 
 
 (def ^:private parsing-checklist
@@ -527,10 +527,10 @@
                          :class "max-h-[90vh] overflow-hidden"}
       [:> Flex {:direction "column" :gap "0"
                 :style {:max-height "calc(90vh - 48px)"}}
-       [:> Flex {:align "center" :justify "between" :gap "4" :mb "5" :wrap "wrap"}
-        [:> Flex {:align "center" :gap "4" :wrap "wrap"}
+       [:> Flex {:align "start" :justify "between" :gap "4" :mb "5" :wrap "wrap"}
+        [:> Flex {:direction "column" :gap "3"}
          [:> Dialog.Title {:asChild true}
-          [:> Heading {:as "span" :size "6"} "Import inventory"]]
+          [:> Heading {:as "span" :size "6"} "Import Resources"]]
          [step-indicator step]]
         [:> Dialog.Close {:asChild true}
          [:> IconButton {:variant "ghost" :color "gray" :size "2"

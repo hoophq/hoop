@@ -6,7 +6,9 @@
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.components.loaders :as loaders]
-   [webapp.components.connections-select :as connections-select]))
+   [webapp.components.connections-select :as connections-select]
+   [webapp.features.activation-journey.views.enterprise-banner :as enterprise-banner]
+   [webapp.features.promotion :as promotion]))
 
 (def risk-levels
   [{:key :low
@@ -199,10 +201,12 @@
   (let [state (create-form-state rule-data)
         rule-loading? (rf/subscribe [:ai-session-analyzer/rule-loading?])
         connections (rf/subscribe [:connections->pagination])
-        access-rules-sub (rf/subscribe [:access-request/rules])]
+        access-rules-sub (rf/subscribe [:access-request/rules])
+        user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:access-request/list-rules])
     (fn []
-      (let [selected-connection-names @(:connection-names state)
+      (let [free-license? (-> @user :data :free-license?)
+            selected-connection-names @(:connection-names state)
             conns (or (:data @connections) [])
             conn-by-name (into {} (map (juxt :name identity)) conns)
             selected-connections-data (mapv (fn [name]
@@ -279,7 +283,14 @@
                           :loading @rule-loading?
                           :disabled (or @rule-loading? require-rule-missing?)
                           :type "submit"}
-               "Save"]]]]]
+               "Save"]]]]
+
+           ;; Free-plan upsell pinned below the header, non-dismissible.
+           (when free-license?
+             [:> Box {:class "mx-7 mt-4"}
+              [enterprise-banner/main
+               {:primary {:label "Talk to Sales"
+                          :on-click promotion/request-demo}}]])]
 
           [:> Box {:p "7" :class "space-y-radix-9"}
 
@@ -382,13 +393,17 @@
         (if (and (= :edit form-type)
                  (= :loading (:status @active-rule)))
           [loading-view]
+          ;; rule-form derives its local state from rule-data once, on mount.
+          ;; Keying by the loaded data forces a remount when it settles
+          ;; (edit fetch or activation-journey template seed), so the form
+          ;; never keeps state from a stale first render.
+          ^{:key (str (name form-type) "-" (hash (:data @active-rule)))}
           [rule-form form-type
-           (if (= :edit form-type)
+           (if (= :success (:status @active-rule))
              (:data @active-rule)
              {})
            scroll-pos])
 
         (finally
           (.removeEventListener js/window "scroll" handle-scroll)
-          (when (= :edit form-type)
-            (rf/dispatch [:ai-session-analyzer/clear-active-rule])))))))
+          (rf/dispatch [:ai-session-analyzer/clear-active-rule]))))))

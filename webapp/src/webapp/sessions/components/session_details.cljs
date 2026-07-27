@@ -1,6 +1,6 @@
 (ns webapp.sessions.components.session-details
   (:require
-   ["@radix-ui/themes" :refer [Avatar Badge Box Button Flex Text]]
+   ["@radix-ui/themes" :refer [Avatar Badge Box Button Flex Text Tooltip]]
    ["lucide-react" :refer [Hash BadgeCheck CalendarArrowDown CalendarArrowUp
                            ChevronDown ChevronUp CircleCheckBig CircleUser
                            Clock2 ExternalLink FastForward KeyRound OctagonX Package
@@ -35,7 +35,27 @@
 (defmethod ^:private access-request-badge :default [_]
   nil)
 
-;; Review group item with icon and badge
+(defn- review-action-verb [status]
+  (case status
+    "APPROVED" "approved"
+    "REJECTED" "rejected"
+    nil))
+
+(defn- review-reviewer-info [group]
+  (let [reviewer (:reviewed_by group)
+        reviewer-name (or (:email reviewer) (:name reviewer))
+        verb (review-action-verb (:status group))
+        review-date (:review_date group)]
+    (when (and reviewer-name verb)
+      [:> Flex {:gap "1" :align "center" :class "text-gray-11"}
+       [:> CircleUser {:size 16}]
+       [:> Text {:size "2" :weight "medium" :class "text-gray-12"} reviewer-name]
+       [:> Text {:size "2"} (str verb " this")]
+       (when review-date
+         [:> Tooltip {:content (formatters/time-parsed->full-date review-date)}
+          [:> Text {:size "2" :class "cursor-default"}
+           (formatters/time-ago-full-date review-date)]])])))
+
 (defn- review-group-item [group]
   [:> Flex {:gap "6" :align "center"}
    [:> Flex {:gap "2" :align "center" :class "w-[128px]"}
@@ -43,7 +63,8 @@
      [:> Users {:size 20 :class "text-gray-11"}]]
     [:> Text {:size "2" :class "text-gray-11 flex block truncate"}
      [tooltip/truncate-tooltip {:text (:group group)}]]]
-   [access-request-badge (:status group)]])
+   [access-request-badge (:status group)]
+   [review-reviewer-info group]])
 
 (defmulti ^:private status-badge identity)
 (defmethod ^:private status-badge "done" [_]

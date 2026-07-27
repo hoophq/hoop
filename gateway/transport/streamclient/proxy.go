@@ -3,6 +3,7 @@ package streamclient
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +24,7 @@ func InitProxyMemoryCleanup() {
 		for {
 			items := proxyStore.List()
 			log.Debugf("executing proxy memory cleanup process, total=%v", len(items))
-			for sid, obj := range proxyStore.List() {
+			for sid, obj := range items {
 				s, _ := obj.(*ProxyStream)
 				if s == nil {
 					log.With("sid", sid).Warnf("removing empty proxy object")
@@ -32,6 +33,10 @@ func InitProxyMemoryCleanup() {
 				}
 				timeout := s.stateTime.Add(proxyMaxTimeoutDuration)
 				if time.Now().After(timeout) {
+					if s.isReviewed() {
+						proxyStore.Del(s.pluginCtx.SID)
+						continue
+					}
 					errMsg := fmt.Errorf("reached max timeout (%s) waiting for session to end", proxyMaxTimeoutDuration.String())
 					log.With("sid", sid).Info(errMsg)
 					s.Close(errMsg)
@@ -51,12 +56,13 @@ type ProxyStream struct {
 	pb.Transport_ConnectServer
 
 	// TODO: change to client context
-	context        context.Context
-	cancelFn       context.CancelCauseFunc
-	metadata       metadata.MD // TODO: remove this from memory?
-	runtimePlugins []runtimePlugin
-	pluginCtx      *plugintypes.Context
-	stateTime      time.Time
+	context           context.Context
+	cancelFn          context.CancelCauseFunc
+	metadata          metadata.MD // TODO: remove this from memory?
+	runtimePlugins    []runtimePlugin
+	pluginCtx         *plugintypes.Context
+	stateTime         time.Time
+	isSessionReviewed atomic.Bool
 }
 
 func GetProxyStream(sid string) *ProxyStream {
@@ -164,6 +170,8 @@ func (s *ProxyStream) SendToAgent(pkt *pb.Packet) error {
 }
 
 func (s *ProxyStream) IsAgentOnline() bool { return IsAgentOnline(s.StreamAgentID()) }
+func (s *ProxyStream) isReviewed() bool    { return s.isSessionReviewed.Load() }
+func (s *ProxyStream) SetReviewed()        { s.isSessionReviewed.Store(true) }
 
 // If the agent is a multi connection type, it returns a deterministic uuid
 // based on the agent id and the id of the connection, otherwise it returns the
@@ -181,9 +189,16 @@ func DisconnectAllProxies(reason error) chan struct{} {
 	donec := make(chan struct{})
 	go func() {
 		for _, obj := range proxies {
-			if s, _ := obj.(*ProxyStream); s != nil {
-				s.Close(reason)
+			s, _ := obj.(*ProxyStream)
+			if s == nil {
+				continue
 			}
+			// remove from the memory, but do not change the session state
+			if s.isReviewed() {
+				proxyStore.Del(s.pluginCtx.SID)
+				continue
+			}
+			s.Close(reason)
 		}
 		// give 5 seconds to wait for goroutines to finish
 		// in the future it could be better to block when calling the
@@ -199,6 +214,11 @@ func disconnectProxiesByAgent(pctx plugintypes.Context, errMsg error) {
 		s, _ := obj.(*ProxyStream)
 		// make sure to send disconnect to both clients
 		if s != nil && s.pluginCtx.AgentID == pctx.AgentID {
+			// remove from the memory, but do not change the session state
+			if s.isReviewed() {
+				proxyStore.Del(s.pluginCtx.SID)
+				continue
+			}
 			_ = s.PluginExecOnDisconnect(pctx, errMsg)
 			_ = s.Close(errMsg)
 		}

@@ -1,0 +1,104 @@
+# Local from-source build of the hoop gateway+agent image.
+#
+# Builds BOTH binaries inside linux stages (no host cross-toolchain / rustup
+# needed -- works on nix/fenix hosts via Docker's native linux/arm64):
+#   - hoop_rs  : the Rust agent (agentrs)
+#   - hoop     : the Go gateway/agent/client multi-call binary
+#
+# Then assembles the same runtime layout as the production Dockerfile so the
+# result is a drop-in stand-in for hoophq/hoop:<tag> built from the current
+# working tree (including the PII-guard branch).
+#
+# This is a DEV/LOCAL build aid; it is not used by CI or releases.
+#
+#   docker build -f Dockerfile.localbuild -t hoophq/hoop:local .
+
+# ---- Stage 1: build hoop_rs (agentrs) -------------------------------------
+FROM rust:1-bookworm AS rust-build
+WORKDIR /src
+# agentrs is self-contained (ring-based TLS, no openssl-sys, no build.rs).
+COPY agentrs/ ./agentrs/
+WORKDIR /src/agentrs
+RUN cargo build --release && \
+    install -D target/release/agentrs /out/hoop_rs
+
+# ---- Stage 2: build hoop (Go multi-call binary) ---------------------------
+FROM golang:1.26-bookworm AS go-build
+WORKDIR /src
+# The whole workspace is needed (go.work references every module). The RDP
+# parser wasm is committed and embedded via go:embed, so no wasm toolchain is
+# required here.
+COPY . .
+# Recreate the libhoop import-path symlink the build expects (the repo ships a
+# symlink, but COPY may not preserve it portably).
+RUN rm -f libhoop && ln -s _libhoop libhoop
+RUN CGO_ENABLED=0 GOOS=linux go build \
+        -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=local" \
+        -o /out/hoop github.com/hoophq/hoop/client
+
+# ---- Stage 2b: build the web UI (CLJS app + React shell) ------------------
+# Mirrors scripts/dev/build-webapp.sh: build the shadow-cljs bundle, build the
+# React (vite) shell, then merge with the React index.html on top. Needs Node
+# + a JDK (shadow-cljs runs on the JVM).
+FROM eclipse-temurin:21-jdk-noble AS webapp-build
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg git && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+# Copy only the two webapp trees (build context already excludes node_modules
+# and prior build outputs via .dockerignore).
+COPY webapp/ ./webapp/
+COPY webapp_v2/ ./webapp_v2/
+# CLJS bundle (downloads connection metadata from the public docs repo).
+RUN cd webapp && npm install && npm run release:hoop-ui
+# React shell.
+RUN cd webapp_v2 && npm install && npm run build
+# Merge: CLJS resources first, React shell on top (React index.html wins) ->
+# the layout the gateway serves from /app/ui/public.
+RUN mkdir -p /ui/public && \
+    cp -a webapp/resources/public/. /ui/public/ && \
+    cp -a webapp_v2/dist/. /ui/public/
+
+# ---- Stage 3: runtime (mirrors the production Dockerfile) -----------------
+FROM ubuntu:noble-20250714
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ACCEPT_EULA=y
+
+RUN mkdir -p /app && \
+    mkdir -p /opt/hoop/sessions && \
+    mkdir -p /opt/hoop/bin && \
+    apt-get update -y && \
+    apt-get install -y \
+        xz-utils \
+        locales \
+        tini \
+        openssh-client \
+        procps \
+        gettext-base \
+        curl \
+        tesseract-ocr \
+        tesseract-ocr-eng && \
+    rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
+
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+
+COPY rootfs /
+COPY --from=go-build     /out/hoop    /app/hoop
+COPY --from=rust-build   /out/hoop_rs /app/hoop_rs
+COPY --from=webapp-build /ui/public   /app/ui/public
+RUN chown root:root /app/hoop* && chmod 755 /app/hoop*
+
+EXPOSE 8009
+EXPOSE 8010
+EXPOSE 15432
+
+ENV PATH="/app:${PATH}"
+ENV PATH="/opt/hoop/bin:${PATH}"
+
+ENTRYPOINT ["tini", "--"]
+CMD ["hoop", "start", "agent"]

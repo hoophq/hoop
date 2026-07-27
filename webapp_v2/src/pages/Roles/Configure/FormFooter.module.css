@@ -1,0 +1,20 @@
+/* Fixed form footer.
+ *
+ * Mirrors the CLJS setup/footer: pinned to the viewport bottom, full
+ * width below the sidebar. The horizontal offset is supplied by the
+ * caller via Mantine `left`/`right` style props (read from useUIStore
+ * so it stays in sync with the sidebar's open/collapsed state).
+ *
+ * This module owns only the visual chrome (opaque background + top
+ * border + horizontal padding) — directional borders aren't expressible
+ * via Mantine style props, which is the documented CSS-Module exception.
+ */
+.root {
+  background: var(--mantine-color-white);
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: var(--mantine-spacing-md);
+  padding-bottom: var(--mantine-spacing-md);
+  padding-left: var(--mantine-spacing-xl);
+  padding-right: var(--mantine-spacing-xl);
+  z-index: 1;
+}

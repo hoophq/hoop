@@ -13,9 +13,10 @@ func TestCanonicalPort(t *testing.T) {
 		{"mssql", 1433, true},
 		{"mongodb", 27017, true},
 		{"oracledb", 1521, true},
-		{"tcp", 0, false},     // no canonical port for generic TCP
-		{"ssh", 0, false},     // not tunnelable
-		{"unknown", 0, false}, // unknown subtype
+		{"httpproxy", 80, true}, // plain HTTP into the tunnel; agent does TLS upstream
+		{"tcp", 0, false},       // no canonical port for generic TCP
+		{"ssh", 0, false},       // not tunnelable
+		{"unknown", 0, false},   // unknown subtype
 		{"", 0, false},
 	}
 	for _, tc := range cases {
@@ -44,6 +45,11 @@ func TestIsAcceptedPort(t *testing.T) {
 		{"mssql on 1433", "mssql", 1433, true},
 		{"mongodb on 27017", "mongodb", 27017, true},
 		{"oracledb on 1521", "oracledb", 1521, true},
+		{"httpproxy on 80", "httpproxy", 80, true},
+		// https://name.hoop can never work (no *.hoop certificate);
+		// reject at the SYN so clients fail fast.
+		{"httpproxy on 443 (wrong)", "httpproxy", 443, false},
+		{"httpproxy on 8080 (wrong)", "httpproxy", 8080, false},
 
 		// tcp accepts any non-zero port
 		{"tcp on 22", "tcp", 22, true},
@@ -54,7 +60,6 @@ func TestIsAcceptedPort(t *testing.T) {
 		// not-tunnelable subtypes always reject
 		{"ssh on 22", "ssh", 22, false},
 		{"kubernetes on 6443", "kubernetes", 6443, false},
-		{"httpproxy on 80", "httpproxy", 80, false},
 		{"rdp on 3389", "rdp", 3389, false},
 
 		// zero port always rejected (defensive)

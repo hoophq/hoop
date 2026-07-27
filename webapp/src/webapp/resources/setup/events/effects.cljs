@@ -6,13 +6,15 @@
    [webapp.resources.helpers :as helpers]
    [webapp.connections.views.setup.connection-method :as connection-method]))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :resource-setup->initialize-state
- (fn [db [_ initial-data]]
-   (if initial-data
-     (assoc db :resource-setup initial-data)
-     (assoc db :resource-setup {:current-step :resource-name
-                                :roles []}))))
+ (fn [{:keys [db]} [_ initial-data]]
+   {:db (if initial-data
+          (assoc db :resource-setup initial-data)
+          (assoc db :resource-setup {:current-step :resource-name
+                                     :roles []}))
+    ;; the federation form is shared singleton state, reset it too
+    :fx [[:dispatch [:federation/clear]]]}))
 
 (rf/reg-event-fx
  :resource-setup->initialize-from-catalog
@@ -25,7 +27,7 @@
                                           :name ""
                                           :agent-id nil
                                           :roles []})
-    :fx []}))
+    :fx [[:dispatch [:federation/clear]]]}))
 
 (rf/reg-event-db
  :resource-setup->set-resource-name
@@ -115,6 +117,8 @@
                    :command command
                    :connection-method "manual-input"
                    :credentials {}
+                   :attributes []
+                   :skip-protection-profile? false
                    :environment-variables []
                    :configuration-files []}]
      (update-in db [:resource-setup :roles] (fnil conj []) new-role))))
@@ -131,6 +135,16 @@
  :resource-setup->update-role-name
  (fn [db [_ role-index name]]
    (assoc-in db [:resource-setup :roles role-index :name] name)))
+
+(rf/reg-event-db
+ :resource-setup->update-role-attributes
+ (fn [db [_ role-index names]]
+   (assoc-in db [:resource-setup :roles role-index :attributes] (vec names))))
+
+(rf/reg-event-db
+ :resource-setup->set-role-skip-protection-profile
+ (fn [db [_ role-index skip?]]
+   (assoc-in db [:resource-setup :roles role-index :skip-protection-profile?] (boolean skip?))))
 
 ;; Role helper functions
 (defn update-role-credentials-source

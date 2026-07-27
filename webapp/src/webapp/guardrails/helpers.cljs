@@ -8,10 +8,12 @@
   {(str ["password"]) "block-password"})
 
 (defn create-empty-rule []
-  {:type ""
+  {:_id (str (random-uuid)) ;; stable row identity for React keys
+   :type ""
    :rule ""
    :pattern_regex ""
    :words []
+   :message ""
    :selected false})
 
 (defn- identify-preset [type pattern_regex words]
@@ -41,10 +43,12 @@
           pattern_regex (:pattern_regex rule)
           words (:words rule)
           preset-rule (identify-preset type pattern_regex words)]
-      {:type type
+      {:_id (or (:_id rule) (str (random-uuid)))
+       :type type
        :rule preset-rule
        :pattern_regex (or pattern_regex "")
        :words (or words [])
+       :message (or (:message rule) "")
        :selected false})))
 
 (defn- format-rules [rules]

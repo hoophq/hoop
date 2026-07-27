@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -106,13 +105,13 @@ func translateUpstreamError(cause string) string {
 // Writes and closes are best-effort. Failures during shutdown don't
 // matter to the caller; the next step is sshConn.Close() which will
 // kill the channels anyway.
-func notifyOpenChannels(channels *sync.Map, message string) {
+func notifyOpenChannels(rangeFn func(func(any, any) bool), message string) {
 	if message == "" {
 		return
 	}
 	line := upstreamFailurePrefix + message + "\r\n"
 
-	channels.Range(func(key, value any) bool {
+	rangeFn(func(key, value any) bool {
 		ch, ok := value.(ssh.Channel)
 		if !ok || ch == nil {
 			return true
@@ -134,11 +133,11 @@ func notifyOpenChannels(channels *sync.Map, message string) {
 // standalone type rather than a closure so its lifecycle is obvious
 // in the call site.
 type userMessageDecorator struct {
-	channels *sync.Map
+	rangeFn func(func(any, any) bool)
 }
 
-func newUserMessageDecorator(channels *sync.Map) *userMessageDecorator {
-	return &userMessageDecorator{channels: channels}
+func newUserMessageDecorator(rangeFn func(func(any, any) bool)) *userMessageDecorator {
+	return &userMessageDecorator{rangeFn: rangeFn}
 }
 
 // Notify writes the translated message (if any) and returns the
@@ -153,7 +152,7 @@ func (d *userMessageDecorator) Notify(cause error) string {
 	if msg == "" {
 		return ""
 	}
-	notifyOpenChannels(d.channels, msg)
+	notifyOpenChannels(d.rangeFn, msg)
 	return msg
 }
 

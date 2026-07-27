@@ -145,8 +145,8 @@
                 "Learn more about Reviews"]]]}])
 
          [toggle-section
-          {:title "AI Data Masking"
-           :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
+          {:title "Live Data Masking"
+           :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with live data masking."
            :checked @data-masking?
            :disabled? (or free-license?
                           (= form-type :onboarding)
@@ -177,7 +177,7 @@
               [:> Callout.Icon
                [:> Star {:size 16}]]
               [:> Callout.Text {:class "text-gray-12"}
-               "Enable AI Data Masking by "
+               "Enable Live Data Masking by "
                [:> Link {:underline "always"
                          :href "#"
                          :class "text-primary-10"
@@ -190,7 +190,7 @@
                                   [:> Callout.Icon
                                    [:> ArrowUpRight {:size 16}]]
                                   [:> Callout.Text
-                                   "Learn more about AI Data Masking"]]]
+                                   "Learn more about Live Data Masking"]]]
                                 (when (= redact-provider "mspresidio")
                                   [:> Link {:href (routes/url-for :ai-data-masking)
                                             :target "_blank"}
@@ -198,7 +198,7 @@
                                     [:> Callout.Icon
                                      [:> ArrowUpRight {:size 16}]]
                                     [:> Callout.Text
-                                     "Go to AI Data Masking Management"]]])]}]
+                                     "Go to Live Data Masking Management"]]])]}]
 
          [toggle-section
           {:title "Runbooks"
@@ -250,7 +250,9 @@
              :clearable? true
              :on-change #(rf/dispatch [:connection-setup/set-jira-template-id (js->clj %)])}]]
 
-          [:> Link {:href (routes/url-for :jira-templates)}
+          ;; The Jira Templates page is owned by the React shell (webapp_v2),
+          ;; so this links to the React route instead of a bidi route.
+          [:> Link {:href "/jira-templates"}
            [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
             [:> Callout.Icon
              [:> ArrowUpRight {:size 16}]]

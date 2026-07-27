@@ -23,6 +23,7 @@ func init() {
 	MainCmd.AddCommand(licenseCmd)
 	MainCmd.AddCommand(mcpCmd)
 	MainCmd.AddCommand(featureFlagCmd)
+	MainCmd.AddCommand(sshServerCmd)
 
 	serverInfoCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 

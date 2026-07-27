@@ -1,0 +1,65 @@
+# RapidOCR OCR PoC — GPU flavor (see server_rapidocr.py).
+#
+# CUDA base + onnxruntime-gpu. The device is detected at runtime: the
+# server uses the GPU when one is visible and REFUSES TO START otherwise
+# (set OCR_ALLOW_CPU_FALLBACK=1 to deliberately run degraded on CPU) — a
+# GPU image silently running on CPU would quietly miss latency targets.
+#
+# Build & run on a CUDA host (requires nvidia-container-toolkit).
+# Host port 8870 (vs 8868 in the CPU flavor) only avoids a collision when
+# both flavors run on the same box during benchmarking:
+#   docker build -f Dockerfile.rapidocr-gpu -t ocr-poc-rapid-gpu .
+#   docker run -d --name ocr-poc-rapid-gpu --gpus all -p 8870:8868 ocr-poc-rapid-gpu
+#   curl http://localhost:8870/healthz  # -> {"status":"ok","device":"onnxruntime-cuda"}
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+# libgl1/libxcb1/libsm6/libxext6: rapidocr depends on regular opencv-python
+# (not headless), whose native module links these even for imdecode-only use.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/lib/apt/lists/*
+
+# onnxruntime-gpu must be pinned to the CUDA 12 line. 1.21+ moved to CUDA 13
+# (needs libcudart.so.13) while declaring NO nvidia/* runtime deps, so an
+# open-ended pin resolved to 1.27 and crashed at import even on this CUDA 12
+# base. 1.20.1 is the last CUDA 12 release.
+#
+# The full CUDA 12 runtime wheel set is installed explicitly and EXACT-pinned
+# (cudart, cublas, cudnn, curand, cufft, nvrtc, nvjitlink) so the engine is
+# self-contained, reproducible, and not reliant on the exact base-image library
+# set — in particular this base ships cuDNN 8 while onnxruntime 1.20 needs
+# cuDNN 9. A partial set silently falls back to CPU ("shifted to be executed
+# under CPUExecutionProvider"), which a GPU image must never do. Versions are
+# the set validated on a T4 (ldd resolves all provider deps; device=
+# onnxruntime-cuda, no CPU fallback). Keep in sync with Dockerfile.agent-ocr-gpu.
+RUN pip3 install --no-cache-dir \
+    "rapidocr==3.8.4" \
+    "onnxruntime-gpu==1.20.1" \
+    "nvidia-cuda-runtime-cu12==12.9.79" \
+    "nvidia-cublas-cu12==12.9.2.10" \
+    "nvidia-cudnn-cu12==9.23.2.1" \
+    "nvidia-curand-cu12==10.3.10.19" \
+    "nvidia-cufft-cu12==11.4.1.4" \
+    "nvidia-cuda-nvrtc-cu12==12.9.86" \
+    "nvidia-nvjitlink-cu12==12.9.86" \
+    "fastapi==0.138.0" \
+    "uvicorn==0.49.0"
+# Symlink every CUDA .so into a fixed directory and put only that on the loader
+# path, instead of hardcoding the python-minor dist-packages location (a rebuild
+# trap if the base image's python changes). Without this the CUDA execution
+# provider fails to load and inference silently falls back to CPU.
+RUN mkdir -p /opt/cuda-libs && \
+    find /usr -path '*/nvidia/*/lib/*.so*' -exec ln -s {} /opt/cuda-libs/ \; && \
+    test -e /opt/cuda-libs/libcudart.so.12 && test -e /opt/cuda-libs/libcublasLt.so.12
+ENV LD_LIBRARY_PATH="/opt/cuda-libs"
+
+COPY device_policy.py server_rapidocr.py /app/
+# Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes, each
+# with its own model instance on the GPU (the gateway analyzer issues up to
+# 8 concurrent chunk requests). 4 matches the benchmarked configuration —
+# each worker holds its own copy of the models in VRAM, so tune to the GPU
+# memory budget with `docker run -e WEB_CONCURRENCY=N`.
+ENV WEB_CONCURRENCY=4
+EXPOSE 8868
+CMD ["python3", "-m", "uvicorn", "server_rapidocr:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8868"]

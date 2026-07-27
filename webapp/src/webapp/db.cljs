@@ -3,14 +3,18 @@
             [webapp.features.workflows.events :as workflows-events]))
 
 (def default-db
-  {:agents {:status :loading, :data []}
-   :ai-data-masking {:list {:status :idle :data []}
-                     :active-rule {:status :idle :data nil}
-                     :submitting? false}
+  {:activation-journey {:masking-rules {:status :idle :data []}
+                        :roles []
+                        :terminal-banner-index 0
+                        :terminal-banner-dismissed? false}
+   :agents {:status :loading, :data []}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
    :audit->session-stream {}
+   ;; reviewed exec state per session id ({:status :executing|:running|:done}),
+   ;; kept outside the modal so it survives closing and reopening it
+   :audit->execution {}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
    :audit-logs {:status :idle
                 :data []
@@ -65,8 +69,8 @@
    :guardrails->active-guardrail {:action nil
                                   :name ""
                                   :description ""
-                                  :input [{:type "" :rule "" :details ""}]
-                                  :output [{:type "" :rule "" :details ""}]}
+                                  :input [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]
+                                  :output [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed
@@ -119,4 +123,19 @@
    :provisioning {:resources {:status :idle :data []}
                   :jobs      []
                   :sessions  []}
-   :connections->list {:status :idle :data []}})
+   :connections->list {:status :idle :data []}
+   :resources/federation {:status :idle
+                          :data nil
+                          :form {:enabled true
+                                 :hook_source "builtin"
+                                 :builtin_provider "gcp_iam"
+                                 :admin_credentials_json ""
+                                 :extra_config {:project_id ""}
+                                 :identity_source_attribute "$.user.email"
+                                 :identity_target_template "{user.email}"
+                                 :fallback_policy "deny"
+                                 :token_ttl_seconds 3600}
+                          :credentials-editing? false
+                          :mapping-editor-open? false
+                          :test-status :idle
+                          :test-result nil}})

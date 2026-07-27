@@ -52,9 +52,12 @@ import (
 // State enumerates the manager lifecycle.
 //
 // Idle  → no netstack, no routes, no goroutines. The daemon is "logged
-//         out" or simply hasn't been asked to bring the tunnel up yet.
+//
+//	out" or simply hasn't been asked to bring the tunnel up yet.
+//
 // Up    → netstack is serving TCP + DNS, routes are configured, the
-//         gateway gRPC is dialable from the TUN side.
+//
+//	gateway gRPC is dialable from the TUN side.
 //
 // We intentionally do NOT expose the transient BringingUp / TearingDown
 // values — callers should observe steady states only. Internally we
@@ -92,13 +95,16 @@ type Snapshot struct {
 	Since time.Time
 
 	// Allocator is the address allocator for the current session, or
-	// nil when idle. The IPC layer iterates it to build /v1/connections.
+	// nil when idle. Retained so callers can resolve a name→IP for the
+	// active connections in Connections below.
 	Allocator *addressing.Allocator
 
-	// SubTypeByName maps connection name → hoop subtype ("postgres",
-	// "mysql", ...). Keyed by the same names the allocator holds.
-	// nil when idle.
-	SubTypeByName map[string]string
+	// Connections is the set of currently-active tunnelable connections
+	// (name + subtype), captured under the registry lock at Snapshot
+	// time so callers can range over it without racing a concurrent
+	// refresh. nil/empty when idle. Connections deleted on the gateway
+	// are excluded even though their IP stays reserved in Allocator.
+	Connections []ConnInfo
 
 	// HostAddr / Gateway are the addresses the kernel and gVisor own
 	// on the current session's /48. Zero when idle.
@@ -161,17 +167,52 @@ type Options struct {
 	// back to the manual hint on unsupported hosts). Tests inject a
 	// fake to assert call shape without spawning resolvectl.
 	ResolvedConfigurer resolved.Configurer
+
+	// TokenSource, when set, supplies the current gateway bearer token
+	// and receives tokens the gateway rotates via X-New-Access-Token.
+	// The manager snapshots it at every use site (per-flow gRPC dials,
+	// connection-list refreshes) instead of pinning the token captured
+	// at bring-up, so a token rotated mid-session (DEP-24 silent
+	// renewal) takes effect on the next dial without re-bringing the
+	// tunnel up. Optional: when nil, the bring-up config's Token is
+	// used for the whole session (pre-renewal behaviour).
+	TokenSource TokenSource
 }
+
+// TokenSource is the manager's view of the daemon's token state. The
+// epoch makes rotation race-safe: a rotation harvested from an
+// in-flight response is only accepted if the token state has not been
+// swapped (login/logout/auth-expiry) since the request was built —
+// otherwise a slow response from a dead session could resurrect its
+// token after an explicit logout.
+type TokenSource interface {
+	// Snapshot returns the token to attach to a request right now and
+	// the epoch identifying this token generation.
+	Snapshot() (token string, epoch uint64)
+
+	// Rotate installs a token the gateway rotated during a request
+	// built at the given epoch. Implementations must reject the
+	// rotation when the epoch no longer matches.
+	Rotate(newToken string, epoch uint64)
+}
+
+// staticTokenSource pins a single token for the whole tunnel session —
+// the pre-DEP-24 behaviour, used when Options.TokenSource is nil
+// (tests, embedded usage).
+type staticTokenSource struct{ token string }
+
+func (s staticTokenSource) Snapshot() (string, uint64) { return s.token, 0 }
+func (s staticTokenSource) Rotate(string, uint64)      {}
 
 // Manager is the lifecycle owner. Construct with New; drive with
 // BringUp / TearDown; read with Snapshot. Safe for concurrent use.
 type Manager struct {
 	opts Options
 
-	mu       sync.RWMutex
-	state    State
-	since    time.Time
-	current  *liveTunnel // non-nil iff state == StateUp
+	mu      sync.RWMutex
+	state   State
+	since   time.Time
+	current *liveTunnel // non-nil iff state == StateUp
 }
 
 // liveTunnel groups every resource that participates in a single
@@ -181,13 +222,18 @@ type liveTunnel struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	alloc      *addressing.Allocator
-	subTypeBy  map[string]string
+	registry   *connRegistry
 	stack      *netstack.Stack
 	deviceName string
 	prefix     string
 	hostAddr   netip.Addr
 	gateway    netip.Addr
 	apiBase    string
+	// tokens supplies the gateway bearer token for every use site and
+	// receives epoch-guarded rotations harvested during this tunnel's
+	// own REST calls (DEP-24). Never nil: BringUp falls back to a
+	// static source pinning the bring-up token.
+	tokens TokenSource
 
 	// routeCfg is the exact addressing handed to netstack.ConfigureRoutes
 	// at bring-up. Stored verbatim so teardown reverses precisely what was
@@ -246,7 +292,7 @@ func (m *Manager) Snapshot() Snapshot {
 		State:              m.state,
 		Since:              m.since,
 		Allocator:          m.current.alloc,
-		SubTypeByName:      m.current.subTypeBy,
+		Connections:        m.current.registry.activeConnections(),
 		HostAddr:           m.current.hostAddr,
 		Gateway:            m.current.gateway,
 		DeviceName:         m.current.deviceName,
@@ -417,7 +463,15 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		return nil, err
 	}
 
-	gatewayCfg, apiBase, err := m.buildGatewayConfig(ctx, cfg)
+	// Resolve the token plumbing once: with a TokenSource the token is
+	// re-snapshotted at every use site so mid-session rotations (DEP-24)
+	// apply to new flows; without one, the bring-up token is pinned.
+	source := m.opts.TokenSource
+	if source == nil {
+		source = staticTokenSource{token: cfg.Token}
+	}
+
+	gatewayCfg, apiBase, err := m.buildGatewayConfig(ctx, cfg, source)
 	if err != nil {
 		return cleanup(err)
 	}
@@ -428,25 +482,14 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 	m.opts.Logger.Printf("tunnelmgr: session prefix %s gateway %s",
 		alloc.Prefix(), alloc.Gateway())
 
-	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
-		APIBaseURL: apiBase,
-		Token:      gatewayCfg.Token,
-	})
+	registry := newConnRegistry()
+	added, err := loadConnections(ctx, alloc, registry, apiBase, source, m.opts.Logger)
 	if err != nil {
-		return cleanup(fmt.Errorf("fetch connections: %w", err))
+		return cleanup(err)
 	}
-	if len(conns) == 0 {
+	if added == 0 {
 		return cleanup(errors.New("no tunnelable connections found for this user"))
 	}
-
-	subTypeByName := make(map[string]string, len(conns))
-	for _, c := range conns {
-		if _, err := alloc.AddName(c.Name); err != nil {
-			return cleanup(fmt.Errorf("allocate %s: %w", c.Name, err))
-		}
-		subTypeByName[c.Name] = c.SubType
-	}
-	m.opts.Logger.Printf("tunnelmgr: loaded %d tunnelable connection(s)", len(conns))
 
 	rsvr := resolver.New(alloc, m.opts.TLD)
 	stack, err := netstack.New(ctx, netstack.Options{
@@ -455,8 +498,8 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		PrefixV4:   alloc.PrefixV4(),
 		GatewayV4:  alloc.GatewayV4(),
 		DeviceName: m.opts.DeviceName,
-		TCPAccept:  m.makeAcceptFunc(alloc, subTypeByName),
-		TCPHandler: m.makeTCPHandler(alloc, subTypeByName, gatewayCfg),
+		TCPAccept:  m.makeAcceptFunc(alloc, registry),
+		TCPHandler: m.makeTCPHandler(alloc, registry, gatewayCfg, source),
 		DNSHandler: rsvr.HandleUDP,
 	})
 	if err != nil {
@@ -510,17 +553,81 @@ func (m *Manager) buildTunnel(parentCtx context.Context, cfg daemonconfig.Config
 		ctx:            ctx,
 		cancel:         cancel,
 		alloc:          alloc,
-		subTypeBy:      subTypeByName,
+		registry:       registry,
 		stack:          stack,
 		deviceName:     deviceName,
 		prefix:         alloc.Prefix().String(),
 		hostAddr:       alloc.HostAddr(),
 		gateway:        alloc.Gateway(),
 		apiBase:        apiBase,
+		tokens:         source,
 		routeCfg:       routeCfg,
 		resolvedActive: resolvedActive,
 		resolved:       m.opts.ResolvedConfigurer,
 	}, nil
+}
+
+// loadConnections fetches the tunnelable connection list from the
+// gateway, allocates a stable IP for every name (append-only — existing
+// allocations are untouched and re-adds are no-ops), and reconciles the
+// registry's active set to exactly the fetched list. Returns the number
+// of currently-active connections (i.e. len of the fetched list on
+// success).
+//
+// Shared by buildTunnel (initial load) and Refresh (periodic / manual
+// re-load) so both paths apply identical filtering and allocation
+// semantics. The allocator's determinism means a name that vanished and
+// later reappears regains its original IP.
+func loadConnections(
+	ctx context.Context,
+	alloc *addressing.Allocator,
+	registry *connRegistry,
+	apiBase string,
+	tokens TokenSource,
+	logger Logger,
+) (activeCount int, err error) {
+	token, epoch := tokens.Snapshot()
+	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
+		APIBaseURL: apiBase,
+		Token:      token,
+		OnNewToken: func(newToken string) { tokens.Rotate(newToken, epoch) },
+	})
+	if err != nil {
+		return 0, fmt.Errorf("fetch connections: %w", err)
+	}
+
+	active := make(map[string]string, len(conns))
+	for _, c := range conns {
+		if _, err := alloc.AddName(c.Name); err != nil {
+			return 0, fmt.Errorf("allocate %s: %w", c.Name, err)
+		}
+		active[c.Name] = c.SubType
+	}
+
+	added, removed := registry.reconcile(active)
+	logger.Printf("tunnelmgr: connection list synced — %d active (%d new, %d retired)",
+		len(active), added, removed)
+	return len(active), nil
+}
+
+// Refresh re-fetches the connection list and reconciles it into the
+// live tunnel without disturbing the netstack, routes, or in-flight
+// flows. New connections become routable immediately (the allocator and
+// resolver hold live references); connections deleted on the gateway
+// are marked inactive (hidden from listings, new SYNs rejected) but
+// keep their reserved IP.
+//
+// No-op (returns nil) when the tunnel is not up — there is nothing to
+// refresh against and the periodic caller may race a teardown.
+func (m *Manager) Refresh(ctx context.Context) error {
+	m.mu.RLock()
+	t := m.current
+	m.mu.RUnlock()
+	if t == nil {
+		return nil
+	}
+	_, err := loadConnections(ctx, t.alloc, t.registry, t.apiBase, t.tokens, m.opts.Logger)
+	return err
 }
 
 // Compile-time assertion: *log.Logger satisfies our Logger interface.

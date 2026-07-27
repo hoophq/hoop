@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
@@ -39,13 +40,13 @@ func installAndActivate(target string) error {
 
 	if store.Active == target {
 		if _, err := os.Stat(layout.BinLink); err == nil {
-			fmt.Printf("Already on %s (symlink: %s)\n", target, layout.BinLink)
+			fmt.Printf("Already on %s (active CLI: %s)\n", target, layout.BinLink)
 			if !skipPathHint {
 				_ = runPathHint(layout)
 			}
 			return nil
 		}
-		// Store thinks this is active but the symlink is gone; fall
+		// Store thinks this is active but the bin path is gone; fall
 		// through to repair it.
 	}
 
@@ -76,7 +77,7 @@ func installAndActivate(target string) error {
 
 	fmt.Printf("Active hoop version is now %s\n", entry.Version)
 	fmt.Printf("Installed at: %s\n", layout.VersionBinary(entry.Version))
-	fmt.Printf("Symlink:      %s -> %s\n", layout.BinLink, layout.VersionBinary(entry.Version))
+	fmt.Printf("Active CLI:   %s\n", layout.BinLink)
 
 	if !skipPathHint {
 		_ = runPathHint(layout)
@@ -96,6 +97,19 @@ func runPathHint(layout upgrade.Layout) error {
 		return err
 	}
 	if upgrade.IsPathConfigured(os.Getenv("PATH"), home) {
+		return nil
+	}
+
+	// Windows has no shell rc file to append to; the durable PATH lives in
+	// the user environment. Print the (safe, non-destructive) PowerShell
+	// snippet and let the user apply it — we don't mutate the registry on
+	// their behalf.
+	if runtime.GOOS == "windows" {
+		fmt.Println()
+		fmt.Println(styles.KeywordHighlight("Heads up:") + " " + layout.BinDir + " is not in your PATH.")
+		fmt.Println("Add it to your user PATH so new terminals can find the active hoop CLI:")
+		fmt.Printf("  PowerShell: [Environment]::SetEnvironmentVariable(\"Path\", [Environment]::GetEnvironmentVariable(\"Path\", \"User\") + \";%s\", \"User\")\n", layout.BinDir)
+		fmt.Println("Then open a new terminal. You can also add it via System Settings > Environment Variables.")
 		return nil
 	}
 

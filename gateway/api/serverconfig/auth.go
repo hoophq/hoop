@@ -200,10 +200,22 @@ func UpdateAuthConfig(c *gin.Context) {
 			CustomScopes: strings.Join(req.OidcConfig.Scopes, ","),
 		})
 	case openapi.ProviderTypeSAML:
-		_, err = samlprovider.New(samlprovider.Options{
+		var samlProvider *samlprovider.Provider
+		samlProvider, err = samlprovider.New(samlprovider.Options{
 			IdpMetadataURL: req.SamlConfig.IdpMetadataURL,
 			GroupsClaim:    req.SamlConfig.GroupsClaim,
 		})
+		// snapshot the identity provider the metadata URL resolved to, so
+		// administrators can verify it points to the intended IdP
+		if err == nil {
+			resolved := samlProvider.ResolvedMetadata()
+			existentConfig.SamlConfig.ResolvedMetadata = &models.ServerAuthSamlResolvedMetadata{
+				EntityID:             resolved.EntityID,
+				SsoURL:               resolved.SsoURL,
+				CertificateExpiresAt: resolved.CertificateExpiresAt,
+				ResolvedAt:           time.Now().UTC(),
+			}
+		}
 	case openapi.ProviderTypeLocal: // noop
 		err = nil
 	default:
@@ -353,6 +365,14 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 		samlConfig = &openapi.ServerAuthSamlConfig{
 			IdpMetadataURL: cfg.SamlConfig.IdpMetadataURL,
 			GroupsClaim:    cfg.SamlConfig.GroupsClaim,
+		}
+		if rm := cfg.SamlConfig.ResolvedMetadata; rm != nil {
+			samlConfig.ResolvedMetadata = &openapi.ServerAuthSamlResolvedMetadata{
+				EntityID:             rm.EntityID,
+				SsoURL:               rm.SsoURL,
+				CertificateExpiresAt: rm.CertificateExpiresAt,
+				ResolvedAt:           rm.ResolvedAt,
+			}
 		}
 	}
 	return &openapi.ServerAuthConfig{

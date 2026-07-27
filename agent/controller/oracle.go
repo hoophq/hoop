@@ -1,0 +1,123 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"libhoop"
+	"strings"
+
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+)
+
+func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
+	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	// Native Oracle access is gated behind a feature flag. When it is off,
+	//It will refuse to open the proxy session instead of starting the TNS handshake.
+	if !featureflagstate.IsEnabled("beta.oracle_native") {
+		log.Infof("session=%s - oracle native access disabled by feature flag, closing session", sessionID)
+		a.sendClientSessionClose(sessionID, "oracle native access is not enabled for this organization")
+		return
+	}
+	streamClient := pb.NewStreamWriter(a.client, pbclient.OracleConnectionWrite, pkt.Spec)
+	connParams := a.connectionParams(sessionID)
+	if connParams == nil {
+		log.Errorf("session=%s - connection params not found", sessionID)
+		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
+		return
+	}
+
+	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+	if clientConnectionID == "" {
+		log.Println("connection id not found in memory")
+		a.sendClientSessionClose(sessionID, "connection id not found, contact the administrator")
+		return
+	}
+
+	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, clientConnectionID)
+	clientObj := a.connStore.Get(clientConnectionIDKey)
+	if serverWriter, ok := clientObj.(io.WriteCloser); ok {
+		if _, err := serverWriter.Write(pkt.Payload); err != nil {
+			// An input guardrail violation surfaces here as a typed error. Close
+			// the session preserving the structured guardrails info (and the
+			// human-readable rule message) the same way the other protocols do,
+			// instead of the generic "fail to write packet".
+			if isGuardrailsError(err) {
+				log.Infof("session=%v - oracle guardrails validation failed, closing session: %v", sessionID, err)
+				a.sendClientSessionCloseFromError(sessionID, err)
+				_ = serverWriter.Close()
+				return
+			}
+			log.Errorf("failed sending packet, err=%v", err)
+			a.sendClientSessionClose(sessionID, "fail to write packet")
+			_ = serverWriter.Close()
+		}
+		return
+	}
+
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeOracleDB)
+	if err != nil {
+		log.Errorf("oracle credentials not found in memory, err=%v", err)
+		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
+		return
+	}
+
+	log.Infof("session=%v - starting oracle connection at %v:%v", sessionID, connenv.host, connenv.port)
+
+	var dataMaskingEntityTypesData string
+	if connParams.DataMaskingEntityTypesData != nil {
+		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
+	}
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
+	// var analyzerMetricsRules string
+	// if connParams.AnalyzerMetricsRules != nil {
+	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	// }
+
+	opts := map[string]string{
+		"sid":      sessionID,
+		"hostname": connenv.host,
+		"port":     connenv.port,
+		"username": connenv.user,
+		"password": connenv.pass,
+		// The hoop client always presents the local Oracle proxy with the fixed
+		// placeholder noop/noop (see client/cmd/connect.go). Oracle auth is
+		// mutual, so the proxy needs the placeholder password to re-key the
+		// handshake and keep the server's response verifiable by real OCI
+		// clients (sqlplus).
+		"client_password":           "noop",
+		"service_name":              connenv.serviceName,
+		"dlp_provider":              connParams.DlpProvider,
+		"dlp_mode":                  connParams.DlpMode,
+		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
+		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
+		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
+		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
+		"dlp_masking_character":     "#",
+		"data_masking_entity_data":  dataMaskingEntityTypesData,
+		"guard_rail_rules":          guardRailRules,
+		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
+		// on more intensive environments this is a problem, we can enable it later based on specific rules
+		// "analyzer_metrics_rules":    analyzerMetricsRules,
+	}
+
+	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Oracle()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed connecting with oracle server, err=%v", err)
+		log.Errorf(errMsg)
+		a.sendClientSessionClose(sessionID, errMsg)
+		return
+	}
+	serverWriter.Run(func(_ int, errMsg string) {
+		a.sendClientSessionClose(sessionID, errMsg)
+	})
+	// write the first packet when establishing the connection
+	_, _ = serverWriter.Write(pkt.Payload)
+	a.connStore.Set(clientConnectionIDKey, serverWriter)
+}

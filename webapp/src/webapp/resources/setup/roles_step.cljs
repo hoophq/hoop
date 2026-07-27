@@ -1,7 +1,7 @@
 (ns webapp.resources.setup.roles-step
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Link Separator Text Switch]]
-   ["lucide-react" :refer [ArrowUpRight Plus Trash2]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link RadioGroup Separator Text Switch]]
+   ["lucide-react" :refer [ArrowUpRight Check Plus ShieldCheck Trash2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
@@ -18,6 +18,10 @@
         connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
         ;; Local state for auth method (default to password)
         auth-method (or (get credentials "auth-method") "password")
+        ;; connection-type selects proxy (default) vs local; stored alongside the
+        ;; role credentials but stripped before the payload is built.
+        connection-type (or (get credentials "connection-type") "proxy")
+        local? (= connection-type "local")
         filtered-fields (filter (fn [field]
                                   (case auth-method
                                     "password" (not= (:key field) "authorized_server_keys")
@@ -25,53 +29,74 @@
                                     true))
                                 configs)]
     [:> Box {:class "space-y-4"}
-     ;; Authentication Method Selector
+     ;; Connection Type: proxy (default) vs local
      [:> Box {:class "space-y-4 mb-6"}
       [:> Heading {:as "h4" :size "3" :weight "medium"}
-       "Authentication Method"]
-      [:> Grid {:columns "2" :gap "3"}
-       [:> Button {:size "2"
-                   :type "button"
-                   :variant (if (= auth-method "password") "solid" "outline")
-                   :on-click #(rf/dispatch [:resource-setup->update-role-credentials
-                                            role-index
-                                            "auth-method"
-                                            "password"])}
-        "Username & Password"]
-       [:> Button {:size "2"
-                   :type "button"
-                   :variant (if (= auth-method "key") "solid" "outline")
-                   :on-click #(rf/dispatch [:resource-setup->update-role-credentials
-                                            role-index
-                                            "auth-method"
-                                            "key"])}
-        "Private Key Authentication"]]]
+       "Connection Type"]
+      [:> RadioGroup.Root
+       {:value connection-type
+        :on-value-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                        role-index "connection-type" %])}
+       [:> Flex {:direction "column" :gap "3"}
+        [:> Box
+         [:> RadioGroup.Item {:value "proxy"} "Proxy to a remote host"]
+         [:> Text {:as "p" :size "2" :color "gray" :ml "5"}
+          "The agent authenticates to a remote SSH server and forwards the session. Configure the target host and credentials below."]]
+        [:> Box
+         [:> RadioGroup.Item {:value "local"} "Local (run on the agent host)"]
+         [:> Text {:as "p" :size "2" :color "gray" :ml "5"}
+          "The agent runs the shell or command directly on the machine where it is deployed. No target host or credentials are required."]]]]]
 
-     ;; SSH Fields (filtered based on auth method)
-     [:> Grid {:columns "1" :gap "4"}
-      (for [field filtered-fields]
-        ^{:key (:key field)}
-        (let [field-key (:key field)
-              field-value (get credentials field-key "")
-              show-source-selector? (= connection-method "secrets-manager")
-              display-value field-value
-              handle-change (fn [e]
-                              (let [new-value (-> e .-target .-value)]
-                                (rf/dispatch [:resource-setup->update-role-credentials
-                                              role-index
-                                              field-key
-                                              new-value])))
-              base-props {:label (:label field)
-                          :placeholder (or (:placeholder field) (str "e.g. " field-key))
-                          :value display-value
-                          :required (:required field)
-                          :type "password"
-                          :on-change handle-change
-                          :start-adornment (when show-source-selector?
-                                             [connection-method/source-selector role-index field-key])}]
-          (if (= (:type field) "textarea")
-            [forms/textarea (dissoc base-props :type :start-adornment)]
-            [forms/input base-props])))]]))
+     ;; Credential configuration is only relevant when proxying to a remote host.
+     (when-not local?
+       [:<>
+        ;; Authentication Method Selector
+        [:> Box {:class "space-y-4 mb-6"}
+         [:> Heading {:as "h4" :size "3" :weight "medium"}
+          "Authentication Method"]
+         [:> Grid {:columns "2" :gap "3"}
+          [:> Button {:size "2"
+                      :type "button"
+                      :variant (if (= auth-method "password") "solid" "outline")
+                      :on-click #(rf/dispatch [:resource-setup->update-role-credentials
+                                               role-index
+                                               "auth-method"
+                                               "password"])}
+           "Username & Password"]
+          [:> Button {:size "2"
+                      :type "button"
+                      :variant (if (= auth-method "key") "solid" "outline")
+                      :on-click #(rf/dispatch [:resource-setup->update-role-credentials
+                                               role-index
+                                               "auth-method"
+                                               "key"])}
+           "Private Key Authentication"]]]
+
+        ;; SSH Fields (filtered based on auth method)
+        [:> Grid {:columns "1" :gap "4"}
+         (for [field filtered-fields]
+           ^{:key (:key field)}
+           (let [field-key (:key field)
+                 field-value (get credentials field-key "")
+                 show-source-selector? (= connection-method "secrets-manager")
+                 display-value field-value
+                 handle-change (fn [e]
+                                 (let [new-value (-> e .-target .-value)]
+                                   (rf/dispatch [:resource-setup->update-role-credentials
+                                                 role-index
+                                                 field-key
+                                                 new-value])))
+                 base-props {:label (:label field)
+                             :placeholder (or (:placeholder field) (str "e.g. " field-key))
+                             :value display-value
+                             :required (:required field)
+                             :type "password"
+                             :on-change handle-change
+                             :start-adornment (when show-source-selector?
+                                                [connection-method/source-selector role-index field-key])}]
+             (if (= (:type field) "textarea")
+               [forms/textarea (dissoc base-props :type :start-adornment)]
+               [forms/input base-props])))]])]))
 
 ;; TCP role form - Based on network.cljs
 (defn tcp-role-form [role-index]
@@ -210,75 +235,215 @@
        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
         "Skip SSL certificate verification for HTTPS connections."]]]]))
 
+(defn- claude-code-cred-display
+  "Display value for a claude-code create-form field, unwrapping the
+  {:value :source} secrets-manager shape into a plain string."
+  [credentials k]
+  (let [v (get credentials k "")]
+    (if (map? v) (or (:value v) "") v)))
+
 (defn claude-code-role-form [role-index]
-  (let [credentials (rf/subscribe [:resource-setup/role-credentials role-index])
-        connection-method (rf/subscribe [:resource-setup/role-connection-method role-index])]
-    (fn [role-index]
-      (let [api-url-value (get @credentials "remote_url" "")
-            api-key-value (get @credentials "HEADER_X_API_KEY" "")
-            show-selector? (= @connection-method "secrets-manager")
-            handle-api-url-change (fn [e]
-                                    (let [new-value (-> e .-target .-value)]
-                                      (rf/dispatch [:resource-setup->update-role-credentials
-                                                    role-index
-                                                    "remote_url"
-                                                    new-value])))
-            handle-api-key-change (fn [e]
-                                    (let [new-value (-> e .-target .-value)]
-                                      (rf/dispatch [:resource-setup->update-role-credentials
-                                                    role-index
-                                                    "HEADER_X_API_KEY"
-                                                    new-value])))]
+  (let [creds @(rf/subscribe [:resource-setup/role-credentials role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        vertex-flag? @(rf/subscribe [:feature-flag/enabled? "experimental.claude_code_vertex"])
+        provider (let [p (claude-code-cred-display creds "provider")]
+                   (if (empty? p) "anthropic" p))
+        vertex? (= provider "vertex")
+        ;; Show the Vertex option when the feature is enabled, or when the
+        ;; role is already set to Vertex (so it never hides existing config).
+        show-vertex-option? (or vertex-flag? vertex?)
+        api-url-value (claude-code-cred-display creds "remote_url")
+        api-key-value (claude-code-cred-display creds "HEADER_X_API_KEY")
+        region-value (claude-code-cred-display creds "GCP_REGION")
+        project-value (claude-code-cred-display creds "GCP_PROJECT_ID")
+        sa-json-value (claude-code-cred-display creds "GCP_SERVICE_ACCOUNT_JSON")
+        show-selector? (= connection-method "secrets-manager")
+        update-cred (fn [k]
+                      (fn [e]
+                        (rf/dispatch [:resource-setup->update-role-credentials
+                                      role-index k (-> e .-target .-value)])))]
 
-        ;; Initialize default values
-        (when (empty? api-url-value)
-          (rf/dispatch [:resource-setup->update-role-credentials
-                        role-index
-                        "remote_url"
-                        "https://api.anthropic.com"]))
+    ;; Initialize default values. REMOTE_URL is only relevant for the
+    ;; Anthropic provider; Vertex derives it from the region at submit time.
+    (when (and (not vertex?) (empty? api-url-value))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "remote_url"
+                    "https://api.anthropic.com"]))
 
-        (when (nil? (get credentials "insecure"))
-          (rf/dispatch [:resource-setup->update-role-credentials
-                        role-index
-                        "insecure"
-                        false]))
+    (when (nil? (get creds "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "insecure"
+                    false]))
 
-        [:> Box {:class "space-y-radix-6"}
-         [:> Box {:class "space-y-radix-4"}
-          [:> Heading {:size "3"} "Basic info"]
+    [:> Box {:class "space-y-radix-6"}
+     [:> Box {:class "space-y-radix-4"}
+      [:> Heading {:size "3"} "Basic info"]
 
-          [forms/input {:label "Anthropic API URL"
-                        :placeholder "https://api.anthropic.com"
-                        :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
-                        :required true
-                        :type "text"
-                        :on-change handle-api-url-change
-                        :start-adornment (when show-selector?
-                                           [connection-method/source-selector role-index "remote_url"])}]
+      (when show-vertex-option?
+        [forms/select
+         {:label "Provider"
+          :options [{:text "Anthropic API" :value "anthropic"}
+                    {:text "Google Vertex AI" :value "vertex"}]
+          :selected provider
+          :on-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                    role-index "provider" %])}])
 
-          [forms/input {:label "Anthropic API Key"
-                        :placeholder "sk-ant-..."
-                        :value api-key-value
-                        :required true
-                        :type "password"
-                        :on-change handle-api-key-change
-                        :start-adornment (when show-selector?
-                                           [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]]
+      (if vertex?
+        [:<>
+         [:> Callout.Root {:size "1" :color "gray"}
+          [:> Callout.Text
+           "Claude Code runs in Vertex mode against hoop. hoop mints a short-lived "
+           "token from the service account below and proxies requests to Google Vertex AI."]]
 
-         [configuration-inputs/http-headers-section role-index]
+         [forms/input {:label "GCP Region"
+                       :placeholder "us-east5"
+                       :value region-value
+                       :required true
+                       :type "text"
+                       :on-change (update-cred "GCP_REGION")}]
 
-         [:> Flex {:align "center" :gap "3"}
-          [:> Switch {:checked (get credentials "insecure" false)
-                      :size "3"
-                      :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
-                                                      role-index
-                                                      "insecure"
-                                                      %])}]
-          [:> Box
-           [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-            "Allow insecure SSL"]
-           [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-            "Skip SSL certificate verification for HTTPS connections."]]]]))))
+         [forms/input {:label "GCP Project ID"
+                       :placeholder "my-gcp-project"
+                       :value project-value
+                       :required true
+                       :type "text"
+                       :on-change (update-cred "GCP_PROJECT_ID")}]
+
+         [forms/textarea {:label "Service Account JSON"
+                          :placeholder "{\n  \"type\": \"service_account\",\n  ...\n}"
+                          :value sa-json-value
+                          :required true
+                          :rows 8
+                          :on-change (update-cred "GCP_SERVICE_ACCOUNT_JSON")}]]
+
+        [:<>
+         [forms/input {:label "Anthropic API URL"
+                       :placeholder "https://api.anthropic.com"
+                       :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
+                       :required true
+                       :type "text"
+                       :on-change (update-cred "remote_url")
+                       :start-adornment (when show-selector?
+                                          [connection-method/source-selector role-index "remote_url"])}]
+
+         [forms/input {:label "Anthropic API Key"
+                       :placeholder "sk-ant-..."
+                       :value api-key-value
+                       :required true
+                       :type "password"
+                       :on-change (update-cred "HEADER_X_API_KEY")
+                       :start-adornment (when show-selector?
+                                          [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]])]
+
+     [configuration-inputs/http-headers-section role-index]
+
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get creds "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index
+                                                  "insecure"
+                                                  %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
+
+
+;; MCP role form - HTTP proxy subtype whose endpoint is protected by OAuth
+;; (e.g. https://mcp.figma.com/mcp). The admin resolves the MCP authorization
+;; here at setup: Hoop drives the OAuth login and freezes the obtained access
+;; token into the connection's HEADER_AUTHORIZATION credential.
+(defn mcp-role-form [role-index]
+  (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        mcp-state @(rf/subscribe [:mcp-oauth/state role-index])
+        remote-url-value (get credentials "remote_url" "")
+        authorized? (not (cs/blank? (get credentials "HEADER_AUTHORIZATION" "")))
+        status (:status mcp-state :idle)
+        busy? (contains? #{:authorizing :pending} status)
+        show-selector? (= connection-method "secrets-manager")
+        handle-remote-url-change (fn [e]
+                                   (rf/dispatch [:resource-setup->update-role-credentials
+                                                 role-index "remote_url" (-> e .-target .-value)]))]
+    (when (nil? (get credentials "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials role-index "insecure" false]))
+    [:> Box {:class "space-y-6"}
+     ;; Server URL
+     [forms/input {:label "MCP Server URL"
+                   :placeholder "e.g. https://mcp.linear.app"
+                   :value remote-url-value
+                   :required true
+                   :type "text"
+                   :on-change handle-remote-url-change
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "remote_url"])}]
+
+     ;; Authorization section
+     [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "MCP Authorization"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Log in to the MCP server to obtain an access token. The token is stored in this connection's Authorization header."]]
+
+      ;; Optional pre-registered client credentials. Left blank, Hoop registers
+      ;; a client dynamically with the MCP server. These inputs are auth-flow
+      ;; only and are never stored as connection environment variables.
+      [:> Box {:class "space-y-3"}
+       [forms/input {:label "Client ID (optional)"
+                     :placeholder "Leave blank to register automatically"
+                     :value (or (:client-id mcp-state) "")
+                     :type "text"
+                     :on-change #(rf/dispatch [:mcp-oauth/set-field role-index :client-id (-> % .-target .-value)])}]
+       [forms/input {:label "Client Secret (optional)"
+                     :placeholder "Only if your client requires one"
+                     :value (or (:client-secret mcp-state) "")
+                     :type "password"
+                     :on-change #(rf/dispatch [:mcp-oauth/set-field role-index :client-secret (-> % .-target .-value)])}]]
+
+      ;; Status + action
+      (cond
+        authorized?
+        [:> Flex {:align "center" :justify "between" :gap "3"}
+         [:> Flex {:align "center" :gap "2"}
+          [:> Check {:size 16 :class "text-[--grass-11]"}]
+          [:> Text {:size "2" :weight "medium" :class "text-[--grass-11]"}
+           "Authorized — access token stored"]]
+         [:> Flex {:gap "2"}
+          [:> Button {:size "2" :type "button" :variant "soft" :disabled busy?
+                      :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
+           "Re-authorize"]
+          [:> Button {:size "2" :type "button" :variant "ghost" :color "red" :pt "3"
+                      :on-click #(rf/dispatch [:mcp-oauth/clear role-index])}
+           "Clear"]]]
+
+        :else
+        [:> Box {:class "space-y-2"}
+         [:> Button {:size "2" :type "button" :variant "solid" :disabled busy?
+                     :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
+          [:> ShieldCheck {:size 16}]
+          (if busy? "Authorizing…" "Authorize with MCP")]
+         (when (= status :error)
+           [:> Text {:as "p" :size "2" :class "text-[--red-11]"}
+            (or (:error mcp-state) "Authorization failed")])])]
+
+     ;; Optional extra headers (forwarded alongside the Authorization header)
+     [configuration-inputs/http-headers-section role-index]
+
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get credentials "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index "insecure" %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
 
 
 ;; Custom/Metadata-driven role form (includes databases)
@@ -378,6 +543,49 @@
      [:> Text {:size "2" :color "gray" :mt "2"}
       "Example: 'python', '-m', 'http.server', '8000'"]]]])
 
+(defn role-attributes-field
+  "Per-role Attributes selector. While a protection profile is active, its
+  managed attribute appears pre-selected as a distinct blue pill. Removing
+  it opts the role out of the profile (the attribute is not sent); it can
+  be re-added from the dropdown before submitting. When kept, the attribute
+  is included in the role's attributes at submit time."
+  [role-index]
+  (let [attributes-data @(rf/subscribe [:attributes/list-data])
+        selected @(rf/subscribe [:resource-setup/role-attributes role-index])
+        skip-profile? @(rf/subscribe [:resource-setup/role-skip-protection-profile? role-index])
+        managed-pill @(rf/subscribe [:protection-profile/managed-pill])]
+    [:> Box {:class "mt-4"}
+     [multi-select/creatable-select
+      {:id (str "role-attributes-" role-index)
+       :name (str "role-attributes-" role-index)
+       :label "Attributes"
+       :placeholder "Select or type to create"
+       ;; Managed attributes come through :managed-options with their own
+       ;; styling — drop them from the regular option list to avoid duplicates.
+       :options (into []
+                      (comp (remove :managed_by)
+                            (map #(hash-map :value (:name %) :label (:name %))))
+                      attributes-data)
+       :default-value (mapv #(hash-map :value % :label %) selected)
+       :managed-options (when managed-pill
+                          [{:value (:attribute-name managed-pill)
+                            :label (:display-name managed-pill)}])
+       :managed-value (when (and managed-pill (not skip-profile?))
+                        [(:attribute-name managed-pill)])
+       :on-managed-change (fn [managed-values]
+                            (rf/dispatch [:resource-setup->set-role-skip-protection-profile
+                                          role-index
+                                          (empty? managed-values)]))
+       :on-change (fn [selected-options]
+                    (rf/dispatch [:resource-setup->update-role-attributes role-index
+                                  (mapv :value (js->clj selected-options :keywordize-keys true))]))
+       :on-create-option (fn [input-value]
+                           (rf/dispatch [:attributes/create-inline {:name input-value}])
+                           (rf/dispatch [:resource-setup->update-role-attributes role-index
+                                         (conj selected input-value)]))}]
+     [:> Text {:size "2" :class "text-[--gray-11]"}
+      "Determine how protection rules and access policies apply to this role."]]))
+
 (defn role-configuration [role-index]
   (let [roles @(rf/subscribe [:resource-setup/roles])
         role (get roles role-index)
@@ -387,7 +595,12 @@
         has-env-vars? (or (contains? #{"linux-vm"} resource-subtype)
                           (contains? constants/http-proxy-subtypes resource-subtype))
         has-credentials? (seq credentials-config)
-        should-show-connection-method? (or has-credentials? has-env-vars?)
+        ;; Local SSH has no credentials, so the credential-source selector is
+        ;; irrelevant and hidden.
+        local-ssh? (and (= resource-subtype "ssh")
+                        (= (get (:credentials role) "connection-type") "local"))
+        should-show-connection-method? (and (or has-credentials? has-env-vars?)
+                                            (not local-ssh?))
         can-remove? (> (count roles) 1)]
 
     [:> Grid {:columns "7" :gap "7"}
@@ -410,7 +623,8 @@
                      :required true
                      :on-change #(rf/dispatch [:resource-setup->update-role-name
                                                role-index
-                                               (-> % .-target .-value)])}]]
+                                               (-> % .-target .-value)])}]
+       [role-attributes-field role-index]]
       (when should-show-connection-method?
         [connection-method/main role-index])
 
@@ -425,6 +639,9 @@
         (= resource-subtype "claude-code")
         [claude-code-role-form role-index]
 
+        (= resource-subtype "mcp")
+        [mcp-role-form role-index]
+
         (contains? constants/http-proxy-subtypes resource-subtype)
         [http-proxy-role-form role-index]
 
@@ -433,6 +650,12 @@
 
         (= resource-subtype "kubernetes-token")
         [kubernetes-token-role-form role-index]
+
+        ;; BigQuery with IAM federation: credentials are managed by the
+        ;; federation config; no static credential form needed here.
+        (and (= resource-subtype "bigquery")
+             (= (:connection-method (get roles role-index)) "iam_federation"))
+        nil
 
         :else
         [metadata-driven-role-form role-index])
@@ -450,10 +673,16 @@
 
 ;; Main roles step component
 (defn main []
-  (let [roles @(rf/subscribe [:resource-setup/roles])
-        context @(rf/subscribe [:resource-setup/context])]
+  ;; One fetch per wizard mount, regardless of how many roles are added:
+  ;; the attribute catalog feeds every role's Attributes field and the
+  ;; active protection profile feeds its fixed pill.
+  (rf/dispatch [:attributes/list])
+  (rf/dispatch [:protection-profile/fetch])
+  (fn []
+    (let [roles @(rf/subscribe [:resource-setup/roles])
+          context @(rf/subscribe [:resource-setup/context])]
 
-    [:form {:id "roles-form"
+      [:form {:id "roles-form"
             :on-submit (fn [e]
                          (.preventDefault e)
                          ;; Add pending env vars for all roles before submitting
@@ -513,4 +742,4 @@
                        :type "button"
                        :on-click #(rf/dispatch [:resource-setup->add-role])}
             [:> Plus {:size 16}]
-            "Add New Role"]]]])]]))
+            "Add New Role"]]]])]])))

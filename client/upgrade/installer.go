@@ -93,8 +93,8 @@ func (i *Installer) Install(version string, platform Platform, store *Store) (Ve
 		)
 	}
 
-	extractedBinary := filepath.Join(tmpDir, binaryName)
-	if err := extractHoopBinary(tarballPath, extractedBinary); err != nil {
+	extractedBinary := filepath.Join(tmpDir, platform.ExecutableName())
+	if err := extractHoopBinary(tarballPath, extractedBinary, platform.ExecutableName()); err != nil {
 		return VersionEntry{}, err
 	}
 
@@ -198,9 +198,13 @@ func (i *Installer) downloadFile(url, dst string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// extractHoopBinary extracts the entry named "hoop" (matching by basename)
+// extractHoopBinary extracts the entry whose basename equals wantName
 // from a gzip+tar archive into dst. Any other entries are skipped.
-func extractHoopBinary(tarball, dst string) error {
+//
+// wantName is platform-dependent: the Windows release tarball carries
+// hoop.exe while the Unix tarballs carry hoop (see Platform.ExecutableName),
+// so callers pass the name for the platform they are installing.
+func extractHoopBinary(tarball, dst, wantName string) error {
 	f, err := os.Open(tarball)
 	if err != nil {
 		return fmt.Errorf("failed opening tarball %s: %w", tarball, err)
@@ -223,7 +227,7 @@ func extractHoopBinary(tarball, dst string) error {
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		if filepath.Base(hdr.Name) != binaryName {
+		if filepath.Base(hdr.Name) != wantName {
 			continue
 		}
 		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
@@ -241,5 +245,5 @@ func extractHoopBinary(tarball, dst string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("hoop binary not found inside %s", tarball)
+	return fmt.Errorf("hoop binary (%s) not found inside %s", wantName, tarball)
 }

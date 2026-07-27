@@ -82,6 +82,5 @@ docker run --rm --name hoopdev \
   --add-host=host.docker.internal:host-gateway \
   -v ./dist/dev/bin/:/app/bin/ \
   -v ./dist/dev/root/.ssh:/root/.ssh \
-  -v ./rootfs/app/migrations/:/app/migrations/ \
   -v ./dist/dev/resources/:/app/ui/ \
   -it hoopdev /app/bin/entrypoint.sh

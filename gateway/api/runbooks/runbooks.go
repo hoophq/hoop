@@ -40,7 +40,7 @@ import (
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+	p, err := models.GetPluginByName(models.DB, ctx.GetOrgID(), plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin runbooks not found"})
@@ -82,7 +82,7 @@ func List(c *gin.Context) {
 func ListByConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connectionName := c.Param("name")
-	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+	p, err := models.GetPluginByName(models.DB, ctx.GetOrgID(), plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin runbooks not found"})
@@ -232,6 +232,7 @@ func RunExec(c *gin.Context) {
 		Status:               string(openapi.SessionStatusOpen),
 		SessionBatchID:       req.SessionBatchID,
 		ExitCode:             nil,
+		Origin:               proto.SessionOriginRunbooks,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
@@ -329,7 +330,7 @@ func getConnection(ctx models.UserContext, c *gin.Context, connectionName string
 }
 
 func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models.Connection) (*runbooks.Config, string, error) {
-	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+	p, err := models.GetPluginByName(models.DB, ctx.GetOrgID(), plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
@@ -368,7 +369,7 @@ func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models
 
 // GetRunbookConfig returns the runbook if the plugin is enabled and there's an existent configuration set
 func GetRunbookConfig(orgID string) (*runbooks.Config, error) {
-	p, err := models.GetPluginByName(orgID, plugintypes.PluginRunbooksName)
+	p, err := models.GetPluginByName(models.DB, orgID, plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
 		return nil, nil

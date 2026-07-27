@@ -138,6 +138,39 @@ func ParseQuery(payload []byte) []byte {
 	}
 }
 
+// CopyBuffer reads PostgreSQL wire-protocol packets from src and writes each
+// encoded packet to dst. onCancelRequest is called with the backend PID when a
+// CancelRequest is received; returning true signals that the caller has
+// scheduled src to be closed (e.g. after a 4-second delay), so any subsequent
+// read error is treated as a clean EOF.
+func CopyBuffer(dst io.Writer, src io.Reader, onCancelRequest func(pid uint32) bool) (int64, error) {
+	pendingClose := false
+	var written int64
+	for {
+		pkt, err := Decode(src)
+		if err != nil {
+			if err == io.EOF || pendingClose {
+				return written, nil
+			}
+			return written, err
+		}
+		if pkt.IsCancelRequest() && onCancelRequest != nil {
+			frame := pkt.Frame()
+			if len(frame) >= 8 {
+				pid := binary.BigEndian.Uint32(frame[4:8])
+				if onCancelRequest(pid) {
+					pendingClose = true
+				}
+			}
+		}
+		n, werr := dst.Write(pkt.Encode())
+		written += int64(n)
+		if werr != nil {
+			return written, werr
+		}
+	}
+}
+
 func NewFatalError(msg string, v ...any) *Packet {
 	return newServerError(LevelFatal, ConnectionFailure, msg, v...)
 }

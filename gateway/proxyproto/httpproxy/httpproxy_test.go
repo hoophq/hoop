@@ -563,3 +563,90 @@ func TestResponseChannelBufferSize(t *testing.T) {
 		assert.Contains(t, body, fmt.Sprintf("chunk-%d", i))
 	}
 }
+
+// --- session reuse / ownership tests ----------------------------------------
+
+// TestGetOrCreateSessionConcurrentReuse verifies that when a live session
+// already exists for a proxy token, a burst of concurrent requests all reuse
+// that single session instead of each minting their own. This is the
+// steady-state half of the session-stampede fix: once a session is registered,
+// no concurrent caller creates a duplicate.
+func TestGetOrCreateSessionConcurrentReuse(t *testing.T) {
+	srv := &HttpProxyServer{}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	const key = "httpproxy-secret-hash"
+	existing := &httpProxySession{sid: "live-session", ctx: ctx}
+	srv.sessionStore.Store(key, existing)
+
+	const n = 64
+	var wg sync.WaitGroup
+	results := make([]*httpProxySession, n)
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = srv.getOrCreateSession(key, "")
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		require.NoErrorf(t, errs[i], "caller %d", i)
+		assert.Samef(t, existing, results[i], "caller %d must reuse the live session", i)
+	}
+}
+
+// TestGetSessionOrReleaseEvictsCancelledSession verifies a cancelled session is
+// never handed back and is evicted from the store, so the next caller mints a
+// fresh one instead of routing onto a dead stream.
+func TestGetSessionOrReleaseEvictsCancelledSession(t *testing.T) {
+	srv := &HttpProxyServer{}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(fmt.Errorf("expired"))
+
+	const key = "httpproxy-secret-hash"
+	dead := &httpProxySession{sid: "dead-session", ctx: ctx}
+	srv.sessionStore.Store(key, dead)
+
+	sess, err := srv.getSessionOrRelease(key)
+	require.Error(t, err)
+	assert.Nil(t, sess)
+
+	_, ok := srv.sessionStore.Load(key)
+	assert.False(t, ok, "cancelled session must be evicted from the store")
+}
+
+// TestSessionStoreCleanupIsOwnershipAware locks in the invariant the cleanup
+// paths rely on: a stale session removing itself (CompareAndDelete with its own
+// pointer) must never evict a newer session registered under the same key.
+// Without this, a cancelled duplicate's cleanup would orphan the live session
+// as a perpetual "open" row — the root cause of the leaked sessions.
+func TestSessionStoreCleanupIsOwnershipAware(t *testing.T) {
+	srv := &HttpProxyServer{}
+	const key = "httpproxy-secret-hash"
+
+	ctxA, cancelA := context.WithCancelCause(context.Background())
+	defer cancelA(nil)
+	ctxB, cancelB := context.WithCancelCause(context.Background())
+	defer cancelB(nil)
+	sessA := &httpProxySession{sid: "A", ctx: ctxA}
+	sessB := &httpProxySession{sid: "B", ctx: ctxB}
+
+	// B supersedes A under the same key.
+	srv.sessionStore.Store(key, sessA)
+	srv.sessionStore.Store(key, sessB)
+
+	// A's late cleanup must be a no-op for B.
+	srv.sessionStore.CompareAndDelete(key, sessA)
+	got, ok := srv.sessionStore.Load(key)
+	require.True(t, ok, "B must survive A's stale cleanup")
+	assert.Same(t, sessB, got)
+
+	// B removes only itself.
+	srv.sessionStore.CompareAndDelete(key, sessB)
+	_, ok = srv.sessionStore.Load(key)
+	assert.False(t, ok, "B must remove itself")
+}

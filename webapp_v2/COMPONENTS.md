@@ -24,6 +24,19 @@ import PageLoader from '@/components/PageLoader'
 ```
 Use with `useMinDelay` to prevent flash on fast requests.
 
+### `AuthPageLoader`
+Full-screen dark loading state for auth-flow routes (login redirect, OAuth callbacks, session verification). Auth screens are always dark — there is no light variant — so the dark styling is baked in. For loaders inside the (light) app shell, use `PageLoader`.
+```jsx
+import AuthPageLoader from '@/components/AuthPageLoader'
+
+<AuthPageLoader message="Verifying authentication..." />
+<AuthPageLoader
+  error
+  message="Authentication failed"
+  description="Redirecting to login..."
+/>
+```
+
 ### `EmptyState` (`src/layout/EmptyState/`)
 Empty list / zero-data state with icon, title, description, and optional CTA.
 ```jsx
@@ -40,11 +53,12 @@ import { Zap } from 'lucide-react'
 `action` is optional — omit when the user has no permission to create.
 
 ### `CodeSnippet`
-Scrollable code block with copy-to-clipboard button.
+Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
 ```jsx
 import CodeSnippet from '@/components/CodeSnippet'
 
 <CodeSnippet code="docker run ..." />
+<CodeSnippet code={mcpConfigJson} variant="gray" />
 ```
 
 ### `Table`
@@ -142,6 +156,9 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
 
+### `Pill` (theme-level, no wrapper)
+Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
+
 ### `Badge`
 Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
 ```jsx
@@ -208,6 +225,22 @@ import MultiSelect from '@/components/MultiSelect'
 />
 ```
 
+### `Radio`
+Radio input. Re-exports `Radio.Group` and `Radio.Indicator` so call sites never import from Mantine directly. `Radio.Indicator` renders the radio visual without an `<input>` — use it inside buttons/cards (e.g. selectable option cards) where a nested input would be invalid markup.
+```jsx
+import Radio from '@/components/Radio'
+
+<Radio.Group value={value} onChange={setValue} label="Mode">
+  <Radio value="a" label="Option A" />
+  <Radio value="b" label="Option B" />
+</Radio.Group>
+
+// Inside a selectable card (no real input):
+<UnstyledButton role="radio" aria-checked={selected} onClick={onSelect}>
+  <Radio.Indicator checked={selected} size="sm" />
+</UnstyledButton>
+```
+
 ### `Switch`
 Toggle switch for boolean settings.
 ```jsx
@@ -223,6 +256,27 @@ import TextInput from '@/components/TextInput'
 
 <TextInput label="Name" placeholder="e.g. my-key" value={name} onChange={(e) => setName(e.currentTarget.value)} />
 ```
+
+### `SourcedInput`
+Input paired with an optional credential source picker (Manual / Vault KV / AWS Secrets Manager / AWS IAM Role) glued to its left. The picker carries the seam border so the two components meet at a single shared edge and read as one control. When `sources` is empty or has a single entry, only the input renders.
+```jsx
+import SourcedInput from '@/components/SourcedInput'
+
+<SourcedInput
+  label="Host"
+  required
+  type="password"
+  value={value}
+  onChange={setValue}
+  source={source}
+  sources={['manual-input', 'aws-secrets-manager']}
+  onSourceChange={setSource}
+/>
+
+// Sizes match Mantine inputs — default `sm`, accepts xs/sm/md/lg/xl:
+<SourcedInput size="md" {...props} />
+```
+Supports `type="text" | "password" | "textarea"` and `size="xs" | "sm" | "md" | "lg" | "xl"` (default `sm`, Mantine's input default). Heights track Mantine's `--input-height-*` variables so a `size="md"` SourcedInput lines up with a `size="md"` TextInput on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -292,6 +346,21 @@ const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 ```
 Props: `message` (string), `variant` (`'info'` | `'limit'`, default `'info'`). Always gate the render on `useUserStore.isFreeLicense` at the call site so it disappears for Enterprise users.
 
+### `EnterpriseBanner`
+Dark-navy enterprise upsell banner pinned to feature pages for free-plan users (activation journey). React counterpart of the CLJS `webapp.features.activation-journey.views.enterprise-banner`, sharing the same visual (`--sidebar-bg`, the app's sidebar navy). The built-in "Talk to Sales" button opens Intercom when analytics tracking is enabled (booting it first if needed, via `useUserStore.showIntercomMessage`), otherwise `https://hoop.dev/meet` in a new tab.
+```jsx
+import EnterpriseBanner from '@/components/EnterpriseBanner'
+import { useUserStore } from '@/stores/useUserStore'
+
+const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+
+{isFreeLicense && <EnterpriseBanner />}
+
+// Custom copy
+<EnterpriseBanner title="Protect your resource" subtitle="..." badgeLabel="Enterprise" />
+```
+Props (all optional): `title` (default `"Unlock all protection controls"`), `subtitle` (default `"Unlock unlimited Guardrails, Masking Rules, AI Session Analyzer, and more."`), `badgeLabel` (default `"Enterprise"`). Always gate the render on `useUserStore.isFreeLicense` at the call site. Use `FreeLicenseCallout` for inline informational/limit callouts; use this for the pinned dark upsell surface.
+
 ### `ValueFilter`
 Popover-backed single-value filter dropdown — icon trigger, search input, and a scrollable list. Used for filtering tables by a single column value (resource, type, attribute, tag, …).
 ```jsx
@@ -308,10 +377,148 @@ import { Rotate3d } from 'lucide-react'
 />
 ```
 Props: `icon` (lucide component), `label` (string), `values` (string[]), `selected` (string | null), `onSelect(value)`, `onClear()`.
+### `Autocomplete`
+Single-value combobox: free-typing input with autocompleted suggestions. Differs from `Select` in that the user can type any value (not just the ones in `data`).
+```jsx
+import Autocomplete from '@/components/Autocomplete'
+
+<Autocomplete
+  label="Key"
+  data={['team', 'environment', 'region']}
+  value={value}
+  onChange={setValue}
+/>
+```
+
+### `NumberInput`
+Numeric input. Supports `min`, `max`, `step`, and clamping.
+```jsx
+import NumberInput from '@/components/NumberInput'
+
+<NumberInput label="Approvals" min={1} value={n} onChange={setN} />
+```
+
+### `TagsInput`
+Multi-tag creatable input. Each tag becomes a chip; press Enter (or any `splitChars`) to commit.
+```jsx
+import TagsInput from '@/components/TagsInput'
+
+<TagsInput
+  label="Command Arguments"
+  value={args}
+  onChange={setArgs}
+  splitChars={[',']}
+/>
+```
+
+
+---
+
+### `AsyncValueFilter`
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+```jsx
+import AsyncValueFilter from '@/components/AsyncValueFilter'
+import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import { Shapes } from 'lucide-react'
+
+const roles = usePaginatedConnections({ pageSize: 50 })
+
+<AsyncValueFilter
+  icon={Shapes}
+  label="Resource Role"
+  placeholder="Search resource roles"
+  selected={selectedRole}
+  onSelect={setSelectedRole}
+  onClear={() => setSelectedRole(null)}
+  options={roles.options}
+  loading={roles.loading}
+  hasMore={roles.hasMore}
+  onLoadMore={roles.loadMore}
+  searchValue={roles.searchValue}
+  onSearchChange={roles.setSearch}
+  onOpen={roles.ensureLoaded}
+/>
+```
+Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+
+---
+
+### `PaginatedMultiSelect`
+Generic multi-select for a **paginated, server-searched** option source — built on Mantine `Combobox`/`PillsInput` with infinite scroll (`useIntersection`). Presentational/controlled (no fetching). `selectedOptions` supplies labels for already-selected values so chips render correctly even when the selection is not on the current page. For connections, use the `ConnectionsMultiSelect` wrapper below rather than wiring this directly.
+Props: `label`, `placeholder`, `required`, `disabled`, `value` (ids[]), `onChange(ids)`, `options`, `selectedOptions`, `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onDropdownOpen()`.
+
+---
+
+### `ConnectionsMultiSelect`
+Resource-role (connection) multi-select with infinite-scroll pagination + server search. Composes `usePaginatedConnections` + `PaginatedMultiSelect` and resolves labels for already-selected ids on demand via `?connection_ids=` (so edit-mode chips show names without loading every connection). This is the React port of CLJS `connections-select` — use it anywhere a feature needs a connection picker.
+```jsx
+import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
+
+<ConnectionsMultiSelect
+  value={form.connectionIds}
+  onChange={(ids) => setField({ connectionIds: ids })}
+/>
+```
+Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`.
+
+---
+
+### `FeaturePromotion`
+Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, and future Access Control / Guardrails / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
+```jsx
+import FeaturePromotion from '@/components/FeaturePromotion'
+import { FolderLock } from 'lucide-react'
+
+<FeaturePromotion
+  featureName="Live Data Masking"
+  mode="empty-state"
+  image="data-masking-promotion.png"
+  description="Zero-config DLP policies…"
+  featureItems={[{ icon: <FolderLock size={20} />, title: '…', description: '…' }]}
+  onPrimaryClick={goCreate}
+  primaryText="Configure Live Data Masking"
+  // OR the docs/deprecation path:
+  // docsHref={docsUrl.features.aiDatamasking} docsText="Go to docs" extraInformation="…"
+/>
+```
+Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+
+---
+
+### `FullBleed` (`src/layout/FullBleed/`)
+Lets a page render edge-to-edge and exactly one viewport tall **inside** the padded `PageLayout` — cancels the page padding (single-sourced from `PageLayout`'s `PAGE_PADDING`) and fills the `AppShell.Main` height. Use for hero/promotion panels.
+```jsx
+import FullBleed from '@/layout/FullBleed'
+
+<FullBleed><FeaturePromotion … /></FullBleed>
+```
 
 ---
 
 ## Page Patterns
+
+### Configure Role page (`pages/Roles/Configure/`)
+Reference implementation for a **multi-tab edit page with write-only secrets and a sticky footer**:
+- `index.jsx` orchestrates four `Tabs.Panel`s with `keepMounted` so HTML5 form validation can see required inputs even when the user is on a different tab.
+- `store.js` keeps `drafts` (editable scalars/arrays) and `stagedSecrets` (Replace/Delete/New on individual credentials) separate, plus a `baseline` snapshot for diffing. `save()` PATCHes only keys that actually diverged.
+- `FormFooter.jsx` is sticky via `position: sticky; bottom: 0` in a small CSS Module — the only sanctioned use of CSS Modules in this page because Mantine props can't express a directional border.
+- `SecretField.jsx` implements the write-only credential UX with states `set` / `editing` / `deleted` / `new`. Always uses `SecretField` instead of a raw `PasswordInput` for any credential field — the current value is never re-displayed.
+- `PredefinedFieldsCredentials.jsx` is the shared renderer driven by a static `{ key, label, required, placeholder, type }[]` schema (`utils/credentialsSchema.js`). Every fixed-schema connection type (catalog DBs, SSH, HTTP proxy, Claude Code, Kubernetes token) reuses it.
+- `CustomCredentials.jsx` handles the free-form `custom` type: list existing envvars + an "Add new variable" row that stages keys with `action: 'new'`.
+
+When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
+
+> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
+> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
+> protection-profile attributes render as indigo award pills (removable and
+> re-addable like any other — removing one detaches the role from the
+> profile on save), user attributes as plain pills. Deliberately NOT built on
+> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
+> individual selected pills) nor on `components/PaginatedMultiSelect` (its
+> contract is pagination/server-search specific, and it also only renders
+> uniform pills). When the React resource-creation wizard needs the same
+> control, graduate this to `src/components/` and consider extracting a
+> shared PillsInput base with `PaginatedMultiSelect`.
 
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
@@ -348,6 +555,15 @@ const showLoader = useMinDelay(loading, 500)
 if (showLoader) return <PageLoader />
 ```
 
+### `usePaginatedConnections({ pageSize = 50 })`
+Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
+```jsx
+const roles = usePaginatedConnections({ pageSize: 50 })
+// roles.options, roles.loading, roles.hasMore, roles.searchValue
+// roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
+```
+Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+
 ---
 
 ## Stores (`src/stores/`)
@@ -374,10 +590,15 @@ useAuthStore.getState().token
 | `api.js` | Base Axios instance — adds Bearer token, handles 401 logout |
 | `auth.js` | Login, register, OAuth, user info, server info |
 | `agents.js` | CRUD `/agents` and `/agents/:id` |
-| `connections.js` | GET `/connections` list |
+| `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
+| `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
+| `guardrails.js` | GET `/guardrails` |
+| `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
+| `attributes.js` | CRUD `/attributes` |
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 | `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
+| `protectionProfiles.js` | GET/PUT `/orgs/protection-profile` (protection rules profile; `profile: null` = manual) |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
 
@@ -387,8 +608,9 @@ When adding a new service file, follow the pattern in `services/agents.js`.
 
 Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
 same library the legacy CLJS app uses — and renders through
-`src/components/Snackbar/Toast.jsx`, a one-to-one port of the legacy toast, so
-snackbars appear at the **top-right** and look identical across React and CLJS routes.
+`src/components/Snackbar/Toast.jsx`, a one-to-one port of the legacy
+`webapp.components.toast`, so snackbars appear at the **top-right** and look
+identical across React and CLJS routes.
 The single `<Toaster>` is mounted in `src/App.jsx`.
 
 ```js

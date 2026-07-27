@@ -38,13 +38,20 @@ type FetchConnectionsOptions struct {
 	// HTTPClient lets callers inject a client with custom TLS / proxies.
 	// Defaults to a 15-second-timeout client.
 	HTTPClient *http.Client
+
+	// OnNewToken, when set, is invoked with the rotated access token if
+	// the gateway's response carries an X-New-Access-Token header. See
+	// token.go for the rotation contract.
+	OnNewToken func(newToken string)
 }
 
 // FetchConnections returns the list of connections available to the
-// current user that are tunnelable (TCP-style protocols). Connections
-// that are not tunnelable (SSH, command-line, http-proxy, kubernetes,
-// RDP, SSM, etc.) are silently filtered out — they need a protocol-
-// specific client, not a transparent IP tunnel.
+// current user that are tunnelable (TCP-style protocols plus
+// httpproxy, which speaks plain HTTP to the tunnel while the agent
+// terminates TLS to the upstream). Connections that are not tunnelable
+// (SSH, command-line, kubernetes, RDP, SSM, etc.) are silently
+// filtered out — they need a protocol-specific client, not a
+// transparent IP tunnel.
 func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Connection, error) {
 	if opts.APIBaseURL == "" {
 		return nil, errors.New("client.FetchConnections: APIBaseURL is required")
@@ -79,10 +86,14 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("GET %s: %w", base.String(), ErrUnauthorized)
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("GET %s returned %s: %s", base.String(), resp.Status, strings.TrimSpace(string(body)))
 	}
+	harvestRotatedToken(resp, opts.OnNewToken)
 
 	// The non-paginated endpoint returns a flat array of openapi.Connection.
 	// We decode only the two fields we need so this code is robust to
@@ -108,8 +119,8 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 	return out, nil
 }
 
-// isTunnelableSubType mirrors pipe.go's isTunnelableType but works on
-// the raw openapi subtype field.
+// isTunnelableSubType mirrors pipe.go's profileFor but works on the
+// raw openapi subtype field.
 func isTunnelableSubType(subtype string) bool {
 	switch pb.ConnectionType(subtype) {
 	case pb.ConnectionTypePostgres,
@@ -117,7 +128,8 @@ func isTunnelableSubType(subtype string) bool {
 		pb.ConnectionTypeMSSQL,
 		pb.ConnectionTypeMongoDB,
 		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeTCP:
+		pb.ConnectionTypeTCP,
+		pb.ConnectionTypeHttpProxy:
 		return true
 	}
 	return false

@@ -12,6 +12,7 @@ type APIContext struct {
 	OrgLicense       string           `json:"org_license"`
 	OrgLicenseData   *json.RawMessage `json:"org_license_data"`
 	OrgAnalyticsMode string           `json:"org_analytics_mode"`
+	OrgHideRoleInfo  bool             `json:"org_hide_role_info"`
 	UserID           string           `json:"user_id"`
 	UserName         string           `json:"user_name"`
 	UserEmail        string           `json:"user_email"`
@@ -92,4 +93,7 @@ type ConnectionInfo struct {
 	AccessSchema                     string
 	Reviewers                        []string
 	JiraTransitionNameOnSessionClose string
+	// JiraSkipTransitionOnNonZeroExitCode, when enabled, prevents transitioning
+	// the issue on session close if the session finished with a non-zero exit code.
+	JiraSkipTransitionOnNonZeroExitCode bool
 }

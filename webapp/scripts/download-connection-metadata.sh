@@ -41,13 +41,13 @@ if [ -f "$OUTPUT_DIR/$OUTPUT_FILE" ]; then
     FILE_SIZE=$(wc -c < "$OUTPUT_DIR/$OUTPUT_FILE" | tr -d ' ')
     echo "✓ Download complete: $OUTPUT_DIR/$OUTPUT_FILE"
     echo "  File size: $FILE_SIZE bytes"
-    
+
     # Check HTTP status code
     if [ "$HTTP_CODE" -ne 200 ]; then
         echo "⚠ Warning: HTTP Status $HTTP_CODE (expected 200)"
         echo "  Response content:"
         head -n 5 "$OUTPUT_DIR/$OUTPUT_FILE" | sed 's/^/    /'
-        
+
         # Handle specific error codes
         case $HTTP_CODE in
             429)
@@ -69,7 +69,7 @@ if [ -f "$OUTPUT_DIR/$OUTPUT_FILE" ]; then
         esac
         exit 1
     fi
-    
+
     # Validate JSON if jq is installed
     if command -v jq &> /dev/null; then
         JQ_ERROR=$(jq empty "$OUTPUT_DIR/$OUTPUT_FILE" 2>&1)

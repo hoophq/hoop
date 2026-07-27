@@ -1,10 +1,11 @@
 (ns webapp.components.multiselect
   (:require
-   ["lucide-react" :refer [HelpCircle]]
+   ["lucide-react" :refer [Award HelpCircle]]
    ["react-select" :default Select]
    ["react-select/creatable" :default CreatableSelect]
    ["@radix-ui/themes" :refer [Text Tooltip]]
    [clojure.string :as cs]
+   [goog.object :as gobj]
    [reagent.core :as r]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
@@ -12,9 +13,12 @@
   #js {"multiValue" (fn [style]
                       (clj->js (into (js->clj style)
                                      {"padding" "4px"
-                                      "borderRadius" "6px"
+                                      "borderRadius" "12px"
                                       "fontSize" "16px"
-                                      "backgroundColor" "#E1E5EB"})))
+                                      "backgroundColor" "rgba(0, 0, 51, 0.06)"})))
+       "multiValueLabel" (fn [style]
+                           (clj->js (into (js->clj style)
+                                          {"color" "#60646c"})))
        "option" (fn [style]
                   (clj->js (into (js->clj style)
                                  {"fontSize" "16px"})))
@@ -86,34 +90,113 @@
          :ref #(reset! container-ref %)
          :styles styles}]])))
 
-(defn creatable-select [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder]}]
-  [:div {:class "mb-regular text-sm"}
-   [:div {:class "flex items-center gap-2 mb-1"}
-    (when label
-      [form-label label])]
-   [:> CreatableSelect
-    (merge {:value default-value
-            :id id
-            :name name
-            :isMulti true
-            :isDisabled disabled?
-            :required required?
-            :onChange on-change
-            :options options
-            :isClearable false
-            :theme (fn [theme]
-                     (clj->js
-                      (-> (js->clj theme :keywordize-keys true)
-                          (update :colors merge {:primary "#3358d4"
-                                                 :primary25 "#d2deff"
-                                                 :primary50 "#abbdf9"
-                                                 :primary75 "#3e63dd"}))))
-            :menuPortalTarget (.-body js/document)
-            :className "react-select-container"
-            :classNamePrefix "react-select"
-            :styles styles}
-           (when placeholder {:placeholder placeholder})
-           (when on-create-option {:onCreateOption on-create-option}))]])
+;; Styles for the react-select "Fixed Options" pattern: fixed pills hide the
+;; remove button and get a distinct neutral background. The style fns receive
+;; (base, state) — react-select always passes both; the shared `styles` def
+;; simply ignores the second argument.
+(defn- managed-option-state?
+  "True when a react-select style-fn state refers to an option tagged isManaged."
+  [state]
+  (boolean (some-> state (gobj/getValueByKeys "data" "isManaged"))))
+
+;; Managed pills (e.g. the protection-profile attribute) follow the Figma
+;; accent style: light blue chip with blue label/icon. They stay removable.
+(def ^:private managed-options-styles
+  (clj->js
+   (merge (js->clj styles)
+          {"multiValue" (fn [style state]
+                          (let [base (into (js->clj style)
+                                           {"padding" "4px"
+                                            "borderRadius" "12px"
+                                            "fontSize" "16px"
+                                            "backgroundColor" "rgba(0, 0, 51, 0.06)"})]
+                            (if (managed-option-state? state)
+                              (clj->js (into base {"backgroundColor" "#edf2fe"}))
+                              (clj->js base))))
+           "multiValueLabel" (fn [style state]
+                               (clj->js (into (js->clj style)
+                                              {"color" (if (managed-option-state? state)
+                                                         "#3a5bc7"
+                                                         "#60646c")})))
+           "multiValueRemove" (fn [style state]
+                                (if (managed-option-state? state)
+                                  (clj->js (into (js->clj style) {"color" "#3a5bc7"}))
+                                  style))})))
+
+(defn- format-option-with-managed-icon
+  "Renders managed options (pills and menu entries) with an award icon;
+  regular options render as plain labels."
+  [opt _ctx]
+  (if (gobj/get opt "isManaged")
+    (r/as-element
+     [:span {:class "flex items-center gap-1"}
+      [:> Award {:size 12 :aria-hidden true}]
+      (gobj/get opt "label")])
+    (gobj/get opt "label")))
+
+(defn creatable-select
+  "Creatable multi-select. Extra optional props for managed options (e.g. the
+  protection-profile attribute in the role creation wizard):
+
+  - :managed-options — vector of {:value v :label l} available managed entries.
+    They render with a distinct blue style + award icon, appear in the
+    dropdown, and are removable like any pill.
+  - :managed-value — vector of currently selected managed values.
+  - :on-managed-change — (fn [managed-values]) called with the selected
+    managed values whenever they change.
+
+  Managed entries never reach the regular `on-change` — callers keep user
+  values and managed values in separate state."
+  [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder
+           managed-options managed-value on-managed-change]}]
+  (let [managed (mapv #(assoc % :isManaged true) managed-options)
+        has-managed? (seq managed)
+        managed-selected (filterv #(some #{(:value %)} (or managed-value [])) managed)
+        value (if has-managed?
+                (into managed-selected default-value)
+                default-value)
+        ;; Managed entries not currently selected stay available in the menu.
+        options* (if has-managed?
+                   (into (vec (remove #(some #{(:value %)} (or managed-value [])) managed))
+                         options)
+                   options)
+        handle-change (if has-managed?
+                        (fn [js-value _action-meta]
+                          (let [values (js->clj js-value :keywordize-keys true)
+                                managed-values (mapv :value (filter :isManaged values))
+                                user-options (vec (remove :isManaged values))]
+                            (when on-managed-change
+                              (on-managed-change managed-values))
+                            (on-change (clj->js user-options))))
+                        on-change)]
+    [:div {:class "mb-regular text-sm"}
+     [:div {:class "flex items-center gap-2 mb-1"}
+      (when label
+        [form-label label])]
+     [:> CreatableSelect
+      (merge {:value value
+              :id id
+              :name name
+              :isMulti true
+              :isDisabled disabled?
+              :required required?
+              :onChange handle-change
+              :options options*
+              :isClearable false
+              :theme (fn [theme]
+                       (clj->js
+                        (-> (js->clj theme :keywordize-keys true)
+                            (update :colors merge {:primary "#3358d4"
+                                                   :primary25 "#d2deff"
+                                                   :primary50 "#abbdf9"
+                                                   :primary75 "#3e63dd"}))))
+              :menuPortalTarget (.-body js/document)
+              :className "react-select-container"
+              :classNamePrefix "react-select"
+              :styles (if has-managed? managed-options-styles styles)}
+             (when has-managed? {:formatOptionLabel format-option-with-managed-icon})
+             (when placeholder {:placeholder placeholder})
+             (when on-create-option {:onCreateOption on-create-option}))]]))
 
 (defn text-input
   "Renders a text input that supports multiple values.
@@ -144,11 +227,11 @@
                         (if input-value
                           (case (.-key event)
                             "Enter" (do
-                                      (on-change (conj (js->clj value) {"label" input-value "value" input-value}))
+                                      (on-change (conj (js->clj value) {"label" input-value "value" input-value "id" (str (random-uuid))}))
                                       (on-input-change "")
                                       (.preventDefault event))
                             "Tab" (do
-                                    (on-change (conj (js->clj value) {"label" input-value "value" input-value}))
+                                    (on-change (conj (js->clj value) {"label" input-value "value" input-value "id" (str (random-uuid))}))
                                     (on-input-change "")
                                     (.preventDefault event))
                             nil)
@@ -169,6 +252,9 @@
        :menuIsOpen false
        :isDisabled disabled?
        :required required?
+       :getOptionValue (fn [option]
+                         (or (gobj/get option "id")
+                             (gobj/get option "value")))
        :onChange (fn [value]
                    (on-change (js->clj value)))
        :onInputChange on-input-change

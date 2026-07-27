@@ -21,6 +21,26 @@ import (
 
 const flagName = "experimental.rulepacks"
 
+// requireProvidersForRulepack aborts with 422 when the rulepack contains
+// masking rules and the server has no DLP provider to enforce them (the
+// invariant and remediation text live in gateway/services). Guardrail rules
+// are not provider-gated: they are enforced by the built-in pattern-matching
+// engine. Returns true when the attach may proceed.
+func requireProvidersForRulepack(c *gin.Context, orgID string, rulepackID uuid.UUID) bool {
+	if err := services.CheckRedactProvider(); err != nil {
+		dmRules, lerr := models.ListDataMaskingRules(orgID, models.DataMaskingListOption{RulepackID: &rulepackID})
+		if lerr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, lerr, "failed listing rulepack data masking rules: %v", lerr)
+			return false
+		}
+		if len(dmRules) > 0 {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "this rulepack contains data masking rules and " + err.Error()})
+			return false
+		}
+	}
+	return true
+}
+
 func flagDisabled(c *gin.Context, ctx *storagev2.Context) bool {
 	if featureflag.IsEnabled(ctx.GetOrgID(), flagName) {
 		return false
@@ -300,7 +320,7 @@ func Put(c *gin.Context) {
 //	@Description	Delete a rulepack. Returns 403 if Hoop-managed. Cascades delete to its attributes and their feature junctions.
 //	@Tags			Rulepacks
 //	@Produce		json
-//	@Param			id				path	string	true	"Rulepack ID"
+//	@Param			id	path	string	true	"Rulepack ID"
 //	@Success		204
 //	@Failure		400,403,404,500	{object}	openapi.HTTPError
 func Delete(c *gin.Context) {
@@ -414,9 +434,9 @@ func List(c *gin.Context) {
 //	@Description	Get a rulepack by its UUID.
 //	@Tags			Rulepacks
 //	@Produce		json
-//	@Param			id				path		string	true	"Rulepack ID"
-//	@Success		200				{object}	openapi.Rulepack
-//	@Failure		400,404,500		{object}	openapi.HTTPError
+//	@Param			id			path		string	true	"Rulepack ID"
+//	@Success		200			{object}	openapi.Rulepack
+//	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/rulepacks/{id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -459,10 +479,10 @@ func Get(c *gin.Context) {
 //	@Tags			Rulepacks
 //	@Accept			json
 //	@Produce		json
-//	@Param			id				path	string							true	"Rulepack ID"
-//	@Param			request			body	openapi.RulepackApplyRequest	true	"Connections to apply the rulepack to"
+//	@Param			id		path	string							true	"Rulepack ID"
+//	@Param			request	body	openapi.RulepackApplyRequest	true	"Connections to apply the rulepack to"
 //	@Success		204
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/rulepacks/{id}/apply [post]
 func Apply(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -491,6 +511,17 @@ func Apply(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+
+	// Attaching a rulepack to connections requires the providers its rules
+	// depend on: guardrails without Presidio make the gateway refuse every
+	// session on the connection (fail-closed), and masking rules without a
+	// DLP provider are silently not enforced. Detaching (an empty set) is
+	// always allowed.
+	if len(req.ConnectionNames) > 0 {
+		if !requireProvidersForRulepack(c, ctx.GetOrgID(), id) {
+			return
+		}
 	}
 
 	err = services.ApplyRulepackToConnections(context.Background(), orgID, id, req.ConnectionNames)

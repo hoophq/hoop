@@ -3,6 +3,7 @@ package cmdutils
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,4 +77,12 @@ func ParseEnvPerType(envPairs []string) (envVar map[string]string, err error) {
 		return nil, fmt.Errorf("invalid env vars, expected env=var. found=%v", invalidEnvs)
 	}
 	return envVar, nil
+}
+
+func GetUrlScheme(urlAddress string) string {
+	parsed, err := url.Parse(urlAddress)
+	if err != nil || parsed.Scheme == "" {
+		return "http"
+	}
+	return parsed.Scheme
 }

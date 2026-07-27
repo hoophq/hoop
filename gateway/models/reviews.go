@@ -78,6 +78,22 @@ type ReviewGroups struct {
 	ForcedReview bool             `json:"forced_review"`
 }
 
+// RejectedByEmail returns the email of the reviewer whose group rejected the
+// review, or "" when no rejecting group with an email is recorded. It mirrors
+// the web UI, which resolves "Rejected by" from the review group whose status
+// is REJECTED.
+func (r *Review) RejectedByEmail() string {
+	if r == nil {
+		return ""
+	}
+	for _, rg := range r.ReviewGroups {
+		if rg.Status == ReviewStatusRejected && rg.OwnerEmail != nil {
+			return *rg.OwnerEmail
+		}
+	}
+	return ""
+}
+
 type ReviewJit struct {
 	ID                string     `gorm:"column:id"`
 	OrgID             string     `gorm:"column:org_id"`
@@ -322,4 +338,41 @@ func UpdateReviewStatus(orgID, id string, status ReviewStatusType) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SetReviewStatusExecutedIfFinished settles the one-time review of the given
+// session as EXECUTED once the session has finished. A review stays in
+// PROCESSING while the execution runs in the agent (legacy rows may hold
+// UNKNOWN); the session is the source of truth for the execution outcome, so
+// when it reaches the done status the review is considered consumed. It is a
+// no-op (false, nil) when the session has no review, the review is in any
+// other status or the session has not finished.
+func SetReviewStatusExecutedIfFinished(db *gorm.DB, orgID, sessionID string) (bool, error) {
+	res := db.Exec(`
+	UPDATE private.reviews AS r
+	SET status = ?
+	FROM private.sessions AS s
+	WHERE s.org_id = r.org_id AND s.id = r.session_id
+	AND r.org_id = ? AND r.session_id = ? AND r.type = ?
+	AND r.status IN (?, ?) AND s.status = 'done'`,
+		ReviewStatusExecuted, orgID, sessionID, ReviewTypeOneTime,
+		ReviewStatusProcessing, ReviewStatusUnknown)
+	return res.RowsAffected > 0, res.Error
+}
+
+// ReconcileStaleReviews settles as EXECUTED every one-time review left in
+// PROCESSING or UNKNOWN whose session already finished. These reviews are
+// normally settled when the session closes, but a gateway restart in between
+// leaves them stale; this runs once at startup. It returns the number of
+// reviews updated.
+func ReconcileStaleReviews(db *gorm.DB) (int64, error) {
+	res := db.Exec(`
+	UPDATE private.reviews AS r
+	SET status = ?
+	FROM private.sessions AS s
+	WHERE s.org_id = r.org_id AND s.id = r.session_id
+	AND r.type = ? AND r.status IN (?, ?) AND s.status = 'done'`,
+		ReviewStatusExecuted, ReviewTypeOneTime,
+		ReviewStatusProcessing, ReviewStatusUnknown)
+	return res.RowsAffected, res.Error
 }

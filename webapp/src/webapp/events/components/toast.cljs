@@ -16,7 +16,11 @@
  :show-snackbar
  (fn
    [{:keys [db]} [_ data]]
-   (case (:level data)
+   ;; Accept both keyword (:success) and string ("success") levels so
+   ;; React callers dispatching via window.hoopDispatch — which only
+   ;; keywordizes object keys, not values — hit the same branches as
+   ;; native CLJS callers.
+   (case (keyword (:level data))
      :success (toast-success (:text data))
      :error (toast-error
              (:text data)

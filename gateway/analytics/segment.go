@@ -312,7 +312,11 @@ func sessionUsageProperties(d *sessionUsageData) map[string]any {
 		"session-id":                       s.ID,
 		"resource-type":                    s.ConnectionType,
 		"resource-subtype":                 s.ConnectionSubtype,
-		"status":                           s.Status,
+		"verb":                             s.Verb,
+		// origin reflects what is persisted on the session; sessions created
+		// before the column existed (or by paths that don't set it) report "".
+		"origin": s.Origin,
+		"status": s.Status,
 		"created-at":                       s.CreatedAt.String(),
 		"ai-session-analyzer-activated":    false,
 		"agent-version":                    d.agent.GetMeta("version"),

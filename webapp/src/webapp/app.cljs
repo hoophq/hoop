@@ -9,10 +9,6 @@
    [re-frame.core :as rf]
    [webapp.agents.new :as create-agent]
    [webapp.agents.panel :as agents]
-   [webapp.ai-data-masking.create-update-form :as ai-data-masking-create-update]
-   [webapp.ai-data-masking.events]
-   [webapp.ai-data-masking.main :as ai-data-masking]
-   [webapp.ai-data-masking.subs]
    [webapp.audit.views.main :as audit]
    [webapp.audit.views.session-details :as session-details]
    [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
@@ -37,8 +33,8 @@
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
-   [webapp.resources.setup.guardrails-suggestions.events]
-   [webapp.resources.setup.guardrails-suggestions.subs]
+   [webapp.resources.setup.events.mcp-oauth]
+   [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
    [webapp.resources.configure-role.main :as configure-role]
@@ -91,6 +87,8 @@
    [webapp.features.machine-identities.subs]
    [webapp.features.machine-identities.views.identity-form :as identity-form]
    [webapp.features.machine-identities.views.identity-roles :as identity-roles]
+   [webapp.features.activation-journey.events]
+   [webapp.features.activation-journey.subs]
    [webapp.features.ai-session-analyzer.events]
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
@@ -99,6 +97,8 @@
    [webapp.features.attributes.main :as attributes-main]
    [webapp.features.attributes.subs]
    [webapp.features.attributes.views.form :as attributes-form]
+   [webapp.features.protection-profiles.events]
+   [webapp.features.protection-profiles.subs]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -117,9 +117,6 @@
    [webapp.integrations.authentication.main :as integrations-authentication]
    [webapp.integrations.authentication.subs]
    [webapp.integrations.events]
-   [webapp.integrations.jira.main :as jira-integration]
-   [webapp.jira-templates.create-update-form :as jira-templates-create-update]
-   [webapp.jira-templates.main :as jira-templates]
    [webapp.onboarding.aws-connect :as aws-connect]
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
@@ -461,7 +458,12 @@
     [guardrails/panel]]])
 
 (defmethod routes/panels :create-guardrail-panel []
-  (rf/dispatch [:guardrails->clear-active-guardrail])
+  (let [params (js/URLSearchParams. (.. js/window -location -search))
+        template-id (.get params "template")]
+    (if template-id
+      (rf/dispatch [:activation-journey/seed-guardrail-template
+                    template-id (.get params "connections")])
+      (rf/dispatch [:guardrails->clear-active-guardrail])))
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
     [routes/wrap-admin-only
@@ -477,28 +479,6 @@
       [routes/wrap-admin-only
        [guardrail-create-update/main :edit]]]]))
 
-(defmethod routes/panels :jira-templates-panel []
-  [layout :application-hoop
-   [routes/wrap-admin-only
-    [jira-templates/panel]]])
-
-(defmethod routes/panels :create-jira-template-panel []
-  (rf/dispatch [:jira-templates->clear-active-template])
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [jira-templates-create-update/main :create]]]])
-
-(defmethod routes/panels :edit-jira-template-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        jira-template-id (:jira-template-id (:route-params current-route))]
-    (rf/dispatch [:jira-templates->get-by-id jira-template-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [jira-templates-create-update/main :edit]]]]))
-
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "h-full"}
@@ -508,14 +488,6 @@
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "h-full"}
                              [runbooks-runner/main]]])
-
-(defmethod routes/panels :settings-jira-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "Jira" {:class "mb-6"}]
-                               [jira-integration/main]]]]))
 
 (defmethod routes/panels :audit-plugin-panel []
   ;; this performs a redirect while we're migrating
@@ -715,31 +687,6 @@
       [routes/wrap-admin-only
        [runbook-rule-form/main :edit {:rule-id rule-id}]]]]))
 
-(defmethod routes/panels :ai-data-masking-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-admin-only
-    [ai-data-masking/main]]])
-
-(defmethod routes/panels :create-ai-data-masking-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (rf/dispatch [:ai-data-masking->clear-active-rule])
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [ai-data-masking-create-update/main :create]]]])
-
-(defmethod routes/panels :edit-ai-data-masking-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        ai-data-masking-id (:ai-data-masking-id (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:ai-data-masking->get-by-id ai-data-masking-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [ai-data-masking-create-update/main :edit]]]]))
-
 (defmethod routes/panels :ai-session-analyzer-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
@@ -748,7 +695,12 @@
 
 (defmethod routes/panels :create-ai-session-analyzer-rule-panel []
   (rf/dispatch [:destroy-page-loader])
-  (rf/dispatch [:ai-session-analyzer/clear-active-rule])
+  (let [params (js/URLSearchParams. (.. js/window -location -search))
+        template-id (.get params "template")]
+    (if template-id
+      (rf/dispatch [:activation-journey/seed-ai-analyzer-template
+                    template-id (.get params "connections")])
+      (rf/dispatch [:ai-session-analyzer/clear-active-rule])))
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
     [routes/wrap-admin-only

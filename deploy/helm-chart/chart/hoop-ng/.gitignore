@@ -1,0 +1,4 @@
+# Built at package time by `helm package -u` (the file:// dependency is
+# bundled from ../gateway); never commit the resolved artifacts.
+charts/
+Chart.lock

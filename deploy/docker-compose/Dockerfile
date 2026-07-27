@@ -16,7 +16,6 @@ RUN apt-get update -y && \
     gnupg \
     gnupg2 \
     net-tools \
-    groff \
     jq \
     openssh-client \
     unzip \
@@ -24,6 +23,11 @@ RUN apt-get update -y && \
     less \
     gettext-base \
     lsb-release && \
+    # groff is only needed by `aws help` to render man pages to the terminal.
+    # Install it without Recommends: they pull ghostscript (AGPL), imagemagick,
+    # netpbm and psutils (GPL), which groff only uses for PostScript/PDF output
+    # that nothing in this image produces.
+    apt-get install -y --no-install-recommends groff && \
     ln -s /usr/bin/python3 /usr/bin/python
 
 # kubectl / aws-cli / aws-session-manager
@@ -79,6 +83,9 @@ ENV LC_ALL=en_US.UTF-8
 COPY dist/hoopgateway_* /tmp/
 RUN tar --extract --file /tmp/hoopgateway_*-Linux_$(dpkg --print-architecture).tar.gz -C / --strip 1 && rm -rf /tmp/*
 COPY rootfs /
+# SQL migrations are embedded in the gateway binary; the on-disk copy is
+# kept for deployments that point MIGRATION_PATH_FILES at it.
+COPY gateway/migrations/ /app/migrations/
 
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
 ENTRYPOINT ["tini", "--"]

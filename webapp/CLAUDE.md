@@ -1,5 +1,12 @@
 # HOOP WebApp Development Guidelines
 
+> **Status:** This is the **legacy ClojureScript app**, being migrated to React in `../webapp_v2/`. New pages should be built in `webapp_v2/`; touch this codebase only to maintain not-yet-migrated pages. See the root `CLAUDE.md` ("Frontend Migration in Progress") and `webapp_v2/CONTEXT_MIGRATION.md` for the split.
+
+## Commands
+- Dev (shadow-cljs on :8280): `cd webapp && npm run dev`
+- Build bundle into the gateway: `make build-dev-webapp` (from repo root)
+- After a CLJS change, hard-reload the browser tab (Vite proxies the bundle and can't HMR it)
+
 ## Code Style Guidelines
 - **ClojureScript**: Follow idiomatic ClojureScript style
 - **Namespaces**: Organized by feature (connections, webclient, components)

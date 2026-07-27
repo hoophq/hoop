@@ -63,7 +63,7 @@ func registerAccessControlTools(server *mcp.Server) {
 // ensureAccessControlPlugin returns the access_control plugin for the org,
 // creating it on first use. It never deletes existing plugin_connections.
 func ensureAccessControlPlugin(orgID string) (*models.Plugin, error) {
-	p, err := models.GetPluginByName(orgID, plugintypes.PluginAccessControlName)
+	p, err := models.GetPluginByName(models.DB, orgID, plugintypes.PluginAccessControlName)
 	if err == nil {
 		return p, nil
 	}
@@ -191,7 +191,7 @@ func accessControlListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ acc
 		return errResult("admin access required"), nil, nil
 	}
 
-	plugin, err := models.GetPluginByName(sc.GetOrgID(), plugintypes.PluginAccessControlName)
+	plugin, err := models.GetPluginByName(models.DB, sc.GetOrgID(), plugintypes.PluginAccessControlName)
 	switch err {
 	case nil:
 	case models.ErrNotFound:

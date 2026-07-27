@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
@@ -13,6 +13,7 @@ import AuthCallback from '@/pages/Auth/Callback'
 import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
+import ConfigureRolePage from '@/pages/Roles/Configure'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -20,6 +21,8 @@ import SettingsApiKeysForm from '@/pages/Settings/ApiKeys/Form'
 import SettingsApiKeysCreated from '@/pages/Settings/ApiKeys/Created'
 import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
+import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
+import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
@@ -28,6 +31,13 @@ import RulepackDetail from '@/pages/Rulepacks/Detail'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
+import DataMasking from '@/pages/Features/DataMasking'
+import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
+import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
+import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
+import JiraTemplates from '@/pages/JiraTemplates'
+import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 
@@ -80,6 +90,20 @@ function Router() {
             <Layout>
               <PageLayout>
                 <AgentsCreate />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Configure connection role */}
+      <Route
+        path="/roles/:connectionName/configure"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <ConfigureRolePage />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
@@ -201,6 +225,20 @@ function Router() {
         }
       />
 
+      {/* Protection Rules */}
+      <Route
+        path="/settings/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsProtectionRules />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Audit Logs */}
       <Route
         path="/settings/audit-logs"
@@ -269,7 +307,7 @@ function Router() {
         }
       />
 
-      {/* Event Routing (gated by experimental.event_routing flag inside the page) */}
+      {/* Event Routing */}
       <Route
         path="/features/event-routing"
         element={
@@ -319,6 +357,136 @@ function Router() {
         }
       />
 
+      <Route
+        path="/features/data-masking"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <DataMasking />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/data-masking/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/data-masking/edit/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* AI Agents Identities */}
+      <Route
+        path="/ai-agents-identities"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentities />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-agents-identities/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentitiesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-agents-identities/created"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentitiesCreated />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-agents-identities/:id/configure"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <AiAgentsIdentitiesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Jira Templates (includes the Jira integration Configuration tab) */}
+      <Route
+        path="/jira-templates"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplates />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/edit/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      {/* Legacy URL absorbed into the Configuration tab — keep old bookmarks working */}
+      <Route
+        path="/settings/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+
       {/* Integrations */}
       <Route
         path="/integrations/slack"
@@ -346,6 +514,14 @@ function Router() {
       />
 
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
+      <Route
+        path="/onboarding/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <OnboardingProtectionRules />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/onboarding/*"
         element={

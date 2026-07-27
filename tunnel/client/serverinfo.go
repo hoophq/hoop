@@ -22,8 +22,8 @@ type ServerInfo struct {
 	// "use.hoop.dev:8443" or "grpcs://use.hoop.dev:8443".
 	GrpcURL string `json:"grpc_url"`
 
-	// FeatureFlags is a map of feature flag name → enabled. The tunnel
-	// uses this to check experimental.hoop_tunnel before proceeding.
+	// FeatureFlags is a map of feature flag name → enabled, as reported by
+	// the gateway's /api/serverinfo response.
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
 
@@ -39,6 +39,11 @@ type FetchServerInfoOptions struct {
 	// HTTPClient lets callers inject a client with custom TLS / proxies.
 	// Defaults to a 15-second-timeout client.
 	HTTPClient *http.Client
+
+	// OnNewToken, when set, is invoked with the rotated access token if
+	// the gateway's response carries an X-New-Access-Token header. See
+	// token.go for the rotation contract.
+	OnNewToken func(newToken string)
 }
 
 // FetchServerInfo calls GET /api/serverinfo and returns the gateway
@@ -77,7 +82,9 @@ func FetchServerInfo(ctx context.Context, opts FetchServerInfoOptions) (*ServerI
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		// ok, fall through
+		harvestRotatedToken(resp, opts.OnNewToken)
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("GET %s: %w", base.String(), ErrUnauthorized)
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("GET %s: gateway does not expose the serverinfo route", base.String())
 	default:

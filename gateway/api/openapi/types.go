@@ -127,6 +127,9 @@ type UserInfo struct {
 	// * on - Disable the users management view on Webapp
 	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
 	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
+	// The organization's default protection profile id; null means manual
+	// configuration or that no profile was ever selected.
+	DefaultProtectionProfile *string `json:"default_protection_profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high"`
 	// Pending organization invitations for this user. When non-empty, the user can migrate
 	// to one of these organizations. Only populated in multi-tenant environments.
 	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
@@ -198,6 +201,58 @@ type APIKeyResponse struct {
 	// Subject of the admin who created this key
 	CreatedBy string `json:"created_by"`
 	// Subject of the admin who revoked this key
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+type AIAgentStatusType string
+
+const (
+	AIAgentStatusActive  AIAgentStatusType = "active"
+	AIAgentStatusRevoked AIAgentStatusType = "revoked"
+)
+
+type AIAgentCreateRequest struct {
+	// Human-readable name for the AI Agent
+	Name string `json:"name" binding:"required" example:"claude-ops"`
+	// Groups to assign to this AI Agent
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type AIAgentCreateResponse struct {
+	AIAgentResponse
+	// The generated AI Agent key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
+}
+
+type AIAgentUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"claude-prod"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type AIAgentResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"ai-agent"`
+	// Masked version of the AI Agent key for identification
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
+	// Current status of the AI Agent
+	Status AIAgentStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this AI Agent
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this agent
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this agent
 	DeactivatedBy *string `json:"deactivated_by,omitempty"`
 	// Creation timestamp
 	CreatedAt time.Time `json:"created_at"`
@@ -382,8 +437,20 @@ type Connection struct {
 	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
 	// When set, the user cannot choose a custom duration and must request access for this exact window.
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
-	// Attributes associated with this connection
+	// Attributes associated with this connection. Includes Hoop-managed
+	// attributes (e.g. the active protection profile attribute); omitting a
+	// managed name on update detaches the connection from it.
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// Hoop-managed attributes associated with this connection (e.g. the
+	// active protection profile attribute). Computed on reads; manage the
+	// association through the attributes field.
+	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
+	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
+	// secret value for this connection. Null when no inline secret has been
+	// modified since the write-only secrets feature was introduced. References
+	// to external providers (AWS Secrets Manager, Vault, IAM RDS) do not
+	// affect this field.
+	SecretsUpdatedAt *time.Time `json:"secrets_updated_at,omitempty" readonly:"true" example:"2025-01-15T10:30:00Z"`
 }
 
 type ConnectionPatch struct {
@@ -695,6 +762,8 @@ type SessionGuardRailsInfo struct {
 	Direction string `json:"direction" enums:"input,output" example:"input"`
 	// MatchedWords are the words that matched the rule
 	MatchedWords []string `json:"matched_words,omitempty" example:"password,secret"`
+	// Message is the admin-defined message configured on the matched rule entry, when present
+	Message string `json:"message,omitempty" example:"This query was blocked by your organization's data policy"`
 }
 
 type SessionAIAnalysis struct {
@@ -1179,6 +1248,34 @@ type OrgAnalyticsModeResponse struct {
 	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 }
 
+// OrgHideRoleInfoRequest toggles whether connection/role secrets (envvars)
+// are blocked from being read back through the API for the organization.
+type OrgHideRoleInfoRequest struct {
+	HideRoleInfo *bool `json:"hide_role_info" binding:"required" example:"true"`
+}
+
+type OrgHideRoleInfoResponse struct {
+	HideRoleInfo bool `json:"hide_role_info" example:"true"`
+}
+
+// OrgProtectionProfileRequest selects the organization's default protection
+// profile. Pass null to switch to manual configuration: all Hoop-managed
+// protection rules and the profile attribute are removed.
+type OrgProtectionProfileRequest struct {
+	// The protection profile id, or null for manual configuration
+	Profile *string `json:"profile" enums:"hipaa-ready,soc2-type2,protection-permissive,protection-medium,protection-high" example:"protection-medium"`
+	// Where the selection happened; used for analytics only
+	Source string `json:"source" binding:"required" enums:"onboarding,settings" example:"onboarding"`
+}
+
+type OrgProtectionProfileResponse struct {
+	// The active protection profile id; null means manual configuration
+	Profile *string `json:"profile" example:"protection-medium"`
+	// The Hoop-managed attribute that binds the profile's rules to
+	// connections; null when no profile is active
+	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
+}
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -1257,6 +1354,8 @@ type ServerInfo struct {
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
 	// Report if SSH_CLIENT_HOST_KEY is set
 	HasSSHClientHostKey bool `json:"has_ssh_client_host_key"`
+	// Report if the Postgres proxy server has a listen address configured
+	PostgresProxyEnabled bool `json:"postgres_proxy_enabled"`
 	// API_URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
@@ -1359,6 +1458,9 @@ type JiraIssueTemplate struct {
 	// The name of the issue transition to change the state of the issue
 	// when the session closes
 	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" example:"done"`
+	// When enabled, the issue transition is skipped if the session
+	// finishes with a non-zero exit code
+	SkipTransitionOnNonZeroExitCode bool `json:"skip_transition_on_nonzero_exit_code"`
 	// The request type id that will be associated to the issue
 	RequestTypeID string         `json:"request_type_id"`
 	MappingTypes  map[string]any `json:"mapping_types"`
@@ -1384,6 +1486,9 @@ type JiraIssueTemplateRequest struct {
 	// The name of the issue transition to change the state of the issue
 	// when the session closes
 	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" default:"done"`
+	// When enabled, the issue transition is skipped if the session
+	// finishes with a non-zero exit code
+	SkipTransitionOnNonZeroExitCode bool `json:"skip_transition_on_nonzero_exit_code"`
 	// The automated fields that will be sent when creating the issue.
 	// There're two types
 	// - preset: obtain the value from a list of available fields that could be propagated
@@ -1472,37 +1577,39 @@ type GuardRailRuleRequest struct {
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
 
-	// The input rule
+	// The input rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
 	*/
 	Input map[string]any `json:"input"`
-	// The output rule
+	// The output rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
@@ -1522,38 +1629,43 @@ type GuardRailRuleResponse struct {
 	Name string `json:"name" example:"my-strict-rule"`
 	// The rule description
 	Description string `json:"description" example:"description about this rule"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 
-	// The input rule
+	// The input rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
 	*/
 	Input map[string]any `json:"input"`
-	// The output rule
+	// The output rule. Each rule entry accepts an optional "message" field that
+	// is shown to the user when that specific rule is hit.
 	/*
 		{
 			"name": "deny-select",
 			"description": "<optional-description>",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>", "message": "<optional-message>"}
 				]
 			},
 			"output": {
 				"rules": [
-					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+", "message": "<optional-message>"}
 				]
 			}
 		}
@@ -1924,7 +2036,11 @@ type SecurityAuditLogResponse struct {
 
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
-	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	ID string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Managed By is a read only field that indicates who manages this rule.
+	// When set (e.g. "hoop" for protection profiles), the rule cannot be
+	// modified or deleted directly.
+	ManagedBy              *string `json:"managed_by" readonly:"true" example:"hoop"`
 	DataMaskingRuleRequest `json:",inline"`
 }
 
@@ -2000,13 +2116,17 @@ type ConnectionFederationConfig struct {
 	// built-in resolver category ships today; the field is preserved so new
 	// sources can be added without breaking existing configurations.
 	HookSource string `json:"hook_source" enums:"builtin" example:"builtin" binding:"required"`
-	// BuiltinProvider is required when HookSource=builtin. Only "gcp_iam"
-	// ships today.
-	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam" example:"gcp_iam"`
-	// AdminCredentialsJSON is the plaintext admin credential blob (for
-	// builtin/gcp_iam: the admin service account JSON). Write-only — never
-	// returned on GET. Required on the initial POST when HookSource=builtin;
-	// optional on PUT (omitting it leaves the stored value unchanged).
+	// BuiltinProvider is required when HookSource=builtin. "gcp_iam"
+	// impersonates a per-user service account via an admin SA key; "gcp_oauth"
+	// mints tokens from a per-user Google OAuth refresh token (no service
+	// accounts).
+	BuiltinProvider string `json:"builtin_provider,omitempty" enums:"gcp_iam,gcp_oauth" example:"gcp_iam"`
+	// AdminCredentialsJSON is the plaintext admin credential blob. Its shape is
+	// provider-specific: for gcp_iam it is the admin service-account JSON; for
+	// gcp_oauth it is the OAuth client config JSON ({"client_id":"...",
+	// "client_secret":"..."}). Write-only — never returned on GET. Required on
+	// the initial POST when HookSource=builtin; optional on PUT (omitting it
+	// leaves the stored value unchanged).
 	AdminCredentialsJSON string `json:"admin_credentials_json,omitempty"`
 	// HasAdminCredentials is server-set on GET responses to let the UI know
 	// whether a credential is stored without exposing its value.
@@ -2017,11 +2137,10 @@ type ConnectionFederationConfig struct {
 	// IdentityTargetTemplate is the principal template the source attribute
 	// substitutes into (defaults to "{user.email}").
 	IdentityTargetTemplate string `json:"identity_target_template" example:"{user.email}"`
-	// FallbackPolicy controls behavior when resolution fails.
-	FallbackPolicy string `json:"fallback_policy" enums:"deny,readonly" example:"deny"`
-	// ReadonlyPrincipal is required when FallbackPolicy=readonly. Used as
-	// the impersonation target on the fallback path.
-	ReadonlyPrincipal string `json:"readonly_principal,omitempty" example:"hoop-readonly@example.com"`
+	// FallbackPolicy controls behavior when resolution fails. "deny" aborts
+	// the session; "static" skips federation and lets the session run on the
+	// connection's existing static credentials.
+	FallbackPolicy string `json:"fallback_policy" enums:"deny,static" example:"deny"`
 	// TokenTTLSeconds caps the lifetime of generated credentials (default
 	// 3600, max 43200). Built-in providers may clamp lower based on cloud
 	// API limits.
@@ -2137,6 +2256,83 @@ type FederationTestResponse struct {
 	Error string `json:"error,omitempty" example:"failed minting access token: permission denied"`
 }
 
+// FederationOAuthAuthorizeResponse is returned by the gcp_oauth consent
+// authorize endpoint. The client should redirect the browser to URL; after the
+// user approves, Google redirects back to the gateway callback which stores the
+// resulting refresh token.
+type FederationOAuthAuthorizeResponse struct {
+	// URL is the Google OAuth consent URL to redirect the user's browser to.
+	URL string `json:"url" example:"https://accounts.google.com/o/oauth2/auth?client_id=...&state=..."`
+}
+
+// FederationOAuthStatusResponse reports, for the authenticated user, whether
+// they have connected a per-user account for a federated connection. Clients
+// use it to decide whether to prompt the user to connect before running.
+type FederationOAuthStatusResponse struct {
+	// Provider is the connection's configured federation provider
+	// (e.g. "gcp_oauth", "gcp_iam"), or empty when the connection has no
+	// federation configured. Only gcp_oauth requires a per-user connection.
+	Provider string `json:"provider" example:"gcp_oauth"`
+	// Connected is true when the user has a stored credential for this
+	// connection. Always false for providers that are not per-user.
+	Connected bool `json:"connected" example:"false"`
+	// GoogleEmail is the consented Google identity, present only when
+	// Connected is true for gcp_oauth.
+	GoogleEmail string `json:"google_email,omitempty" example:"alice@example.com"`
+}
+
+// MCPOAuthAuthorizeRequest starts the OAuth login flow for an "mcp" httpproxy
+// connection. ServerURL is the MCP endpoint (the OAuth protected resource).
+// ClientID/ClientSecret are optional: when both are empty the gateway performs
+// Dynamic Client Registration (RFC 7591) against the discovered authorization
+// server.
+type MCPOAuthAuthorizeRequest struct {
+	// ServerURL is the MCP endpoint to authorize against (the OAuth resource).
+	ServerURL string `json:"server_url" binding:"required" example:"https://mcp.figma.com/mcp"`
+	// ClientID is an optional pre-registered OAuth client id. When empty the
+	// gateway registers a client dynamically.
+	ClientID string `json:"client_id,omitempty"`
+	// ClientSecret is an optional pre-registered OAuth client secret, paired
+	// with ClientID.
+	ClientSecret string `json:"client_secret,omitempty"`
+	// Scopes is an optional space-delimited scope string. When empty the
+	// scopes advertised by the authorization server are requested.
+	Scopes string `json:"scopes,omitempty" example:"openid profile"`
+}
+
+// MCPOAuthAuthorizeResponse is returned by the MCP OAuth authorize endpoint.
+// The client should open AuthorizationURL in the browser; after login the
+// provider redirects back to the gateway callback, which exchanges the code
+// for a token. The create page then redeems the token with FlowID.
+type MCPOAuthAuthorizeResponse struct {
+	// AuthorizationURL is the upstream OAuth authorization URL to open.
+	AuthorizationURL string `json:"authorization_url" example:"https://www.figma.com/oauth?client_id=...&state=..."`
+	// FlowID identifies this login flow; used to redeem the token afterwards.
+	FlowID string `json:"flow_id" example:"7c8a1234-5678-9abc-def0-123456789abc"`
+}
+
+// MCPOAuthTokenResponse carries the access token obtained by a completed MCP
+// OAuth login. AuthorizationHeader is the ready-to-use value for the
+// connection's HEADER_AUTHORIZATION configuration. The token is returned at
+// most once: the flow is consumed on read.
+type MCPOAuthTokenResponse struct {
+	// AccessToken is the OAuth access token.
+	AccessToken string `json:"access_token"`
+	// TokenType is the OAuth token type (typically "Bearer").
+	TokenType string `json:"token_type" example:"Bearer"`
+	// AuthorizationHeader is the full "<TokenType> <AccessToken>" value to set
+	// as HEADER_AUTHORIZATION on the connection.
+	AuthorizationHeader string `json:"authorization_header" example:"Bearer eyJ..."`
+	// RefreshToken is the OAuth refresh token, when the provider returned one.
+	RefreshToken string `json:"refresh_token,omitempty"`
+	// ExpiresIn is the access token lifetime in seconds, when known.
+	ExpiresIn int64 `json:"expires_in,omitempty" example:"3600"`
+	// ClientID is the OAuth client id used (relevant when registered dynamically).
+	ClientID string `json:"client_id,omitempty"`
+	// ServerURL echoes the authorized MCP endpoint.
+	ServerURL string `json:"server_url" example:"https://mcp.figma.com/mcp"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
@@ -2150,11 +2346,30 @@ type ServerMiscConfig struct {
 	HttpProxyServerConfig *HttpProxyServerConfig `json:"http_proxy_server_config"`
 }
 
+// SSHUserMapping configures which certificate attribute is matched against
+// which Hoop user attribute to authorize certificate-based SSH connections.
+// Required when trusted_cas is set.
+type SSHUserMapping struct {
+	// CertAttribute is the certificate field used for the lookup.
+	// "principal" checks all ValidPrincipals; the first match wins.
+	// "key_id" uses the certificate's KeyId field.
+	CertAttribute string `json:"cert_attr" enums:"principal,key_id" example:"principal"`
+	// UserAttribute is the Hoop user table column matched against the cert value.
+	UserAttribute string `json:"user_attr" enums:"email,subject,user_id" example:"email"`
+}
+
 type SSHServerConfig struct {
 	// The listen address to run the SSH server proxy
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222"`
 	// The hosts key used for SSH connections
 	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
+	// TrustedCAs is the list of trusted SSH CA public keys in authorized_keys
+	// format. When non-empty, the server accepts certificate authentication.
+	// UserMapping is required when TrustedCAs is set.
+	TrustedCAs []string `json:"trusted_cas,omitempty" example:"ssh-ed25519 AAAA..."`
+	// UserMapping is required when TrustedCAs is configured. It defines how
+	// the certificate is matched against a Hoop user.
+	UserMapping *SSHUserMapping `json:"user_mapping,omitempty"`
 }
 
 type RDPServerConfig struct {
@@ -2192,6 +2407,22 @@ type ServerAuthSamlConfig struct {
 	IdpMetadataURL string `json:"idp_metadata_url" example:"https://auth.domain.tld/saml/metadata" binding:"required"`
 	// Specifies the claim identifier used to configure group propagation.
 	GroupsClaim string `json:"groups_claim" default:"groups"`
+	// The identity provider details resolved from the metadata URL when the configuration was last saved. It is a read only field
+	ResolvedMetadata *ServerAuthSamlResolvedMetadata `json:"resolved_metadata,omitempty" readonly:"true"`
+}
+
+// ServerAuthSamlResolvedMetadata is a snapshot of the identity provider that the
+// configured metadata URL resolved to, allowing administrators to verify the
+// metadata URL points to the intended identity provider.
+type ServerAuthSamlResolvedMetadata struct {
+	// The entity ID declared in the identity provider metadata document
+	EntityID string `json:"entity_id" example:"https://app.onelogin.com/saml/metadata/123456"`
+	// The Single Sign-On URL users are redirected to when authenticating
+	SsoURL string `json:"sso_url" example:"https://mycompany.onelogin.com/trust/saml2/http-post/sso/123456"`
+	// The expiration time of the most recent signing certificate found in the metadata
+	CertificateExpiresAt time.Time `json:"certificate_expires_at" example:"2030-01-01T00:00:00Z"`
+	// When the metadata document was fetched and resolved
+	ResolvedAt time.Time `json:"resolved_at" example:"2026-07-10T12:00:00Z"`
 }
 
 type ProviderType string
@@ -2272,8 +2503,10 @@ type ConnectionCredentialsResponse struct {
 	HasReview bool `json:"has_review" example:"false"`
 	// The review ID if review is required
 	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
-	// When the database access connection expires
-	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the database access connection expires. Null when the credential
+	// has no expiration (persistent native-client credentials issued without
+	// access_duration_seconds).
+	ExpireAt *time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 }
@@ -2314,6 +2547,14 @@ type HttpProxyConnectionInfo struct {
 	ProxyToken string `json:"proxy_token"`
 	// The command to access the HTTP proxy instance
 	Command string `json:"command"`
+	// VertexProjectID is set only for claude-code connections federated to
+	// Google Vertex AI (experimental.claude_code_vertex). It is the GCP project
+	// `hoop claude configure` writes to ANTHROPIC_VERTEX_PROJECT_ID so Claude
+	// Code runs in Vertex mode against the hoop proxy. Empty otherwise.
+	VertexProjectID string `json:"vertex_project_id,omitempty"`
+	// VertexRegion is the GCP region (CLOUD_ML_REGION) for the Vertex-federated
+	// claude-code connection. Empty for non-Vertex connections.
+	VertexRegion string `json:"vertex_region,omitempty"`
 }
 
 type PostgresConnectionInfo struct {
@@ -2478,6 +2719,8 @@ type ResourceRoleRequest struct {
 	Secrets map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ResourceRequest struct {
@@ -2907,6 +3150,10 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; only approval settings and group lists can be
+	// changed on managed rules, and they cannot be deleted
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3020,6 +3267,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
+	// protection profile; managed rules are read-only through this API
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -3035,6 +3285,10 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// The description of the attribute
 	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Managed By is a read only field that indicates who manages this
+	// attribute. When set (e.g. "hoop" for protection profiles), the
+	// attribute cannot be modified or deleted directly.
+	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute

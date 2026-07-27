@@ -1,0 +1,146 @@
+# Agent image with a BUNDLED OCR engine (GPU flavor).
+#
+# Same bundled-engine design as Dockerfile.agent-ocr (loopback-only, baked-in
+# RDP_OCR_SERVER_URL), but installs onnxruntime-gpu and the CUDA runtime
+# libraries so the engine uses the CUDA execution provider. The device is
+# detected at runtime (device_policy.py): with a visible GPU the engine runs
+# on CUDA; without one it REFUSES TO START unless OCR_ALLOW_CPU_FALLBACK=1 —
+# a GPU image silently running on CPU would quietly miss latency targets.
+#
+# Requires the nvidia container runtime at deploy time (docker run --gpus all
+# / nvidia-container-toolkit). NOT buildable/validatable on a non-CUDA host;
+# the CPU flavor (Dockerfile.agent-ocr) is validated locally and shares the
+# launcher + engine, so divergence is limited to the GPU dependency set.
+#
+# Build (CI):
+#   docker build -f Dockerfile.agent-ocr-gpu \
+#     --build-arg HOOP_IMAGE=hoophq/hoop:<tag> -t hoophq/hoop-agent-ocr:<tag>-gpu .
+# Required: the released hoop base image to build on. No default —
+# an unpinned 'latest' base would make derived builds non-reproducible.
+ARG HOOP_IMAGE
+FROM ${HOOP_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The hoop base image drops to the unprivileged 'hoop' user; package
+# installation below needs root. The runtime user is restored after setup.
+USER root
+
+# Python + native libs RapidOCR's opencv dependency links. The CUDA userspace
+# runtime libraries are NOT bundled by the onnxruntime-gpu wheel — they are
+# installed explicitly below as nvidia-*-cu12 wheels. The driver itself is
+# injected by the nvidia container runtime at run time.
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+        libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
+
+# onnxruntime-gpu must be pinned to the CUDA 12 line: 1.21+ moved to CUDA 13
+# (the wheel then needs libcudart.so.13) while declaring NO nvidia/* runtime
+# dependencies, so an unbounded pin resolved to 1.27 and crashed at import with
+# "libcudart.so.13: cannot open shared object file". 1.20.1 is the last CUDA 12
+# release.
+#
+# This image is FROM the hoop base (no CUDA libs of its own), so the CUDA 12
+# runtime libraries the provider links against are installed explicitly as
+# EXACT-pinned pip wheels — onnxruntime-gpu does NOT pull them transitively, and
+# leaving them unpinned reintroduces the same drift class of bug. The full set
+# is required: libonnxruntime_providers_cuda.so links cudart, cublas(+cublasLt),
+# cudnn, curand, cufft, nvrtc and nvjitlink; a partial set silently falls back
+# to CPU (RapidOCR logs "shifted to be executed under CPUExecutionProvider"),
+# which a GPU image must never do. Versions are the set validated on a T4 (ldd
+# resolves all provider deps; engine reports device=onnxruntime-cuda, no CPU
+# fallback). Keep in sync with Dockerfile.rapidocr-gpu.
+RUN python3 -m venv /opt/ocr-venv && \
+    /opt/ocr-venv/bin/pip install --no-cache-dir \
+        "rapidocr==3.8.4" \
+        "onnxruntime-gpu==1.20.1" \
+        "nvidia-cuda-runtime-cu12==12.9.79" \
+        "nvidia-cublas-cu12==12.9.2.10" \
+        "nvidia-cudnn-cu12==9.23.2.1" \
+        "nvidia-curand-cu12==10.3.10.19" \
+        "nvidia-cufft-cu12==11.4.1.4" \
+        "nvidia-cuda-nvrtc-cu12==12.9.86" \
+        "nvidia-nvjitlink-cu12==12.9.86" \
+        "fastapi==0.138.0" \
+        "uvicorn==0.49.0"
+ENV PATH="/opt/ocr-venv/bin:${PATH}"
+# The CUDA wheels install their .so files under nvidia/*/lib inside the venv's
+# site-packages. Rather than hardcode the python-minor-specific path (a rebuild
+# trap if the base image's python changes), symlink every CUDA .so into a fixed
+# directory and put only that on the loader path. Without this the CUDA
+# execution provider fails to load and inference silently falls back to CPU.
+RUN mkdir -p /opt/cuda-libs && \
+    find /opt/ocr-venv -path '*/nvidia/*/lib/*.so*' -exec ln -s {} /opt/cuda-libs/ \; && \
+    test -e /opt/cuda-libs/libcudart.so.12 && test -e /opt/cuda-libs/libcublasLt.so.12
+ENV LD_LIBRARY_PATH="/opt/cuda-libs"
+
+# Prefetch the en recognition model (OCR_REC_LANG=en) and produce the fp16
+# conversions (OCR_REC_PRECISION=fp16) AT BUILD TIME, preserving the image's
+# "nothing is downloaded or written after build" property. The converter
+# packages live in a throwaway venv so the runtime venv stays exactly the
+# pinned dependency set above. Instantiating RapidOCR with LangRec.EN is the
+# supported way to fetch the en model — it lands next to the bundled ch
+# models inside the rapidocr wheel and doubles as a wheel sanity check.
+# keep_io_types=True keeps fp32 inputs/outputs, so the fp16 models are
+# drop-in for the same pre/postprocessing code paths.
+RUN /opt/ocr-venv/bin/python -c "\
+from rapidocr import RapidOCR; \
+from rapidocr.utils.typings import LangRec; \
+RapidOCR(params={'Rec.lang_type': LangRec.EN})" && \
+    python3 -m venv /tmp/convert-venv && \
+    # numpy must stay on the 1.x line: onnxconverter-common 1.14.0 calls
+    # np.fromstring, which NumPy 2 removed (build fails with "The binary
+    # mode of fromstring is removed").
+    /tmp/convert-venv/bin/pip install --no-cache-dir \
+        "onnx==1.17.0" "onnxconverter-common==1.14.0" "numpy==1.26.4" && \
+    mkdir -p /opt/ocr/models && \
+    MODELS_DIR=$(/opt/ocr-venv/bin/python -c "\
+import rapidocr, pathlib; \
+print(pathlib.Path(rapidocr.__file__).parent / 'models')") && \
+    test -s "$MODELS_DIR/ch_PP-OCRv4_rec_mobile.onnx" && \
+    test -s "$MODELS_DIR/en_PP-OCRv4_rec_mobile.onnx" && \
+    /tmp/convert-venv/bin/python -c "\
+import onnx, sys; \
+from onnxconverter_common import float16; \
+models_dir = sys.argv[1]; \
+[onnx.save( \
+    float16.convert_float_to_float16(onnx.load(f'{models_dir}/{src}'), keep_io_types=True), \
+    f'/opt/ocr/models/{dst}') \
+ for src, dst in ( \
+    ('ch_PP-OCRv4_rec_mobile.onnx', 'ch_rec_fp16.onnx'), \
+    ('en_PP-OCRv4_rec_mobile.onnx', 'en_rec_fp16.onnx'))]" "$MODELS_DIR" && \
+    rm -rf /tmp/convert-venv && \
+    test -s /opt/ocr/models/ch_rec_fp16.onnx && test -s /opt/ocr/models/en_rec_fp16.onnx
+
+COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
+COPY scripts/dev/ocr-poc/bucket_rec.py /opt/ocr/bucket_rec.py
+COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
+COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
+RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
+
+# Drop back to the base image's unprivileged runtime user. Everything under
+# /opt/ocr-venv, /opt/cuda-libs and /opt/ocr stays root-owned and
+# world-readable — the engine only reads them at runtime (models ship inside
+# the rapidocr wheel, so nothing is downloaded or written after build).
+USER hoop
+
+ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
+ENV OCR_PORT=18868
+# Each worker holds its own copy of the models in VRAM; tune to the GPU
+# memory budget with `docker run -e WEB_CONCURRENCY=N`. With
+# OCR_REC_PRECISION=fp16 each worker additionally holds one fixed-shape
+# recognition session per width bucket (~600MB/worker measured on a T4).
+ENV WEB_CONCURRENCY=4
+# Recognition runtime knobs (see server_rapidocr.py for the full rationale):
+#   OCR_REC_LANG:      ch (default) | en — en is faster and more accurate on
+#                      Latin-only screens but CANNOT read CJK text (CJK PII
+#                      would be missed). Per-deployment product decision.
+#   OCR_REC_PRECISION: fp32 (default) | fp16 — fp16 runs recognition through
+#                      fixed-shape bucket sessions, measured 1.8x end-to-end
+#                      on a T4 with byte-identical text output. CUDA only.
+# Defaults preserve the exact behavior of previous image releases.
+
+ENTRYPOINT ["tini", "--", "/opt/ocr/entrypoint-embedded.sh"]
+CMD ["/usr/local/bin/hoop-default-agent.sh"]

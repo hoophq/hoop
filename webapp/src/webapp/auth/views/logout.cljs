@@ -18,5 +18,5 @@
                                                              :login-hoop)))
      1500)
 
-    [loaders/page-loading-screen {:message "Logging out..."
-                                   :description "You will be redirected in a few seconds."}]))
+    [loaders/auth-loading-screen {:message "Logging out..."
+                                  :description "You will be redirected in a few seconds."}]))

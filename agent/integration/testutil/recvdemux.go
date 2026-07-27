@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
 // RecvDemux fans out the agent's outgoing packets from a MockTransport into
@@ -30,9 +31,20 @@ type RecvDemux struct {
 	// Packets without SpecClientConnectionID (session-level events like
 	// SessionOpenOK and SessionClose) are routed here.
 	sessionCh chan *pb.Packet
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
+	// sessionCloseSubs maps sessionID → channels that are closed when a
+	// SessionClose for that session is observed. Each channel is closed
+	// exactly once; see SessionCloseChan.
+	sessionCloseSubs map[string][]chan struct{}
+	// sessionCloseReasons records the payload of the first observed
+	// SessionClose per sessionID, so tests can surface WHY the agent
+	// ended a session (e.g. the OSS libhoop stub's "missing protocol
+	// hoop library") instead of hanging or failing opaquely. Entries are
+	// never evicted — a demux lives for one test and holds one short
+	// string per closed session.
+	sessionCloseReasons map[string]string
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	wg                  sync.WaitGroup
 }
 
 // StartRecvDemux begins consuming from tr.RecvCh() in a background goroutine
@@ -45,11 +57,13 @@ func StartRecvDemux(t T, tr *MockTransport) *RecvDemux {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &RecvDemux{
-		tr:        tr,
-		conns:     make(map[string]chan *pb.Packet),
-		sessionCh: make(chan *pb.Packet, 256),
-		ctx:       ctx,
-		cancel:    cancel,
+		tr:                  tr,
+		conns:               make(map[string]chan *pb.Packet),
+		sessionCh:           make(chan *pb.Packet, 256),
+		sessionCloseSubs:    make(map[string][]chan struct{}),
+		sessionCloseReasons: make(map[string]string),
+		ctx:                 ctx,
+		cancel:              cancel,
 	}
 
 	d.wg.Add(1)
@@ -73,6 +87,13 @@ func (d *RecvDemux) loop() {
 			}
 			connID := string(pkt.Spec[pb.SpecClientConnectionID])
 			if connID == "" {
+				// Session-level packet: route to sessionCh and, for
+				// SessionClose packets, also signal any registered subscribers
+				// so inbound pumps can unblock blocked drivers.
+				if pkt.Type == pbclient.SessionClose {
+					sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+					d.fireSessionClose(sid, string(pkt.Payload))
+				}
 				select {
 				case d.sessionCh <- pkt:
 				case <-d.ctx.Done():
@@ -88,6 +109,53 @@ func (d *RecvDemux) loop() {
 			}
 		}
 	}
+}
+
+// fireSessionClose records the close reason and closes all channels
+// registered for the given sessionID. Safe to call from the demux loop
+// (holds mu briefly). Only the first reason is kept.
+func (d *RecvDemux) fireSessionClose(sessionID, reason string) {
+	d.mu.Lock()
+	if _, seen := d.sessionCloseReasons[sessionID]; !seen {
+		d.sessionCloseReasons[sessionID] = reason
+	}
+	subs := d.sessionCloseSubs[sessionID]
+	delete(d.sessionCloseSubs, sessionID)
+	d.mu.Unlock()
+	for _, ch := range subs {
+		close(ch)
+	}
+}
+
+// SessionCloseReason returns the payload of the first SessionClose observed
+// for sessionID, and whether one was observed at all.
+func (d *RecvDemux) SessionCloseReason(sessionID string) (string, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	reason, ok := d.sessionCloseReasons[sessionID]
+	return reason, ok
+}
+
+// SessionCloseChan returns a channel that is closed when the demux observes a
+// SessionClose packet for sessionID. Callers can select on it to detect agent
+// session teardown without consuming from the shared sessionCh.
+//
+// Multiple calls for the same sessionID each get their own channel — all are
+// closed when the SessionClose arrives. If a SessionClose for sessionID has
+// already been processed, the returned channel is closed immediately.
+func (d *RecvDemux) SessionCloseChan(sessionID string) <-chan struct{} {
+	ch := make(chan struct{})
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, closed := d.sessionCloseReasons[sessionID]; closed {
+		// SessionClose already observed: honour the documented contract
+		// by returning an already-closed channel instead of one that
+		// would never fire.
+		close(ch)
+		return ch
+	}
+	d.sessionCloseSubs[sessionID] = append(d.sessionCloseSubs[sessionID], ch)
+	return ch
 }
 
 func (d *RecvDemux) channelFor(connID string) chan *pb.Packet {

@@ -19,6 +19,7 @@ const (
 	MySQLConnectionWrite     = "ClientMySQLConnectionWrite"
 	MSSQLConnectionWrite     = "ClientMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "ClientMongoDBConnectionWrite"
+	OracleConnectionWrite    = "ClientOracleConnectionWrite"
 	SSHConnectionWrite       = "ClientSSHConnectionWrite"
 	SSMConnectionWrite       = "ClientSSMConnectionWrite"
 	WriteStdout              = "ClientWriteStdout"

@@ -13,7 +13,7 @@ import classes from './ActionMenu.module.css'
  */
 function ActionMenu({ children, disabled = false }) {
   return (
-    <Menu shadow="md" width={180} position="bottom-end" withinPortal classNames={{ dropdown: classes.dropdown }}>
+    <Menu shadow="md" width={180} position="bottom-end" withinPortal>
       <Menu.Target>
         <ActionIcon variant="subtle" color="gray" disabled={disabled} aria-label="Actions">
           <MoreHorizontal size={16} />
@@ -29,7 +29,7 @@ function ActionMenuItem({ danger = false, onClick, disabled = false, children })
     <Menu.Item
       onClick={onClick}
       disabled={disabled}
-      classNames={{ item: danger ? classes.itemDanger : classes.item }}
+      classNames={danger ? { item: classes.itemDanger } : undefined}
     >
       {children}
     </Menu.Item>

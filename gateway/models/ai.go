@@ -106,6 +106,9 @@ type AISessionAnalyzerRules struct {
 	ConnectionNames pq.StringArray                  `gorm:"column:connection_names;type:text[]"`
 	RiskEvaluation  AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;type:jsonb;serializer:json"`
 	CustomPrompt    *string                         `gorm:"column:custom_prompt"`
+	ManagedBy       *string                         `gorm:"column:managed_by"`
+
+	RuleAttributes []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AnalyzerRuleName;references:OrgID,Name"`
 
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
@@ -193,10 +196,22 @@ func GetAISessionAnalyzerRule(orgID uuid.UUID, name string) (*AISessionAnalyzerR
 	return &rule, nil
 }
 
+// GetAISessionAnalyzerRuleByConnection resolves the analyzer rule for a
+// connection either by explicit connection_names membership or through the
+// attribute junction (rule tagged with an attribute the connection carries,
+// e.g. a protection profile attribute). Explicit name targeting wins when
+// both match.
 func GetAISessionAnalyzerRuleByConnection(db *gorm.DB, orgID uuid.UUID, connectionName string) (*AISessionAnalyzerRules, error) {
 	var rule AISessionAnalyzerRules
 	result := db.
-		Where("org_id = ? AND connection_names @> ?", orgID, pq.StringArray{connectionName}).
+		Where(`org_id = ? AND (connection_names @> ? OR name IN (
+			SELECT ra.analyzer_rule_name
+			FROM private.ai_session_analyzer_rules_attributes ra
+			JOIN private.connections_attributes ca
+			  ON ca.org_id = ra.org_id AND ca.attribute_name = ra.attribute_name
+			WHERE ra.org_id = ? AND ca.connection_name = ?
+		))`, orgID, pq.StringArray{connectionName}, orgID, connectionName).
+		Order("cardinality(connection_names) DESC").
 		First(&rule)
 	if result.Error != nil {
 		return nil, result.Error

@@ -40,6 +40,8 @@ func GenerateSecretKey(connType proto.ConnectionType) (plaintext string, hash st
 		return keys.GenerateSecureRandomKey("httpproxy", credentialKeySize)
 	case proto.ConnectionTypeClaudeCode:
 		return keys.GenerateSecureRandomKey("claude-code", credentialKeySize)
+	case proto.ConnectionTypeMcp:
+		return keys.GenerateSecureRandomKey("mcp", credentialKeySize)
 	case proto.ConnectionTypeKubernetes:
 		return keys.GenerateSecureRandomKey("k8s", credentialKeySize)
 	default:
@@ -247,7 +249,7 @@ func IsConnectionTypeConfigured(serverConf *models.ServerMiscConfig, connType pr
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -343,7 +345,7 @@ func revokeActiveProxySessions(info *models.RevokedCredentialInfo) {
 	case proto.ConnectionTypeRDP:
 		broker.RevokeByCredentialID(info.CredentialID)
 	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes,
-		proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine:
+		proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(info.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
 		// SSM has no persistent session store; DB invalidation blocks new connections

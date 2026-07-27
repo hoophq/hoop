@@ -1,6 +1,6 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Spinner Tabs Text]]
    ["lucide-react" :refer [Info ShieldCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -26,6 +26,14 @@
                                                                 (rf/dispatch [:modal->close]))
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
+
+(defn- normalize-subtype
+  "Collapse SSH variants to \"ssh\" for the connect UI. Local-mode SSH
+   connections carry the subtype \"ssh-local\" but connect the same way as a
+   regular SSH connection (gateway SSH server + password), so they should show
+   the same credentials and command instructions."
+  [subtype]
+  (if (= subtype "ssh-local") "ssh" subtype))
 
 (defn- get-hostname []
   (let [hostname (.-hostname js/location)]
@@ -63,6 +71,14 @@
          "AWS_SECRET_ACCESS_KEY=\"" aws_secret_access_key "\" "
          "aws ssm start-session --target {TARGET_INSTANCE} "
          "--endpoint-url \"" endpoint-url "\"")))
+
+(defn- build-mcp-url
+  "Build the MCP endpoint URL exposed by the local http proxy, in the form
+   protocol://hostname:port/mcp."
+  [{:keys [port]}]
+  (let [protocol (.-protocol js/location)
+        hostname (get-hostname)]
+    (str protocol "//" hostname ":" port "/mcp")))
 
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
@@ -268,6 +284,47 @@
         :id "port"
         :logs port}]]]))
 
+(defn- mcp-credentials-fields
+  "MCP specific credentials fields: the MCP endpoint URL and the Authorization
+   header used to authenticate the MCP client against the proxy."
+  [{:keys [proxy_token port] :as connection-credentials}]
+    [:> Box {:class "space-y-4"}
+      ;; Host
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Host"]
+      [logs/new-container
+       {:status :success
+        :id "hostname"
+        :logs (get-hostname)}]]
+
+    ;; Port
+    [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+        "Port"]
+      [logs/new-container
+        {:status :success
+        :id "port"
+        :logs port}]]
+
+   ;; MCP URL
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "MCP URL"]
+    [logs/new-container
+     {:status :success
+      :id "mcp-url"
+      :logs (build-mcp-url connection-credentials)}]]
+
+   ;; Authorization Header
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Authorization Header"]
+    [logs/new-container
+     {:status :success
+      :id "authtoken"
+      :logs proxy_token}]]])
+
 (defn- ssh-credentials-fields
   "SSH specific credentials fields"
   [connection-credentials]
@@ -313,11 +370,12 @@
   "Credentials tab content - adapts based on connection type"
   [{:keys [connection_subtype connection_credentials] :as native-client-access-data}]
   [:> Box {:class "space-y-radix-6"}
-   (case connection_subtype
+   (case (normalize-subtype connection_subtype)
      "postgres" [postgres-credentials-fields connection_credentials]
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
      "claude-code" [custom-views/claude-code-credentials-fields native-client-access-data]
+     "mcp" [mcp-credentials-fields connection_credentials]
      "httpproxy" [http-proxy-credentials-fields connection_credentials]
      "kubernetes" [http-proxy-credentials-fields connection_credentials]
      "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
@@ -378,7 +436,7 @@
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
-        subtype (:connection_subtype native-client-access-data)
+        subtype (normalize-subtype (:connection_subtype native-client-access-data))
         has-command? (contains? #{"ssh" "rdp"} subtype)]
 
     (fn []
@@ -389,19 +447,22 @@
          [:> Heading {:size "6" :as "h2" :class "text-[--gray-12]"}
           (str "Connect to " (:connection_name native-client-access-data))]
 
-         [:> Flex {:align "center" :gap "2"}
-          [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-           "Connection established, time left: "]
-          [timer/inline-timer
-           {:expire-at (:expire_at native-client-access-data)
-            :text-component (fn [timer-text]
-                              [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
-                               timer-text])
-            :on-complete (fn []
-                           (rf/dispatch [:native-client-access->clear-session connection-name])
-                           (rf/dispatch [:modal->close])
-                           (rf/dispatch [:show-snackbar {:level :info
-                                                         :text "Native client access session has expired."}]))}]]]
+         (if-let [expire-at (:expire_at native-client-access-data)]
+           [:> Flex {:align "center" :gap "2"}
+            [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+             "Connection established, time left: "]
+            [timer/inline-timer
+             {:expire-at expire-at
+              :text-component (fn [timer-text]
+                                [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
+                                 timer-text])
+              :on-complete (fn []
+                             (rf/dispatch [:native-client-access->clear-session connection-name])
+                             (rf/dispatch [:modal->close])
+                             (rf/dispatch [:show-snackbar {:level :info
+                                                           :text "Native client access session has expired."}]))}]]
+           [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+            "Connection established"])]
 
         (cond
           (= subtype "postgres")
@@ -486,6 +547,17 @@
      :on-click #(rf/dispatch [:modal->close])}
     "Close"]])
 
+(defn- requesting-credentials-view
+  "Loading state shown while the persistent credential is being issued for a
+   non-review connection."
+  [connection-name]
+  [:> Flex {:direction "column" :align "center" :justify "center" :gap "4" :class "h-full py-16"}
+   [:> Spinner {:size "3"}]
+   [:> Heading {:size "5" :as "h2" :class "text-[--gray-12]"}
+    (str "Connecting to " connection-name)]
+   [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+    "Generating native client credentials..."]])
+
 (defn minimize-modal-content [connection-name native-client-access-data]
   [:> Box {:class "min-w-32"}
    [:> Box {:class "space-y-2"}
@@ -498,27 +570,29 @@
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Type: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      (case (:connection_subtype native-client-access-data)
+      (case (normalize-subtype (:connection_subtype native-client-access-data))
         "postgres" "PostgreSQL"
         "rdp" "Remote Desktop"
         "ssh" "SSH"
         "aws-ssm" "AWS SSM"
         "kubernetes" "Kubernetes"
         "httpproxy" "HTTP Proxy"
+        "mcp" "MCP"
         (formatters/title-case
          (:connection_subtype native-client-access-data)))]]
-    [:> Box
-     [:> Text {:size "2" :class "text-[--gray-12]"}
-      "Time left: "]
-     [timer/inline-timer
-      {:expire-at (:expire_at native-client-access-data)
-       :text-component (fn [timer-text]
-                         [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-                          timer-text])
-       :on-complete (fn []
-                      (rf/dispatch [:native-client-access->clear-session connection-name])
-                      (rf/dispatch [:show-snackbar {:level :info
-                                                    :text "Native client access session has expired."}]))}]]]
+    (when-let [expire-at (:expire_at native-client-access-data)]
+      [:> Box
+       [:> Text {:size "2" :class "text-[--gray-12]"}
+        "Time left: "]
+       [timer/inline-timer
+        {:expire-at expire-at
+         :text-component (fn [timer-text]
+                           [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+                            timer-text])
+         :on-complete (fn []
+                        (rf/dispatch [:native-client-access->clear-session connection-name])
+                        (rf/dispatch [:show-snackbar {:level :info
+                                                      :text "Native client access session has expired."}]))}]])]
 
    [:> Box {:class "mt-4"}
     [:> Button
@@ -549,6 +623,9 @@
                           (:name connection-name-or-map))
         jit-duration-sec (when (map? connection-name-or-map)
                            (:jit_access_duration_sec connection-name-or-map))
+        reviewers (when (map? connection-name-or-map)
+                    (:reviewers connection-name-or-map))
+        requires-review? (or jit-duration-sec (seq reviewers))
         selected-duration (r/atom 30)
         requesting? (rf/subscribe [:native-client-access->requesting? connection-name])
         native-client-access-data (rf/subscribe [:native-client-access->current-session connection-name])
@@ -564,7 +641,14 @@
          #(minimize-modal connection-name)
          #(disconnect-session connection-name (:id @native-client-access-data))]
 
-        ;; Step 1: Configure session duration (no session)
+        ;; Non-review flow with no session yet: a persistent credential request
+        ;; is in flight (dispatched by :native-client-access->agent-status-check-success).
+        ;; Show a loading view until the credential arrives — the configure-session
+        ;; step is skipped entirely for these connections.
+        (and (not @native-client-access-data) (not requires-review?))
+        [requesting-credentials-view connection-name]
+
+        ;; Step 1: Configure session duration (review-required connections)
         (not @native-client-access-data)
         [configure-session-view connection-name selected-duration requesting? jit-duration-sec]
 

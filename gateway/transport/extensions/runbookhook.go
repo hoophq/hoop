@@ -35,7 +35,7 @@ type runbookWrapperFiles struct {
 }
 
 func getRunbookHookFiles(ctx Context) (*runbookWrapperFiles, error) {
-	p, err := models.GetPluginByName(ctx.OrgID, plugintypes.PluginRunbooksName)
+	p, err := models.GetPluginByName(models.DB, ctx.OrgID, plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
 		return nil, nil

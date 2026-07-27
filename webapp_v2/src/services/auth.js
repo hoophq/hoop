@@ -4,6 +4,7 @@ const AUTH_ENDPOINTS = {
   LOCAL_LOGIN: '/localauth/login',
   LOCAL_REGISTER: '/localauth/register',
   IDPS_LOGIN: '/login',
+  SAML_LOGIN: '/saml/login',
   SIGNUP: '/signup',
   USER: '/userinfo',
   SERVER_INFO: '/serverinfo',
@@ -58,6 +59,24 @@ export const authService = {
     params.append('redirect', callbackUrl);
 
     const response = await api.get(`${AUTH_ENDPOINTS.IDPS_LOGIN}?${params.toString()}`);
+    return response.data.login_url;
+  },
+
+  // Get SAML login URL (for SAML 2.0 identity providers)
+  // Calls GET /saml/login?redirect=<callbackUrl> and returns login_url from response
+  async getSamlLoginUrl(callbackUrl, options = {}) {
+    const { promptLogin = false } = options;
+
+    const params = new URLSearchParams();
+
+    // SAML's equivalent of the OIDC re-authentication prompt
+    if (promptLogin) {
+      params.append('force_authn', 'true');
+    }
+
+    params.append('redirect', callbackUrl);
+
+    const response = await api.get(`${AUTH_ENDPOINTS.SAML_LOGIN}?${params.toString()}`);
     return response.data.login_url;
   },
 

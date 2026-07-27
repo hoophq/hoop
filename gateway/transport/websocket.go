@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -62,8 +63,11 @@ func HandleConnection(c *gin.Context) {
 	}
 	defer wsConn.Close()
 
-	// Register this agent's communicator inside the broker
-	if err := broker.CreateAgent(agent.Name, wsConn); err != nil {
+	// Register this agent's communicator inside the broker. The returned
+	// instance id ties cleanup to THIS connection so a late close of a stale
+	// connection cannot evict a newer one that reused the same agent name.
+	agentInstanceID, err := broker.CreateAgent(agent.Name, wsConn)
+	if err != nil {
 		log.Errorf("failed to register agent communicator: %v", err)
 		return
 	}
@@ -88,10 +92,20 @@ func HandleConnection(c *gin.Context) {
 		if messageType != websocket.BinaryMessage {
 			continue
 		}
-		handleWebSocketMessage(data)
+		handleWebSocketMessage(agent.Name, data)
 	}
 
-	// Cleanup: close all sessions that belong to this agent ===
+	// Cleanup: remove this connection's broker state (only if it is still the
+	// live entry for this agent name) so a late close of a stale connection
+	// cannot evict a newer one that reused the same name.
+	broker.RemoveAgent(agent.Name, agentInstanceID)
+
+	// Then close sessions belonging to this agent. NOTE: this still matches by
+	// agent NAME, not connection instance, so if the same name reconnects with
+	// overlapping sessions, a stale connection's cleanup can close the newer
+	// connection's sessions. Pre-existing behavior; tracked in RD-247 to scope
+	// teardown by connection instance. The broker-entry fix above already
+	// prevents the worst case (stale eviction of the live registration).
 	for id, s := range broker.GetSessions() {
 		if s.Connection.AgentName == agent.Name {
 			log.Debugf("Closing session %s due to agent=%s disconnect", id, agent.Name)
@@ -100,9 +114,98 @@ func HandleConnection(c *gin.Context) {
 	}
 }
 
-func handleWebSocketMessage(data []byte) {
+// agentGuardrailsViolation mirrors the Rust agent's ViolationReport
+// (agentrs/src/piigate/report.rs). Entity metadata only — no pixels/text.
+type agentGuardrailsViolation struct {
+	Kind        string   `json:"kind"` // "detection" | "overload" | "analysis_error"
+	EntityTypes []string `json:"entity_types"`
+	Detections  []struct {
+		EntityType string  `json:"entity_type"`
+		Score      float64 `json:"score"`
+		X          int     `json:"x"`
+		Y          int     `json:"y"`
+		Width      int     `json:"width"`
+		Height     int     `json:"height"`
+	} `json:"detections"`
+	DroppedBytes int `json:"dropped_bytes"`
+}
+
+// persistAgentGuardrailsViolation records an agent-reported PII guard
+// violation as session guardrails info plus per-entity detection rows —
+// mirroring the gateway-side gate's persistPIIViolation. Best-effort and
+// non-transactional: enforcement already happened at the agent, partial
+// evidence beats none.
+func persistAgentGuardrailsViolation(s *broker.Session, payload []byte) {
+	orgID := s.Connection.OrgID
+	sessionID := s.ID.String()
+
+	var report agentGuardrailsViolation
+	if err := json.Unmarshal(payload, &report); err != nil {
+		log.With("sid", sessionID).Warnf("piigate: failed to decode agent guardrails violation: %v", err)
+		return
+	}
+
+	// Distinguish the fail-closed causes from a real PII detection in the
+	// audit record: an overload (analysis backlog) and an analysis error
+	// (OCR/Presidio failure or timeout) both terminate the session without
+	// confirmed entities, and must not be mislabeled as a detection.
+	ruleType := "pii_detection"
+	switch report.Kind {
+	case "overload":
+		ruleType = "pii_guard_overload"
+	case "analysis_error":
+		ruleType = "pii_guard_analysis_error"
+	}
+	info := []models.SessionGuardRailsInfo{{
+		RuleName:     "rdp_pii_guard",
+		Rule:         models.SessionGuardRailMatchedRule{Type: ruleType},
+		Direction:    "server_to_client",
+		MatchedWords: report.EntityTypes,
+	}}
+	if data, err := json.Marshal(info); err != nil {
+		log.With("sid", sessionID).Warnf("piigate: failed to marshal agent guardrails info: %v", err)
+	} else if err := models.UpdateSessionGuardRailsInfo(orgID, sessionID, data); err != nil {
+		log.With("sid", sessionID).Warnf("piigate: failed to persist agent guardrails info: %v", err)
+	}
+
+	if len(report.Detections) > 0 {
+		detections := make([]models.RDPEntityDetection, 0, len(report.Detections))
+		for _, d := range report.Detections {
+			detections = append(detections, models.RDPEntityDetection{
+				SessionID:  sessionID,
+				EntityType: d.EntityType,
+				Score:      d.Score,
+				X:          d.X,
+				Y:          d.Y,
+				Width:      d.Width,
+				Height:     d.Height,
+			})
+		}
+		if err := models.BulkInsertRDPEntityDetections(detections); err != nil {
+			log.With("sid", sessionID).Warnf("piigate: failed to persist agent entity detections: %v", err)
+		}
+	}
+
+	log.With("sid", sessionID).Infof("piigate: agent-side PII guard violation persisted (kind=%s, entities=%v)", report.Kind, report.EntityTypes)
+}
+
+func handleWebSocketMessage(agentName string, data []byte) {
 	// 1) Try CONTROL frame first (JSON-like)
 	if sid, msg, err := broker.DecodeWebSocketMessage(data); err == nil {
+		// Connection-scoped control frames (sid == ControlSentinelSID) describe
+		// the agent connection, not a session. Dispatch them by type before any
+		// session lookup.
+		if sid == broker.ControlSentinelSID {
+			switch msg.Type {
+			case broker.MessageTypeCapabilities:
+				broker.SetAgentCapabilities(agentName, msg.Metadata)
+				log.Debugf("agent=%s advertised capabilities: %v", agentName, msg.Metadata)
+			default:
+				log.Infof("Unhandled connection-scoped control message type=%q for agent=%s", msg.Type, agentName)
+			}
+			return
+		}
+
 		s := broker.GetSession(sid)
 		if s == nil {
 			log.Infof("Control message for unknown SID=%s", sid)
@@ -121,6 +224,11 @@ func handleWebSocketMessage(data []byte) {
 		case broker.MessageTypeData:
 			// Some agents might send data via control envelope. Let handler decide.
 			_ = handler.HandleData(s, msg)
+		case broker.MessageTypeGuardrailsViolation:
+			// Agent-side PII guard reported a violation: persist the entity
+			// metadata for audit. Enforcement (session teardown) already
+			// happened at the agent — this is best-effort evidence.
+			persistAgentGuardrailsViolation(s, msg.Payload)
 		default:
 			log.Infof("Unhandled control message type=%q for SID=%s", msg.Type, sid)
 		}

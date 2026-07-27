@@ -3,7 +3,9 @@ FROM ubuntu:noble-20250714
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 
-RUN mkdir -p /app && \
+RUN groupadd --gid 10001 hoop && \
+    useradd --uid 10001 --gid 10001 --no-create-home --shell /sbin/nologin hoop && \
+    mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
     mkdir -p /opt/hoop/bin && \
     apt-get update -y && \
@@ -25,9 +27,12 @@ ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
 COPY rootfs /
+# SQL migrations are embedded in the gateway binary; the on-disk copy is
+# kept for deployments that point MIGRATION_PATH_FILES at it.
+COPY gateway/migrations/ /app/migrations/
 COPY dist/binaries/ /tmp/
 RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
-    chown root:root /app/hoop* && \
+    chown -R hoop:hoop /app /opt/hoop && \
     chmod 755 /app/hoop* && \
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
@@ -38,5 +43,7 @@ EXPOSE 15432
 
 ENV PATH="/app:${PATH}"
 ENV PATH="/opt/hoop/bin:${PATH}"
+
+USER hoop
 
 ENTRYPOINT ["tini", "--"]
