@@ -150,7 +150,7 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 | Sidebar | `shared_ui/sidebar/main.cljs` | ✅ Yes — `layout/Sidebar.jsx` |
 | Command Palette (cmd+k) | `shared_ui/cmdk/command_palette.cljs` | ✅ Yes — `features/CommandPalette/` (Native Client action still bridges to CLJS) |
 | Modal system | `components/modal.cljs` | ✅ Pattern replaced — `components/Modal` + colocated `useDisclosure` (no global registry by design) |
-| Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (same sonner lib) |
+| Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
 | Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — no shared ConfirmDialog yet; pages build ad-hoc confirmations (planned: roadmap Wave 1) |
 | Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` + `hooks/useMinDelay` |
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ❌ Not yet — hard blocker; React CommandPalette dispatches into CLJS (roadmap Wave 4) |

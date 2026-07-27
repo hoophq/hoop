@@ -5,8 +5,8 @@ import { useDisclosure } from '@mantine/hooks'
 import Modal from '@/components/Modal'
 import Button from '@/components/Button'
 import Tabs from '@/components/Tabs'
-import { useBridgeStore } from '@/stores/useBridgeStore'
 import PageLoader from '@/components/PageLoader'
+import { showSnackbar } from '@/utils/snackbar'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import ConfigureHeader from '@/pages/Roles/Configure/ConfigureHeader'
 import FormFooter from '@/pages/Roles/Configure/FormFooter'
@@ -76,8 +76,6 @@ export default function ConfigureRolePage() {
     loadAuxiliaryData()
     return () => reset()
   }, [connectionName, loadConnection, loadAuxiliaryData, reset])
-
-  const showSnackbar = useBridgeStore((s) => s.showSnackbar)
 
   const handleSave = async () => {
     if (formRef.current && !formRef.current.checkValidity()) {

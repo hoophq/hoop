@@ -128,7 +128,7 @@ When something in `pages/[Page]/components/` starts getting reused outside the p
 
 The legacy CLJS app shows toasts through `sonner` via a `:show-snackbar` re-frame event.
 While the migration is in progress, the React side uses the **same library** (`sonner`)
-through a thin wrapper at `src/utils/snackbar.js` so users see one consistent toast
+through a thin wrapper at `src/utils/snackbar.jsx` so users see one consistent toast
 style across CLJS and React routes.
 
 ```jsx
@@ -140,13 +140,14 @@ showSnackbar({ level: 'info',    text: 'Heads up.' })
 ```
 
 **Rules:**
-- Do NOT import `notifications` from `@mantine/notifications` in new code — it produces
-  a completely different visual from v1 and breaks parity.
+- Do NOT use `@mantine/notifications` — the dependency has been removed from the project
+  (it produced a completely different visual from v1 and broke parity). Do not re-add it.
 - The `<Toaster>` is mounted once at `src/App.jsx`. Do not add additional Toaster instances.
 - The wrapper accepts the same `{ level, text, description }` shape as the CLJS
   `:show-snackbar` event so the mental model stays identical on both sides.
-- Pre-existing pages still using Mantine `notifications.show()` should be migrated to
-  `showSnackbar` opportunistically whenever you touch them.
+- Do NOT show snackbars through the CLJS bridge (`clojureDispatch('show-snackbar', ...)`) —
+  the CLJS Toaster only exists while the CLJS tree is mounted, so toasts fired from
+  React-only routes would be silently lost. Always use `showSnackbar` from `@/utils/snackbar`.
 
 ## Authentication Flow
 

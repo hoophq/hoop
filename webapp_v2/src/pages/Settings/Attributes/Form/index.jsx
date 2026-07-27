@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Button, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
 import { ArrowLeft } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
@@ -11,6 +10,7 @@ import TextInput from '@/components/TextInput'
 import MultiSelect from '@/components/MultiSelect'
 import { attributesService } from '@/services/attributes'
 import { connectionsService } from '@/services/connections'
+import { showSnackbar } from '@/utils/snackbar'
 
 function SectionRow({ title, description, children }) {
   return (
@@ -59,7 +59,7 @@ export default function AttributesForm() {
           setConnectionNames(attr.connection_names ?? [])
         }
       } catch {
-        notifications.show({ message: 'Failed to load data.', color: 'red' })
+        showSnackbar({ level: 'error', text: 'Failed to load data.' })
       } finally {
         setLoading(false)
       }
@@ -69,7 +69,7 @@ export default function AttributesForm() {
 
   async function handleSubmit() {
     if (!name.trim()) {
-      notifications.show({ message: 'Name is required.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Name is required.' })
       return
     }
     setSaving(true)
@@ -78,14 +78,14 @@ export default function AttributesForm() {
       if (description.trim()) body.description = description
       if (isEdit) {
         await attributesService.update(attrName, body)
-        notifications.show({ message: 'Attribute updated.', color: 'green' })
+        showSnackbar({ level: 'success', text: 'Attribute updated.' })
       } else {
         await attributesService.create(body)
-        notifications.show({ message: 'Attribute created.', color: 'green' })
+        showSnackbar({ level: 'success', text: 'Attribute created.' })
       }
       navigate('/settings/attributes')
     } catch {
-      notifications.show({ message: `Failed to ${isEdit ? 'update' : 'create'} attribute.`, color: 'red' })
+      showSnackbar({ level: 'error', text: `Failed to ${isEdit ? 'update' : 'create'} attribute.` })
     } finally {
       setSaving(false)
     }
@@ -95,10 +95,10 @@ export default function AttributesForm() {
     setSaving(true)
     try {
       await attributesService.remove(attrName)
-      notifications.show({ message: 'Attribute deleted.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'Attribute deleted.' })
       navigate('/settings/attributes')
     } catch {
-      notifications.show({ message: 'Failed to delete attribute.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Failed to delete attribute.' })
     } finally {
       setSaving(false)
       closeDelete()
