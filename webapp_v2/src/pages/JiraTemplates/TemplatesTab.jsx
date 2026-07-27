@@ -17,11 +17,12 @@ const FREE_LICENSE_INFO_MESSAGE =
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Jira Templates free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
-export default function TemplatesTab() {
+export default function TemplatesTab({ onGoConfiguration }) {
   const navigate = useNavigate()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
   const list = useJiraTemplatesStore((s) => s.list)
+  const integration = useJiraTemplatesStore((s) => s.integration)
   const submitting = useJiraTemplatesStore((s) => s.submitting)
   const deleteTemplate = useJiraTemplatesStore((s) => s.deleteTemplate)
 
@@ -46,6 +47,21 @@ export default function TemplatesTab() {
         text: error?.response?.data?.message || 'Failed to delete Jira template.',
       })
     }
+  }
+
+  // Reached once the promotion has been dismissed: templates cannot be
+  // created until the org-level integration exists, so point at the
+  // Configuration tab instead of the create CTA.
+  if (!integration) {
+    return (
+      <EmptyState
+        title="No Jira integration configured in your Organization yet."
+        description="Configure your Jira instance to start creating Jira Templates."
+        action={{ label: 'Configure Jira Integration', onClick: onGoConfiguration }}
+        docsUrl={docsUrl.integrations.jira}
+        docsLabel="Jira templates documentation"
+      />
+    )
   }
 
   if (list.length === 0) {

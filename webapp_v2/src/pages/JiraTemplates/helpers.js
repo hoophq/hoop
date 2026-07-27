@@ -18,7 +18,6 @@ export const HOOP_VALUE_OPTIONS = [
   { value: 'session.connection', label: 'Resource role name' },
   { value: 'session.status', label: 'Session status' },
   { value: 'session.start_date', label: 'Session start date' },
-  { value: 'session.verb', label: 'Session type' },
   { value: 'session.script', label: 'Session Script' },
 ]
 

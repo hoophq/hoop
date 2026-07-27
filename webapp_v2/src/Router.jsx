@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
@@ -462,6 +462,11 @@ function Router() {
             </Layout>
           </ProtectedRoute>
         }
+      />
+      {/* Legacy URL absorbed into the Configuration tab — keep old bookmarks working */}
+      <Route
+        path="/settings/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
       />
 
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}

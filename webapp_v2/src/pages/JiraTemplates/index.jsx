@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
@@ -11,6 +11,10 @@ import { useJiraTemplatesStore } from './store'
 import TemplatesTab from './TemplatesTab'
 import ConfigurationTab from './ConfigurationTab'
 import JiraPromotion from './sections/JiraPromotion'
+
+// Same persistence semantics as the legacy Runbooks Setup gate
+// ("runbooks-promotion-seen"): any stored value counts as seen.
+const PROMOTION_SEEN_STORAGE_KEY = 'jira-templates-promotion-seen'
 
 export default function JiraTemplates() {
   const navigate = useNavigate()
@@ -31,6 +35,14 @@ export default function JiraTemplates() {
     setSearchParams(value === 'configuration' ? { tab: value } : {}, {
       replace: true,
     })
+
+  const [promotionSeen, setPromotionSeen] = useState(() =>
+    Boolean(localStorage.getItem(PROMOTION_SEEN_STORAGE_KEY)),
+  )
+  const markPromotionSeen = () => {
+    localStorage.setItem(PROMOTION_SEEN_STORAGE_KEY, 'true')
+    setPromotionSeen(true)
+  }
 
   useEffect(() => {
     fetchList()
@@ -53,12 +65,18 @@ export default function JiraTemplates() {
   }
 
   // Promotion gate: like other features, the full-page promotion replaces the
-  // tabbed page while the org has no Jira integration. Its primary action (and
-  // the sidebar deep-link) opens the page on the Configuration tab.
-  if (!integration && tab !== 'configuration') {
+  // tabbed page while the org has no Jira integration — but only until its
+  // primary action is clicked once, which persists a seen flag (mirroring the
+  // legacy Runbooks Setup gate) and opens the page on the Configuration tab.
+  if (!integration && !promotionSeen && tab !== 'configuration') {
     return (
       <FullBleed>
-        <JiraPromotion onConfigure={() => setTab('configuration')} />
+        <JiraPromotion
+          onConfigure={() => {
+            markPromotionSeen()
+            setTab('configuration')
+          }}
+        />
       </FullBleed>
     )
   }
@@ -92,7 +110,7 @@ export default function JiraTemplates() {
         </Tabs.List>
 
         <Tabs.Panel value="templates" pt="md">
-          <TemplatesTab />
+          <TemplatesTab onGoConfiguration={() => setTab('configuration')} />
         </Tabs.Panel>
         <Tabs.Panel value="configuration" pt="md">
           <ConfigurationTab />
