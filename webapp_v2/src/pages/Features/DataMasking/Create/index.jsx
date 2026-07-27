@@ -55,7 +55,12 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   const [form, setForm] = useState(() => ({
     name: rule?.name ?? '',
     description: rule?.description ?? '',
-    scoreThreshold: scoreToPercent(rule?.score_threshold),
+    // New blank rules start at 85%. Template/edited rules keep their own
+    // value — a stored NULL stays empty so saving doesn't silently add a
+    // threshold to a rule that masks every detection today. The `!isEdit`
+    // guard keeps the default out of edit flows even if a null rule ever
+    // slips past the page-level error gate.
+    scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
     connectionIds: rule?.connection_ids ?? [],
     attributes: rule?.attributes ?? [],
   }))
@@ -201,7 +206,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
                 const value = e.currentTarget.value
                 setField({ scoreThreshold: value === '' ? '' : Number(value) })
               }}
-              description="Minimum confidence level required to detect and mask sensitive data. Default 85% works well for most use cases."
+              description="Minimum confidence level (1-100) a detection needs to be masked. Defaults to 85% for new rules. Leave empty to mask every detection regardless of confidence. Custom entity types with a score below this value are never masked."
             />
           </Stack>
         </SectionRow>
@@ -305,6 +310,13 @@ export default function DataMaskingForm() {
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />
+  }
+
+  // A failed fetch leaves `active` null; rendering the form would present a
+  // blank "edit" whose save overwrites the real rule with defaults (85%
+  // threshold, empty rows). Block it like the loading state.
+  if (isEdit && activeStatus === 'error') {
+    return <Text c="red">Failed to load data masking rule.</Text>
   }
 
   return (
