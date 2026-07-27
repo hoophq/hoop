@@ -98,6 +98,8 @@ Gateway backend (port 8009)
 | `/jira-templates/new` | React | Done |
 | `/jira-templates/edit/:id` | React | Done |
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
+| `/integrations/slack` | React | Done |
+| `/integrations/webhooks` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing — see `MIGRATION_ROADMAP.md` for the wave plan |
 
 ---
@@ -128,7 +130,8 @@ Gateway backend (port 8009)
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
 /features/ai-session-analyzer/*
-/plugins/manage/:name            (Slack/Webhooks — in flight on EVL-101)
+/guardrails/*
+/plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
 /client (SQL editor)
@@ -259,6 +262,9 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - ClojureApp bridge component
 - Re-frame dispatch bridge — React can trigger CLJS actions via `window.hoopDispatch` (wrapped in Zustand stores)
 - Vite proxy setup for CLJS and backend
+- Onboarding flow 
+- Auth pages
+- Slack & Webhooks integration pages (`/integrations/slack`, `/integrations/webhooks`) — legacy `/plugins/manage/*` route removed from CLJS
 
 ### In Progress / Known Gaps 🔄
 - No shared ConfirmDialog component yet (pages build ad-hoc confirmations)

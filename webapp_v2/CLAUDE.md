@@ -126,15 +126,16 @@ When something in `pages/[Page]/components/` starts getting reused outside the p
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 
-The legacy CLJS app shows toasts through `sonner` via a `:show-snackbar` re-frame event.
-While the migration is in progress, the React side uses the **same library** (`sonner`)
-through a thin wrapper at `src/utils/snackbar.jsx` so users see one consistent toast
-style across CLJS and React routes.
+The legacy CLJS app shows toasts through `sonner` at the **top-right** of the screen.
+The React side uses the **same library** (`sonner`) through a thin wrapper at
+`src/utils/snackbar.jsx`, rendered by `src/components/Snackbar/Toast.jsx` (a
+one-to-one port of the legacy toast), so users see one consistent toast style
+across CLJS and React routes.
 
 ```jsx
 import { showSnackbar } from '@/utils/snackbar'
 
-showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
+showSnackbar({ level: 'success', text: 'Connection enabled.' })
 showSnackbar({ level: 'error',   text: 'Failed to update.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
 ```
