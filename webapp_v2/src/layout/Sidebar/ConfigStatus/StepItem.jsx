@@ -11,7 +11,9 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
     <Box className={classes.step}>
       <UnstyledButton className={classes.stepHeader} aria-expanded={opened} onClick={onToggle}>
         {step.done ? (
-          <CircleCheckBig size={24} aria-hidden="true" className={classes.stepIconDone} />
+          <Box className={classes.stepIconDone} aria-hidden="true">
+            <CircleCheckBig size={20} />
+          </Box>
         ) : (
           <step.icon size={24} aria-hidden="true" className={classes.stepIcon} />
         )}

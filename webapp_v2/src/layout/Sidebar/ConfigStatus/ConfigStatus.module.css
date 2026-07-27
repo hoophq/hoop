@@ -55,7 +55,14 @@
   flex-shrink: 0;
 }
 
+/* Same 24px slot as the pending step icon so titles stay aligned; the glyph
+   itself renders smaller inside it. */
 .stepIconDone {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--mantine-color-green-8);
   flex-shrink: 0;
 }
