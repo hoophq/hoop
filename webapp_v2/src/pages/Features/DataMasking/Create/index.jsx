@@ -57,8 +57,10 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
     description: rule?.description ?? '',
     // New blank rules start at 85%. Template/edited rules keep their own
     // value — a stored NULL stays empty so saving doesn't silently add a
-    // threshold to a rule that masks every detection today.
-    scoreThreshold: rule ? scoreToPercent(rule.score_threshold) : 85,
+    // threshold to a rule that masks every detection today. The `!isEdit`
+    // guard keeps the default out of edit flows even if a null rule ever
+    // slips past the page-level error gate.
+    scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
     connectionIds: rule?.connection_ids ?? [],
     attributes: rule?.attributes ?? [],
   }))
@@ -308,6 +310,13 @@ export default function DataMaskingForm() {
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />
+  }
+
+  // A failed fetch leaves `active` null; rendering the form would present a
+  // blank "edit" whose save overwrites the real rule with defaults (85%
+  // threshold, empty rows). Block it like the loading state.
+  if (isEdit && activeStatus === 'error') {
+    return <Text c="red">Failed to load data masking rule.</Text>
   }
 
   return (
