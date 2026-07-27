@@ -1,12 +1,11 @@
 import { SpotlightAction, SpotlightActionsGroup } from '@mantine/spotlight'
-import { SquareCode, FlaskConical, Settings } from 'lucide-react'
+import { SquareCode, Settings } from 'lucide-react'
 import { canAccessNativeClient } from '@/utils/connectionPolicy'
 
 const ACTION_TYPES = {
   WEB_TERMINAL: 'web-terminal',
   HOOP_CLI: 'hoop-cli',
   NATIVE_CLIENT: 'native-client',
-  TEST: 'test',
   CONFIGURE: 'configure',
 }
 
@@ -26,14 +25,6 @@ export default function ConnectionActionsPage({ connection, resource, isAdmin, o
             description="Connect with native client"
             leftSection={<SquareCode size={16} />}
             onClick={() => onAction(ACTION_TYPES.NATIVE_CLIENT, connection, resource)}
-          />
-        )}
-        {isAdmin && (
-          <SpotlightAction
-            label="Test Connection"
-            description="Run a connectivity test"
-            leftSection={<FlaskConical size={16} />}
-            onClick={() => onAction(ACTION_TYPES.TEST, connection, resource)}
           />
         )}
       </SpotlightActionsGroup>

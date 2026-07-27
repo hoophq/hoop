@@ -37,7 +37,7 @@ export function NavItem({ item, isAdmin, isSelfHosted }) {
 
   if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled)) return null
 
-  const active = item.path ? isActive(item.path, location.pathname) : false
+  const active = item.path ? isActive(item.path, location.pathname, location.search) : false
   const closeMobile = () => setSidebarOpen(false)
 
   if (item.children) {

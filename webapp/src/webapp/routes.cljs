@@ -89,7 +89,7 @@
                   ["/audit-logs" :settings-audit-logs]
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
-                  ["/attributes/edit" :settings-attributes-edit]
+                  [["/attributes/edit/" :name] :settings-attributes-edit]
                   ["/api-keys" :settings-api-keys]
                   ["/api-keys/new" :settings-api-keys-new]
                   ["/api-keys/created" :settings-api-keys-created]

@@ -82,10 +82,6 @@ function ConnectedCommandPalette() {
         clojureDispatch('native-client-access->start-flow', connection?.name)
         break;
 
-      case ACTION_TYPES.TEST:
-        navigate(`/connections/${connection?.name}/test`);
-        break;
-
       case ACTION_TYPES.CONFIGURE:
         navigate(`/roles/${connection?.name}/configure?from=roles-list`);
         break;
