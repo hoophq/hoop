@@ -14,6 +14,14 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
+// NOTE: This file no longer contains native-MSSQL guardrail admission tests.
+// Under the DEP-74 delegate model the gateway performs NO guardrail admission,
+// feature-flag gating, or agent-capability gating for MSSQL: it ships the
+// connection's configured rules and libhoop is the sole authority, failing
+// closed at proxy construction when it cannot enforce them. The remaining test
+// below covers the one gateway-side admission invariant that still exists: a
+// guarded connection opens without a DLP provider configured.
+
 // TestGuardedConnectionOpensWithoutProvider verifies the gateway admits a
 // session on a guarded connection even when no Presidio provider is configured.
 // Guardrails are enforced by the agent's built-in pattern-matching engine (see
