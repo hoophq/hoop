@@ -141,13 +141,14 @@ showSnackbar({ level: 'info',    text: 'Heads up.' })
 ```
 
 **Rules:**
-- Do NOT import `notifications` from `@mantine/notifications` in new code — it renders
-  a completely different visual (bottom of the screen) and breaks parity with v1.
-- Whenever you find a `notifications.show()` call in code you are touching, migrate it
-  to `showSnackbar` in the same change.
+- Do NOT use `@mantine/notifications` — the dependency has been removed from the project
+  (it produced a completely different visual from v1 and broke parity). Do not re-add it.
 - The `<Toaster>` is mounted once at `src/App.jsx`. Do not add additional Toaster instances.
 - The wrapper accepts the same `{ level, text, description }` shape as the CLJS
   `:show-snackbar` event so the mental model stays identical on both sides.
+- Do NOT show snackbars through the CLJS bridge (`clojureDispatch('show-snackbar', ...)`) —
+  the CLJS Toaster only exists while the CLJS tree is mounted, so toasts fired from
+  React-only routes would be silently lost. Always use `showSnackbar` from `@/utils/snackbar`.
 
 ## Authentication Flow
 
