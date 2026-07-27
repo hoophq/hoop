@@ -5,12 +5,12 @@ import { spotlight } from '@mantine/spotlight';
 import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { searchAll } from '@/services/search';
+import { showSnackbar } from '@/utils/snackbar';
+import { clojureDispatch } from '@/utils/clojureDispatch';
 import CommandPaletteRoot from './CommandPaletteRoot';
 import MainPage from './MainPage';
 import ResourceRolesPage from './ResourceRolesPage';
 import ConnectionActionsPage, { ACTION_TYPES } from './ConnectionActionsPage';
-import { showSnackbar } from '@/utils/snackbar';
-import { clojureDispatch } from '@/utils/clojureDispatch';
 
 function ConnectedCommandPalette() {
   const navigate = useNavigate();
