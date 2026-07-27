@@ -10,7 +10,6 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
 import { AlertCircle } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
@@ -19,6 +18,7 @@ import Table from '@/components/Table'
 import licenseService from '@/services/license'
 import authService from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
+import { showSnackbar } from '@/utils/snackbar'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -63,7 +63,7 @@ function SettingsLicense() {
       .getInfo()
       .then(setLicenseInfo)
       .catch(() =>
-        notifications.show({ color: 'red', title: 'Error', message: 'Failed to load license information' })
+        showSnackbar({ level: 'error', text: 'Failed to load license information' })
       )
       .finally(() => setLoading(false))
   }, [])
@@ -73,20 +73,20 @@ function SettingsLicense() {
     try {
       parsed = JSON.parse(licenseKey)
     } catch {
-      notifications.show({ color: 'red', title: 'Error', message: 'Error processing license: invalid JSON format' })
+      showSnackbar({ level: 'error', text: 'Error processing license: invalid JSON format' })
       return
     }
 
     setSaving(true)
     try {
       await licenseService.update(parsed)
-      notifications.show({ color: 'green', title: 'Saved', message: 'License updated successfully' })
+      showSnackbar({ level: 'success', text: 'License updated successfully' })
       const [updated, serverInfo] = await Promise.all([licenseService.getInfo(), authService.getServerInfo()])
       setLicenseInfo(updated)
       setServerInfo(serverInfo)
       setLicenseKey('')
     } catch {
-      notifications.show({ color: 'red', title: 'Error', message: 'Failed to update license' })
+      showSnackbar({ level: 'error', text: 'Failed to update license' })
     } finally {
       setSaving(false)
     }

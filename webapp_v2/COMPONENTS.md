@@ -628,10 +628,9 @@ showSnackbar({
 ```
 
 Error toasts auto-dismiss after 10 seconds (mirrors v1); other levels use sonner's
-default. Do NOT import `notifications` from `@mantine/notifications` in new code — it
-renders a completely different visual and breaks parity with v1. Pre-existing pages
-that still use it should be migrated opportunistically. See the "Snackbars / Toasts"
-section of `CLAUDE.md` for the full rule.
+default. Do NOT use `@mantine/notifications` — the dependency has been removed from
+the project (it rendered a completely different visual and broke parity with v1).
+See the "Snackbars / Toasts" section of `CLAUDE.md` for the full rule.
 
 ---
 

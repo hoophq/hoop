@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { Box, Card, Group, Stack, Text, Title } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
-import { notifications } from "@mantine/notifications"
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,6 +21,7 @@ import Code from "@/components/Code"
 import Modal from "@/components/Modal"
 import PageLoader from "@/components/PageLoader"
 import Tooltip from "@/components/Tooltip"
+import { showSnackbar } from "@/utils/snackbar"
 import { useEventRoutingStore } from "../store"
 import StatusBadge from "../components/StatusBadge"
 import DispatchBadge from "../components/DispatchBadge"
@@ -330,17 +330,17 @@ export default function EventRoutingDetail() {
   const handleTogglePause = async () => {
     try {
       await togglePause(sub.id)
-      notifications.show({
-        message:
+      showSnackbar({
+        level: "success",
+        text:
           sub.status === "active"
             ? "Subscription paused."
             : "Subscription resumed.",
-        color: "green",
       })
     } catch (e) {
-      notifications.show({
-        message: e?.response?.data?.message || "Failed.",
-        color: "red",
+      showSnackbar({
+        level: "error",
+        text: e?.response?.data?.message || "Failed.",
       })
     }
   }
@@ -349,12 +349,12 @@ export default function EventRoutingDetail() {
     setDeleting(true)
     try {
       await deleteSubscription(sub.id)
-      notifications.show({ message: `Deleted "${sub.name}".`, color: "green" })
+      showSnackbar({ level: "success", text: `Deleted "${sub.name}".` })
       navigate("/features/event-routing")
     } catch (e) {
-      notifications.show({
-        message: e?.response?.data?.message || "Failed to delete.",
-        color: "red",
+      showSnackbar({
+        level: "error",
+        text: e?.response?.data?.message || "Failed to delete.",
       })
       setDeleting(false)
     }

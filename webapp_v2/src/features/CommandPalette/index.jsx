@@ -9,7 +9,7 @@ import CommandPaletteRoot from './CommandPaletteRoot';
 import MainPage from './MainPage';
 import ResourceRolesPage from './ResourceRolesPage';
 import ConnectionActionsPage, { ACTION_TYPES } from './ConnectionActionsPage';
-import { notifications } from '@mantine/notifications'
+import { showSnackbar } from '@/utils/snackbar';
 import { clojureDispatch } from '@/utils/clojureDispatch';
 
 function ConnectedCommandPalette() {
@@ -74,7 +74,7 @@ function ConnectedCommandPalette() {
       case ACTION_TYPES.HOOP_CLI:
         const cmd = `hoop connect ${connection?.name}`;
         navigator.clipboard.writeText(cmd).then(() => {
-          notifications.show({ message: `Copied: ${cmd}`, color: 'green' });
+          showSnackbar({ level: 'success', text: `Copied: ${cmd}` });
         });
         break;
 

@@ -7,13 +7,13 @@ import {
   Stack,
   Text,
 } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
 import { ListVideo, Rotate3d, Search, Shapes } from 'lucide-react'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import Table from '@/components/Table'
 import TextInput from '@/components/TextInput'
 import ValueFilter from '@/components/ValueFilter'
+import { showSnackbar } from '@/utils/snackbar'
 import { useRulepackStore } from '../store'
 
 function connectionTagValues(connection) {
@@ -103,16 +103,16 @@ export default function RolesTab() {
   const handleApply = async () => {
     const result = await applyConnections()
     if (result.ok) {
-      notifications.show({
-        color: 'green',
-        message: 'Rulepack applied successfully',
+      showSnackbar({
+        level: 'success',
+        text: 'Rulepack applied successfully',
       })
       return
     }
     const missing = result.missing
-    notifications.show({
-      color: 'red',
-      message:
+    showSnackbar({
+      level: 'error',
+      text:
         missing && missing.length > 0
           ? `Unknown connections: ${missing.join(', ')}`
           : 'Failed to apply rulepack',
