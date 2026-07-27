@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
@@ -36,6 +36,8 @@ import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
+import JiraTemplates from '@/pages/JiraTemplates'
+import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 
 /**
  * Routing strategy:
@@ -438,6 +440,49 @@ function Router() {
             </Layout>
           </ProtectedRoute>
         }
+      />
+
+      {/* Jira Templates (includes the Jira integration Configuration tab) */}
+      <Route
+        path="/jira-templates"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplates />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/edit/:id"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      {/* Legacy URL absorbed into the Configuration tab — keep old bookmarks working */}
+      <Route
+        path="/settings/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
       />
 
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}

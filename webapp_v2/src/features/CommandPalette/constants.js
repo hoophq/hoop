@@ -13,6 +13,7 @@ import {
   PackageSearch,
   BrainCog,
   ExternalLink,
+  Layers,
   Users,
 } from 'lucide-react'
 
@@ -34,7 +35,8 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents' },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication' },
-  { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/settings/jira' },
+  { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration' },
+  { id: 'jira-templates', label: 'Jira Templates', description: 'Manage Jira issue templates', icon: Layers, path: '/jira-templates' },
   { id: 'settings-infra', label: 'Infrastructure', description: 'Infrastructure settings', icon: LayoutDashboard, path: '/settings/infrastructure' },
   { id: 'license', label: 'License', description: 'License management', icon: ShieldCheck, path: '/settings/license' },
   { id: 'users', label: 'Users', description: 'Manage organization users', icon: Users, path: '/organization/users' },

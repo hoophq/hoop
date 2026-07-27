@@ -3,8 +3,7 @@
    [re-frame.core :as rf]
    [webapp.jira-templates.prompt-form :as prompt-form]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
-   [webapp.jira-templates.cmdb-error :as cmdb-error]
-   [clojure.string :as cs]))
+   [webapp.jira-templates.cmdb-error :as cmdb-error]))
 
 ;; CMDB
 
@@ -190,17 +189,6 @@
     :db (assoc db :jira-templates->list {:status :loading :data []})}))
 
 (rf/reg-event-fx
- :jira-templates->get-by-id
- (fn [{:keys [db]} [_ id]]
-   {:db (assoc db :jira-templates->active-template {:status :loading
-                                                    :data {}})
-    :fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri (str "/integrations/jira/issuetemplates/" id)
-                   :on-success #(rf/dispatch [:jira-templates->set-active-template %])
-                   :on-failure #(rf/dispatch [:jira-templates->set-active-template nil])}]]]}))
-
-(rf/reg-event-fx
  :jira-templates->get-submit-template
  (fn [{:keys [db]} [_ id]]
    {:db (assoc db :jira-templates->submit-template {:status :loading :data {}})
@@ -238,14 +226,6 @@
    (assoc db :jira-templates->list {:status :ready :data templates})))
 
 (rf/reg-event-db
- :jira-templates->set-active-template
- (fn [db [_ template]]
-   (assoc db :jira-templates->active-template
-          {:status :ready
-           :data (merge {:connections nil :connections-load-state {:loading false :remaining 0 :acc [] :errors []} :connections-error nil} template)})))
-
-
-(rf/reg-event-db
  :jira-templates->set-submit-template
  (fn [db [_ template]]
    (if (empty? (get-in template [:cmdb_types :items]))
@@ -281,79 +261,15 @@
                    {:status :loading :data template})}))))
 
 (rf/reg-event-db
- :jira-templates->clear-active-template
- (fn [db _]
-   (assoc db :jira-templates->active-template {:status :ready :data nil})))
-
-(rf/reg-event-db
  :jira-templates->clear-submit-template
  (fn [db _]
    (assoc db :jira-templates->submit-template {:status :loading :data nil})))
-
-(rf/reg-event-fx
- :jira-templates->create
- (fn [_ [_ template]]
-   {:fx [[:dispatch [:jira-templates->set-submitting true]]
-         [:dispatch
-          [:fetch {:method "POST"
-                   :uri "/integrations/jira/issuetemplates"
-                   :body template
-                   :on-success (fn []
-                                 (rf/dispatch [:jira-templates->set-submitting false])
-                                 (rf/dispatch [:jira-templates->get-all])
-                                 (rf/dispatch [:navigate :jira-templates])
-                                 (rf/dispatch [:jira-templates->clear-active-template]))
-                   :on-failure (fn [error]
-                                 (rf/dispatch [:show-snackbar {:text "Failed to create JIRA template" :level :error :details error}])
-                                 (rf/dispatch [:jira-templates->set-submitting false]))}]]]}))
-
-(rf/reg-event-fx
- :jira-templates->update-by-id
- (fn [_ [_ template]]
-   {:fx [[:dispatch [:jira-templates->set-submitting true]]
-         [:dispatch
-          [:fetch {:method "PUT"
-                   :uri (str "/integrations/jira/issuetemplates/" (:id template))
-                   :body template
-                   :on-success (fn []
-                                 (rf/dispatch [:jira-templates->set-submitting false])
-                                 (rf/dispatch [:jira-templates->get-all])
-                                 (rf/dispatch [:navigate :jira-templates])
-                                 (rf/dispatch [:jira-templates->clear-active-template]))
-                   :on-failure (fn [error]
-                                 (rf/dispatch [:show-snackbar {:text "Failed to update JIRA template" :level :error :details error}])
-                                 (rf/dispatch [:jira-templates->set-submitting false]))}]]]}))
-
-(rf/reg-event-fx
- :jira-templates->delete-by-id
- (fn [_ [_ id]]
-   {:fx [[:dispatch
-          [:fetch {:method "DELETE"
-                   :uri (str "/integrations/jira/issuetemplates/" id)
-                   :on-success (fn []
-                                 (rf/dispatch [:jira-templates->get-all])
-                                 (rf/dispatch [:navigate :jira-templates]))}]]]}))
-
-(rf/reg-event-db
- :jira-templates->set-submitting
- (fn [db [_ value]]
-   (assoc-in db [:jira-templates :submitting?] value)))
 
 ;; Subs
 (rf/reg-sub
  :jira-templates->list
  (fn [db _]
    (:jira-templates->list db)))
-
-(rf/reg-sub
- :jira-templates->active-template
- (fn [db _]
-   (:jira-templates->active-template db)))
-
-(rf/reg-sub
- :jira-templates->active-template-id
- (fn [db _]
-   (get-in db [:jira-templates->active-template :data :id])))
 
 (rf/reg-sub
  :jira-templates->submit-template
@@ -370,80 +286,3 @@
  (fn [db _]
    (get-in db [:jira-templates->submit-template :data :id])))
 
-(rf/reg-sub
- :jira-templates->submitting?
- (fn [db]
-   (get-in db [:jira-templates :submitting?])))
-
-
-(rf/reg-event-fx
- :jira-templates/get-selected-connections
- (fn [{:keys [db]} [_ connection-ids]]
-   (if (seq connection-ids)
-     (let [page-size 30
-           base-uri "/connections"
-           chunks (partition-all page-size connection-ids)
-           num-batches (count chunks)
-           mk-uri (fn [ids]
-                    (let [query-params [(str "connection_ids=" (cs/join "," ids))
-                                        "page=1"
-                                        (str "page_size=" page-size)]]
-                      (str base-uri "?" (cs/join "&" query-params))))
-           fx-requests (mapv (fn [ids]
-                               [:dispatch
-                                [:fetch {:method "GET"
-                                         :uri (mk-uri ids)
-                                         :on-success (fn [response]
-                                                       (rf/dispatch [:jira-templates/accumulate-selected-connections (:data response)]))
-                                         :on-failure (fn [error]
-                                                       (rf/dispatch [:jira-templates/accumulate-selected-connections-error error]))}]])
-                             chunks)]
-       {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-load-state {:loading true :remaining num-batches :acc [] :errors []}})
-        :fx fx-requests})
-     {:db (update-in db [:jira-templates->active-template :data] merge
-                     {:connections [] :connections-load-state {:loading false :remaining 0 :acc [] :errors []}})})))
-
-(rf/reg-event-fx
- :jira-templates/accumulate-selected-connections
- (fn [{:keys [db]} [_ connections]]
-   (let [{:keys [remaining acc errors]} (get-in db [:jira-templates->active-template :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
-         new-remaining (dec remaining)
-         new-acc (into acc connections)]
-     (if (pos? new-remaining)
-       {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-load-state {:loading true
-                                                 :remaining new-remaining
-                                                 :acc new-acc
-                                                 :errors errors}})}
-       {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
-        :fx [[:dispatch [:jira-templates/set-selected-connections new-acc]]]}))))
-
-(rf/reg-event-fx
- :jira-templates/accumulate-selected-connections-error
- (fn [{:keys [db]} [_ error]]
-   (let [{:keys [remaining acc errors]} (get-in db [:jira-templates->active-template :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
-         new-remaining (dec remaining)
-         new-errors (conj (vec errors) error)]
-     (if (pos? new-remaining)
-       {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-load-state {:loading true
-                                                 :remaining new-remaining
-                                                 :acc acc
-                                                 :errors new-errors}})}
-       {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
-        :fx [[:dispatch [:jira-templates/set-selected-connections-error new-errors]]]}))))
-
-(rf/reg-event-db
- :jira-templates/set-selected-connections
- (fn [db [_ connections]]
-   (let [filtered-connections (mapv #(select-keys % [:id :name]) connections)]
-     (assoc-in db [:jira-templates->active-template :data :connections] filtered-connections))))
-
-(rf/reg-event-db
- :jira-templates/set-selected-connections-error
- (fn [db [_ error]]
-   (update-in db [:jira-templates->active-template :data] merge
-              {:connections [] :connections-error error})))

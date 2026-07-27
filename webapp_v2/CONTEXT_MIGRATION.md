@@ -83,6 +83,10 @@ Gateway backend (port 8009)
 | `/features/data-masking/new` | React | Done |
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
+| `/jira-templates` | React | Done |
+| `/jira-templates/new` | React | Done |
+| `/jira-templates/edit/:id` | React | Done |
+| `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -112,8 +116,6 @@ Gateway backend (port 8009)
 /features/runbooks/*
 /features/ai-session-analyzer/*
 /guardrails/*
-/jira-templates/*
-/settings/jira  (belongs to Integrations — route will be renamed when migrated)
 /plugins/*
 /integrations/authentication
 /integrations/aws-connect/*

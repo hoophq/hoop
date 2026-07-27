@@ -118,9 +118,6 @@
    [webapp.integrations.authentication.main :as integrations-authentication]
    [webapp.integrations.authentication.subs]
    [webapp.integrations.events]
-   [webapp.integrations.jira.main :as jira-integration]
-   [webapp.jira-templates.create-update-form :as jira-templates-create-update]
-   [webapp.jira-templates.main :as jira-templates]
    [webapp.onboarding.aws-connect :as aws-connect]
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
@@ -484,28 +481,6 @@
       [routes/wrap-admin-only
        [guardrail-create-update/main :edit]]]]))
 
-(defmethod routes/panels :jira-templates-panel []
-  [layout :application-hoop
-   [routes/wrap-admin-only
-    [jira-templates/panel]]])
-
-(defmethod routes/panels :create-jira-template-panel []
-  (rf/dispatch [:jira-templates->clear-active-template])
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [jira-templates-create-update/main :create]]]])
-
-(defmethod routes/panels :edit-jira-template-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        jira-template-id (:jira-template-id (:route-params current-route))]
-    (rf/dispatch [:jira-templates->get-by-id jira-template-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [jira-templates-create-update/main :edit]]]]))
-
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "h-full"}
@@ -525,14 +500,6 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [manage-plugin/main plugin-name]]]))
-
-(defmethod routes/panels :settings-jira-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "Jira" {:class "mb-6"}]
-                               [jira-integration/main]]]]))
 
 (defmethod routes/panels :audit-plugin-panel []
   ;; this performs a redirect while we're migrating

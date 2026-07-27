@@ -190,30 +190,6 @@
                          "Create new Guardrails"
                          "Request demo")}))]))
 
-(defn jira-templates-promotion
-  "Specific component for Jira templates"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "JIRA Templates"
-    :mode mode
-    :image "jira-pomotion.png"
-    :description "Automate change management and security workflows."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Automated Change Management"
-                     :description "Reduce manual documentation and administrative overhead by automatically creating and tracking Jira tickets for every infrastructure access request."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Seamless Workflow Integration"
-                     :description "Link access requests directly to Jira projects and request types with contextual information."}
-                    {:icon [:> FileLock2 {:size 20}]
-                     :title "Flexible User Prompts & Data Collection"
-                     :description "Request additional information from users during access workflows. Map manual or automated data to Jira fields."}]
-    :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :settings-jira])
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Configure Jira Integration"
-                    "Request demo")}])
-
 (defn runbooks-promotion
   "Specific component for Runbooks"
   [{:keys [mode on-promotion-seen]}]
