@@ -2469,6 +2469,17 @@ type ServerMcpAuthConfig struct {
 	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/mcp"`
 	// JWT claim name from which user groups are extracted. Defaults to "groups".
 	GroupsClaim string `json:"groups_claim" example:"groups"`
+	// Statically pre-registered OAuth client ID at the IdP, for IdPs without
+	// RFC 7591 Dynamic Client Registration support (e.g. JumpCloud, Okta,
+	// Entra ID). When set, the gateway advertises itself as the authorization
+	// server and serves a Dynamic Client Registration shim that returns this
+	// client to MCP clients; tokens whose `aud` claim matches this client ID
+	// are accepted in addition to resource_uri.
+	ClientID string `json:"client_id" example:"hoop-mcp"`
+	// Optional client secret paired with client_id. Leave empty to use a
+	// public client with PKCE (recommended): the registration shim discloses
+	// this value to any registering MCP client.
+	ClientSecret string `json:"client_secret" example:""`
 }
 
 type GenerateApiKeyResponse struct {

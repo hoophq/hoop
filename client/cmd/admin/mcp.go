@@ -11,8 +11,10 @@ import (
 const mcpAuthEndpoint = "/api/serverconfig/mcp-auth"
 
 var (
-	mcpAuthResourceURIFlag string
-	mcpAuthGroupsClaimFlag string
+	mcpAuthResourceURIFlag  string
+	mcpAuthGroupsClaimFlag  string
+	mcpAuthClientIDFlag     string
+	mcpAuthClientSecretFlag string
 )
 
 var mcpCmd = &cobra.Command{
@@ -41,6 +43,12 @@ var mcpAuthEnableCmd = &cobra.Command{
 		}
 		if mcpAuthGroupsClaimFlag != "" {
 			current["groups_claim"] = mcpAuthGroupsClaimFlag
+		}
+		if mcpAuthClientIDFlag != "" {
+			current["client_id"] = mcpAuthClientIDFlag
+		}
+		if mcpAuthClientSecretFlag != "" {
+			current["client_secret"] = mcpAuthClientSecretFlag
 		}
 		mcpAuthPutOrDie(current)
 		fmt.Println(styles.Fainted("MCP OAuth authentication enabled."))
@@ -71,12 +79,17 @@ var mcpAuthStatusCmd = &cobra.Command{
 var mcpAuthConfigureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Update MCP OAuth configuration without changing enabled state",
-	Long: `Update the MCP OAuth resource URI or groups claim without toggling enable/disable.
+	Long: `Update the MCP OAuth configuration without toggling enable/disable.
 Use --resource-uri to change the canonical RFC 8707 audience binding.
-Use --groups-claim to change the JWT claim from which user groups are extracted.`,
+Use --groups-claim to change the JWT claim from which user groups are extracted.
+Use --client-id/--client-secret to set a statically pre-registered OAuth client
+for IdPs without RFC 7591 Dynamic Client Registration support (JumpCloud, Okta,
+Entra ID). Prefer a public client (no secret) with PKCE: the registration shim
+discloses the secret to any registering MCP client.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if mcpAuthResourceURIFlag == "" && mcpAuthGroupsClaimFlag == "" {
-			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri and/or --groups-claim")
+		if mcpAuthResourceURIFlag == "" && mcpAuthGroupsClaimFlag == "" &&
+			mcpAuthClientIDFlag == "" && mcpAuthClientSecretFlag == "" {
+			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri, --groups-claim, --client-id and/or --client-secret")
 		}
 		current := mcpAuthGetOrEmpty()
 		if mcpAuthResourceURIFlag != "" {
@@ -84,6 +97,12 @@ Use --groups-claim to change the JWT claim from which user groups are extracted.
 		}
 		if mcpAuthGroupsClaimFlag != "" {
 			current["groups_claim"] = mcpAuthGroupsClaimFlag
+		}
+		if mcpAuthClientIDFlag != "" {
+			current["client_id"] = mcpAuthClientIDFlag
+		}
+		if mcpAuthClientSecretFlag != "" {
+			current["client_secret"] = mcpAuthClientSecretFlag
 		}
 		mcpAuthPutOrDie(current)
 		fmt.Println(styles.Fainted("MCP OAuth configuration updated."))
@@ -111,9 +130,11 @@ func mcpAuthGetOrEmpty() map[string]any {
 func mcpAuthPutOrDie(payload map[string]any) {
 	conf := clientconfig.GetClientConfigOrDie()
 	body := map[string]any{
-		"enabled":      mcpAuthBool(payload["enabled"]),
-		"resource_uri": mcpAuthString(payload["resource_uri"]),
-		"groups_claim": mcpAuthString(payload["groups_claim"]),
+		"enabled":       mcpAuthBool(payload["enabled"]),
+		"resource_uri":  mcpAuthString(payload["resource_uri"]),
+		"groups_claim":  mcpAuthString(payload["groups_claim"]),
+		"client_id":     mcpAuthString(payload["client_id"]),
+		"client_secret": mcpAuthString(payload["client_secret"]),
 	}
 	if _, err := httpBodyRequest(&apiResource{
 		suffixEndpoint: mcpAuthEndpoint,
@@ -134,15 +155,25 @@ func mcpAuthPrintStatus(cfg map[string]any) {
 	if groupsClaim == "" {
 		groupsClaim = "(default: groups)"
 	}
+	clientID := mcpAuthString(cfg["client_id"])
+	staticClient := clientID
+	if clientID == "" {
+		staticClient = "(none: Dynamic Client Registration via IdP)"
+	} else if mcpAuthString(cfg["client_secret"]) != "" {
+		staticClient += " (confidential)"
+	} else {
+		staticClient += " (public, PKCE)"
+	}
 	state := "disabled"
 	if enabled {
 		state = "enabled"
 	}
 	fmt.Printf(`MCP OAuth Status:
-  State:        %s
-  Resource URI: %s
-  Groups Claim: %s
-`, state, resourceURI, groupsClaim)
+  State:         %s
+  Resource URI:  %s
+  Groups Claim:  %s
+  Static Client: %s
+`, state, resourceURI, groupsClaim, staticClient)
 }
 
 func mcpAuthBool(v any) bool {

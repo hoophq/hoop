@@ -16934,6 +16934,16 @@ const docTemplate = `{
         "openapi.ServerMcpAuthConfig": {
             "type": "object",
             "properties": {
+                "client_id": {
+                    "description": "Statically pre-registered OAuth client ID at the IdP, for IdPs without\nRFC 7591 Dynamic Client Registration support (e.g. JumpCloud, Okta,\nEntra ID). When set, the gateway advertises itself as the authorization\nserver and serves a Dynamic Client Registration shim that returns this\nclient to MCP clients; tokens whose ` + "`" + `aud` + "`" + ` claim matches this client ID\nare accepted in addition to resource_uri.",
+                    "type": "string",
+                    "example": "hoop-mcp"
+                },
+                "client_secret": {
+                    "description": "Optional client secret paired with client_id. Leave empty to use a\npublic client with PKCE (recommended): the registration shim discloses\nthis value to any registering MCP client.",
+                    "type": "string",
+                    "example": ""
+                },
                 "enabled": {
                     "description": "Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition\nto Hoop-issued bearer tokens.",
                     "type": "boolean"

@@ -353,10 +353,15 @@ func (p *Provider) GetIssuerURL() string { return p.IssuerURL }
 // issuer and asserts that the token was minted for the given resource URI as required
 // by the MCP OAuth 2.1 Resource Server profile (RFC 8707, MCP 2025-11-25).
 //
+// extraAudiences lists additional acceptable `aud` values. IdPs without RFC 8707
+// resource-indicator support (JumpCloud, Okta org auth server, Entra ID v1) mint
+// tokens whose audience is the OAuth client ID rather than the resource URI, so a
+// statically registered MCP client ID is passed here. Empty entries are ignored.
+//
 // The check is strict: it rejects opaque tokens, rejects tokens whose `aud` claim does
-// not contain expectedResource, and returns the parsed claims so callers can extract
-// subject, email, and groups without re-parsing.
-func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
+// not contain expectedResource or one of extraAudiences, and returns the parsed claims
+// so callers can extract subject, email, and groups without re-parsing.
+func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string, extraAudiences ...string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
 	var uinfo idptypes.ProviderUserInfo
 	if expectedResource == "" {
 		return uinfo, nil, fmt.Errorf("missing expected resource (aud) for token validation")
@@ -392,7 +397,16 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 		return uinfo, nil, fmt.Errorf("untrusted issuer, got=%q, want=%q", iss, p.IssuerURL)
 	}
 
-	if !audienceContains(claims["aud"], expectedResource) {
+	audienceOk := audienceContains(claims["aud"], expectedResource)
+	for _, extra := range extraAudiences {
+		if audienceOk {
+			break
+		}
+		if extra != "" {
+			audienceOk = audienceContains(claims["aud"], extra)
+		}
+	}
+	if !audienceOk {
 		return uinfo, nil, fmt.Errorf("audience mismatch, expected=%q", expectedResource)
 	}
 
