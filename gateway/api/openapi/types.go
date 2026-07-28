@@ -2465,8 +2465,10 @@ type ServerMcpAuthConfig struct {
 	// to Hoop-issued bearer tokens.
 	Enabled bool `json:"enabled"`
 	// Canonical resource URI used for RFC 8707 audience binding. Defaults to
-	// "<API_URL>/mcp" when empty. Must match the `aud` claim of inbound JWTs.
-	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/mcp"`
+	// "<API_URL>/api/mcp" when empty. Compared against the `aud` claim of
+	// inbound JWTs in canonical URI form (host case, default port, and
+	// trailing slashes are ignored).
+	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/api/mcp"`
 	// JWT claim name from which user groups are extracted. Defaults to "groups".
 	GroupsClaim string `json:"groups_claim" example:"groups"`
 	// Statically pre-registered OAuth client ID at the IdP, for IdPs without

@@ -407,7 +407,7 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 		}
 	}
 	if !audienceOk {
-		return uinfo, nil, fmt.Errorf("audience mismatch, expected=%q", expectedResource)
+		return uinfo, nil, fmt.Errorf("audience mismatch, got=%v, want=%q or one of %v", claims["aud"], expectedResource, extraAudiences)
 	}
 
 	uinfo = p.parseUserInfo(claims)
@@ -439,25 +439,54 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 }
 
 // audienceContains returns true when the JWT `aud` claim (which may be a string or
-// an array per RFC 7519 §4.1.3) explicitly includes expected.
+// an array per RFC 7519 §4.1.3) includes expected. URI-shaped values are compared
+// in canonical form so cosmetic variances between the configured resource URI and
+// the IdP-minted audience (trailing slash, host case, explicit default port) do
+// not reject a semantically identical resource.
 func audienceContains(claim any, expected string) bool {
 	switch v := claim.(type) {
 	case string:
-		return v == expected
+		return resourceAudienceEquals(v, expected)
 	case []any:
 		for _, raw := range v {
-			if s, _ := raw.(string); s == expected {
+			if s, _ := raw.(string); resourceAudienceEquals(s, expected) {
 				return true
 			}
 		}
 	case []string:
 		for _, s := range v {
-			if s == expected {
+			if resourceAudienceEquals(s, expected) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// resourceAudienceEquals reports whether two audience values denote the same
+// resource. Absolute http(s) URIs are compared canonically per RFC 3986 §6;
+// anything else (opaque client IDs) falls back to exact, case-sensitive
+// comparison.
+func resourceAudienceEquals(a, b string) bool {
+	return canonicalResourceURI(a) == canonicalResourceURI(b)
+}
+
+// canonicalResourceURI lowercases the scheme and host, strips the scheme's
+// default port, and trims trailing slashes from the path. Values that are not
+// absolute http(s) URIs are returned unchanged.
+func canonicalResourceURI(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return s
+	}
+	host := strings.ToLower(u.Host)
+	switch u.Scheme {
+	case "http":
+		host = strings.TrimSuffix(host, ":80")
+	case "https":
+		host = strings.TrimSuffix(host, ":443")
+	}
+	return u.Scheme + "://" + host + strings.TrimRight(u.EscapedPath(), "/")
 }
 
 func (p *Provider) userInfoEndpoint(accessToken string) (*idptypes.ProviderUserInfo, error) {

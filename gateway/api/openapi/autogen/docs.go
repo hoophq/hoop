@@ -16954,9 +16954,9 @@ const docTemplate = `{
                     "example": "groups"
                 },
                 "resource_uri": {
-                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/mcp\" when empty. Must match the ` + "`" + `aud` + "`" + ` claim of inbound JWTs.",
+                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/api/mcp\" when empty. Compared against the ` + "`" + `aud` + "`" + ` claim of\ninbound JWTs in canonical URI form (host case, default port, and\ntrailing slashes are ignored).",
                     "type": "string",
-                    "example": "https://use.hoop.dev/mcp"
+                    "example": "https://use.hoop.dev/api/mcp"
                 }
             }
         },
