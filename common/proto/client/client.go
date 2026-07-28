@@ -26,4 +26,7 @@ const (
 	WriteStdout              = "ClientWriteStdout"
 	WriteStderr              = "ClientWriteStderr"
 	HttpProxyConnectionWrite = "ClientHttpProxyConnectionWrite"
+	// MCPProxyConnectionWrite is the agent->client half of the protocol-aware
+	// MCP path (ADR-0004).
+	MCPProxyConnectionWrite = "ClientMCPProxyConnectionWrite"
 )

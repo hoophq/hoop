@@ -81,6 +81,31 @@ type httpProxySession struct {
 	responseStore  sync.Map    // stores response channels per connectionID
 	closed         atomic.Bool // fast-fail flag to avoid mutex contention on session close
 	connCounter    atomic.Int64
+
+	// Packet types for this session's protocol. The wire framing is identical
+	// for httpproxy and the protocol-aware MCP type (ADR-0004) — raw HTTP
+	// bytes both ways — so the only difference is which packet type the agent
+	// dispatches on. Set once at session creation; zero values mean httpproxy.
+	agentWritePacketType  pb.PacketType
+	clientWritePacketType pb.PacketType
+}
+
+// agentWriteType is the packet type for gateway->agent writes, defaulting to
+// the httpproxy relay when unset.
+func (sess *httpProxySession) agentWriteType() pb.PacketType {
+	if sess.agentWritePacketType != "" {
+		return sess.agentWritePacketType
+	}
+	return pbagent.HttpProxyConnectionWrite
+}
+
+// clientWriteType is the packet type this session expects on agent->client
+// responses.
+func (sess *httpProxySession) clientWriteType() pb.PacketType {
+	if sess.clientWritePacketType != "" {
+		return sess.clientWritePacketType
+	}
+	return pbclient.HttpProxyConnectionWrite
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -298,6 +323,9 @@ func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCred
 		[]string{
 			pb.ConnectionTypeHttpProxy.String(), pb.ConnectionTypeKubernetes.String(),
 			pb.ConnectionTypeCommandLine.String(),
+			// Protocol-aware MCP shares this listener and its proxy-token
+			// auth; only the packet type downstream differs (ADR-0004).
+			pb.ConnectionTypeMcpProxy.String(),
 		},
 		secretKeyHash)
 
@@ -481,7 +509,16 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 	}
 
 	connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
-	if connectionType != pb.ConnectionTypeHttpProxy && connectionType != pb.ConnectionTypeKubernetes {
+	switch connectionType {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
+		// Opaque byte relay: the agent forwards the request upstream as-is.
+	case pb.ConnectionTypeMcpProxy:
+		// Protocol-aware MCP (ADR-0004). Identical framing — raw HTTP bytes
+		// both ways — but a distinct packet type routes the payload to the
+		// agent's MCP adapter instead of the byte relay.
+		session.agentWritePacketType = pbagent.MCPProxyConnectionWrite
+		session.clientWritePacketType = pbclient.MCPProxyConnectionWrite
+	default:
 		session.cancelFn("unsupported connection type: %v", connectionType)
 		return nil, fmt.Errorf("unsupported connection type: %v", connectionType)
 	}
@@ -603,7 +640,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		// in-flight requests interleave their own packets on the shared
 		// stream. The chunked writer is deliberately not Closed: closing it
 		// would close the session's underlying gRPC stream.
-		streamWriter := pb.NewStreamWriter(sess.streamClient, pbagent.HttpProxyConnectionWrite, map[string][]byte{
+		streamWriter := pb.NewStreamWriter(sess.streamClient, sess.agentWriteType(), map[string][]byte{
 			pb.SpecGatewaySessionID:   []byte(sess.sid),
 			pb.SpecClientConnectionID: []byte(connectionID),
 			pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
@@ -1015,7 +1052,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 			}
 			if n > 0 {
 				if err := sess.streamClient.Send(&pb.Packet{
-					Type:    pbagent.HttpProxyConnectionWrite,
+					Type:    sess.agentWriteType().String(),
 					Payload: buf[:n],
 					Spec: map[string][]byte{
 						pb.SpecGatewaySessionID:   []byte(sess.sid),
@@ -1053,7 +1090,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 					return
 				}
 				if err := sess.streamClient.Send(&pb.Packet{
-					Type:    pbagent.HttpProxyConnectionWrite,
+					Type:    sess.agentWriteType().String(),
 					Payload: buf[:n],
 					Spec: map[string][]byte{
 						pb.SpecGatewaySessionID:   []byte(sess.sid),
@@ -1160,8 +1197,19 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			continue
 		}
 
+		// A protocol-aware MCP session multiplexes two kinds of payload on one
+		// packet type: response bytes bound for the MCP client, and structured
+		// protocol events describing what the gateway inspected. Injecting an
+		// event record into the response stream would corrupt the client's HTTP
+		// framing, so it stops here. The audit plugin has already recorded it
+		// on the way through (see plugins/audit: MCPProxyConnectionWrite).
+		if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
+			log.Debugf("recorded mcp protocol event, sid=%s, size=%d", sess.sid, len(pkt.Payload))
+			continue
+		}
+
 		switch pb.PacketType(pkt.Type) {
-		case pbclient.HttpProxyConnectionWrite:
+		case sess.clientWriteType():
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 			log.Debugf("received response packet, connectionID=%s, payload size=%d, sid=%s", connectionID, len(pkt.Payload), sess.sid)
 

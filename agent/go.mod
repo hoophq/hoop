@@ -6,6 +6,12 @@ replace github.com/hoophq/hoop/common => ../common
 
 replace libhoop => ../libhoop
 
+// mcpproxy is developed alongside hoop (ADR-0004) in a sibling checkout.
+// LOCAL DEVELOPMENT ONLY: this path assumes hoophq/mcpproxy is cloned next to
+// hoophq/hoop. Replace with a published version tag before merging, or CI and
+// container builds will fail to resolve the module.
+replace github.com/hoophq/mcpproxy => ../../mcpproxy
+
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
@@ -23,9 +29,9 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	go.mongodb.org/mongo-driver v1.17.9
-	golang.org/x/crypto v0.52.0
+	golang.org/x/crypto v0.54.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.81.1
 	gopkg.in/yaml.v3 v3.0.1
 	libhoop v0.0.0-00010101000000-000000000000
@@ -75,9 +81,10 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
+	github.com/hoophq/mcpproxy v0.0.0-00010101000000-000000000000 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
@@ -129,19 +136,19 @@ require (
 	go.opentelemetry.io/contrib/processors/baggagecopy v0.16.0 // indirect
 	go.opentelemetry.io/contrib/propagators/b3 v1.43.0 // indirect
 	go.opentelemetry.io/contrib/propagators/ot v1.43.0 // indirect
-	go.opentelemetry.io/otel v1.43.0 // indirect
+	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.43.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.43.0 // indirect
 	go.opentelemetry.io/otel/log v0.19.0 // indirect
-	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
+	go.opentelemetry.io/otel/metric v1.44.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.19.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
-	go.opentelemetry.io/otel/trace v1.43.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.44.0 // indirect
+	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
@@ -156,8 +163,8 @@ require (
 require (
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

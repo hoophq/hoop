@@ -319,6 +319,10 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		return ConnectionType(ConnectionTypeHttpProxy)
 	case "application":
 		switch subtype {
+		// Protocol-aware MCP (ADR-0004), reachable under either parent type
+		// so the UI can file it beside the existing "mcp" subtype.
+		case "mcpproxy":
+			return ConnectionType(ConnectionTypeMcpProxy)
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
 		case "ssh", "ssh-local", "git", "github":
@@ -337,6 +341,10 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		}
 	case "custom":
 		switch subtype {
+		// Protocol-aware MCP (ADR-0004). Distinct from the "mcp" subtype,
+		// which stays an httpproxy alias until the new path proves out.
+		case "mcpproxy":
+			return ConnectionType(ConnectionTypeMcpProxy)
 		case "dynamodb":
 			return ConnectionType(ConnectionTypeDynamoDB)
 		case "cloudwatch":

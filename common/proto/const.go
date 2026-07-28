@@ -44,24 +44,35 @@ const (
 	SpecJitStatus           string = "jit.status"
 	SpecJitTimeout          string = "jit.timeout"
 
+	// SpecMCPEventKey marks an MCPProxyConnectionWrite packet as a structured
+	// protocol event (one JSON audit record) rather than response bytes bound
+	// for the MCP client. The gateway records it and does not forward it.
+	SpecMCPEventKey string = "mcp.event"
+
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
 	ConnectionTypeClaudeCode  ConnectionType = "claude-code"
 	ConnectionTypeMcp         ConnectionType = "mcp"
-	ConnectionTypeDynamoDB    ConnectionType = "dynamodb"
-	ConnectionTypeCloudWatch  ConnectionType = "cloudwatch"
-	ConnectionTypePostgres    ConnectionType = "postgres"
-	ConnectionTypeMySQL       ConnectionType = "mysql"
-	ConnectionTypeMSSQL       ConnectionType = "mssql"
-	ConnectionTypeMongoDB     ConnectionType = "mongodb"
-	ConnectionTypeOracleDB    ConnectionType = "oracledb"
-	ConnectionTypeTCP         ConnectionType = "tcp"
-	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
-	ConnectionTypeKubernetes  ConnectionType = "kubernetes"
-	ConnectionTypeSSH         ConnectionType = "ssh"
-	ConnectionTypeRDP         ConnectionType = "rdp"
-	ConnectionTypeSSM         ConnectionType = "aws-ssm"
+	// ConnectionTypeMcpProxy is the protocol-aware MCP gateway (ADR-0004).
+	// Unlike ConnectionTypeMcp — an httpproxy alias that relays MCP as opaque
+	// HTTP bytes — this type parses every JSON-RPC message, so tool-level
+	// policy, per-tool-call review, rug-pull detection and structured audit
+	// become expressible. The two coexist until the alias is migrated.
+	ConnectionTypeMcpProxy   ConnectionType = "mcpproxy"
+	ConnectionTypeDynamoDB   ConnectionType = "dynamodb"
+	ConnectionTypeCloudWatch ConnectionType = "cloudwatch"
+	ConnectionTypePostgres   ConnectionType = "postgres"
+	ConnectionTypeMySQL      ConnectionType = "mysql"
+	ConnectionTypeMSSQL      ConnectionType = "mssql"
+	ConnectionTypeMongoDB    ConnectionType = "mongodb"
+	ConnectionTypeOracleDB   ConnectionType = "oracledb"
+	ConnectionTypeTCP        ConnectionType = "tcp"
+	ConnectionTypeHttpProxy  ConnectionType = "httpproxy"
+	ConnectionTypeKubernetes ConnectionType = "kubernetes"
+	ConnectionTypeSSH        ConnectionType = "ssh"
+	ConnectionTypeRDP        ConnectionType = "rdp"
+	ConnectionTypeSSM        ConnectionType = "aws-ssm"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"

@@ -84,6 +84,13 @@ type (
 		// worker into a second, concurrent worker for the same connection.
 		httpProxyQueues sync.Map
 
+		// mcpProxyQueues is the MCP counterpart of httpProxyQueues, with the
+		// same key shape and the same removal rules. A separate map keeps the
+		// two paths independent: an MCP tool call parked on a human review can
+		// hold its worker for minutes, and that must never delay an httpproxy
+		// connection multiplexed on the same agent.
+		mcpProxyQueues sync.Map
+
 		// gcpTokenSources caches one oauth2.TokenSource per session (keyed by
 		// gateway session ID) for claude-code connections that federate to
 		// Google Vertex AI. The source is built once from the connection's
@@ -136,6 +143,26 @@ type (
 		// parseConnectionEnvVars; only MySQL consumes it (the other engines'
 		// CLIs already print result metadata in batch mode).
 		resultMetadata string
+
+		// MCP (ADR-0004). mcpTransport selects the backend transport
+		// (stdio | streamable-http | sse); mcpEnv is the child process
+		// environment for stdio backends, collected from MCPENV_* keys.
+		// A dedicated prefix is required because every hoop secret already
+		// arrives as envvar:NAME, so "envvar:*" cannot distinguish the
+		// child's environment from the connection's own settings.
+		mcpTransport string
+		mcpAuth      string
+		mcpEnv       map[string]string
+		// Tool policy globs and budgets, applied by the MCP gateway's
+		// inspection pipeline.
+		mcpAllowedTools     []string
+		mcpDeniedTools      []string
+		mcpApprovalTools    []string
+		mcpBlockSampling    *bool
+		mcpBlockElicitation *bool
+		mcpOnRugPull        string
+		mcpMaxCalls         int
+		mcpMaxResultKB      int
 	}
 	ioMetricFlush struct {
 		client pb.ClientTransport
@@ -258,6 +285,10 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	// http proxy
 	case pbagent.HttpProxyConnectionWrite:
 		a.processHttpProxyWriteServer(pkt)
+
+	// protocol-aware MCP (ADR-0004)
+	case pbagent.MCPProxyConnectionWrite:
+		a.processMCPProxyWriteServer(pkt)
 
 	// SSH protocol
 	case pbagent.SSHConnectionWrite:
@@ -474,6 +505,10 @@ func (a *Agent) sessionCleanup(sessionID string) {
 		}
 		return true
 	})
+	// Same for the MCP queues. The adapter itself (and the stdio child it
+	// owns) is closed by the connStore loop above, which calls Close on every
+	// libhoop.Proxy — dropping the queue here only releases the dispatch slot.
+	a.closeMCPProxyConnections(sessionID)
 	// Deleting an SSH queue entry while its drain worker may still be alive
 	// is safe only because session closure is terminal: closed=true was
 	// stored above under the write lock, so both the surviving worker and
@@ -798,6 +833,21 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		kubernetesInsecureSkipVerify: envVarS.Getenv("KUBERNETES_INSECURE_SKIP_VERIFY") == "true",
 
 		experimentalRedactRows: envVarS.Getenv("EXPERIMENTAL_REDACT_ROWS"),
+
+		// MCP settings (ADR-0004). MCPENV_* is a carve-out prefix like
+		// HEADER_*: it names the stdio child's environment, distinct from the
+		// connection's own envvar:-stored settings.
+		mcpTransport:        envVarS.Getenv("MCP_TRANSPORT"),
+		mcpAuth:             envVarS.Getenv("MCP_AUTH"),
+		mcpEnv:              stripPrefixKeys(envVarS.Search(func(key string) bool { return strings.HasPrefix(strings.ToLower(key), "mcpenv_") }), "mcpenv_"),
+		mcpAllowedTools:     splitGlobList(envVarS.Getenv("MCP_ALLOWED_TOOLS")),
+		mcpDeniedTools:      splitGlobList(envVarS.Getenv("MCP_DENIED_TOOLS")),
+		mcpApprovalTools:    splitGlobList(envVarS.Getenv("MCP_APPROVAL_TOOLS")),
+		mcpBlockSampling:    parseOptionalBool(envVarS.Getenv("MCP_BLOCK_SAMPLING")),
+		mcpBlockElicitation: parseOptionalBool(envVarS.Getenv("MCP_BLOCK_ELICITATION")),
+		mcpOnRugPull:        envVarS.Getenv("MCP_ON_RUG_PULL"),
+		mcpMaxCalls:         parseIntOrZero(envVarS.Getenv("MCP_MAX_CALLS")),
+		mcpMaxResultKB:      parseIntOrZero(envVarS.Getenv("MCP_MAX_RESULT_KB")),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:

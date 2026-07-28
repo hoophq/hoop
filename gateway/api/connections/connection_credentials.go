@@ -32,7 +32,7 @@ import (
 
 var validConnectionTypes = []string{
 	"postgres", "ssh", "ssh-local", "rdp", "aws-ssm",
-	"httpproxy", "kubernetes", "claude-code", "mcp",
+	"httpproxy", "kubernetes", "claude-code", "mcp", "mcpproxy",
 }
 
 // noExpirySentinel is the expire_at value stored for credentials that should
@@ -735,7 +735,7 @@ func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn 
 		sshproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeRDP:
 		broker.RevokeByCredentialID(cred.ID)
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp, proto.ConnectionTypeMcpProxy:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
 		// SSM has no persistent session store; proxies reject new connections
@@ -951,7 +951,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp, proto.ConnectionTypeMcpProxy:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -1104,6 +1104,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("claude-code", keySize)
 	case proto.ConnectionTypeMcp:
 		return keys.GenerateSecureRandomKey("mcp", keySize)
+	case proto.ConnectionTypeMcpProxy:
+		return keys.GenerateSecureRandomKey("mcpproxy", keySize)
 	case proto.ConnectionTypeKubernetes:
 		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:
