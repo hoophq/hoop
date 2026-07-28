@@ -3,6 +3,7 @@ package oidcprovider
 import (
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -70,4 +71,41 @@ func TestCanonicalResourceURI(t *testing.T) {
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, canonicalResourceURI(tc.in), "in=%s", tc.in)
 	}
+}
+
+func TestTokenBoundToClient(t *testing.T) {
+	const clientID = "hoop-mcp-client"
+
+	t.Run("client id in aud", func(t *testing.T) {
+		assert.True(t, tokenBoundToClient(jwt.MapClaims{"aud": clientID}, []string{clientID}))
+		assert.True(t, tokenBoundToClient(jwt.MapClaims{"aud": []any{"other", clientID}}, []string{clientID}))
+	})
+
+	// Auth0-style: aud carries the IdP's own default audience while the
+	// requesting client surfaces only as the azp authorized party.
+	t.Run("client id in azp with foreign aud", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"aud": []any{"https://tenant.us.auth0.com/userinfo"},
+			"azp": clientID,
+		}
+		assert.True(t, tokenBoundToClient(claims, []string{clientID}))
+	})
+
+	t.Run("unrelated client rejected", func(t *testing.T) {
+		claims := jwt.MapClaims{"aud": "something-else", "azp": "web-app-client"}
+		assert.False(t, tokenBoundToClient(claims, []string{clientID}))
+	})
+
+	t.Run("azp is case-sensitive exact", func(t *testing.T) {
+		assert.False(t, tokenBoundToClient(jwt.MapClaims{"azp": "HOOP-mcp-client"}, []string{clientID}))
+	})
+
+	t.Run("empty client ids never match", func(t *testing.T) {
+		assert.False(t, tokenBoundToClient(jwt.MapClaims{"aud": "", "azp": ""}, []string{""}))
+		assert.False(t, tokenBoundToClient(jwt.MapClaims{"azp": clientID}, nil))
+	})
+
+	t.Run("missing claims rejected", func(t *testing.T) {
+		assert.False(t, tokenBoundToClient(jwt.MapClaims{}, []string{clientID}))
+	})
 }

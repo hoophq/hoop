@@ -353,15 +353,19 @@ func (p *Provider) GetIssuerURL() string { return p.IssuerURL }
 // issuer and asserts that the token was minted for the given resource URI as required
 // by the MCP OAuth 2.1 Resource Server profile (RFC 8707, MCP 2025-11-25).
 //
-// extraAudiences lists additional acceptable `aud` values. IdPs without RFC 8707
-// resource-indicator support (JumpCloud, Okta org auth server, Entra ID v1) mint
-// tokens whose audience is the OAuth client ID rather than the resource URI, so a
-// statically registered MCP client ID is passed here. Empty entries are ignored.
+// staticClientIDs lists statically pre-registered OAuth client IDs (see the MCP
+// auth DCR shim) whose tokens are also accepted. IdPs without RFC 8707
+// resource-indicator support don't bind tokens to the resource URI: depending
+// on the IdP the client binding surfaces as `aud` = client ID (JumpCloud,
+// Entra ID) or as `azp` = client ID with an IdP-chosen `aud` (Auth0-style), so
+// both claims are checked. The static client must therefore be dedicated to
+// MCP access for this gateway. Empty entries are ignored.
 //
-// The check is strict: it rejects opaque tokens, rejects tokens whose `aud` claim does
-// not contain expectedResource or one of extraAudiences, and returns the parsed claims
-// so callers can extract subject, email, and groups without re-parsing.
-func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string, extraAudiences ...string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
+// The check is strict: it rejects opaque tokens, and rejects tokens bound to
+// neither expectedResource (via `aud`) nor a static client (via `aud`/`azp`).
+// It returns the parsed claims so callers can extract subject, email, and
+// groups without re-parsing.
+func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string, staticClientIDs ...string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
 	var uinfo idptypes.ProviderUserInfo
 	if expectedResource == "" {
 		return uinfo, nil, fmt.Errorf("missing expected resource (aud) for token validation")
@@ -388,26 +392,13 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 		return uinfo, nil, fmt.Errorf("'sub' claim is missing or empty")
 	}
 
-	// Do no validate the azp claim, cause of the DCR
-	// if err := p.validateOidcAzpClaim(claims); err != nil {
-	// 	return uinfo, nil, err
-	// }
-
 	if iss, _ := claims["iss"].(string); iss != "" && iss != p.IssuerURL {
 		return uinfo, nil, fmt.Errorf("untrusted issuer, got=%q, want=%q", iss, p.IssuerURL)
 	}
 
-	audienceOk := audienceContains(claims["aud"], expectedResource)
-	for _, extra := range extraAudiences {
-		if audienceOk {
-			break
-		}
-		if extra != "" {
-			audienceOk = audienceContains(claims["aud"], extra)
-		}
-	}
-	if !audienceOk {
-		return uinfo, nil, fmt.Errorf("audience mismatch, got=%v, want=%q or one of %v", claims["aud"], expectedResource, extraAudiences)
+	if !audienceContains(claims["aud"], expectedResource) && !tokenBoundToClient(claims, staticClientIDs) {
+		return uinfo, nil, fmt.Errorf("audience mismatch, got aud=%v azp=%v, want %q or a static client of %v",
+			claims["aud"], claims["azp"], expectedResource, staticClientIDs)
 	}
 
 	uinfo = p.parseUserInfo(claims)
@@ -458,6 +449,25 @@ func audienceContains(claim any, expected string) bool {
 			if resourceAudienceEquals(s, expected) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// tokenBoundToClient reports whether the token is bound to one of the
+// statically pre-registered client IDs, either through the `aud` claim (IdPs
+// that mint the client ID as audience) or the `azp` authorized-party claim
+// (OIDC Core §3.1.3.7 — IdPs that keep their own default `aud` and record the
+// requesting client in `azp`). Client IDs are compared exactly and
+// case-sensitively; empty entries are ignored.
+func tokenBoundToClient(claims jwt.MapClaims, clientIDs []string) bool {
+	azp, _ := claims["azp"].(string)
+	for _, clientID := range clientIDs {
+		if clientID == "" {
+			continue
+		}
+		if azp == clientID || audienceContains(claims["aud"], clientID) {
+			return true
 		}
 	}
 	return false
