@@ -16,32 +16,56 @@ import { PillTheme } from '@/components/Pill/theme';
 //
 // Font sizes: Radix --font-size-* scale (12/14/16/18/20px for xs–xl).
 
-export function cssVariablesResolver() {
+export function cssVariablesResolver(theme) {
   return {
     variables: {
       // Brand navy — dark surface color for auth/upsell visuals (MethodCard,
       // SelectionCard, EnterpriseBanner, AuthPageLoader). Not tied to the
       // sidebar, which uses the gray scale.
       '--brand-navy': '#182449',
+
+      // Control height scale — the single source of truth for Button,
+      // ActionIcon, and every Input-based component. md is the app-wide
+      // default (no size prop at call sites); xs/sm/lg are the variants.
+      // Consumed by the vars resolvers in components/{Button,ActionIcon,Input}/theme.js
+      // and by CSS Modules that must match a control's height (SourcedInput).
+      '--hoop-control-height-xs': rem(24),
+      '--hoop-control-height-sm': rem(32),
+      '--hoop-control-height-md': rem(40),
+      '--hoop-control-height-lg': rem(48),
+    },
+    // Scheme-dependent semantic tokens. Mantine emits its own defaults for
+    // these under :root[data-mantine-color-scheme="light"], which outranks a
+    // plain :root declaration — so overrides MUST live in this bucket, not in
+    // `variables`, to win deterministically.
+    //
+    // Note: component-scoped variables (--input-bd, --paper-border-color,
+    // --tab-hover-color, ...) cannot be overridden here at all — Mantine
+    // declares them directly on the component element, which beats any
+    // inherited value. Override those via Component.extend() in
+    // src/components/[Name]/theme.js (see components/Input/theme.js).
+    light: {
       // Radix Slate steps 11/12 are not in the 10-slot gray array — wired here
       // as semantic tokens (see the gray scale comment below).
       '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f0f0f3 is too tinted for body)
       '--mantine-color-text': '#212529', // slate12 — body text, headings
       '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
-      '--mantine-color-placeholder': '#807f8f' // gray[5] — placeholder text
+      '--mantine-color-default-border': theme.colors.gray[2],
+      '--mantine-color-placeholder': '#807f8f', // gray[5] — placeholder text
     },
-    light: {},
     dark: {}
   };
 }
 
 export const theme = createTheme({
   primaryColor: 'indigo',
-  primaryShade: 8, // → Radix shade 9, the solid/saturated action color
+  primaryShade: 5, // → Radix shade 9, the solid/saturated action color
   defaultRadius: 'md',
 
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif",
   fontFamilyMonospace: "Menlo, Consolas, 'Bitstream Vera Sans Mono', monospace",
+  white: "#FCFCFD",
+  black: "#212529",
 
   colors: {
     // Radix Indigo — primary action color
@@ -79,58 +103,58 @@ export const theme = createTheme({
 
     // Radix Green — success / positive feedback
     green: [
-      '#fbfefc', // shade 1
-      '#f4fbf6', // shade 2
-      '#e6f6eb', // shade 3
-      '#d6f1df', // shade 4
-      '#c4e8d1', // shade 5
-      '#adddc0', // shade 6
-      '#8eceaa', // shade 7
-      '#5bb98b', // shade 8
-      '#30a46c', // shade 9  ← primaryShade (index 8)
-      '#2b9a66' // shade 10
+      "#e9fbf0",
+      "#d1f1dd",
+      "#b9e6cb",
+      "#8bcea5",
+      "#5cb67f",
+      "#1f9d57",   // shade 5 — primary in light
+      "#1a8c4e",
+      "#157c45",
+      "#116c3c",
+      "#0d5c33"
     ],
 
     // Radix Amber — warning / caution
     amber: [
-      '#fefdfb', // shade 1
-      '#fefbe9', // shade 2
-      '#fff7c2', // shade 3
-      '#ffee9c', // shade 4
-      '#fbe577', // shade 5
-      '#f3d673', // shade 6
-      '#e9c162', // shade 7
-      '#e2a336', // shade 8
-      '#ffc53d', // shade 9  ← primaryShade (index 8)
-      '#ffba18' // shade 10
+      "#fff8e1",
+      "#fcefc5",
+      "#f8e6a8",
+      "#efd180",
+      "#e7bb53",
+      "#e0a400",
+      "#c59100",
+      "#ab7e00",
+      "#926c00",
+      "#7a5a00"
     ],
 
     // Radix Red — error / destructive actions
     red: [
-      '#fffcfc', // shade 1
-      '#fff7f7', // shade 2
-      '#feebec', // shade 3
-      '#ffdbdc', // shade 4
-      '#ffcdce', // shade 5
-      '#fdbdbe', // shade 6
-      '#f4a9aa', // shade 7
-      '#eb8e90', // shade 8
-      '#e5484d', // shade 9  ← primaryShade (index 8)
-      '#dc3e42' // shade 10
+      "#ffe9ea",
+      "#fdbdbe",
+      "#faa0a1",
+      "#f86b6d",
+      "#f64141",
+      "#f52825",
+      "#f61a17",
+      "#db0f0d",
+      "#c40609",
+      "#ab0004"
     ],
 
     // Radix Sky — informational / neutral highlight
     sky: [
-      '#f9feff', // shade 1
-      '#f1fafd', // shade 2
-      '#e1f6fd', // shade 3
-      '#d1f0fa', // shade 4
-      '#bee7f5', // shade 5
-      '#a9daed', // shade 6
-      '#8dcae3', // shade 7
-      '#60b3d7', // shade 8
-      '#7ce2fe', // shade 9  ← primaryShade (index 8)
-      '#74daf8' // shade 10
+      "#e5faff",
+      "#d5eff9",
+      "#a9daed",
+      "#82c8e3",
+      "#5fb7da",
+      "#48acd5",
+      "#39a7d3",
+      "#2792bc",
+      "#1582a9",
+      "#007196"
     ]
   },
   spacing: {
