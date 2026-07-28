@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { Box, Collapse, Text, UnstyledButton } from '@mantine/core';
 import { CircleCheckBig, ChevronDown, ChevronUp } from 'lucide-react';
+import ActionIcon from '@/components/ActionIcon';
 import { SubItem } from './SubItem';
 import classes from './ConfigStatus.module.css';
 
@@ -10,11 +11,15 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
   return (
     <Box className={classes.step}>
       <UnstyledButton className={classes.stepHeader} aria-expanded={opened} onClick={onToggle}>
+        {/* Action-button look only — component="div" keeps it non-interactive
+            (no nested button); the click lives on the whole row. */}
         {step.done
-          ? <Box className={classes.stepIconDone} aria-hidden="true">
+          ? <ActionIcon component="div" variant="light" color="green" size={32} radius="xl" aria-hidden="true" className={classes.stepActionIcon}>
               <CircleCheckBig size={24} />
-            </Box>
-          : <step.icon size={24} aria-hidden="true" className={classes.stepIcon} />}
+            </ActionIcon>
+          : <ActionIcon component="div" variant="light" color="gray" size={32} radius="xl" aria-hidden="true" className={classes.stepActionIcon}>
+              <step.icon size={24} className={classes.stepIcon} />
+            </ActionIcon>}
         <Text component="span" className={classes.stepTitle} data-done={step.done || undefined}>
           {step.title}
         </Text>

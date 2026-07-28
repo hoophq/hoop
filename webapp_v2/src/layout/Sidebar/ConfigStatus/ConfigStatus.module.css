@@ -4,7 +4,7 @@
   background-color: var(--mantine-color-body);
   border: 1px solid var(--mantine-color-gray-2);
   border-radius: var(--mantine-radius-lg);
-  padding: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-smAlt);
 }
 
 /* ── Widget header (always visible) ────────────────────────── */
@@ -40,7 +40,7 @@
 }
 
 .step {
-  padding: 0 var(--mantine-spacing-sm);
+  padding: 0 var(--mantine-spacing-smAlt);
 }
 
 .stepHeader {
@@ -55,15 +55,7 @@
   flex-shrink: 0;
 }
 
-/* Same 24px slot as the pending step icon so titles stay aligned; the glyph
-   itself renders smaller inside it. */
-.stepIconDone {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--mantine-color-green-8);
+.stepActionIcon {
   flex-shrink: 0;
 }
 
@@ -87,7 +79,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--mantine-spacing-smAlt);
-  padding: var(--mantine-spacing-md) var(--mantine-spacing-md) 0;
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md) 0;
 }
 
 .subItem {
