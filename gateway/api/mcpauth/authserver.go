@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -31,13 +32,16 @@ import (
 const (
 	idpMetadataTTL     = 5 * time.Minute
 	idpMetadataTimeout = 15 * time.Second
+	// maxRegistrationBodyBytes bounds the unauthenticated RFC 7591 request
+	// body; legitimate client metadata documents are well under this.
+	maxRegistrationBodyBytes = 64 << 10
 )
 
 var idpMetadataHTTPClient = &http.Client{Timeout: idpMetadataTimeout}
 
-// authorizationServerMetadata is the RFC 8414 document served by the gateway
+// AuthorizationServerMetadata is the RFC 8414 document served by the gateway
 // when a static MCP OAuth client is configured.
-type authorizationServerMetadata struct {
+type AuthorizationServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
@@ -63,10 +67,10 @@ type idpAuthServerMetadata struct {
 	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported"`
 }
 
-// clientRegistration is the RFC 7591 request/response shape. Only the fields
+// ClientRegistration is the RFC 7591 request/response shape. Only the fields
 // MCP clients commonly send are modeled; the response echoes them back with
 // the statically configured client credentials.
-type clientRegistration struct {
+type ClientRegistration struct {
 	ClientID                string   `json:"client_id,omitempty"`
 	ClientSecret            string   `json:"client_secret,omitempty"`
 	ClientSecretExpiresAt   *int64   `json:"client_secret_expires_at,omitempty"`
@@ -95,9 +99,18 @@ func RegistrationPath() string {
 
 // AuthorizationServerMetadataHandler serves the RFC 8414 authorization-server
 // metadata document mirroring the configured IdP, with registration_endpoint
-// pointing at the local DCR shim. Returns 404 unless MCP OAuth is enabled with
-// a static client configured, so DCR-capable setups keep talking to the IdP
-// directly.
+// pointing at the local DCR shim, so DCR-capable setups keep talking to the
+// IdP directly.
+//
+//	@Summary		Get MCP OAuth Authorization Server Metadata
+//	@Description	RFC 8414 authorization-server metadata mirroring the configured IdP, with registration_endpoint pointing at the gateway's RFC 7591 registration shim.
+//	@Description	Served unauthenticated at the gateway root (outside the /api base path) as /.well-known/oauth-authorization-server and /.well-known/openid-configuration.
+//	@Description	Returns 404 unless MCP OAuth is enabled with a static client configured; 502 when the IdP discovery document cannot be resolved.
+//	@Tags			Server Management
+//	@Produce		json
+//	@Success		200		{object}	mcpauth.AuthorizationServerMetadata
+//	@Failure		404,502	{object}	openapi.HTTPError
+//	@Router			/.well-known/oauth-authorization-server [get]
 func AuthorizationServerMetadataHandler(c *gin.Context) {
 	cfg, ok := loadConfig()
 	if !ok || !cfg.Enabled || cfg.ClientID == "" || cfg.IssuerURL == "" {
@@ -118,12 +131,12 @@ func AuthorizationServerMetadataHandler(c *gin.Context) {
 // gateway's own issuer identity, the IdP's endpoints, and the local
 // registration shim. S256 is force-advertised since the MCP authorization
 // profile requires it and supporting IdPs do not always list it.
-func buildAuthServerMetadata(cfg effectiveConfig, idpMeta *idpAuthServerMetadata, issuer, registrationEndpoint string) authorizationServerMetadata {
+func buildAuthServerMetadata(cfg effectiveConfig, idpMeta *idpAuthServerMetadata, issuer, registrationEndpoint string) AuthorizationServerMetadata {
 	authMethods := []string{"none"}
 	if cfg.ClientSecret != "" {
 		authMethods = []string{"client_secret_basic", "client_secret_post"}
 	}
-	return authorizationServerMetadata{
+	return AuthorizationServerMetadata{
 		Issuer:                            issuer,
 		AuthorizationEndpoint:             idpMeta.AuthorizationEndpoint,
 		TokenEndpoint:                     idpMeta.TokenEndpoint,
@@ -146,13 +159,24 @@ func buildAuthServerMetadata(cfg effectiveConfig, idpMeta *idpAuthServerMetadata
 // Note the endpoint is unauthenticated per RFC 7591, so a configured
 // client_secret is disclosed to any caller. Public clients with PKCE (no
 // secret) are the recommended configuration.
+//
+//	@Summary		Register MCP OAuth Client
+//	@Description	RFC 7591 Dynamic Client Registration shim for IdPs without native DCR support: accepts any registration request and answers with the statically pre-registered OAuth client, echoing the caller's client metadata.
+//	@Description	Served unauthenticated per RFC 7591. Returns 404 unless MCP OAuth is enabled with a static client configured.
+//	@Tags			Server Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		mcpauth.ClientRegistration	true	"RFC 7591 client metadata"
+//	@Success		201		{object}	mcpauth.ClientRegistration
+//	@Failure		400,404	{object}	openapi.HTTPError
+//	@Router			/mcp/oauth/register [post]
 func ClientRegistrationHandler(c *gin.Context) {
 	cfg, ok := loadConfig()
 	if !ok || !cfg.Enabled || cfg.ClientID == "" {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	var req clientRegistration
+	var req ClientRegistration
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":             "invalid_client_metadata",
@@ -167,9 +191,11 @@ func ClientRegistrationHandler(c *gin.Context) {
 
 // buildRegistrationResponse shapes the RFC 7591 response: the static client
 // with the caller's metadata echoed back. Public client (PKCE, auth method
-// "none") unless a secret is configured.
-func buildRegistrationResponse(cfg effectiveConfig, req clientRegistration) clientRegistration {
-	resp := clientRegistration{
+// "none") unless a secret is configured; confidential clients honor a
+// requested client_secret_post, defaulting to client_secret_basic, since the
+// shim cannot know how the static client was registered at the IdP.
+func buildRegistrationResponse(cfg effectiveConfig, req ClientRegistration) ClientRegistration {
+	resp := ClientRegistration{
 		ClientID:                cfg.ClientID,
 		RedirectURIs:            req.RedirectURIs,
 		ClientName:              req.ClientName,
@@ -183,6 +209,9 @@ func buildRegistrationResponse(cfg effectiveConfig, req clientRegistration) clie
 		resp.ClientSecret = cfg.ClientSecret
 		resp.ClientSecretExpiresAt = &neverExpires
 		resp.TokenEndpointAuthMethod = "client_secret_basic"
+		if req.TokenEndpointAuthMethod == "client_secret_post" {
+			resp.TokenEndpointAuthMethod = "client_secret_post"
+		}
 	}
 	return resp
 }
@@ -207,10 +236,14 @@ func fetchIdpMetadata(ctx context.Context, issuerURL string) (*idpAuthServerMeta
 		return idpMetadataCache.meta, nil
 	}
 	base := strings.TrimSuffix(issuerURL, "/")
-	candidates := []string{
-		base + "/.well-known/openid-configuration",
-		base + "/.well-known/oauth-authorization-server",
+	candidates := []string{base + "/.well-known/openid-configuration"}
+	// RFC 8414 §3.1: for issuers with a path component the well-known segment
+	// is inserted between host and path. The suffix form is kept as a last
+	// resort for servers that serve it non-standardly.
+	if u, err := url.Parse(base); err == nil && u.EscapedPath() != "" && u.EscapedPath() != "/" {
+		candidates = append(candidates, u.Scheme+"://"+u.Host+"/.well-known/oauth-authorization-server"+u.EscapedPath())
 	}
+	candidates = append(candidates, base+"/.well-known/oauth-authorization-server")
 	var lastErr error
 	for _, wellKnown := range candidates {
 		meta, err := fetchAuthServerDocument(ctx, wellKnown)
@@ -227,7 +260,7 @@ func fetchIdpMetadata(ctx context.Context, issuerURL string) (*idpAuthServerMeta
 			continue
 		}
 		idpMetadataCache.issuer = issuerURL
-		idpMetadataCache.fetchedAt = time.Now()
+		idpMetadataCache.fetchedAt = time.Now().UTC()
 		idpMetadataCache.meta = meta
 		return meta, nil
 	}

@@ -38,18 +38,7 @@ var mcpAuthEnableCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		current := mcpAuthGetOrEmpty()
 		current["enabled"] = true
-		if mcpAuthResourceURIFlag != "" {
-			current["resource_uri"] = mcpAuthResourceURIFlag
-		}
-		if mcpAuthGroupsClaimFlag != "" {
-			current["groups_claim"] = mcpAuthGroupsClaimFlag
-		}
-		if mcpAuthClientIDFlag != "" {
-			current["client_id"] = mcpAuthClientIDFlag
-		}
-		if mcpAuthClientSecretFlag != "" {
-			current["client_secret"] = mcpAuthClientSecretFlag
-		}
+		mcpAuthApplyFlags(cmd, current)
 		mcpAuthPutOrDie(current)
 		fmt.Println(styles.Fainted("MCP OAuth authentication enabled."))
 		mcpAuthPrintStatus(current)
@@ -87,27 +76,36 @@ for IdPs without RFC 7591 Dynamic Client Registration support (JumpCloud, Okta,
 Entra ID). Prefer a public client (no secret) with PKCE: the registration shim
 discloses the secret to any registering MCP client.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if mcpAuthResourceURIFlag == "" && mcpAuthGroupsClaimFlag == "" &&
-			mcpAuthClientIDFlag == "" && mcpAuthClientSecretFlag == "" {
+		if !cmd.Flags().Changed("resource-uri") && !cmd.Flags().Changed("groups-claim") &&
+			!cmd.Flags().Changed("client-id") && !cmd.Flags().Changed("client-secret") {
 			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri, --groups-claim, --client-id and/or --client-secret")
 		}
 		current := mcpAuthGetOrEmpty()
-		if mcpAuthResourceURIFlag != "" {
-			current["resource_uri"] = mcpAuthResourceURIFlag
-		}
-		if mcpAuthGroupsClaimFlag != "" {
-			current["groups_claim"] = mcpAuthGroupsClaimFlag
-		}
-		if mcpAuthClientIDFlag != "" {
-			current["client_id"] = mcpAuthClientIDFlag
-		}
-		if mcpAuthClientSecretFlag != "" {
-			current["client_secret"] = mcpAuthClientSecretFlag
-		}
+		mcpAuthApplyFlags(cmd, current)
 		mcpAuthPutOrDie(current)
 		fmt.Println(styles.Fainted("MCP OAuth configuration updated."))
 		mcpAuthPrintStatus(current)
 	},
+}
+
+// mcpAuthApplyFlags copies explicitly provided flags into the config payload.
+// Cobra's changed-state distinguishes an omitted flag (stored value preserved)
+// from an explicitly empty one (value cleared), so operators can remove a
+// static client (--client-id "") or downgrade a confidential client to public
+// PKCE (--client-secret "").
+func mcpAuthApplyFlags(cmd *cobra.Command, current map[string]any) {
+	if cmd.Flags().Changed("resource-uri") {
+		current["resource_uri"] = mcpAuthResourceURIFlag
+	}
+	if cmd.Flags().Changed("groups-claim") {
+		current["groups_claim"] = mcpAuthGroupsClaimFlag
+	}
+	if cmd.Flags().Changed("client-id") {
+		current["client_id"] = mcpAuthClientIDFlag
+	}
+	if cmd.Flags().Changed("client-secret") {
+		current["client_secret"] = mcpAuthClientSecretFlag
+	}
 }
 
 func mcpAuthGetOrEmpty() map[string]any {

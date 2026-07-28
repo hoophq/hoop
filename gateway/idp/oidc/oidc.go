@@ -466,8 +466,32 @@ func tokenBoundToClient(claims jwt.MapClaims, clientIDs []string) bool {
 		if clientID == "" {
 			continue
 		}
-		if azp == clientID || audienceContains(claims["aud"], clientID) {
+		if azp == clientID || audienceContainsExact(claims["aud"], clientID) {
 			return true
+		}
+	}
+	return false
+}
+
+// audienceContainsExact reports whether the `aud` claim includes expected,
+// compared byte-exactly. Used for OAuth client IDs, which are opaque
+// identifiers even when URL-shaped (RFC 6749 §2.2) — canonicalizing them
+// could conflate distinct clients.
+func audienceContainsExact(claim any, expected string) bool {
+	switch v := claim.(type) {
+	case string:
+		return v == expected
+	case []any:
+		for _, raw := range v {
+			if s, _ := raw.(string); s == expected {
+				return true
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if s == expected {
+				return true
+			}
 		}
 	}
 	return false
@@ -482,8 +506,10 @@ func resourceAudienceEquals(a, b string) bool {
 }
 
 // canonicalResourceURI lowercases the scheme and host, strips the scheme's
-// default port, and trims trailing slashes from the path. Values that are not
-// absolute http(s) URIs are returned unchanged.
+// default port, and trims trailing slashes from the path. The query component
+// is preserved verbatim so resources distinguished by query parameters never
+// compare equal. Values that are not absolute http(s) URIs are returned
+// unchanged.
 func canonicalResourceURI(s string) string {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
@@ -496,7 +522,11 @@ func canonicalResourceURI(s string) string {
 	case "https":
 		host = strings.TrimSuffix(host, ":443")
 	}
-	return u.Scheme + "://" + host + strings.TrimRight(u.EscapedPath(), "/")
+	canonical := u.Scheme + "://" + host + strings.TrimRight(u.EscapedPath(), "/")
+	if u.RawQuery != "" {
+		canonical += "?" + u.RawQuery
+	}
+	return canonical
 }
 
 func (p *Provider) userInfoEndpoint(accessToken string) (*idptypes.ProviderUserInfo, error) {

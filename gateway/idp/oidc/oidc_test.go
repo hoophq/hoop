@@ -63,6 +63,10 @@ func TestCanonicalResourceURI(t *testing.T) {
 		{"http://gw.internal:8009/api/mcp", "http://gw.internal:8009/api/mcp"},
 		{"https://demo.hoop.dev", "https://demo.hoop.dev"},
 		{"https://demo.hoop.dev/", "https://demo.hoop.dev"},
+		// Query components are preserved: resources distinguished by query
+		// parameters must not compare equal.
+		{"https://demo.hoop.dev/api/mcp?tenant=a", "https://demo.hoop.dev/api/mcp?tenant=a"},
+		{"https://DEMO.hoop.dev:443/api/mcp/?tenant=a", "https://demo.hoop.dev/api/mcp?tenant=a"},
 		// Non-URI audiences pass through untouched.
 		{"hoop-mcp", "hoop-mcp"},
 		{"urn:example:mcp", "urn:example:mcp"},
@@ -71,6 +75,12 @@ func TestCanonicalResourceURI(t *testing.T) {
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, canonicalResourceURI(tc.in), "in=%s", tc.in)
 	}
+}
+
+func TestAudienceQueryIsolation(t *testing.T) {
+	assert.False(t, audienceContains("https://demo.hoop.dev/api/mcp?tenant=a", "https://demo.hoop.dev/api/mcp?tenant=b"))
+	assert.False(t, audienceContains("https://demo.hoop.dev/api/mcp?tenant=a", "https://demo.hoop.dev/api/mcp"))
+	assert.True(t, audienceContains("https://DEMO.hoop.dev/api/mcp?tenant=a", "https://demo.hoop.dev/api/mcp?tenant=a"))
 }
 
 func TestTokenBoundToClient(t *testing.T) {
@@ -98,6 +108,20 @@ func TestTokenBoundToClient(t *testing.T) {
 
 	t.Run("azp is case-sensitive exact", func(t *testing.T) {
 		assert.False(t, tokenBoundToClient(jwt.MapClaims{"azp": "HOOP-mcp-client"}, []string{clientID}))
+	})
+
+	// Client IDs are opaque identifiers (RFC 6749 §2.2) even when URL-shaped:
+	// no canonicalization may conflate distinct clients.
+	t.Run("url-shaped client ids compare byte-exactly", func(t *testing.T) {
+		const urlClientID = "https://apps.example.com/mcp-client"
+		assert.True(t, tokenBoundToClient(jwt.MapClaims{"aud": urlClientID}, []string{urlClientID}))
+		for _, aud := range []string{
+			urlClientID + "/",
+			"https://APPS.example.com/mcp-client",
+			"https://apps.example.com:443/mcp-client",
+		} {
+			assert.False(t, tokenBoundToClient(jwt.MapClaims{"aud": aud}, []string{urlClientID}), "aud=%s", aud)
+		}
 	})
 
 	t.Run("empty client ids never match", func(t *testing.T) {

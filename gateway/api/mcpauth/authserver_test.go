@@ -68,7 +68,7 @@ func TestBuildAuthServerMetadata(t *testing.T) {
 }
 
 func TestBuildRegistrationResponse(t *testing.T) {
-	req := clientRegistration{
+	req := ClientRegistration{
 		RedirectURIs: []string{"http://localhost:33418/callback"},
 		ClientName:   "Claude Code",
 		Scope:        "openid profile",
@@ -97,6 +97,16 @@ func TestBuildRegistrationResponse(t *testing.T) {
 		assert.Equal(t, "client_secret_basic", got.TokenEndpointAuthMethod)
 	})
 
+	t.Run("confidential client honors requested client_secret_post", func(t *testing.T) {
+		r := req
+		r.TokenEndpointAuthMethod = "client_secret_post"
+		got := buildRegistrationResponse(effectiveConfig{ClientID: "hoop-mcp", ClientSecret: "s3cr3t"}, r)
+		assert.Equal(t, "client_secret_post", got.TokenEndpointAuthMethod)
+		// Public clients never honor a secret-based method.
+		got = buildRegistrationResponse(effectiveConfig{ClientID: "hoop-mcp"}, r)
+		assert.Equal(t, "none", got.TokenEndpointAuthMethod)
+	})
+
 	t.Run("caller grant and response types pass through", func(t *testing.T) {
 		r := req
 		r.GrantTypes = []string{"authorization_code"}
@@ -104,6 +114,37 @@ func TestBuildRegistrationResponse(t *testing.T) {
 		got := buildRegistrationResponse(effectiveConfig{ClientID: "x"}, r)
 		assert.Equal(t, []string{"authorization_code"}, got.GrantTypes)
 	})
+}
+
+// TestFetchIdpMetadataPathIssuer covers RFC 8414 §3.1 path insertion: for an
+// issuer with a path component the well-known segment goes between host and
+// path, which is the only fallback that works when OIDC discovery is absent.
+func TestFetchIdpMetadataPathIssuer(t *testing.T) {
+	resetIdpMetadataCache()
+	var srv *httptest.Server
+	var paths []string
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path != "/.well-known/oauth-authorization-server/tenant/v2.0" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 srv.URL + "/tenant/v2.0",
+			"authorization_endpoint": srv.URL + "/tenant/authorize",
+			"token_endpoint":         srv.URL + "/tenant/token",
+		})
+	}))
+	defer srv.Close()
+
+	meta, err := fetchIdpMetadata(context.Background(), srv.URL+"/tenant/v2.0")
+	assert.NoError(t, err)
+	assert.Equal(t, srv.URL+"/tenant/token", meta.TokenEndpoint)
+	// OIDC suffix form tried first, then the RFC 8414 path-inserted form.
+	assert.Equal(t, []string{
+		"/tenant/v2.0/.well-known/openid-configuration",
+		"/.well-known/oauth-authorization-server/tenant/v2.0",
+	}, paths)
 }
 
 func TestFetchIdpMetadata(t *testing.T) {
