@@ -1,0 +1,226 @@
+# Citadel-shaped topology, fully local.
+#
+#   client ──TLS──> envoy ──ext_authz(gRPC)──> opa          (tier 1: fat gate)
+#                     │                          │
+#                     │                     injects per-user
+#                     │                     hoop proxy token
+#                     ▼
+#                   hoop gateway :18888 (httpproxy)         (tier 2: inspection)
+#                     │  :15432 (postgres proxy)
+#                     ▼
+#                   hoop agent ──> httpbin / postgres        (upstreams)
+#
+# Envoy owns TLS and the network path. hoop is an ordinary HTTP upstream
+# behind it and never sees the sandbox. No UDS, no PROXY protocol, no MITM
+# argument with InfoSec -- that is the entire point of the exercise.
+#
+# Bring up:  ./run.sh
+
+name: hoop-envoy-poc
+
+services:
+  db:
+    image: postgres:17.6
+    attach: false
+    networks: [poc]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hoopdb
+      PGUSER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # The upstream a DBA would actually care about. Separate from the gateway's
+  # own state store so a guardrail denial is visibly about THIS database.
+  appdb:
+    image: postgres:17.6
+    attach: false
+    networks: [poc]
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      POSTGRES_DB: appdb
+      PGUSER: appuser
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "appuser", "-d", "appdb"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # Stand-in for one of the ~100 internal HTTP services.
+  httpbin:
+    image: mccutchen/go-httpbin:latest
+    networks: [poc]
+
+  # A Linux host reached over SSH. This is the lane where Envoy is not merely
+  # coarse but entirely blind: there is no SSH filter in Envoy, so the whole
+  # session -- auth, channels, every keystroke -- is one opaque TCP stream.
+  sshd:
+    image: linuxserver/openssh-server:latest
+    attach: false
+    networks: [poc]
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC
+      USER_NAME: appops
+      USER_PASSWORD: appops-pass
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 2222 || exit 1"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 15
+      start_period: "15s"
+
+  # Stands in for the sandbox: the only box a developer types on. It reaches
+  # nothing directly -- every lane below goes through Envoy. Carries psql, ssh
+  # and sshpass so the demo has one consistent vantage point.
+  client:
+    image: alpine:3.20
+    networks: [poc]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - apk add --no-cache sshpass openssh-client postgresql16-client curl >/dev/null
+        && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql && command -v sshpass"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "10s"
+
+  # The hoop-inspect sidecar: the library as a process.
+  #
+  # Envoy forwards to it instead of straight to the upstream. It decodes the
+  # wire protocol, evaluates policy, writes an audit trail naming the human,
+  # and masks sensitive values on the way back. It owns no routing and
+  # terminates no downstream TLS — Envoy keeps both.
+  #
+  # This is the purple box in the architecture diagram, running for real.
+  hoop-inspect:
+    image: hoop-inspect:local
+    build:
+      context: ../../../hoopinspect
+      dockerfile: ../deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile
+    networks: [poc]
+    volumes:
+      - ./hoopinspect/config.json:/etc/hoop-inspect/config.json:ro
+    ports:
+      # Admin only. The data-path listeners are reached over the compose
+      # network by Envoy, never from the host.
+      - "19000:19000"
+    depends_on:
+      appdb: { condition: service_healthy }
+      # httpbin ships no healthcheck; service_started is the strongest
+      # condition available and the sidecar dials lazily anyway.
+      httpbin: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  gateway:
+    image: ${HOOP_IMAGE:-hoophq/hoop:1314.0.0-58eb81a}
+    tty: true
+    networks: [poc]
+    environment:
+      - GIN_MODE=release
+      - ORG_MULTI_TENANT=false
+      - AUTH_METHOD=local
+      - JWT_SECRET_KEY=envoy-poc-secret-not-for-production
+      - API_URL=http://localhost:8009
+      - GRPC_URL=http://gateway:8010
+      - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+    command: ["hoop", "start", "gateway"]
+    ports:
+      # Exposed for the setup script and for eyeballing the audit UI.
+      # Envoy reaches the proxies over the compose network, not these.
+      - "8009:8009"
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8009/api/healthz || exit 1"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 15
+      start_period: "30s"
+
+  agent:
+    image: ${HOOP_AGENT_IMAGE:-hoophq/hoopdev:1314.0.0-58eb81a}
+    attach: false
+    networks: [poc]
+    environment:
+      - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+      - DEFAULT_AGENT_GRPC_SCHEME=grpc
+      - DEFAULT_AGENT_GRPC_HOST=gateway:8010
+      - DEFAULT_AGENT_GATEWAY_URL=ws://gateway:8009
+    command: hoop-default-agent.sh
+    depends_on:
+      gateway: { condition: service_healthy }
+
+  opa:
+    image: openpolicyagent/opa:latest-envoy
+    # opa:*-envoy publishes amd64 only. Harmless under Rosetta/qemu for a POC;
+    # drop this line on an amd64 host.
+    platform: linux/amd64
+    networks: [poc]
+    volumes:
+      - ./opa:/policy:ro
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --diagnostic-addr=0.0.0.0:8282
+      - --set=plugins.envoy_ext_authz_grpc.addr=:9191
+      - --set=plugins.envoy_ext_authz_grpc.path=envoy/authz/result
+      - --set=decision_logs.console=true
+      - --log-level=info
+      - /policy/authz.rego
+    healthcheck:
+      test: ["CMD", "/opa", "version"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 10
+      start_period: "10s"
+
+  envoy:
+    image: envoyproxy/envoy:v1.33-latest
+    networks: [poc]
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      - "8443:8443"   # HTTPS lane  -> hoop httpproxy
+      - "15432:5432"  # TCP lane    -> hoop postgres proxy
+      - "12222:2222"  # TCP lane    -> hoop ssh proxy
+      - "8444:8444"   # HTTPS lane  -> hoop-inspect sidecar
+      - "5433:5433"   # TCP lane    -> hoop-inspect sidecar (postgres)
+      - "9901:9901"   # admin
+    command:
+      - envoy
+      - -c
+      - /etc/envoy/envoy.yaml
+      - --log-level
+      - warn
+      - --component-log-level
+      - ext_authz:info
+    depends_on:
+      opa: { condition: service_healthy }
+      gateway: { condition: service_healthy }
+      sshd: { condition: service_healthy }
+      hoop-inspect: { condition: service_healthy }
+
+networks:
+  poc:
