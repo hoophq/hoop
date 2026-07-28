@@ -24,7 +24,7 @@ export function SidebarCollapsed({ skipLink }) {
 
       <Box mb="xl" mt="xl" className={classes.logoCollapsed}>
         <img
-          src="/images/hoop-branding/SVG/hoop-symbol+text_black.svg"
+          src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
           alt="Hoop"
           height={24}
           style={{ display: 'block' }}

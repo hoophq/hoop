@@ -4,7 +4,7 @@
   background-color: var(--mantine-color-body);
   border: 1px solid var(--mantine-color-gray-2);
   border-radius: var(--mantine-radius-lg);
-  padding: var(--mantine-spacing-smAlt);
+  padding: var(--mantine-spacing-sm);
 }
 
 /* ── Widget header (always visible) ────────────────────────── */
@@ -12,7 +12,7 @@
 .headerBtn {
   display: flex;
   align-items: center;
-  gap: var(--mantine-spacing-smAlt);
+  gap: var(--mantine-spacing-sm);
   width: 100%;
 }
 
@@ -35,18 +35,18 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: var(--mantine-spacing-mdAlt);
-  padding-top: var(--mantine-spacing-smAlt);
+  gap: var(--mantine-spacing-md);
+  padding-top: var(--mantine-spacing-sm);
 }
 
 .step {
-  padding: 0 var(--mantine-spacing-smAlt);
+  padding: 0 var(--mantine-spacing-sm);
 }
 
 .stepHeader {
   display: flex;
   align-items: center;
-  gap: var(--mantine-spacing-smAlt);
+  gap: var(--mantine-spacing-sm);
   width: 100%;
 }
 
@@ -87,7 +87,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--mantine-spacing-smAlt);
-  padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt) 0;
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-md) 0;
 }
 
 .subItem {

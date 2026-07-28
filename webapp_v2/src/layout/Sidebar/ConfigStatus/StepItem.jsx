@@ -1,22 +1,20 @@
-import { Fragment } from 'react'
-import { Box, Collapse, Text, UnstyledButton } from '@mantine/core'
-import { CircleCheckBig, ChevronDown, ChevronUp } from 'lucide-react'
-import { SubItem } from './SubItem'
-import classes from './ConfigStatus.module.css'
+import { Fragment } from 'react';
+import { Box, Collapse, Text, UnstyledButton } from '@mantine/core';
+import { CircleCheckBig, ChevronDown, ChevronUp } from 'lucide-react';
+import { SubItem } from './SubItem';
+import classes from './ConfigStatus.module.css';
 
 export function StepItem({ step, opened, onToggle, onNavigate }) {
-  const Chevron = opened ? ChevronUp : ChevronDown
+  const Chevron = opened ? ChevronUp : ChevronDown;
 
   return (
     <Box className={classes.step}>
       <UnstyledButton className={classes.stepHeader} aria-expanded={opened} onClick={onToggle}>
-        {step.done ? (
-          <Box className={classes.stepIconDone} aria-hidden="true">
-            <CircleCheckBig size={20} />
-          </Box>
-        ) : (
-          <step.icon size={24} aria-hidden="true" className={classes.stepIcon} />
-        )}
+        {step.done
+          ? <Box className={classes.stepIconDone} aria-hidden="true">
+              <CircleCheckBig size={24} />
+            </Box>
+          : <step.icon size={24} aria-hidden="true" className={classes.stepIcon} />}
         <Text component="span" className={classes.stepTitle} data-done={step.done || undefined}>
           {step.title}
         </Text>
@@ -25,14 +23,14 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
 
       <Collapse in={opened}>
         <Box className={classes.subItems}>
-          {step.subItems.map((item) => (
+          {step.subItems.map(item =>
             <Fragment key={item.checkKey}>
               {item.dividerBefore && <Box className={classes.divider} role="separator" />}
               <SubItem item={item} onNavigate={onNavigate} />
             </Fragment>
-          ))}
+          )}
         </Box>
       </Collapse>
     </Box>
-  )
+  );
 }

@@ -10,7 +10,7 @@ import { RingProgress as MantineRingProgress, Text } from '@mantine/core'
  */
 export default function RingProgress({
   value,
-  size = 32,
+  size = 38,
   thickness = 3,
   color = 'indigo.5',
   rootColor = 'gray.2',

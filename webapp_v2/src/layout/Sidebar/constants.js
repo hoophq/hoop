@@ -42,10 +42,12 @@ export const MAIN_ITEMS = [
   }
 ]
 
+// Alphabetical, mirroring the sidebar component in Figma (Components | Custom).
 export const DISCOVER_ITEMS = [
-  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true },
+  { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true },
   { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true },
-  { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true },
+  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true },
+  { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true },
   {
     label: 'Event Routing',
     path: '/features/event-routing',
@@ -54,17 +56,9 @@ export const DISCOVER_ITEMS = [
   },
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true },
   { label: 'Jira Templates', path: '/jira-templates', icon: Layers, adminOnly: true },
-  { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true },
   { label: 'Live Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true },
-  { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true },
+  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true },
   { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true },
-  {
-    label: 'Rulepacks',
-    path: '/rulepacks',
-    icon: WandSparkles,
-    adminOnly: true,
-    featureFlag: 'experimental.rulepacks'
-  },
   {
     label: 'Resource Discovery',
     path: '/integrations/aws-connect',
@@ -72,7 +66,14 @@ export const DISCOVER_ITEMS = [
     adminOnly: true,
     badge: { text: 'BETA', color: 'indigo' }
   },
-  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true }
+  {
+    label: 'Rulepacks',
+    path: '/rulepacks',
+    icon: WandSparkles,
+    adminOnly: true,
+    featureFlag: 'experimental.rulepacks'
+  },
+  { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true }
 ]
 
 export const ORGANIZATION_ITEMS = [
