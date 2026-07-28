@@ -221,7 +221,7 @@ function Setup() {
                 </Text>
               )}
 
-              <Button type="submit" size="md" fullWidth loading={loading} disabled={loading}>
+              <Button type="submit" fullWidth loading={loading} disabled={loading}>
                 {loading ? 'Creating account...' : 'Create admin account'}
               </Button>
 

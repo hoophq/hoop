@@ -18,7 +18,7 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
               component="div"
               variant="light"
               color="green"
-              size={24}
+              size="sm"
               radius="xl"
               aria-hidden="true"
               className={classes.stepActionIcon}
@@ -29,7 +29,7 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
               component="div"
               variant="light"
               color="gray"
-              size={24}
+              size="sm"
               radius="xl"
               aria-hidden="true"
               className={classes.stepActionIcon}

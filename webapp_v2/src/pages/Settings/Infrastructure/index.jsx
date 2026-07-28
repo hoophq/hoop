@@ -144,7 +144,7 @@ function SettingsInfrastructure() {
     <>
       <Group justify="space-between" align="flex-start" mb="xxxlAlt">
         <Title order={1}>Infrastructure</Title>
-        <Button size="md" loading={saving} onClick={handleSave}>
+        <Button loading={saving} onClick={handleSave}>
           Save
         </Button>
       </Group>

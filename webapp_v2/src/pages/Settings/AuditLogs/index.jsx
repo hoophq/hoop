@@ -91,7 +91,6 @@ function UserFilter({ value, onChange, users }) {
         <Button
           variant={value ? 'light' : 'outline'}
           color="gray"
-          size="sm"
           leftSection={<User size={14} />}
           onClick={() => { setSearch(''); setOpened((o) => !o) }}
         >
@@ -104,7 +103,7 @@ function UserFilter({ value, onChange, users }) {
             <Button
               variant="subtle"
               color="gray"
-              size="xs"
+              size="sm"
               fullWidth
               onClick={() => { onChange(null); setOpened(false) }}
             >
@@ -112,7 +111,6 @@ function UserFilter({ value, onChange, users }) {
             </Button>
           )}
           <TextInput
-            size="xs"
             placeholder="Search users"
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
@@ -127,7 +125,7 @@ function UserFilter({ value, onChange, users }) {
                     key={u.id}
                     variant={u.email === value ? 'light' : 'subtle'}
                     color="gray"
-                    size="xs"
+                    size="sm"
                     fullWidth
                     justify="flex-start"
                     onClick={() => { onChange(u.email === value ? null : u.email); setOpened(false) }}
@@ -249,7 +247,6 @@ export default function AuditLogs() {
             value={dateRange}
             onChange={setDateRange}
             w={220}
-            size="sm"
           />
           <UserFilter value={actorEmail} onChange={setActorEmail} users={users} />
         </Group>
@@ -306,7 +303,6 @@ export default function AuditLogs() {
               <Button
                 variant="outline"
                 color="gray"
-                size="sm"
                 onClick={() => fetchLogs({ page: pagination.page + 1, append: true })}
                 loading={loadingMore}
               >

@@ -182,7 +182,7 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
                 </Text>
                 <Group gap="sm" wrap="nowrap">
                   <PasswordInput value={password} readOnly flex={1} />
-                  <CopyButton value={password} label="Copy password" size="md" />
+                  <CopyButton value={password} label="Copy password" />
                 </Group>
               </Stack>
             </>
@@ -306,7 +306,7 @@ export default function Users() {
                         </Badge>
                       </Table.Td>
                       <Table.Td>
-                        <Button variant="subtle" color="gray" size="xs" onClick={() => handleEdit(user)}>
+                        <Button variant="subtle" color="gray" size="sm" onClick={() => handleEdit(user)}>
                           Edit
                         </Button>
                       </Table.Td>

@@ -8,6 +8,29 @@ App code **never imports UI primitives directly from Mantine**. Every primitive 
 
 Before creating a new component, check this list. Re-use what already exists.
 
+## Control size scale — Button, ActionIcon, and every input
+
+All interactive controls share one 4-step height scale, owned by the theme
+(`--hoop-control-height-*` in `src/theme.js` `cssVariablesResolver`, applied by
+the vars resolvers in `src/components/{Button,ActionIcon,Input}/theme.js`).
+Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
+
+| `size` | Height | When |
+|---|---|---|
+| *(none)* / `md` | 40px | **Default — do not pass a size prop** |
+| `xs` | 24px | Micro affordances in dense chrome |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. |
+| `lg` | 48px | Prominent/hero actions |
+
+Rules:
+- **Never pass `size` for the regular 40px control** — the theme default handles it.
+- `xs`, `sm`, and `lg` are the only variants. Do not use `xl` or numeric sizes on
+  Button, ActionIcon, or input-family components (`compact-*` on Button is allowed —
+  it's a separate inline-button axis, not a height override).
+- **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
+- Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
+  and align automatically.
+
 ---
 
 ## Reusable Components (`src/components/`)
@@ -92,9 +115,9 @@ import Table from '@/components/Table'
   </Table.Tbody>
 </Table>
 ```
-Styles: `1px solid gray.3` border with `border-radius`, subtle gray.1 header background, row separators, `verticalSpacing="sm"` / `horizontalSpacing="md"`. Defined in `components/Table/Table.module.css`.
+Styles: light chrome — `1px solid gray.1` outer border with `border-radius`, `gray.1` row separators, `verticalSpacing="sm"` / `horizontalSpacing="md"`. Striping is opt-in: pass `striped` and rows alternate with `gray.0`. Defined in `components/Table/index.jsx` + `Table.module.css`.
 
-> **Note on `Table.Th`**: The wrapper's CSS already sets `font-size: xs` and `font-weight: 600` on all `th` cells. Do not wrap the content in `<Text size="xs">` — it's redundant.
+> **Note on `Table.Th`**: The wrapper's CSS already sets `font-size: sm` and `font-weight: 700` on all `th` cells. Do not wrap the content in `<Text>` — it's redundant.
 
 ### `DocsBtnCallOut`
 Bordered link to external documentation. Equivalent of `webapp.components.callout-link` in CLJS.
@@ -164,6 +187,12 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
+
+### `Input` (theme-level, no wrapper)
+Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
+
+### `Paper` (theme-level, no wrapper)
+Global border color for `Paper` — and `Card`, which renders through Paper — via `Paper.extend()` in `src/components/Paper/theme.js` (registered in `src/theme.js`). Same story as `Input`: Mantine declares `--paper-border-color` per color scheme directly on the Paper root, out of reach of `cssVariablesResolver`, so a co-located CSS Module rule overrides it on the element. Only visible on instances using `withBorder`; the value matches the app-wide input resting border. To change it, edit `src/components/Paper/Paper.module.css`.
 
 ### `Pill` (theme-level, no wrapper)
 Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
@@ -282,10 +311,10 @@ import SourcedInput from '@/components/SourcedInput'
   onSourceChange={setSource}
 />
 
-// Sizes match Mantine inputs — default `sm`, accepts xs/sm/md/lg/xl:
-<SourcedInput size="md" {...props} />
+// Sizes follow the app control scale — default `md` (40px), sm/lg variants:
+<SourcedInput size="sm" {...props} />
 ```
-Supports `type="text" | "password" | "textarea"` and `size="xs" | "sm" | "md" | "lg" | "xl"` (default `sm`, Mantine's input default). Heights track Mantine's `--input-height-*` variables so a `size="md"` SourcedInput lines up with a `size="md"` TextInput on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
+Supports `type="text" | "password" | "textarea"` and `size="sm" | "md" | "lg"` (default `md`, the app-wide control default). Heights track the `--hoop-control-height-*` variables so a SourcedInput lines up with a TextInput of the same size on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -324,7 +353,9 @@ Icon button that copies `value` to the clipboard. Shows a checkmark for 2 second
 import CopyButton from '@/components/CopyButton'
 
 <CopyButton value="secret-key-here" />
-<CopyButton value={key} label="Copy API Key" size="md" />
+<CopyButton value={key} label="Copy API Key" />
+// Inside an input rightSection (~38px slot), use the small variant:
+<TextInput rightSection={<CopyButton value={key} size="sm" />} />
 ```
 
 ### `DatePickerInput`
@@ -335,7 +366,7 @@ import DatePickerInput from '@/components/DatePickerInput'
 // Single date:
 <DatePickerInput label="Start date" value={date} onChange={setDate} />
 // Date range:
-<DatePickerInput type="range" label="Period" value={[start, end]} onChange={setRange} w={220} size="sm" />
+<DatePickerInput type="range" label="Period" value={[start, end]} onChange={setRange} w={220} />
 ```
 
 ### `FreeLicenseCallout`

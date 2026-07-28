@@ -7,5 +7,5 @@ import { NumberInput as MantineNumberInput } from '@mantine/core'
  *   <NumberInput label="Approvals" min={1} value={n} onChange={setN} />
  */
 export default function NumberInput(props) {
-  return <MantineNumberInput radius="sm" {...props} />
+  return <MantineNumberInput {...props} />
 }

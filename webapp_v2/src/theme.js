@@ -2,6 +2,18 @@ import { createTheme, rem } from '@mantine/core';
 import { SpotlightTheme } from '@/components/Spotlight/theme';
 import { AppShellTheme } from '@/components/AppShell/theme';
 import { PillTheme } from '@/components/Pill/theme';
+import {
+  InputTheme,
+  InputBaseTheme,
+  InputWrapperTheme,
+  TextareaTheme,
+  MultiSelectTheme,
+  TagsInputTheme,
+  PillsInputTheme,
+} from '@/components/Input/theme';
+import { PaperTheme } from '@/components/Paper/theme';
+import { ButtonTheme } from '@/components/Button/theme';
+import { ActionIconTheme } from '@/components/ActionIcon/theme';
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -209,6 +221,22 @@ export const theme = createTheme({
   components: {
     Spotlight: SpotlightTheme,
     AppShell: AppShellTheme,
-    Pill: PillTheme
+    Pill: PillTheme,
+    Input: InputTheme,
+    // Input-family components with local `size: 'sm'` defaults that would
+    // otherwise beat the Input theme default — see components/Input/theme.js.
+    InputBase: InputBaseTheme,
+    InputWrapper: InputWrapperTheme,
+    Textarea: TextareaTheme,
+    MultiSelect: MultiSelectTheme,
+    TagsInput: TagsInputTheme,
+    PillsInput: PillsInputTheme,
+    // PickerInputBase (under @mantine/dates DatePickerInput) is not exported,
+    // so a plain theme entry stands in for Component.extend().
+    PickerInputBase: { defaultProps: { size: 'md' } },
+    Paper: PaperTheme,
+    Button: ButtonTheme,
+    ActionIcon: ActionIconTheme,
   }
 });
+

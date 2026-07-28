@@ -68,7 +68,7 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
                   </Text>
                 </Group>
                 <Button
-                  size="xs"
+                  size="sm"
                   variant="default"
                   onClick={() => onConfigureConnection(connection.name)}
                 >
@@ -145,7 +145,7 @@ export default function RuleListItem({
         <Group gap="sm" wrap="nowrap">
           {hasConnections && (
             <Button
-              size="xs"
+              size="sm"
               variant="subtle"
               color="gray"
               onClick={() => setShowConnections((v) => !v)}

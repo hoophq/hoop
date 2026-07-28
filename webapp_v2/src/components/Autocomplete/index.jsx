@@ -12,5 +12,5 @@ import { Autocomplete as MantineAutocomplete } from '@mantine/core'
  *   />
  */
 export default function Autocomplete(props) {
-  return <MantineAutocomplete radius="sm" {...props} />
+  return <MantineAutocomplete {...props} />
 }

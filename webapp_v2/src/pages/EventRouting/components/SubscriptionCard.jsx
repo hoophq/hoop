@@ -43,7 +43,7 @@ export default function SubscriptionCard({ sub }) {
           <Button
             variant="light"
             color="gray"
-            size="xs"
+            size="sm"
             onClick={() => navigate(`/features/event-routing/${sub.id}`)}
           >
             Configure

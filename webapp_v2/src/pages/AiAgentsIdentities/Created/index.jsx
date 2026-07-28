@@ -67,9 +67,8 @@ export default function AiAgentsIdentitiesCreated() {
               value={rawKey}
               readOnly
               ff="monospace"
-              size="sm"
               leftSection={<KeyRound size={14} color="var(--mantine-color-gray-7)" />}
-              rightSection={<CopyButton value={rawKey} label="Copy AI Agent key" />}
+              rightSection={<CopyButton value={rawKey} label="Copy AI Agent key" size="sm" />}
             />
           </Stack>
 
