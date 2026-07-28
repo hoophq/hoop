@@ -14,11 +14,27 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
         {/* Action-button look only — component="div" keeps it non-interactive
             (no nested button); the click lives on the whole row. */}
         {step.done
-          ? <ActionIcon component="div" variant="light" color="green" size={24} radius="xl" aria-hidden="true" className={classes.stepActionIcon}>
+          ? <ActionIcon
+              component="div"
+              variant="light"
+              color="green"
+              size={24}
+              radius="xl"
+              aria-hidden="true"
+              className={classes.stepActionIcon}
+            >
               <CircleCheckBig size={16} />
             </ActionIcon>
-          : <ActionIcon component="div" variant="light" color="gray" size={24} radius="xl" aria-hidden="true" className={classes.stepActionIcon}>
-              <step.icon size={16} className={classes.stepIcon} />
+          : <ActionIcon
+              component="div"
+              variant="light"
+              color="gray"
+              size={24}
+              radius="xl"
+              aria-hidden="true"
+              className={classes.stepActionIcon}
+            >
+              <step.icon size={16} className={classes.stepIcon} strokeWidth={1} />
             </ActionIcon>}
         <Text component="span" className={classes.stepTitle} data-done={step.done || undefined}>
           {step.title}

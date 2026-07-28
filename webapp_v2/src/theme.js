@@ -26,7 +26,7 @@ export function cssVariablesResolver() {
       // Radix Slate steps 11/12 are not in the 10-slot gray array — wired here
       // as semantic tokens (see the gray scale comment below).
       '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f0f0f3 is too tinted for body)
-      '--mantine-color-text': '#1c2024', // slate12 — body text, headings
+      '--mantine-color-text': '#212529', // slate12 — body text, headings
       '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
       '--mantine-color-placeholder': '#807f8f' // gray[5] — placeholder text
     },
