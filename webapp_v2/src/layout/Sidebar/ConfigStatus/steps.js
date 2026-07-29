@@ -1,4 +1,4 @@
-import { Database, Users, Sparkles, ShieldCogCorner } from 'lucide-react'
+import { Database, Users, Sparkles, ShieldCogCorner, ShieldCheck } from 'lucide-react'
 
 // Setup checklist definition (Figma: EVAL Config status, node 14:2).
 // `checkKey` maps to a boolean in useConfigStatusStore.checks.
@@ -37,6 +37,7 @@ export const STEP_DEFS = [
         label: 'Set Protection Level',
         to: '/settings/protection-rules',
         icon: ShieldCogCorner,
+        doneIcon: ShieldCheck,
         dividerBefore: true,
       },
     ],

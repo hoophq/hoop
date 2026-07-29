@@ -3,7 +3,7 @@ import { CircleDashed, BadgeCheck, ArrowRight } from 'lucide-react'
 import classes from './ConfigStatus.module.css'
 
 export function SubItem({ item, onNavigate }) {
-  const Icon = item.done ? BadgeCheck : item.icon ?? CircleDashed
+  const Icon = item.done ? item.doneIcon ?? BadgeCheck : item.icon ?? CircleDashed
 
   return (
     <UnstyledButton
