@@ -58,12 +58,36 @@ curl -sk https://localhost:8444/status/503 \
 h "MASKING / sensitive values rewritten on the way back"
 curl -sk -X POST https://localhost:8444/anything \
     -H 'X-Citadel-User: alice' -H 'Content-Type: application/json' \
-    -d '{"email":"ada@example.com","ssn":"123-45-6789","card":"4111111111111111"}' \
-    2>/dev/null | grep -E '"(email|ssn|card)"' | sed 's/^/  /' | head -4
+    -d '{"email":"ada@example.com","ssn":"123-45-6789","card":"4111111111111111","cpf":"111.444.777-35","iban":"GB82WEST12345698765432"}' \
+    2>/dev/null | grep -E '"(email|ssn|card|cpf|iban)"' | sed 's/^/  /' | head -6
 note ""
 note "email redacted, ssn and card partial-masked keeping the last 4."
 note "The card was validated with Luhn, so order ids and timestamps that"
 note "merely look like 16 digits are left alone."
+note ""
+note "cpf and iban come from the alcatraz detector, not the eight built-ins."
+note "Both carry a real checksum (mod-11, ISO 7064) so a lookalike is dropped"
+note "rather than masked. This build is hoop-inspect-pii; the base binary has"
+note "no detector and would refuse this config's \"pii\" section outright."
+
+# -------------------------------------------------------------- guardrails
+h "GUARDRAIL / a national id in the query itself"
+note "Masking cleans the response. It cannot help with an identifier the"
+note "client PUT IN THE QUERY - that text lands in the database's own query"
+note "log, slow-query log and EXPLAIN output before any response exists."
+note ""
+printf '  $ SELECT name FROM customers WHERE cpf = %s...%s\n' "'111.444" "35'"
+docker compose exec -T client env PGPASSWORD=apppass PGSSLMODE=disable \
+    psql -h envoy -p 5433 -U appuser -d appdb \
+    -tAc "SELECT name FROM customers WHERE cpf = '111.444.777-35';" 2>&1 \
+    | grep -E 'FATAL|taxpayer' | sed 's/^/  /' | head -2
+note ""
+printf '  $ SELECT name FROM customers WHERE id = 1\n'
+docker compose exec -T client env PGPASSWORD=apppass PGSSLMODE=disable \
+    psql -h envoy -p 5433 -U appuser -d appdb \
+    -tAc "SELECT name FROM customers WHERE id = 1;" 2>&1 | sed 's/^/  /' | head -2
+note ""
+note "Same table, same user. The pii rule denied one and allowed the other."
 
 # ------------------------------------------------------------------- audit
 h "AUDIT / what hoop-inspect recorded"

@@ -33,7 +33,7 @@ user := u if {
 # service account (the exact Teleport behaviour Matt objects to).
 tokens := {
 	# BEGIN-TOKENS
-	"alice": "httpproxy-uc8Laax0AdLTD-dPdwd_e0v4bvux2NZR8_eksBFbhFI",
+	"alice": "httpproxy-pFlr_h8oNIHIrc4_X-hoRHr6U5eZyT-nkw0FDdxKPwQ",
 	"bob": "",
 	# END-TOKENS
 }

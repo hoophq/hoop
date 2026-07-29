@@ -8,6 +8,7 @@ use (
 	./common
 	./gateway
 	./hoopinspect
+	./hoopinspect/pii/alcatraz
 	./hoopinspect/store/sqlite
 	./libhoop
 	./tunnel

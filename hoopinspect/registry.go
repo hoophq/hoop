@@ -7,9 +7,9 @@ import "sync"
 // directions: `codec/postgres` imports `hoopinspect` for the types, and
 // `hoopinspect` imports nothing.
 //
-// The practical payoff is binary size. An Envoy WASM filter that only speaks
-// Postgres imports only `codec/postgres`, and the HTTP machinery is never
-// linked in.
+// The practical payoff is that a caller links only the protocols it speaks.
+// A sidecar fronting Postgres imports `codec/postgres`, and the HTTP
+// machinery is never linked in.
 var (
 	registryMu sync.RWMutex
 	registry   = map[Protocol]func() Codec{}

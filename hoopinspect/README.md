@@ -3,12 +3,17 @@
 Turn raw database wire-protocol bytes into structured statements, and
 structured statements into allow/deny verdicts.
 
-**Not a proxy.** It never opens a socket, terminates TLS, or routes anything.
-It is a pure function over bytes you already have, so whatever holds the
-connection — Envoy, a sidecar, an agent — keeps holding it.
+**The library is not a proxy.** It never opens a socket, terminates TLS, or
+routes anything. It is a pure function over bytes you already have, so
+whatever holds the connection keeps holding it.
+
+**The relay is.** `cmd/hoop-inspect` wraps the library in a TCP listener that
+accepts a connection, dials one upstream, and pumps bytes through the gate in
+both directions. It runs behind something that already owns TLS and identity
+— Envoy, typically, forwarding plaintext over loopback or a unix socket.
 
 **Zero dependencies.** No `go.sum`. Standard library only, tests included.
-Compiles to `GOOS=wasip1 GOARCH=wasm` for an Envoy network filter.
+Nothing to vendor, nothing to review, no version skew with whatever links it.
 
 ```go
 insp, _ := hoopinspect.New(hoopinspect.Postgres)
@@ -64,12 +69,12 @@ and the shared SQL classifier are protocol-agnostic, so adding one is a new
 `codec/<name>` package and nothing else; the earlier implementations were
 removed to keep the surface to what is exercised end to end.
 
-Import only what you need. A WASM filter that speaks Postgres imports
+Import only what you need. A listener that speaks Postgres imports
 `codec/postgres` and never links the HTTP machinery:
 
 ```go
-import _ "github.com/hoophq/hoopinspect/codec/postgres" // ~54 KB of wasm
-import _ "github.com/hoophq/hoopinspect/codec/all"      // all four
+import _ "github.com/hoophq/hoopinspect/codec/postgres" // postgres only
+import _ "github.com/hoophq/hoopinspect/codec/all"      // postgres + http
 ```
 
 ## The Statement
@@ -125,8 +130,9 @@ Two evaluators, meant to be layered via `policy.Chain{local, opa}` so an
 obviously-forbidden statement never costs a network round-trip.
 
 **Local rules** — SQL: `deny_words_list`, `pattern_match` (RE2),
-`operation`, `table`. HTTP: `http_resource`, `http_status`. One ordered set
-can mix both, so a deployment fronting a database and an API needs one evaluator:
+`operation`, `table`. HTTP: `http_resource`, `http_status`. Cross-protocol:
+`pii` (see [Masking and PII](#masking-and-pii)). One ordered set can mix
+them, so a deployment fronting a database and an API needs one evaluator:
 
 ```go
 policy.NewRules([]policy.Rule{
@@ -171,6 +177,75 @@ in one shape for both protocols. Accepts `{"allow": bool}`,
 denies. Set `FailOpen` to invert where availability outranks enforcement.
 There is no silent middle ground.
 
+## Masking and PII
+
+Masking is the response-side half, and it is the capability with no Envoy
+equivalent for any protocol: `ext_authz` is consulted before the upstream is
+called, so it has never seen the row that comes back.
+
+`mask` ships eight detectors — `email`, `ssn`, `credit_card`, `phone`,
+`ip_address`, `aws_key`, `jwt`, `private_key`. Three carry an exact check
+behind the regex: Luhn on cards, `net.ParseIP` on addresses, a base64+JSON
+decode on JWTs. Four strategies: `redact`, `mask`, `partial`, `hash`.
+
+```go
+m, _ := mask.New([]mask.Rule{
+    {Entity: mask.EntitySSN,        Strategy: mask.StrategyRedact},
+    {Entity: mask.EntityCreditCard, Strategy: mask.StrategyPartial, KeepLast: 4},
+})
+out, res := m.Mask(responseBytes)   // res names WHAT was masked, never values
+```
+
+### More entities: the alcatraz module
+
+Eight detectors is a US-shaped set. For national identifiers,
+[alcatraz](https://github.com/hoophq/alcatraz) brings 45 entity types across
+12 countries, 25 of them checksum-verified. It plugs into two interfaces the
+root already declares, so it lives in a nested module and the root stays
+dependency-free:
+
+```go
+det, err := alcatraz.NewDetector(alcatraz.Options{
+    Entities: []string{entities.BRCPF, entities.IBANCode},
+})
+m, _ := mask.NewWithDetector(rules, det)          // response masking
+p, _ := policy.NewRulesWithScanner(rules, det)    // request guardrails
+```
+
+One value satisfies both. The `pii` policy rule is the guardrail half, and it
+answers a different question than masking: a national ID in a `WHERE` clause
+lands in the database's own query log, slow-query log and `EXPLAIN` output,
+and no amount of response masking undoes that.
+
+```json
+{"name": "no-cpf-in-query", "type": "pii", "entities": ["BR_CPF"],
+ "message": "do not put a taxpayer id in a query"}
+```
+
+**Name the entity types you want.** There is no all-entities default, on
+purpose. Enabling all 45 recognizers rewrites ordinary numeric columns:
+
+```
+{"order_id":457555462,"customer_id":123456781}
+  -> both masked as US_SSN
+```
+
+Nine digits in a legal range *is* a valid SSN as far as any detector can
+tell — SSNs carry no checksum, so nothing can reject it. Measured over random
+nine-digit business ids, `US_SSN` fires on about a third. `alcatraz.Noisy`
+records the offenders with their rates; `AllEntities()` exists for a caller
+who has read it.
+
+A `pii` policy rule records the offending statement in the audit trail, raw
+literal included. Set `audit.redact_statements` where that is the wrong
+trade — the denial keeps working, and the record keeps a stable fingerprint
+instead of the text.
+
+**Two builds.** `cmd/hoop-inspect` links nothing and compiles with no module
+download at all. `pii/alcatraz/cmd/hoop-inspect-pii` is the same relay with
+the detector attached, one dependency deep. Both read the same config; the
+base binary refuses a `pii` section rather than ignoring it.
+
 ## Limits
 
 Read these before writing a policy against it.
@@ -183,6 +258,18 @@ Read these before writing a policy against it.
   the database codecs `FromServer` bytes are consumed and yield no
   statements — the redaction path is unbuilt. The HTTP codec inspects both
   directions.
+- **Masking is HTTP-only.** The wire-database protocols length-prefix their
+  rows in binary frames, and substituting bytes in place desynchronizes the
+  client (`psql` reports "lost synchronization with server"). The gate
+  refuses rather than half-masking: corrupt *and* still leaking is the worst
+  outcome. Re-framing per codec is the next step and is deliberately not
+  faked. `pii` policy rules work on every protocol, because denying a
+  statement changes no bytes.
+- **PII detection is neither sound nor complete.** A checksum-verified
+  identifier is solid; everything else is a pattern. A name column is not
+  detectable without NER, which this module does not wire, and a caller can
+  split a value across two responses. Masking raises the cost of accidental
+  exposure. It does not replace not granting access to the table.
 - **HTTP/1.x only for stream decoding.** HTTP/2 and HTTP/3 framing belongs to
   whatever terminated the connection; by then it has a `*http.Request`, so
   use `InspectRequest`.
@@ -199,7 +286,6 @@ Read these before writing a policy against it.
 ```bash
 go test ./...           # unit
 go test -race ./...     # concurrency
-GOOS=wasip1 GOARCH=wasm go build ./...
 ```
 
 Every codec is tested against a split-read matrix: the same message is fed in

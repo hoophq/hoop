@@ -138,6 +138,54 @@ var knownEntities = func() []string {
 	return out
 }()
 
+// Detector finds spans of sensitive data that the built-in patterns cannot.
+//
+// The built-ins are eight regexes, three of them backed by an exact check: a
+// Luhn checksum on card numbers, net.ParseIP on addresses, and a base64+JSON
+// decode on JWTs. That covers the values which appear in a result set often
+// enough to be worth hard-coding, and it deliberately stops there: a masker
+// carrying a NER model is not a masker, it is a deployment. This interface is
+// how a shop plugs in the detector it already has — an existing DLP service,
+// a national-ID library, github.com/hoophq/alcatraz — without forking the
+// package.
+//
+// A Detector is consulted for the entities it reports in Entities. It never
+// replaces a built-in: a rule naming a built-in entity keeps using the
+// built-in unless the Detector claims that entity name too, in which case the
+// Detector wins, because an operator who wired one in did so on purpose.
+//
+// Implementations MUST be safe for concurrent use: one Masker serves every
+// connection.
+type Detector interface {
+	// Entities lists the entity names this Detector can find. New uses it to
+	// tell an unknown-entity config error from a detector-supplied one, so a
+	// typo still fails at construction rather than silently masking nothing.
+	Entities() []string
+
+	// Find returns the byte spans of entity in data, as [start, end) pairs
+	// in ascending start order. Overlapping spans are resolved by the
+	// Masker's normal precedence rules, so an implementation need not
+	// deduplicate against other entities.
+	//
+	// Returning nil means "found nothing", which is not the same as "cannot
+	// look": an entity absent from Entities is never passed here.
+	Find(entity string, data []byte) [][2]int
+}
+
+// detectorHint lists the detector-supplied entities so an unknown-entity error
+// names every spelling that would have worked, not just the built-in ones.
+func detectorHint(detected map[Entity]bool) string {
+	if len(detected) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(detected))
+	for e := range detected {
+		out = append(out, string(e))
+	}
+	sort.Strings(out)
+	return "; from detector: " + strings.Join(out, ", ")
+}
+
 // luhn reports whether the digits in s satisfy the mod-10 checksum every
 // payment card number carries, and whether there are between 13 and 19 of
 // them.

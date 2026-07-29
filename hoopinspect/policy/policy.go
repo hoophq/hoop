@@ -123,6 +123,9 @@ type Rule struct {
 	// generated, which is worse for everyone; set it.
 	Message string `json:"message,omitempty"`
 
+	// Entities for MatchPII, naming the classes a Scanner must not find.
+	Entities []string `json:"entities,omitempty"`
+
 	// HTTP-specific fields (Resources, Statuses, Fields, MaxDepth, ...).
 	// Embedded so one ordered rule set can mix SQL and HTTP matchers; a
 	// deployment fronting both a database and an API should not need two
@@ -138,6 +141,10 @@ type Rule struct {
 type Rules struct {
 	rules []Rule
 
+	// scanner backs MatchPII rules. Nil unless set by
+	// NewRulesWithScanner, and NewRules rejects PII rules when it is.
+	scanner Scanner
+
 	// FailOpen inverts the error behavior: when a rule cannot be evaluated
 	// (an invalid regex), allow instead of deny. Default false.
 	FailOpen bool
@@ -146,7 +153,12 @@ type Rules struct {
 // NewRules compiles a rule set. It returns an error listing every rule that
 // failed to compile, so a bad config surfaces at startup rather than on the
 // first request that happens to hit it.
-func NewRules(rules []Rule) (*Rules, error) {
+func NewRules(rules []Rule) (*Rules, error) { return newRules(rules, false) }
+
+// newRules is the shared constructor. hasScanner tells PII validation whether
+// a Scanner will be attached, so a PII rule without one fails at startup
+// instead of quietly allowing every statement.
+func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 	var problems []string
 	out := make([]Rule, 0, len(rules))
 
@@ -178,6 +190,10 @@ func NewRules(rules []Rule) (*Rules, error) {
 			if len(r.Tables) == 0 {
 				problems = append(problems, r.Name+": table rule with no tables")
 			}
+		case MatchPII:
+			if err := r.validatePII(hasScanner); err != nil {
+				problems = append(problems, err.Error())
+			}
 		case MatchHTTPResource, MatchHTTPStatus:
 			if err := r.validateHTTP(); err != nil {
 				problems = append(problems, err.Error())
@@ -197,6 +213,15 @@ func NewRules(rules []Rule) (*Rules, error) {
 // Evaluate implements Evaluator. First matching rule wins.
 func (r *Rules) Evaluate(stmt hoopinspect.Statement) Verdict {
 	for _, rule := range r.rules {
+		// PII needs the Scanner held by the rule SET, not the rule, so it
+		// is dispatched here rather than in Rule.matches.
+		if rule.Type == MatchPII {
+			if hit, entities := rule.matchesPII(stmt, r.scanner); hit {
+				return Deny(rule.Name, rule.piiMessage(entities))
+			}
+			continue
+		}
+
 		matched, err := rule.matches(stmt)
 		if err != nil {
 			if r.FailOpen {

@@ -159,6 +159,8 @@ type Masker struct {
 
 // compiled is a Rule with its defaults resolved and its regex built, so the
 // data path never re-derives them and never touches the caller's Rule.
+//
+// Exactly one of re or detect finds candidate spans.
 type compiled struct {
 	entity   Entity
 	strategy Strategy
@@ -166,6 +168,10 @@ type compiled struct {
 	maskChar rune
 	re       *regexp.Regexp
 	validate func(string) bool
+
+	// detect is set when an external Detector owns this entity, in which
+	// case re is nil and the Detector supplies the spans.
+	detect func(data []byte) [][2]int
 
 	// redaction is the StrategyRedact replacement, built once.
 	redaction []byte
@@ -182,7 +188,23 @@ type compiled struct {
 // start.
 //
 // An empty rule set is valid and masks nothing.
-func New(rules []Rule) (*Masker, error) {
+func New(rules []Rule) (*Masker, error) { return NewWithDetector(rules, nil) }
+
+// NewWithDetector is New with an external Detector consulted for the entities
+// it claims. A nil Detector is exactly New.
+//
+// Precedence is deliberate: the Detector wins for any entity it lists, even
+// one with a built-in of the same name. Wiring a detector in is an explicit
+// act, and a caller who does it and still silently gets the eight built-in
+// regexes has been lied to. A rule carrying its own Pattern still overrides
+// both — that is the operator's per-rule escape hatch.
+func NewWithDetector(rules []Rule, d Detector) (*Masker, error) {
+	detected := map[Entity]bool{}
+	if d != nil {
+		for _, e := range d.Entities() {
+			detected[Entity(e)] = true
+		}
+	}
 	var problems []string
 	out := make([]compiled, 0, len(rules))
 
@@ -237,14 +259,17 @@ func New(rules []Rule) (*Masker, error) {
 			default:
 				c.re = re
 			}
+		case detected[r.Entity]:
+			entity := string(r.Entity)
+			c.detect = func(data []byte) [][2]int { return d.Find(entity, data) }
 		default:
-			d, ok := builtins[r.Entity]
+			b, ok := builtins[r.Entity]
 			if !ok {
-				problems = append(problems, fmt.Sprintf("%s: unknown entity %q (known: %s; set pattern_regex for a custom one)",
-					name, r.Entity, strings.Join(knownEntities, ", ")))
+				problems = append(problems, fmt.Sprintf("%s: unknown entity %q (known: %s%s; set pattern_regex for a custom one)",
+					name, r.Entity, strings.Join(knownEntities, ", "), detectorHint(detected)))
 				break
 			}
-			c.re, c.validate = d.re, d.validate
+			c.re, c.validate = b.re, b.validate
 		}
 
 		if c.strategy == StrategyRedact {
@@ -384,20 +409,39 @@ func (m *Masker) mask(data []byte, hits []bool) ([]byte, int) {
 // rejects is never claimed, so a later rule may still match that text.
 func (m *Masker) claim(data []byte) []span {
 	var claimed []span
+	// try is the shared tail of both paths: validate the span, then insert
+	// it if it does not overlap one an earlier rule already took.
+	try := func(ri, s, e int) {
+		r := &m.rules[ri]
+		if r.validate != nil && !r.validate(string(data[s:e])) {
+			return
+		}
+		i, ok := insertPos(claimed, s, e)
+		if !ok {
+			return
+		}
+		claimed = append(claimed, span{})
+		copy(claimed[i+1:], claimed[i:])
+		claimed[i] = span{start: s, end: e, rule: ri}
+	}
+
 	for ri := range m.rules {
 		r := &m.rules[ri]
-		for _, loc := range r.re.FindAllIndex(data, -1) {
+		if r.detect == nil {
+			for _, loc := range r.re.FindAllIndex(data, -1) {
+				try(ri, loc[0], loc[1])
+			}
+			continue
+		}
+		for _, loc := range r.detect(data) {
 			s, e := loc[0], loc[1]
-			if r.validate != nil && !r.validate(string(data[s:e])) {
+			// A detector-supplied span is outside the Masker's control, so
+			// check it addresses real bytes before slicing with it. A buggy
+			// detector must mask nothing, never panic the relay.
+			if s < 0 || e > len(data) || s >= e {
 				continue
 			}
-			i, ok := insertPos(claimed, s, e)
-			if !ok {
-				continue
-			}
-			claimed = append(claimed, span{})
-			copy(claimed[i+1:], claimed[i:])
-			claimed[i] = span{start: s, end: e, rule: ri}
+			try(ri, s, e)
 		}
 	}
 	return claimed

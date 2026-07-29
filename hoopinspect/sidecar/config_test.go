@@ -1,4 +1,4 @@
-package main
+package sidecar
 
 import (
 	"os"
@@ -144,7 +144,7 @@ func TestEnforceDefaultsOff(t *testing.T) {
 			}},
 		},
 	}
-	pol, err := cfg.BuildPolicy()
+	pol, err := cfg.BuildPolicy(nil)
 	if err != nil {
 		t.Fatalf("BuildPolicy: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestBuildPolicyChainsLocalRulesThenOPA(t *testing.T) {
 			OPA: &OPAConfig{URL: "http://opa:8181/v1/data/hoop"},
 		},
 	}
-	pol, err := cfg.BuildPolicy()
+	pol, err := cfg.BuildPolicy(nil)
 	if err != nil {
 		t.Fatalf("BuildPolicy: %v", err)
 	}

@@ -22,8 +22,8 @@
 // so this package offers both:
 //
 //   - Codec — implements hoopinspect.Codec over a raw byte stream, for a
-//     caller holding a socket (the hoop agent's packet stream, an Envoy WASM
-//     network filter).
+//     caller holding a socket (the hoop-inspect relay, the hoop agent's
+//     packet stream).
 //   - Inspector — takes an already-parsed *net/http Request or Response, for
 //     a caller inside an HTTP pipeline (libhoop's ReverseProxy, an ext_proc
 //     server). No re-parsing, no second copy of the body.

@@ -16,6 +16,12 @@
       "connection": "httpbin"
     }
   ],
+  "pii": {
+    "entities": [
+      "BR_CPF",
+      "IBAN_CODE"
+    ]
+  },
   "policy": {
     "enforce": true,
     "rules": [
@@ -52,6 +58,14 @@
           "5xx"
         ],
         "message": "upstream failure suppressed by policy"
+      },
+      {
+        "name": "no-cpf-in-query",
+        "type": "pii",
+        "entities": [
+          "BR_CPF"
+        ],
+        "message": "do not put a taxpayer id in a query; it lands in the database's own logs"
       }
     ]
   },
@@ -72,6 +86,17 @@
       {
         "name": "cards",
         "entity": "credit_card",
+        "strategy": "partial",
+        "keep_last": 4
+      },
+      {
+        "name": "cpf",
+        "entity": "BR_CPF",
+        "strategy": "redact"
+      },
+      {
+        "name": "iban",
+        "entity": "IBAN_CODE",
         "strategy": "partial",
         "keep_last": 4
       }

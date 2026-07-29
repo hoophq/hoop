@@ -312,6 +312,12 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 	if dir == hoopinspect.FromServer && g.masker != nil && len(data) > 0 && maskSafe(g.cfg.Protocol) {
 		out, entities, count := g.masker.Mask(data)
 		if count > 0 {
+			// Masking changes the body LENGTH, and for HTTP the length is
+			// also declared in a header the masker never looked at. Leaving
+			// Content-Length stale makes the client read exactly that many
+			// bytes and stop mid-document — the response is truncated, which
+			// looks like a corrupt upstream rather than a masking bug.
+			out = retagContentLength(out, len(out)-len(data))
 			d.Payload = out
 			d.Masked = entities
 			d.MaskedCount = count
@@ -325,11 +331,10 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 // maskSafe reports whether in-place byte substitution can be applied to a
 // protocol's response payload without corrupting its framing.
 //
-// Only HTTP qualifies today: its body is delimited by a Content-Length the
-// codec can see, or by chunked framing, and the transport tolerates a body
-// whose length changed as long as the header is consistent — which for the
-// raw-stream path means masking is safe only because the relay forwards the
-// whole response as one unit.
+// Only HTTP qualifies today. Its body length is declared in a Content-Length
+// header the gate can find and rewrite (see retagContentLength), or it is
+// chunked, in which case the relay forwards whole chunks and the framing is
+// already self-describing.
 //
 // The wire-database protocols all length-prefix their rows in binary frames.
 // Supporting them means teaching each codec to re-frame after substitution,

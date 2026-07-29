@@ -1,4 +1,4 @@
-package main
+package sidecar
 
 import (
 	"crypto/tls"
@@ -34,6 +34,15 @@ type Config struct {
 
 	// Admin serves health and stats. Disabled when Listen is empty.
 	Admin AdminConfig `json:"admin"`
+
+	// PII configures the optional detector plugin. It is decoded but not
+	// interpreted here: this package must not know what an alcatraz Options
+	// looks like, or the dependency it exists to keep out comes back in.
+	//
+	// The field is declared so DisallowUnknownFields does not reject a
+	// config written for the pii build, and so the base binary can say
+	// "this section needs the other binary" instead of "unknown field pii".
+	PII json.RawMessage `json:"pii,omitempty"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
@@ -249,13 +258,19 @@ func (c *Config) Validate() error {
 	}
 
 	// Compile the rules here so a bad regex fails at startup rather than on
-	// the first request that happens to hit it.
-	if len(c.Policy.Rules) > 0 {
+	// the first request that happens to hit it. With a pii section present
+	// the real check happens in Main against the actual detector; a pii rule
+	// has no scanner yet at this point and would fail for the wrong reason.
+	if len(c.Policy.Rules) > 0 && len(c.PII) == 0 {
 		if _, err := policy.NewRules(c.Policy.Rules); err != nil {
 			problems = append(problems, err.Error())
 		}
 	}
-	if c.Mask.Enabled && len(c.Mask.Rules) > 0 {
+	// Mask rules are checked in Main against the real detector, which is the
+	// only check that can resolve a detector-supplied entity name. Here we
+	// can only catch the errors that hold regardless: a bad strategy, a
+	// broken custom pattern, a negative keep_last.
+	if c.Mask.Enabled && len(c.Mask.Rules) > 0 && len(c.PII) == 0 {
 		if _, err := mask.New(c.Mask.Rules); err != nil {
 			problems = append(problems, err.Error())
 		}
@@ -270,16 +285,43 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// PIIDetector is the optional plugin that supplies extra entity detection to
+// both masking rules and PII policy rules.
+//
+// It is nil in this binary, and that is deliberate. A detector worth having
+// carries recognizers for dozens of national identifier formats, and linking
+// one in would give the sidecar a dependency tree — the same reasoning that
+// keeps store/sqlite out (see AuditConfig.QuerySessions). Instead the nested
+// module github.com/hoophq/hoopinspect/pii/alcatraz builds a second binary
+// that sets this and calls Run.
+//
+// The interface is the intersection of mask.Detector and policy.Scanner, so
+// one value serves the response path and the request path.
+type PIIDetector interface {
+	Entities() []string
+	Find(entity string, data []byte) [][2]int
+	ScanText(text string) []string
+}
+
 // BuildPolicy assembles the evaluator chain: local rules first, OPA second.
 // Returns nil in observe-only mode.
-func (c *Config) BuildPolicy() (policy.Evaluator, error) {
+//
+// det may be nil; a config with pii rules then fails to build, which is the
+// point — a guardrail that cannot see must not start.
+func (c *Config) BuildPolicy(det PIIDetector) (policy.Evaluator, error) {
 	if !c.Policy.Enforce {
 		return nil, nil
 	}
 
 	var chain policy.Chain
 	if len(c.Policy.Rules) > 0 {
-		rules, err := policy.NewRules(c.Policy.Rules)
+		var rules *policy.Rules
+		var err error
+		if det != nil {
+			rules, err = policy.NewRulesWithScanner(c.Policy.Rules, det)
+		} else {
+			rules, err = policy.NewRules(c.Policy.Rules)
+		}
 		if err != nil {
 			return nil, err
 		}
