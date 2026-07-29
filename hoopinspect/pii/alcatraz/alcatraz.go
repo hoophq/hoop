@@ -13,22 +13,22 @@
 //
 // # What it adds
 //
-// The built-in masker ships eight detectors: email, SSN, credit card, phone,
-// IP, AWS key, JWT and private key. That is the set that appears often enough
-// in a result set to justify hard-coding. Alcatraz brings 45 entity types
-// across 12 countries, and 25 of them carry a real checksum validator — Luhn,
-// ISO 7064 mod-97 for IBAN, Verhoeff for Aadhaar, the Brazilian mod-11
-// schemes. For a deployment whose data is not US-shaped, that is the
-// difference between masking working and not.
+// Alcatraz brings 45 entity types across 12 countries, and 25 of them carry a
+// real checksum validator — Luhn, ISO 7064 mod-97 for IBAN, Verhoeff for
+// Aadhaar, the Brazilian mod-11 schemes. For a deployment whose data is not
+// US-shaped, that is the difference between masking working and not.
+//
+// It is a PII engine, so it has no recognizer for a credential. secrets.go
+// adds three — AWS_ACCESS_KEY, JWT, PRIVATE_KEY — into the same engine, so a
+// config names them exactly like a built-in alcatraz type.
 //
 //	det, err := alcatraz.NewDetector(alcatraz.Options{
 //	    Entities: []string{entities.BRCPF, entities.IBANCode},
 //	})
-//	m, err := mask.NewWithDetector(rules, det)          // response masking
+//	m, err := alcatraz.NewMasker(det, rules)            // response masking
 //	p, err := policy.NewRulesWithScanner(rules, det)    // request guardrails
 //
-// One value satisfies both interfaces, so a deployment configures its entity
-// list once.
+// One Detector drives both, so a deployment configures its entity list once.
 //
 // # Name the entities you want
 //
@@ -56,8 +56,10 @@ import (
 	"strings"
 
 	"github.com/hoophq/alcatraz"
+	"github.com/hoophq/alcatraz/analyzer"
 	"github.com/hoophq/alcatraz/entities"
-	"github.com/hoophq/hoopinspect/mask"
+	"github.com/hoophq/alcatraz/recognizers"
+	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
 )
 
@@ -158,18 +160,38 @@ type Detector struct {
 }
 
 var (
-	_ mask.Detector  = (*Detector)(nil)
 	_ policy.Scanner = (*Detector)(nil)
+	_ sidecarPlugin  = (*Detector)(nil)
 )
 
-// AllEntities returns every entity type alcatraz's pattern core detects, for a
-// caller who wants the full set and has read Noisy.
+// sidecarPlugin mirrors sidecar.Plugin. Asserted structurally rather than by
+// importing sidecar, which would be a cycle: the binary imports both.
+type sidecarPlugin interface {
+	ScanText(text string) []string
+	BuildMasker(rawRules []byte) (gate.Masker, error)
+}
+
+// newEngine builds the alcatraz engine this package uses: the full built-in
+// recognizer set plus the credential recognizers in secrets.go.
+//
+// One builder so AllEntities and NewDetector can never disagree about what is
+// registered — a mismatch there would reject a valid config with "unknown
+// entity type".
+func newEngine(lang string) *alcatraz.Engine {
+	reg := analyzer.NewRegistry(lang)
+	recognizers.LoadDefaults(reg, lang)
+	registerSecrets(reg, lang)
+	return analyzer.NewEngine(reg, []string{lang})
+}
+
+// AllEntities returns every entity type this package detects: alcatraz's 45
+// plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY.
 //
 // Prefer naming the types your data contains. This exists so "everything" is
 // an explicit, greppable decision rather than the consequence of leaving a
 // config field blank.
 func AllEntities() []string {
-	return alcatraz.NewEngine("en").SupportedEntities("en")
+	return newEngine("en").SupportedEntities("en")
 }
 
 // NewDetector builds a Detector over the named entity types.
@@ -183,7 +205,7 @@ func NewDetector(o Options) (*Detector, error) {
 	if lang == "" {
 		lang = "en"
 	}
-	eng := alcatraz.NewEngine(lang)
+	eng := newEngine(lang)
 
 	if len(o.Entities) == 0 {
 		return nil, fmt.Errorf("alcatraz: Options.Entities is required " +
@@ -250,13 +272,13 @@ func NewDetector(o Options) (*Detector, error) {
 	return d, nil
 }
 
-// Entities implements mask.Detector. The returned slice is a copy: a caller
+// Entities returns the active entity types. The returned slice is a copy: a caller
 // sorting or trimming it must not reshape the Detector.
 func (d *Detector) Entities() []string {
 	return append([]string(nil), d.active...)
 }
 
-// Find implements mask.Detector, returning the byte spans of one entity type.
+// Find returns the byte spans of one entity type in data.
 //
 // It restricts the engine to the single entity asked for rather than running
 // all 45 recognizers and discarding the rest. The Masker calls this once per

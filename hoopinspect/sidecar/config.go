@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/mask"
+	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
 )
 
@@ -143,9 +143,13 @@ type OPAConfig struct {
 }
 
 // MaskConfig configures response rewriting.
+//
+// Rules are held as raw JSON for the same reason as Config.PII: the shape
+// belongs to whichever detector plugin is wired in, and this package must not
+// link one. The plugin decodes them.
 type MaskConfig struct {
-	Enabled bool        `json:"enabled"`
-	Rules   []mask.Rule `json:"rules"`
+	Enabled bool            `json:"enabled"`
+	Rules   json.RawMessage `json:"rules"`
 }
 
 // AuditConfig configures the event sink.
@@ -266,14 +270,11 @@ func (c *Config) Validate() error {
 			problems = append(problems, err.Error())
 		}
 	}
-	// Mask rules are checked in Main against the real detector, which is the
-	// only check that can resolve a detector-supplied entity name. Here we
-	// can only catch the errors that hold regardless: a bad strategy, a
-	// broken custom pattern, a negative keep_last.
-	if c.Mask.Enabled && len(c.Mask.Rules) > 0 && len(c.PII) == 0 {
-		if _, err := mask.New(c.Mask.Rules); err != nil {
-			problems = append(problems, err.Error())
-		}
+	// Mask rules are not validated here: their shape belongs to the plugin,
+	// and only the plugin can tell a typo from an entity it detects. Main
+	// builds the masker for real, which is the check that counts.
+	if c.Mask.Enabled && len(c.Mask.Rules) == 0 {
+		problems = append(problems, "mask.enabled is true but mask.rules is empty")
 	}
 	if c.Policy.OPA != nil && c.Policy.OPA.URL == "" {
 		problems = append(problems, "policy.opa set but url is empty")
@@ -285,22 +286,28 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// PIIDetector is the optional plugin that supplies extra entity detection to
-// both masking rules and PII policy rules.
+// Plugin is the optional detection engine: it scans statements for the PII
+// policy rule, and builds the response masker from the "mask" config section.
 //
 // It is declared here rather than imported so this package stays
-// dependency-free: a detector worth having carries recognizers for dozens of
+// dependency-free. An engine worth having carries recognizers for dozens of
 // national identifier formats, and linking one in would give the root module
 // a dependency tree — the same reasoning that keeps store/sqlite out (see
 // AuditConfig.QuerySessions). The nested module
 // github.com/hoophq/hoopinspect/pii/alcatraz supplies an implementation.
 //
-// The interface is the intersection of mask.Detector and policy.Scanner, so
-// one value serves the response path and the request path.
-type PIIDetector interface {
-	Entities() []string
-	Find(entity string, data []byte) [][2]int
+// Nil means no detection: pii policy rules are a config error and masking is
+// unavailable. That is a refusal, never a silent downgrade.
+type Plugin interface {
+	// ScanText implements policy.Scanner for the pii rule type.
 	ScanText(text string) []string
+
+	// BuildMasker decodes the "mask" config section and returns something
+	// the gate can call. rawRules is the JSON array from MaskConfig.Rules;
+	// its shape belongs to the plugin.
+	//
+	// Returning a nil Masker with a nil error means the rules were empty.
+	BuildMasker(rawRules []byte) (gate.Masker, error)
 }
 
 // BuildPolicy assembles the evaluator chain: local rules first, OPA second.
@@ -308,7 +315,7 @@ type PIIDetector interface {
 //
 // det may be nil; a config with pii rules then fails to build, which is the
 // point — a guardrail that cannot see must not start.
-func (c *Config) BuildPolicy(det PIIDetector) (policy.Evaluator, error) {
+func (c *Config) BuildPolicy(det Plugin) (policy.Evaluator, error) {
 	if !c.Policy.Enforce {
 		return nil, nil
 	}

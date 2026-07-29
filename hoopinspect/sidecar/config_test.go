@@ -121,14 +121,39 @@ func TestBadPolicyRuleFailsAtLoad(t *testing.T) {
 	}
 }
 
-func TestBadMaskRuleFailsAtLoad(t *testing.T) {
+// Mask rule SHAPES are no longer validated here — only the plugin knows which
+// entity names it detects. What this package must still catch is masking
+// switched on with nothing to do, which would otherwise look enabled in the
+// config and mask nothing at runtime.
+func TestMaskEnabledWithNoRulesFailsAtLoad(t *testing.T) {
 	p := writeConfig(t, `{
       "listeners": [{"protocol":"postgres","listen":":1","upstream":"h:1"}],
-      "mask": {"enabled": true, "rules": [{"name":"r","entity":"nonsense","strategy":"redact"}]}
+      "mask": {"enabled": true}
     }`)
 
 	if _, err := LoadConfig(p); err == nil {
-		t.Fatal("an unknown mask entity was accepted at load")
+		t.Fatal("mask.enabled with no rules was accepted at load")
+	}
+}
+
+// An unknown entity is the plugin's error, and it must still be fatal — just
+// raised where the knowledge lives. Masking enabled with no plugin at all is
+// a refusal, never a silent pass-through.
+func TestMaskWithoutPluginIsRefused(t *testing.T) {
+	cfg := &Config{
+		Listeners: []ListenerConfig{{Protocol: "postgres", Listen: ":1", Upstream: "h:1"}},
+		Mask: MaskConfig{
+			Enabled: true,
+			Rules:   []byte(`[{"name":"r","entity":"US_SSN","strategy":"redact"}]`),
+		},
+	}
+
+	m, err := buildMasker(cfg, nil)
+	if err == nil {
+		t.Fatal("masking without a plugin must fail, not forward responses unmasked")
+	}
+	if m != nil {
+		t.Error("no masker should be returned on error")
 	}
 }
 

@@ -184,47 +184,49 @@ Masking is the response-side half, and it is the capability with no Envoy
 equivalent for any protocol: `ext_authz` is consulted before the upstream is
 called, so it has never seen the row that comes back.
 
-`mask` ships eight detectors — `email`, `ssn`, `credit_card`, `phone`,
-`ip_address`, `aws_key`, `jwt`, `private_key`. Three carry an exact check
-behind the regex: Luhn on cards, `net.ParseIP` on addresses, a base64+JSON
-decode on JWTs. Four strategies: `redact`, `mask`, `partial`, `hash`.
+Detection and rewriting both come from
+[alcatraz](https://github.com/hoophq/alcatraz): 45 entity types across 12
+countries, 25 of them checksum-verified — Luhn on cards, ISO 7064 mod-97 on
+IBAN, Verhoeff on Aadhaar, mod-11 on the Brazilian schemes. It lives in the
+nested `pii/alcatraz` module, so the root library stays dependency-free.
 
 ```go
-m, _ := mask.New([]mask.Rule{
-    {Entity: mask.EntitySSN,        Strategy: mask.StrategyRedact},
-    {Entity: mask.EntityCreditCard, Strategy: mask.StrategyPartial, KeepLast: 4},
+det, _ := alcatraz.NewDetector(alcatraz.Options{
+    Entities: []string{entities.USSSN, entities.CreditCard, entities.BRCPF},
+})
+m, _ := alcatraz.NewMasker(det, []alcatraz.Rule{
+    {Entity: entities.USSSN,      Strategy: alcatraz.StrategyRedact},
+    {Entity: entities.CreditCard, Strategy: alcatraz.StrategyPartial, KeepLast: 4},
 })
 out, res := m.Mask(responseBytes)   // res names WHAT was masked, never values
+
+p, _ := policy.NewRulesWithScanner(rules, det)   // the same det, request side
 ```
 
-### More entities: the alcatraz module
+Four strategies: `redact`, `mask`, `partial`, `hash`.
 
-Eight detectors is a US-shaped set. For national identifiers,
-[alcatraz](https://github.com/hoophq/alcatraz) brings 45 entity types across
-12 countries, 25 of them checksum-verified. It plugs into two interfaces the
-root already declares, so it lives in a nested module and the root stays
-dependency-free:
+**Credentials too.** Alcatraz is a PII engine and has no recognizer for a
+secret, so `pii/alcatraz/secrets.go` registers three into the same engine:
+`AWS_ACCESS_KEY`, `JWT` (header decoded, not just shape-matched) and
+`PRIVATE_KEY` (including a PEM block a size limit cut short). They are named
+like any other entity in config.
 
-```go
-det, err := alcatraz.NewDetector(alcatraz.Options{
-    Entities: []string{entities.BRCPF, entities.IBANCode},
-})
-m, _ := mask.NewWithDetector(rules, det)          // response masking
-p, _ := policy.NewRulesWithScanner(rules, det)    // request guardrails
-```
+### The guardrail half
 
-One value satisfies both. The `pii` policy rule is the guardrail half, and it
-answers a different question than masking: a national ID in a `WHERE` clause
-lands in the database's own query log, slow-query log and `EXPLAIN` output,
-and no amount of response masking undoes that.
+One `Detector` drives both paths. The `pii` policy rule answers a different
+question than masking: a national ID in a `WHERE` clause lands in the
+database's own query log, slow-query log and `EXPLAIN` output, and no amount
+of response masking undoes that.
 
 ```json
 {"name": "no-cpf-in-query", "type": "pii", "entities": ["BR_CPF"],
  "message": "do not put a taxpayer id in a query"}
 ```
 
-**Name the entity types you want.** There is no all-entities default, on
-purpose. Enabling all 45 recognizers rewrites ordinary numeric columns:
+### Name the entity types you want
+
+There is no all-entities default, on purpose. Enabling all 45 recognizers
+rewrites ordinary numeric columns:
 
 ```
 {"order_id":457555462,"customer_id":123456781}
@@ -237,15 +239,19 @@ nine-digit business ids, `US_SSN` fires on about a third. `alcatraz.Noisy`
 records the offenders with their rates; `AllEntities()` exists for a caller
 who has read it.
 
+The same validation cuts the other way, and it is worth knowing before a
+demo: alcatraz **declines** `123-45-6789` and `987-65-4321`, rejecting
+sequential and descending runs as obvious test fixtures. A shop that must
+mask placeholder SSNs should add a rule for that shape rather than widen the
+detector.
+
 A `pii` policy rule records the offending statement in the audit trail, raw
 literal included. Set `audit.redact_statements` where that is the wrong
 trade — the denial keeps working, and the record keeps a stable fingerprint
 instead of the text.
 
-**One binary.** `pii/alcatraz/cmd/hoop-inspect-pii` is the shipped relay. It
-lives in the nested module because that is where the alcatraz dependency is
-declared. Omit the `pii` config section and it runs on the eight built-in
-detectors alone; the root library itself stays dependency-free either way.
+**Masking requires the plugin.** `mask.enabled` with no detection wired in is
+refused at startup, never a silent pass-through.
 
 ## Limits
 

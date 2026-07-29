@@ -58,17 +58,26 @@ curl -sk https://localhost:8444/status/503 \
 h "MASKING / sensitive values rewritten on the way back"
 curl -sk -X POST https://localhost:8444/anything \
     -H 'X-Citadel-User: alice' -H 'Content-Type: application/json' \
-    -d '{"email":"ada@example.com","ssn":"123-45-6789","card":"4111111111111111","cpf":"111.444.777-35","iban":"GB82WEST12345698765432"}' \
+    -d '{"email":"ada@example.com","ssn":"555-12-3456","card":"4111111111111111","cpf":"111.444.777-35","iban":"GB82WEST12345698765432"}' \
     2>/dev/null | grep -E '"(email|ssn|card|cpf|iban)"' | sed 's/^/  /' | head -6
 note ""
-note "email redacted, ssn and card partial-masked keeping the last 4."
-note "The card was validated with Luhn, so order ids and timestamps that"
-note "merely look like 16 digits are left alone."
+note "One engine detects all five: alcatraz. email redacted; ssn, card and"
+note "iban partial-masked keeping the last 4; cpf redacted."
 note ""
-note "cpf and iban come from the alcatraz detector, not the eight built-ins."
-note "Both carry a real checksum (mod-11, ISO 7064) so a lookalike is dropped"
-note "rather than masked. This build is hoop-inspect-pii; the base binary has"
-note "no detector and would refuse this config's \"pii\" section outright."
+note "Card, CPF and IBAN are checksum-verified (Luhn, mod-11, ISO 7064), so"
+note "order ids and timestamps that merely look like them are left alone."
+
+h "MASKING / what a verified detector refuses to mask"
+curl -sk -X POST https://localhost:8444/anything \
+    -H 'X-Citadel-User: alice' -H 'Content-Type: application/json' \
+    -d '{"real":"555-12-3456","placeholder":"123-45-6789"}' \
+    2>/dev/null | grep -E '"(real|placeholder)"' | sed 's/^/  /' | head -2
+note ""
+note "123-45-6789 is left alone on purpose: alcatraz rejects sequential and"
+note "descending digit runs as obvious test fixtures. That is the trade a"
+note "validating detector makes - it cuts false positives on ordinary ids and"
+note "declines the fixtures. A shop that must mask placeholder SSNs too should"
+note "add a pattern rule for them rather than widen the detector."
 
 # -------------------------------------------------------------- guardrails
 h "GUARDRAIL / a national id in the query itself"

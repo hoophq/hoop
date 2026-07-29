@@ -14,17 +14,18 @@
 // module because it wires in alcatraz PII detection, and a main in the root
 // could not import that without putting the dependency in the root's go.mod.
 //
-// What alcatraz adds over the eight built-in detectors: 45 entity types
-// across 12 countries, 25 of them checksum-verified. Two capabilities follow:
+// The plugin supplies both halves of detection: 45 alcatraz entity types
+// across 12 countries (25 checksum-verified) plus three credential
+// recognizers, driving
 //
-//   - masking rules can name any alcatraz entity ("BR_CPF", "IBAN_CODE")
-//     instead of only the built-ins;
-//   - policy rules of type "pii" can deny a statement that embeds a national
-//     identifier, which no amount of response masking undoes once the query
-//     is in the database's own log.
+//   - response masking, where a rule names an entity and a strategy;
+//   - policy rules of type "pii", which deny a statement that embeds a
+//     national identifier — something no amount of response masking undoes
+//     once the query is in the database's own log.
 //
-// Omit the "pii" config section and the relay runs on the built-in detectors
-// alone, so one binary covers both cases.
+// Omit the "pii" config section and the relay runs with detection disabled:
+// masking is then unavailable and a pii rule is a config error, both refused
+// at startup rather than silently skipped.
 //
 // Configure the detector under "pii" in the same config file:
 //

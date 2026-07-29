@@ -8,7 +8,6 @@ import (
 
 	alcz "github.com/hoophq/alcatraz/entities"
 	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/mask"
 	"github.com/hoophq/hoopinspect/pii/alcatraz"
 	"github.com/hoophq/hoopinspect/policy"
 )
@@ -25,24 +24,29 @@ func newDet(t *testing.T, o alcatraz.Options) *alcatraz.Detector {
 	return d
 }
 
-func TestSatisfiesBothInterfaces(t *testing.T) {
+// newMask builds a Masker over the detector or fails the test.
+func newMask(t *testing.T, d *alcatraz.Detector, rules ...alcatraz.Rule) *alcatraz.Masker {
+	t.Helper()
+	m, err := alcatraz.NewMasker(d, rules)
+	if err != nil {
+		t.Fatalf("NewMasker: %v", err)
+	}
+	return m
+}
+
+func TestSatisfiesPolicyScanner(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
-	var _ mask.Detector = d
 	var _ policy.Scanner = d
 }
 
-// The whole point of the module: entities the eight built-ins cannot find.
+// Checksum-verified national identifiers: the reason this module exists.
 func TestMasksEntitiesTheBuiltinsCannot(t *testing.T) {
 	det := newDet(t, alcatraz.Options{
 		Entities: []string{alcz.BRCPF, alcz.IBANCode, alcz.UKNINO},
 	})
-	m, err := mask.NewWithDetector([]mask.Rule{
-		{Entity: mask.Entity(alcz.BRCPF), Strategy: mask.StrategyRedact},
-		{Entity: mask.Entity(alcz.IBANCode), Strategy: mask.StrategyRedact},
-	}, det)
-	if err != nil {
-		t.Fatalf("NewWithDetector: %v", err)
-	}
+	m := newMask(t, det,
+		alcatraz.Rule{Entity: alcz.BRCPF, Strategy: alcatraz.StrategyRedact},
+		alcatraz.Rule{Entity: alcz.IBANCode, Strategy: alcatraz.StrategyRedact})
 
 	out, res := m.MaskString("cpf 111.444.777-35 iban GB82WEST12345698765432 done")
 	if strings.Contains(out, "111.444.777-35") {
@@ -63,12 +67,7 @@ func TestMasksEntitiesTheBuiltinsCannot(t *testing.T) {
 // digit run that fails mod-11 must NOT be masked, or every order id goes too.
 func TestChecksumRejectsLookalikes(t *testing.T) {
 	det := newDet(t, alcatraz.Options{Entities: []string{alcz.BRCPF}})
-	m, err := mask.NewWithDetector([]mask.Rule{
-		{Entity: mask.Entity(alcz.BRCPF), Strategy: mask.StrategyRedact},
-	}, det)
-	if err != nil {
-		t.Fatalf("NewWithDetector: %v", err)
-	}
+	m := newMask(t, det, alcatraz.Rule{Entity: alcz.BRCPF, Strategy: alcatraz.StrategyRedact})
 
 	// 111.444.777-35 is a valid CPF; 111.444.777-99 fails the check digits.
 	out, res := m.MaskString("good 111.444.777-35 bad 111.444.777-99")
@@ -310,13 +309,9 @@ func TestConcurrentUse(t *testing.T) {
 	d := newDet(t, alcatraz.Options{
 		Entities: []string{alcz.CreditCard, alcz.BRCPF},
 	})
-	m, err := mask.NewWithDetector([]mask.Rule{
-		{Entity: mask.Entity(alcz.CreditCard), Strategy: mask.StrategyPartial, KeepLast: 4},
-		{Entity: mask.Entity(alcz.BRCPF), Strategy: mask.StrategyRedact},
-	}, d)
-	if err != nil {
-		t.Fatalf("NewWithDetector: %v", err)
-	}
+	m := newMask(t, d,
+		alcatraz.Rule{Entity: alcz.CreditCard, Strategy: alcatraz.StrategyPartial, KeepLast: 4},
+		alcatraz.Rule{Entity: alcz.BRCPF, Strategy: alcatraz.StrategyRedact})
 
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {

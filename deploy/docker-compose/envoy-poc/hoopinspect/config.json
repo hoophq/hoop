@@ -18,6 +18,9 @@
   ],
   "pii": {
     "entities": [
+      "EMAIL_ADDRESS",
+      "US_SSN",
+      "CREDIT_CARD",
       "BR_CPF",
       "IBAN_CODE"
     ]
@@ -74,18 +77,18 @@
     "rules": [
       {
         "name": "emails",
-        "entity": "email",
+        "entity": "EMAIL_ADDRESS",
         "strategy": "redact"
       },
       {
         "name": "ssn",
-        "entity": "ssn",
+        "entity": "US_SSN",
         "strategy": "partial",
         "keep_last": 4
       },
       {
         "name": "cards",
-        "entity": "credit_card",
+        "entity": "CREDIT_CARD",
         "strategy": "partial",
         "keep_last": 4
       },

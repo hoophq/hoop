@@ -43,7 +43,6 @@ import (
 	"github.com/hoophq/hoopinspect/audit"
 	_ "github.com/hoophq/hoopinspect/codec/all"
 	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/mask"
 	"github.com/hoophq/hoopinspect/policy"
 	"github.com/hoophq/hoopinspect/proxy"
 	"github.com/hoophq/hoopinspect/session"
@@ -57,17 +56,16 @@ var Version = "dev"
 
 // Main is the command-line entry point.
 //
-// version is stamped by the caller's -ldflags. det is the optional PII
-// detector: nil restricts masking to the eight built-in detectors and makes
-// any pii policy rule a config error. It calls os.Exit, so it is the last
-// thing a main does.
+// version is stamped by the caller's -ldflags. det is the optional detection
+// plugin: nil disables masking and makes any pii policy rule a config error.
+// It calls os.Exit, so it is the last thing a main does.
 //
 // Usage:
 //
 //	hoop-inspect -config /etc/hoop-inspect/config.json
 //	hoop-inspect -validate -config config.json   # check and exit
 //	hoop-inspect -version
-func Main(version string, det PIIDetector) {
+func Main(version string, det Plugin) {
 	Version = version
 
 	var (
@@ -113,7 +111,7 @@ func Main(version string, det PIIDetector) {
 			os.Exit(1)
 		}
 		if cfg.Mask.Enabled {
-			if _, merr := newMasker(cfg.Mask.Rules, det); merr != nil {
+			if _, merr := buildMasker(cfg, det); merr != nil {
 				fmt.Fprintln(os.Stderr, "hoop-inspect:", merr)
 				os.Exit(1)
 			}
@@ -130,11 +128,10 @@ func Main(version string, det PIIDetector) {
 
 // Run starts the sidecar and blocks until the process is signalled.
 //
-// det is the optional PII detector plugin. Passing nil restricts masking to
-// the eight built-in detectors and rejects any pii policy rule. This is the
-// entry point for a caller embedding the relay in their own binary; the
-// shipped one goes through Main.
-func Run(cfg *Config, det PIIDetector) error {
+// det is the optional detection plugin. Passing nil disables masking and
+// rejects any pii policy rule. This is the entry point for a caller embedding
+// the relay in their own binary; the shipped one goes through Main.
+func Run(cfg *Config, det Plugin) error {
 	log := newLogger(cfg.LogLevel)
 
 	ac, err := buildAudit(cfg.Audit)
@@ -151,7 +148,7 @@ func Run(cfg *Config, det PIIDetector) error {
 	}()
 
 	if det != nil {
-		log.Info("pii detector attached", "entities", len(det.Entities()))
+		log.Info("detection plugin attached")
 	}
 
 	pol, err := cfg.BuildPolicy(det)
@@ -163,14 +160,12 @@ func Run(cfg *Config, det PIIDetector) error {
 			"hint", "set policy.enforce=true to enforce")
 	}
 
-	var masker gate.Masker
-	if cfg.Mask.Enabled {
-		m, merr := newMasker(cfg.Mask.Rules, det)
-		if merr != nil {
-			return merr
-		}
-		masker = maskAdapter{m}
-		log.Info("response masking enabled", "rules", len(cfg.Mask.Rules))
+	masker, err := buildMasker(cfg, det)
+	if err != nil {
+		return err
+	}
+	if masker != nil {
+		log.Info("response masking enabled")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
@@ -275,25 +270,20 @@ func buildServer(
 	})
 }
 
-// newMasker compiles the masking rules, wiring the PII detector in when one
-// was supplied. mask.NewWithDetector(rules, nil) is exactly mask.New, but the
-// nil has to be typed: a nil PIIDetector in a mask.Detector interface value
-// is non-nil, and the Masker would then call through it.
-func newMasker(rules []mask.Rule, det PIIDetector) (*mask.Masker, error) {
-	if det == nil {
-		return mask.New(rules)
+// buildMasker asks the plugin to compile the "mask" config section.
+//
+// Masking needs a detection engine, and this package deliberately links none.
+// So a config that enables masking without a plugin is refused rather than
+// quietly forwarding responses unmasked — the failure that would otherwise be
+// discovered by finding an SSN in a screenshot.
+func buildMasker(cfg *Config, det Plugin) (gate.Masker, error) {
+	if !cfg.Mask.Enabled {
+		return nil, nil
 	}
-	return mask.NewWithDetector(rules, det)
-}
-
-// maskAdapter bridges *mask.Masker to the narrow gate.Masker interface. The
-// gate declares its own interface so a shop with an existing DLP service can
-// substitute one without forking the gate.
-type maskAdapter struct{ m *mask.Masker }
-
-func (a maskAdapter) Mask(data []byte) ([]byte, []string, int) {
-	out, res := a.m.Mask(data)
-	return out, res.Entities, res.Count
+	if det == nil {
+		return nil, fmt.Errorf("mask.enabled is true but this build has no detection plugin")
+	}
+	return det.BuildMasker(cfg.Mask.Rules)
 }
 
 func newLogger(level string) *slog.Logger {
