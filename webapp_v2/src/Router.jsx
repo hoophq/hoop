@@ -38,6 +38,8 @@ import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
+import IntegrationsSlack from '@/pages/Integrations/Slack'
+import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 
 /**
  * Routing strategy:
@@ -483,6 +485,41 @@ function Router() {
       <Route
         path="/settings/jira"
         element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+
+      {/* Integrations */}
+      {/* Legacy plugin-manage URLs — keep old bookmarks working */}
+      <Route
+        path="/plugins/manage/slack"
+        element={<Navigate to="/integrations/slack" replace />}
+      />
+      <Route
+        path="/plugins/manage/webhooks"
+        element={<Navigate to="/integrations/webhooks" replace />}
+      />
+      <Route
+        path="/integrations/slack"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsSlack />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/integrations/webhooks"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsWebhooks />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
       />
 
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}

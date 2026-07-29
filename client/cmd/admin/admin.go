@@ -39,6 +39,10 @@ func init() {
 			"Canonical resource URI for RFC 8707 audience binding (default: <api-url>/api/mcp)")
 		c.Flags().StringVar(&mcpAuthGroupsClaimFlag, "groups-claim", "",
 			"JWT claim name from which user groups are extracted (default: groups)")
+		c.Flags().StringVar(&mcpAuthClientIDFlag, "client-id", "",
+			"Statically pre-registered OAuth client ID, for IdPs without Dynamic Client Registration (RFC 7591) support")
+		c.Flags().StringVar(&mcpAuthClientSecretFlag, "client-secret", "",
+			"Optional secret paired with --client-id; omit for a public client with PKCE (recommended)")
 	}
 }
 

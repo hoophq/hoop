@@ -56,6 +56,15 @@ type ServerMcpAuthConfig struct {
 	Enabled     bool   `json:"enabled"`
 	ResourceURI string `json:"resource_uri"`
 	GroupsClaim string `json:"groups_claim"`
+	// ClientID is a statically pre-registered OAuth client at the IdP, used
+	// for IdPs without RFC 7591 Dynamic Client Registration support. When set,
+	// the gateway advertises itself as the authorization server and serves a
+	// DCR shim that hands this client out to MCP clients.
+	ClientID string `json:"client_id"`
+	// ClientSecret is the optional secret paired with ClientID. Empty means
+	// the static client is a public client (PKCE only), which is recommended
+	// since the DCR shim discloses this value to registering MCP clients.
+	ClientSecret string `json:"client_secret"`
 }
 
 func GetServerAuthConfig() (*ServerAuthConfig, error) {
