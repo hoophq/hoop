@@ -224,8 +224,8 @@ func CreateConnectionCredentials(c *gin.Context) {
 // CreateConnectionCredentials: for a given (user, connection) pair the plaintext
 // secret key is stable across issuances. The row is reused (and its expiration
 // refreshed to the new value) whenever a non-revoked credential exists; the key
-// only changes when the previous credential was revoked or when the row predates
-// the encrypted_secret_key backfill column.
+// only changes when the previous credential was revoked or when its password
+// cannot be recovered (rows predating plaintext/encrypted storage).
 func issueOrRefreshCredential(
 	orgID, userSubject string,
 	conn *models.Connection,
@@ -249,68 +249,56 @@ func issueOrRefreshCredential(
 			}
 		}
 
-		// Reuse the stable key: decrypt, refresh expiration, keep the same row.
-		if len(existing.EncryptedSecretKey) > 0 {
-			plaintext, decErr := models.DecryptCredentialSecretKey(existing.EncryptedSecretKey)
-			if decErr == nil {
-				if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
-					return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
-				}
-				existing.SessionID = sessionID
-				existing.ExpireAt = expireAt
-				return plaintext, existing, nil
+		// Reuse the stable password: refresh expiration, keep the same row.
+		if plaintext := recoverSecretKey(existing); plaintext != "" {
+			if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
+				return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
 			}
-			log.Warnf("failed to decrypt stored credential (id=%s), regenerating: %v",
-				existing.ID, decErr)
+			existing.SessionID = sessionID
+			existing.ExpireAt = expireAt
+			return plaintext, existing, nil
 		}
 
-		// Backfill path: the row exists but has no ciphertext (created before
-		// migration 000081, or decryption failed). Rotate the secret key in
-		// place so the user still keeps the same credential id, but they will
-		// observe a one-time token change.
+		// The password cannot be recovered (row has neither a plaintext nor a
+		// decryptable encrypted copy). Rotate the secret key in place so the
+		// user still keeps the same credential id, but they will observe a
+		// one-time token change.
 		newSecret, newHash, genErr := generateSecretKey(connType)
 		if genErr != nil {
 			return "", nil, fmt.Errorf("failed to generate secret key: %w", genErr)
 		}
-		ciphertext, encErr := models.EncryptCredentialSecretKey(newSecret)
-		if encErr != nil {
-			return "", nil, fmt.Errorf("failed to encrypt secret key: %w", encErr)
-		}
-		if err := models.UpdateConnectionCredentialsSecret(existing.ID, newHash, ciphertext); err != nil {
+		if err := models.UpdateConnectionCredentialsSecret(existing.ID, newHash, newSecret); err != nil {
 			return "", nil, fmt.Errorf("failed to update credential secret: %w", err)
 		}
 		if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
 			return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
 		}
 		existing.SecretKeyHash = newHash
-		existing.EncryptedSecretKey = ciphertext
+		existing.SecretKey = &newSecret
+		existing.EncryptedSecretKey = nil
 		existing.SessionID = sessionID
 		existing.ExpireAt = expireAt
 		return newSecret, existing, nil
 	}
 
 	// No active credential for this (user, connection) pair. Create a fresh row
-	// and store both the hash (for proxy auth lookup) and the encrypted copy of
-	// the plaintext (for future reuse).
+	// and store both the hash (for proxy auth lookup) and the plaintext (for
+	// future reuse).
 	newSecret, newHash, err := generateSecretKey(connType)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate secret key: %w", err)
 	}
-	ciphertext, err := models.EncryptCredentialSecretKey(newSecret)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to encrypt secret key: %w", err)
-	}
 	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
-		ID:                 uuid.NewString(),
-		OrgID:              orgID,
-		UserSubject:        userSubject,
-		ConnectionName:     conn.Name,
-		ConnectionType:     proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-		SecretKeyHash:      newHash,
-		EncryptedSecretKey: ciphertext,
-		SessionID:          sessionID,
-		CreatedAt:          time.Now().UTC(),
-		ExpireAt:           expireAt,
+		ID:             uuid.NewString(),
+		OrgID:          orgID,
+		UserSubject:    userSubject,
+		ConnectionName: conn.Name,
+		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+		SecretKeyHash:  newHash,
+		SecretKey:      &newSecret,
+		SessionID:      sessionID,
+		CreatedAt:      time.Now().UTC(),
+		ExpireAt:       expireAt,
 	})
 	if err != nil {
 		return "", nil, err
@@ -471,52 +459,69 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	// Generate credentials
+	// Recover the user's stable password for this connection instead of
+	// minting a new one on every call: prefer the session's own credential
+	// row, then any active credential the user holds on the same connection.
+	// A fresh key is generated only when no password can be recovered.
 	connType := proto.ConnectionType(conn.SubType.String)
-	secretKey, secretKeyHash, err := generateSecretKey(connType)
-	if err != nil {
-		log.Warnf("failed to create access credentials, err=%v", err)
-		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
-		return
-	}
-
-	// If credentials already exist for this session, update the secret key (preserves expiration)
-	// Otherwise create a new record.
-	//
-	// Resume keeps the legacy rotate-on-call behavior for review/JIT flows:
-	// repeated Resume calls explicitly rotate the token. The encrypted copy is
-	// cleared on rotation so the credential cannot later be mistaken for a
-	// stable-key row by CreateConnectionCredentials.
 	var db *models.ConnectionCredentials
+	var secretKey string
 	if existingCred != nil {
-		if err := models.UpdateConnectionCredentialsSecretKey(existingCred.ID, secretKeyHash); err != nil {
-			c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
-			return
+		secretKey = recoverSecretKey(existingCred)
+		if secretKey == "" {
+			// Unrecoverable legacy row: rotate in place, keeping the same
+			// credential id. One-time token change.
+			newSecret, newHash, genErr := generateSecretKey(connType)
+			if genErr != nil {
+				log.Warnf("failed to create access credentials, err=%v", genErr)
+				c.AbortWithStatusJSON(400, gin.H{"message": genErr.Error()})
+				return
+			}
+			if err := models.UpdateConnectionCredentialsSecret(existingCred.ID, newHash, newSecret); err != nil {
+				c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
+				return
+			}
+			existingCred.SecretKeyHash = newHash
+			existingCred.SecretKey = &newSecret
+			existingCred.EncryptedSecretKey = nil
+			secretKey = newSecret
 		}
-		existingCred.SecretKeyHash = secretKeyHash
-		existingCred.EncryptedSecretKey = nil
 		db = existingCred
 	} else {
-		// First issuance after review approval: store the encrypted copy so
-		// that if the review requirement is later removed the same token can
-		// be reused via CreateConnectionCredentials.
-		ciphertext, encErr := models.EncryptCredentialSecretKey(secretKey)
-		if encErr != nil {
-			log.Errorf("failed to encrypt secret key, err=%v", encErr)
-			c.AbortWithStatusJSON(500, gin.H{"message": "failed to encrypt secret key"})
+		// First issuance after review approval: reuse the password of the
+		// user's active credential on the same connection when one exists so
+		// the token stays stable across review cycles.
+		secretKeyHash := ""
+		if prior, perr := models.GetActiveCredentialByUserAndConnection(ctx.OrgID, ctx.UserID, conn.Name); perr == nil {
+			if plaintext := recoverSecretKey(prior); plaintext != "" {
+				secretKey = plaintext
+				secretKeyHash = prior.SecretKeyHash
+			}
+		} else if perr != models.ErrNotFound {
+			log.Errorf("failed looking up prior credential, err=%v", perr)
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed checking existing credentials"})
 			return
 		}
+		if secretKey == "" {
+			var genErr error
+			secretKey, secretKeyHash, genErr = generateSecretKey(connType)
+			if genErr != nil {
+				log.Warnf("failed to create access credentials, err=%v", genErr)
+				c.AbortWithStatusJSON(400, gin.H{"message": genErr.Error()})
+				return
+			}
+		}
 		db, err = models.CreateConnectionCredentials(&models.ConnectionCredentials{
-			ID:                 uuid.NewString(),
-			OrgID:              ctx.OrgID,
-			UserSubject:        ctx.UserID,
-			ConnectionName:     conn.Name,
-			ConnectionType:     proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-			SecretKeyHash:      secretKeyHash,
-			EncryptedSecretKey: ciphertext,
-			SessionID:          sessionID,
-			CreatedAt:          createdAt,
-			ExpireAt:           expireAt,
+			ID:             uuid.NewString(),
+			OrgID:          ctx.OrgID,
+			UserSubject:    ctx.UserID,
+			ConnectionName: conn.Name,
+			ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+			SecretKeyHash:  secretKeyHash,
+			SecretKey:      &secretKey,
+			SessionID:      sessionID,
+			CreatedAt:      createdAt,
+			ExpireAt:       expireAt,
 		})
 		if err != nil {
 			c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
@@ -664,14 +669,9 @@ func GetConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if len(cred.EncryptedSecretKey) == 0 {
+	plaintext := recoverSecretKey(cred)
+	if plaintext == "" {
 		c.AbortWithStatusJSON(404, gin.H{"message": "no credentials available for this connection"})
-		return
-	}
-
-	plaintext, err := models.DecryptCredentialSecretKey(cred.EncryptedSecretKey)
-	if err != nil {
-		c.AbortWithStatusJSON(500, gin.H{"message": "failed to recover credential secret key"})
 		return
 	}
 
@@ -1084,6 +1084,31 @@ func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connecti
 	}
 
 	return false, nil
+}
+
+// recoverSecretKey returns the plaintext secret key stored on the credential.
+// It prefers the plaintext secret_key column and falls back to decrypting the
+// legacy encrypted copy for rows that predate plaintext storage, backfilling
+// the plaintext column so the fallback runs once per row. Returns "" when the
+// password cannot be recovered.
+func recoverSecretKey(cred *models.ConnectionCredentials) string {
+	if cred.SecretKey != nil && *cred.SecretKey != "" {
+		return *cred.SecretKey
+	}
+	if len(cred.EncryptedSecretKey) == 0 {
+		return ""
+	}
+	plaintext, err := models.DecryptCredentialSecretKey(cred.EncryptedSecretKey)
+	if err != nil {
+		log.Warnf("failed to decrypt stored credential (id=%s): %v", cred.ID, err)
+		return ""
+	}
+	if err := models.BackfillConnectionCredentialsSecretKey(cred.ID, plaintext); err != nil {
+		log.Warnf("failed to backfill plaintext secret key (id=%s): %v", cred.ID, err)
+	} else {
+		cred.SecretKey = &plaintext
+	}
+	return plaintext
 }
 
 func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
