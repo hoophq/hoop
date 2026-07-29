@@ -35,8 +35,42 @@ const (
 	EnterpriseType string = "enterprise"
 )
 
+// Feature keys that a license can restrict. An empty/absent features list
+// means every feature is enabled.
+const (
+	FeatureGuardrails        string = "guardrails"
+	FeatureDataMasking       string = "data-masking"
+	FeatureAISessionAnalyzer string = "ai-session-analyzer"
+	FeatureAccessRequests    string = "access-requests"
+	FeatureRunbooks          string = "runbooks"
+	FeatureJiraIntegration   string = "jira-integration"
+	FeatureEventRouting      string = "event-routing"
+	FeatureAIAgents          string = "ai-agents"
+	FeatureRulepacks         string = "rulepacks"
+	FeatureMachineIdentities string = "machine-identities"
+	FeatureAccessControl     string = "access-control"
+	FeatureProvisioningHub   string = "provisioning-hub"
+	FeatureResourceDiscovery string = "resource-discovery"
+)
+
 var (
 	allowedLicenseTypes = []string{OSSType, EnterpriseType}
+
+	allowedFeatures = []string{
+		FeatureGuardrails,
+		FeatureDataMasking,
+		FeatureAISessionAnalyzer,
+		FeatureAccessRequests,
+		FeatureRunbooks,
+		FeatureJiraIntegration,
+		FeatureEventRouting,
+		FeatureAIAgents,
+		FeatureRulepacks,
+		FeatureMachineIdentities,
+		FeatureAccessControl,
+		FeatureProvisioningHub,
+		FeatureResourceDiscovery,
+	}
 
 	ErrNotValid               = errors.New("license is not valid, contact your administrator or our support at https://help.hoop.dev")
 	ErrDataMaskingUnsupported = errors.New("data masking is enabled for this connection but is not supported with the open source license, disable it or contact our support at https://help.hoop.dev")
@@ -51,6 +85,9 @@ type Payload struct {
 	ExpireAt     int64    `json:"expire_at"`
 	AllowedHosts []string `json:"allowed_hosts"`
 	Description  string   `json:"description"`
+	// Features enabled by this license. Empty or absent means all
+	// features are enabled.
+	Features []string `json:"features,omitempty"`
 }
 
 type License struct {
@@ -59,17 +96,37 @@ type License struct {
 	Signature string  `json:"signature"`
 }
 
-func Sign(privKey *rsa.PrivateKey, licenseType, description string, allowedHosts []string, expireAt time.Duration) (*License, error) {
+// AllowedFeatures returns the catalog of feature keys a license may restrict.
+func AllowedFeatures() []string { return slices.Clone(allowedFeatures) }
+
+func validateFeatures(features []string) error {
+	for _, f := range features {
+		if !slices.Contains(allowedFeatures, f) {
+			return fmt.Errorf("unknown feature: %q, allowed values: %v", f, allowedFeatures)
+		}
+	}
+	return nil
+}
+
+func Sign(privKey *rsa.PrivateKey, licenseType, description string, allowedHosts, features []string, expireAt time.Duration) (*License, error) {
 	clockTolerance := -time.Hour
 	issuedAt := time.Now().UTC().Add(clockTolerance)
 	expireAtTime := time.Now().UTC().Add(expireAt)
-	return sign(privKey, licenseType, description, allowedHosts, issuedAt, expireAtTime)
+	return sign(privKey, licenseType, description, allowedHosts, features, issuedAt, expireAtTime)
 }
 
-func sign(privKey *rsa.PrivateKey, licenseType, description string, allowedHosts []string, issuedAt, expireAt time.Time) (*License, error) {
+func sign(privKey *rsa.PrivateKey, licenseType, description string, allowedHosts, features []string, issuedAt, expireAt time.Time) (*License, error) {
 	if !slices.Contains(allowedLicenseTypes, licenseType) {
 		return nil, fmt.Errorf("unknown license type: %q, allowed values: %v",
 			licenseType, allowedLicenseTypes)
+	}
+	if err := validateFeatures(features); err != nil {
+		return nil, err
+	}
+	if len(features) > 0 {
+		features = slices.Clone(features)
+		slices.Sort(features)
+		features = slices.Compact(features)
 	}
 	keyID, err := pubkeyChecksum(&privKey.PublicKey)
 	if err != nil {
@@ -81,6 +138,7 @@ func sign(privKey *rsa.PrivateKey, licenseType, description string, allowedHosts
 		ExpireAt:     expireAt.Unix(),
 		AllowedHosts: allowedHosts,
 		Description:  description,
+		Features:     features,
 	}
 
 	msgHash := sha256.New()
@@ -168,14 +226,28 @@ func (l License) validateAttributes() error {
 	return nil
 }
 
-// signingData is the payload to be signed and verified
+// signingData is the payload to be signed and verified.
+// The features segment is appended only when present so licenses signed
+// before the field existed keep verifying with the same data.
 func (p Payload) signingData() []byte {
 	v := p.Type + ":" +
 		fmt.Sprintf("%v", p.IssuedAt) + ":" +
 		fmt.Sprintf("%v", p.ExpireAt) + ":" +
 		strings.Join(p.AllowedHosts, ",") + ":" +
 		p.Description
+	if len(p.Features) > 0 {
+		v += ":" + strings.Join(p.Features, ",")
+	}
 	return []byte(v)
+}
+
+// IsFeatureEnabled reports whether a feature is enabled by this license.
+// An empty features list means every feature is enabled.
+func (l License) IsFeatureEnabled(feature string) bool {
+	if len(l.Payload.Features) == 0 {
+		return true
+	}
+	return slices.Contains(l.Payload.Features, feature)
 }
 
 func (l License) VerifyHost(host string) error {

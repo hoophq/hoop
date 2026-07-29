@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
@@ -75,6 +76,7 @@ License:
   Issued At:     %v
   Expires At:    %v
   Allowed Hosts: %v
+  Features:      %v
   Verify Error:  %v
 `
 
@@ -110,6 +112,17 @@ var serverInfoCmd = &cobra.Command{
 			timestamp, _ := val.(float64)
 			return time.Unix(int64(timestamp), 0).In(time.UTC).Format(time.RFC3339)
 		}
+		featuresFn := func(val any) string {
+			features, _ := val.([]any)
+			if len(features) == 0 {
+				return "all (unrestricted)"
+			}
+			items := make([]string, len(features))
+			for i, f := range features {
+				items[i] = fmt.Sprintf("%v", f)
+			}
+			return strings.Join(items, ", ")
+		}
 		if resp, _ := obj.(map[string]any); len(resp) > 0 {
 			licenseInfo, _ := resp["license_info"].(map[string]any)
 			if licenseInfo == nil {
@@ -137,6 +150,7 @@ var serverInfoCmd = &cobra.Command{
 				timeFn(licenseInfo["issued_at"]),
 				timeFn(licenseInfo["expire_at"]),
 				licenseInfo["allowed_hosts"],
+				featuresFn(licenseInfo["features"]),
 				licenseInfo["verify_error"],
 			)
 			return
