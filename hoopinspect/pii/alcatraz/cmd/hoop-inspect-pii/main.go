@@ -1,21 +1,30 @@
-// Command hoop-inspect-pii is the hoop-inspect relay with alcatraz PII
-// detection wired in.
+// Command hoop-inspect-pii is the hoop-inspect relay: an inspecting TCP proxy
+// that decodes the wire protocol between a client and a database or API,
+// evaluates each statement against policy, records an audit trail naming the
+// human who ran it, and masks sensitive values on the way back.
 //
-// It is the same binary as cmd/hoop-inspect — same config file, same
-// listeners, same audit trail — plus 45 entity types across 12 countries, 25
-// of them checksum-verified. That buys two capabilities the base build does
-// not have:
+// It runs behind something that already owns TLS and identity — Envoy,
+// typically, forwarding plaintext over loopback or a unix socket. It is not a
+// router: one listener, one upstream, one protocol per endpoint.
+//
+// # Why the binary lives here
+//
+// The relay itself is assembled by github.com/hoophq/hoopinspect/sidecar, in
+// the dependency-free root module. This main sits in the nested pii/alcatraz
+// module because it wires in alcatraz PII detection, and a main in the root
+// could not import that without putting the dependency in the root's go.mod.
+//
+// What alcatraz adds over the eight built-in detectors: 45 entity types
+// across 12 countries, 25 of them checksum-verified. Two capabilities follow:
 //
 //   - masking rules can name any alcatraz entity ("BR_CPF", "IBAN_CODE")
-//     instead of the eight built-ins;
+//     instead of only the built-ins;
 //   - policy rules of type "pii" can deny a statement that embeds a national
 //     identifier, which no amount of response masking undoes once the query
 //     is in the database's own log.
 //
-// The trade is the dependency. The base build compiles with no module
-// download at all; this one links github.com/hoophq/alcatraz. Alcatraz is
-// itself dependency-free, so the tree is one edge deep, but it is not zero —
-// pick the binary that matches what your deployment has to justify.
+// Omit the "pii" config section and the relay runs on the built-in detectors
+// alone, so one binary covers both cases.
 //
 // Configure the detector under "pii" in the same config file:
 //

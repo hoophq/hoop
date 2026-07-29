@@ -7,10 +7,11 @@ structured statements into allow/deny verdicts.
 routes anything. It is a pure function over bytes you already have, so
 whatever holds the connection keeps holding it.
 
-**The relay is.** `cmd/hoop-inspect` wraps the library in a TCP listener that
-accepts a connection, dials one upstream, and pumps bytes through the gate in
-both directions. It runs behind something that already owns TLS and identity
-— Envoy, typically, forwarding plaintext over loopback or a unix socket.
+**The relay is.** `pii/alcatraz/cmd/hoop-inspect-pii` wraps the library in a
+TCP listener that accepts a connection, dials one upstream, and pumps bytes
+through the gate in both directions. It runs behind something that already
+owns TLS and identity — Envoy, typically, forwarding plaintext over loopback
+or a unix socket.
 
 **Zero dependencies.** No `go.sum`. Standard library only, tests included.
 Nothing to vendor, nothing to review, no version skew with whatever links it.
@@ -241,10 +242,10 @@ literal included. Set `audit.redact_statements` where that is the wrong
 trade — the denial keeps working, and the record keeps a stable fingerprint
 instead of the text.
 
-**Two builds.** `cmd/hoop-inspect` links nothing and compiles with no module
-download at all. `pii/alcatraz/cmd/hoop-inspect-pii` is the same relay with
-the detector attached, one dependency deep. Both read the same config; the
-base binary refuses a `pii` section rather than ignoring it.
+**One binary.** `pii/alcatraz/cmd/hoop-inspect-pii` is the shipped relay. It
+lives in the nested module because that is where the alcatraz dependency is
+declared. Omit the `pii` config section and it runs on the eight built-in
+detectors alone; the root library itself stays dependency-free either way.
 
 ## Limits
 

@@ -1,16 +1,10 @@
-# hoop-inspect sidecar image, PII-enabled build.
+# hoop-inspect sidecar image.
 #
-# Two builds exist and they differ in one property worth stating plainly:
-#
-#   cmd/hoop-inspect           zero dependencies, no module download at all
-#   pii/alcatraz/.../hoop-inspect-pii   links github.com/hoophq/alcatraz
-#
-# This Dockerfile builds the second, because the POC demonstrates masking
-# Brazilian CPFs and IBANs, which the eight built-in detectors cannot find.
-# Alcatraz is itself dependency-free, so the tree is exactly one edge deep —
-# but it is not zero, and a deployment that has to justify a supply chain
-# should build the base binary instead by pointing the build stage at
-# ./cmd/hoop-inspect and dropping the `go mod download`.
+# The relay is assembled by the hoopinspect root module, which has zero
+# dependencies. The binary lives in the nested pii/alcatraz module because it
+# wires in PII detection, so the build needs exactly one module download:
+# github.com/hoophq/alcatraz, itself dependency-free. One edge deep, no vendor
+# directory, no transitive tree to review.
 #
 # Build from the repo root:
 #   docker build -f deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile \
@@ -19,8 +13,8 @@
 FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY . .
-# The nested module is where the alcatraz dependency lives; the root module
-# stays dependency-free and is pulled in by a replace directive.
+# The nested module declares the alcatraz dependency; the root module is
+# pulled in beside it by a replace directive.
 WORKDIR /src/pii/alcatraz
 RUN go mod download
 # CGO off and a static build so the runtime stage can be distroless-thin.

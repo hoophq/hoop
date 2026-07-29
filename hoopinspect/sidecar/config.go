@@ -39,9 +39,9 @@ type Config struct {
 	// interpreted here: this package must not know what an alcatraz Options
 	// looks like, or the dependency it exists to keep out comes back in.
 	//
-	// The field is declared so DisallowUnknownFields does not reject a
-	// config written for the pii build, and so the base binary can say
-	// "this section needs the other binary" instead of "unknown field pii".
+	// The field is declared so DisallowUnknownFields does not reject it, and
+	// so a build wired without a detector can say "this section needs one"
+	// instead of "unknown field pii".
 	PII json.RawMessage `json:"pii,omitempty"`
 
 	// LogLevel is debug, info, warn or error. Default info.
@@ -288,12 +288,12 @@ func (c *Config) Validate() error {
 // PIIDetector is the optional plugin that supplies extra entity detection to
 // both masking rules and PII policy rules.
 //
-// It is nil in this binary, and that is deliberate. A detector worth having
-// carries recognizers for dozens of national identifier formats, and linking
-// one in would give the sidecar a dependency tree — the same reasoning that
-// keeps store/sqlite out (see AuditConfig.QuerySessions). Instead the nested
-// module github.com/hoophq/hoopinspect/pii/alcatraz builds a second binary
-// that sets this and calls Run.
+// It is declared here rather than imported so this package stays
+// dependency-free: a detector worth having carries recognizers for dozens of
+// national identifier formats, and linking one in would give the root module
+// a dependency tree — the same reasoning that keeps store/sqlite out (see
+// AuditConfig.QuerySessions). The nested module
+// github.com/hoophq/hoopinspect/pii/alcatraz supplies an implementation.
 //
 // The interface is the intersection of mask.Detector and policy.Scanner, so
 // one value serves the response path and the request path.

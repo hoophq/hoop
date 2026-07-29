@@ -59,25 +59,20 @@ docker build -f deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile \
 cd - && docker compose up -d --force-recreate hoop-inspect
 ```
 
-The image builds `hoop-inspect-pii`, the variant with
+The image builds `hoop-inspect-pii`, the relay with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
 demo can mask Brazilian CPFs and IBANs and deny a query that embeds one. The
 `pii` section of `hoopinspect/config.json` names which entity types are
 active — deliberately just `BR_CPF` and `IBAN_CODE`, the two the eight
-built-in detectors cannot find.
-
-The base `cmd/hoop-inspect` binary links nothing at all and refuses a config
-with a `pii` section rather than silently ignoring it. To build that one
-instead, point the Dockerfile's build stage at `./cmd/hoop-inspect` and drop
-the `go mod download`.
-
+built-in detectors cannot find. Drop that section and the same binary runs on
+the built-ins alone.
 
 Sidecar knobs live in `hoopinspect/config.json`; validate a change without
 starting anything:
 
 ```bash
-go run ./cmd/hoop-inspect -validate \
-  -config deploy/docker-compose/envoy-poc/hoopinspect/config.json
+cd hoopinspect/pii/alcatraz && go run ./cmd/hoop-inspect-pii -validate \
+  -config ../../../deploy/docker-compose/envoy-poc/hoopinspect/config.json
 ```
 
 ## The tiers

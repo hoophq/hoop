@@ -15,12 +15,13 @@
 //
 // # Why this is a package and not just a main
 //
-// Two binaries build from it. cmd/hoop-inspect is the dependency-free one:
-// the whole thing compiles with no module downloads, which is what makes the
-// image auditable. The nested module pii/alcatraz builds a second binary that
-// passes a PIIDetector to Main, trading that property for 45 entity types.
-// Keeping the assembly here means the two differ by one argument rather than
-// by a forked copy that drifts.
+// The binary lives in the nested module pii/alcatraz, because that is where
+// the PII detector's dependency is declared and a main in the root module
+// could not import it without dragging that dependency into the root's
+// go.mod. Keeping the assembly here means the root module still owns the
+// relay — the binary is a four-line shell that supplies a detector and calls
+// Main. A caller embedding this library can call Run directly and skip the
+// binary entirely.
 package sidecar
 
 import (
@@ -54,11 +55,12 @@ import (
 // instead.
 var Version = "dev"
 
-// Main is the command-line entry point, shared by both binaries.
+// Main is the command-line entry point.
 //
 // version is stamped by the caller's -ldflags. det is the optional PII
-// detector: nil gives the dependency-free build. It calls os.Exit, so it is
-// the last thing a main does.
+// detector: nil restricts masking to the eight built-in detectors and makes
+// any pii policy rule a config error. It calls os.Exit, so it is the last
+// thing a main does.
 //
 // Usage:
 //
@@ -128,11 +130,10 @@ func Main(version string, det PIIDetector) {
 
 // Run starts the sidecar and blocks until the process is signalled.
 //
-// det is the optional PII detector plugin. Passing nil gives the
-// dependency-free behavior of this binary: the eight built-in mask detectors
-// and no pii policy rules. The nested module
-// github.com/hoophq/hoopinspect/pii/alcatraz calls this with a detector to
-// produce the batteries-included build.
+// det is the optional PII detector plugin. Passing nil restricts masking to
+// the eight built-in detectors and rejects any pii policy rule. This is the
+// entry point for a caller embedding the relay in their own binary; the
+// shipped one goes through Main.
 func Run(cfg *Config, det PIIDetector) error {
 	log := newLogger(cfg.LogLevel)
 
