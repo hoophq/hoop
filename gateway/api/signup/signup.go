@@ -54,6 +54,7 @@ func Post(c *gin.Context) {
 		license.EnterpriseType,
 		fmt.Sprintf("multi tenant customer: %v", req.OrgName),
 		[]string{"*.hoop.dev"},
+		nil, // all features enabled
 		(time.Hour*8760)*20, // 20 years
 	)
 	if err != nil {

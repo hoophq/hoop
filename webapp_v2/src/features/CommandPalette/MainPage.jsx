@@ -6,9 +6,9 @@ import { shouldHide } from '@/layout/Sidebar/helpers'
 import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from './constants'
 
 function SuggestionsAndQuickAccess({ onNavigate }) {
-  const { isAdmin, isSelfHosted, isFeatureFlagEnabled } = useUserStore()
-  const visibleSuggestions = SUGGESTION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled))
-  const visibleQuickAccess = QUICK_ACCESS_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled))
+  const { isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
+  const visibleSuggestions = SUGGESTION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+  const visibleQuickAccess = QUICK_ACCESS_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
 
   return (
     <>
