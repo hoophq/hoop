@@ -32,9 +32,9 @@ export function cssVariablesResolver(theme) {
   return {
     variables: {
       // Brand navy — dark surface color for auth/upsell visuals (MethodCard,
-      // SelectionCard, EnterpriseBanner, AuthPageLoader). Not tied to the
-      // sidebar, which uses the gray scale.
-      '--brand-navy': '#182449',
+      // SelectionCard, EnterpriseBanner, AuthPageLoader) and the CLJS
+      // enterprise banner. Not tied to the sidebar, which uses the gray scale.
+      '--brand-navy': '#1F2D5C',
 
       // Control height scale — the single source of truth for Button,
       // ActionIcon, and every Input-based component. md is the app-wide
