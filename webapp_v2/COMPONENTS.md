@@ -485,6 +485,25 @@ Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file und
 
 ---
 
+### `RuleTableControls`
+Toolbar under an editable rule table: New / Select / Select all / Delete. Port of the CLJS `rule_buttons`, shared by Jira Templates and Guardrails. Pair it with `makeRowOps` (see Utils below) — `ops.allSelected`, `ops.toggleAll`, `ops.deleteSelected` and `ops.addRow` map 1:1 onto its props. On the free plan pass `disableNew` so a second rule can't be added; selection and deletion stay available (the button is disabled, never hidden).
+```jsx
+import RuleTableControls from '@/components/RuleTableControls'
+
+<RuleTableControls
+  onAdd={() => ops.addRow()}
+  selectMode={selectMode}
+  onToggleSelectMode={() => setSelectMode((v) => !v)}
+  allSelected={ops.allSelected}
+  onToggleAll={ops.toggleAll}
+  onDelete={ops.deleteSelected}
+  disableNew={freeLicense && rows.length >= 1}
+/>
+```
+Props: `onAdd()`, `selectMode`, `onToggleSelectMode()`, `allSelected`, `onToggleAll()`, `onDelete()`, `disableNew`.
+
+---
+
 ### `FullBleed` (`src/layout/FullBleed/`)
 Lets a page render edge-to-edge and exactly one viewport tall **inside** the padded `PageLayout` — cancels the page padding (single-sourced from `PageLayout`'s `PAGE_PADDING`) and fills the `AppShell.Main` height. Use for hero/promotion panels.
 ```jsx
@@ -601,6 +620,25 @@ useAuthStore.getState().token
 | `protectionProfiles.js` | GET/PUT `/orgs/protection-profile` (protection rules profile; `profile: null` = manual) |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
+
+---
+
+## Utils (`src/utils/`)
+
+Pure helpers with no React or Mantine dependency. `snackbar.jsx` is documented under Notifications below.
+
+### `makeRowOps({ rows, setRows, factory, filterFn })`
+Row operations for editable rule tables (Jira Templates, Guardrails). Rows are plain objects with a stable `id` and a `selected` flag; the table owns the array through a `setRows` state setter. Deleting the last row reseeds a blank one via `factory`, so a table is never left with nothing to type into. Pass `filterFn` only when several tables render disjoint subsets of one shared rows array — select/delete then touch only the rows that table actually shows. Pairs with `RuleTableControls`.
+```jsx
+import { makeRowOps } from '@/utils/rowOps'
+
+const ops = makeRowOps({ rows, setRows, factory: createEmptyRow })
+// ops.visible, ops.allSelected
+// ops.patchRow(id, patch), ops.toggleSelect(id), ops.toggleAll()
+// ops.deleteSelected(), ops.addRow(transform?)
+<Table.Tr key={row.id}>…</Table.Tr>
+```
+Returns `{ visible, allSelected, patchRow, toggleSelect, toggleAll, deleteSelected, addRow }`. `addRow(transform)` applies `transform` to the fresh row before appending (used to pre-fill a type/value).
 
 ---
 
