@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Mints hoop credentials for the two raw-TCP lanes (postgres + ssh) and writes
-# them where demo.sh can find them.
+# them where demo-inspect.sh can find them.
 #
 # Both proxies authenticate on fields the protocol already has, so a stock
 # client needs no hoop plugin:

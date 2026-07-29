@@ -301,9 +301,9 @@ func TestIdentityFilledByLaterEventWhenStartMissing(t *testing.T) {
 	// event carrying a principal must still populate it.
 	m := accumulate(
 		audit.Event{Kind: audit.KindStatement, Timestamp: base, Allowed: true},
-		audit.Event{Kind: audit.KindStatement, Timestamp: base, Principal: "bob", Protocol: hoopinspect.MySQL, Allowed: true},
+		audit.Event{Kind: audit.KindStatement, Timestamp: base, Principal: "bob", Protocol: hoopinspect.HTTP, Allowed: true},
 	)
-	if m.Principal != "bob" || m.Protocol != hoopinspect.MySQL {
+	if m.Principal != "bob" || m.Protocol != hoopinspect.HTTP {
 		t.Errorf("got %q/%q, want bob/mysql", m.Principal, m.Protocol)
 	}
 }
@@ -770,7 +770,7 @@ func TestAggregateTotalsAndRate(t *testing.T) {
 			StatementCount: 8, DeniedCount: 1, MaskedCount: 4, ErrorCount: 0,
 		},
 		{
-			ID: "b", Principal: "bob", Connection: "appdb", Protocol: hoopinspect.MySQL,
+			ID: "b", Principal: "bob", Connection: "appdb", Protocol: hoopinspect.HTTP,
 			StartedAt: base, EndedAt: base.Add(time.Second), DurationMS: 300,
 			StatementCount: 2, DeniedCount: 1, MaskedCount: 0, ErrorCount: 2,
 		},

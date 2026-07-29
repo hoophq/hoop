@@ -32,20 +32,18 @@ Three lanes, decreasing Envoy visibility:
 ```bash
 ./run.sh            # ~55s: brings the whole stack up
 ./creds.sh          # mints the postgres + ssh credentials
-./demo.sh           # the hoop gateway lanes (http, postgres, ssh)
 ./demo-inspect.sh   # the hoop-inspect sidecar lanes (postgres, http)
 ./run.sh down       # tear down, including volumes
 ```
 
 Needs `docker`, `curl`, `jq`, `openssl`, `python3`.
 
-`demo.sh` and `demo-inspect.sh` exercise two different data paths that run
-side by side in the same compose stack:
+Two data paths run side by side in the same compose stack:
 
-| Script | Path | Ports |
+| Path | Ports | Driven by |
 |---|---|---|
-| `demo.sh` | Envoy → **hoop gateway + agent** | 8443, 15432, 12222 |
-| `demo-inspect.sh` | Envoy → **hoop-inspect sidecar** | 8444, 5433 |
+| Envoy → **hoop gateway + agent** | 8443, 15432, 12222 | manual / the hoop UI |
+| Envoy → **hoop-inspect sidecar** | 8444, 5433 | `./demo-inspect.sh` |
 
 The gateway path is the existing product. The sidecar path is the
 `hoopinspect` library running as a process: it parses the wire protocol,
@@ -140,8 +138,9 @@ docker compose exec -T db psql -U postgres -d hoopdb -x -c \
     ORDER BY created_at DESC LIMIT 3;"
 ```
 
-The full SQL text is in `private.blobs.blob_stream` (base64 pgwire frames);
-`demo.sh` decodes it for you.
+The full SQL text is in `private.blobs.blob_stream` as base64 pgwire frames.
+Decode a row with `base64 -d` to read the statement; the hoop web UI at
+:8009 renders the same data.
 
 ## Per-user identity
 
@@ -184,17 +183,17 @@ Postgres — relaying the client's SCRAM instead of rewriting the startup packet
   build context — so `Dockerfile.localbuild` cannot build this tree as-is).
 
   **This does not weaken the tier-2 argument.** The audit trail captures the
-  full SQL text either way, and `demo.sh` decodes it. Recording is the evidence
-  Envoy structurally cannot produce; blocking is the same parse plus a verdict.
+  full SQL text either way. Recording is the evidence Envoy structurally
+  cannot produce; blocking is the same parse plus a verdict. The hoop-inspect
+  sidecar path (`./demo-inspect.sh`) does block, on the same statements.
 - **SSH payload blob is empty — same image skew.** The SSH *session* is fully
   recorded: `private.sessions` carries subtype `ssh`, the real user, and the
   connection, and the gateway logs the whole channel lifecycle
   (`sshproxy.go:189,215,553`). The `blob_input_id` row exists but holds `[""]`
   on this image. The `/api/feature-flags` endpoint returns 404 here, so
   `experimental.ssh_guardrails` / `experimental.ssh_input_guardrails`
-  (`agent/controller/ssh.go:24-25`) cannot be switched on either. `demo.sh`
-  detects the empty blob and falls back to the gateway lifecycle log rather
-  than claiming evidence it does not have.
+  (`agent/controller/ssh.go:24-25`) cannot be switched on either. The gateway
+  lifecycle log (`sshproxy.go:189,215,553`) is the evidence that survives.
 - **Credentials need an explicit TTL.** Gateway builds before the no-expiry
   sentinel (`connection_credentials.go:42`) treat an omitted
   `access_duration_seconds` as "expires now". Both scripts pass 24h.

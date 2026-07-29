@@ -245,7 +245,7 @@ $(printf '\033[1;32mready\033[0m')
       docker compose exec -T client sshpass -p "\$(cat .sshtoken)" \\
         ssh -o StrictHostKeyChecking=no -p 2222 hoop@envoy 'whoami; ls /'
 
-    Or just: ./creds.sh && ./demo.sh
+    Or just: ./creds.sh && ./demo-inspect.sh
 
   Audit trail -- every request above, attributed to a real user:
 

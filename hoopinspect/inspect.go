@@ -12,13 +12,12 @@
 // It stops there. The metadata is a resource name and an operation verb, so a
 // policy can say "no DELETE on customers" but not "no DELETE without a WHERE
 // clause" or "no query touching the ssn column". Envoy's MySQL filter parses
-// no SQL at all. There is no TDS filter, no MongoDB filter, and no SSH filter
-// of any kind. Four of five protocols hoop speaks have zero coverage.
+// no SQL at all, and there is no SSH filter of any kind.
 //
 // hoopinspect fills exactly that gap and nothing else:
 //
 //   - The full statement text, not a summary of it.
-//   - The same shape for Postgres, MSSQL, MySQL and MongoDB.
+//   - The same shape for every protocol, SQL and HTTP alike.
 //   - A deny path that carries an operator-authored message back to the user,
 //     rather than dropping the connection and leaving them to guess.
 //
@@ -50,13 +49,15 @@ import (
 )
 
 // Protocol identifies a wire protocol.
+//
+// Only the protocols with a shipped codec are listed. Adding one means adding
+// a codec/<name> package that registers itself; a constant with no decoder
+// behind it is a promise the library cannot keep, and a caller who passes it
+// to New gets ErrUnsupportedProtocol at a confusing distance from the cause.
 type Protocol string
 
 const (
 	Postgres Protocol = "postgres"
-	MSSQL    Protocol = "mssql"
-	MySQL    Protocol = "mysql"
-	MongoDB  Protocol = "mongodb"
 	HTTP     Protocol = "http"
 )
 
@@ -93,8 +94,6 @@ const (
 	OpBegin    Operation = "begin"
 	OpCommit   Operation = "commit"
 	OpRollback Operation = "rollback"
-	OpFind     Operation = "find"  // mongodb
-	OpAdmin    Operation = "admin" // mongodb handshake / isMaster
 
 	// HTTP verbs. They are kept distinct from the SQL verbs rather than
 	// mapped onto them (GET -> select, DELETE -> delete) because the mapping
@@ -122,9 +121,8 @@ const (
 	OpUnknown Operation = "unknown"
 )
 
-// Statement is one inspected unit of work: a SQL statement, a MongoDB
-// command, or an HTTP request/response. It is the input document a policy
-// engine evaluates.
+// Statement is one inspected unit of work: a SQL statement or an HTTP
+// request/response. It is the input document a policy engine evaluates.
 type Statement struct {
 	// Protocol that produced this statement.
 	Protocol Protocol `json:"protocol"`
@@ -132,9 +130,8 @@ type Statement struct {
 	// Direction the bytes travelled.
 	Direction Direction `json:"direction"`
 
-	// Text is the statement verbatim, as the client sent it. For MongoDB it
-	// is the command document rendered as JSON. This is the field Envoy's
-	// postgres_proxy dynamic metadata does not give you.
+	// Text is the statement verbatim, as the client sent it. This is the
+	// field Envoy's postgres_proxy dynamic metadata does not give you.
 	Text string `json:"text"`
 
 	// Operation is the normalized verb (see Operation constants).
@@ -147,8 +144,8 @@ type Statement struct {
 	// nothing", only as "we could not tell".
 	Tables []string `json:"tables,omitempty"`
 
-	// Database is the target database or namespace when the protocol states
-	// it explicitly (MongoDB always; MSSQL and Postgres only at login).
+	// Database is the target database when the protocol states it explicitly,
+	// which for Postgres is only at login.
 	Database string `json:"database,omitempty"`
 
 	// HTTP is set only for the http protocol and carries the request/response
@@ -157,9 +154,8 @@ type Statement struct {
 	HTTP *HTTPDetail `json:"http,omitempty"`
 
 	// Metadata carries protocol-specific details a policy may want: the
-	// prepared-statement name for a Postgres Parse, the MongoDB collection,
-	// the MySQL command byte. Keys are stable per protocol and documented on
-	// each codec.
+	// prepared-statement name for a Postgres Parse, the HTTP request method.
+	// Keys are stable per protocol and documented on each codec.
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
@@ -301,8 +297,8 @@ type Inspector struct {
 }
 
 // DefaultMaxBuffer bounds per-connection reassembly. Postgres allows a single
-// message up to 2^31 bytes and MongoDB up to 48 MB, so this is a policy
-// choice, not a protocol limit: 8 MiB comfortably holds any statement a human
+// message up to 2^31 bytes, so this is a policy choice, not a protocol
+// limit: 8 MiB comfortably holds any statement a human
 // or ORM emits while refusing to buffer a bulk COPY into RAM.
 const DefaultMaxBuffer = 8 << 20
 

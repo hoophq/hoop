@@ -44,15 +44,11 @@ Here is the honest boundary:
 |---|---|---|
 | Postgres SQL parse | `postgres_proxy`, best effort | full statement text |
 | Postgres granularity | `table.db` + operation verb | statement, operation, tables |
-| MySQL | filter exists, **parses no SQL** | parsed |
-| MSSQL / TDS | **nothing** | SQLBatch + sp_executesql RPC |
-| MongoDB | counters only | OP_MSG / OP_QUERY commands |
 | HTTP request | `ext_authz`: method, path, headers, bounded body | same, plus normalized resource |
 | HTTP **response** | ✗ — ext_authz decides before the upstream is called | status, headers, body |
 | **GraphQL** | ✗ — every call is `POST /graphql` | operation type, root fields, depth |
 | Deny UX | RBAC/ext_authz drops or returns a bare 403 | operator-authored message |
 
-Four of the five wire protocols have no Envoy statement inspection at all.
 On HTTP, Envoy's `ext_authz` is genuinely capable for request-side
 authorization — the gaps there are narrower and named above. This is not
 "Envoy is blind".
@@ -62,13 +58,15 @@ authorization — the gaps there are narrower and named above. This is not
 | Protocol | Messages decoded | Stateful |
 |---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | no |
-| `mssql` | `SQLBatch` (0x01), `RPCRequest` (0x03) for `sp_executesql` | yes — multi-packet reassembly |
-| `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) | yes — handshake phase + 16 MiB continuation |
-| `mongodb` | `OP_MSG` (2013), `OP_QUERY` (2004) | no |
 | `http` | HTTP/1.x requests and responses; GraphQL bodies | no |
 
+MySQL, MSSQL and MongoDB codecs are **not shipped**. The `Codec` interface
+and the shared SQL classifier are protocol-agnostic, so adding one is a new
+`codec/<name>` package and nothing else; the earlier implementations were
+removed to keep the surface to what is exercised end to end.
+
 Import only what you need. A WASM filter that speaks Postgres imports
-`codec/postgres` and never links the BSON walker:
+`codec/postgres` and never links the HTTP and GraphQL machinery:
 
 ```go
 import _ "github.com/hoophq/hoopinspect/codec/postgres" // ~54 KB of wasm
@@ -79,9 +77,9 @@ import _ "github.com/hoophq/hoopinspect/codec/all"      // all four
 
 ```go
 type Statement struct {
-    Protocol  Protocol          // postgres | mssql | mysql | mongodb | http
+    Protocol  Protocol          // postgres | http
     Direction Direction         // client | server
-    Text      string            // verbatim; JSON for MongoDB; request line for HTTP
+    Text      string            // verbatim SQL, or the request line for HTTP
     Operation Operation         // select | delete | get | mutation | ...
     Tables    []string          // SQL relations, or HTTP resource / GraphQL root fields
     Database  string            // when the protocol states it
@@ -198,23 +196,6 @@ in one shape for five protocols. Accepts `{"allow": bool}`,
 denies. Set `FailOpen` to invert where availability outranks enforcement.
 There is no silent middle ground.
 
-## Kerberos on SQL Server
-
-`mssql.DetectSSPI` exists to fail loudly rather than silently:
-
-```go
-if info, ok := mssql.DetectSSPI(packet); ok && info.UsesSSPI {
-    return errors.New("integrated auth is not supported through this proxy")
-}
-```
-
-An SSPI blob is a service ticket bound to the server's SPN. It can be relayed
-but never minted or rewritten, so credential injection cannot work against it.
-With Extended Protection (channel binding) on, the authenticator is bound to
-the TLS channel and *any* interposition invalidates it. Detecting this at
-login and refusing with a clear message beats an opaque failure deep in the
-handshake.
-
 ## Limits
 
 Read these before writing a policy against it.
@@ -240,8 +221,6 @@ Read these before writing a policy against it.
   accidentally too broad.
 - **Plaintext only.** If the client negotiates TLS to the server, there is
   nothing to parse. Termination is the caller's problem.
-- **MSSQL RPC decodes `sp_executesql` and nothing else.** Other procs return
-  no statement rather than a guess, because a wrong decode is worse than none.
 - **Statements are not transactions.** Each is evaluated independently; there
   is no cross-statement session state.
 
@@ -255,6 +234,4 @@ GOOS=wasip1 GOARCH=wasm go build ./...
 
 Every codec is tested against a split-read matrix: the same message is fed in
 two chunks at every possible boundary, asserting no statement is emitted from
-a fragment and none is lost on reassembly. The MongoDB codec additionally
-walks truncated BSON at every length to prove a hostile client cannot panic
-the walker.
+a fragment and none is lost on reassembly.

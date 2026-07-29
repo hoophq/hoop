@@ -44,7 +44,7 @@ type ListenerConfig struct {
 	// Name identifies the listener in logs. Defaults to Connection.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres, mysql, mssql, mongodb, http.
+	// Protocol selects the codec: postgres or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is

@@ -8,8 +8,8 @@ import "sync"
 // `hoopinspect` imports nothing.
 //
 // The practical payoff is binary size. An Envoy WASM filter that only speaks
-// Postgres imports only `codec/postgres`, and the MongoDB BSON walker is never
-// linked in.
+// Postgres imports only `codec/postgres`, and the HTTP and GraphQL machinery
+// is never linked in.
 var (
 	registryMu sync.RWMutex
 	registry   = map[Protocol]func() Codec{}
@@ -17,9 +17,9 @@ var (
 
 // Register makes a codec available to New.
 //
-// The argument is a FACTORY, not an instance, and that is load-bearing: the
-// MSSQL and MySQL codecs reassemble messages that span packets, so they hold
-// per-connection state. Handing every Inspector the same instance would let
+// The argument is a FACTORY, not an instance, and that is load-bearing: a
+// codec that reassembles messages spanning packets holds per-connection
+// state. Handing every Inspector the same instance would let
 // two connections corrupt each other's reassembly buffer — a data-dependent
 // bug that surfaces as one tenant's SQL appearing in another's audit trail.
 // A factory makes per-connection isolation the default rather than something

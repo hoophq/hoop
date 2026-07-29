@@ -155,7 +155,7 @@ func TestEventWithoutSessionStartCreatesSession(t *testing.T) {
 	// view, which is the only screen anyone opens.
 	write(t, s, audit.Event{
 		Kind: audit.KindViolation, SessionID: "orphan", Timestamp: base,
-		Principal: "bob", Protocol: hoopinspect.MySQL, Connection: "reports",
+		Principal: "bob", Protocol: hoopinspect.HTTP, Connection: "reports",
 		Statement: "DELETE FROM audit", Rule: "no-delete",
 	})
 
@@ -163,7 +163,7 @@ func TestEventWithoutSessionStartCreatesSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Session: %v", err)
 	}
-	if rec.Principal != "bob" || rec.Connection != "reports" || rec.Protocol != hoopinspect.MySQL {
+	if rec.Principal != "bob" || rec.Connection != "reports" || rec.Protocol != hoopinspect.HTTP {
 		t.Errorf("facts not seeded from the first event: %+v", rec)
 	}
 	if rec.StatementCount != 1 || rec.DeniedCount != 1 {
@@ -645,11 +645,11 @@ func seedFilterCorpus(t *testing.T, s *sqlitestore.Store) {
 	// hour later, and left open.
 	write(t, s, audit.Event{
 		Kind: audit.KindSessionStart, SessionID: "b", Timestamp: base.Add(time.Hour),
-		Principal: "bob", Protocol: hoopinspect.MySQL, Connection: "reports",
+		Principal: "bob", Protocol: hoopinspect.HTTP, Connection: "reports",
 	})
 	write(t, s, audit.Event{
 		Kind: audit.KindViolation, SessionID: "b", Timestamp: base.Add(time.Hour + time.Second),
-		Principal: "bob", Protocol: hoopinspect.MySQL, Connection: "reports",
+		Principal: "bob", Protocol: hoopinspect.HTTP, Connection: "reports",
 		Operation: hoopinspect.OpDrop, Statement: "DROP TABLE ledger", Rule: "no-destructive",
 	})
 }
@@ -719,7 +719,7 @@ func TestEventFilterFieldsNarrow(t *testing.T) {
 		{"kind and session", store.EventFilter{SessionID: "a", Kinds: []audit.Kind{audit.KindSessionStart}}, 1},
 		{"principal", store.EventFilter{Principal: "bob"}, 2},
 		{"connection", store.EventFilter{Connection: "appdb"}, 3},
-		{"protocol", store.EventFilter{Protocol: hoopinspect.MySQL}, 2},
+		{"protocol", store.EventFilter{Protocol: hoopinspect.HTTP}, 2},
 		{"denied only", store.EventFilter{DeniedOnly: true}, 1},
 		{"since", store.EventFilter{Since: base.Add(time.Hour)}, 2},
 		{"until exclusive", store.EventFilter{Until: base.Add(time.Second)}, 1},

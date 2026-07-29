@@ -242,7 +242,7 @@ func (h *HeuristicAnalyzer) analyzeHigh(stmt hoopinspect.Statement) *Verdict {
 				Explanation: "UPDATE with no WHERE clause rewrites every row of " + objectPhrase(stmt.Tables) + ".",
 			}
 		}
-	case hoopinspect.OpSelect, hoopinspect.OpFind:
+	case hoopinspect.OpSelect:
 		if t, ok := h.matchSensitive(stmt.Tables); ok {
 			return &Verdict{
 				RiskLevel:   RiskHigh,

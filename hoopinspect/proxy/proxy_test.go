@@ -475,46 +475,6 @@ func TestPostgresErrorFrame(t *testing.T) {
 	}
 }
 
-func TestMySQLErrorFrame(t *testing.T) {
-	frame := proxy.MySQLError("nope")
-
-	declared := int(frame[0]) | int(frame[1])<<8 | int(frame[2])<<16
-	if declared != len(frame)-4 {
-		t.Errorf("declared payload %d does not match actual %d", declared, len(frame)-4)
-	}
-	if frame[4] != 0xFF {
-		t.Errorf("payload does not start with the ERR marker: %#x", frame[4])
-	}
-	if !bytes.Contains(frame, []byte("nope")) {
-		t.Error("message missing")
-	}
-	if !bytes.Contains(frame, []byte("#28000")) {
-		t.Error("SQLSTATE marker missing")
-	}
-}
-
-func TestMSSQLErrorFrame(t *testing.T) {
-	frame := proxy.MSSQLError("nope")
-
-	if frame[0] != 0x04 {
-		t.Errorf("packet type = %#x, want 0x04 (response)", frame[0])
-	}
-	if frame[1]&0x01 == 0 {
-		t.Error("EOM status bit not set")
-	}
-	declared := binary.BigEndian.Uint16(frame[2:4])
-	if int(declared) != len(frame) {
-		t.Errorf("declared length %d does not match frame length %d", declared, len(frame))
-	}
-	if frame[8] != 0xAA {
-		t.Errorf("first token = %#x, want 0xAA (ERROR)", frame[8])
-	}
-	// The message is UCS-2, so the ASCII bytes are interleaved with NULs.
-	if !bytes.Contains(frame, []byte{'n', 0, 'o', 0, 'p', 0, 'e', 0}) {
-		t.Error("UCS-2 message missing")
-	}
-}
-
 func TestHTTPForbiddenFrame(t *testing.T) {
 	frame := string(proxy.HTTPForbidden("nope"))
 
@@ -537,16 +497,17 @@ func TestHTTPForbiddenFrame(t *testing.T) {
 func TestDenyWriterDispatch(t *testing.T) {
 	w := proxy.ProtocolDenyWriter{}
 	for _, proto := range []hoopinspect.Protocol{
-		hoopinspect.Postgres, hoopinspect.MySQL, hoopinspect.MSSQL, hoopinspect.HTTP,
+		hoopinspect.Postgres, hoopinspect.HTTP,
 	} {
 		if len(w.Deny(proto, hoopinspect.FromClient, "x")) == 0 {
 			t.Errorf("%s produced no deny frame", proto)
 		}
 	}
-	// MongoDB has no in-band pre-handshake error frame; closing is the
-	// honest answer rather than emitting something a driver misparses.
-	if w.Deny(hoopinspect.MongoDB, hoopinspect.FromClient, "x") != nil {
-		t.Error("mongodb produced a deny frame")
+	// A protocol with no shipped codec gets no frame: without a decoder
+	// there is no statement to explain a denial about, and emitting bytes a
+	// driver misparses is worse than closing.
+	if w.Deny(hoopinspect.Protocol("mongodb"), hoopinspect.FromClient, "x") != nil {
+		t.Error("an unsupported protocol produced a deny frame")
 	}
 }
 

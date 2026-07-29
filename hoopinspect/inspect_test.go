@@ -21,8 +21,7 @@ func TestRegisteredCoversAllShippedProtocols(t *testing.T) {
 		got[p] = true
 	}
 	for _, want := range []hoopinspect.Protocol{
-		hoopinspect.Postgres, hoopinspect.MSSQL,
-		hoopinspect.MySQL, hoopinspect.MongoDB,
+		hoopinspect.Postgres, hoopinspect.HTTP,
 	} {
 		if !got[want] {
 			t.Errorf("protocol %q is not registered by codec/all", want)
@@ -30,16 +29,27 @@ func TestRegisteredCoversAllShippedProtocols(t *testing.T) {
 	}
 }
 
+// A Protocol constant with no codec behind it is a promise the library
+// cannot keep. Registered() is the honest list, and it must not grow a name
+// that New would then reject.
+func TestEveryRegisteredProtocolConstructs(t *testing.T) {
+	for _, p := range hoopinspect.Registered() {
+		if _, err := hoopinspect.New(p); err != nil {
+			t.Errorf("New(%q) failed though the protocol is registered: %v", p, err)
+		}
+	}
+}
+
 func TestNewReturnsDistinctCodecs(t *testing.T) {
-	// Stateful codecs must not be shared. Constructing two inspectors for a
-	// stateful protocol and mutating one must not affect the other; the codec
-	// packages assert the behavioral version of this, here we assert the
-	// registry contract that makes it possible.
-	a, err := hoopinspect.New(hoopinspect.MSSQL)
+	// Codecs must not be shared across connections: a stateful one would let
+	// two connections corrupt each other's reassembly buffer. The codec
+	// packages assert the behavioral version; here we assert the registry
+	// contract that makes it possible.
+	a, err := hoopinspect.New(hoopinspect.Postgres)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	b, err := hoopinspect.New(hoopinspect.MSSQL)
+	b, err := hoopinspect.New(hoopinspect.Postgres)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

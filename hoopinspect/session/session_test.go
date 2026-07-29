@@ -166,9 +166,9 @@ func TestPolicyContextIncludesMetadata(t *testing.T) {
 
 func TestNewSetsFields(t *testing.T) {
 	before := time.Now().UTC()
-	s := session.New(hoopinspect.MySQL, session.Identity{Subject: "bob"})
+	s := session.New(hoopinspect.HTTP, session.Identity{Subject: "bob"})
 
-	if s.Protocol != hoopinspect.MySQL {
+	if s.Protocol != hoopinspect.HTTP {
 		t.Errorf("Protocol = %q", s.Protocol)
 	}
 	if s.ID == "" {

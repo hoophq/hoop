@@ -90,7 +90,7 @@ func TestEventWithoutSessionStartStillCreatesASession(t *testing.T) {
 	s := store.NewMemoryStore(10)
 	err := s.Write(ctx(), audit.Event{
 		Kind: audit.KindStatement, Timestamp: time.Now().UTC(), SessionID: "orphan",
-		Principal: "bob", Protocol: hoopinspect.MySQL, Connection: "db",
+		Principal: "bob", Protocol: hoopinspect.HTTP, Connection: "db",
 		Operation: hoopinspect.OpSelect, Statement: "SELECT 1", Allowed: true,
 	})
 	if err != nil {
@@ -129,7 +129,7 @@ func TestSessionFiltersNarrow(t *testing.T) {
 		{"principal", store.SessionFilter{Principal: "alice"}, 2},
 		{"connection", store.SessionFilter{Connection: "appdb"}, 2},
 		{"protocol", store.SessionFilter{Protocol: hoopinspect.Postgres}, 3},
-		{"other protocol", store.SessionFilter{Protocol: hoopinspect.MySQL}, 0},
+		{"other protocol", store.SessionFilter{Protocol: hoopinspect.HTTP}, 0},
 		{"denied only", store.SessionFilter{DeniedOnly: true}, 1},
 		{"search", store.SessionFilter{Search: "ALICE"}, 2},
 		{"since future", store.SessionFilter{Since: time.Now().Add(time.Hour)}, 0},

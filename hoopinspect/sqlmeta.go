@@ -3,7 +3,7 @@ package hoopinspect
 import "strings"
 
 // This file derives the normalized Operation and the table list from raw SQL.
-// Postgres, MSSQL and MySQL all funnel through here so that a policy sees the
+// Every SQL-bearing codec funnels through here so that a policy sees the
 // same shape regardless of which wire protocol delivered the statement.
 //
 // It is a lexer, not a parser. That is a deliberate ceiling:
