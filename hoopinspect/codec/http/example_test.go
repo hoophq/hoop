@@ -6,46 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/hoophq/hoopinspect"
 	hi "github.com/hoophq/hoopinspect/codec/http"
 	"github.com/hoophq/hoopinspect/policy"
 )
 
-// The GraphQL case, which is the reason this codec exists: both requests are
-// POST /graphql and are indistinguishable to a method-and-path policy.
-func Example_graphQL() {
-	insp := hi.New(hi.Options{})
-	rules, _ := policy.NewRules([]policy.Rule{
-		policy.Rule{Name: "read-only", Type: policy.MatchGraphQLOperation}.
-			WithGraphQLOperations(hoopinspect.OpMutation).
-			WithMessage("this credential may query but not mutate"),
-	})
-
-	for _, q := range []string{
-		`{"query":"query { user(id: 1) { name } }"}`,
-		`{"query":"mutation { deleteUser(id: 1) }"}`,
-	} {
-		r := httptest.NewRequest("POST", "/graphql", strings.NewReader(q))
-		r.Header.Set("Content-Type", "application/json")
-
-		s := insp.InspectRequest(r, []byte(q))
-		v := rules.Evaluate(s)
-
-		fmt.Printf("%s %s -> %-8s ", s.HTTP.Method, s.HTTP.Path, s.Operation)
-		if v.Denied {
-			fmt.Println("DENY:", v.Message)
-		} else {
-			fmt.Println("ALLOW")
-		}
-	}
-
-	// Output:
-	// POST /graphql -> query    ALLOW
-	// POST /graphql -> mutation DENY: this credential may query but not mutate
-}
-
-// Path normalization: one rule covers every id, instead of a regex per
-// endpoint.
 func Example_resourceNormalization() {
 	insp := hi.New(hi.Options{})
 	rules, _ := policy.NewRules([]policy.Rule{
@@ -128,21 +92,21 @@ func Example_responseInspection() {
 func Example_libhoopIntegration() {
 	insp := hi.New(hi.Options{CaptureBody: true, Headers: []string{"Content-Type"}})
 
-	body := `{"query":"mutation { deleteUser(id: 42) }"}`
-	r := httptest.NewRequest("POST", "https://api.internal/graphql", strings.NewReader(body))
+	body := `{"reason":"cleanup"}`
+	r := httptest.NewRequest("DELETE", "https://api.internal/users/42", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer secret-token")
 
 	s := insp.InspectRequest(r, []byte(body))
 
 	fmt.Println("operation:", s.Operation)
-	fmt.Println("root fields:", s.HTTP.GraphQL.RootFields)
+	fmt.Println("resource:", s.HTTP.Resource)
 	// The Authorization header is not in the allowlist, so it never reaches
 	// the policy engine's decision log.
 	fmt.Println("headers exposed:", s.HTTP.Headers)
 
 	// Output:
-	// operation: mutation
-	// root fields: [deleteUser]
+	// operation: delete
+	// resource: /users/*
 	// headers exposed: map[content-type:application/json]
 }

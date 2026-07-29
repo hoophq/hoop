@@ -6,8 +6,8 @@
 //	import _ "github.com/hoophq/hoopinspect/codec/all"
 //
 // Do NOT import it in a size-sensitive build. An Envoy WASM filter that only
-// inspects Postgres should import codec/postgres alone, so the HTTP and
-// GraphQL machinery is never linked in.
+// inspects Postgres should import codec/postgres alone, so the HTTP machinery
+// is never linked in.
 package all
 
 import (

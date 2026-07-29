@@ -19,31 +19,14 @@ const (
 	RuleTruncate          = "truncate"
 	RulePrivilegeChange   = "privilege_change"
 	RuleSensitiveTable    = "sensitive_table_read"
-	RuleGraphQLDestroy    = "graphql_destructive_mutation"
 	RuleHTTPUnboundedDel  = "http_unbounded_delete"
 	RuleCustomPattern     = "custom_pattern"
 	RuleBulkRead          = "bulk_read"
 	RuleSchemaRead        = "schema_read"
 	RuleSchemaChange      = "schema_change"
-	RuleGraphQLDepth      = "graphql_depth"
 	RuleServerError       = "server_error"
 	RuleRecognizedRoutine = "routine"
 )
-
-// DefaultGraphQLDepth is the nesting depth above which a query is flagged.
-// Six is deeper than a hand-written product query and shallower than the
-// recursive `posts { author { posts { ... } } }` amplification that turns one
-// request into a full table scan.
-const DefaultGraphQLDepth = 6
-
-// destructiveGraphQLPrefixes are the root-field name shapes that mean a
-// mutation destroys or escalates rather than edits. Matched as a prefix on the
-// lowercased field name, because the convention in every GraphQL schema is
-// verb-first: deleteUser, purgeAccount, resetPassword.
-var destructiveGraphQLPrefixes = []string{
-	"delete", "remove", "destroy", "purge", "drop", "truncate",
-	"wipe", "reset", "revoke", "disable", "deactivate",
-}
 
 // HeuristicConfig configures HeuristicAnalyzer.
 type HeuristicConfig struct {
@@ -53,10 +36,6 @@ type HeuristicConfig struct {
 	// because an operator writing both configs must not have to remember two
 	// matching semantics.
 	SensitiveTables []string
-
-	// MaxGraphQLDepth flags queries nested deeper than this. Zero uses
-	// DefaultGraphQLDepth; negative disables the check.
-	MaxGraphQLDepth int
 
 	// Patterns are deployment-specific triggers evaluated after the built-in
 	// rules, so a site can flag its own shapes ("nolock hint on the ledger")
@@ -90,7 +69,6 @@ type Pattern struct {
 // only reads.
 type HeuristicAnalyzer struct {
 	sensitive []string
-	maxDepth  int
 	patterns  []Pattern
 }
 
@@ -116,11 +94,6 @@ func NewHeuristic(cfg HeuristicConfig) (*HeuristicAnalyzer, error) {
 		}
 		seenTable[name] = true
 		sensitive = append(sensitive, name)
-	}
-
-	depth := cfg.MaxGraphQLDepth
-	if depth == 0 {
-		depth = DefaultGraphQLDepth
 	}
 
 	patterns := make([]Pattern, 0, len(cfg.Patterns))
@@ -160,7 +133,7 @@ func NewHeuristic(cfg HeuristicConfig) (*HeuristicAnalyzer, error) {
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("aianalysis: invalid heuristic config: %s", strings.Join(problems, "; "))
 	}
-	return &HeuristicAnalyzer{sensitive: sensitive, maxDepth: depth, patterns: patterns}, nil
+	return &HeuristicAnalyzer{sensitive: sensitive, patterns: patterns}, nil
 }
 
 // Analyze implements Analyzer. It never returns an error: every rule is a
@@ -259,18 +232,6 @@ func (h *HeuristicAnalyzer) analyzeHigh(stmt hoopinspect.Statement) *Verdict {
 // analyzeHTTPHigh scores an HTTP statement. d is never nil: the only caller
 // reaches it after branching on stmt.HTTP.
 func (h *HeuristicAnalyzer) analyzeHTTPHigh(d *hoopinspect.HTTPDetail) *Verdict {
-	if gql := d.GraphQL; gql != nil && gql.OperationType == hoopinspect.OpMutation {
-		if field, ok := destructiveRootField(gql.RootFields); ok {
-			return &Verdict{
-				RiskLevel: RiskHigh,
-				Title:     "Destructive GraphQL mutation",
-				Rule:      RuleGraphQLDestroy,
-				Score:     0.9,
-				Explanation: fmt.Sprintf("The mutation calls %q, a root field whose name says it destroys or revokes rather than edits.",
-					field),
-			}
-		}
-	}
 
 	// A DELETE on a collection path (/users) removes the whole collection;
 	// the same verb on /users/42 removes one row. Resource is the codec's
@@ -300,16 +261,6 @@ func (h *HeuristicAnalyzer) analyzeMedium(stmt hoopinspect.Statement) *Verdict {
 				Score:     0.5,
 				Explanation: fmt.Sprintf("The upstream answered %d. A run of 5xx responses is how a failing dependency, or someone probing for one, shows up in an audit trail.",
 					d.StatusCode),
-			}
-		}
-		if gql := d.GraphQL; gql != nil && h.maxDepth > 0 && gql.Depth > h.maxDepth {
-			return &Verdict{
-				RiskLevel: RiskMedium,
-				Title:     "Deeply nested GraphQL query",
-				Rule:      RuleGraphQLDepth,
-				Score:     0.55,
-				Explanation: fmt.Sprintf("The selection set nests %d levels, above the configured limit of %d. Deep nesting is the standard GraphQL amplification vector: one request fans out into many resolver calls.",
-					gql.Depth, h.maxDepth),
 			}
 		}
 		// Same short-circuit as analyzeHigh: an HTTP statement has no SQL text
@@ -387,7 +338,7 @@ func (h *HeuristicAnalyzer) analyzeLow(stmt hoopinspect.Statement) *Verdict {
 	// explanation a reader can tell is boilerplate is one they stop reading.
 	what := "bounded in scope and touching no table flagged as sensitive"
 	if stmt.HTTP != nil {
-		what = "no destructive method on a collection, no server error, no oversized GraphQL document"
+		what = "no destructive method on a collection and no server error"
 	}
 	return &Verdict{
 		RiskLevel: RiskLow,
@@ -596,18 +547,6 @@ func stripNoise(sql string) string {
 		}
 	}
 	return b.String()
-}
-
-func destructiveRootField(fields []string) (string, bool) {
-	for _, f := range fields {
-		lower := strings.ToLower(f)
-		for _, prefix := range destructiveGraphQLPrefixes {
-			if strings.HasPrefix(lower, prefix) {
-				return f, true
-			}
-		}
-	}
-	return "", false
 }
 
 // isUnboundedResource reports an HTTP path that names a collection rather than

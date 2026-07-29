@@ -109,14 +109,6 @@ const (
 	OpConnect Operation = "connect"
 	OpTrace   Operation = "trace"
 
-	// GraphQL operation types, resolved from the query document rather than
-	// the HTTP method. Every GraphQL request is a POST, so the method alone
-	// cannot distinguish a read from a write — this is the single biggest
-	// blind spot in method-plus-path authorization.
-	OpQuery        Operation = "query"
-	OpMutation     Operation = "mutation"
-	OpSubscription Operation = "subscription"
-
 	OpOther   Operation = "other" // parsed, but not a verb we classify
 	OpUnknown Operation = "unknown"
 )
@@ -166,9 +158,6 @@ type Statement struct {
 // and headers of a REQUEST, and that is genuinely enough for "may alice call
 // POST /admin". What it does not give you:
 //
-//   - The GraphQL operation. Every GraphQL call is POST /graphql, so method
-//     and path cannot separate a read from a schema-mutating write. The
-//     operation lives in the body.
 //   - The RESPONSE. ext_authz is request-side; the filter decides before the
 //     upstream is called. Response bodies are where the data actually leaves.
 //   - A stable resource identity. /users/12345/orders and /users/67890/orders
@@ -219,32 +208,6 @@ type HTTPDetail struct {
 	// on body content MUST treat a truncated body as inconclusive rather
 	// than as proof a pattern is absent.
 	BodyTruncated bool `json:"body_truncated,omitempty"`
-
-	// GraphQL is set when the body parsed as a GraphQL document.
-	GraphQL *GraphQLDetail `json:"graphql,omitempty"`
-}
-
-// GraphQLDetail describes a parsed GraphQL request.
-//
-// This is the field that makes HTTP inspection worth doing. `POST /graphql`
-// is indistinguishable from any other POST at the ext_authz layer, so a
-// method-and-path policy either allows every GraphQL operation or none.
-type GraphQLDetail struct {
-	// OperationType is query, mutation or subscription.
-	OperationType Operation `json:"operation_type"`
-
-	// OperationName is the client-supplied name, when present.
-	OperationName string `json:"operation_name,omitempty"`
-
-	// RootFields lists the top-level selections of the operation — the
-	// actual resolvers being invoked. For a mutation these are the write
-	// operations: ["deleteUser", "resetPassword"].
-	RootFields []string `json:"root_fields,omitempty"`
-
-	// Depth is the maximum nesting depth of the selection set. Deeply nested
-	// queries are the standard GraphQL denial-of-service vector, and a depth
-	// limit is a policy every GraphQL deployment eventually needs.
-	Depth int `json:"depth,omitempty"`
 }
 
 // String renders the statement for logs. Long text is elided so a log line

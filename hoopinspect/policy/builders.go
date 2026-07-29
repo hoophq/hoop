@@ -1,7 +1,5 @@
 package policy
 
-import "github.com/hoophq/hoopinspect"
-
 // Fluent builders for the HTTP rule fields.
 //
 // The fields are unexported (they live on the embedded httpRuleFields) so
@@ -34,33 +32,6 @@ func (r Rule) WithMethods(methods ...string) Rule {
 // exact codes ("404") and classes ("4xx").
 func (r Rule) WithStatuses(statuses ...string) Rule {
 	r.Statuses = statuses
-	return r
-}
-
-// WithGraphQLOperations sets the operation types for a MatchGraphQLOperation
-// rule.
-func (r Rule) WithGraphQLOperations(ops ...hoopinspect.Operation) Rule {
-	r.GraphQLOperations = ops
-	return r
-}
-
-// WithFields sets the root-field names for a MatchGraphQLField rule.
-func (r Rule) WithFields(fields ...string) Rule {
-	r.Fields = fields
-	return r
-}
-
-// WithMaxDepth sets the nesting limit for a MatchGraphQLDepth rule. A
-// statement whose depth EXCEEDS this is denied.
-func (r Rule) WithMaxDepth(depth int) Rule {
-	r.MaxDepth = depth
-	return r
-}
-
-// RequiringGraphQL makes a GraphQL rule deny requests whose body could not be
-// parsed as GraphQL, instead of letting them past every GraphQL rule.
-func (r Rule) RequiringGraphQL() Rule {
-	r.RequireGraphQL = true
 	return r
 }
 

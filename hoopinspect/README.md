@@ -46,7 +46,6 @@ Here is the honest boundary:
 | Postgres granularity | `table.db` + operation verb | statement, operation, tables |
 | HTTP request | `ext_authz`: method, path, headers, bounded body | same, plus normalized resource |
 | HTTP **response** | ✗ — ext_authz decides before the upstream is called | status, headers, body |
-| **GraphQL** | ✗ — every call is `POST /graphql` | operation type, root fields, depth |
 | Deny UX | RBAC/ext_authz drops or returns a bare 403 | operator-authored message |
 
 On HTTP, Envoy's `ext_authz` is genuinely capable for request-side
@@ -58,7 +57,7 @@ authorization — the gaps there are narrower and named above. This is not
 | Protocol | Messages decoded | Stateful |
 |---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | no |
-| `http` | HTTP/1.x requests and responses; GraphQL bodies | no |
+| `http` | HTTP/1.x requests and responses | no |
 
 MySQL, MSSQL and MongoDB codecs are **not shipped**. The `Codec` interface
 and the shared SQL classifier are protocol-agnostic, so adding one is a new
@@ -66,7 +65,7 @@ and the shared SQL classifier are protocol-agnostic, so adding one is a new
 removed to keep the surface to what is exercised end to end.
 
 Import only what you need. A WASM filter that speaks Postgres imports
-`codec/postgres` and never links the HTTP and GraphQL machinery:
+`codec/postgres` and never links the HTTP machinery:
 
 ```go
 import _ "github.com/hoophq/hoopinspect/codec/postgres" // ~54 KB of wasm
@@ -80,8 +79,8 @@ type Statement struct {
     Protocol  Protocol          // postgres | http
     Direction Direction         // client | server
     Text      string            // verbatim SQL, or the request line for HTTP
-    Operation Operation         // select | delete | get | mutation | ...
-    Tables    []string          // SQL relations, or HTTP resource / GraphQL root fields
+    Operation Operation         // select | delete | get | post | ...
+    Tables    []string          // SQL relations, or the HTTP resource
     Database  string            // when the protocol states it
     HTTP      *HTTPDetail       // http only; nil for the wire-database codecs
     Metadata  map[string]string // protocol-specific, documented per codec
@@ -93,7 +92,7 @@ literals first, so `SELECT 'DROP TABLE customers'` classifies as `select`.
 That is why `MatchOperation` should be preferred to `MatchDenyWords` for
 verbs.
 
-## HTTP and GraphQL
+## HTTP
 
 Two entry points, because HTTP arrives in two shapes:
 
@@ -116,20 +115,6 @@ like `/users/alice` is deliberately NOT collapsed — merging it with
 normalizer errs toward keeping segments, so a policy can only be too narrow,
 never accidentally too broad.
 
-**GraphQL is the point.** Every GraphQL call is `POST /graphql`, so a
-method-and-path policy allows all operations or none:
-
-```
-query    { user(id: 1) { name } }   // a read
-mutation { deleteUser(id: 1) }      // destroys a record
-```
-
-Identical at the ext_authz layer. The codec resolves operation type,
-operation name, root fields and selection depth from the body. Aliases
-resolve to the real field, so `{ harmless: deleteUser(id: 1) }` still reports
-`deleteUser`, and string literals are dropped so `search(term: "deleteUser")`
-does not.
-
 **Data exposure is opt-in.** Bodies and headers are NOT captured by default.
 A policy engine's decision log is a copy of everything you send it, and
 `Options.Headers` is an allowlist with no "capture all" switch.
@@ -140,9 +125,8 @@ Two evaluators, meant to be layered via `policy.Chain{local, opa}` so an
 obviously-forbidden statement never costs a network round-trip.
 
 **Local rules** — SQL: `deny_words_list`, `pattern_match` (RE2),
-`operation`, `table`. HTTP: `http_resource`, `http_status`,
-`graphql_operation`, `graphql_field`, `graphql_depth`. One ordered set can
-mix both, so a deployment fronting a database and an API needs one evaluator:
+`operation`, `table`. HTTP: `http_resource`, `http_status`. One ordered set
+can mix both, so a deployment fronting a database and an API needs one evaluator:
 
 ```go
 policy.NewRules([]policy.Rule{
@@ -152,12 +136,9 @@ policy.NewRules([]policy.Rule{
     policy.Rule{Name: "no-admin", Type: policy.MatchHTTPResource}.
         WithResources("/admin/**"),
 
-    policy.Rule{Name: "read-only-graphql", Type: policy.MatchGraphQLOperation}.
-        WithGraphQLOperations(hoopinspect.OpMutation).
-        WithMessage("this credential may query but not mutate"),
-
-    policy.Rule{Name: "depth-limit", Type: policy.MatchGraphQLDepth}.
-        WithMaxDepth(10),
+    policy.Rule{Name: "no-5xx-leak", Type: policy.MatchHTTPStatus}.
+        WithStatuses("5xx").
+        WithMessage("upstream failure suppressed by policy"),
 })
 ```
 
@@ -171,25 +152,19 @@ it owns the *input document*:
 {"input": {
   "protocol": "http",
   "direction": "client",
-  "operation": "mutation",
-  "tables": ["deleteuser"],
+  "operation": "delete",
+  "tables": ["/users/*"],
   "http": {
-    "method": "POST",
-    "path": "/graphql",
-    "resource": "/graphql",
-    "graphql": {
-      "operation_type": "mutation",
-      "operation_name": "Nuke",
-      "root_fields": ["deleteUser"],
-      "depth": 3
-    }
+    "method": "DELETE",
+    "path": "/users/42",
+    "resource": "/users/*"
   },
   "context": {"user": "alice"}
 }}
 ```
 
 A strict superset of what `ext_authz` and `postgres_proxy` metadata provide,
-in one shape for five protocols. Accepts `{"allow": bool}`,
+in one shape for both protocols. Accepts `{"allow": bool}`,
 `{"denied": bool}`, or a bare boolean, with an optional `message` and `rule`.
 
 **Both fail closed.** An unreachable OPA, a 500, or an undefined decision
@@ -211,11 +186,6 @@ Read these before writing a policy against it.
 - **HTTP/1.x only for stream decoding.** HTTP/2 and HTTP/3 framing belongs to
   whatever terminated the connection; by then it has a `*http.Request`, so
   use `InspectRequest`.
-- **GraphQL fragments are not expanded.** A root field reached only through a
-  fragment spread is not listed in `RootFields`. Pair a field rule with an
-  operation-type rule, which cannot be evaded that way. Batched GraphQL
-  (`[{...},{...}]`) reports nothing rather than inspecting only the first
-  operation.
 - **Path normalization is conservative.** Numeric, UUID, hex and long opaque
   segments collapse; short slugs do not. A policy can be too narrow, never
   accidentally too broad.

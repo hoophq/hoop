@@ -289,79 +289,6 @@ func TestSchemaReadAndAlterAreMedium(t *testing.T) {
 	}
 }
 
-func gqlStmt(op hoopinspect.Operation, depth int, fields ...string) hoopinspect.Statement {
-	return hoopinspect.Statement{
-		Protocol:  hoopinspect.HTTP,
-		Direction: hoopinspect.FromClient,
-		Operation: op,
-		Text:      "{}",
-		HTTP: &hoopinspect.HTTPDetail{
-			Method: "POST",
-			Path:   "/graphql",
-			GraphQL: &hoopinspect.GraphQLDetail{
-				OperationType: op,
-				RootFields:    fields,
-				Depth:         depth,
-			},
-		},
-	}
-}
-
-func TestGraphQLDestructiveMutation(t *testing.T) {
-	a := newAnalyzer(t, aianalysis.HeuristicConfig{})
-
-	v := analyze(t, a, gqlStmt(hoopinspect.OpMutation, 2, "updateProfile", "deleteUser"))
-	if v == nil || v.RiskLevel != aianalysis.RiskHigh || v.Rule != aianalysis.RuleGraphQLDestroy {
-		t.Fatalf("destructive mutation = %+v, want high/%s", v, aianalysis.RuleGraphQLDestroy)
-	}
-	if !strings.Contains(v.Explanation, "deleteUser") {
-		t.Errorf("explanation does not name the root field: %q", v.Explanation)
-	}
-
-	benign := analyze(t, a, gqlStmt(hoopinspect.OpMutation, 2, "updateProfile"))
-	if benign == nil || benign.RiskLevel == aianalysis.RiskHigh {
-		t.Errorf("non-destructive mutation = %+v, want below high", benign)
-	}
-
-	// A QUERY naming a destructive-sounding field reads nothing away; only
-	// mutations execute.
-	q := analyze(t, a, gqlStmt(hoopinspect.OpQuery, 2, "deletedUsers"))
-	if q == nil || q.RiskLevel == aianalysis.RiskHigh {
-		t.Errorf("query with a delete-shaped field = %+v, want below high", q)
-	}
-}
-
-func TestGraphQLDepthThreshold(t *testing.T) {
-	a := newAnalyzer(t, aianalysis.HeuristicConfig{MaxGraphQLDepth: 3})
-
-	// Boundary: at the threshold is fine, one above is flagged.
-	at := analyze(t, a, gqlStmt(hoopinspect.OpQuery, 3, "posts"))
-	if at != nil && at.Rule == aianalysis.RuleGraphQLDepth {
-		t.Errorf("depth exactly at the limit was flagged: %+v", at)
-	}
-
-	over := analyze(t, a, gqlStmt(hoopinspect.OpQuery, 4, "posts"))
-	if over == nil || over.RiskLevel != aianalysis.RiskMedium || over.Rule != aianalysis.RuleGraphQLDepth {
-		t.Fatalf("depth above the limit = %+v, want medium/%s", over, aianalysis.RuleGraphQLDepth)
-	}
-	if !strings.Contains(over.Explanation, "4") || !strings.Contains(over.Explanation, "3") {
-		t.Errorf("explanation names neither the depth nor the limit: %q", over.Explanation)
-	}
-
-	// A default config uses DefaultGraphQLDepth, not zero (which would flag
-	// every query).
-	def := newAnalyzer(t, aianalysis.HeuristicConfig{})
-	if v := analyze(t, def, gqlStmt(hoopinspect.OpQuery, 1, "me")); v != nil && v.Rule == aianalysis.RuleGraphQLDepth {
-		t.Errorf("depth 1 flagged under the default threshold: %+v", v)
-	}
-
-	// Negative disables the check entirely.
-	off := newAnalyzer(t, aianalysis.HeuristicConfig{MaxGraphQLDepth: -1})
-	if v := analyze(t, off, gqlStmt(hoopinspect.OpQuery, 99, "posts")); v != nil && v.Rule == aianalysis.RuleGraphQLDepth {
-		t.Errorf("depth check ran with a negative threshold: %+v", v)
-	}
-}
-
 func TestHTTPRules(t *testing.T) {
 	a := newAnalyzer(t, aianalysis.HeuristicConfig{})
 
@@ -515,8 +442,6 @@ func TestEveryVerdictHasASpecificExplanation(t *testing.T) {
 		sqlStmt("SHOW TABLES"),
 		sqlStmt("SELECT id FROM orders WHERE id = 1"),
 		sqlStmt("INSERT INTO orders (id) VALUES (1)"),
-		gqlStmt(hoopinspect.OpMutation, 2, "purgeAccount"),
-		gqlStmt(hoopinspect.OpQuery, 12, "posts"),
 	}
 
 	seen := map[string]bool{}

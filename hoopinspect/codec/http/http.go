@@ -7,16 +7,12 @@
 // call POST /admin", that is enough, and this package is not trying to
 // replace it.
 //
-// Three things it does not do:
+// Two things it does not do:
 //
-//  1. **GraphQL.** Every GraphQL call is `POST /graphql`. Method and path
-//     cannot separate a read from a schema-mutating write, because the
-//     operation is in the body. A method-and-path policy either allows all
-//     GraphQL or none.
-//  2. **Responses.** ext_authz is request-side by construction — it decides
+//  1. **Responses.** ext_authz is request-side by construction — it decides
 //     before the upstream is called. The response body is where data actually
 //     leaves the building.
-//  3. **Stable resource identity.** `/users/12345/orders` and
+//  2. **Stable resource identity.** `/users/12345/orders` and
 //     `/users/67890/orders` are the same resource; keying policy on raw paths
 //     means a regex per endpoint.
 //
@@ -73,16 +69,6 @@ type Options struct {
 	// case-insensitively. Anything not listed is dropped. There is no
 	// "capture all" switch on purpose.
 	Headers []string
-
-	// ParseGraphQL parses a JSON body as a GraphQL document when the path or
-	// the body shape suggests one. On by default via New; set
-	// DisableGraphQL to turn it off.
-	DisableGraphQL bool
-
-	// GraphQLPaths restricts GraphQL parsing to these exact paths. Empty
-	// means "any path whose JSON body has a `query` string field", which is
-	// the reliable signal in practice.
-	GraphQLPaths []string
 }
 
 // DefaultMaxBodyBytes bounds a captured body. A policy that needs more than
@@ -143,12 +129,6 @@ func (i *Inspector) InspectRequest(r *http.Request, body []byte) hoopinspect.Sta
 		d.Query = q
 	}
 	i.attachBody(d, body)
-
-	if !i.opts.DisableGraphQL && i.graphQLCandidate(path, d.ContentType, body) {
-		if g := ParseGraphQL(body); g != nil {
-			d.GraphQL = g
-		}
-	}
 
 	return hoopinspect.Statement{
 		Protocol:  hoopinspect.HTTP,
@@ -327,32 +307,8 @@ func (i *Inspector) pickHeaders(h http.Header) map[string]string {
 	return out
 }
 
-// graphQLCandidate decides whether to attempt GraphQL parsing.
-func (i *Inspector) graphQLCandidate(path, ctype string, body []byte) bool {
-	if len(body) == 0 {
-		return false
-	}
-	if len(i.opts.GraphQLPaths) > 0 {
-		for _, p := range i.opts.GraphQLPaths {
-			if p == path {
-				return true
-			}
-		}
-		return false
-	}
-	// No configured paths: rely on the body shape. Anything JSON-ish is a
-	// candidate; ParseGraphQL returns nil when the `query` field is absent.
-	return ctype == "" || strings.Contains(ctype, "json") || strings.Contains(ctype, "graphql")
-}
-
-// operationFor picks the Statement operation.
-//
-// GraphQL wins over the HTTP method when present, because `mutation` is the
-// answer to "is this a write" and `post` is not.
+// operationFor picks the Statement operation from the request method.
 func operationFor(d *hoopinspect.HTTPDetail) hoopinspect.Operation {
-	if d.GraphQL != nil && d.GraphQL.OperationType != "" {
-		return d.GraphQL.OperationType
-	}
 	switch d.Method {
 	case "GET":
 		return hoopinspect.OpGet
@@ -379,17 +335,8 @@ func operationFor(d *hoopinspect.HTTPDetail) hoopinspect.Operation {
 }
 
 // resourceTables exposes the normalized resource through Statement.Tables so
-// a policy.MatchTable rule works uniformly across SQL and HTTP. For GraphQL
-// the root fields are the resources being touched, which is far more precise
-// than the /graphql path.
+// a policy.MatchTable rule works uniformly across SQL and HTTP.
 func resourceTables(d *hoopinspect.HTTPDetail) []string {
-	if d.GraphQL != nil && len(d.GraphQL.RootFields) > 0 {
-		out := make([]string, 0, len(d.GraphQL.RootFields))
-		for _, f := range d.GraphQL.RootFields {
-			out = append(out, strings.ToLower(f))
-		}
-		return out
-	}
 	if d.Resource == "" {
 		return nil
 	}

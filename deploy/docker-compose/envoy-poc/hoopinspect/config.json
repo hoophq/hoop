@@ -52,14 +52,6 @@
           "5xx"
         ],
         "message": "upstream failure suppressed by policy"
-      },
-      {
-        "name": "graphql-read-only",
-        "type": "graphql_operation",
-        "graphql_operations": [
-          "mutation"
-        ],
-        "message": "this credential may query but not mutate"
       }
     ]
   },

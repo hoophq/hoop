@@ -178,8 +178,7 @@ func NewRules(rules []Rule) (*Rules, error) {
 			if len(r.Tables) == 0 {
 				problems = append(problems, r.Name+": table rule with no tables")
 			}
-		case MatchHTTPResource, MatchHTTPStatus, MatchGraphQLOperation,
-			MatchGraphQLField, MatchGraphQLDepth:
+		case MatchHTTPResource, MatchHTTPStatus:
 			if err := r.validateHTTP(); err != nil {
 				problems = append(problems, err.Error())
 			}

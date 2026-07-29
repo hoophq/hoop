@@ -120,111 +120,10 @@ func TestHTTPStatusExactCode(t *testing.T) {
 	}
 }
 
-// --- GraphQL -------------------------------------------------------------
-
-func TestGraphQLOperationRule(t *testing.T) {
-	rules, _ := policy.NewRules([]policy.Rule{
-		policy.Rule{Name: "read-only", Type: policy.MatchGraphQLOperation,
-			Message: "this credential may query but not mutate"}.
-			WithGraphQLOperations(hoopinspect.OpMutation, hoopinspect.OpSubscription),
-	})
-
-	mutation := httpStmt(&hoopinspect.HTTPDetail{
-		Method: "POST", Path: "/graphql",
-		GraphQL: &hoopinspect.GraphQLDetail{OperationType: hoopinspect.OpMutation},
-	})
-	query := httpStmt(&hoopinspect.HTTPDetail{
-		Method: "POST", Path: "/graphql",
-		GraphQL: &hoopinspect.GraphQLDetail{OperationType: hoopinspect.OpQuery},
-	})
-
-	// Both are POST /graphql — indistinguishable to a method-and-path policy.
-	if !rules.Evaluate(mutation).Denied {
-		t.Error("mutation was allowed")
-	}
-	if rules.Evaluate(query).Denied {
-		t.Error("query was denied")
-	}
-}
-
-func TestGraphQLFieldRule(t *testing.T) {
-	rules, _ := policy.NewRules([]policy.Rule{
-		policy.Rule{Name: "no-delete-user", Type: policy.MatchGraphQLField,
-			Message: "deleteUser is not callable through this proxy"}.
-			WithFields("deleteUser"),
-	})
-
-	denied := httpStmt(&hoopinspect.HTTPDetail{
-		GraphQL: &hoopinspect.GraphQLDetail{
-			OperationType: hoopinspect.OpMutation,
-			RootFields:    []string{"updateUser", "deleteUser"},
-		},
-	})
-	allowed := httpStmt(&hoopinspect.HTTPDetail{
-		GraphQL: &hoopinspect.GraphQLDetail{
-			OperationType: hoopinspect.OpMutation,
-			RootFields:    []string{"updateUser"},
-		},
-	})
-
-	if !rules.Evaluate(denied).Denied {
-		t.Error("deleteUser was allowed")
-	}
-	if rules.Evaluate(allowed).Denied {
-		t.Error("updateUser was denied")
-	}
-}
-
-func TestGraphQLDepthRule(t *testing.T) {
-	rules, _ := policy.NewRules([]policy.Rule{
-		policy.Rule{Name: "depth-limit", Type: policy.MatchGraphQLDepth,
-			Message: "query nesting exceeds the configured limit"}.
-			WithMaxDepth(5),
-	})
-
-	if !rules.Evaluate(httpStmt(&hoopinspect.HTTPDetail{
-		GraphQL: &hoopinspect.GraphQLDetail{Depth: 12},
-	})).Denied {
-		t.Error("a depth-12 query was allowed under a limit of 5")
-	}
-	if rules.Evaluate(httpStmt(&hoopinspect.HTTPDetail{
-		GraphQL: &hoopinspect.GraphQLDetail{Depth: 5},
-	})).Denied {
-		t.Error("a query exactly at the limit was denied")
-	}
-}
-
-// A body that failed to parse as GraphQL slips past every GraphQL rule unless
-// the operator opts into strictness.
-func TestRequireGraphQLFailsClosed(t *testing.T) {
-	lenient, _ := policy.NewRules([]policy.Rule{
-		policy.Rule{Name: "lenient", Type: policy.MatchGraphQLOperation}.
-			WithGraphQLOperations(hoopinspect.OpMutation),
-	})
-	unparsed := httpStmt(&hoopinspect.HTTPDetail{Method: "POST", Path: "/graphql"})
-
-	if lenient.Evaluate(unparsed).Denied {
-		t.Error("lenient rule denied an unparsed body")
-	}
-
-	strict, _ := policy.NewRules([]policy.Rule{
-		policy.Rule{Name: "strict", Type: policy.MatchGraphQLOperation,
-			Message: "GraphQL body could not be inspected"}.
-			WithGraphQLOperations(hoopinspect.OpMutation).RequiringGraphQL(),
-	})
-	if !strict.Evaluate(unparsed).Denied {
-		t.Error("strict rule allowed a body it could not inspect")
-	}
-}
-
-// An HTTP rule must never match a SQL statement, or a mixed rule set would
-// deny every database query.
 func TestHTTPRulesIgnoreNonHTTPStatements(t *testing.T) {
 	rules, _ := policy.NewRules([]policy.Rule{
 		policy.Rule{Name: "no-admin", Type: policy.MatchHTTPResource}.
 			WithResources("/admin/**"),
-		policy.Rule{Name: "no-gql-mutation", Type: policy.MatchGraphQLOperation}.
-			WithGraphQLOperations(hoopinspect.OpMutation),
 	})
 
 	sql := hoopinspect.Statement{
@@ -276,12 +175,9 @@ func TestMixedSQLAndHTTPRuleSet(t *testing.T) {
 
 func TestInvalidHTTPRulesRejected(t *testing.T) {
 	cases := map[string]policy.Rule{
-		"no resources":  {Name: "r", Type: policy.MatchHTTPResource},
-		"no statuses":   {Name: "r", Type: policy.MatchHTTPStatus},
-		"no operations": {Name: "r", Type: policy.MatchGraphQLOperation},
-		"no fields":     {Name: "r", Type: policy.MatchGraphQLField},
-		"no depth":      {Name: "r", Type: policy.MatchGraphQLDepth},
-		"bad status":    policy.Rule{Name: "r", Type: policy.MatchHTTPStatus}.WithStatuses("nope"),
+		"no resources": {Name: "r", Type: policy.MatchHTTPResource},
+		"no statuses":  {Name: "r", Type: policy.MatchHTTPStatus},
+		"bad status":   policy.Rule{Name: "r", Type: policy.MatchHTTPStatus}.WithStatuses("nope"),
 	}
 	for name, rule := range cases {
 		if _, err := policy.NewRules([]policy.Rule{rule}); err == nil {
@@ -301,15 +197,9 @@ func TestOPAInputCarriesHTTPDetail(t *testing.T) {
 
 	c := &policy.OPAClient{URL: srv.URL}
 	c.Evaluate(httpStmt(&hoopinspect.HTTPDetail{
-		Method:   "POST",
-		Path:     "/graphql",
-		Resource: "/graphql",
-		GraphQL: &hoopinspect.GraphQLDetail{
-			OperationType: hoopinspect.OpMutation,
-			OperationName: "Nuke",
-			RootFields:    []string{"deleteUser"},
-			Depth:         3,
-		},
+		Method:   "DELETE",
+		Path:     "/users/42",
+		Resource: "/users/*",
 	}))
 
 	input, ok := got["input"].(map[string]any)
@@ -320,22 +210,11 @@ func TestOPAInputCarriesHTTPDetail(t *testing.T) {
 	if !ok {
 		t.Fatalf("input.http missing: %+v", input)
 	}
-	if h["method"] != "POST" {
+	if h["method"] != "DELETE" {
 		t.Errorf("input.http.method = %v", h["method"])
 	}
-	g, ok := h["graphql"].(map[string]any)
-	if !ok {
-		t.Fatalf("input.http.graphql missing: %+v", h)
-	}
-	if g["operation_type"] != "mutation" {
-		t.Errorf("input.http.graphql.operation_type = %v", g["operation_type"])
-	}
-	if g["operation_name"] != "Nuke" {
-		t.Errorf("input.http.graphql.operation_name = %v", g["operation_name"])
-	}
-	fields, _ := g["root_fields"].([]any)
-	if len(fields) != 1 || fields[0] != "deleteUser" {
-		t.Errorf("input.http.graphql.root_fields = %v", g["root_fields"])
+	if h["resource"] != "/users/*" {
+		t.Errorf("input.http.resource = %v — the normalized resource must reach Rego", h["resource"])
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 
 // HTTP-specific rule types. They are separate from the SQL matchers because
 // the useful questions differ: SQL policy asks "which verb, which table",
-// HTTP policy asks "which resource, which status, which GraphQL operation".
+// HTTP policy asks "which resource, which status".
 const (
 	// MatchHTTPResource denies when the normalized resource path matches any
 	// entry in Resources. Patterns use the normalized form, so
@@ -27,21 +27,6 @@ const (
 	// This is the rule Envoy's ext_authz structurally cannot express: it
 	// decides before the upstream is called.
 	MatchHTTPStatus MatchType = "http_status"
-
-	// MatchGraphQLOperation denies by GraphQL operation type
-	// (query / mutation / subscription). This is the coarse GraphQL gate:
-	// "this credential may read but not mutate".
-	MatchGraphQLOperation MatchType = "graphql_operation"
-
-	// MatchGraphQLField denies when any root field of the operation is in
-	// Fields, matched case-insensitively. This is the fine gate: "nobody
-	// calls deleteUser through this proxy".
-	MatchGraphQLField MatchType = "graphql_field"
-
-	// MatchGraphQLDepth denies when the selection-set nesting exceeds
-	// MaxDepth. Deep nesting on a cyclic schema is the standard GraphQL
-	// denial-of-service vector.
-	MatchGraphQLDepth MatchType = "graphql_depth"
 )
 
 // HTTP-specific Rule fields. They live on the same Rule struct so a single
@@ -59,22 +44,6 @@ type httpRuleFields struct {
 	// Statuses for MatchHTTPStatus. Accepts exact codes ("404") and classes
 	// ("4xx", "5xx").
 	Statuses []string `json:"statuses,omitempty"`
-
-	// GraphQLOperations for MatchGraphQLOperation.
-	GraphQLOperations []hoopinspect.Operation `json:"graphql_operations,omitempty"`
-
-	// Fields for MatchGraphQLField.
-	Fields []string `json:"fields,omitempty"`
-
-	// MaxDepth for MatchGraphQLDepth. A statement whose depth EXCEEDS this
-	// is denied.
-	MaxDepth int `json:"max_depth,omitempty"`
-
-	// RequireGraphQL makes a GraphQL rule also deny a request whose body did
-	// not parse as GraphQL, when it was sent to a path the operator expects
-	// to be a GraphQL endpoint. Without it, an unparseable body slips past
-	// every GraphQL rule.
-	RequireGraphQL bool `json:"require_graphql,omitempty"`
 }
 
 // validateHTTP checks the HTTP-specific fields of a rule at construction.
@@ -93,18 +62,6 @@ func (r Rule) validateHTTP() error {
 				return fmt.Errorf("%s: invalid status %q (want a code like 404 or a class like 4xx)", r.Name, s)
 			}
 		}
-	case MatchGraphQLOperation:
-		if len(r.GraphQLOperations) == 0 {
-			return fmt.Errorf("%s: graphql_operation rule with no operations", r.Name)
-		}
-	case MatchGraphQLField:
-		if len(r.Fields) == 0 {
-			return fmt.Errorf("%s: graphql_field rule with no fields", r.Name)
-		}
-	case MatchGraphQLDepth:
-		if r.MaxDepth <= 0 {
-			return fmt.Errorf("%s: graphql_depth rule needs a positive max_depth", r.Name)
-		}
 	}
 	return nil
 }
@@ -113,8 +70,7 @@ func (r Rule) validateHTTP() error {
 // was handled here, so the SQL matcher can take everything else.
 func (r Rule) matchesHTTP(stmt hoopinspect.Statement) (matched, ok bool) {
 	switch r.Type {
-	case MatchHTTPResource, MatchHTTPStatus, MatchGraphQLOperation,
-		MatchGraphQLField, MatchGraphQLDepth:
+	case MatchHTTPResource, MatchHTTPStatus:
 	default:
 		return false, false
 	}
@@ -151,37 +107,6 @@ func (r Rule) matchesHTTP(stmt hoopinspect.Statement) (matched, ok bool) {
 			}
 		}
 		return false, true
-
-	case MatchGraphQLOperation:
-		if d.GraphQL == nil {
-			return r.RequireGraphQL, true
-		}
-		for _, op := range r.GraphQLOperations {
-			if d.GraphQL.OperationType == op {
-				return true, true
-			}
-		}
-		return false, true
-
-	case MatchGraphQLField:
-		if d.GraphQL == nil {
-			return r.RequireGraphQL, true
-		}
-		for _, want := range r.Fields {
-			want = strings.ToLower(want)
-			for _, got := range d.GraphQL.RootFields {
-				if strings.ToLower(got) == want {
-					return true, true
-				}
-			}
-		}
-		return false, true
-
-	case MatchGraphQLDepth:
-		if d.GraphQL == nil {
-			return r.RequireGraphQL, true
-		}
-		return d.GraphQL.Depth > r.MaxDepth, true
 	}
 	return false, true
 }
