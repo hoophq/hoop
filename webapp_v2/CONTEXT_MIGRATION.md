@@ -100,6 +100,9 @@ Gateway backend (port 8009)
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
 | `/integrations/slack` | React | Done |
 | `/integrations/webhooks` | React | Done |
+| `/guardrails` | React | Done |
+| `/guardrails/new` | React | Done |
+| `/guardrails/edit/:id` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing — see `MIGRATION_ROADMAP.md` for the wave plan |
 
 ---
@@ -124,13 +127,11 @@ Gateway backend (port 8009)
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
-/guardrails/*
 /features/access-control/*
 /features/access-request/*
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
 /features/ai-session-analyzer/*
-/guardrails/*
 /plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
@@ -145,6 +146,11 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `MIGRATION_ROADMAP.md` Track A): `/404`, `/hoop-app`, `/plugins/manage/jira`
 (hangs on an infinite spinner today), `/plugins/reviews/:review-id`,
 `/features/runbooks/edit/:connection-id`.
+
+Shadowed bidi entries (route + panel still exist but React matches first, so
+the CLJS page is unreachable): `/guardrails/*`. Its `events/guardrails.cljs`
+stays regardless — resource setup/configure and the activation journey still
+subscribe to it. Removal belongs to a Track A cleanup PR.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
