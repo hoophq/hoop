@@ -65,6 +65,17 @@ export function ConfigStatus() {
     return () => clearInterval(interval)
   }, [opened, fetchStatus])
 
+  // Instant reaction for the step-defining action: the CLJS web terminal
+  // emits this event right after a successful exec (POST /sessions success in
+  // webapp/src/webapp/events/editor_plugin.cljs), so "Run your first session"
+  // checks off the moment the query runs.
+  useEffect(() => {
+    if (!isAdmin) return undefined
+    const onSessionExecuted = () => fetchStatus({ force: true })
+    window.addEventListener('hoop:session-executed', onSessionExecuted)
+    return () => window.removeEventListener('hoop:session-executed', onSessionExecuted)
+  }, [isAdmin, fetchStatus])
+
   // Never render for non-admins; stay hidden until the first snapshot
   // resolves (avoids flashing "3 steps from success" at a fully configured
   // org) and while the snapshot belongs to a previously logged-in user.

@@ -53,6 +53,7 @@ Gateway backend (port 8009)
 | `window.hoopRemount()` | Called on remount to re-render Reagent without refetching user data |
 | `localStorage.jwt-token` | Shared auth token. Both apps read/write the same key |
 | `localStorage.react-shell = true` | Guards double-render of sidebar in CLJS mode |
+| `hoop:session-executed` (DOM CustomEvent on `window`) | Emitted by the CLJS web terminal on exec success (`editor_plugin.cljs`); the React Config Status widget listens and refreshes instantly |
 
 ### Routing Split (Router.jsx)
 
