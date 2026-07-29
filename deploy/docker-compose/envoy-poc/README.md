@@ -55,7 +55,7 @@ and reuses it afterwards. After a library change:
 ./run.sh --rebuild
 ```
 
-The image builds `hoop-inspect-pii`, the relay with
+The image builds `hoop-inspect` with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
 demo can mask Brazilian CPFs and IBANs and deny a query that embeds one. The
 `pii` section of `hoopinspect/config.yaml` names which of the 45 entity types
@@ -67,8 +67,8 @@ Sidecar knobs live in `hoopinspect/config.yaml`; validate a change without
 starting anything:
 
 ```bash
-cd ../../../hoopinspect/pii/alcatraz && go run ./cmd/hoop-inspect-pii -validate \
-  -config ../../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+cd ../../../hoopinspect/cmd && go run . -validate \
+  -config ../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
 ```
 
 ## The tiers

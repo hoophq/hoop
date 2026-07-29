@@ -7,9 +7,9 @@ CREATE TABLE customers (
     email   text NOT NULL,
     ssn     text NOT NULL,
     -- Non-US identifiers, which the eight built-in mask detectors cannot
-    -- find. They are the reason the hoop-inspect-pii build exists: both
-    -- carry a real checksum, so a detector either verifies them or drops
-    -- them, and a regex would have to guess.
+    -- find. They are the reason the alcatraz detector exists: both carry a
+    -- real checksum, so a detector either verifies them or drops them, and a
+    -- regex would have to guess.
     cpf     text NOT NULL,   -- Brazilian taxpayer id, mod-11
     iban    text NOT NULL    -- bank account, ISO 7064 mod-97
 );

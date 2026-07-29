@@ -7,7 +7,7 @@ structured statements into allow/deny verdicts.
 no TLS, routes nothing. You hand it bytes you already have, and whatever holds
 the connection keeps holding it.
 
-**The relay owns a socket.** `pii/alcatraz/cmd/hoop-inspect-pii` wraps the
+**The relay owns a socket.** `cmd/hoop-inspect` wraps the
 library in a TCP listener that accepts a connection, dials one upstream, and
 pumps bytes through the gate in both directions. It runs behind something that
 already owns TLS and identity, typically Envoy forwarding plaintext over
@@ -281,6 +281,20 @@ Read these before writing a policy against it.
   nothing to parse. Termination is your problem.
 - **Statements are not transactions.** The gate evaluates each one
   independently, with no cross-statement session state.
+
+## Building the relay
+
+The binary lives in the nested `cmd` module, so the root stays
+dependency-free. Build it from there:
+
+```bash
+cd cmd && go build -o hoop-inspect .
+./hoop-inspect -validate -config config.yaml
+```
+
+Config decides the features, not a build tag. Omit the `pii` section and
+detection is off: masking is unavailable and a `pii` policy rule is a config
+error, both refused at startup rather than silently skipped.
 
 ## Testing
 

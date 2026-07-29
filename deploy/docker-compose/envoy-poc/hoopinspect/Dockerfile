@@ -1,10 +1,10 @@
 # hoop-inspect sidecar image.
 #
 # The relay is assembled by the hoopinspect root module, which has zero
-# dependencies. The binary lives in the nested pii/alcatraz module because it
-# wires in PII detection, so the build needs exactly one module download:
-# github.com/hoophq/alcatraz, itself dependency-free. One edge deep, no vendor
-# directory, no transitive tree to review.
+# dependencies. The binary lives in the nested cmd module because it links the
+# optional plugins, so the build needs exactly two module downloads:
+# github.com/hoophq/alcatraz, itself dependency-free, and gopkg.in/yaml.v3.
+# One edge deep, no vendor directory, no transitive tree to review.
 #
 # Build from the repo root:
 #   docker build -f deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile \
@@ -13,14 +13,14 @@
 FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY . .
-# The nested module declares the alcatraz dependency; the root module is
-# pulled in beside it by a replace directive.
-WORKDIR /src/pii/alcatraz
+# The nested cmd module declares the plugin dependencies; the root module and
+# the other nested modules are pulled in beside it by replace directives.
+WORKDIR /src/cmd
 RUN go mod download
 # CGO off and a static build so the runtime stage can be distroless-thin.
 RUN CGO_ENABLED=0 go build \
     -ldflags "-s -w -X main.version=poc" \
-    -o /out/hoop-inspect ./cmd/hoop-inspect-pii
+    -o /out/hoop-inspect .
 
 FROM alpine:3.20
 # curl only so the compose healthcheck can hit /healthz.

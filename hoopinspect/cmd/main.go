@@ -1,4 +1,4 @@
-// Command hoop-inspect-pii is the hoop-inspect relay: an inspecting TCP proxy
+// Command hoop-inspect is the hoop-inspect relay: an inspecting TCP proxy
 // that decodes the wire protocol between a client and a database or API,
 // evaluates each statement against policy, records an audit trail naming the
 // human who ran it, and masks sensitive values on the way back.
@@ -10,24 +10,28 @@
 // # The binary's home
 //
 // The relay itself is assembled by github.com/hoophq/hoopinspect/sidecar, in
-// the dependency-free root module. This main sits in the nested pii/alcatraz
-// module because it wires in alcatraz PII detection, and a main in the root
-// could not import that without putting the dependency in the root's go.mod.
+// the dependency-free root module. This main sits in its own nested module
+// because it links the optional plugins -- alcatraz PII detection and the
+// YAML config front end -- and a main in the root could not import those
+// without putting their dependencies in the root's go.mod.
 //
-// The plugin supplies both halves of detection: 45 alcatraz entity types
-// across 12 countries (25 checksum-verified) plus three credential
-// recognizers, driving
+// # What the config turns on
 //
-//   - response masking, where a rule names an entity and a strategy;
-//   - policy rules of type "pii", which deny a statement that embeds a
-//     national identifier. No amount of response masking undoes that once the
-//     query is in the database's own log.
+// There is one binary and no build tags. Every capability below is decided by
+// the config file, so an operator adding a "pii" section does not also have to
+// swap the binary out:
 //
-// Omit the "pii" config section and the relay runs with detection disabled:
-// masking is then unavailable and a pii rule is a config error, both refused
-// at startup rather than silently skipped.
+//   - "pii" absent: detection is off. Masking is unavailable and a policy rule
+//     of type "pii" is a config error, both refused at startup rather than
+//     silently skipped.
+//   - "pii" present: 45 alcatraz entity types across 12 countries (25
+//     checksum-verified) plus three credential recognizers drive response
+//     masking, where a rule names an entity and a strategy, and policy rules
+//     of type "pii", which deny a statement that embeds a national identifier.
+//     No amount of response masking undoes that once the query is in the
+//     database's own log.
 //
-// Configure the detector under "pii" in the same config file:
+// The config file may be YAML or JSON; the extension picks the parser.
 //
 //	{
 //	  "pii": {
@@ -41,15 +45,16 @@
 //	  ]}
 //	}
 //
-// pii.entities is required. There is no all-entities default, because turning
-// on all 45 recognizers rewrites ordinary numeric columns as US_SSN. See the
-// package documentation for the measured rates.
+// pii.entities is required whenever the section is present. There is no
+// all-entities default, because turning on all 45 recognizers rewrites
+// ordinary numeric columns as US_SSN. See the pii/alcatraz package
+// documentation for the measured rates.
 //
 // Usage:
 //
-//	hoop-inspect-pii -config /etc/hoop-inspect/config.json
-//	hoop-inspect-pii -validate -config config.json
-//	hoop-inspect-pii -version
+//	hoop-inspect -config /etc/hoop-inspect/config.yaml
+//	hoop-inspect -validate -config config.yaml
+//	hoop-inspect -version
 package main
 
 import (
@@ -87,7 +92,7 @@ func main() {
 
 	det, err := buildDetector(cfgPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "hoop-inspect-pii:", err)
+		fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
 		os.Exit(1)
 	}
 	// A nil *alcatraz.Detector in a non-nil interface would make the sidecar
@@ -112,9 +117,8 @@ func peekConfigPath() string {
 }
 
 // buildDetector reads the "pii" section and constructs the detector. A missing
-// section means no detector: this binary then behaves exactly like the base
-// one, which is the right answer for a config written before the section
-// existed.
+// section means no detector: the relay then runs with detection disabled,
+// which is the right answer for a config written before the section existed.
 func buildDetector(cfgPath string) (*alcatraz.Detector, error) {
 	if cfgPath == "" {
 		return nil, nil

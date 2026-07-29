@@ -13,14 +13,15 @@
 // owns the payload. It routes nothing and balances nothing: one listener,
 // one upstream, one protocol per endpoint.
 //
-// # Package here, binary in pii/alcatraz
+// # Package here, binary in cmd
 //
-// The binary lives in the nested module pii/alcatraz, because that is where
-// the PII detector's dependency is declared and a main in the root module
-// could not import it without dragging that dependency into the root's
-// go.mod. Keeping the assembly here leaves the relay in the root module: the
-// binary is a four-line shell that supplies a detector and calls Main. A
-// caller embedding this library can call Run directly and skip the binary.
+// The binary lives in the nested module cmd, because that is where the
+// optional plugins are linked -- PII detection and the YAML config front end
+// -- and a main in the root module could not import them without dragging
+// their dependencies into the root's go.mod. Keeping the assembly here leaves
+// the relay in the root module: the binary is a shell that supplies a
+// detector and a loader, then calls Main. A caller embedding this library can
+// call Run directly and skip the binary.
 package sidecar
 
 import (
@@ -108,8 +109,8 @@ func Main(version string, det Plugin, load Loader) {
 	// is on when the binary cannot do it.
 	if len(cfg.PII) > 0 && det == nil {
 		fmt.Fprintln(os.Stderr, "hoop-inspect: config has a \"pii\" section but this build "+
-			"has no PII detector; use the hoop-inspect-pii binary "+
-			"(github.com/hoophq/hoopinspect/pii/alcatraz) or remove the section")
+			"has no PII detector; build github.com/hoophq/hoopinspect/cmd, or pass a "+
+			"detector to Main, or remove the section")
 		os.Exit(1)
 	}
 
