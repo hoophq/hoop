@@ -1,12 +1,12 @@
 // Package store is the read side of the audit trail.
 //
-// # Why this is a separate package from audit
+// # Separation from audit
 //
-// `audit.Sink` only writes. That is the right shape for the data path — a
-// sink can be a file, a pipe, a queue, and the gate must not care. But a UI
-// asks questions a writer cannot answer: "show me alice's denied statements
-// last Tuesday", "which tables did this session touch", "how many violations
-// per connection this week".
+// `audit.Sink` only writes. That shape fits the data path: a sink can be a
+// file, a pipe, or a queue, and the gate must not care which. A UI asks
+// questions a writer cannot answer: "show me alice's denied statements last
+// Tuesday", "which tables did this session touch", "how many violations per
+// connection this week".
 //
 // Answering those needs an index, and an index needs a schema. Keeping the
 // query contract here means:
@@ -20,9 +20,9 @@
 // # The Store is also a Sink
 //
 // A backend implements both: it records events on the data path and serves
-// queries from the same storage. That is deliberate — an audit trail you can
-// write but not read is a compliance artifact nobody uses, and two separate
-// pipelines drift.
+// queries from the same storage. One backend for both keeps the two paths
+// from drifting, and an audit trail you can write but not read serves no
+// one.
 package store
 
 import (
@@ -44,8 +44,8 @@ var ErrNotFound = errors.New("hoopinspect/store: not found")
 //
 // The counters are denormalized on purpose. A session list is the first screen
 // of any audit UI, and computing "how many statements, how many denied" with a
-// correlated subquery per row is how that screen gets slow enough that people
-// stop opening it.
+// correlated subquery per row makes that screen slow enough that you stop
+// opening it.
 type SessionRecord struct {
 	ID         session.ID           `json:"id"`
 	Principal  string               `json:"principal"`
@@ -68,8 +68,14 @@ type SessionRecord struct {
 	// any statement was refused, "error" when the transport failed.
 	Verdict string `json:"verdict"`
 
-	// RiskLevel is the highest AI-analysis risk seen in the session, when an
-	// analyzer ran. Empty otherwise.
+	// RiskLevel is the highest risk seen in the session, taken from an
+	// event's "risk_level" metadata key.
+	//
+	// Nothing in this library sets it today: risk analysis is a gateway
+	// feature, and when it arrives here it will arrive as a plugin writing
+	// that key. The rollup stays because such a plugin needs the seam. A
+	// session's risk is the HIGHEST its statements reached, and deriving
+	// that after the fact means re-reading the whole timeline.
 	RiskLevel string `json:"risk_level,omitempty"`
 
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -106,9 +112,9 @@ type SessionFilter struct {
 	Since time.Time
 	Until time.Time
 
-	// DeniedOnly returns only sessions with at least one denial. This is the
-	// query a security team actually runs, so it gets a first-class field
-	// rather than a generic predicate.
+	// DeniedOnly returns only sessions with at least one denial. A security
+	// team runs this query daily, so it gets a first-class field rather than
+	// a generic predicate.
 	DeniedOnly bool
 
 	// OpenOnly returns only sessions still running.
@@ -234,8 +240,8 @@ type LabelCount struct {
 	Count int64  `json:"count"`
 }
 
-// TopN bounds a breakdown. A dashboard cannot render a thousand bars, and a
-// query that returns them all is a query that got slow for no benefit.
+// TopN bounds a breakdown. A dashboard cannot render a thousand bars, so a
+// query that returns them all pays scan cost for rows the UI drops.
 const TopN = 20
 
 // Normalize clamps a filter's paging to the allowed range. Backends should
@@ -270,8 +276,8 @@ const (
 )
 
 // ClassifyVerdict derives the session verdict from its counters. Denials
-// outrank errors: a session that was refused AND then failed is interesting
-// primarily because it was refused.
+// outrank errors: a session that was refused AND then failed matters first
+// for the refusal.
 func ClassifyVerdict(denied, errors int) string {
 	switch {
 	case denied > 0:

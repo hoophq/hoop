@@ -1,14 +1,14 @@
 // Package sqlite implements store.Store over a local SQLite file.
 //
-// # Why SQLite
+// # Choosing SQLite
 //
 // The audit trail of a sidecar is a single-writer, many-reader workload with
-// a working set measured in megabytes. That is the shape SQLite is best at,
-// and it needs no server to operate, no credentials to leak, and no network
-// hop on the connection's data path. A deployment that outgrows it swaps in
-// a Postgres backend behind the same store.Store interface.
+// a working set measured in megabytes. SQLite handles that shape well, and
+// it needs no server to operate, no credentials to leak, and no network hop
+// on the connection's data path. A deployment that outgrows it swaps in a
+// Postgres backend behind the same store.Store interface.
 //
-// # Why a nested module
+// # The nested module
 //
 // The root hoopinspect module has zero dependencies and must keep them. This
 // package needs a driver, so it lives behind its own go.mod. See go.mod.
@@ -79,8 +79,8 @@ func Open(path string) (*Store, error) {
 // The DSN names the database and sets cache=shared rather than using a bare
 // ":memory:". database/sql keeps a POOL of connections, and a bare in-memory
 // database is per-connection: the pool's second connection would see an empty
-// schema, which presents as a test that mysteriously cannot find its tables.
-// A shared cache makes every connection in the pool see one database.
+// schema, which surfaces as a test that cannot find its own tables. A shared
+// cache makes every connection in the pool see one database.
 func OpenMemory() (*Store, error) {
 	// A unique name per call so two stores in the same test binary do not
 	// share a database and see each other's rows.
@@ -101,16 +101,16 @@ func nextMemDB() int64 {
 
 // dsn builds the connection string.
 //
-// The pragmas are not optional:
+// Each pragma earns its place:
 //
 //   - journal_mode=WAL lets readers run while a write is in flight. Without
-//     it a dashboard refresh blocks the connection that is trying to record a
-//     statement, which is the one thing an audit path must never do. WAL is
-//     unavailable for in-memory databases, so it is set only on file DSNs.
+//     it a dashboard refresh blocks the connection recording a statement,
+//     which an audit path must never do. WAL is unavailable for in-memory
+//     databases, so it is set only on file DSNs.
 //   - busy_timeout gives a writer five seconds to acquire the lock instead of
-//     failing instantly with SQLITE_BUSY. A checkpoint or a concurrent
-//     process holding the lock for a few milliseconds must not turn into a
-//     lost audit record.
+//     failing at once with SQLITE_BUSY. A checkpoint or a concurrent process
+//     holding the lock for a few milliseconds must not turn into a lost audit
+//     record.
 //   - foreign_keys is on for correctness if a future migration adds one.
 //   - synchronous=NORMAL is the documented safe pairing with WAL: durable
 //     against process crash, and it avoids an fsync per transaction on a path
@@ -174,9 +174,9 @@ func (s *Store) Close() error {
 //
 // The session row carries denormalized counters because a session list is the
 // first screen of any audit UI, and computing "how many statements, how many
-// denied" with a correlated subquery per row is how that screen gets slow
-// enough that people stop opening it. Maintaining them here costs one UPSERT
-// on a path that is already doing an INSERT.
+// denied" with a correlated subquery per row makes that screen slow enough
+// that you stop opening it. Maintaining them here costs one UPSERT on a path
+// already doing an INSERT.
 func (s *Store) Write(ctx context.Context, ev audit.Event) error {
 	if ev.SessionID == "" {
 		return errors.New("hoopinspect/store/sqlite: event has no session id")
@@ -240,7 +240,7 @@ func upsertSession(ctx context.Context, tx *sql.Tx, ev audit.Event) error {
 	case audit.KindViolation:
 		// A violation is also a statement that was attempted. Counting it in
 		// both keeps statement_count meaning "statements seen" rather than
-		// "statements allowed", which is what an auditor reads it as.
+		// "statements allowed", the reading an auditor expects.
 		stmtDelta, deniedDelta = 1, 1
 	case audit.KindMasked:
 		// MaskedCount is how many VALUES were rewritten; a masked event with
@@ -252,8 +252,7 @@ func upsertSession(ctx context.Context, tx *sql.Tx, ev audit.Event) error {
 
 	// session_end carries authoritative totals from the gate. Prefer them
 	// over the accumulated counters: an AsyncSink may have dropped events
-	// under backpressure, and the gate's own tally is the one that saw
-	// everything.
+	// under backpressure, and the gate's own tally saw every statement.
 	var endedAt, durationMS int64
 	finalStmts, finalDenied := -1, -1
 	if ev.Kind == audit.KindSessionEnd {
@@ -356,18 +355,18 @@ func riskRank(level string) int64 {
 //
 // Keyset rather than OFFSET: OFFSET counts rows from the start of the result
 // set, so a session opening between two page fetches shifts every later row
-// down one and the reader silently skips it (or, on a delete, sees one
-// twice). On a live audit trail that is not an edge case, it is the steady
-// state. A keyset cursor names the last row seen, so a concurrent insert
-// simply lands outside the window already read.
+// down one and the reader skips it with no warning (or, on a delete, sees
+// one twice). On a live audit trail that is the steady state. A keyset
+// cursor names the last row seen, so a concurrent insert lands outside the
+// window already read.
 type sessionCursor struct {
 	StartedAt int64  `json:"s"`
 	ID        string `json:"i"`
 }
 
 // eventCursor pages events on seq alone. Millisecond (and even microsecond)
-// timestamps collide under load, so seq — a monotonic AUTOINCREMENT — is the
-// only total order available.
+// timestamps collide under load, leaving seq, a monotonic AUTOINCREMENT, as
+// the only total order available.
 type eventCursor struct {
 	Seq int64 `json:"q"`
 }
@@ -378,7 +377,7 @@ func encodeCursor(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		// The cursor structs are two fixed-shape structs of scalars; marshal
-		// cannot fail. Returning "" would silently restart paging.
+		// cannot fail. Returning "" would restart paging with no signal.
 		panic("hoopinspect/store/sqlite: cursor marshal: " + err.Error())
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
@@ -737,9 +736,9 @@ FROM sessions`+where, args...).
 	}
 
 	// sessionBreakdown counts SESSIONS per label; the operation and rule
-	// breakdowns below count EVENTS. The two units are deliberately not
-	// mixed: "12 sessions by alice" and "12 selects" are different facts and
-	// a chart that conflated them would be wrong.
+	// breakdowns below count EVENTS. Keep the two units apart: "12 sessions
+	// by alice" and "12 selects" are different facts, and a chart that
+	// conflated them would be wrong.
 	sessionBreakdown := func(column string) ([]store.LabelCount, error) {
 		q := `SELECT ` + column + `, COUNT(*) FROM sessions` +
 			whereClause(append(append([]string{}, conds...), column+` <> ''`)) +
@@ -794,8 +793,7 @@ func (s *Store) labelCounts(ctx context.Context, query string, args []any) ([]st
 	}
 
 	// Sorted in Go, not SQL: ties must break deterministically or a dashboard
-	// reshuffles its bars between refreshes for no reason. Label ascending is
-	// the tiebreak.
+	// reshuffles its bars between refreshes. Label ascending is the tiebreak.
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count != out[j].Count {
 			return out[i].Count > out[j].Count
@@ -855,9 +853,8 @@ func encodeJSON(v any) string {
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
-		// Every field routed here is JSON-marshalable by construction. Losing
-		// the whole event over one unencodable detail field would be worse
-		// than losing the field.
+		// Every field routed here is JSON-marshalable by construction, and
+		// losing one unencodable detail field beats losing the whole event.
 		return ""
 	}
 	return string(b)

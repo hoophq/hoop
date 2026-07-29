@@ -6,26 +6,26 @@ import (
 	"fmt"
 )
 
-// schemaVersion is the version this build writes. It exists so a future
-// migration has somewhere to stand: an older binary opening a newer file can
-// refuse rather than silently misread columns it does not know about.
+// schemaVersion is the version this build writes. It gives a future
+// migration somewhere to stand: an older binary opening a newer file can
+// refuse rather than misread columns it does not know about.
 const schemaVersion = 1
 
 // schemaDDL is applied at every open. Every statement is idempotent, so
 // opening an existing database is a no-op rather than a migration.
 //
-// Timestamps are stored as INTEGER unix microseconds, not TEXT. Text
-// timestamps sort correctly only if every writer agrees on the exact format
-// and zone; an integer sorts correctly by construction, which matters because
-// the session cursor pages on (started_at, id) and a mis-sorting key silently
-// skips rows. Microseconds because millisecond resolution collides under
-// load and nanoseconds overflow the useful range of int64 arithmetic in
-// SQLite's date functions.
+// Timestamps are stored as INTEGER unix microseconds. Text timestamps sort
+// correctly only if every writer agrees on the exact format and zone; an
+// integer sorts correctly by construction. That matters because the session
+// cursor pages on (started_at, id), and a mis-sorting key silently skips
+// rows. Microseconds because millisecond resolution collides under load and
+// nanoseconds overflow the useful range of int64 arithmetic in SQLite's date
+// functions.
 //
 // List-valued and structured fields (tables, masked_entities, http, metadata)
-// are JSON text. They are display/detail data, never join keys: a normalized
-// tables table would buy an index nobody queries and cost a second write per
-// statement on the connection's data path.
+// are JSON text. They carry display and detail data, never join keys: a
+// normalized tables table would add an index no query uses and cost a second
+// write per statement on the connection's data path.
 const schemaDDL = `
 CREATE TABLE IF NOT EXISTS schema_version (
 	version INTEGER NOT NULL
@@ -150,9 +150,8 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("hoopinspect/store/sqlite: record schema version: %w", err)
 		}
 	case found > schemaVersion:
-		// Refuse rather than misread: a newer writer may have repurposed a
-		// column, and silently serving wrong audit data is worse than an
-		// error at open.
+		// Refuse rather than misread. A newer writer may have repurposed a
+		// column; an error at open beats serving wrong audit data.
 		return fmt.Errorf("hoopinspect/store/sqlite: database schema version %d is newer than supported %d", found, schemaVersion)
 	}
 	return nil

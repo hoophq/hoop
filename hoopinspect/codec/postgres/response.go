@@ -20,9 +20,8 @@ const (
 	tagEmptyQuery      = 'I'
 )
 
-// nullColumn is the length field of a SQL NULL: -1 as an int32. It is the one
-// value that is not a byte count, and treating it as one reads 4 GiB of
-// whatever follows.
+// nullColumn is the length field of a SQL NULL: -1 as an int32. It carries no
+// byte count, and reading it as one consumes 4 GiB of whatever follows.
 const nullColumn = 0xFFFFFFFF
 
 // maxDecodedRows bounds how many rows one Decode call turns into structured
@@ -38,8 +37,8 @@ const maxDecodedRows = 1000
 // rowDescription is the column layout of the result set currently streaming.
 //
 // It is codec state, not per-call state: the 'T' message arrives once and
-// every 'D' after it is described by it, which is exactly why the Codec is a
-// pointer type and why Register hands out a factory rather than an instance.
+// every 'D' after it is described by it. That is why the Codec is a pointer
+// type and why Register hands out a factory rather than an instance.
 type rowDescription struct {
 	columns []hoopinspect.Column
 }
@@ -48,7 +47,7 @@ type rowDescription struct {
 // completed result set.
 //
 // "Completed" means a CommandComplete ('C'), an ErrorResponse ('E') or an
-// EmptyQueryResponse ('I') — the messages that end a query's output. Rows seen
+// EmptyQueryResponse ('I'), the messages that end a query's output. Rows seen
 // before that point accumulate on the codec, so a result set split across
 // several reads still yields exactly one Statement.
 func (c *Codec) decodeResponse(data []byte) ([]hoopinspect.Statement, int, error) {
@@ -93,8 +92,7 @@ func (c *Codec) decodeResponse(data []byte) ([]hoopinspect.Statement, int, error
 
 		case tagCommandComplete, tagErrorResponse, tagEmptyQuery:
 			// End of one query's output. Emit whatever we accumulated, even
-			// when it is zero rows: "this query returned nothing" is a fact
-			// worth auditing.
+			// at zero rows: "this query returned nothing" is worth auditing.
 			if stmt, ok := c.flushResult(cstring(payload), tag); ok {
 				stmts = append(stmts, stmt)
 			}
@@ -120,7 +118,7 @@ func (c *Codec) countRow(payload []byte) bool {
 
 	if c.rowCount > maxDecodedRows {
 		c.truncated = true
-		return true // still counted, just not decoded
+		return true // counted, not decoded
 	}
 	// Validate the frame even when we keep no values: a malformed row means
 	// the stream is desynchronized and every later offset is wrong.
@@ -157,8 +155,8 @@ func validateDataRow(payload []byte) bool {
 // ErrorResponse it is the error's primary message, so a failed query is
 // auditable as a failure rather than as silence.
 func (c *Codec) flushResult(text string, tag byte) (hoopinspect.Statement, bool) {
-	// Nothing at all seen: not a result set, just a bare acknowledgement of
-	// something we did not track.
+	// Nothing seen at all, so this is a bare acknowledgement of something we
+	// did not track.
 	if c.rowDesc == nil && c.rowCount == 0 && tag != tagErrorResponse {
 		c.resetResult()
 		return hoopinspect.Statement{}, false
@@ -176,10 +174,10 @@ func (c *Codec) flushResult(text string, tag byte) (hoopinspect.Statement, bool)
 		Protocol:  hoopinspect.Postgres,
 		Direction: hoopinspect.FromServer,
 		Text:      text,
-		// A response is not a verb the client issued: the operation lives on
-		// the REQUEST statement, which the audit trail already has. Adding an
-		// Operation value for it would put a non-verb in a field every SQL
-		// rule matches on.
+		// A response carries no verb the client issued. The operation lives
+		// on the REQUEST statement, which the audit trail already has, and
+		// setting one here would put a non-verb in a field every SQL rule
+		// matches on.
 		Operation: hoopinspect.OpUnknown,
 		Result:    detail,
 		Metadata:  map[string]string{"pg.message": terminatorName(tag)},
@@ -190,7 +188,7 @@ func (c *Codec) flushResult(text string, tag byte) (hoopinspect.Statement, bool)
 }
 
 // terminatorName names the message that ended the result set, so a failed
-// query is selectable in the audit trail rather than indistinguishable from a
+// query is selectable in the audit trail instead of looking like a
 // successful one that returned no rows.
 func terminatorName(tag byte) string {
 	switch tag {

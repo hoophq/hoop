@@ -7,9 +7,9 @@ import "sync"
 // directions: `codec/postgres` imports `hoopinspect` for the types, and
 // `hoopinspect` imports nothing.
 //
-// The practical payoff is that a caller links only the protocols it speaks.
-// A sidecar fronting Postgres imports `codec/postgres`, and the HTTP
-// machinery is never linked in.
+// The payoff: you link only the protocols you speak. A sidecar fronting
+// Postgres imports `codec/postgres`, and the HTTP machinery never enters the
+// binary.
 var (
 	registryMu sync.RWMutex
 	registry   = map[Protocol]func() Codec{}
@@ -17,12 +17,12 @@ var (
 
 // Register makes a codec available to New.
 //
-// The argument is a FACTORY, not an instance, and that is load-bearing: a
-// codec that reassembles messages spanning packets holds per-connection
-// state. Handing every Inspector the same instance would let
-// two connections corrupt each other's reassembly buffer — a data-dependent
+// The argument is a FACTORY rather than an instance, and that is
+// load-bearing: a codec that reassembles messages spanning packets holds
+// per-connection state. Handing every Inspector the same instance would let
+// two connections corrupt each other's reassembly buffer, a data-dependent
 // bug that surfaces as one tenant's SQL appearing in another's audit trail.
-// A factory makes per-connection isolation the default rather than something
+// A factory makes per-connection isolation the default instead of something
 // every caller has to remember.
 //
 // It panics on a duplicate registration for the same protocol, because that
@@ -56,8 +56,8 @@ func lookup(p Protocol) (func() Codec, bool) {
 }
 
 // Registered lists the protocols with a codec linked into this binary, in no
-// particular order. Useful for a startup log line that makes the build's
-// actual capabilities visible.
+// particular order. Useful for a startup log line that shows what the build
+// can speak.
 func Registered() []Protocol {
 	registryMu.RLock()
 	defer registryMu.RUnlock()

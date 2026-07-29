@@ -39,7 +39,7 @@ func TestSatisfiesPolicyScanner(t *testing.T) {
 	var _ policy.Scanner = d
 }
 
-// Checksum-verified national identifiers: the reason this module exists.
+// Checksum-verified national identifiers, the reason this module exists.
 func TestMasksEntitiesTheBuiltinsCannot(t *testing.T) {
 	det := newDet(t, alcatraz.Options{
 		Entities: []string{alcz.BRCPF, alcz.IBANCode, alcz.UKNINO},
@@ -94,7 +94,7 @@ func TestEntitiesIsRequired(t *testing.T) {
 	}
 }
 
-// The full set is available, but only by asking for it in so many words.
+// The full set is available, but only by asking for it by name.
 func TestAllEntitiesOptIn(t *testing.T) {
 	all := alcatraz.AllEntities()
 	if len(all) < 40 {
@@ -134,7 +134,7 @@ func TestNoisyDocumentsTheRealOffenders(t *testing.T) {
 		t.Error("US_SSN must be documented as noisy: it fires on ~a third of 9-digit ids")
 	}
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
-	// A plain order id. No checksum can reject it, so it IS detected — the
+	// A plain order id. No checksum can reject it, so it IS detected. The
 	// documentation says so, and this test proves the documentation.
 	if got := d.Find(alcz.USSSN, []byte("457555462")); len(got) == 0 {
 		t.Error("US_SSN no longer matches a bare 9-digit id; the Noisy entry is now wrong")
@@ -151,8 +151,8 @@ func TestExplicitEntitiesRestrictTheSet(t *testing.T) {
 	}
 }
 
-// Entities() must hand out a copy; a caller reslicing it cannot reshape the
-// Detector that every connection shares.
+// Entities() must hand out a copy, so a caller reslicing it cannot reshape
+// the Detector that every connection shares.
 func TestEntitiesReturnsACopy(t *testing.T) {
 	d := newDet(t, alcatraz.Options{
 		Entities: []string{alcz.USSSN, alcz.CreditCard},
@@ -223,7 +223,7 @@ func TestFindOffsetsAreBytes(t *testing.T) {
 		t.Fatalf("want 1 email, got %d", len(spans))
 	}
 	if got := string(data[spans[0][0]:spans[0][1]]); got != "ada@example.com" {
-		t.Errorf("span addresses %q, not the email — offsets are not byte indices", got)
+		t.Errorf("span addresses %q, not the email; offsets are not byte indices", got)
 	}
 }
 

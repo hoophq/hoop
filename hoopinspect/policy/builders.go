@@ -2,9 +2,9 @@ package policy
 
 // Fluent builders for the HTTP rule fields.
 //
-// The fields are unexported (they live on the embedded httpRuleFields) so
-// that a rule set loaded from JSON and one built in Go go through the same
-// validation in NewRules. These setters are the Go-side constructor.
+// The embedded httpRuleFields keeps these fields off the Rule literal's own
+// surface, so a rule set loaded from JSON and one built in Go run through the
+// same validation in NewRules. These setters are the Go-side constructor.
 //
 // They take and return Rule by value, so a rule literal reads as one
 // expression:
@@ -14,8 +14,8 @@ package policy
 //	    WithMethods("POST", "DELETE")
 
 // WithResources sets the resource patterns for a MatchHTTPResource rule.
-// Patterns are matched against the NORMALIZED resource, so write
-// "/users/*/ssn", not "/users/12345/ssn".
+// Patterns match the NORMALIZED resource, so write "/users/*/ssn", not
+// "/users/12345/ssn".
 func (r Rule) WithResources(patterns ...string) Rule {
 	r.Resources = patterns
 	return r

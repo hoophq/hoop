@@ -64,11 +64,11 @@ func Example_responseInspection() {
 	// 503 /orders/* -> DENY: upstream failure suppressed by policy
 }
 
-// How this drops into libhoop's ReverseProxy (the `revproxy` branch).
+// Dropping this into libhoop's ReverseProxy (the `revproxy` branch).
 //
 // ReverseProxy already has the parsed request in inspectHandler and the
 // parsed response in modifyResponse, both with the body buffered, so wiring
-// this in costs one struct build per message — no re-parsing, no second copy.
+// this in costs one struct build per message: no re-parsing, no second copy.
 //
 //	// reverse_proxy_inspect.go, inside inspectHandler after the body read:
 //	stmt := p.inspector.InspectRequest(r, body)
@@ -87,8 +87,8 @@ func Example_responseInspection() {
 //	}
 //
 // The verdict message reaches the user through the same framed-403 path the
-// branch already built for guardrail violations, so no new error plumbing is
-// needed.
+// branch already built for guardrail violations, so it needs no new error
+// plumbing.
 func Example_libhoopIntegration() {
 	insp := hi.New(hi.Options{CaptureBody: true, Headers: []string{"Content-Type"}})
 

@@ -22,7 +22,7 @@ func pgQuery(sql string) []byte {
 }
 
 // The end-to-end shape: bytes in, verdict out. Nothing here opens a socket or
-// terminates TLS — whatever already holds the connection keeps holding it.
+// terminates TLS; whatever already holds the connection keeps holding it.
 func Example() {
 	rules, err := policy.NewRules([]policy.Rule{{
 		Name:       "no-destructive",
@@ -80,7 +80,7 @@ func Example_multiStatement() {
 }
 
 // Operation comes from a classifier that strips comments and string literals,
-// so a keyword appearing inside data does not change the verdict. This is the
+// so a keyword appearing inside data does not change the verdict. That is the
 // concrete advantage over matching raw text.
 func Example_literalsDoNotFoolClassification() {
 	insp, _ := hoopinspect.New(hoopinspect.Postgres)

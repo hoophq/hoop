@@ -44,6 +44,10 @@ admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
 is only the host-side publication, because a laptop usually has something on
 5432 already.
 
+For the code path behind these commands, a per-command runbook and a
+troubleshooting table, read
+[docs/hoopinspect-flow.md](../../../docs/hoopinspect-flow.md).
+
 `run.sh` builds `hoop-inspect:local` from `../../../hoopinspect` on first run
 and reuses it afterwards. After a library change:
 
@@ -114,14 +118,21 @@ The same lane rewrites the result set on the way back:
 ```
      name     |          email           |     ssn     |          iban
 --------------+--------------------------+-------------+------------------------
- Ada Lovelace | [REDACTED:EMAIL_ADDRESS] | 123-45-6789 | ******************5432
+ Ada Lovelace | [REDACTED:EMAIL_ADDRESS] | ***-**-6789 | ******************5432
+ Grace Hopper | [REDACTED:EMAIL_ADDRESS] | ***-**-4321 | ******************3000
 ```
 
 That is not byte substitution. A pgwire `DataRow` length-prefixes every row
 and every column, so rewriting bytes in place desynchronizes psql on the next
 message; the codec rebuilds the frames around the new values instead
-(`hoopinspect/codec/postgres/rewrite.go`). `123-45-6789` survives on purpose —
-alcatraz rejects sequential digit runs as test fixtures.
+(`hoopinspect/codec/postgres/rewrite.go`).
+
+A **column rule** masks the `ssn` column by position rather than by detection.
+The seeded value `123-45-6789` is one alcatraz refuses, because it rejects
+sequential digit runs as test fixtures, so the entity rule skips it and
+`columns: [ssn]` catches it anyway. Where the protocol names its values, a
+column rule does not care what the value looks like. The same placeholder
+posted to the HTTP lane survives unmasked, and `./demo.sh` shows that contrast.
 
 ### Tier 2b — the HTTP response
 

@@ -15,24 +15,23 @@ import (
 
 // API exposes a Store over HTTP as JSON.
 //
-// # Why this ships with the library rather than with a UI
+// # Shipping the contract with the library
 //
-// The UI is a separate concern and a later conversation, but the CONTRACT
-// between it and the data is not: field names, filter semantics and paging
-// behavior are decisions that outlive any particular frontend. Pinning them
-// here means a UI can be written, thrown away and rewritten without the
-// storage layer moving.
+// The UI is a separate concern and a later conversation. The CONTRACT
+// between it and the data outlives any particular frontend: field names,
+// filter semantics, paging behavior. Pinning them here means a UI can be
+// written, thrown away and rewritten without the storage layer moving.
 //
-// It is also immediately useful without a UI at all — `curl` against these
-// endpoints is how you answer "what did alice run" during an incident, which
-// is the question the whole library exists for.
+// It also works without a UI at all. `curl` against these endpoints answers
+// "what did alice run" during an incident, the question the whole library
+// exists for.
 //
-// # What it deliberately omits
+// # Security boundary
 //
-// No authentication, no authorization, no CORS. This handler assumes it is
-// mounted behind something that has already decided the caller may see audit
-// data. Exposing it directly is a mistake: it is a read interface to every
-// statement every user ran.
+// The handler provides no authentication, no authorization, and no CORS. It
+// assumes you mounted it behind something that already decided the caller
+// may see audit data. Exposing it directly hands out a read interface to
+// every statement every user ran.
 type API struct {
 	store Store
 
@@ -158,8 +157,8 @@ func (a *API) getStats(w http.ResponseWriter, r *http.Request) {
 //	limit, cursor                     paging
 //
 // An unparseable value is an error rather than a silent default. A filter
-// that quietly ignores `since=yesterdy` shows the operator the wrong window
-// and they have no way to tell.
+// that drops `since=yesterdy` shows the operator the wrong window with no
+// signal that it happened.
 func parseSessionFilter(r *http.Request) (SessionFilter, error) {
 	q := r.URL.Query()
 	f := SessionFilter{

@@ -25,16 +25,16 @@ type CellMasker = func(column string, value []byte) []byte
 // maxHeldBytes bounds the bytes a rewriter will hold back while waiting for a
 // result set to end.
 //
-// Buffering is what makes re-framing possible — a row already forwarded cannot
-// be masked — but an unbounded buffer turns a large SELECT into a memory
-// exhaustion. Past this the rewriter flushes what it holds MASKED and keeps
-// going: the client gets correct, complete data, and only the batching
-// granularity changes.
+// Buffering is what makes re-framing possible, since a row already forwarded
+// cannot be masked. An unbounded buffer turns a large SELECT into memory
+// exhaustion, so past this limit the rewriter flushes what it holds MASKED
+// and keeps going: the client gets correct, complete data, and only the
+// batching granularity changes.
 const maxHeldBytes = 4 << 20
 
 // Rewrite masks a response stream in place, re-framing every row it changes.
 //
-// # Why this cannot be byte substitution
+// # Length prefixes
 //
 // A DataRow length-prefixes the message and every column inside it:
 //
@@ -43,10 +43,10 @@ const maxHeldBytes = 4 << 20
 // Replacing ada@example.com (15 bytes) with [REDACTED:EMAIL_ADDRESS] (24)
 // leaves both prefixes describing the old size. The client reads the declared
 // number of bytes, lands mid-value, and reports "lost synchronization with
-// server". So a changed row is not patched — it is rebuilt, with every length
-// recomputed from the masked values.
+// server". So a changed row gets rebuilt rather than patched, with every
+// length recomputed from the masked values.
 //
-// # Why it buffers
+// # Buffering
 //
 // A row cannot be rebuilt after it has been forwarded, and a row is not
 // complete until its last column has arrived. Rewrite therefore returns only
@@ -54,8 +54,8 @@ const maxHeldBytes = 4 << 20
 // have already been re-framed. Whatever it holds is emitted on the next call
 // that completes the result set, or by Flush.
 //
-// Messages other than DataRow pass through unchanged and IN ORDER, which is
-// the property that keeps the client's state machine intact.
+// Messages other than DataRow pass through unchanged and IN ORDER, which
+// keeps the client's state machine intact.
 func (c *Codec) Rewrite(data []byte, mask CellMasker) ([]byte, hoopinspect.ReframeResult, error) {
 	if mask == nil {
 		return data, hoopinspect.ReframeResult{}, nil
@@ -112,7 +112,7 @@ func (c *Codec) Rewrite(data []byte, mask CellMasker) ([]byte, hoopinspect.Refra
 
 		default:
 			// Any other message ends the run of rows before it. Emitting the
-			// held rows first is what preserves order.
+			// held rows first preserves order.
 			emit(c.flushHeld(mask, &res))
 			if tag == tagReadyForQuery {
 				c.maskCols = nil
@@ -132,9 +132,9 @@ func (c *Codec) Rewrite(data []byte, mask CellMasker) ([]byte, hoopinspect.Refra
 
 // Flush emits every row still held, masked.
 //
-// The caller must call it when the connection closes: rows buffered when the
-// peer went away would otherwise be dropped, which silently truncates the
-// client's result set — a far worse failure than masking late.
+// The caller must call it when the connection closes. Rows buffered when the
+// peer went away would otherwise be dropped, truncating the client's result
+// set, a worse failure than masking late.
 func (c *Codec) Flush(mask CellMasker) []byte {
 	if mask == nil {
 		out := append(c.pending, c.held...)
@@ -162,7 +162,7 @@ func (c *Codec) flushHeld(mask CellMasker, res *hoopinspect.ReframeResult) []byt
 	pos := 0
 	for pos < len(held) {
 		if len(held)-pos < 5 {
-			// Cannot happen: only complete messages are appended. Forward the
+			// Unreachable: only complete messages are appended. Forward the
 			// remainder rather than dropping bytes.
 			out = append(out, held[pos:]...)
 			break
@@ -188,8 +188,8 @@ func (c *Codec) flushHeld(mask CellMasker, res *hoopinspect.ReframeResult) []byt
 // maskRow applies the masker to every cell of one DataRow payload, returning a
 // freshly encoded message when anything changed.
 //
-// The unchanged case returns changed=false and allocates nothing, because the
-// overwhelming majority of rows in any result set contain no sensitive value.
+// The unchanged case returns changed=false and allocates nothing, because
+// most rows in any result set contain no sensitive value.
 func (c *Codec) maskRow(payload []byte, mask CellMasker, res *hoopinspect.ReframeResult) ([]byte, bool) {
 	if len(payload) < 2 {
 		return nil, false

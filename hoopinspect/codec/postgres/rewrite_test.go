@@ -11,7 +11,7 @@ import (
 )
 
 // rewriteAll runs a whole stream through one codec and returns everything it
-// emitted, flush included. This is what the relay does across a connection.
+// emitted, flush included, the way the relay does across a connection.
 func rewriteAll(t *testing.T, stream []byte, mask func(string, []byte) []byte) ([]byte, hoopinspect.ReframeResult) {
 	t.Helper()
 	c := &pg.Codec{}
@@ -22,9 +22,9 @@ func rewriteAll(t *testing.T, stream []byte, mask func(string, []byte) []byte) (
 	return append(out, c.Flush(mask)...), res
 }
 
-// mustReparse is the assertion that matters: a client reading this stream must
-// not desynchronize. A wrong length prefix surfaces here exactly as psql's
-// "lost synchronization with server".
+// mustReparse is the assertion that matters: a client reading this stream
+// must not desynchronize. A wrong length prefix surfaces here exactly as
+// psql's "lost synchronization with server".
 func mustReparse(t *testing.T, stream []byte) []hoopinspect.Statement {
 	t.Helper()
 	insp := hoopinspect.NewWithCodec(&pg.Codec{})
@@ -46,8 +46,8 @@ func redactColumn(target string) func(string, []byte) []byte {
 
 // --- framing ----------------------------------------------------------------
 
-// The whole point: a replacement of a DIFFERENT length must leave the stream
-// parseable. Both directions, because a shrink corrupts just as thoroughly.
+// A replacement of a DIFFERENT length must leave the stream parseable. Both
+// directions, because a shrink corrupts as thoroughly as a growth.
 func TestRewriteReframesGrowAndShrink(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		rowDescMsg("name", "ssn"),
@@ -115,9 +115,8 @@ func TestRewritePreservesNull(t *testing.T) {
 	}
 }
 
-// A masker that changes nothing must leave the bytes byte-identical: the
-// common case is a result set with no sensitive values, and rewriting it would
-// be pure cost.
+// A masker that changes nothing must leave the bytes byte-identical. Most
+// result sets hold no sensitive values, and rewriting one is pure cost.
 func TestRewriteUnchangedIsByteIdentical(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		rowDescMsg("a", "b"),
@@ -135,7 +134,7 @@ func TestRewriteUnchangedIsByteIdentical(t *testing.T) {
 	}
 }
 
-// Message ORDER is the client's state machine. Rows are buffered, so the
+// Message ORDER drives the client's state machine. Rows are buffered, so the
 // danger is emitting them after the CommandComplete that ends them.
 func TestRewritePreservesMessageOrder(t *testing.T) {
 	stream := bytes.Join([][]byte{
@@ -193,7 +192,7 @@ func TestRewriteSplitReadMatrix(t *testing.T) {
 }
 
 // Rows held when the connection ends must still reach the client. Dropping
-// them silently truncates the result set, which is worse than masking late.
+// them truncates the result set, worse than masking late.
 func TestFlushReleasesHeldRows(t *testing.T) {
 	// No terminator: the rows are still buffered when the peer goes away.
 	stream := bytes.Join([][]byte{
@@ -235,8 +234,8 @@ func TestRewriteNilMaskerPassesThrough(t *testing.T) {
 	}
 }
 
-// Column names come from the RowDescription and must reach the masker, since
-// that is the whole reason a column rule can beat a pattern.
+// Column names come from the RowDescription and must reach the masker. They
+// are the reason a column rule can beat a pattern.
 func TestMaskerSeesColumnNames(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		rowDescMsg("first", "second"),
@@ -280,7 +279,7 @@ func TestColumnNamesResetBetweenResultSets(t *testing.T) {
 }
 
 // A masker returning nil must be read as "unchanged", never as "delete the
-// cell" — deleting one would shift every column after it.
+// cell": deleting one would shift every column after it.
 func TestNilReplacementLeavesCellIntact(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		rowDescMsg("a"),
@@ -315,7 +314,7 @@ func TestOtherMessagesPassThrough(t *testing.T) {
 	mustReparse(t, out)
 }
 
-// A row wider than the description must not panic: the masker is shown an
+// A row wider than the description must not panic. The masker is shown an
 // empty column name for the extra cells rather than reading past the slice.
 func TestMoreColumnsThanDescribed(t *testing.T) {
 	stream := bytes.Join([][]byte{

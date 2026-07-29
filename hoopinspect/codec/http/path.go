@@ -5,17 +5,17 @@ import "strings"
 // NormalizePath collapses dynamic path segments to "*", turning
 // /users/12345/orders/98765 into /users/*/orders/*.
 //
-// # Why
+// # Rationale
 //
-// A policy keyed on the raw path needs one rule per id, which is impossible,
-// so in practice people write a regex per endpoint and get it subtly wrong.
-// Keying on the normalized resource gives one rule per endpoint:
+// A policy keyed on the raw path needs one rule per id, which no one can
+// write, so you end up with a regex per endpoint and get it wrong. Keying on
+// the normalized resource gives one rule per endpoint:
 //
 //	deny if input.http.resource == "/users/*/ssn"
 //
-// # What counts as dynamic
+// # Dynamic segments
 //
-// A segment is collapsed when it is unambiguously an identifier rather than a
+// A segment collapses when it is unambiguously an identifier rather than a
 // route name:
 //
 //   - all digits            /users/12345
@@ -24,11 +24,11 @@ import "strings"
 //   - a long opaque token   /sessions/eyJhbGciOi... (≥ 24 chars, mixed case
 //     or containing - _ . which are base64url/JWT shapes)
 //
-// A short alphanumeric slug like /users/alice is NOT collapsed. There is no
-// signal distinguishing it from a static route segment, and collapsing it
-// would merge /users/alice with /users/settings — silently widening every
-// rule written against either. When in doubt this function keeps the segment,
-// so a policy can only ever be too narrow, never accidentally too broad.
+// A short alphanumeric slug like /users/alice is NOT collapsed. Nothing
+// distinguishes it from a static route segment, and collapsing it would
+// merge /users/alice with /users/settings, widening every rule written
+// against either with no warning. In doubt this function keeps the segment,
+// so a policy can end up too narrow but never too broad.
 func NormalizePath(path string) string {
 	if path == "" || path == "/" {
 		return path
@@ -55,9 +55,9 @@ func NormalizePath(path string) string {
 // returns its collapsed form.
 //
 // A file extension is preserved: /reports/12345.pdf becomes /reports/*.pdf,
-// not /reports/*. The extension is part of the resource's identity — a policy
-// may allow /exports/*.csv and deny /exports/*.sql — and collapsing it would
-// merge the two into one rule.
+// not /reports/*. The extension carries part of the resource's identity (a
+// policy may allow /exports/*.csv and deny /exports/*.sql), so collapsing it
+// would merge the two into one rule.
 func normalizeSegment(s string) (string, bool) {
 	if dot := strings.LastIndexByte(s, '.'); dot > 0 && dot < len(s)-1 {
 		ext := s[dot+1:]
@@ -157,9 +157,9 @@ func isUUID(s string) bool {
 	return true
 }
 
-// isOpaqueToken recognizes long base64url/JWT-shaped strings: they mix case
+// isOpaqueToken recognizes long base64url/JWT-shaped strings. They mix case
 // or carry the base64url alphabet, which a human-authored route segment does
-// not. The length floor is what keeps /users/settings out.
+// not. The length floor keeps /users/settings out.
 func isOpaqueToken(s string) bool {
 	var hasUpper, hasLower, hasDigit, hasSep bool
 	for i := range len(s) {

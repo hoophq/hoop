@@ -6,18 +6,18 @@ import "strings"
 // Every SQL-bearing codec funnels through here so that a policy sees the
 // same shape regardless of which wire protocol delivered the statement.
 //
-// It is a lexer, not a parser. That is a deliberate ceiling:
+// It is a lexer with a deliberate ceiling:
 //
 //   - A real SQL grammar is a large dependency (or a large maintenance
 //     burden) and this module ships zero dependencies on purpose.
-//   - Envoy's postgres_proxy has the same limitation and says so — its docs
+//   - Envoy's postgres_proxy has the same limitation and says so: its docs
 //     warn that "currently used parser does not successfully parse all SQL
 //     statements" and that metadata is best-effort.
 //   - The high-value policies ("no DROP", "no DELETE on customers", "nothing
 //     touching this table") are answerable from the leading verb plus the
 //     relation names, which a lexer gets right.
 //
-// The contract callers must respect: Operation is reliable, Tables is
+// The contract you must respect: Operation is reliable, Tables is
 // best-effort. Never write a policy that treats an empty Tables as proof the
 // statement touches nothing. Fail closed on OpUnknown instead.
 
@@ -62,7 +62,7 @@ func stripSQLNoise(sql string) string {
 			}
 			b.WriteByte(' ')
 
-		// /* block comment */ — not nested in standard SQL, and treating it
+		// /* block comment */. Not nested in standard SQL, and treating it
 		// as non-nesting matches what the servers do.
 		case c == '/' && i+1 < len(sql) && sql[i+1] == '*':
 			i += 2
@@ -76,7 +76,7 @@ func stripSQLNoise(sql string) string {
 			}
 			b.WriteByte(' ')
 
-		// 'string literal' — dropped. '' inside is an escaped quote.
+		// 'string literal', dropped. '' inside is an escaped quote.
 		case c == '\'':
 			i++
 			for i < len(sql) {
@@ -92,7 +92,7 @@ func stripSQLNoise(sql string) string {
 			}
 			b.WriteByte(' ')
 
-		// "quoted identifier" — kept, quotes dropped. Doubled "" escapes.
+		// "quoted identifier", kept with quotes dropped. Doubled "" escapes.
 		case c == '"':
 			i++
 			for i < len(sql) {
@@ -109,7 +109,7 @@ func stripSQLNoise(sql string) string {
 				i++
 			}
 
-		// `backtick identifier` (MySQL) — kept, backticks dropped.
+		// `backtick identifier` (MySQL), kept with backticks dropped.
 		case c == '`':
 			i++
 			for i < len(sql) && sql[i] != '`' {
@@ -120,7 +120,7 @@ func stripSQLNoise(sql string) string {
 				i++
 			}
 
-		// [bracket identifier] (MSSQL) — kept, brackets dropped.
+		// [bracket identifier] (MSSQL), kept with brackets dropped.
 		case c == '[':
 			i++
 			for i < len(sql) && sql[i] != ']' {
@@ -141,7 +141,7 @@ func stripSQLNoise(sql string) string {
 
 // tokenizeSQL splits on whitespace and punctuation that cannot appear inside
 // an identifier, lowercasing as it goes. Dots are preserved so `schema.table`
-// stays one token — a policy usually wants the qualified name.
+// stays one token, because a policy usually wants the qualified name.
 func tokenizeSQL(s string) []string {
 	var toks []string
 	var cur strings.Builder
@@ -244,8 +244,8 @@ func classifyTokens(toks []string) (Operation, []string) {
 	}
 
 	// CREATE/DROP/ALTER apply to many object kinds. Record the kind in the
-	// operation only where it changes the risk profile meaningfully; for the
-	// rest the verb alone is what a policy keys on.
+	// operation only where it changes the risk profile; for the rest the
+	// verb alone is what a policy keys on.
 	switch toks[0] {
 	case "start":
 		// START TRANSACTION only; bare `start` is not a statement.

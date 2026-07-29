@@ -12,11 +12,11 @@
 //
 // Two message types carry SQL:
 //
-//	'Q' Query  — simple query: a NUL-terminated string, possibly several
-//	             statements separated by semicolons.
-//	'P' Parse  — extended query: prepared-statement name (NUL-terminated,
-//	             empty for the unnamed statement), then the query string
-//	             (NUL-terminated), then parameter type OIDs.
+//	'Q' Query  simple query: a NUL-terminated string, possibly several
+//	           statements separated by semicolons.
+//	'P' Parse  extended query: prepared-statement name (NUL-terminated,
+//	           empty for the unnamed statement), then the query string
+//	           (NUL-terminated), then parameter type OIDs.
 //
 // Everything else is skipped by length. The startup packet (which has no type
 // tag) and the SSLRequest sentinel are recognized so the decoder stays in sync
@@ -37,8 +37,8 @@ func init() { hoopinspect.Register(func() hoopinspect.Codec { return &Codec{} })
 //
 // It is stateful on the response side: a RowDescription describes every
 // DataRow that follows it, and those messages routinely land in different
-// TCP reads. One Codec per connection — the registry hands out a factory for
-// exactly this reason.
+// TCP reads. Use one Codec per connection; the registry hands out a factory
+// for exactly this reason.
 type Codec struct {
 	// rowDesc is the column layout of the result set currently streaming,
 	// nil between result sets.
@@ -79,8 +79,8 @@ const (
 
 // maxMessageLen rejects a length field that could only come from garbage or a
 // hostile peer. Postgres itself caps a message at 1 GB; we refuse anything
-// above 64 MiB because a statement that large is not something a policy engine
-// should be asked to evaluate inline.
+// above 64 MiB because evaluating a statement that large inline would stall
+// the policy engine.
 const maxMessageLen = 64 << 20
 
 // ErrMalformed means the byte stream is not valid Postgres v3. The connection
@@ -91,8 +91,8 @@ var ErrMalformed = errors.New("hoopinspect/postgres: malformed message")
 //
 // Metadata keys set on returned statements:
 //
-//	"pg.message"   — "Query", "Parse" or "ErrorResponse"
-//	"pg.statement" — prepared-statement name, only for a named Parse
+//	"pg.message"    "Query", "Parse" or "ErrorResponse"
+//	"pg.statement"  prepared-statement name, only for a named Parse
 //
 // Server → client messages yield one statement per completed result set,
 // carrying Statement.Result: the column names the server described and the
@@ -158,8 +158,8 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 // flow: StartupMessage, SSLRequest, GSSENCRequest and CancelRequest. It
 // returns the byte count to skip and whether the packet was one of these.
 //
-// A returned (0, true) means "this is a handshake packet but it is not fully
-// buffered yet" — the caller must wait for more bytes.
+// A returned (0, true) means the packet is a handshake but is not fully
+// buffered yet, so the caller must wait for more bytes.
 //
 // Disambiguation: a real message tag is a printable ASCII letter, so a first
 // byte of 0x00 can only be the high byte of a startup packet's int32 length
@@ -169,7 +169,7 @@ func skipHandshake(data []byte) (int, bool) {
 		return 0, false
 	}
 	if len(data) < 8 {
-		return 0, true // definitely a handshake, not yet complete
+		return 0, true // a handshake, not yet complete
 	}
 	length := binary.BigEndian.Uint32(data[0:4])
 	if length < 8 || length > maxMessageLen {
@@ -229,10 +229,10 @@ func indexNUL(b []byte) int {
 
 // splitSimpleQuery breaks a simple-query payload on top-level semicolons.
 //
-// This matters for policy: `SELECT 1; DROP TABLE users` is ONE 'Q' message,
-// and a decoder that classified it by its leading verb alone would report a
-// harmless select and wave the DROP through. Splitting means every statement
-// gets its own verdict.
+// Policy depends on the split: `SELECT 1; DROP TABLE users` is ONE 'Q'
+// message, and a decoder classifying it by its leading verb alone would
+// report a harmless select and wave the DROP through. Splitting gives every
+// statement its own verdict.
 //
 // Semicolons inside string literals, quoted identifiers and dollar-quoted
 // bodies are not separators and are skipped.

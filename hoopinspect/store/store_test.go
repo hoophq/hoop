@@ -85,7 +85,7 @@ func TestSessionCountersAreDenormalized(t *testing.T) {
 }
 
 // A sink attached mid-session sees no session_start. Dropping those events
-// would silently lose the statements that matter most.
+// would lose the statements that matter most.
 func TestEventWithoutSessionStartStillCreatesASession(t *testing.T) {
 	s := store.NewMemoryStore(10)
 	err := s.Write(ctx(), audit.Event{
@@ -149,8 +149,8 @@ func TestSessionFiltersNarrow(t *testing.T) {
 }
 
 // Keyset paging must return every row exactly once even while new rows
-// arrive. This is the bug OFFSET paging has: an insert shifts the window and
-// a row is skipped or repeated.
+// arrive. OFFSET paging fails here: an insert shifts the window, so a row is
+// skipped or repeated.
 func TestKeysetPagingIsStableUnderConcurrentInserts(t *testing.T) {
 	s := store.NewMemoryStore(500)
 	for i := range 20 {
@@ -167,8 +167,8 @@ func TestKeysetPagingIsStableUnderConcurrentInserts(t *testing.T) {
 		for _, rec := range page.Sessions {
 			seen[rec.ID]++
 		}
-		// Insert a NEW session between pages, which is what a live audit
-		// trail does constantly.
+		// Insert a NEW session between pages, the way a live audit trail
+		// does.
 		seed(t, s, session.ID("new-"+cursor+string(rune(len(seen)))), "carol", "appdb", false)
 
 		if page.NextCursor == "" {
@@ -264,7 +264,7 @@ func TestStatsAggregates(t *testing.T) {
 	if len(st.ByPrincipal) == 0 || st.ByPrincipal[0].Label != "alice" {
 		t.Errorf("ByPrincipal = %+v, want alice first", st.ByPrincipal)
 	}
-	// Descending order is what a chart needs.
+	// A chart needs descending order.
 	for i := 1; i < len(st.ByPrincipal); i++ {
 		if st.ByPrincipal[i].Count > st.ByPrincipal[i-1].Count {
 			t.Error("ByPrincipal is not sorted descending")
@@ -287,7 +287,7 @@ func TestStatsBreakdownTruncatedToTopN(t *testing.T) {
 	}
 }
 
-// Highest risk wins: an average lets one dangerous statement hide behind
+// Highest risk wins. An average lets one dangerous statement hide behind
 // fifty harmless ones.
 func TestRiskLevelTakesTheMaximum(t *testing.T) {
 	s := store.NewMemoryStore(10)
@@ -305,7 +305,7 @@ func TestRiskLevelTakesTheMaximum(t *testing.T) {
 }
 
 // Eviction must drop a whole session, never half its timeline, or the detail
-// view lies about what happened.
+// view renders a truncated session as a whole one.
 func TestEvictionDropsWholeSessions(t *testing.T) {
 	s := store.NewMemoryStore(2)
 	seed(t, s, "old", "alice", "appdb", false)
@@ -388,8 +388,8 @@ func TestLimitIsClamped(t *testing.T) {
 }
 
 func TestClassifyVerdictPrecedence(t *testing.T) {
-	// A session that was refused AND then failed is interesting primarily
-	// because it was refused.
+	// A session that was refused AND then failed matters first for the
+	// refusal.
 	if got := store.ClassifyVerdict(1, 1); got != store.VerdictDenied {
 		t.Errorf("ClassifyVerdict(1,1) = %q, want denied", got)
 	}
@@ -453,8 +453,8 @@ func TestAPIFilters(t *testing.T) {
 	}
 }
 
-// A filter that silently ignores a typo shows the operator the wrong window
-// and they have no way to tell.
+// A filter that drops a typo shows the operator the wrong window with no
+// signal that it happened.
 func TestAPIRejectsUnparseableFilters(t *testing.T) {
 	_, h := newAPI(t)
 	for _, path := range []string{

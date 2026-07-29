@@ -34,7 +34,7 @@ func TestHTTPResourceRule(t *testing.T) {
 		t.Fatalf("NewRules: %v", err)
 	}
 
-	// One rule covers every user id — the point of normalization.
+	// Normalization lets one rule cover every user id.
 	for _, res := range []string{"/users/*/ssn"} {
 		v := rules.Evaluate(httpStmt(&hoopinspect.HTTPDetail{
 			Method: "GET", Resource: res,
@@ -66,7 +66,7 @@ func TestHTTPResourceDoubleStar(t *testing.T) {
 		}
 	}
 	if rules.Evaluate(httpStmt(&hoopinspect.HTTPDetail{Resource: "/administration"})).Denied {
-		t.Error("/administration matched /admin/** — prefix matching must respect segment boundaries")
+		t.Error("/administration matched /admin/**; prefix matching must respect segment boundaries")
 	}
 }
 
@@ -88,8 +88,8 @@ func TestHTTPResourceMethodNarrowing(t *testing.T) {
 	}
 }
 
-// The rule Envoy's ext_authz structurally cannot express: it decides before
-// the upstream is called, so it never sees a status.
+// Envoy's ext_authz cannot express this rule: it decides before the upstream
+// is called, so it never sees a status.
 func TestHTTPStatusRule(t *testing.T) {
 	rules, _ := policy.NewRules([]policy.Rule{
 		policy.Rule{Name: "no-5xx", Type: policy.MatchHTTPStatus,
@@ -102,7 +102,7 @@ func TestHTTPStatusRule(t *testing.T) {
 	if rules.Evaluate(httpStmt(&hoopinspect.HTTPDetail{StatusCode: 200})).Denied {
 		t.Error("200 was denied by a 5xx rule")
 	}
-	// A request statement has no status and must never match.
+	// A request statement has no status and never matches.
 	if rules.Evaluate(httpStmt(&hoopinspect.HTTPDetail{Method: "GET", Resource: "/x"})).Denied {
 		t.Error("a request matched a status rule")
 	}
@@ -137,8 +137,8 @@ func TestHTTPRulesIgnoreNonHTTPStatements(t *testing.T) {
 	}
 }
 
-// One ordered rule set should serve a deployment fronting both a database and
-// an API.
+// One ordered rule set serves a deployment fronting both a database and an
+// API.
 func TestMixedSQLAndHTTPRuleSet(t *testing.T) {
 	rules, err := policy.NewRules([]policy.Rule{
 		{Name: "no-sql-drop", Type: policy.MatchOperation,
@@ -186,7 +186,7 @@ func TestInvalidHTTPRulesRejected(t *testing.T) {
 	}
 }
 
-// The HTTP detail must reach Rego, or none of this is usable from OPA.
+// The HTTP detail must reach Rego, or OPA cannot use any of this.
 func TestOPAInputCarriesHTTPDetail(t *testing.T) {
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +214,7 @@ func TestOPAInputCarriesHTTPDetail(t *testing.T) {
 		t.Errorf("input.http.method = %v", h["method"])
 	}
 	if h["resource"] != "/users/*" {
-		t.Errorf("input.http.resource = %v — the normalized resource must reach Rego", h["resource"])
+		t.Errorf("input.http.resource = %v; the normalized resource must reach Rego", h["resource"])
 	}
 }
 

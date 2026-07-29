@@ -25,8 +25,8 @@ func TestNewIDIsUniqueAndOpaque(t *testing.T) {
 	}
 }
 
-// The audit trail always needs something in the actor column, even when the
-// identity provider gave nothing.
+// The audit trail needs something in the actor column even when the identity
+// provider gave nothing.
 func TestPrincipalFallback(t *testing.T) {
 	tests := []struct {
 		name string
@@ -68,7 +68,7 @@ func TestEndIsIdempotent(t *testing.T) {
 	s.End()
 
 	if !s.EndedAt.Equal(first) {
-		t.Error("a second End moved EndedAt — the duration would be wrong")
+		t.Error("a second End moved EndedAt; the duration would be wrong")
 	}
 }
 
@@ -98,7 +98,7 @@ func TestDurationBeforeAndAfterEnd(t *testing.T) {
 	}
 }
 
-// PolicyContext is what a Rego rule reads as input.context. Field names are a
+// PolicyContext is the input.context a Rego rule reads. Field names are a
 // public contract: renaming one silently breaks someone's policy.
 func TestPolicyContextShape(t *testing.T) {
 	s := session.New(hoopinspect.Postgres, session.Identity{
@@ -136,9 +136,9 @@ func TestPolicyContextShape(t *testing.T) {
 	}
 }
 
-// Absent facts must be omitted, not present as empty strings: a Rego rule
-// written as `input.context.connection == ""` should not accidentally match
-// every session that simply did not set one.
+// Absent facts must be omitted rather than present as empty strings: a Rego
+// rule written as `input.context.connection == ""` should not match every
+// session that never set one.
 func TestPolicyContextOmitsEmptyFields(t *testing.T) {
 	s := session.New(hoopinspect.Postgres, session.Identity{Subject: "a"})
 	ctx := s.PolicyContext()
@@ -153,8 +153,8 @@ func TestPolicyContextOmitsEmptyFields(t *testing.T) {
 	}
 }
 
-// Metadata must be able to override nothing structural, but must reach the
-// policy — a deployment-specific fact is the reason the field exists.
+// Metadata overrides nothing structural and must still reach the policy. A
+// deployment-specific fact is the reason the field exists.
 func TestPolicyContextIncludesMetadata(t *testing.T) {
 	s := session.New(hoopinspect.HTTP, session.Identity{Subject: "a"})
 	s.Metadata = map[string]string{"tenant": "acme"}
@@ -178,7 +178,7 @@ func TestNewSetsFields(t *testing.T) {
 		t.Error("StartedAt precedes the call")
 	}
 	if s.StartedAt.Location() != time.UTC {
-		t.Error("StartedAt is not UTC — audit timestamps must not be local")
+		t.Error("StartedAt is not UTC; audit timestamps must not be local")
 	}
 	if !s.EndedAt.IsZero() {
 		t.Error("EndedAt set on a new session")

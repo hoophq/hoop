@@ -80,7 +80,7 @@ func TestSessionLifecycleCounters(t *testing.T) {
 		t.Fatalf("Session: %v", err)
 	}
 
-	// A violation counts as a statement seen AND a denial: an auditor reads
+	// A violation counts as a statement seen AND a denial. An auditor reads
 	// statement_count as "what was attempted", not "what was allowed".
 	if rec.StatementCount != 4 {
 		t.Errorf("StatementCount = %d, want 4", rec.StatementCount)
@@ -151,8 +151,8 @@ func TestEventWithoutSessionStartCreatesSession(t *testing.T) {
 	ctx := context.Background()
 
 	// A sink attached mid-session never sees session_start. Dropping the
-	// event, or recording it under no session, makes it invisible to the list
-	// view, which is the only screen anyone opens.
+	// event, or recording it under no session, hides it from the list view,
+	// the screen an operator opens first.
 	write(t, s, audit.Event{
 		Kind: audit.KindViolation, SessionID: "orphan", Timestamp: base,
 		Principal: "bob", Protocol: hoopinspect.HTTP, Connection: "reports",
@@ -195,7 +195,7 @@ func TestSessionEndTotalsOverrideAccumulated(t *testing.T) {
 	s := newStore(t)
 
 	// The gate's own tally saw every statement; an AsyncSink between them may
-	// not have. When session_end carries totals they win.
+	// have dropped some. When session_end carries totals they win.
 	write(t, s, audit.Event{Kind: audit.KindStatement, SessionID: "s", Timestamp: base})
 	write(t, s, audit.Event{
 		Kind: audit.KindSessionEnd, SessionID: "s", Timestamp: base.Add(time.Second),
@@ -216,8 +216,7 @@ func TestSessionEndTotalsOverrideAccumulated(t *testing.T) {
 
 func TestRiskLevelKeepsHighest(t *testing.T) {
 	// 'high' sorts BEFORE 'low' lexically, so a naive MAX() reports "low" for
-	// a session that had a high-risk statement. This is the bug that test
-	// exists for.
+	// a session that had a high-risk statement. This test pins that bug shut.
 	cases := []struct {
 		name   string
 		levels []string
@@ -355,11 +354,11 @@ func TestSessionsNewestFirst(t *testing.T) {
 	}
 }
 
-// TestSessionKeysetPagingUnderConcurrentInserts is the reason paging is
-// keyset and not OFFSET. New sessions land at the FRONT of a newest-first
-// listing, so an OFFSET cursor points one row further into a list that grew
-// underneath it and serves a row the caller already read. On a live audit
-// trail sessions open constantly, so this is the steady state, not an edge.
+// TestSessionKeysetPagingUnderConcurrentInserts is the reason paging keys on
+// (started_at, id) instead of OFFSET. New sessions land at the FRONT of a
+// newest-first listing, so an OFFSET cursor points one row further into a
+// list that grew underneath it and serves a row the caller already read. On
+// a live audit trail sessions open constantly, making this the steady state.
 func TestSessionKeysetPagingUnderConcurrentInserts(t *testing.T) {
 	const seeded, pageSize = 20, 5
 
@@ -408,9 +407,9 @@ func TestSessionKeysetPagingUnderConcurrentInserts(t *testing.T) {
 		}
 	})
 
-	// The same loop against OFFSET paging, to prove the bug is real rather
-	// than theoretical. If this ever stops failing, the concurrent insert
-	// above stopped happening and the keyset test above went vacuous.
+	// The same loop against OFFSET paging, proving the bug is real. If this
+	// ever stops failing, the concurrent insert above stopped happening and
+	// the keyset test above went vacuous.
 	t.Run("offset paging is why", func(t *testing.T) {
 		s := newStore(t)
 		want := seedSessions(t, s, seeded)
@@ -466,7 +465,7 @@ func TestSessionPagingBreaksTimestampTies(t *testing.T) {
 	want := make([]session.ID, n)
 	for i := range n {
 		want[i] = session.ID(fmt.Sprintf("tie%02d", i))
-		// One shared timestamp: id is the only thing separating these rows.
+		// One shared timestamp, so id alone separates these rows.
 		write(t, s, audit.Event{Kind: audit.KindSessionStart, SessionID: want[i], Timestamp: base})
 	}
 
@@ -504,7 +503,7 @@ func TestEventKeysetPagingUnderConcurrentInserts(t *testing.T) {
 	for i := range seeded {
 		write(t, s, audit.Event{
 			Kind: audit.KindStatement, SessionID: "e",
-			// Every event shares one timestamp on purpose: at millisecond (or
+			// Every event shares one timestamp by design: at millisecond (or
 			// even microsecond) resolution real events collide, and a cursor
 			// keyed on the timestamp would then skip or repeat rows. seq is
 			// the only total order.
@@ -579,8 +578,8 @@ func TestMalformedCursorErrors(t *testing.T) {
 	seedSessions(t, s, 3)
 	ctx := context.Background()
 
-	// Silently restarting at page one turns a client bug into an infinite
-	// loop that re-reads the first page forever.
+	// Rewinding to page one turns a client bug into an infinite loop that
+	// re-reads the first page forever.
 	bad := []string{
 		"not base64!!",
 		"////",
@@ -621,8 +620,8 @@ func TestLimitClampedToMax(t *testing.T) {
 // --------------------------------------------------------------- filters
 
 // seedFilterCorpus builds a small corpus where every filter field has both a
-// matching and a non-matching row, so a filter that is silently ignored shows
-// up as too many results.
+// matching and a non-matching row, so a filter that gets dropped shows up as
+// too many results.
 func seedFilterCorpus(t *testing.T, s *sqlitestore.Store) {
 	t.Helper()
 
@@ -811,7 +810,7 @@ func TestStatsTotalsHonorFilter(t *testing.T) {
 		t.Errorf("stats = %+v, want 2 sessions / 2 statements / 1 denied", all)
 	}
 
-	// A dashboard and the list underneath it must agree on the population.
+	// A dashboard and the list underneath it aggregate the same population.
 	scoped, err := s.Stats(context.Background(), store.SessionFilter{Principal: "alice"})
 	if err != nil {
 		t.Fatal(err)
@@ -869,7 +868,7 @@ func TestStatsBreakdownUnits(t *testing.T) {
 	ctx := context.Background()
 
 	// One session, three selects. ByPrincipal counts SESSIONS (1);
-	// ByOperation counts EVENTS (3). Conflating them makes a chart lie.
+	// ByOperation counts EVENTS (3). Conflating them misreports both.
 	write(t, s, audit.Event{Kind: audit.KindSessionStart, SessionID: "u",
 		Timestamp: base, Principal: "dana", Connection: "appdb"})
 	for i := range 3 {
@@ -944,8 +943,8 @@ func TestConcurrentWritesLoseNoEvents(t *testing.T) {
 			for i := range perWorker {
 				// Half the writes share one session so its denormalized
 				// counters are contended: the shared row's final count must
-				// equal the events actually stored, not a value a lost
-				// update left behind.
+				// equal the events stored, not a value a lost update left
+				// behind.
 				id := session.ID("shared")
 				if w%2 == 0 {
 					id = session.ID(fmt.Sprintf("w%02d", w))
@@ -1091,9 +1090,9 @@ func TestSchemaVersionRecordedAndGuarded(t *testing.T) {
 		t.Errorf("schema_version = %d, want 1", v)
 	}
 
-	// Simulate a newer binary having written this file. Serving audit data
-	// out of columns a newer writer may have repurposed is worse than
-	// refusing to open.
+	// Simulate a newer binary having written this file. Refusing to open
+	// beats serving audit data out of columns a newer writer may have
+	// repurposed.
 	if _, err := s.DB().ExecContext(ctx, `INSERT INTO schema_version(version) VALUES (99)`); err != nil {
 		t.Fatal(err)
 	}

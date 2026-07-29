@@ -204,7 +204,7 @@ func TestDeniedStatementNeverReachesUpstream(t *testing.T) {
 	got := string(buf[:n])
 
 	if n == 0 {
-		t.Fatal("connection closed with no explanation — the user cannot tell why")
+		t.Fatal("connection closed with no explanation; the user cannot tell why")
 	}
 	if buf[0] != 'E' {
 		t.Errorf("first byte = %q, want 'E' (ErrorResponse)", buf[0])
@@ -275,7 +275,7 @@ func TestSessionAuditLifecycle(t *testing.T) {
 	}
 	for _, ev := range events {
 		if ev.Principal != "alice@example.com" {
-			t.Errorf("event %s has principal %q — identity must reach the audit trail",
+			t.Errorf("event %s has principal %q; identity must reach the audit trail",
 				ev.Kind, ev.Principal)
 		}
 	}
@@ -306,9 +306,9 @@ func (m emailMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
 	return m.Mask(value)
 }
 
-// Masking runs on HTTP, whose body length is carried in a header the relay
-// forwards as a unit. It is deliberately refused on the length-prefixed
-// binary protocols, where substitution would desynchronize the client — see
+// Masking runs on HTTP, which carries body length in a header the relay
+// forwards as a unit. The gate refuses it on the length-prefixed binary
+// protocols, where substitution would desynchronize the client. See
 // gate.TestMaskingIsRefusedOnLengthPrefixedProtocols.
 func TestResponseMasking(t *testing.T) {
 	body := "ada@example.com"
@@ -389,7 +389,7 @@ func TestMaxConnsRefusesRatherThanQueues(t *testing.T) {
 	}
 	defer second.Close()
 
-	// The server accepts then immediately closes when at capacity, so a read
+	// The server accepts then closes at once when at capacity, so a read
 	// returns EOF rather than data.
 	second.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if n, err := second.Read(make([]byte, 16)); err == nil && n > 0 {

@@ -81,7 +81,7 @@ func TestBodyAndHeadersOptInOnly(t *testing.T) {
 	}
 }
 
-// A truncated body must say so: a policy matching on content cannot treat a
+// A truncated body must say so. A policy matching on content cannot read a
 // prefix as proof a pattern is absent.
 func TestBodyTruncationIsFlagged(t *testing.T) {
 	big := strings.Repeat("x", 100)
@@ -155,8 +155,8 @@ func TestNormalizePath(t *testing.T) {
 		{"/static/index.html", "/static/index.html"},
 
 		// A short slug is NOT collapsed. Merging /users/alice with
-		// /users/settings would silently widen every rule written against
-		// either, so the normalizer errs toward keeping segments.
+		// /users/settings would widen every rule written against either,
+		// so the normalizer keeps segments it cannot classify.
 		{"/users/alice", "/users/alice"},
 		{"/users/settings", "/users/settings"},
 	}
@@ -167,7 +167,7 @@ func TestNormalizePath(t *testing.T) {
 	}
 }
 
-// read/write distinction lives only in the body.
+// The read/write distinction lives only in the body.
 func TestDecodeRequestStream(t *testing.T) {
 	insp, err := hoopinspect.New(hoopinspect.HTTP)
 	if err != nil {
@@ -286,8 +286,8 @@ func TestTextRendersRequestLine(t *testing.T) {
 }
 
 func TestStatementBodyIsNotReadFromRequest(t *testing.T) {
-	// InspectRequest must never consume r.Body — the caller may still need
-	// it to forward upstream.
+	// InspectRequest must never consume r.Body: the caller may still need it
+	// to forward upstream.
 	body := "important"
 	r := req(t, "POST", "/x", body)
 	hi.New(hi.Options{CaptureBody: true}).InspectRequest(r, nil)

@@ -48,8 +48,8 @@ func bodyOf(t *testing.T, payload []byte) []byte {
 	return body
 }
 
-// The bug this file exists for: a client reads exactly Content-Length bytes,
-// so a stale header truncates the document mid-token.
+// A client reads exactly Content-Length bytes, so a stale header truncates
+// the document mid-token. That is the bug this file guards against.
 func TestRetagKeepsHeaderConsistentWithBody(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -90,7 +90,7 @@ func TestRetagNoopOnZeroDelta(t *testing.T) {
 	}
 }
 
-// Every refusal below is deliberate: a WRONG Content-Length desynchronizes a
+// Each refusal below is deliberate: a WRONG Content-Length desynchronizes a
 // keep-alive connection for every request that follows, which is worse than
 // leaving a truncated body for this one.
 func TestRetagRefusesWhenItCannotBeSure(t *testing.T) {
@@ -126,7 +126,7 @@ func TestRetagRefusesWhenItCannotBeSure(t *testing.T) {
 			+1,
 		},
 		{
-			// Not a response: could be a body that merely looks like headers.
+			// Not a response: could be a body shaped like headers.
 			"no status line",
 			[]byte("Content-Length: 27\r\n\r\n" + body),
 			+1,
@@ -194,8 +194,8 @@ func TestRetagNeverEmitsNegative(t *testing.T) {
 	}
 }
 
-// The end-to-end property, stated once: after retagging, what a client reads
-// is exactly what the masker produced.
+// The end-to-end property: after retagging, a client reads exactly what the
+// masker produced.
 func TestClientReadsTheWholeMaskedBody(t *testing.T) {
 	for _, masked := range []string{
 		`{"cpf":"[REDACTED:BR_CPF]"}`,

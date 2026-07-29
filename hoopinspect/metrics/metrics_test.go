@@ -173,7 +173,7 @@ func TestAccumulatorSkipsEmptyLabels(t *testing.T) {
 
 func TestAccumulatorDenialKeysOnKind(t *testing.T) {
 	// Allowed's zero value is false. A statement event whose producer never
-	// set it must not register as a denial — an audit counter that
+	// set it must not register as a denial: an audit counter that
 	// over-reports violations gets ignored, and then the real one is too.
 	m := accumulate(audit.Event{Kind: audit.KindStatement, Timestamp: base})
 	if m.Denied != 0 {
@@ -442,7 +442,7 @@ func TestLatencyPercentileAccuracy(t *testing.T) {
 		t.Fatalf("Count = %d, want 1000", l.Count)
 	}
 	if l.Max != 1000*time.Millisecond {
-		t.Errorf("Max = %v, want exactly 1s — the slowest statement must not be rounded", l.Max)
+		t.Errorf("Max = %v, want exactly 1s: the slowest statement must not be rounded", l.Max)
 	}
 	for _, tc := range []struct {
 		name string
@@ -471,7 +471,7 @@ func TestLatencyAccuracyBoundHolds(t *testing.T) {
 		a.Add(audit.Event{Kind: audit.KindStatement, Timestamp: base, Allowed: true, Duration: d})
 		got := a.Snapshot().Latency.P50
 		if !within(got, d, 0.03125) {
-			t.Fatalf("recorded %v, reported %v — outside the 3.125%% bound", d, got)
+			t.Fatalf("recorded %v, reported %v: outside the 3.125%% bound", d, got)
 		}
 	}
 }
@@ -544,7 +544,7 @@ func TestLatencyIgnoresSessionEndDuration(t *testing.T) {
 		t.Errorf("Count = %d, want 1", l.Count)
 	}
 	if l.Max > time.Second {
-		t.Errorf("Max = %v — the session duration leaked into the statement histogram", l.Max)
+		t.Errorf("Max = %v: the session duration leaked into the statement histogram", l.Max)
 	}
 }
 
@@ -627,7 +627,7 @@ func TestRegistryEvictsCompletedBeforeLive(t *testing.T) {
 		t.Error("newer completed session was evicted before the older one")
 	}
 	if _, ok := r.Snapshot("live"); !ok {
-		t.Error("a LIVE session was evicted — its numbers are the ones being watched")
+		t.Error("a LIVE session was evicted; its numbers are the ones being watched")
 	}
 	if r.Len() != 3 {
 		t.Errorf("Len = %d, want 3", r.Len())
@@ -643,7 +643,7 @@ func TestRegistryKeepsLiveSessionsOverBudget(t *testing.T) {
 		r.For(id).Add(audit.Event{Kind: audit.KindStatement, Timestamp: base, SessionID: id, Allowed: true})
 	}
 	if r.Len() != 5 {
-		t.Fatalf("Len = %d, want 5 — a live session was evicted", r.Len())
+		t.Fatalf("Len = %d, want 5: a live session was evicted", r.Len())
 	}
 
 	// As soon as sessions complete, the overage is reclaimed on the next
@@ -786,7 +786,7 @@ func TestAggregateTotalsAndRate(t *testing.T) {
 
 func TestAggregateDurationsExcludeOpenSessions(t *testing.T) {
 	// An open session's DurationMS is zero. Counting those zeros drags the
-	// median toward nothing exactly when traffic picks up.
+	// median down at the moment traffic picks up.
 	s := Aggregate([]store.SessionRecord{
 		{ID: "a", StartedAt: base, EndedAt: base.Add(time.Second), DurationMS: 100},
 		{ID: "b", StartedAt: base, EndedAt: base.Add(time.Second), DurationMS: 300},

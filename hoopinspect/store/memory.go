@@ -17,9 +17,9 @@ import (
 
 // MemoryStore is an in-process Store.
 //
-// # What it is for
+// # Uses
 //
-// Three real uses, in order of importance:
+// Three, in order of importance:
 //
 //  1. The default backend of the sidecar's query API, so `/sessions` works
 //     out of the box with no database to provision. A team evaluating this
@@ -28,19 +28,19 @@ import (
 //  3. A bounded live window in front of a durable sink, so the recent-events
 //     view is fast while the JSONL file remains the record of truth.
 //
-// # What it is not
+// # Boundaries
 //
-// Not durable. It is a bounded ring: when full it evicts the OLDEST session
-// and every event belonging to it. A deployment that needs a complete trail
-// pairs it with a JSONL or SQLite sink via audit.MultiSink — and the API
-// reports what was dropped so a reader can tell the window is partial rather
-// than silently believing they see everything.
+// The store keeps nothing across a restart. It is a bounded ring: when full
+// it evicts the OLDEST session and every event belonging to it. For a
+// complete trail, pair it with a JSONL or SQLite sink via audit.MultiSink.
+// The API reports how many sessions were dropped, so a reader can tell the
+// window is partial.
 type MemoryStore struct {
 	mu sync.RWMutex
 
 	// maxSessions bounds retention. Eviction is by session rather than by
 	// event so a session's timeline is never half-present, which would make
-	// the detail view lie.
+	// the detail view show a truncated session as a whole one.
 	maxSessions int
 
 	sessions map[session.ID]*SessionRecord
@@ -91,8 +91,8 @@ func (m *MemoryStore) Write(_ context.Context, ev audit.Event) error {
 	rec := m.sessions[ev.SessionID]
 	if rec == nil {
 		// An event may arrive with no preceding session_start when a sink is
-		// attached mid-session. Creating the row from whatever the event
-		// carries beats dropping the event.
+		// attached mid-session. Build the row from whatever the event
+		// carries rather than dropping it.
 		rec = &SessionRecord{
 			ID:         ev.SessionID,
 			Principal:  ev.Principal,
@@ -125,9 +125,9 @@ func applyEvent(rec *SessionRecord, ev audit.Event) {
 	case audit.KindSessionEnd:
 		rec.EndedAt = ev.Timestamp
 		rec.DurationMS = ev.Duration.Milliseconds()
-		// Trust the end event's totals over the running counts: it is
-		// authoritative, and a sink attached mid-session may have missed
-		// earlier statements.
+		// Trust the end event's totals over the running counts. The end
+		// event is authoritative, and a sink attached mid-session may have
+		// missed earlier statements.
 		if ev.StatementCount > 0 {
 			rec.StatementCount = ev.StatementCount
 		}
@@ -155,7 +155,7 @@ func applyEvent(rec *SessionRecord, ev audit.Event) {
 		rec.Connection = ev.Connection
 	}
 	if risk := ev.Metadata["risk_level"]; risk != "" && riskRank(risk) > riskRank(rec.RiskLevel) {
-		// Highest risk wins: an average would let one dangerous statement
+		// Highest risk wins. An average would let one dangerous statement
 		// hide behind fifty harmless ones.
 		rec.RiskLevel = risk
 	}
@@ -202,8 +202,8 @@ func (m *MemoryStore) Close() error {
 	return nil
 }
 
-// Dropped reports how many sessions were evicted. A reader that ignores this
-// believes a partial window is complete.
+// Dropped reports how many sessions were evicted. Check it before you read a
+// window as complete.
 func (m *MemoryStore) Dropped() int64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -255,8 +255,8 @@ func (m *MemoryStore) Sessions(ctx context.Context, f SessionFilter) (SessionPag
 		if err != nil {
 			return SessionPage{}, err
 		}
-		// Keyset, not offset: resume after the last id seen, so rows
-		// inserted since the previous page cannot shift the window.
+		// Keyset paging: resume after the last id seen, so rows inserted
+		// since the previous page cannot shift the window.
 		for i, rec := range matched {
 			if string(rec.ID) == c.ID {
 				start = i + 1
@@ -377,8 +377,8 @@ func (m *MemoryStore) Stats(ctx context.Context, f SessionFilter) (Stats, error)
 }
 
 // topN sorts a breakdown descending and truncates it. A dashboard cannot
-// render a thousand bars, and a query returning them all got slow for no
-// benefit.
+// render a thousand bars, so a query returning them all pays scan cost for
+// rows the UI drops.
 func topN(counts map[string]int64) []LabelCount {
 	if len(counts) == 0 {
 		return nil
@@ -488,8 +488,8 @@ func encodeCursor(c cursor) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// decodeCursor rejects a malformed token rather than silently restarting from
-// page one, which would make a paging bug look like duplicated data.
+// decodeCursor rejects a malformed token rather than restarting from page
+// one, which would make a paging bug look like duplicated data.
 func decodeCursor(s string) (cursor, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
@@ -502,5 +502,5 @@ func decodeCursor(s string) (cursor, error) {
 	return c, nil
 }
 
-// compile-time proof the backend satisfies the contract.
+// Compile-time proof the backend satisfies the contract.
 var _ Store = (*MemoryStore)(nil)

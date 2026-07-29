@@ -1,6 +1,6 @@
 // Package yaml loads a hoop-inspect configuration written in YAML.
 //
-// # Why this is a separate module
+// # The separate module
 //
 // The hoopinspect root module has zero dependencies, and the stdlib has no
 // YAML parser. Adding one to the root would put a dependency edge on every
@@ -8,25 +8,26 @@
 // ConfigMap and have no use for another syntax. So it lives here, behind the
 // same nested-module boundary as store/sqlite and pii/alcatraz.
 //
-// # Why transcode instead of yaml tags
+// # Transcoding instead of yaml tags
 //
-// Every config struct already carries snake_case JSON tags — pattern_regex,
-// keep_last, idle_timeout_sec — and YAML keys map onto them one for one. So
+// Every config struct already carries snake_case JSON tags (pattern_regex,
+// keep_last, idle_timeout_sec) and YAML keys map onto them one for one. So
 // this package parses YAML into a generic value, marshals that to JSON, and
 // hands the bytes to sidecar.LoadConfigBytes.
 //
-// The alternative is a second set of yaml tags on forty fields. That is two
-// schemas that drift, and it loses DisallowUnknownFields: yaml.v3's KnownFields
-// does not see into the json.RawMessage sections (pii, mask.rules) that the
-// detector plugin owns, so a typo inside them would be silently dropped. One
-// decode path means one set of rules about what a valid config is.
+// The alternative is a second set of yaml tags on forty fields. That gives
+// two schemas that drift, and it loses DisallowUnknownFields: yaml.v3's
+// KnownFields does not see into the json.RawMessage sections (pii,
+// mask.rules) that the detector plugin owns, so a typo inside them would be
+// silently dropped. One decode path means one set of rules about what a
+// valid config is.
 //
 // # Anchors
 //
-// The transcode preserves YAML anchors and aliases, because they are resolved
-// during parsing. That is the feature JSON cannot express and the reason to
-// offer YAML at all: a rule block shared across several listeners is written
-// once.
+// The transcode preserves YAML anchors and aliases, because yaml.v3 resolves
+// them during parsing. JSON cannot express them, and they are the reason to
+// offer YAML at all: write a shared rule block once and reference it from
+// several listeners.
 //
 //	x-readonly: &readonly
 //	  - {name: no-writes, type: operation, operations: [insert, update, delete]}
@@ -52,17 +53,16 @@ import (
 
 // AnchorPrefix names the key prefix reserved for YAML anchor blocks.
 //
-// A top-level "x-anything" key is dropped before validation, so an operator can
-// park a shared rule list somewhere without inventing a config field for it.
-// The convention is borrowed from docker-compose, where it means the same
-// thing.
+// A top-level "x-anything" key is dropped before validation, so you can park
+// a shared rule list somewhere without inventing a config field for it.
+// docker-compose uses the same convention for the same purpose.
 const AnchorPrefix = "x-"
 
 // Load reads a config file, choosing the parser by extension: .yaml and .yml
 // are transcoded, anything else is read as JSON.
 //
-// This is the entry point a main wants — one function that accepts either
-// syntax, so the operator's file extension decides and nothing else has to.
+// A main should call this: one function accepting either syntax, with the
+// file extension picking the parser.
 func Load(path string) (*sidecar.Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -85,9 +85,9 @@ func IsYAML(path string) bool {
 
 // LoadYAMLBytes transcodes YAML to JSON and validates it.
 //
-// Errors from the JSON stage name JSON constructs, which is a small wart: a
-// YAML author reading "unknown field" gets the right field name, so the
-// message survives the translation even though the syntax in it does not.
+// Errors from the JSON stage name JSON constructs, a small wart: a YAML
+// author reading "unknown field" still gets the right field name, so the
+// message survives the translation even though its syntax does not.
 func LoadYAMLBytes(data []byte) (*sidecar.Config, error) {
 	jsonBytes, err := ToJSON(data)
 	if err != nil {
@@ -98,9 +98,9 @@ func LoadYAMLBytes(data []byte) (*sidecar.Config, error) {
 
 // ToJSON converts YAML bytes to the equivalent JSON document.
 //
-// Exported so a caller can inspect the translation — "what did my YAML
-// actually become" is the first question when a config behaves unexpectedly,
-// and answering it should not require a debugger.
+// Exported so a caller can inspect the translation. "What did my YAML become"
+// is the first question when a config misbehaves, and answering it should not
+// require a debugger.
 func ToJSON(data []byte) ([]byte, error) {
 	var root any
 	if err := yamlv3.Unmarshal(data, &root); err != nil {
@@ -132,12 +132,12 @@ func ToJSON(data []byte) ([]byte, error) {
 // normalize rewrites a decoded YAML value into something encoding/json can
 // marshal.
 //
-// yaml.v3 decodes mappings as map[string]any when every key is a string, but
-// as map[any]any the moment one is not — and encoding/json rejects that. A
-// non-string key is a config mistake here regardless (no field in the schema
-// is keyed by a number), so this reports it with its path rather than
-// coercing: "listeners[0].policy: mapping key 1 is not a string" is
-// actionable, and a silently stringified key is a field name nobody wrote.
+// yaml.v3 decodes mappings as map[string]any when every key is a string, and
+// as map[any]any the moment one is not, which encoding/json rejects. A
+// non-string key is a config mistake here regardless, since no field in the
+// schema is keyed by a number, so this reports it with its path rather than
+// coercing. "listeners[0].policy: mapping key 1 is not a string" is
+// actionable; a stringified key is a field name nobody wrote.
 func normalize(v any, path string) (any, error) {
 	switch t := v.(type) {
 	case map[string]any:

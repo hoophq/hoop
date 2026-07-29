@@ -11,6 +11,10 @@
 #
 # Prereqs: ./run.sh
 #
+# Each section below is explained, with the code path behind it, in
+# docs/hoopinspect-flow.md. Run the steps one at a time from the runbook there
+# when you want to watch a single lane instead of the whole walk.
+#
 # Note the ports. The client container reaches Envoy on the compose network,
 # where the postgres listener is :5432; from the host that same listener is
 # published on :5433.
@@ -133,5 +137,6 @@ cat <<'EOF'
 
   Every session above records principal=anonymous: the actor column is
   wired (proxy.Config.IdentityFn) and not yet filled from X-Hoop-User.
-  See the Identity section of the README.
+  See the Identity section of the README, or docs/hoopinspect-flow.md for
+  the full flow and a per-command runbook.
 EOF

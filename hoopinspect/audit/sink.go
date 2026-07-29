@@ -37,11 +37,11 @@ var (
 	// ErrQueueFull is returned by AsyncSink.Write when the queue has no room.
 	//
 	// The alternative designs are both worse. Blocking would make a slow
-	// audit store stall the user's query, which is the problem AsyncSink
-	// exists to solve. Dropping silently would take the decision away from
-	// the caller — and the caller is the gate, which treats a failed audit
-	// write as a policy failure, because an unrecorded statement is exactly
-	// the one an attacker wants.
+	// audit store stall the user's query, the problem AsyncSink exists to
+	// solve. Dropping silently would take the decision away from the
+	// caller, and the caller is the gate, which treats a failed audit
+	// write as a policy failure, because an unrecorded statement is the
+	// one an attacker wants.
 	ErrQueueFull = errors.New("audit: sink queue is full")
 )
 
@@ -66,7 +66,7 @@ type SinkOptions struct {
 
 	// Now supplies the timestamp for events that arrive without one.
 	// Defaults to time.Now. Injectable so a test can assert on an exact
-	// line rather than on a regex.
+	// line instead of a regex.
 	Now func() time.Time
 }
 
@@ -122,7 +122,8 @@ func (o SinkOptions) apply(ev Event) Event {
 //
 // 64 bits of hex is short enough to eyeball in a log line and wide enough
 // that a collision between two statements in one deployment is not a
-// practical concern; this is a correlation key, not a security boundary.
+// practical concern. Use it to correlate records, never as a security
+// boundary.
 func fingerprint(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return "sha256:" + hex.EncodeToString(sum[:8])
@@ -131,7 +132,8 @@ func fingerprint(s string) string {
 // truncate cuts s to at most max bytes and marks it.
 //
 // The cut backs off to a rune boundary: slicing mid-sequence would make the
-// JSON encoder emit U+FFFD, which corrupts a statement that was merely long.
+// JSON encoder emit U+FFFD, corrupting a statement whose only fault was
+// length.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
@@ -169,14 +171,14 @@ type JSONLSink struct {
 func NewJSONLSink(w io.Writer, opts SinkOptions) *JSONLSink {
 	enc := json.NewEncoder(w)
 	// Audit records hold SQL and URLs. Escaping <, > and & to \u003c turns a
-	// `WHERE age > 30` into something nobody can grep for.
+	// `WHERE age > 30` into something you cannot grep for.
 	enc.SetEscapeHTML(false)
 	return &JSONLSink{opts: opts, w: w, enc: enc}
 }
 
 // Write encodes ev as one line.
 //
-// ctx is accepted for the Sink interface and deliberately ignored: an audit
+// ctx is accepted for the Sink interface and ignored on purpose: an audit
 // record must not be skipped because the user's request context was
 // cancelled, since a cancelled request is a plausible thing to want the
 // record of.
@@ -185,7 +187,7 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 
 	// The whole encode is under the lock. json.Encoder is not safe for
 	// concurrent use, and even if it were, two goroutines interleaving
-	// writes produce a torn line — a corrupt audit record that a parser
+	// writes produce a torn line: a corrupt audit record that a parser
 	// either rejects or, worse, reads as a different event.
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -223,7 +225,7 @@ func (s *JSONLSink) Close() error {
 	return errors.Join(errs...)
 }
 
-// MultiSink fans one event out to several sinks — typically a local JSONL
+// MultiSink fans one event out to several sinks, typically a local JSONL
 // file plus a remote collector.
 type MultiSink struct {
 	sinks []Sink
@@ -242,8 +244,8 @@ func NewMultiSink(sinks ...Sink) *MultiSink {
 //
 // Stopping at the first failure would let a broken local sink silently
 // disable a remote one: the file fills its disk, the write errors, and the
-// SIEM that InfoSec actually watches stops receiving events without anyone
-// changing a config.
+// SIEM that InfoSec watches stops receiving events without anyone changing
+// a config.
 func (m *MultiSink) Write(ctx context.Context, ev Event) error {
 	m.mu.Lock()
 	closed := m.closed
@@ -283,11 +285,11 @@ func (m *MultiSink) Close() error {
 // MemorySink keeps the most recent events in a bounded ring, for tests and
 // for a debug endpoint that answers "what just happened on this process".
 //
-// It is explicitly NOT durable and must never be the only sink in a
-// deployment that needs an audit trail. When the ring is full the OLDEST
-// event is evicted and Write still succeeds: this sink exists to show recent
-// activity, and failing a user's query because a debug buffer wrapped would
-// be absurd. Everything that must survive goes to a JSONLSink beside it.
+// It is NOT durable and must never be the only sink in a deployment that
+// needs an audit trail. A full ring evicts the OLDEST event and Write still
+// succeeds: this sink shows recent activity, and failing a user's query
+// because a debug buffer wrapped would be the wrong trade. Everything that
+// must survive goes to a JSONLSink beside it.
 type MemorySink struct {
 	mu      sync.Mutex
 	buf     []Event
@@ -346,16 +348,16 @@ func (m *MemorySink) Len() int {
 }
 
 // Dropped reports how many events the ring evicted. A debug endpoint that
-// shows the buffer without showing this number is lying about coverage.
+// shows the buffer without showing this number lies about coverage.
 func (m *MemorySink) Dropped() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.dropped
 }
 
-// Close marks the sink closed. Retained events stay readable, because the
-// reason to close a debug buffer is shutdown and that is exactly when
-// somebody wants to look at it. Safe to call twice.
+// Close marks the sink closed. Retained events stay readable, because you
+// close a debug buffer at shutdown and shutdown is when somebody wants to
+// look at it. Safe to call twice.
 func (m *MemorySink) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -363,8 +365,8 @@ func (m *MemorySink) Close() error {
 	return nil
 }
 
-// AsyncSink hands events to a drain goroutine so a slow backing store — an
-// HTTP collector, a remote file system — does not sit on the connection's
+// AsyncSink hands events to a drain goroutine so a slow backing store (an
+// HTTP collector, a remote file system) does not sit on the connection's
 // data path while a user waits for their query.
 type AsyncSink struct {
 	inner Sink
@@ -376,7 +378,7 @@ type AsyncSink struct {
 
 	// errMu guards the drain goroutine's failure record. Only the first
 	// error is kept: a backing store that is down fails for every event, and
-	// joining ten thousand identical errors helps nobody.
+	// joining ten thousand identical errors buries the one you need.
 	errMu    sync.Mutex
 	firstErr error
 	failures int

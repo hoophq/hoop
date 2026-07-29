@@ -2,15 +2,15 @@
 //
 // It is the thin transport shell around the library: accept a connection,
 // dial the upstream, and pump bytes through a Gate in each direction. The
-// interesting behavior all lives in gate/, codec/ and policy/ — this file
-// exists so a deployment gets a process instead of an integration project.
+// interesting behavior lives in gate/, codec/ and policy/. This file exists
+// so a deployment gets a process instead of an integration project.
 //
-// # What it deliberately is not
+// # Scope
 //
-// Not a load balancer, not a router, not a TLS terminator for the downstream.
-// One listener, one upstream, one protocol. A deployment that needs routing
-// puts Envoy in front, which is the topology this whole library assumes:
-// Envoy owns the network path and hoop-inspect owns the payload.
+// One listener, one upstream, one protocol. It balances no load, routes
+// nothing, and terminates no downstream TLS. A deployment that needs routing
+// puts Envoy in front, the topology this library assumes throughout: Envoy
+// owns the network path and hoop-inspect owns the payload.
 //
 // Upstream TLS IS supported, because a proxy that can only talk plaintext to
 // the database is unusable in the environments that care about any of this.
@@ -37,12 +37,12 @@ import (
 
 // DenyWriter renders a policy denial in the wire protocol's own error frame.
 //
-// Without one, a denial is a dropped connection and the user files a support
+// Without one, a denial drops the connection and the user files a support
 // ticket. With one they read "destructive statements are not permitted on
-// appdb" in their psql session and fix it themselves. That difference is a
-// product feature, not a nicety, which is why it is a first-class hook.
+// appdb" in their psql session and fix it themselves. That is why the hook is
+// first-class.
 //
-// Write returns the bytes to send to the client before closing. Returning nil
+// Deny returns the bytes to send to the client before closing. Returning nil
 // closes without explanation.
 type DenyWriter interface {
 	// Deny renders message for the given protocol and direction.
@@ -55,9 +55,9 @@ type Config struct {
 	// Network is "unix").
 	Listen string
 
-	// Network is "tcp" (default) or "unix". A unix socket is the option for
-	// a sandbox with no network egress, where filesystem permissions gate
-	// who can reach the proxy at all.
+	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
+	// with no network egress, where filesystem permissions gate who can reach
+	// the proxy at all.
 	Network string
 
 	// Upstream is the address to forward to.
@@ -84,12 +84,12 @@ type Config struct {
 	DenyWriter DenyWriter
 
 	// IdentityFn derives the caller's identity from the accepted connection.
-	// Optional; the default records only the peer address, which produces an
+	// Optional; the default records only the peer address, producing an
 	// anonymous session.
 	//
-	// This is the seam for per-user deployments: an Envoy sidecar that has
-	// already authenticated the user passes the subject through a header,
-	// mTLS peer cert, or a credential token, and this function extracts it.
+	// Per-user deployments hook in here: an Envoy sidecar that has already
+	// authenticated the user passes the subject through a header, mTLS peer
+	// cert, or a credential token, and this function extracts it.
 	IdentityFn func(net.Conn) session.Identity
 
 	// DialTimeout bounds the upstream connect. Default 10s.
@@ -97,7 +97,7 @@ type Config struct {
 
 	// IdleTimeout closes a connection with no traffic in either direction.
 	// Zero disables it. Interactive sessions idle between keystrokes, so a
-	// short value here breaks psql; the default is off for that reason.
+	// short value here breaks psql; that is why the default is off.
 	IdleTimeout time.Duration
 
 	// MaxConns bounds concurrent connections. Zero means unlimited.
@@ -194,8 +194,8 @@ func (s *Server) Serve(ctx context.Context) error {
 
 		if s.cfg.MaxConns > 0 && int(s.active.Load()) >= s.cfg.MaxConns {
 			// Refuse rather than queue: an unbounded accept queue turns a
-			// connection flood into memory exhaustion, and the client gets a
-			// faster, clearer failure from a closed connection.
+			// connection flood into memory exhaustion, and a closed connection
+			// gives the client a faster, clearer failure.
 			s.log.Warn("connection refused, at capacity", "max_conns", s.cfg.MaxConns)
 			_ = conn.Close()
 			continue
@@ -347,7 +347,7 @@ func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
 //
 // On a denial it writes the in-protocol error (when a DenyWriter is
 // configured) and returns, which closes both halves via the deferred closes
-// in handle. Nothing is forwarded.
+// in handle. It forwards nothing.
 func (s *Server) pump(
 	ctx context.Context,
 	g *gate.Gate,
@@ -356,8 +356,8 @@ func (s *Server) pump(
 	log *slog.Logger,
 ) {
 	// A re-framing codec holds rows back until their result set ends. Every
-	// exit from this loop must release them, or the client silently loses
-	// the tail of its output — which reads as a truncated result, not as a
+	// exit from this loop must release them, or the client silently loses the
+	// tail of its output, which looks like a truncated result rather than a
 	// masking bug. Only the server direction can hold anything.
 	if dir == hoopinspect.FromServer {
 		defer func() {
@@ -393,8 +393,8 @@ func (s *Server) pump(
 
 				// Deliver the reason to the CLIENT, whichever direction the
 				// denial came from: on a response denial the offending bytes
-				// travel toward the client, so the client is who needs to
-				// know why the connection ended.
+				// travel toward the client, so the client needs to know why
+				// the connection ended.
 				if s.cfg.DenyWriter != nil {
 					target := dst
 					if dir == hoopinspect.FromClient {

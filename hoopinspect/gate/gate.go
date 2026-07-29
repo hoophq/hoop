@@ -1,29 +1,28 @@
 // Package gate wires inspection, policy, audit and masking into the single
-// decision a proxy actually needs to make: may these bytes proceed, and in
-// what form.
+// decision a proxy has to make: may these bytes proceed, and in what form.
 //
-// # Why this exists as its own package
+// # The ordering this package enforces
 //
-// The four capabilities are independently useful and deliberately decoupled —
-// a codec knows nothing about identity, a policy knows nothing about storage.
-// But every real caller needs the same ordering, and getting that ordering
-// wrong is a security bug rather than a style choice:
+// The four capabilities are independently useful and decoupled: a codec
+// knows nothing about identity, a policy knows nothing about storage. Every
+// caller needs the same ordering, and getting that ordering wrong is a
+// security bug:
 //
 //  1. Inspect the bytes.
 //  2. Evaluate policy on each statement.
-//  3. Audit the verdict — BEFORE the statement reaches the upstream.
+//  3. Audit the verdict, BEFORE the statement reaches the upstream.
 //  4. On the way back, mask, then audit what was masked.
 //
-// Step 3 is the one people get backwards. Auditing after forwarding means a
-// crash between the two loses exactly the record of the statement that
-// crashed you. Auditing first costs a write on the hot path and is worth it.
+// Step 3 is the one to get right. Auditing after forwarding means a crash
+// between the two loses the record of the statement that crashed you.
+// Auditing first costs a write on the hot path and buys that record.
 //
-// # What it does not do
+// # Scope
 //
-// No sockets, no TLS, no routing. A Gate is a function over bytes that
-// returns a Decision; the caller owns the connection and enforces the answer.
-// That boundary is what keeps this embeddable in libhoop's ReverseProxy, an
-// Envoy ext_proc server, and a standalone sidecar without three variants.
+// A Gate is a function over bytes that returns a Decision. Sockets, TLS and
+// routing stay with the caller, which owns the connection and enforces the
+// answer. That boundary keeps a single implementation embeddable in libhoop's
+// ReverseProxy, an Envoy ext_proc server, and a standalone sidecar.
 package gate
 
 import (
@@ -41,9 +40,9 @@ import (
 
 // Masker rewrites sensitive values out of a payload.
 //
-// Declared here as a narrow interface rather than imported from a masking
-// package so a caller can supply their own engine — a shop with an existing
-// DLP service plugs it in without forking the gate.
+// Declared here as a narrow interface instead of imported from a masking
+// package, so you can supply your own engine: a shop with an existing DLP
+// service plugs it in without forking the gate.
 type Masker interface {
 	// Mask returns the rewritten payload, the entity names that were
 	// rewritten, and how many values changed. It must never return the
@@ -54,10 +53,9 @@ type Masker interface {
 	// MaskCell rewrites one already-delimited value, such as a database
 	// result-set cell, and is told the column it came from.
 	//
-	// It exists because Mask scans for values inside an opaque blob, which
-	// is the wrong question once the protocol has already told you where the
-	// values are and what they are called. A rule can then say "mask the ssn
-	// column" — deterministic, and the only way to protect a column whose
+	// It exists because Mask scans for values inside an opaque blob. Once
+	// the protocol has named the columns, a rule can say "mask the ssn
+	// column": deterministic, and the only way to protect a column whose
 	// contents no pattern detector recognizes.
 	//
 	// column is empty when the protocol did not name it.
@@ -86,8 +84,8 @@ type Config struct {
 	Protocol hoopinspect.Protocol
 
 	// Policy evaluates statements. Optional: a nil Policy inspects and
-	// audits without ever denying, which is the observe-only mode a team
-	// runs for a week before turning enforcement on.
+	// audits without ever denying, the observe-only mode you run for a week
+	// before turning enforcement on.
 	Policy policy.Evaluator
 
 	// Audit persists events. Optional but strongly recommended; nil means
@@ -101,10 +99,9 @@ type Config struct {
 	//
 	// Default false, and the default is the uncomfortable one: a broken
 	// audit sink lets statements through unrecorded. Set this true where the
-	// audit trail is a compliance requirement rather than an operational
-	// convenience — then a sink outage stops traffic, which is the correct
-	// behavior for a system whose whole purpose is "we can prove who did
-	// what".
+	// audit trail is a compliance requirement. A sink outage then stops
+	// traffic, the correct behavior for a system that exists to prove who
+	// did what.
 	FailOnAuditError bool
 
 	// MaxBuffer bounds per-connection reassembly. Zero uses the inspector
@@ -120,8 +117,8 @@ type Decision struct {
 
 	// Message is the operator-authored denial reason, meant to be surfaced
 	// to the end user in the protocol's own error frame (a Postgres
-	// ErrorResponse, an HTTP 403 body). A denial the user cannot read is a
-	// support ticket.
+	// ErrorResponse, an HTTP 403 body). A denial the user cannot read turns
+	// into a support ticket.
 	Message string
 
 	// Rule identifies the policy rule that denied.
@@ -148,9 +145,9 @@ type Decision struct {
 
 // Gate inspects one connection.
 //
-// It is stateful — the underlying codec reassembles messages across reads —
-// and therefore NOT safe for concurrent use. One Gate per connection. The
-// Policy, Audit and Masker it holds ARE shared and must themselves be
+// It is stateful, because the underlying codec reassembles messages across
+// reads, so it is NOT safe for concurrent use. Use one Gate per connection.
+// The Policy, Audit and Masker it holds ARE shared and must themselves be
 // concurrency-safe.
 type Gate struct {
 	cfg     Config
@@ -179,7 +176,7 @@ type Gate struct {
 
 // New builds a Gate for a session.
 //
-// Two inspectors are created, one per direction: a codec reassembles messages
+// New creates two inspectors, one per direction: a codec reassembles messages
 // across reads, and interleaving both halves of a duplex stream into one
 // reassembly buffer would corrupt both.
 func New(sess *session.Session, cfg Config) (*Gate, error) {
@@ -232,7 +229,7 @@ func (g *Gate) Session() *session.Session { return g.sess }
 
 // Start records the session-start event. Calling it is optional but makes an
 // abandoned connection visible in the audit trail; without it a session that
-// never issues a statement leaves no record at all.
+// never issues a statement leaves no record.
 //
 // Idempotent.
 func (g *Gate) Start(ctx context.Context) error {
@@ -258,8 +255,8 @@ func (g *Gate) Start(ctx context.Context) error {
 // Decision.Message in the protocol's error frame.
 //
 // Bytes that do not complete a statement are buffered and produce an allowed
-// Decision with no statements — a partial message cannot be judged, and
-// holding the connection until it completes is the only correct answer.
+// Decision with no statements. A partial message cannot be judged, so the
+// gate holds the connection until it completes.
 func (g *Gate) Request(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, hoopinspect.FromClient, data)
 }
@@ -267,9 +264,9 @@ func (g *Gate) Request(ctx context.Context, data []byte) Decision {
 // Response inspects bytes travelling upstream -> client.
 //
 // Masking applies here: Decision.Payload may differ from the input. A policy
-// denial on a response is meaningful too — a rule can forbid a 5xx body or a
-// result set touching a protected column — and the caller must honor it
-// rather than forwarding what it already has in hand.
+// denial on a response is meaningful too. A rule can forbid a 5xx body or a
+// result set touching a protected column, and the caller must honor the
+// denial instead of forwarding what it already has in hand.
 func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, hoopinspect.FromServer, data)
 }
@@ -278,7 +275,7 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 //
 // A re-framing codec buffers rows until their result set ends, because a row
 // cannot be rebuilt once forwarded. If the connection closes mid-result-set
-// those rows would be dropped, silently truncating the client's output — a
+// those rows would be dropped, silently truncating the client's output, a
 // worse failure than masking late. The relay MUST call this before it stops
 // pumping, and forward whatever comes back.
 //
@@ -310,9 +307,9 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 	stmts, err := insp.Inspect(dir, data)
 	d.Statements = stmts
 	if err != nil {
-		// A malformed stream is not a policy question. Report it and let the
+		// A malformed stream falls outside policy. Report it and let the
 		// caller decide whether to tear the connection down; forwarding
-		// bytes we could not parse is the honest default, because the
+		// bytes the gate could not parse is the honest default, because the
 		// upstream's own parser is the authority on its protocol.
 		d.Err = fmt.Errorf("inspect: %w", err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
@@ -362,8 +359,8 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 	}
 
 	// Masking is response-side only: rewriting a client's request would
-	// change the statement the upstream executes, which is a correctness
-	// change, not a privacy control.
+	// change the statement the upstream executes, which breaks correctness
+	// instead of protecting privacy.
 	//
 	// Two mechanisms, because two kinds of framing:
 	//
@@ -371,8 +368,7 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 	//     header the gate can find and correct (HTTP's Content-Length).
 	//   - Re-framing, for a length-prefixed binary protocol where every row
 	//     and column carries its own size. Substituting bytes there
-	//     desynchronizes the client instantly; the codec rebuilds the frames
-	//     instead.
+	//     desynchronizes the client; the codec rebuilds the frames instead.
 	if dir == hoopinspect.FromServer && g.masker != nil && len(data) > 0 {
 		switch {
 		case g.reframer != nil:
@@ -395,8 +391,8 @@ func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte)
 	// Masking changes the body LENGTH, and for HTTP the length is also
 	// declared in a header the masker never looked at. Leaving Content-Length
 	// stale makes the client read exactly that many bytes and stop
-	// mid-document — the response is truncated, which looks like a corrupt
-	// upstream rather than a masking bug.
+	// mid-document. The truncated response looks like a corrupt upstream
+	// rather than a masking bug.
 	out = retagContentLength(out, len(out)-len(data))
 	d.Payload = out
 	d.Masked = entities
@@ -409,8 +405,8 @@ func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte)
 //
 // The codec may return FEWER bytes than it was given: rows are held back until
 // their result set ends, because a row cannot be rebuilt once forwarded. That
-// is safe for a relay — the held bytes arrive on a later call or on Close —
-// and it is why Gate.Close flushes.
+// is safe for a relay, since the held bytes arrive on a later call or on
+// Close, and it is why Gate.Close flushes.
 func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	var (
 		entities []string
@@ -430,9 +426,9 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		return masked
 	})
 	if err != nil {
-		// A malformed response is not a masking failure. Forward what the
-		// codec produced and record it; the upstream's own client is the
-		// authority on its protocol.
+		// A malformed response falls outside masking. Forward what the codec
+		// produced and record it; the upstream's own client is the authority
+		// on its protocol.
 		d.Err = errors.Join(d.Err, err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, err))
 	}
@@ -447,7 +443,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 }
 
 // MaskSupported reports whether a protocol's response payload can be masked
-// at all, by either mechanism.
+// by either mechanism.
 //
 // Two ways a payload can be rewritten safely:
 //
@@ -457,7 +453,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 //     values. Postgres, whose every row and column is length-prefixed; see
 //     the Reframer interface.
 //
-// Answered by asking the codec rather than by listing protocols, so adding a
+// MaskSupported asks the codec instead of listing protocols, so adding a
 // re-framing codec does not require also remembering to edit this.
 //
 // Exported so a configuration layer can REFUSE masking on a protocol that
@@ -475,8 +471,8 @@ func MaskSupported(p hoopinspect.Protocol) bool {
 	return ok
 }
 
-// substitutionSafe reports whether the byte-substitution path applies. It is
-// the narrow question the data path asks after finding no reframer.
+// substitutionSafe reports whether the byte-substitution path applies. The
+// data path asks this after finding no reframer.
 func substitutionSafe(p hoopinspect.Protocol) bool {
 	return p == hoopinspect.HTTP
 }

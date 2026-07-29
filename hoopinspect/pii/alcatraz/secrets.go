@@ -11,10 +11,10 @@ import (
 // Entity names for the credential recognizers this package adds.
 //
 // Alcatraz is a PII engine: it detects who someone is, across 45 identifier
-// formats and 12 countries. It has no recognizer for a credential, and the
-// distinction is not an oversight — an AWS key is not personal data. But a
-// response body carrying one is a worse leak than the same body carrying a
-// phone number, and the relay masking that body should not have to care which
+// formats and 12 countries. It has no recognizer for a credential, and that
+// gap is correct, because an AWS key is not personal data. But a response
+// body carrying one is a worse leak than the same body carrying a phone
+// number, and the relay masking that body should not have to care which
 // engine a value came from.
 //
 // So these three are registered into the same alcatraz engine as everything
@@ -31,10 +31,10 @@ var secretEntities = []string{AWSAccessKey, JWT, PrivateKey}
 
 // registerSecrets adds the credential recognizers to a registry.
 //
-// Each is scored 1.0 or validated up to it: unlike a nine-digit number that
-// merely looks like an SSN, these formats are unambiguous. "AKIA" followed by
-// exactly 16 uppercase alphanumerics is an AWS access key id; nothing else
-// looks like that.
+// Each is scored 1.0 or validated up to it, because these formats are
+// unambiguous where a nine-digit number that looks like an SSN is not. "AKIA"
+// followed by exactly 16 uppercase alphanumerics is an AWS access key id, and
+// nothing else looks like that.
 func registerSecrets(reg *analyzer.Registry, lang string) {
 	reg.Add(lang, awsAccessKeyRecognizer())
 	reg.Add(lang, jwtRecognizer())
@@ -57,11 +57,11 @@ func jwtRecognizer() analyzer.Recognizer {
 		"JwtRecognizer", JWT, "en",
 		[]*analyzer.Pattern{
 			// Three base64url segments. A bare three-segment pattern also
-			// matches every dotted hostname and file path, so the header must
-			// start with "eyJ" — base64url of `{"`, which every JWT header
-			// begins with — and the validator decodes it. The signature
-			// segment may be empty: alg=none tokens are exactly the ones
-			// worth catching.
+			// matches every dotted hostname and file path, so the header
+			// must start with "eyJ", base64url of `{"`, which every JWT
+			// header begins with, and the validator decodes it. The
+			// signature segment may be empty: alg=none tokens are exactly
+			// the ones worth catching.
 			analyzer.MustPattern("JWT",
 				`\beyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*`, 0.6),
 		},
@@ -77,7 +77,7 @@ func privateKeyRecognizer() analyzer.Recognizer {
 			//
 			// The first takes a complete PEM block. The second is the
 			// fallback for a block a response-size limit cut short, and it
-			// must still eat the base64 that follows the header — matching
+			// must still eat the base64 that follows the header. Matching
 			// the header alone would emit a placeholder directly above the
 			// key material it claimed to remove. It stops at the first
 			// character that cannot appear in a PEM body rather than running
@@ -92,12 +92,12 @@ func privateKeyRecognizer() analyzer.Recognizer {
 }
 
 // validJWT decodes the header segment and requires it to be a JSON object
-// naming an algorithm. Structure, not signature: this runs on a response body
-// and has no key material, so the question is "is this a token" and not "is
-// this token valid".
+// naming an algorithm. It checks structure, not signature: this runs on a
+// response body with no key material, so it answers "is this a token" and
+// not "is this token valid".
 func validJWT(s string) bool {
 	// The regex guarantees two dots, so Cut always splits; a dotless string
-	// would simply fail the decode below.
+	// fails the decode below.
 	header, _, _ := strings.Cut(s, ".")
 
 	// JWT segments are unpadded base64url, but be tolerant of a producer that

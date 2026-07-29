@@ -38,7 +38,7 @@ func TestDenyWords(t *testing.T) {
 		t.Fatal("DROP was allowed")
 	}
 	if v.Message != "destructive statements are not permitted on appdb" {
-		t.Errorf("Message = %q — the operator-authored text must reach the user", v.Message)
+		t.Errorf("Message = %q; the operator-authored text must reach the user", v.Message)
 	}
 	if v.Rule != "no-destructive" {
 		t.Errorf("Rule = %q, want no-destructive", v.Rule)
@@ -60,9 +60,9 @@ func TestDenyWordsIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-// Operation matching is immune to the false positive that makes deny-words
-// blunt: a DELETE inside a string literal never becomes Operation=delete,
-// because the classifier strips literals first.
+// Operation matching avoids the false positive that makes deny-words blunt:
+// the classifier strips literals first, so a DELETE inside a string literal
+// never becomes Operation=delete.
 func TestOperationBeatsDenyWordsOnLiterals(t *testing.T) {
 	text := `SELECT 'DROP TABLE customers' AS warning`
 
@@ -159,7 +159,8 @@ func TestPatternMatch(t *testing.T) {
 	}
 }
 
-// A bad config must fail at startup, not on the first request that trips it.
+// A bad config must fail at startup, before the first request that would
+// trip it.
 func TestInvalidRulesRejectedAtConstruction(t *testing.T) {
 	cases := map[string]policy.Rule{
 		"bad regex":     {Name: "r", Type: policy.MatchPattern, Pattern: "([unclosed"},
@@ -184,7 +185,7 @@ func TestFirstMatchWins(t *testing.T) {
 	})
 	v := rules.Evaluate(stmt("DELETE FROM t", hoopinspect.OpDelete, "t"))
 	if v.Rule != "first" {
-		t.Errorf("Rule = %q, want first — order must express precedence", v.Rule)
+		t.Errorf("Rule = %q, want first; order must express precedence", v.Rule)
 	}
 }
 
@@ -302,7 +303,7 @@ func TestOPAUnreachableFailOpen(t *testing.T) {
 }
 
 // The input document is a public contract with whoever writes the Rego.
-// Renaming a field silently breaks their policy, so the shape is asserted.
+// Renaming a field silently breaks their policy, so this test pins the shape.
 func TestOPAInputDocumentShape(t *testing.T) {
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,8 +362,8 @@ func TestOPAHTTPErrorFailsClosed(t *testing.T) {
 
 // --- chain ---------------------------------------------------------------
 
-// Local rules run first so an obviously-forbidden statement never costs a
-// network round-trip.
+// Local rules run first, so a statement a local rule already forbids never
+// costs a network round-trip.
 func TestChainShortCircuitsBeforeOPA(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -409,8 +410,8 @@ func TestChainReachesOPAWhenLocalAllows(t *testing.T) {
 }
 
 func TestEmptyChainAllows(t *testing.T) {
-	// A composite literal directly in an `if` condition is
-	// ambiguous with the block opener, hence the variable.
+	// Go parses a composite literal in an `if` condition as the block
+	// opener, hence the variable.
 	var empty policy.Chain
 	if empty.Evaluate(stmt("DROP TABLE t", hoopinspect.OpDrop)).Denied {
 		t.Error("an empty chain denied")

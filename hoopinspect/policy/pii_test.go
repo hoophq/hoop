@@ -54,9 +54,9 @@ func TestPIIRuleDeniesOnListedEntity(t *testing.T) {
 	}
 }
 
-// An entity the scanner finds but the rule does not list must not deny. A
-// guardrail that denies on anything sensitive anywhere is a guardrail nobody
-// can deploy.
+// An entity the scanner finds but the rule does not list must not deny.
+// Denying on anything sensitive anywhere produces a guardrail no team can
+// deploy.
 func TestPIIRuleIgnoresUnlistedEntity(t *testing.T) {
 	s := fakeScanner{"EMAIL_ADDRESS": "ada@example.com"}
 	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
@@ -74,7 +74,7 @@ func TestPIIRuleIgnoresUnlistedEntity(t *testing.T) {
 }
 
 // The generated message must name the classes found and never quote the value
-// that triggered it — a verdict travels into the audit record.
+// that triggered it: a verdict travels into the audit record.
 func TestPIIDefaultMessageNamesClassNotValue(t *testing.T) {
 	s := fakeScanner{"US_SSN": "123-45-6789"}
 	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
@@ -98,7 +98,7 @@ func TestPIIDefaultMessageNamesClassNotValue(t *testing.T) {
 	}
 }
 
-// Several hits are reported sorted, so an operator's log query is stable.
+// Several hits are reported sorted, keeping an operator's log query stable.
 func TestPIIMessageListsEntitiesSorted(t *testing.T) {
 	s := fakeScanner{"US_SSN": "123-45-6789", "CREDIT_CARD": "4111111111111111"}
 	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
@@ -116,8 +116,8 @@ func TestPIIMessageListsEntitiesSorted(t *testing.T) {
 	}
 }
 
-// A PII rule without a scanner must fail at construction. Starting up and
-// silently allowing everything is the failure this prevents.
+// A PII rule without a scanner must fail at construction. Otherwise the
+// process starts up and silently allows everything.
 func TestPIIRuleWithoutScannerRejected(t *testing.T) {
 	_, err := policy.NewRules([]policy.Rule{{
 		Name: "r", Type: policy.MatchPII, Entities: []string{"US_SSN"},
@@ -140,8 +140,8 @@ func TestPIIRuleWithoutEntitiesRejected(t *testing.T) {
 	}
 }
 
-// A nil scanner degrades NewRulesWithScanner to NewRules, including the
-// rejection above — no silent "scanner-shaped nil" path.
+// A nil scanner degrades NewRulesWithScanner to NewRules, rejection included.
+// There is no "scanner-shaped nil" path that silently allows.
 func TestNilScannerBehavesAsNewRules(t *testing.T) {
 	_, err := policy.NewRulesWithScanner([]policy.Rule{{
 		Name: "r", Type: policy.MatchPII, Entities: []string{"US_SSN"},
@@ -151,8 +151,8 @@ func TestNilScannerBehavesAsNewRules(t *testing.T) {
 	}
 }
 
-// Rule order is precedence and a PII rule must take its turn in it, not jump
-// the queue or be skipped.
+// Rule order is precedence, so a PII rule takes its turn: it neither jumps
+// the queue nor gets skipped.
 func TestPIIRuleRespectsOrdering(t *testing.T) {
 	s := fakeScanner{"US_SSN": "123-45-6789"}
 	rules, err := policy.NewRulesWithScanner([]policy.Rule{
@@ -188,7 +188,7 @@ func TestPIIAllowsCleanStatements(t *testing.T) {
 	}
 }
 
-// Mixing PII with SQL and HTTP rules in one ordered set must work — that is
+// Mixing PII with SQL and HTTP rules in one ordered set must work, which is
 // the whole reason the rule types share a Rules.
 func TestPIIMixesWithOtherRuleTypes(t *testing.T) {
 	s := fakeScanner{"US_SSN": "123-45-6789"}

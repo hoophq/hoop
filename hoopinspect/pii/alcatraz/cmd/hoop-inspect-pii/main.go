@@ -3,11 +3,11 @@
 // evaluates each statement against policy, records an audit trail naming the
 // human who ran it, and masks sensitive values on the way back.
 //
-// It runs behind something that already owns TLS and identity — Envoy,
-// typically, forwarding plaintext over loopback or a unix socket. It is not a
-// router: one listener, one upstream, one protocol per endpoint.
+// It runs behind something that already owns TLS and identity, typically
+// Envoy forwarding plaintext over loopback or a unix socket. It routes
+// nothing: one listener, one upstream, one protocol per endpoint.
 //
-// # Why the binary lives here
+// # The binary's home
 //
 // The relay itself is assembled by github.com/hoophq/hoopinspect/sidecar, in
 // the dependency-free root module. This main sits in the nested pii/alcatraz
@@ -20,8 +20,8 @@
 //
 //   - response masking, where a rule names an entity and a strategy;
 //   - policy rules of type "pii", which deny a statement that embeds a
-//     national identifier — something no amount of response masking undoes
-//     once the query is in the database's own log.
+//     national identifier. No amount of response masking undoes that once the
+//     query is in the database's own log.
 //
 // Omit the "pii" config section and the relay runs with detection disabled:
 // masking is then unavailable and a pii rule is a config error, both refused
@@ -41,7 +41,7 @@
 //	  ]}
 //	}
 //
-// pii.entities is required: there is no all-entities default, because turning
+// pii.entities is required. There is no all-entities default, because turning
 // on all 45 recognizers rewrites ordinary numeric columns as US_SSN. See the
 // package documentation for the measured rates.
 //
@@ -67,8 +67,8 @@ import (
 var version = "dev"
 
 // piiFile is the "pii" section of the shared config file. It is read here
-// rather than in the sidecar package because the sidecar must not know what an
-// alcatraz Options looks like — that is the whole point of the split.
+// rather than in the sidecar package, so the sidecar never has to know what
+// an alcatraz Options looks like.
 type piiFile struct {
 	PII *struct {
 		Entities  []string `json:"entities"`
@@ -127,8 +127,8 @@ func buildDetector(cfgPath string) (*alcatraz.Detector, error) {
 
 	// The sidecar accepts YAML or JSON, so this second read of the same file
 	// has to agree about the syntax. Transcoding here rather than parsing
-	// YAML directly keeps one definition of what the "pii" section looks
-	// like — the JSON tags below.
+	// YAML directly keeps one definition of the "pii" section: the JSON tags
+	// below.
 	if configyaml.IsYAML(cfgPath) {
 		converted, cerr := configyaml.ToJSON(raw)
 		if cerr != nil {

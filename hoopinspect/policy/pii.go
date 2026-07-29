@@ -11,39 +11,39 @@ import (
 // MatchPII denies when the statement carries any of Entities, as reported by
 // the Scanner wired into the rule set.
 //
-// This is the guardrail half of PII detection, and it is a different question
-// from masking. Masking asks "rewrite this value on the way out". A guardrail
-// asks "should this statement have been written at all" — a WHERE clause
+// It is the guardrail half of PII detection, and it asks a different question
+// from masking. Masking rewrites a value on the way out. A guardrail
+// asks whether the statement should have been written at all: a WHERE clause
 // carrying a customer's national ID leaks that ID into every query log,
-// slow-query log and EXPLAIN output the database keeps, and no amount of
-// response masking undoes it.
+// slow-query log and EXPLAIN output the database keeps, and response masking
+// cannot undo that.
 //
-// The rule is inert without a Scanner: NewRulesWithScanner wires one in, and
+// The rule is inert without a Scanner. NewRulesWithScanner wires one in, and
 // NewRules rejects a PII rule outright rather than letting it silently allow
-// everything. A guardrail that cannot see is worse than no guardrail, because
-// someone believes it is working.
+// everything: otherwise you run with a rule that permits every statement
+// while believing enforcement is on.
 const MatchPII MatchType = "pii"
 
 // Scanner reports which classes of sensitive data appear in a piece of text.
 //
 // Declared here as a narrow interface rather than imported from mask/ so the
-// policy package keeps its own dependency surface and a caller can supply any
-// detector — the built-in masker, an existing DLP service,
-// github.com/hoophq/alcatraz — without policy knowing which.
+// policy package keeps its own dependency surface and you can supply any
+// detector (the built-in masker, an existing DLP service,
+// github.com/hoophq/alcatraz) without policy knowing which.
 //
 // Implementations MUST be safe for concurrent use.
 type Scanner interface {
 	// ScanText returns the distinct entity names found in text, in any
 	// order. Returning nil means "found nothing".
 	//
-	// It deliberately returns names and never values or offsets: a policy
+	// It returns names and never values or offsets, deliberately: a policy
 	// verdict travels into an audit record, and a denial message quoting the
 	// SSN it denied has published it.
 	ScanText(text string) []string
 }
 
 // NewRulesWithScanner is NewRules with a Scanner available to MatchPII rules.
-// A nil Scanner is exactly NewRules, and any PII rule then fails validation.
+// A nil Scanner behaves as NewRules, so any PII rule then fails validation.
 func NewRulesWithScanner(rules []Rule, s Scanner) (*Rules, error) {
 	out, err := newRules(rules, s != nil)
 	if err != nil {
@@ -67,10 +67,10 @@ func (r Rule) validatePII(hasScanner bool) error {
 // matchesPII reports whether the statement carries a denied entity, and which.
 //
 // It scans Statement.Text, which for SQL is the literal query the client sent
-// and for HTTP is the request line. Bodies are NOT scanned here: a request
-// body only reaches the policy layer when the codec was configured to capture
-// it, and a rule that silently checks less than an operator assumes is the
-// failure this comment exists to prevent. Mask the response for body PII.
+// and for HTTP is the request line. It does NOT scan bodies: a request body
+// only reaches the policy layer when the codec was configured to capture it,
+// so a body-scanning rule would check less than you assume. Mask the response
+// for body PII.
 func (r Rule) matchesPII(stmt hoopinspect.Statement, s Scanner) (bool, string) {
 	if s == nil || stmt.Text == "" {
 		return false, ""
@@ -94,8 +94,8 @@ func (r Rule) matchesPII(stmt hoopinspect.Statement, s Scanner) (bool, string) {
 	if len(hit) == 0 {
 		return false, ""
 	}
-	// Sorted so the denial message is stable across runs: an operator
-	// grepping their logs for one message should find every occurrence.
+	// Sorted so the denial message is stable across runs: grep your logs for
+	// one message and you find every occurrence.
 	sort.Strings(hit)
 	return true, strings.Join(hit, ", ")
 }

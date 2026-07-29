@@ -1,28 +1,28 @@
 // Package policy turns an inspected Statement into an allow/deny verdict.
 //
-// Two evaluators ship here, and they are meant to be layered:
+// Two evaluators ship here, and they layer:
 //
-//   - Rules  — a local, dependency-free matcher (deny-words, regex, operation
+//   - Rules: a local, dependency-free matcher (deny-words, regex, operation
 //     and table allow/deny lists). Microseconds, no network, so it is safe on
 //     the data path. Use it for the coarse "never, under any circumstances"
 //     rules.
-//   - OPA    — a client for Open Policy Agent's Data API. Use it for policy
-//     an InfoSec team already owns in Rego.
+//   - OPA: a client for Open Policy Agent's Data API. Use it for policy an
+//     InfoSec team already owns in Rego.
 //
-// # Why deny messages matter
+// # Deny messages reach the user
 //
 // Envoy's RBAC network filter denies by dropping the connection. The developer
 // sees "connection reset" and files a ticket. Every deny path here carries an
-// operator-authored Message, and the caller is expected to surface it in the
-// protocol's own error frame (a Postgres ErrorResponse, a MySQL ERR packet) so
-// the user reads *why* and fixes it themselves.
+// operator-authored Message, and the caller must surface it in the protocol's
+// own error frame (a Postgres ErrorResponse, a MySQL ERR packet) so the user
+// reads the reason and fixes it themselves.
 //
 // # Fail-closed
 //
 // Both evaluators fail closed on error by default: if OPA is unreachable or a
 // rule cannot compile, the verdict is Deny with a diagnostic Message. Set
-// FailOpen to invert that where availability outranks enforcement. There is no
-// silent middle ground.
+// FailOpen to invert that where availability outranks enforcement. Neither
+// evaluator has a third mode.
 package policy
 
 import (
@@ -38,7 +38,7 @@ type Verdict struct {
 	// Denied is the decision. False means the statement may proceed.
 	Denied bool
 
-	// Message is shown to the end user when Denied. It is operator-authored
+	// Message reaches the end user when Denied. The operator authors it
 	// where a rule supplies one, so it can name the actual constraint
 	// ("destructive statements are not permitted on appdb") rather than
 	// leaking rule internals.
@@ -48,8 +48,9 @@ type Verdict struct {
 	// Empty on allow.
 	Rule string
 
-	// Err is set when evaluation itself failed (OPA unreachable, bad regex).
-	// Denied reflects the fail-open/fail-closed choice; Err records why.
+	// Err holds the failure when evaluation itself broke (OPA unreachable,
+	// bad regex). Denied reflects the fail-open/fail-closed choice; Err
+	// records the cause.
 	Err error
 }
 
@@ -89,7 +90,7 @@ const (
 	// MatchTable denies when the statement references any table in Tables.
 	// Because Tables is best-effort (see hoopinspect.ClassifySQL), a rule of
 	// this type also denies when RequireTableMatch is set and no tables could
-	// be extracted — "we could not tell" reads as unsafe.
+	// be extracted: "we could not tell" reads as unsafe.
 	MatchTable MatchType = "table"
 )
 
@@ -119,8 +120,9 @@ type Rule struct {
 	// that must never be touched, and accept the false positives.
 	RequireTableMatch bool `json:"require_table_match,omitempty"`
 
-	// Message is shown to the user on denial. When empty a generic message is
-	// generated, which is worse for everyone; set it.
+	// Message reaches the user on denial. Leave it empty and the rule falls
+	// back to a generated message naming only the rule and the operation;
+	// set it.
 	Message string `json:"message,omitempty"`
 
 	// Entities for MatchPII, naming the classes a Scanner must not find.
@@ -141,8 +143,8 @@ type Rule struct {
 type Rules struct {
 	rules []Rule
 
-	// scanner backs MatchPII rules. Nil unless set by
-	// NewRulesWithScanner, and NewRules rejects PII rules when it is.
+	// scanner backs MatchPII rules. It is nil unless NewRulesWithScanner set
+	// it, and NewRules rejects PII rules while it is nil.
 	scanner Scanner
 
 	// FailOpen inverts the error behavior: when a rule cannot be evaluated
@@ -213,8 +215,8 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 // Evaluate implements Evaluator. First matching rule wins.
 func (r *Rules) Evaluate(stmt hoopinspect.Statement) Verdict {
 	for _, rule := range r.rules {
-		// PII needs the Scanner held by the rule SET, not the rule, so it
-		// is dispatched here rather than in Rule.matches.
+		// Rules owns the Scanner, so PII dispatches here rather than
+		// inside Rule.matches.
 		if rule.Type == MatchPII {
 			if hit, entities := rule.matchesPII(stmt, r.scanner); hit {
 				return Deny(rule.Name, rule.piiMessage(entities))

@@ -30,7 +30,7 @@ func TestRegisteredCoversAllShippedProtocols(t *testing.T) {
 }
 
 // A Protocol constant with no codec behind it is a promise the library
-// cannot keep. Registered() is the honest list, and it must not grow a name
+// cannot keep. Registered() is the honest list, so it must not grow a name
 // that New would then reject.
 func TestEveryRegisteredProtocolConstructs(t *testing.T) {
 	for _, p := range hoopinspect.Registered() {
@@ -43,7 +43,7 @@ func TestEveryRegisteredProtocolConstructs(t *testing.T) {
 func TestNewReturnsDistinctCodecs(t *testing.T) {
 	// Codecs must not be shared across connections: a stateful one would let
 	// two connections corrupt each other's reassembly buffer. The codec
-	// packages assert the behavioral version; here we assert the registry
+	// packages assert the behavioral version; this asserts the registry
 	// contract that makes it possible.
 	a, err := hoopinspect.New(hoopinspect.Postgres)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestNewReturnsDistinctCodecs(t *testing.T) {
 	}
 }
 
-// --- a stub codec, to exercise Inspector independently of any real protocol
+// --- a stub codec, to exercise Inspector without any real protocol
 
 type stubCodec struct {
 	// consume tells Decode how many bytes to report consuming.
@@ -123,7 +123,7 @@ func TestInspectorDropsBufferOnError(t *testing.T) {
 		t.Fatalf("err = %v, want boom", err)
 	}
 	if insp.Buffered() != 0 {
-		t.Errorf("Buffered = %d after an error, want 0 — a caller that ignores "+
+		t.Errorf("Buffered = %d after an error, want 0. A caller that ignores "+
 			"the error must not keep re-decoding the same garbage", insp.Buffered())
 	}
 }

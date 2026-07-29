@@ -60,8 +60,8 @@ func TestLoadValidConfig(t *testing.T) {
 	}
 }
 
-// A typo in a key must not silently disable a control. `enfroce: true` that
-// parses as "enforcement off" is the worst possible failure for this system.
+// A typo in a key must not silently disable a control. `enfroce: true`
+// parsing as "enforcement off" is the worst failure this system can have.
 func TestUnknownFieldIsRejected(t *testing.T) {
 	p := writeConfig(t, `{
       "listeners": [{"protocol":"postgres","listen":":1","upstream":"h:1"}],
@@ -75,8 +75,8 @@ func TestUnknownFieldIsRejected(t *testing.T) {
 	}
 }
 
-// A bad config should report every problem at once; fixing one error per
-// restart is miserable.
+// A bad config reports every problem at once, so nobody fixes one error per
+// restart.
 func TestValidationReportsEveryProblem(t *testing.T) {
 	cfg := &Config{
 		Listeners: []ListenerConfig{
@@ -129,10 +129,10 @@ func TestBadPolicyRuleFailsAtLoad(t *testing.T) {
 	}
 }
 
-// Mask rule SHAPES are no longer validated here — only the plugin knows which
-// entity names it detects. What this package must still catch is masking
-// switched on with nothing to do, which would otherwise look enabled in the
-// config and mask nothing at runtime.
+// Mask rule SHAPES are no longer validated here, since only the plugin knows
+// which entity names it detects. This package must still catch masking
+// switched on with nothing to do, which would look enabled in the config and
+// mask nothing at runtime.
 func TestMaskEnabledWithNoRulesFailsAtLoad(t *testing.T) {
 	p := writeConfig(t, `{
       "listeners": [{"protocol":"postgres","listen":":1","upstream":"h:1"}],
@@ -144,9 +144,9 @@ func TestMaskEnabledWithNoRulesFailsAtLoad(t *testing.T) {
 	}
 }
 
-// An unknown entity is the plugin's error, and it must still be fatal — just
-// raised where the knowledge lives. Masking enabled with no plugin at all is
-// a refusal, never a silent pass-through.
+// An unknown entity is the plugin's error and must still be fatal, raised
+// where the knowledge lives. Masking enabled with no plugin at all is a
+// refusal, never a silent pass-through.
 func TestMaskWithoutPluginIsRefused(t *testing.T) {
 	mc := MaskConfig{
 		Enabled: ptr(true),
@@ -180,7 +180,7 @@ func TestEnforceDefaultsOff(t *testing.T) {
 		t.Fatalf("buildPolicy: %v", err)
 	}
 	if pol != nil {
-		t.Error("rules were active with enforce=false — observe-only must not deny")
+		t.Error("rules were active with enforce=false; observe-only must not deny")
 	}
 }
 
@@ -204,7 +204,7 @@ func TestBuildPolicyChainsLocalRulesThenOPA(t *testing.T) {
 	if len(chain) != 2 {
 		t.Fatalf("chain length = %d, want 2 (local rules then OPA)", len(chain))
 	}
-	// Order matters: an obviously forbidden statement must not cost a
+	// Order matters: a statement the local rules forbid must not cost a
 	// network round trip.
 	if _, isRules := chain[0].(*policy.Rules); !isRules {
 		t.Errorf("chain[0] = %T, want *policy.Rules first", chain[0])

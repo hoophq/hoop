@@ -63,9 +63,9 @@ func TestStrategies(t *testing.T) {
 	}
 }
 
-// Separators are format, not data. Keeping them is what makes the output
-// legible as a card number rather than a corrupted string — and legible
-// output is what stops the support ticket.
+// Separators are format, not data. Keeping them leaves the output legible as
+// a card number rather than a corrupted string, and legible output stops the
+// support ticket.
 func TestPartialKeepsSeparators(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.CreditCard}})
 	m := newMask(t, d, alcatraz.Rule{
@@ -74,12 +74,12 @@ func TestPartialKeepsSeparators(t *testing.T) {
 
 	got, _ := m.MaskString("4111-1111-1111-1111")
 	if want := "****-****-****-1111"; got != want {
-		t.Errorf("got %q, want %q — dashes must survive", got, want)
+		t.Errorf("got %q, want %q; dashes must survive", got, want)
 	}
 }
 
-// KeepLast at or above the value length is not partial masking, it is no
-// masking. Fail towards the safe end.
+// KeepLast at or above the value length masks nothing. Fail towards the safe
+// end.
 func TestPartialKeepLastTooLargeMasksEverything(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.CreditCard}})
 	m := newMask(t, d, alcatraz.Rule{
@@ -117,8 +117,8 @@ func TestHashIsStableAndOpaque(t *testing.T) {
 
 // --- rule validation -------------------------------------------------------
 
-// Every invalid rule is reported at once: finding out about the second typo on
-// the next restart is how a rollout takes three rounds instead of one.
+// Every invalid rule is reported at once: finding out about the second typo
+// on the next restart is how a rollout takes three rounds instead of one.
 func TestAllInvalidRulesReportedTogether(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN, alcz.CreditCard}})
 
@@ -151,8 +151,8 @@ func TestRuleForUndetectedEntityRejected(t *testing.T) {
 	}
 }
 
-// Two rules for one entity is ambiguous, not additive: the second would
-// silently replace the first.
+// Two rules for one entity is ambiguous: the second would silently replace
+// the first.
 func TestDuplicateEntityRejected(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
 
@@ -185,8 +185,8 @@ func TestCleanPayloadReturnedUnchanged(t *testing.T) {
 	}
 }
 
-// Result names classes and counts. It must never carry the values, because it
-// is what the audit sink writes.
+// Result names classes and counts. It must never carry the values, because
+// the audit sink writes it.
 func TestResultCarriesNoValues(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.EmailAddress, alcz.CreditCard}})
 	m := newMask(t, d,

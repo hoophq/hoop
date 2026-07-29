@@ -14,18 +14,18 @@
 // clause" or "no query touching the ssn column". Envoy's MySQL filter parses
 // no SQL at all, and there is no SSH filter of any kind.
 //
-// hoopinspect fills exactly that gap and nothing else:
+// hoopinspect fills that gap:
 //
 //   - The full statement text, not a summary of it.
 //   - The same shape for every protocol, SQL and HTTP alike.
 //   - A deny path that carries an operator-authored message back to the user,
 //     rather than dropping the connection and leaving them to guess.
 //
-// # What it is not
+// # Boundaries
 //
-// Not a proxy. It never opens a socket, never terminates TLS, never routes.
-// It is a pure function over bytes you already have. Whatever holds the
-// connection — Envoy, a sidecar, the hoop agent — keeps holding it.
+// hoopinspect is a pure function over bytes you already have. It opens no
+// socket, terminates no TLS, and routes nothing. Whatever holds the
+// connection (Envoy, a sidecar, the hoop agent) keeps holding it.
 //
 // # Usage
 //
@@ -38,9 +38,9 @@
 //	}
 //
 // Inspect is safe to call with partial packets: it returns what it can decode
-// and reports how many bytes it consumed, so a caller streaming a socket can
-// retain the remainder. Inspectors are NOT safe for concurrent use; give each
-// connection its own.
+// and reports how many bytes it consumed, so you can retain the remainder
+// while streaming a socket. Inspectors are NOT safe for concurrent use; give
+// each connection its own.
 package hoopinspect
 
 import (
@@ -52,8 +52,8 @@ import (
 //
 // Only the protocols with a shipped codec are listed. Adding one means adding
 // a codec/<name> package that registers itself; a constant with no decoder
-// behind it is a promise the library cannot keep, and a caller who passes it
-// to New gets ErrUnsupportedProtocol at a confusing distance from the cause.
+// behind it is a promise the library cannot keep, and passing it to New
+// returns ErrUnsupportedProtocol at a confusing distance from the cause.
 type Protocol string
 
 const (
@@ -62,9 +62,9 @@ const (
 )
 
 // Direction says which side of the connection produced the bytes. Only
-// FromClient currently yields statements; FromServer is accepted so callers
-// can feed both halves of a stream through one code path without branching,
-// and so response-side inspection can be added without an API change.
+// FromClient currently yields statements; FromServer is accepted so you can
+// feed both halves of a stream through one code path without branching, and
+// so response-side inspection can be added without an API change.
 type Direction string
 
 const (
@@ -73,7 +73,7 @@ const (
 )
 
 // Operation is the normalized verb of a statement. It is derived from the
-// statement text, not from the wire encoding, so it means the same thing
+// statement text rather than the wire encoding, so it means the same thing
 // across every protocol.
 type Operation string
 
@@ -97,9 +97,9 @@ const (
 
 	// HTTP verbs. They are kept distinct from the SQL verbs rather than
 	// mapped onto them (GET -> select, DELETE -> delete) because the mapping
-	// is a lie in both directions: a POST to /search is a read, and a GET
-	// with side effects is common in badly-behaved APIs. A policy author
-	// should see the method the client actually sent.
+	// breaks in both directions: a POST to /search is a read, and a GET with
+	// side effects is common in badly-behaved APIs. A policy author should
+	// see the method the client sent.
 	OpGet     Operation = "get"
 	OpPost    Operation = "post"
 	OpPut     Operation = "put"
@@ -132,8 +132,8 @@ type Statement struct {
 	// Tables lists the relations the statement references, lowercased and
 	// deduplicated in order of appearance. Best effort: derived from FROM /
 	// INTO / UPDATE / JOIN / TABLE keywords, not a full SQL grammar. Empty
-	// when nothing was recognized — callers MUST NOT treat empty as "touches
-	// nothing", only as "we could not tell".
+	// when nothing was recognized. Read empty as "we could not tell", never
+	// as "touches nothing".
 	Tables []string `json:"tables,omitempty"`
 
 	// Database is the target database when the protocol states it explicitly,
@@ -150,9 +150,9 @@ type Statement struct {
 	// many rows. Nil on every request, and nil for a codec that does not
 	// decode responses.
 	//
-	// It is what makes a response-side policy possible at all: "this query
-	// returned a column named ssn" is a question no request-side rule can
-	// answer, because `SELECT *` does not name it.
+	// Response-side policy depends on it: "this query returned a column
+	// named ssn" is a question no request-side rule can answer, because
+	// `SELECT *` does not name the column.
 	Result *ResultDetail `json:"result,omitempty"`
 
 	// Metadata carries protocol-specific details a policy may want: the
@@ -164,16 +164,16 @@ type Statement struct {
 // ResultDetail describes the shape of a result set travelling back to the
 // client, without carrying the values.
 //
-// The values are deliberately absent for the same reason mask.Result omits
-// them: a Statement becomes an audit record, and a record holding the rows it
-// masked has un-masked them. What survives is the metadata a policy can act
-// on — column names, types, row count.
+// The values are absent for the same reason mask.Result omits them: a
+// Statement becomes an audit record, and a record holding the rows it masked
+// has un-masked them. The metadata survives instead: column names, types,
+// row count.
 //
 // Columns come from the protocol's own description of the result (Postgres
-// RowDescription), so they are exact, not inferred. That is strictly more
-// than a pattern detector can know: "the column is named ssn" beats "these
-// nine digits look like an SSN", and it is the only way to protect a column
-// whose contents no detector recognizes.
+// RowDescription), so they are exact rather than inferred. A pattern
+// detector cannot know as much: "the column is named ssn" beats "these nine
+// digits look like an SSN", and it is the only way to protect a column whose
+// contents no detector recognizes.
 type ResultDetail struct {
 	// Columns names the result columns in order.
 	Columns []Column `json:"columns,omitempty"`
@@ -214,13 +214,12 @@ type Column struct {
 
 // HTTPDetail is the HTTP-shaped half of a Statement.
 //
-// It exists because the useful policy questions about HTTP are not the ones
-// you can ask about SQL. Envoy's ext_authz already gives OPA the method, path
-// and headers of a REQUEST, and that is genuinely enough for "may alice call
-// POST /admin". What it does not give you:
+// The useful policy questions about HTTP differ from the SQL ones. Envoy's
+// ext_authz already gives OPA the method, path and headers of a REQUEST, and
+// that is enough for "may alice call POST /admin". Two things it leaves out:
 //
 //   - The RESPONSE. ext_authz is request-side; the filter decides before the
-//     upstream is called. Response bodies are where the data actually leaves.
+//     upstream is called. Response bodies are where the data leaves.
 //   - A stable resource identity. /users/12345/orders and /users/67890/orders
 //     are the same resource with different ids; a policy keyed on the raw
 //     path needs a regex per endpoint.
@@ -239,13 +238,13 @@ type HTTPDetail struct {
 	Host string `json:"host,omitempty"`
 
 	// Resource is Path with dynamic segments replaced by "*", so
-	// /users/12345/orders becomes /users/*/orders. This is what a policy
-	// should key on: it is stable across ids, and it collapses the
-	// combinatorial explosion of per-id rules into one.
+	// /users/12345/orders becomes /users/*/orders. Key a policy on this
+	// rather than on Path: it is stable across ids, so one rule replaces a
+	// rule per id.
 	//
 	// Best effort. A segment is treated as dynamic when it is numeric, a
 	// UUID, or a long opaque token. A slug like /users/alice is NOT
-	// collapsed, because there is no way to tell it from a static segment.
+	// collapsed, because nothing distinguishes it from a static segment.
 	Resource string `json:"resource,omitempty"`
 
 	// StatusCode is the response status. Zero on a request.
@@ -288,13 +287,13 @@ type Codec interface {
 	Protocol() Protocol
 
 	// Decode parses as many complete messages as `data` contains and returns
-	// the statements found, plus the number of bytes consumed. A caller
-	// streaming a socket retains data[n:] and prepends it to the next read.
+	// the statements found, plus the number of bytes consumed. When streaming
+	// a socket, retain data[n:] and prepend it to the next read.
 	//
-	// Decode MUST NOT return an error for a merely incomplete buffer: it
-	// returns the statements it could decode and a consumed count that stops
-	// at the partial message. An error means the bytes are malformed for this
-	// protocol, and the caller should stop trusting the stream.
+	// Decode MUST NOT return an error for an incomplete buffer: it returns
+	// the statements it could decode and a consumed count that stops at the
+	// partial message. An error means the bytes are malformed for this
+	// protocol, so stop trusting the stream.
 	Decode(dir Direction, data []byte) (stmts []Statement, consumed int, err error)
 }
 
@@ -304,8 +303,8 @@ var ErrUnsupportedProtocol = errors.New("hoopinspect: unsupported protocol")
 // Inspector decodes a byte stream for one connection.
 //
 // It buffers across calls: a statement split over two TCP segments is
-// reassembled. An Inspector is stateful and NOT safe for concurrent use — one
-// per connection.
+// reassembled. An Inspector is stateful and NOT safe for concurrent use. Give
+// each connection its own.
 type Inspector struct {
 	codec Codec
 
@@ -321,9 +320,9 @@ type Inspector struct {
 }
 
 // DefaultMaxBuffer bounds per-connection reassembly. Postgres allows a single
-// message up to 2^31 bytes, so this is a policy choice, not a protocol
-// limit: 8 MiB comfortably holds any statement a human
-// or ORM emits while refusing to buffer a bulk COPY into RAM.
+// message up to 2^31 bytes, so this is a policy choice rather than a protocol
+// limit: 8 MiB holds any statement a human or ORM emits while refusing to
+// buffer a bulk COPY into RAM.
 const DefaultMaxBuffer = 8 << 20
 
 // ErrBufferOverflow means a single message exceeded the inspector's reassembly
@@ -334,8 +333,8 @@ var ErrBufferOverflow = errors.New("hoopinspect: message exceeds max buffer")
 // ErrUnsupportedProtocol if no codec is registered.
 //
 // Codecs register themselves via Register in their package init, so importing
-// codec/postgres is what makes Postgres available. A caller that wants every
-// protocol imports the umbrella package `codec/all`.
+// codec/postgres makes Postgres available. Import the umbrella package
+// `codec/all` to get every shipped protocol.
 func New(p Protocol) (*Inspector, error) {
 	newCodec, ok := lookup(p)
 	if !ok {
@@ -366,10 +365,9 @@ func (i *Inspector) Protocol() Protocol { return i.codec.Protocol() }
 
 // Codec returns the codec driving this Inspector.
 //
-// It exists so a caller can discover an OPTIONAL capability a particular
-// codec offers beyond the Codec interface — response re-framing, for
-// instance — with a type assertion, rather than the library growing a method
-// every codec must stub out.
+// It exists so you can type-assert for an OPTIONAL capability a codec offers
+// beyond the Codec interface (response re-framing, for instance) instead of
+// the library growing a method every codec must stub out.
 func (i *Inspector) Codec() Codec { return i.codec }
 
 // Inspect feeds one chunk of the stream and returns the statements it
@@ -377,7 +375,7 @@ func (i *Inspector) Codec() Codec { return i.codec }
 // the next call.
 //
 // Passing an empty slice is a no-op that flushes nothing: incomplete messages
-// stay buffered, because a statement is only a statement once it is whole.
+// stay buffered, because a message is decoded only once it is complete.
 func (i *Inspector) Inspect(dir Direction, data []byte) ([]Statement, error) {
 	if len(data) == 0 && len(i.buf) == 0 {
 		return nil, nil

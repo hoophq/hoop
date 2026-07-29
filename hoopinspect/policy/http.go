@@ -7,9 +7,9 @@ import (
 	"github.com/hoophq/hoopinspect"
 )
 
-// HTTP-specific rule types. They are separate from the SQL matchers because
-// the useful questions differ: SQL policy asks "which verb, which table",
-// HTTP policy asks "which resource, which status".
+// HTTP-specific rule types. They sit apart from the SQL matchers because the
+// useful questions differ: SQL policy asks "which verb, which table", HTTP
+// policy asks "which resource, which status".
 const (
 	// MatchHTTPResource denies when the normalized resource path matches any
 	// entry in Resources. Patterns use the normalized form, so
@@ -21,24 +21,24 @@ const (
 	MatchHTTPResource MatchType = "http_resource"
 
 	// MatchHTTPStatus denies when the response status is in Statuses, or
-	// falls in a class named as "2xx".."5xx". Response-side only — request
+	// falls in a class named as "2xx".."5xx". Response-side only: request
 	// statements have StatusCode 0 and never match.
 	//
-	// This is the rule Envoy's ext_authz structurally cannot express: it
-	// decides before the upstream is called.
+	// Envoy's ext_authz cannot express this rule, because it decides before
+	// the upstream is called.
 	MatchHTTPStatus MatchType = "http_status"
 )
 
 // HTTP-specific Rule fields. They live on the same Rule struct so a single
-// ordered rule set can mix SQL and HTTP matchers — a chain in front of a
-// mixed workload should not need two evaluators.
+// ordered rule set can mix SQL and HTTP matchers, sparing a chain in front of
+// a mixed workload from running two evaluators.
 type httpRuleFields struct {
 	// Resources for MatchHTTPResource. Compared against
 	// Statement.HTTP.Resource. Supports a trailing "/**" wildcard.
 	Resources []string `json:"resources,omitempty"`
 
-	// Methods optionally narrows any HTTP rule to these methods. Empty means
-	// every method. Applies to MatchHTTPResource and MatchHTTPStatus.
+	// Methods narrows any HTTP rule to these methods. Empty means every
+	// method. Applies to MatchHTTPResource and MatchHTTPStatus.
 	Methods []string `json:"methods,omitempty"`
 
 	// Statuses for MatchHTTPStatus. Accepts exact codes ("404") and classes
@@ -67,7 +67,7 @@ func (r Rule) validateHTTP() error {
 }
 
 // matchesHTTP evaluates the HTTP rule types. ok reports whether this rule type
-// was handled here, so the SQL matcher can take everything else.
+// belongs here, leaving everything else to the SQL matcher.
 func (r Rule) matchesHTTP(stmt hoopinspect.Statement) (matched, ok bool) {
 	switch r.Type {
 	case MatchHTTPResource, MatchHTTPStatus:
@@ -77,7 +77,7 @@ func (r Rule) matchesHTTP(stmt hoopinspect.Statement) (matched, ok bool) {
 
 	d := stmt.HTTP
 	if d == nil {
-		// A non-HTTP statement can never match an HTTP rule. Failing closed
+		// A non-HTTP statement never matches an HTTP rule. Failing closed
 		// here would deny every SQL statement in a mixed rule set.
 		return false, true
 	}
@@ -126,9 +126,9 @@ func (r Rule) methodAllowed(method string) bool {
 // matchResource compares a normalized resource against a pattern.
 //
 // "*" matches exactly one segment; a trailing "/**" matches one or more
-// trailing segments. Both sides are already normalized, so a pattern written
-// with a literal id ("/users/12345") will not match — that is intentional, it
-// forces patterns to be written against the stable resource form.
+// trailing segments. Both sides arrive normalized, so a pattern written with
+// a literal id ("/users/12345") will not match. That forces patterns to be
+// written against the stable resource form.
 func matchResource(pattern, resource string) bool {
 	if pattern == resource {
 		return true

@@ -22,8 +22,7 @@ type Strategy string
 const (
 	// StrategyRedact replaces the value with "[REDACTED:<entity>]". The
 	// output tells the reader something was removed and what kind of thing it
-	// was, which is what stops a support engineer filing a bug about
-	// corrupted data.
+	// was, which stops a support engineer filing a bug about corrupted data.
 	StrategyRedact Strategy = "redact"
 
 	// StrategyMask replaces every character with MaskChar, preserving the
@@ -33,21 +32,21 @@ const (
 
 	// StrategyPartial keeps the last KeepLast characters and masks the
 	// alphanumeric ones before them, leaving punctuation in place:
-	// 4111-1111-1111-1234 becomes ****-****-****-1234. The tail is what a
-	// human uses to confirm "yes, that is the card I meant", which is the
-	// only reason to show any of it.
+	// 4111-1111-1111-1234 becomes ****-****-****-1234. A human uses the tail
+	// to confirm "yes, that is the card I meant", the only reason to show any
+	// of it.
 	StrategyPartial Strategy = "partial"
 
 	// StrategyHash replaces the value with "sha256:<first 16 hex digits>".
 	//
 	// Equal inputs give equal outputs, so a masked column still works as a
-	// join key and a GROUP BY still counts distinct users. The cost is real
-	// and worth stating plainly: the mapping is deterministic and unsalted,
-	// so it LEAKS EQUALITY (you can tell two rows share an email without
-	// learning it) and is trivially reversed by dictionary attack over any
-	// small value space. Hashing a US SSN is pointless — there are only 10^9
-	// of them. Use it for high-entropy identifiers where correlation is the
-	// requirement, and redact everything else.
+	// join key and a GROUP BY still counts distinct users. The cost is real:
+	// the mapping is deterministic and unsalted, so it LEAKS EQUALITY (you
+	// can tell two rows share an email without learning it) and falls to a
+	// dictionary attack over any small value space. Hashing a US SSN buys
+	// nothing, since only 10^9 of them exist. Use it for high-entropy
+	// identifiers where correlation is the requirement, and redact
+	// everything else.
 	StrategyHash Strategy = "hash"
 )
 
@@ -66,11 +65,11 @@ const DefaultMaskChar = '*'
 //	{"entity": "US_SSN", "strategy": "partial"}   // wherever an SSN appears
 //	{"columns": ["ssn"], "strategy": "redact"}    // whatever is in that column
 //
-// The column form is only available where the protocol names its values — a
-// database result set — and it is strictly stronger there. It is
-// deterministic rather than probabilistic, it protects a column whose
-// contents no detector recognizes (an internal risk score, a free-text note),
-// and it does not care that alcatraz declines 123-45-6789 as a placeholder.
+// The column form is available only where the protocol names its values (a
+// database result set) and it is stronger there. It is deterministic rather
+// than probabilistic, it protects a column whose contents no detector
+// recognizes (an internal risk score, a free-text note), and it does not care
+// that alcatraz declines 123-45-6789 as a placeholder.
 type Rule struct {
 	// Name identifies the rule in configuration errors. Defaults to
 	// "rule[<index>]".
@@ -121,9 +120,8 @@ func (r Rule) entityName() string {
 
 // Result reports what a Mask call rewrote.
 //
-// It deliberately carries no values: an audit log recording the values it
-// masked has un-masked them, and it is the log that gets shipped off-box to a
-// search cluster.
+// It carries no values: an audit log recording the values it masked has
+// un-masked them, and that log gets shipped off-box to a search cluster.
 type Result struct {
 	// Entities names the distinct entity classes that were rewritten, sorted
 	// so a log query can rely on the order.
@@ -136,8 +134,8 @@ type Result struct {
 // Masker rewrites detected values out of a payload.
 //
 // Detection is alcatraz's engine; rewriting is alcatraz's anonymizer. This
-// type is the adapter between them and the byte-oriented interface a relay
-// needs — gate.Masker in hoopinspect.
+// type adapts them to the byte-oriented interface a relay needs,
+// gate.Masker in hoopinspect.
 //
 // Immutable after NewMasker and safe for concurrent use by any number of
 // connections.
@@ -158,11 +156,11 @@ type Masker struct {
 // NewMasker compiles a rule set against a detector's engine.
 //
 // It reports EVERY invalid rule in one error rather than stopping at the
-// first. A masking config is edited by hand and deployed to a fleet; finding
-// out about the second typo on the next restart is how a rollout takes three
-// rounds instead of one. And it fails at construction, not on the first
-// request that trips the bad rule — a masker that silently passes a payload
-// through is worse than one that refuses to start.
+// first. Someone edits a masking config by hand and deploys it to a fleet;
+// finding out about the second typo on the next restart is how a rollout
+// takes three rounds instead of one. It fails at construction, before the
+// first request that trips the bad rule, because a masker that silently
+// passes a payload through is worse than one that refuses to start.
 //
 // The rules restrict what is looked for: a payload is scanned only for the
 // entity types some rule rewrites, so an unused recognizer costs nothing.
@@ -229,9 +227,9 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 			continue
 		}
 
-		// Two rules for one entity is ambiguous, not additive: the anonymizer
-		// keys operators by entity type, so the second would silently replace
-		// the first.
+		// Two rules for one entity is ambiguous: the anonymizer keys
+		// operators by entity type, so the second would silently replace the
+		// first.
 		if prev, dup := seen[r.Entity]; dup {
 			problems = append(problems, fmt.Sprintf(
 				"%s: entity %q already rewritten by %s", name, r.Entity, prev))
@@ -318,18 +316,18 @@ func redactOperator() anonymizer.Operator {
 // partialOperator keeps the last keep runes and masks the ALPHANUMERIC ones
 // before them, leaving punctuation in place.
 //
-// This is deliberately not anonymizer.MaskKeepLast, which masks every
-// preceding rune including separators: it turns 4111-1111-1111-1234 into
-// ***************1234. Keeping the dashes is what makes the output legible as
-// a card number rather than a corrupted string, and legible output is what
-// stops the support ticket.
+// This avoids anonymizer.MaskKeepLast, which masks every preceding rune
+// including separators: it turns 4111-1111-1111-1234 into
+// ***************1234. Keeping the dashes leaves the output legible as a card
+// number rather than a corrupted string, and legible output stops the support
+// ticket.
 func partialOperator(maskChar rune, keep int) anonymizer.Operator {
 	return func(_, match string) string {
 		n := utf8.RuneCountInString(match)
 		cut := n - keep
 		if keep >= n {
-			// Keeping the whole value is not partial masking, it is no
-			// masking. Fail towards the safe end.
+			// Keeping the whole value masks nothing. Fail towards the
+			// safe end.
 			cut = n
 		}
 		var b strings.Builder
@@ -361,9 +359,9 @@ func hashOperator() anonymizer.Operator {
 
 // Mask rewrites every detected span in data.
 //
-// When nothing matches it returns data itself, not a copy, so the common case
-// of a clean payload costs one scan and no allocation. Callers must therefore
-// treat the result as aliasing the input.
+// A clean payload comes back as data itself, not a copy, so the common case
+// costs one scan and no allocation. Callers must treat the result as
+// aliasing the input.
 func (m *Masker) Mask(data []byte) ([]byte, Result) {
 	if len(data) == 0 || len(m.entities) == 0 {
 		return data, Result{}
@@ -393,7 +391,7 @@ func (m *Masker) Mask(data []byte) ([]byte, Result) {
 
 // MaskCell rewrites one already-delimited value from a named column.
 //
-// This is the database path, and it asks a better question than Mask does.
+// This is the database path, where the protocol supplies more than Mask gets.
 // Mask scans an opaque blob for anything that LOOKS sensitive; MaskCell is
 // told where the value ends and what the server calls it. So it can honor a
 // rule like {"columns": ["ssn"]} deterministically, with no detector involved

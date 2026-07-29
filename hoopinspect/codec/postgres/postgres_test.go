@@ -167,8 +167,8 @@ func TestDollarQuotedBodyIsNotSplit(t *testing.T) {
 }
 
 // A DELETE hidden in a string literal or a comment must NOT classify as a
-// delete: the classifier strips both before looking for a verb. This is the
-// concrete advantage of Operation over a naive deny-words match.
+// delete: the classifier strips both before looking for a verb. That is the
+// concrete advantage of Operation over a deny-words match.
 func TestLiteralsAndCommentsDoNotChangeOperation(t *testing.T) {
 	for _, sql := range []string{
 		`SELECT 'DROP TABLE customers' AS warning`,
@@ -189,7 +189,7 @@ func TestLiteralsAndCommentsDoNotChangeOperation(t *testing.T) {
 	}
 }
 
-// A CTE must be classified by its real verb, not by WITH.
+// A CTE must be classified by the verb it runs, not by WITH.
 func TestCTEClassifiedByRealVerb(t *testing.T) {
 	insp := newInspector(t)
 	sql := `WITH doomed AS (SELECT id FROM customers) DELETE FROM orders WHERE id IN (SELECT id FROM doomed)`
@@ -311,7 +311,7 @@ func TestRetainedBytesAreCopied(t *testing.T) {
 		t.Fatalf("got %d statements, want 1", len(stmts))
 	}
 	if stmts[0].Text != "SELECT name FROM customers" {
-		t.Errorf("Text = %q — retained bytes were aliased, not copied", stmts[0].Text)
+		t.Errorf("Text = %q: retained bytes were aliased, not copied", stmts[0].Text)
 	}
 }
 

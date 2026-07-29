@@ -28,7 +28,8 @@ func (s stubPlugin) ScanText(text string) []string {
 }
 
 // BuildMasker mirrors the real plugin: a rule naming an entity it does not
-// detect is a config error, not a rule that silently never fires.
+// detect is a config error, so it cannot become a rule that silently never
+// fires.
 func (s stubPlugin) BuildMasker(raw []byte) (gate.Masker, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -70,7 +71,7 @@ func names(rules []policy.Rule) []string {
 
 // A listener's rules come FIRST so its specific message wins over a generic
 // default for the same statement. Every rule type denies and evaluation is
-// first-match-wins, so concatenating cannot change the allow/deny outcome —
+// first-match-wins, so concatenating cannot change the allow/deny outcome,
 // only which rule gets reported.
 func TestResolveConcatenatesRulesListenerFirst(t *testing.T) {
 	cfg := &Config{
@@ -95,12 +96,11 @@ func TestResolveConcatenatesRulesListenerFirst(t *testing.T) {
 	}
 }
 
-// The merge must not write through a shared backing array: one listener's
-// rules leaking into another's is a silent policy change on a lane nobody
-// edited.
+// The merge must not write through a shared backing array. One listener's
+// rules leaking into another's changes policy on a lane nobody edited.
 func TestResolveDoesNotAliasAcrossListeners(t *testing.T) {
 	cfg := &Config{
-		// Capacity beyond length is what makes append reuse the array.
+		// Capacity beyond length makes append reuse the array.
 		Policy: PolicyConfig{Rules: append(make([]policy.Rule, 0, 8), rule("global"))},
 		Listeners: []ListenerConfig{
 			{Name: "a", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
@@ -125,9 +125,9 @@ func TestResolveDoesNotAliasAcrossListeners(t *testing.T) {
 	}
 }
 
-// OPA replaces rather than merges: two decision endpoints for one lane is not
-// a thing, and silently keeping the default would send statements to a policy
-// the operator thought they had overridden.
+// OPA replaces rather than merges. One lane cannot have two decision
+// endpoints, and keeping the default would send statements to a policy the
+// operator thought they had overridden.
 func TestResolveReplacesOPA(t *testing.T) {
 	cfg := &Config{
 		Policy: PolicyConfig{OPA: &OPAConfig{URL: "http://default/v1/data/x"}},
@@ -149,8 +149,7 @@ func TestResolveReplacesOPA(t *testing.T) {
 }
 
 // A lane rolling out behind an enforcing default must be able to say
-// observe-only. A plain bool cannot express that, which is why Enforce is a
-// pointer.
+// observe-only. A plain bool cannot express that, so Enforce is a pointer.
 func TestResolveListenerCanDisableEnforcementAgainstEnabledDefault(t *testing.T) {
 	cfg := &Config{
 		Policy: PolicyConfig{Enforce: ptr(true), Rules: []policy.Rule{rule("global")}},
@@ -174,7 +173,7 @@ func TestResolveListenerCanDisableEnforcementAgainstEnabledDefault(t *testing.T)
 }
 
 // Mask rules REPLACE rather than concatenate: a rule owns an entity type, and
-// two rules claiming one entity is an ambiguity decided by slice order.
+// two rules claiming one entity leave slice order to decide the winner.
 func TestResolveReplacesMaskRules(t *testing.T) {
 	cfg := &Config{
 		Mask: MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"EMAIL_ADDRESS"}]`)},
@@ -194,7 +193,7 @@ func TestResolveReplacesMaskRules(t *testing.T) {
 }
 
 // Each lane gets its own evaluator. A shared one would apply every lane's
-// rules to every lane, which is the bug this whole change exists to fix.
+// rules to every lane, the bug this change fixes.
 func TestBuildLanesGivesEachListenerItsOwnEvaluator(t *testing.T) {
 	cfg := &Config{
 		Policy: PolicyConfig{Enforce: ptr(true)},
@@ -222,9 +221,9 @@ func TestBuildLanesGivesEachListenerItsOwnEvaluator(t *testing.T) {
 }
 
 // Postgres masking used to be refused because the gate could not re-frame a
-// length-prefixed response. The codec does now, so the config must accept it
-// — and a stale refusal here would be worse than the original bug: masking
-// that works, switched off by validation.
+// length-prefixed response. The codec does now, so the config must accept it.
+// A stale refusal here would beat the original bug for damage: masking that
+// works, switched off by validation.
 func TestMaskOnPostgresIsAccepted(t *testing.T) {
 	cfg := &Config{
 		Listeners: []ListenerConfig{{
@@ -243,8 +242,8 @@ func TestMaskOnPostgresIsAccepted(t *testing.T) {
 	}
 }
 
-// A protocol with neither mechanism must still be refused: config that looks
-// active but can never fire is the failure this guards.
+// A protocol with neither mechanism must still be refused. This guards
+// against config that looks active and can never fire.
 func TestMaskOnUnmaskableProtocolIsRefused(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
 	mc := MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"US_SSN"}]`)}
@@ -276,7 +275,7 @@ func TestMaskOnHTTPIsAccepted(t *testing.T) {
 }
 
 // A pii rule naming an entity the detector was not told to find would
-// evaluate cleanly and never match — a guardrail that silently allows what it
+// evaluate cleanly and never match, a guardrail that silently allows what it
 // was written to deny.
 func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 	cfg := &Config{
@@ -304,8 +303,8 @@ func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 	}
 }
 
-// Every broken lane is reported in one run. Fixing a fleet config one error
-// per restart is the misery this avoids.
+// One run reports every broken lane, so you do not fix a fleet config one
+// error per restart.
 func TestBuildLanesReportsEveryBrokenLane(t *testing.T) {
 	cfg := &Config{
 		Policy: PolicyConfig{Enforce: ptr(true)},
@@ -332,8 +331,8 @@ func TestBuildLanesReportsEveryBrokenLane(t *testing.T) {
 	}
 }
 
-// A config with no per-listener blocks behaves exactly as it did before this
-// feature existed: the top-level policy applies everywhere.
+// A config with no per-listener blocks behaves as it did before this feature
+// existed: the top-level policy applies everywhere.
 func TestGlobalOnlyConfigStillAppliesToEveryLane(t *testing.T) {
 	cfg := &Config{
 		Policy: PolicyConfig{Enforce: ptr(true), Rules: []policy.Rule{rule("no-drop")}},

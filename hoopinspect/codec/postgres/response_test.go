@@ -91,8 +91,8 @@ func TestDecodesResultSetShape(t *testing.T) {
 	}
 }
 
-// A Statement is an audit record. Carrying the cells would put the very values
-// masking exists to remove into the log.
+// A Statement is an audit record. Carrying the cells would write the values
+// masking exists to remove straight into the log.
 func TestResultCarriesNoCellValues(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		rowDescMsg("ssn"),
@@ -108,7 +108,7 @@ func TestResultCarriesNoCellValues(t *testing.T) {
 }
 
 // An error terminates a result set too, and must be distinguishable from a
-// query that simply returned nothing.
+// query that returned nothing.
 func TestErrorResponseIsRecorded(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		backendMsg('E', append([]byte("SFATAL\x00Mpermission denied\x00"), 0)),
@@ -124,7 +124,7 @@ func TestErrorResponseIsRecorded(t *testing.T) {
 	}
 }
 
-// Two queries on one connection are two result sets, not one merged blob.
+// Two queries on one connection are two result sets, never one merged blob.
 func TestConsecutiveResultSets(t *testing.T) {
 	stream := bytes.Join([][]byte{
 		rowDescMsg("a"),
@@ -150,8 +150,8 @@ func TestConsecutiveResultSets(t *testing.T) {
 	}
 }
 
-// The split-read matrix every codec in this library is held to: the same
-// stream fed in two chunks at every possible boundary must produce the same
+// The split-read matrix every codec in this library must pass: the same
+// stream fed in two chunks at every possible boundary produces the same
 // result, with nothing emitted from a fragment.
 func TestResponseSplitReadMatrix(t *testing.T) {
 	stream := bytes.Join([][]byte{
@@ -206,8 +206,8 @@ func TestRequestStillDecodes(t *testing.T) {
 	}
 }
 
-// Garbage must be reported, not silently consumed: a desynchronized stream
-// means every later offset is wrong.
+// Garbage must be reported rather than consumed: a desynchronized stream
+// makes every later offset wrong.
 func TestMalformedResponseRejected(t *testing.T) {
 	// Declared length of 2 is below the legal minimum of 4.
 	bad := []byte{'D', 0, 0, 0, 2, 0, 0}

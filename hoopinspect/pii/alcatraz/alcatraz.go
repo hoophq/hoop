@@ -1,25 +1,25 @@
 // Package alcatraz plugs github.com/hoophq/alcatraz into hoopinspect as both a
 // masking Detector and a policy Scanner.
 //
-// # Why this is a separate module
+// # A separate module
 //
-// The hoopinspect root module has zero dependencies, which is what lets it be
-// audited without a supply-chain review and dropped into a caller without
-// touching their dependency tree. Alcatraz is itself dependency-free, but
-// importing it from the root would still add a module edge to every consumer
-// of the library, including the ones with no use for 45 national-ID
-// recognizers. So it lives here, behind the two interfaces the root already
-// declares — the same shape as store/sqlite.
+// The hoopinspect root module has zero dependencies, so you can audit it
+// without a supply-chain review and drop it into a caller without touching
+// their dependency tree. Alcatraz is itself dependency-free, but importing it
+// from the root would add a module edge to every consumer of the library,
+// including the ones with no use for 45 national-ID recognizers. So it lives
+// here, behind the two interfaces the root already declares, the same shape
+// as store/sqlite.
 //
-// # What it adds
+// # Coverage
 //
 // Alcatraz brings 45 entity types across 12 countries, and 25 of them carry a
-// real checksum validator — Luhn, ISO 7064 mod-97 for IBAN, Verhoeff for
+// real checksum validator: Luhn, ISO 7064 mod-97 for IBAN, Verhoeff for
 // Aadhaar, the Brazilian mod-11 schemes. For a deployment whose data is not
-// US-shaped, that is the difference between masking working and not.
+// US-shaped, that decides whether masking works at all.
 //
 // It is a PII engine, so it has no recognizer for a credential. secrets.go
-// adds three — AWS_ACCESS_KEY, JWT, PRIVATE_KEY — into the same engine, so a
+// adds three (AWS_ACCESS_KEY, JWT, PRIVATE_KEY) into the same engine, so a
 // config names them exactly like a built-in alcatraz type.
 //
 //	det, err := alcatraz.NewDetector(alcatraz.Options{
@@ -40,14 +40,14 @@
 // offenders with their measured rates, and AllEntities() exists for a caller
 // who has read it and still wants everything.
 //
-// # No NER
+// # Pattern core only
 //
-// This wires the pattern-and-checksum core only. Alcatraz's PERSON, LOCATION
-// and NRP entities need the optional alcatraz/ner module, which loads an ONNX
-// model — a different deployment shape (hundreds of MB of weights, per-call
-// inference latency on the response path) and a different decision. Nothing
-// here forecloses it: ner plugs into the same engine, so adding it later is a
-// constructor option, not a rewrite.
+// This wires the pattern-and-checksum core. Alcatraz's PERSON, LOCATION and
+// NRP entities need the optional alcatraz/ner module, which loads an ONNX
+// model: a different deployment shape (hundreds of MB of weights, per-call
+// inference latency on the response path) and a different decision. Adding it
+// later stays open, because ner plugs into the same engine and costs one
+// constructor option.
 package alcatraz
 
 import (
@@ -66,15 +66,15 @@ import (
 // DefaultThreshold drops detections scoring below it. 0.4 is alcatraz's own
 // CLI default.
 //
-// Be clear about what this does and does not buy. It removes the genuinely
-// weak heuristics — US_BANK_NUMBER scores 0.05, US_PASSPORT 0.30 — which fire
-// constantly on ordinary numeric data. It does NOT tame a recognizer whose
-// validator promotes a hit to 1.0, and a validator only rejects what its
-// format can check: an SSN carries no checksum, so any nine digits in a legal
-// area/group/serial range verify. Measured over random nine-digit business
-// ids, US_SSN fires on about a third of them at any threshold.
+// It removes the weak heuristics (US_BANK_NUMBER scores 0.05, US_PASSPORT
+// 0.30) that fire constantly on ordinary numeric data. It does NOT tame a
+// recognizer whose validator promotes a hit to 1.0, and a validator only
+// rejects what its format can check: an SSN carries no checksum, so any nine
+// digits in a legal area/group/serial range verify. Measured over random
+// nine-digit business ids, US_SSN fires on about a third of them at any
+// threshold.
 //
-// That is why Options.Entities is required rather than defaulted. See its
+// So Options.Entities is required rather than defaulted. See its
 // documentation.
 const DefaultThreshold = 0.4
 
@@ -82,7 +82,7 @@ const DefaultThreshold = 0.4
 // caller enabling one does it knowing the cost.
 //
 // The rates below were measured over synthetic order ids, SKUs and reference
-// numbers — no PII at all — at DefaultThreshold:
+// numbers, no PII at all, at DefaultThreshold:
 //
 //	US_SSN       ~32%   nine digits in a legal range; no checksum exists
 //	ABA_ROUTING  ~2.5%  nine digits with a weak mod-10
@@ -92,10 +92,10 @@ const DefaultThreshold = 0.4
 //	URL          high   every HTTP response body has one
 //	DATE_TIME    high   every row has a timestamp
 //
-// None of these is a bug in alcatraz: a nine-digit SSN genuinely is
-// indistinguishable from a nine-digit order id, and a detector that refused to
-// report it would miss every real one. The judgement of whether a given column
-// holds ids or identifiers belongs to whoever knows the schema.
+// Every rate here is correct behavior. A nine-digit SSN is indistinguishable
+// from a nine-digit order id, and a detector that refused to report it would
+// miss every real one. Whoever knows the schema decides which columns hold
+// order ids and which hold identifiers.
 var Noisy = map[string]string{
 	entities.USSSN:      "~32% of random 9-digit ids; SSNs carry no checksum",
 	entities.ABARouting: "~2.5% of random 9-digit ids",
@@ -111,20 +111,19 @@ type Options struct {
 	// Entities selects the alcatraz entity types to detect, named as the
 	// constants in github.com/hoophq/alcatraz/entities ("US_SSN", "BR_CPF").
 	//
-	// REQUIRED. There is deliberately no "all entities" default, and that is
-	// the most important decision in this package. Enabling all 45
+	// REQUIRED. There is no "all entities" default. Enabling all 45
 	// recognizers on a response path corrupts ordinary data: a row like
 	//
 	//	{"order_id":457555462,"customer_id":123456781}
 	//
 	// has both integers rewritten as US_SSN, because nine digits in a legal
-	// range IS a valid SSN as far as any detector can tell. A masker that
-	// mangles a third of the numeric columns gets switched off within a day,
-	// and then nothing is masked at all.
+	// range IS a valid SSN as far as any detector can tell. An operator
+	// switches off a masker that mangles a third of the numeric columns
+	// within a day, and then nothing is masked at all.
 	//
-	// So the caller names the entity types their data actually contains.
-	// See Noisy for the ones that cost the most when guessed at, and
-	// AllEntities if you genuinely want the full set.
+	// So you name the entity types your data contains. See Noisy for the
+	// ones that cost the most when guessed at, and AllEntities if you want
+	// the full set.
 	Entities []string
 
 	// Ignored removes types from the active set, applied after Entities.
@@ -137,8 +136,8 @@ type Options struct {
 	Threshold float64
 
 	// AllowList suppresses detections whose matched text is in this list.
-	// The usual case is a test fixture — a documentation card number, a
-	// seeded example account — that would otherwise be masked out of every
+	// The usual case is a test fixture (a documentation card number, a
+	// seeded example account) that would otherwise be masked out of every
 	// staging response.
 	AllowList []string
 
@@ -174,8 +173,8 @@ type sidecarPlugin interface {
 // newEngine builds the alcatraz engine this package uses: the full built-in
 // recognizer set plus the credential recognizers in secrets.go.
 //
-// One builder so AllEntities and NewDetector can never disagree about what is
-// registered — a mismatch there would reject a valid config with "unknown
+// One builder keeps AllEntities and NewDetector from disagreeing about what
+// is registered. A mismatch there would reject a valid config with "unknown
 // entity type".
 func newEngine(lang string) *alcatraz.Engine {
 	reg := analyzer.NewRegistry(lang)
@@ -283,8 +282,8 @@ func (d *Detector) Entities() []string {
 // It restricts the engine to the single entity asked for rather than running
 // all 45 recognizers and discarding the rest. The Masker calls this once per
 // rule, so a three-rule config costs three narrow scans instead of three full
-// ones — and nothing has to be cached between calls, which matters because a
-// cache keyed on payloads is a map holding the PII it just found.
+// ones. Nothing is cached between calls either, which matters because a cache
+// keyed on payloads is a map holding the PII it just found.
 //
 // Alcatraz reports byte offsets into the analyzed string, and Go's
 // []byte-to-string conversion preserves them, so spans need no translation.
@@ -311,9 +310,8 @@ func (d *Detector) Find(entity string, data []byte) [][2]int {
 }
 
 // claims reports whether entity is in the active set. Find is only ever
-// called for an entity Entities() advertised, but a caller wiring the
-// Detector in by hand can get that wrong, and a narrower scan is cheaper than
-// trusting them.
+// called for an entity Entities() advertised, but hand-wiring the Detector
+// can get that wrong, and a narrow scan costs less than trusting the caller.
 func (d *Detector) claims(entity string) bool {
 	i := sort.SearchStrings(d.active, entity)
 	return i < len(d.active) && d.active[i] == entity

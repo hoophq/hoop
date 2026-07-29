@@ -1,17 +1,17 @@
 // Package session models one inspected connection and the identity behind it.
 //
 // A Session is the unit an audit trail is keyed on and the unit a policy sees
-// as "who". It carries the facts that are true for the whole connection —
-// user, connection name, upstream, protocol — so a per-statement Event does
-// not have to repeat them.
+// as "who". It carries the facts that hold for the whole connection (user,
+// connection name, upstream, protocol) so a per-statement Event does not have
+// to repeat them.
 //
-// # Why identity lives here and not in the codec
+// # Identity belongs to the transport
 //
 // A codec turns bytes into statements. It has no idea who is on the other end
 // of the socket, and it must not: the same Postgres parser serves a per-user
 // sidecar, a shared gateway, and an offline replay of a captured stream. The
-// identity arrives out of band — an injected header from Envoy, a credential
-// token, a mTLS peer certificate — so it belongs in a type the transport
+// identity arrives out of band (an injected header from Envoy, a credential
+// token, a mTLS peer certificate) so it belongs in a type the transport
 // owns.
 package session
 
@@ -47,8 +47,8 @@ func NewID() ID {
 // Every field is optional because the available facts differ by deployment: a
 // per-user Envoy sidecar knows Subject from a verified JWT; a shared gateway
 // knows it from a credential lookup; a raw TCP relay may know only PeerAddr.
-// A policy that requires a field it did not get must fail closed itself —
-// this package will not invent one.
+// A policy that requires a field it did not get must fail closed itself.
+// This package will not invent one.
 type Identity struct {
 	// Subject is the authenticated principal: an email, a JWT sub, a
 	// service-account name. This is the field a DBA needs when a bad query
@@ -72,7 +72,7 @@ type Identity struct {
 
 // IsAnonymous reports whether any principal was established. A deployment
 // that requires authentication should refuse anonymous sessions rather than
-// recording an audit trail nobody can act on.
+// recording an audit trail you cannot act on.
 func (i Identity) IsAnonymous() bool {
 	return i.Subject == "" && i.Email == ""
 }

@@ -125,7 +125,7 @@ func TestAllowedStatementIsForwardedAndAudited(t *testing.T) {
 		t.Fatal("no statement event recorded")
 	}
 	if ev.Principal != "alice@example.com" {
-		t.Errorf("Principal = %q — the audit trail must name the human", ev.Principal)
+		t.Errorf("Principal = %q; the audit trail must name the human", ev.Principal)
 	}
 	if ev.Statement != "SELECT name FROM customers" {
 		t.Errorf("Statement = %q", ev.Statement)
@@ -151,10 +151,10 @@ func TestDeniedStatementBlocksAndRecordsViolation(t *testing.T) {
 		t.Fatal("DROP was allowed")
 	}
 	if d.Payload != nil {
-		t.Error("payload is non-nil on a denial — the caller might forward it")
+		t.Error("payload is non-nil on a denial; the caller might forward it")
 	}
 	if d.Message != "destructive statements are not permitted on appdb" {
-		t.Errorf("Message = %q — the operator's text must reach the user", d.Message)
+		t.Errorf("Message = %q; the operator's text must reach the user", d.Message)
 	}
 	if d.Rule != "no-destructive" {
 		t.Errorf("Rule = %q", d.Rule)
@@ -225,7 +225,7 @@ func TestAuditPrecedesTheDecisionBeingReturned(t *testing.T) {
 }
 
 // The default is uncomfortable and deliberate: a broken sink lets statements
-// through. FailOnAuditError inverts it for compliance deployments.
+// through. FailOnAuditError inverts that for compliance deployments.
 func TestFailOnAuditError(t *testing.T) {
 	t.Run("default allows", func(t *testing.T) {
 		sink := &recordingSink{failOn: audit.KindStatement}
@@ -276,7 +276,7 @@ func TestNilPolicyAllowsEverythingButStillAudits(t *testing.T) {
 	}
 }
 
-// A partial message cannot be judged; holding it is the only correct answer.
+// A partial message cannot be judged, so the gate holds it.
 func TestPartialMessageIsBufferedNotJudged(t *testing.T) {
 	sink := &recordingSink{}
 	g, _ := gate.New(newSession(), gate.Config{
@@ -325,9 +325,9 @@ func (m stubMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
 
 func TestResponseMaskingRewritesAndAudits(t *testing.T) {
 	sink := &recordingSink{}
-	// HTTP, not Postgres: masking is protocol-gated because byte
-	// substitution changes payload length, which corrupts a length-prefixed
-	// binary frame. See TestMaskingIsRefusedOnLengthPrefixedProtocols.
+	// HTTP here, because byte substitution changes payload length and would
+	// corrupt a length-prefixed binary frame. Postgres takes the re-framing
+	// path; see TestMaskingReframesLengthPrefixedProtocols.
 	sess := session.New(hoopinspect.HTTP, session.Identity{Subject: "alice@example.com"})
 	sess.Connection = "api"
 	g, _ := gate.New(sess, gate.Config{
@@ -364,7 +364,7 @@ func TestResponseMaskingRewritesAndAudits(t *testing.T) {
 }
 
 // Masking a request would change the statement the upstream executes, which
-// is a correctness change, not a privacy control.
+// breaks correctness instead of protecting privacy.
 func TestRequestsAreNeverMasked(t *testing.T) {
 	g, _ := gate.New(newSession(), gate.Config{
 		Protocol: hoopinspect.Postgres,
@@ -375,7 +375,7 @@ func TestRequestsAreNeverMasked(t *testing.T) {
 	d := g.Request(context.Background(), in)
 
 	if !bytes.Equal(d.Payload, in) {
-		t.Error("a request payload was masked — the upstream would run a different query")
+		t.Error("a request payload was masked; the upstream would run a different query")
 	}
 	if d.MaskedCount != 0 {
 		t.Errorf("MaskedCount = %d on a request", d.MaskedCount)
@@ -504,7 +504,7 @@ func TestDirectionsHaveIndependentBuffers(t *testing.T) {
 
 	d := g.Request(ctx, full[6:])
 	if len(d.Statements) != 1 {
-		t.Fatalf("got %d statements, want 1 — the buffers were shared", len(d.Statements))
+		t.Fatalf("got %d statements, want 1; the buffers were shared", len(d.Statements))
 	}
 	if d.Statements[0].Text != "SELECT name FROM customers" {
 		t.Errorf("Text = %q", d.Statements[0].Text)
@@ -545,8 +545,8 @@ func TestPolicyContextCarriesIdentity(t *testing.T) {
 	}
 }
 
-// The HTTP codec exercises the same gate, including response-side policy —
-// the case Envoy's ext_authz cannot express.
+// The HTTP codec exercises the same gate, including response-side policy, the
+// case Envoy's ext_authz cannot express.
 func TestHTTPResponsePolicy(t *testing.T) {
 	rules, err := policy.NewRules([]policy.Rule{
 		policy.Rule{Name: "no-5xx", Type: policy.MatchHTTPStatus}.
@@ -580,12 +580,12 @@ func TestHTTPResponsePolicy(t *testing.T) {
 
 // Byte substitution changes payload LENGTH, and a pgwire DataRow carries that
 // length in a frame header the masker cannot see. Substituting in place made
-// psql report "lost synchronization with server" — a real bug caught against
-// a live database.
+// psql report "lost synchronization with server", a real bug caught against a
+// live database.
 //
-// The gate no longer refuses; the codec re-frames instead. The property that
-// matters is not "was it masked" but "is the result still valid pgwire", so
-// this test re-parses the output the way a client would.
+// The gate no longer refuses; the codec re-frames instead. The property to
+// check is that the result is still valid pgwire, so this test re-parses the
+// output the way a client would.
 func TestMaskingReframesLengthPrefixedProtocols(t *testing.T) {
 	sink := &recordingSink{}
 	g, _ := gate.New(newSession(), gate.Config{

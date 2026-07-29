@@ -18,14 +18,14 @@ import (
 // Config is the on-disk configuration.
 //
 // JSON is the native syntax because the module ships zero dependencies and
-// the stdlib has no YAML parser. YAML is available through the nested module
+// the stdlib has no YAML parser. YAML arrives through the nested module
 // github.com/hoophq/hoopinspect/config/yaml, which transcodes to JSON and
-// hands the bytes to LoadConfigBytes — one schema, two syntaxes, and the
+// hands the bytes to LoadConfigBytes. One schema, two syntaxes, and the
 // dependency stays out of anything that does not ask for it.
 type Config struct {
-	// Listeners is the set of protocol endpoints to serve. A sidecar
-	// typically runs one, but a per-user pod fronting both a database and an
-	// API runs two in one process rather than two containers.
+	// Listeners is the set of protocol endpoints to serve. A sidecar usually
+	// runs one; a per-user pod fronting both a database and an API runs two
+	// in one process instead of two containers.
 	Listeners []ListenerConfig `json:"listeners"`
 
 	// Policy is the DEFAULT rule set and OPA client, applied to every
@@ -42,9 +42,9 @@ type Config struct {
 	// Admin serves health and stats. Disabled when Listen is empty.
 	Admin AdminConfig `json:"admin"`
 
-	// PII configures the optional detector plugin. It is decoded but not
-	// interpreted here: this package must not know what an alcatraz Options
-	// looks like, or the dependency it exists to keep out comes back in.
+	// PII configures the optional detector plugin. This package decodes it
+	// without interpreting it: knowing what an alcatraz Options looks like
+	// would drag back the dependency the split exists to keep out.
 	//
 	// The field is declared so DisallowUnknownFields does not reject it, and
 	// so a build wired without a detector can say "this section needs one"
@@ -68,17 +68,17 @@ type ListenerConfig struct {
 	// "unix".
 	Listen string `json:"listen"`
 
-	// Network is "tcp" (default) or "unix". A unix socket is the right
-	// choice for a sandbox with no network egress: filesystem permissions,
-	// not firewall rules, decide who can reach the proxy.
+	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
+	// with no network egress: filesystem permissions decide who can reach the
+	// proxy.
 	Network string `json:"network"`
 
 	// Upstream is the real backend.
 	Upstream string `json:"upstream"`
 
 	// Connection is the operator-facing resource name recorded in audit and
-	// exposed to policy. This is what a rule and an audit query key on, as
-	// distinct from the physical Upstream which may change.
+	// exposed to policy. Rules and audit queries key on it; the physical
+	// Upstream may change under it.
 	Connection string `json:"connection"`
 
 	// UpstreamTLS enables TLS to the backend.
@@ -87,13 +87,13 @@ type ListenerConfig struct {
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http protocol behind an authenticating proxy.
 	//
-	// Trusting a header is only safe when nothing can reach this listener
-	// except that proxy — which is exactly the sidecar topology, where the
-	// listener binds loopback or a unix socket. Setting this on a listener
-	// reachable from anywhere else lets a caller assert any identity.
+	// Trusting a header is safe only when nothing but that proxy can reach
+	// this listener, which the sidecar topology guarantees by binding
+	// loopback or a unix socket. Set this on a listener reachable from
+	// anywhere else and a caller can assert any identity.
 	IdentityHeader string `json:"identity_header"`
 
-	// IdleTimeout closes a connection with no traffic. Zero disables it.
+	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
 	IdleTimeoutSec int `json:"idle_timeout_sec"`
@@ -106,25 +106,25 @@ type ListenerConfig struct {
 	// Rules CONCATENATE, this listener's first: every rule type denies and
 	// evaluation is first-match-wins, so concatenating is monotonic in the
 	// allow/deny outcome and order decides only which name and message get
-	// reported. Listener-first means a lane's specific message beats a
-	// generic default for the same statement.
+	// reported. Listener-first lets a lane's specific message beat a generic
+	// default for the same statement.
 	//
-	// OPA and Enforce REPLACE when set. Merging two decision endpoints is
-	// meaningless, and a lane that says enforce:false means it.
+	// OPA and Enforce REPLACE when set. Two decision endpoints cannot merge
+	// into one, and a lane that says enforce:false means it.
 	Policy *PolicyConfig `json:"policy,omitempty"`
 
 	// Mask overrides the top-level default for this listener.
 	//
 	// Rules REPLACE rather than concatenate: a rule owns an entity type, and
 	// concatenating two lists produces two rewrites competing for one entity
-	// with the winner decided by slice order. Enabled replaces when set.
+	// with slice order picking the winner. Enabled replaces when set.
 	Mask *MaskConfig `json:"mask,omitempty"`
 }
 
 // TLSConfig configures an upstream TLS connection.
 type TLSConfig struct {
-	// CAFile is a PEM bundle used to verify the upstream. When empty the
-	// host trust store is used.
+	// CAFile is a PEM bundle that verifies the upstream. Empty falls back to
+	// the host trust store.
 	CAFile string `json:"ca_file"`
 
 	// CertFile and KeyFile enable client certificates (mTLS).
@@ -135,28 +135,27 @@ type TLSConfig struct {
 	// certificate's name.
 	ServerName string `json:"server_name"`
 
-	// InsecureSkipVerify disables verification. It is deliberately verbose,
-	// and startup logs a warning when it is on: a proxy whose entire purpose
-	// is inspecting sensitive traffic should not silently accept any
-	// certificate.
+	// InsecureSkipVerify disables verification. The name is verbose on
+	// purpose and startup logs a warning when it is on: a proxy built to
+	// inspect sensitive traffic should not silently accept any certificate.
 	InsecureSkipVerify bool `json:"insecure_skip_verify"`
 }
 
 // PolicyConfig configures enforcement.
 type PolicyConfig struct {
-	// Rules is the local rule set, evaluated first so an obviously
-	// forbidden statement never costs a network round trip.
+	// Rules is the local rule set, evaluated first so a statement the
+	// local rules already forbid costs no network round trip.
 	Rules []policy.Rule `json:"rules"`
 
 	// OPA, when URL is set, is consulted after the local rules pass.
 	OPA *OPAConfig `json:"opa"`
 
-	// Enforce false runs in observe-only mode: everything is inspected and
-	// audited, nothing is denied. This is the mode a team runs for a week
-	// before turning enforcement on, and it is the default so a misconfigured
-	// rule cannot take production down on first deploy.
+	// Enforce false runs in observe-only mode: the gate inspects and audits
+	// everything and denies nothing. Teams run this way for a week before
+	// turning enforcement on, and it is the default so a misconfigured rule
+	// cannot take production down on first deploy.
 	//
-	// A pointer so a listener can distinguish "inherit" from an explicit
+	// A pointer, so a listener can distinguish "inherit" from an explicit
 	// false: a lane rolling out behind an enforcing default needs to say
 	// observe-only, and a zero bool cannot express that.
 	Enforce *bool `json:"enforce,omitempty"`
@@ -167,38 +166,38 @@ type OPAConfig struct {
 	URL        string `json:"url"`
 	TimeoutSec int    `json:"timeout_sec"`
 
-	// FailOpen allows the statement when OPA is unreachable. Default false:
-	// a policy engine outage should stop traffic, not silently disable
+	// FailOpen allows the statement when OPA is unreachable. Default false,
+	// so a policy engine outage stops traffic instead of silently disabling
 	// enforcement.
 	FailOpen bool `json:"fail_open"`
 }
 
 // MaskConfig configures response rewriting.
 //
-// Rules are held as raw JSON for the same reason as Config.PII: the shape
-// belongs to whichever detector plugin is wired in, and this package must not
-// link one. The plugin decodes them.
+// Rules stay raw JSON for the same reason as Config.PII: the shape belongs to
+// whichever detector plugin is wired in, and this package must not link one.
+// The plugin decodes them.
 type MaskConfig struct {
 	// Enabled is a pointer for the same reason as PolicyConfig.Enforce: a
-	// listener must be able to say "off" against an enabled default, which a
+	// listener must be able to say "off" against an enabled default, and a
 	// zero bool reads as "inherit".
 	Enabled *bool           `json:"enabled,omitempty"`
 	Rules   json.RawMessage `json:"rules,omitempty"`
 }
 
 // on reports whether masking is switched on, treating an absent Enabled as
-// off. Rules alone do not enable it: a config that lists rules without
-// enabling them is stating an intent to keep them dormant.
+// off. Rules alone do not enable it: a config listing rules without enabling
+// them wants them dormant.
 func (m MaskConfig) on() bool { return m.Enabled != nil && *m.Enabled }
 
 // AuditConfig configures the event sink.
 type AuditConfig struct {
-	// File receives JSON lines. "-" means stdout, which is what a container
+	// File receives JSON lines. "-" means stdout, which a container
 	// deployment wants so the platform's log pipeline collects it.
 	File string `json:"file"`
 
-	// RedactStatements replaces statement text with a stable fingerprint.
-	// For shops that cannot store query text because literals embed PII, but
+	// RedactStatements replaces statement text with a stable fingerprint,
+	// for shops that cannot store query text because literals embed PII but
 	// still need to correlate repeated statements.
 	RedactStatements bool `json:"redact_statements"`
 
@@ -213,30 +212,29 @@ type AuditConfig struct {
 	// Zero disables it.
 	MemoryBuffer int `json:"memory_buffer"`
 
-	// QuerySessions enables the queryable in-memory store that backs the
-	// admin query API (/api/sessions, /api/events, /api/stats) — the
-	// endpoints a UI will render. The value bounds how many sessions are
-	// retained; when full the oldest session and its whole timeline are
-	// evicted, and the API reports the drop count so a reader can tell the
-	// window is partial.
+	// QuerySessions enables the queryable in-memory store behind the admin
+	// query API (/api/sessions, /api/events, /api/stats), the endpoints a UI
+	// renders. The value bounds how many sessions are retained; when full the
+	// oldest session and its whole timeline are evicted, and the API reports
+	// the drop count so a reader can tell the window is partial.
 	//
-	// Deliberately in-memory. A durable, queryable backend lives in the
-	// nested module github.com/hoophq/hoopinspect/store/sqlite, which this
-	// binary does NOT import: linking a database driver here would give the
-	// sidecar a dependency tree, and staying dependency-free is what makes
-	// it auditable. A deployment that wants durable queries embeds the
-	// library and supplies the SQLite store itself.
+	// In-memory by design. A durable, queryable backend lives in the nested
+	// module github.com/hoophq/hoopinspect/store/sqlite, which this binary
+	// does NOT import: linking a database driver here would give the sidecar
+	// a dependency tree, and a dependency-free sidecar is an auditable one. A
+	// deployment that wants durable queries embeds the library and supplies
+	// the SQLite store itself.
 	//
-	// Zero disables the query API entirely; the JSONL file remains the
-	// record of truth either way.
+	// Zero disables the query API; the JSONL file remains the record of truth
+	// either way.
 	QuerySessions int `json:"query_sessions"`
 
 	// FailClosed denies a statement when its audit record cannot be written.
 	//
-	// Default false, and the default is the uncomfortable one. Turn this on
-	// where the audit trail is a compliance requirement rather than an
-	// operational convenience: then a sink outage stops traffic, which is
-	// correct for a system whose purpose is proving who did what.
+	// Default false, which is the uncomfortable default. Turn this on where
+	// the audit trail is a compliance requirement rather than an operational
+	// convenience: a sink outage then stops traffic, which is correct for a
+	// system that exists to prove who did what.
 	FailClosed bool `json:"fail_closed"`
 }
 
@@ -248,7 +246,7 @@ type AdminConfig struct {
 // LoadConfig reads and validates a config file.
 //
 // Validation is exhaustive rather than fail-fast: it reports every problem at
-// once, because fixing a config one error per restart is miserable.
+// once, so you do not fix a config one error per restart.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -259,9 +257,9 @@ func LoadConfig(path string) (*Config, error) {
 
 // LoadConfigBytes parses and validates JSON config bytes.
 //
-// Exported so a caller holding config from somewhere other than a file — a
-// ConfigMap, a secret manager, or the YAML transcoder in the nested module
-// github.com/hoophq/hoopinspect/config/yaml — gets the same strict decode and
+// It is exported so config from somewhere other than a file (a ConfigMap, a
+// secret manager, or the YAML transcoder in the nested module
+// github.com/hoophq/hoopinspect/config/yaml) gets the same strict decode and
 // the same validation as the file path.
 func LoadConfigBytes(data []byte) (*Config, error) {
 	var cfg Config
@@ -365,17 +363,17 @@ func (c *Config) Validate() error {
 
 // validateLane checks one listener's RESOLVED stack.
 //
-// Checking the resolved form rather than the two halves separately is the
-// point: an operator reads "this lane is broken", not "some default you
-// inherited conflicts with something you set".
+// Checking the resolved form rather than the two halves separately gives the
+// operator "this lane is broken" instead of "some default you inherited
+// conflicts with something you set".
 func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	var problems []string
 	pc, mc := c.resolve(lc)
 
 	// Compile the rules so a bad regex fails at startup rather than on the
-	// first request that happens to hit it. With a pii section present the
-	// real check happens in Main against the actual detector; a pii rule has
-	// no scanner yet at this point and would fail for the wrong reason.
+	// first request that hits it. With a pii section present, Main runs the
+	// real check against the detector; a pii rule has no scanner yet here and
+	// would fail for the wrong reason.
 	if len(pc.Rules) > 0 && len(c.PII) == 0 {
 		if _, err := policy.NewRules(pc.Rules); err != nil {
 			problems = append(problems, name+": "+err.Error())
@@ -385,9 +383,9 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, name+": policy.opa set but url is empty")
 	}
 
-	// Mask rule SHAPE belongs to the plugin and is checked when the masker is
-	// built. What can be checked here is whether masking can work at all on
-	// this protocol.
+	// Mask rule SHAPE belongs to the plugin, which checks it when building
+	// the masker. This check covers the one thing knowable here: whether
+	// masking can work on this protocol.
 	if mc.on() {
 		if len(mc.Rules) == 0 {
 			problems = append(problems, name+": mask.enabled is true but mask.rules is empty")
@@ -409,20 +407,20 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 // It is declared here rather than imported so this package stays
 // dependency-free. An engine worth having carries recognizers for dozens of
 // national identifier formats, and linking one in would give the root module
-// a dependency tree — the same reasoning that keeps store/sqlite out (see
+// a dependency tree, the same reasoning that keeps store/sqlite out (see
 // AuditConfig.QuerySessions). The nested module
 // github.com/hoophq/hoopinspect/pii/alcatraz supplies an implementation.
 //
 // Nil means no detection: pii policy rules are a config error and masking is
-// unavailable. That is a refusal, never a silent downgrade.
+// unavailable. Both are refusals, never silent downgrades.
 type Plugin interface {
 	// ScanText implements policy.Scanner for the pii rule type.
 	ScanText(text string) []string
 
-	// Entities lists the entity types this engine will look for. Used to
-	// reject a pii rule naming an entity the engine was not configured to
-	// detect: the rule would load, evaluate, and never match, which is a
-	// guardrail that silently allows everything it was written to stop.
+	// Entities lists the entity types this engine looks for. buildLanes uses
+	// it to reject a pii rule naming an entity the engine was not configured
+	// to detect: that rule would load, evaluate, and never match, silently
+	// allowing everything it was written to stop.
 	Entities() []string
 
 	// BuildMasker decodes the "mask" config section and returns something
@@ -434,10 +432,10 @@ type Plugin interface {
 }
 
 // buildPolicy assembles one lane's evaluator chain: local rules first, OPA
-// second, so an obviously-forbidden statement never costs a round trip.
+// second, so a statement the local rules forbid costs no round trip.
 //
-// Returns nil in observe-only mode. det may be nil; a lane with pii rules then
-// fails to build, which is the point — a guardrail that cannot see must not
+// Returns nil in observe-only mode. det may be nil, and a lane with pii rules
+// then fails to build by design: a guardrail that cannot see must not
 // start.
 func buildPolicy(pc PolicyConfig, det Plugin) (policy.Evaluator, error) {
 	if !pc.enforcing() {

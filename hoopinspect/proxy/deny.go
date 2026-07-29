@@ -9,7 +9,7 @@ import (
 
 // ProtocolDenyWriter renders a denial in each protocol's native error frame.
 //
-// # Why bother
+// # Rationale
 //
 // Envoy's RBAC filter denies by dropping the connection. The developer sees
 // "connection reset by peer", has no idea a policy exists, and files a
@@ -17,14 +17,12 @@ import (
 //
 //	ERROR:  destructive statements are not permitted on appdb
 //
-// They fix it themselves. Every hour of support this saves is the argument
-// for carrying an operator-authored message all the way from the rule
-// definition to the client socket, which is why Verdict.Message exists at
-// all.
+// They fix it themselves. The support hours this saves pay for carrying an
+// operator-authored message from the rule definition all the way to the
+// client socket, which is why Verdict.Message exists.
 //
-// A protocol with no shipped codec returns nil and the connection simply
-// closes. That is honest: without a decoder there is no statement to explain
-// a denial about.
+// A protocol with no shipped codec returns nil and the connection closes.
+// Without a decoder there is no statement to explain a denial about.
 type ProtocolDenyWriter struct{}
 
 // Deny implements DenyWriter.
@@ -43,13 +41,13 @@ func (ProtocolDenyWriter) Deny(proto hoopinspect.Protocol, dir hoopinspect.Direc
 
 // PostgresError builds an ErrorResponse ('E') message.
 //
-// Wire format: each field is a one-byte type code, a NUL-terminated value,
-// and the set is terminated by a zero byte.
+// Wire format: each field is a one-byte type code and a NUL-terminated value,
+// and a zero byte terminates the set.
 // https://www.postgresql.org/docs/current/protocol-error-fields.html
 //
 // Severity is FATAL rather than ERROR because the connection is about to
-// close: reporting ERROR would leave psql waiting for a ReadyForQuery that
-// never arrives, and the user would see a hang instead of the message.
+// close. Reporting ERROR would leave psql waiting for a ReadyForQuery that
+// never arrives, showing the user a hang instead of the message.
 func PostgresError(msg string) []byte {
 	var body []byte
 	field := func(code byte, val string) {
@@ -74,9 +72,9 @@ func PostgresError(msg string) []byte {
 
 // HTTPForbidden builds a 403 response.
 //
-// Connection: close is set because the caller is about to drop the socket;
-// without it a keep-alive client waits for a second response that never
-// comes.
+// It sets Connection: close because the caller is about to drop the socket.
+// Without that header a keep-alive client waits for a second response that
+// never comes.
 func HTTPForbidden(msg string) []byte {
 	body := msg + "\n"
 	return []byte(fmt.Sprintf(

@@ -1,15 +1,15 @@
 // Package metrics turns the audit stream into the numbers a UI renders.
 //
-// # Why this is not part of audit
+// # Separation from audit
 //
-// A sink writes and forgets. That is the right shape for the data path, but a
-// session detail page needs the running totals for a session that has not
-// ended yet — "this query has been open for 40 seconds and has touched three
-// tables" is the screen an operator watches during an incident, and it cannot
-// be answered by querying a store that only learns the totals at close.
+// A sink writes and forgets, the right shape for the data path. A session
+// detail page needs the running totals for a session that has not ended yet:
+// "this query has been open for 40 seconds and has touched three tables" is
+// the screen an operator watches during an incident, and a store that only
+// learns the totals at close cannot answer it.
 //
-// So an Accumulator sits beside the sink, fed the same events, and answers
-// that question from memory. Nothing here persists; a restart loses the live
+// An Accumulator sits beside the sink, fed the same events, and answers that
+// question from memory. Nothing here persists; a restart loses the live
 // numbers and the store keeps the durable ones.
 //
 // # Two scopes
@@ -19,9 +19,9 @@
 //   - Aggregate: a page of store.SessionRecord already read back from a
 //     backend. This is the fleet dashboard.
 //
-// They are deliberately separate. Folding the fleet view into the live
-// registry would mean the dashboard only sees sessions this process handled,
-// which is wrong the moment there are two replicas.
+// The two stay separate. Folding the fleet view into the live registry would
+// mean the dashboard only sees sessions this process handled, which breaks
+// the moment there are two replicas.
 package metrics
 
 import (
@@ -41,19 +41,19 @@ import (
 
 // Latency summarizes per-statement latency for one session.
 //
-// Values below Max are read out of a fixed-bucket histogram and are therefore
+// Values below Max come out of a fixed-bucket histogram and are therefore
 // approximate; see the accuracy note on Accumulator. Max is tracked exactly,
 // because the slowest statement is the one an operator goes looking for and
-// rounding it is a way to lose the outlier that mattered.
+// rounding it loses the outlier that mattered.
 type Latency struct {
 	P50 time.Duration `json:"p50_ns"`
 	P95 time.Duration `json:"p95_ns"`
 	P99 time.Duration `json:"p99_ns"`
 	Max time.Duration `json:"max_ns"`
 
-	// Count is how many statements carried a latency. It is not the
-	// statement count: a caller that never sets Event.Duration gets zero
-	// here while Statements climbs, and a UI must render "no data" rather
+	// Count is how many statements carried a latency. Statements without
+	// one are absent here: a caller that never sets Event.Duration gets
+	// zero while Statements climbs, and a UI must render "no data" rather
 	// than "0ms".
 	Count int64 `json:"count"`
 }
@@ -73,9 +73,9 @@ type SessionMetrics struct {
 	Statements int `json:"statements"`
 	Denied     int `json:"denied"`
 
-	// Masked is the number of VALUES rewritten, summed over masked events,
-	// not the number of events. "we masked 412 values" is the number a
-	// compliance reviewer asks for.
+	// Masked is the number of VALUES rewritten, summed over masked events
+	// rather than counting the events. "We masked 412 values" is the number
+	// a compliance reviewer asks for.
 	Masked int `json:"masked"`
 
 	// Errors counts transport or upstream failures.
@@ -85,7 +85,7 @@ type SessionMetrics struct {
 	ByOperation map[hoopinspect.Operation]int `json:"by_operation,omitempty"`
 
 	// ByTable counts how often each relation or resource was referenced.
-	// Statements with no recognized tables contribute nothing — an empty
+	// Statements with no recognized tables contribute nothing: an empty
 	// Tables means "the parser could not tell", never "touches nothing".
 	ByTable map[string]int `json:"by_table,omitempty"`
 
@@ -93,9 +93,9 @@ type SessionMetrics struct {
 	ByRule map[string]int `json:"by_rule,omitempty"`
 
 	// MaskedEntities counts how many masked EVENTS mentioned each PII class.
-	// It is not a value count: an event reports the classes it rewrote and a
-	// single total, with no per-class breakdown, so summing MaskedCount into
-	// every class named would multiply-count.
+	// The unit is events: an event reports the classes it rewrote and a
+	// single total, with no per-class breakdown, so summing MaskedCount
+	// into every class named would multiply-count.
 	MaskedEntities map[string]int `json:"masked_entities,omitempty"`
 
 	// BytesIn and BytesOut measure INSPECTED PAYLOAD, not socket traffic:
@@ -150,12 +150,11 @@ func (m SessionMetrics) Verdict() string {
 // octave floor: (2^(e-4)/2) / 2^e = 1/32, i.e. ACCURACY IS +/- 3.125% for any
 // value >= 16ns, and exact below that.
 //
-// The trade-off, stated honestly: this is worse than keeping every sample and
-// sorting, and better than a random reservoir, which has sampling error that
-// grows in the tail exactly where p99 lives. It costs a flat 624 counters —
-// about 2.4 KiB — per session no matter how many statements run, which is the
-// whole point: a session that stays open for a day and runs a million
-// statements must not grow a million-element slice.
+// The trade-off: this is worse than keeping every sample and sorting, and
+// better than a random reservoir, whose sampling error grows in the tail
+// where p99 lives. It costs a flat 624 counters (about 2.4 KiB) per session
+// no matter how many statements run. A session that stays open for a day and
+// runs a million statements must not grow a million-element slice.
 const (
 	latSubBits  = 4
 	latSubCount = 1 << latSubBits
@@ -169,8 +168,7 @@ const (
 )
 
 // latBucket maps a nanosecond count to its bucket index. The mapping is
-// monotone, which is what makes a running sum over buckets a valid quantile
-// scan.
+// monotone, so a running sum over buckets is a valid quantile scan.
 func latBucket(v uint64) int {
 	if v < latSubCount {
 		return int(v)
@@ -261,7 +259,7 @@ func (h *histogram) summary() Latency {
 //
 // Safe for concurrent use: the request and response pumps are separate
 // goroutines writing the same session, so an accumulator that needed external
-// synchronization would just move the mutex to every caller.
+// synchronization would move the mutex to every caller.
 type Accumulator struct {
 	mu sync.Mutex
 
@@ -298,8 +296,8 @@ func (a *Accumulator) Add(ev audit.Event) {
 
 		// Denial keys on the KIND, not on !Allowed. Allowed is a bool whose
 		// zero value is false, so a hand-built Event{Kind: KindStatement}
-		// that forgot to set it would otherwise register as a violation —
-		// the exact direction an audit counter must never be wrong in.
+		// that forgot to set it would otherwise register as a violation,
+		// the direction an audit counter must never be wrong in.
 		if ev.Kind == audit.KindViolation {
 			a.m.Denied++
 		}
@@ -397,10 +395,10 @@ func (a *Accumulator) countBytes(ev audit.Event) {
 
 // Snapshot returns an independent copy.
 //
-// Deep, not shallow. Handing back the live maps means a UI marshalling the
-// result races the connection still writing events, and encoding/json reading
-// a map under concurrent write is a fatal runtime throw, not a recoverable
-// error. The copy is the whole reason this method exists.
+// The copy is deep, which is the reason this method exists. Handing back the
+// live maps means a UI marshalling the result races the connection still
+// writing events, and encoding/json reading a map under concurrent write is
+// a fatal runtime throw, not a recoverable error.
 func (a *Accumulator) Snapshot() SessionMetrics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -428,16 +426,16 @@ const DefaultMaxSessions = 1024
 
 // Registry holds one Accumulator per live session.
 //
-// # The bound, and why it is soft
+// # The soft bound
 //
 // A registry that grows forever is a memory leak in a process that runs for
 // months. A registry that evicts a session still running loses the numbers
-// for the query someone is watching right now, which is the single case the
-// live view exists for.
+// for the query someone is watching right now, the single case the live view
+// exists for.
 //
-// So eviction only ever takes the OLDEST COMPLETED session, and when every
-// entry is still live the registry goes over budget rather than dropping one.
-// That is not unbounded: the ceiling becomes the number of simultaneously
+// Eviction therefore takes the OLDEST COMPLETED session, and when every
+// entry is still live the registry goes over budget rather than dropping
+// one. The ceiling stays bounded: it becomes the number of simultaneously
 // open connections, which the transport already limits, and the overage is
 // reclaimed as soon as anything completes.
 type Registry struct {
@@ -456,9 +454,9 @@ func NewRegistry(maxSessions int) *Registry {
 }
 
 // For returns the accumulator for id, creating it if needed. The returned
-// pointer stays valid after eviction — a caller holding it keeps writing to a
-// live object that the registry no longer publishes, which is better than
-// handing back nil on the data path.
+// pointer stays valid after eviction: a caller holding it keeps writing to a
+// live object the registry no longer publishes, which beats handing back nil
+// on the data path.
 func (r *Registry) For(id session.ID) *Accumulator {
 	r.mu.Lock()
 	defer r.mu.Unlock()

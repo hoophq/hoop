@@ -8,27 +8,28 @@ import (
 // retagContentLength rewrites an HTTP response's Content-Length header after
 // masking changed the body by delta bytes.
 //
-// # Why this is necessary
+// # The bug it prevents
 //
 // The masker rewrites values in place and the rewrite is rarely
 // length-preserving: ada@example.com (15 bytes) becomes [REDACTED:email] (16).
 // The declared Content-Length is now one byte short, so the client reads that
-// many bytes and stops — the JSON ends mid-token. It looks like a corrupt
-// upstream, and the report that comes back is "your proxy breaks responses",
-// not "your masking works".
+// many bytes and stops, ending the JSON mid-token. It looks like a corrupt
+// upstream, and the report that comes back says "your proxy breaks
+// responses".
 //
-// # Why it is this conservative
+// # Refusal conditions
 //
 // The relay hands the gate raw TCP chunks, so the header block and the body
 // may or may not arrive together. Rewriting is attempted ONLY when the buffer
 // carries a complete header block, exactly one Content-Length, and a declared
-// length that matches the bytes actually present before masking. Any doubt and
-// the payload is returned untouched: a wrong Content-Length is worse than a
-// stale one, because it desynchronizes a keep-alive connection for every
-// request that follows.
+// length that matches the bytes present before masking. Any doubt and
+// retagContentLength returns the payload untouched: a wrong Content-Length is
+// worse than a stale one, because it desynchronizes a keep-alive connection
+// for every request that follows.
 //
-// A chunked response needs no fix — its framing is per-chunk and the relay
-// forwards whole chunks — so a response without Content-Length is left alone.
+// A chunked response needs no fix, since its framing is per-chunk and the
+// relay forwards whole chunks, so a response without Content-Length is left
+// alone.
 func retagContentLength(payload []byte, delta int) []byte {
 	if delta == 0 {
 		return payload
@@ -43,16 +44,16 @@ func retagContentLength(payload []byte, delta int) []byte {
 	}
 	head := payload[:headerEnd]
 
-	// Only a response we can see the status line of. Masking runs on the
-	// server direction, but a buffer starting mid-body could contain
-	// something that merely looks like a header block.
+	// Require a visible status line. Masking runs on the server direction,
+	// but a buffer starting mid-body could hold something shaped like a
+	// header block.
 	if !bytes.HasPrefix(head, []byte("HTTP/")) {
 		return payload
 	}
 
 	valueStart, valueEnd, n := findContentLength(head)
 	if n != 1 {
-		// Zero: chunked or no body — nothing to correct. More than one: a
+		// Zero: chunked or no body, so nothing to correct. More than one: a
 		// request smuggling shape. Refuse either way.
 		return payload
 	}
@@ -62,8 +63,8 @@ func retagContentLength(payload []byte, delta int) []byte {
 		return payload
 	}
 
-	// The whole body must be in this buffer, or the delta we were handed does
-	// not describe the whole entity and the corrected number would be wrong.
+	// The whole body must be in this buffer, or delta does not describe the
+	// whole entity and the corrected number would be wrong.
 	bodyLen := len(payload) - (headerEnd + 4)
 	if bodyLen != declared+delta {
 		return payload

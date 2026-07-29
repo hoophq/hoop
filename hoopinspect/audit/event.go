@@ -1,23 +1,22 @@
 // Package audit records what happened, durably enough to answer questions
 // after the fact.
 //
-// # What an audit trail is for
+// # The scenario that justifies this
 //
-// The concrete scenario, which is the one that justifies this whole library:
-// a bad query lands on a production database. The DBA's first action is to
+// A bad query lands on a production database. The DBA's first action is to
 // disable the account that ran it. For that they need to know WHOSE identity
-// it was — and every proxy that authenticates upstream with a shared service
+// it was, and every proxy that authenticates upstream with a shared service
 // account makes that impossible.
 //
-// So an Event carries the principal, not just the statement. Everything else
-// here follows from wanting that lookup to work at 3am.
+// An Event therefore carries the principal alongside the statement.
+// Everything else here follows from wanting that lookup to work at 3am.
 //
 // # Ordering and durability
 //
 // Sink implementations are free to buffer, but Write must not silently drop.
-// A sink that cannot keep up returns an error and the caller decides — the
+// A sink that cannot keep up returns an error and the caller decides. The
 // gate treats a failed audit write as a policy failure, because an
-// unrecorded statement is exactly the one an attacker wants.
+// unrecorded statement is the one an attacker wants.
 package audit
 
 import (
@@ -73,7 +72,7 @@ type Event struct {
 
 	// Principal is the authenticated actor. Denormalized onto every event on
 	// purpose: an audit query that needs a join to answer "who ran this" is
-	// a query nobody runs during an incident.
+	// a query you will not write at 3am.
 	Principal string `json:"principal"`
 
 	// Protocol the statement came from.
@@ -86,7 +85,7 @@ type Event struct {
 	Operation hoopinspect.Operation `json:"operation,omitempty"`
 
 	// Statement is the text that was inspected. Subject to the sink's
-	// redaction settings — see RedactStatements.
+	// redaction settings; see RedactStatements.
 	Statement string `json:"statement,omitempty"`
 
 	// Tables the statement referenced.
@@ -106,8 +105,8 @@ type Event struct {
 	Direction hoopinspect.Direction `json:"direction,omitempty"`
 
 	// MaskedEntities names what was rewritten on a KindMasked event
-	// (["email", "ssn"]). The VALUES are deliberately absent: an audit log
-	// that records what you masked, in the clear, has un-masked it.
+	// (["email", "ssn"]). The VALUES stay out on purpose: an audit log that
+	// records what you masked, in the clear, has un-masked it.
 	MaskedEntities []string `json:"masked_entities,omitempty"`
 
 	// MaskedCount is how many values were rewritten.
@@ -134,9 +133,8 @@ type Event struct {
 //
 // Write is called on the connection's data path, so an implementation that
 // blocks blocks the user's query. Buffer internally if the backing store is
-// slow, and return an error rather than dropping when the buffer is full —
-// the caller must be the one to decide whether an unrecorded statement may
-// still run.
+// slow, and return an error rather than dropping when the buffer is full.
+// The caller decides whether an unrecorded statement may still run.
 //
 // Implementations must be safe for concurrent use: one sink serves every
 // connection in the process.

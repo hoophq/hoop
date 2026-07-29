@@ -14,14 +14,13 @@ import (
 // OPAClient evaluates statements against an Open Policy Agent Data API
 // endpoint.
 //
-// # Why this shape
+// # Shape of the contract
 //
 // InfoSec teams that already run OPA will not adopt a second policy system.
-// The point of this client is that hoopinspect does NOT own policy — it owns
-// the input document. Envoy's postgres_proxy can hand OPA a resource name and
-// an operation verb; this hands it the statement text, the normalized
-// operation, the table list and the protocol, in one shape for four
-// protocols.
+// So hoopinspect does NOT own policy here; it owns the input document.
+// Envoy's postgres_proxy can hand OPA a resource name and an operation verb.
+// This client hands it the statement text, the normalized operation, the
+// table list and the protocol, in one shape for four protocols.
 //
 // The request body is:
 //
@@ -32,20 +31,20 @@ import (
 //	{"result": {"allow": true}}
 //	{"result": {"allow": false, "message": "..."}}
 //
-// A bare boolean result is also accepted, so `data.hoop.allow` written as a
+// A bare boolean result also decodes, so `data.hoop.allow` written as a
 // simple rule works without a wrapper object.
 type OPAClient struct {
 	// URL is the full decision endpoint, e.g.
 	// http://opa:8181/v1/data/hoop/inspect
 	URL string
 
-	// HTTPClient is used for requests. When nil, a client with Timeout is
-	// created on first use.
+	// HTTPClient serves the requests. When nil, the client builds one with
+	// Timeout on first use.
 	HTTPClient *http.Client
 
-	// Timeout bounds a single decision. OPA sits on the data path, so this
-	// must stay small; a slow policy engine should fail the request, not hang
-	// the connection. Defaults to 2s.
+	// Timeout bounds a single decision. OPA sits on the data path, so keep
+	// this small: a slow policy engine must fail the request rather than
+	// hang the connection. Defaults to 2s.
 	Timeout time.Duration
 
 	// FailOpen allows the statement when OPA cannot be reached or returns a
@@ -53,20 +52,20 @@ type OPAClient struct {
 	FailOpen bool
 
 	// Context carries extra fields into input alongside the statement: the
-	// authenticated user, the hoop connection name, a correlation id.
-	// Evaluated once per client, so put per-connection facts here and
-	// per-statement facts in the Statement itself.
+	// authenticated user, the hoop connection name, a correlation id. The
+	// client reads it once per evaluation, so put per-connection facts here
+	// and per-statement facts in the Statement itself.
 	Context map[string]string
 }
 
-// opaRequest is the wire body sent to OPA.
+// opaRequest is the wire body the client posts to OPA.
 type opaRequest struct {
 	Input opaInput `json:"input"`
 }
 
 // opaInput is the document a Rego policy sees as `input`.
 //
-// Field names are snake_case and stable: they are a public contract with
+// Field names are snake_case and stable: they form a public contract with
 // whoever writes the Rego, and renaming one silently breaks their policy.
 type opaInput struct {
 	Protocol  string                  `json:"protocol"`
@@ -80,8 +79,8 @@ type opaInput struct {
 	Context   map[string]string       `json:"context,omitempty"`
 }
 
-// opaResponse models OPA's Data API reply. Result is deliberately typed as
-// json.RawMessage so both an object and a bare boolean decode.
+// opaResponse models OPA's Data API reply. Result is json.RawMessage,
+// deliberately, so both an object and a bare boolean decode.
 type opaResponse struct {
 	Result json.RawMessage `json:"result"`
 }
@@ -152,8 +151,8 @@ func (c *OPAClient) EvaluateContext(ctx context.Context, stmt hoopinspect.Statem
 	}
 
 	// An undefined decision (no matching rule) comes back with result absent.
-	// That is not an error, but it IS the absence of an allow, so it denies
-	// unless FailOpen.
+	// OPA did not fail, yet nothing allowed the statement either, so it
+	// denies unless FailOpen.
 	if len(out.Result) == 0 || string(out.Result) == "null" {
 		if c.FailOpen {
 			return Allow()
@@ -175,9 +174,9 @@ func (c *OPAClient) EvaluateContext(ctx context.Context, stmt hoopinspect.Statem
 		return c.failure(fmt.Errorf("policy/opa: unrecognized result shape: %s", out.Result))
 	}
 
-	// Accept either polarity so a policy can be written as `allow` or `deny`
-	// without the caller adapting. `denied` wins when both are present,
-	// because an explicit denial is the safer reading.
+	// Either polarity decodes, so a Rego policy written as `allow` or as
+	// `deny` works without you adapting the caller. `denied` wins when both
+	// are present, because an explicit denial is the safer reading.
 	switch {
 	case obj.Denied != nil && *obj.Denied:
 		return Verdict{Denied: true, Message: messageOr(obj.Message, "denied by policy"), Rule: ruleOr(obj.Rule)}
