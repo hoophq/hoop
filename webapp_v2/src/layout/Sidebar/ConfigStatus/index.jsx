@@ -8,7 +8,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStatusStore } from '@/stores/useConfigStatusStore'
 import { useBridgeStore } from '@/stores/useBridgeStore'
-import { computeProgress } from './steps'
+import { computeProgress, STEP_DEFS } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
 
@@ -34,10 +34,36 @@ export function ConfigStatus() {
   const cardRef = useClickOutside(() => setOpened(false))
 
   // Initial fetch + TTL-respecting refresh when the admin navigates (returning
-  // from "Create a Resource" & friends should update the ring without polling).
+  // from "Create a Resource" & friends should update the ring right away).
   useEffect(() => {
     if (isAdmin) fetchStatus()
   }, [isAdmin, location.pathname, fetchStatus])
+
+  // Background reactivity: refresh on window focus (actions done via CLI or
+  // another tab) and on a slow poll, so completing a step reflects on the
+  // ring without reopening the widget. Skipped once setup is complete — the
+  // widget is gone at 3/3, so a configured org never polls.
+  useEffect(() => {
+    if (!isAdmin) return undefined
+    const tick = () => {
+      const state = useConfigStatusStore.getState()
+      if (state.status === 'ready' && computeProgress(state.checks).stepsDone === STEP_DEFS.length) return
+      fetchStatus()
+    }
+    window.addEventListener('focus', tick)
+    const interval = setInterval(tick, 30_000)
+    return () => {
+      window.removeEventListener('focus', tick)
+      clearInterval(interval)
+    }
+  }, [isAdmin, fetchStatus])
+
+  // Faster feedback while the admin is actually looking at the open checklist.
+  useEffect(() => {
+    if (!opened) return undefined
+    const interval = setInterval(() => fetchStatus({ force: true }), 10_000)
+    return () => clearInterval(interval)
+  }, [opened, fetchStatus])
 
   // Never render for non-admins; stay hidden until the first snapshot
   // resolves (avoids flashing "3 steps from success" at a fully configured

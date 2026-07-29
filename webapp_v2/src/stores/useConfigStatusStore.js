@@ -13,7 +13,10 @@ import { useUserStore } from '@/stores/useUserStore'
 // from real configuration state — nothing is persisted or manually ticked —
 // so the widget updates automatically as the admin configures the org.
 
-const TTL_MS = 60_000
+// Short TTL: navigation/focus/poll triggers all funnel through fetchStatus,
+// and the TTL is what dedupes them — 15s keeps the widget feeling live
+// without letting overlapping triggers stack requests.
+const TTL_MS = 15_000
 
 // The gateway's built-in admin group (GroupAdmin). Server-side it is
 // env-overridable, but 'admin' is the default every org starts with, and the
