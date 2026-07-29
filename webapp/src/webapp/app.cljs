@@ -733,7 +733,7 @@
 (defmethod routes/panels :settings-attributes-edit-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
-        attr-name (:name (:route-params current-route))]
+        attr-name (safe-decode-uri-component (:name (:route-params current-route)))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:attributes/get attr-name])
     [layout :application-hoop
