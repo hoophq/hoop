@@ -1,0 +1,112 @@
+# hoop-inspect: one process, one lane per Envoy cluster.
+#
+#   envoy :8443 --cluster hoop_inspect_http--> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg----> :15432  lane "appdb"
+#
+# Each lane resolves its own rules, its own masking and its own OPA endpoint.
+# The top-level policy/mask blocks are DEFAULTS every lane inherits unless it
+# overrides them; the resolved result is served at :19000/config.
+#
+# Validate without starting anything:
+#   cd hoopinspect/pii/alcatraz && go run ./cmd/hoop-inspect-pii -validate \
+#     -config ../../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-" # stdout, for the container log pipeline
+  memory_buffer: 256
+  async_queue_size: 1024 # a slow disk must not block a user's query
+  query_sessions: 500 # backs /api/sessions
+
+# One detector engine for the process: the union of every entity any lane
+# references below. Required — there is no all-entities default, because
+# enabling all 45 recognizers rewrites ordinary numeric columns (US_SSN fires
+# on roughly a third of random nine-digit business ids).
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+# ---------------------------------------------------------------- defaults
+# Applies to every lane. Lane rules are evaluated BEFORE these, so a lane's
+# specific message wins over a generic one for the same statement.
+policy:
+  enforce: true
+  rules:
+    # Cross-protocol: a taxpayer id in a statement lands in the database's own
+    # query log, slow-query log and EXPLAIN output. Masking the response does
+    # not undo that, which is why this is a guardrail and not a mask rule.
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+# Masking is response-side, and both lanes get it by two different mechanisms:
+# HTTP by substituting bytes and correcting Content-Length, postgres by
+# rebuilding its length-prefixed row frames around the new values.
+mask:
+  enabled: true
+  rules:
+    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
+    - {name: cards, entity: CREDIT_CARD, strategy: partial, keep_last: 4}
+    - {name: cpf, entity: BR_CPF, strategy: redact}
+    - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+
+# ------------------------------------------------------------------- lanes
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    connection: appdb
+    policy:
+      rules:
+        # Envoy cannot see this: there is no pgwire parser in its filter
+        # chain, so OPA is never consulted and never sees the statement.
+        - name: no-destructive-sql
+          type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on appdb
+    mask:
+      rules:
+        # Column rules are only possible where the protocol names its values,
+        # and there they beat detection outright. alcatraz REFUSES
+        # 123-45-6789 as an obvious fixture (sequential digits), so the
+        # detector-based ssn rule leaves it in the clear. The column does not
+        # care what the value looks like.
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+        - {name: cpf, entity: BR_CPF, strategy: redact}
+        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+    connection: httpbin
+    policy:
+      rules:
+        - name: no-admin-api
+          type: http_resource
+          resources: ["/admin/**"]
+          message: the admin API is not reachable through this proxy
+        - name: no-internal-ids
+          type: http_resource
+          # Matched against the NORMALIZED resource, so one rule covers every
+          # id: /anything/users/12345/orders/98765 collapses to this shape.
+          resources: ["/anything/users/*/orders/*"]
+          message: direct id access is not permitted; use the search endpoint
+        - name: no-upstream-5xx
+          type: http_status
+          # Response-side. ext_authz decides before the upstream is called, so
+          # this is a question Envoy structurally cannot ask.
+          statuses: ["5xx"]
+          message: upstream failure suppressed by policy

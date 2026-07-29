@@ -58,6 +58,7 @@ import (
 	"fmt"
 	"os"
 
+	configyaml "github.com/hoophq/hoopinspect/config/yaml"
 	"github.com/hoophq/hoopinspect/pii/alcatraz"
 	"github.com/hoophq/hoopinspect/sidecar"
 )
@@ -89,14 +90,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "hoop-inspect-pii:", err)
 		os.Exit(1)
 	}
-
 	// A nil *alcatraz.Detector in a non-nil interface would make the sidecar
 	// think a detector is present and call through it. Pass an untyped nil.
 	if det == nil {
-		sidecar.Main(version, nil)
+		sidecar.Main(version, nil, configyaml.Load)
 		return
 	}
-	sidecar.Main(version, det)
+	sidecar.Main(version, det, configyaml.Load)
 }
 
 // peekConfigPath finds -config without consuming the flag set, so
@@ -123,6 +123,19 @@ func buildDetector(cfgPath string) (*alcatraz.Detector, error) {
 	if err != nil {
 		// Let sidecar.Main report an unreadable config; it owns that message.
 		return nil, nil
+	}
+
+	// The sidecar accepts YAML or JSON, so this second read of the same file
+	// has to agree about the syntax. Transcoding here rather than parsing
+	// YAML directly keeps one definition of what the "pii" section looks
+	// like — the JSON tags below.
+	if configyaml.IsYAML(cfgPath) {
+		converted, cerr := configyaml.ToJSON(raw)
+		if cerr != nil {
+			// A malformed config is the sidecar's error to report.
+			return nil, nil
+		}
+		raw = converted
 	}
 
 	var f piiFile

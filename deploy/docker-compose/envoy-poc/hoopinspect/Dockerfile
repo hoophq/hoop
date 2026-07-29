@@ -33,4 +33,4 @@ RUN adduser -D -u 10001 inspect
 USER inspect
 
 ENTRYPOINT ["/usr/local/bin/hoop-inspect"]
-CMD ["-config", "/etc/hoop-inspect/config.json"]
+CMD ["-config", "/etc/hoop-inspect/config.yaml"]

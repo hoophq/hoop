@@ -1,15 +1,15 @@
 # Tier 1: the fat gate.
 #
 # This is the layer InfoSec already owns. It answers one question -- "may this
-# user reach this service at all?" -- and, on allow, hands Envoy the hoop proxy
-# token for that user so the request arrives at hoop already carrying a
-# per-user identity.
+# user reach this service at all?" -- and nothing else.
 #
 # What it deliberately does NOT do: inspect the action. A DELETE and a SELECT
-# look identical here. That is tier 2, and it lives in hoop, because Envoy
-# cannot parse pgwire and OPA never sees the statement.
+# look identical here. That is tier 2, and it lives in hoop-inspect, because
+# Envoy cannot parse pgwire and OPA never sees the statement. Even on the HTTP
+# lane, where OPA does see method and path, it decides BEFORE the upstream is
+# called and so never sees a response.
 #
-# Identity source: X-Citadel-User. In the real deployment this is the verified
+# Identity source: X-Hoop-User. In the real deployment this is the verified
 # JWT subject that Envoy's jwt_authn filter drops into dynamic metadata
 # (input.attributes.metadataContext.filterMetadata). A header keeps the POC
 # honest about the shape without dragging an IdP into docker-compose.
@@ -23,23 +23,14 @@ default allow := false
 http := input.attributes.request.http
 
 user := u if {
-	u := http.headers["x-citadel-user"]
+	u := http.headers["x-hoop-user"]
 	u != ""
 }
 
-# Per-user hoop proxy tokens. run.sh mints these against the hoop API and
-# rewrites this block. Users absent from the map are denied -- there is no
-# default token, so a typo fails closed rather than falling back to a shared
-# service account (the exact Teleport behaviour Matt objects to).
-tokens := {
-	# BEGIN-TOKENS
-	"alice": "httpproxy-51EeshOHoYbAcJR_oNWd4F5oBp96A7nXfjr-quXPMxI",
-	"bob": "",
-	# END-TOKENS
-}
-
 # Service catalogue. In production this is data pushed by the policy bundle,
-# not a literal.
+# not a literal. Users absent from the map are denied -- there is no default
+# grant, so a typo fails closed rather than falling back to a shared service
+# account (the exact Teleport behaviour Matt objects to).
 grants := {
 	"alice": ["httpbin"],
 	"bob": [],
@@ -48,19 +39,15 @@ grants := {
 service := "httpbin"
 
 allow if {
-	user
-	tokens[user] != ""
 	some svc in grants[user]
 	svc == service
 }
 
 # --------------------------------------------------------------- credential
-# On allow, inject the caller's hoop proxy token. hoop reads this at
-# gateway/proxyproto/httpproxy/httpproxy.go:245 (Authorization header),
-# resolves it to a ConnectionCredentials row, and impersonates that user for
-# the whole session. Per-user identity survives the hop.
-headers["authorization"] := tokens[user] if allow
-
+# Nothing to inject. The upstream here is hoop-inspect, which authenticates
+# nobody: Envoy already did that, and the sidecar's whole contract is that it
+# sits behind something owning identity. Correlation is the one thing worth
+# passing on, so an audit row can be joined to an Envoy access log line.
 headers["x-hoop-correlation-id"] := http.headers["x-request-id"] if {
 	allow
 	http.headers["x-request-id"]
@@ -73,7 +60,7 @@ status_code := 200 if {
 	not user
 } else := 403
 
-body := "missing X-Citadel-User header" if status_code == 401
+body := "missing X-Hoop-User header" if status_code == 401
 
 body := sprintf("user %q is not granted access to %q by the fat gate (tier 1)", [user, service]) if {
 	status_code == 403

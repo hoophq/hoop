@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -54,22 +55,35 @@ import (
 // instead.
 var Version = "dev"
 
+// Loader reads and validates a config file. It is the seam that lets a build
+// accept YAML without the root module linking a YAML parser: pass
+// github.com/hoophq/hoopinspect/config/yaml's Load, or nil for JSON only.
+type Loader func(path string) (*Config, error)
+
 // Main is the command-line entry point.
 //
 // version is stamped by the caller's -ldflags. det is the optional detection
 // plugin: nil disables masking and makes any pii policy rule a config error.
-// It calls os.Exit, so it is the last thing a main does.
+// load is the optional config reader; nil means JSON only. It calls os.Exit,
+// so it is the last thing a main does.
 //
 // Usage:
 //
-//	hoop-inspect -config /etc/hoop-inspect/config.json
-//	hoop-inspect -validate -config config.json   # check and exit
+//	hoop-inspect -config /etc/hoop-inspect/config.yaml
+//	hoop-inspect -validate -config config.yaml   # check and exit
 //	hoop-inspect -version
-func Main(version string, det Plugin) {
+func Main(version string, det Plugin, load Loader) {
 	Version = version
 
+	syntax := "JSON"
+	if load == nil {
+		load = LoadConfig
+	} else {
+		syntax = "YAML or JSON"
+	}
+
 	var (
-		configPath = flag.String("config", "", "path to the JSON config file")
+		configPath = flag.String("config", "", "path to the config file ("+syntax+")")
 		validate   = flag.Bool("validate", false, "validate the config and exit")
 		showVer    = flag.Bool("version", false, "print the version and exit")
 	)
@@ -85,7 +99,7 @@ func Main(version string, det Plugin) {
 		os.Exit(2)
 	}
 
-	cfg, err := LoadConfig(*configPath)
+	cfg, err := load(*configPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
 		os.Exit(1)
@@ -102,21 +116,28 @@ func Main(version string, det Plugin) {
 	}
 
 	if *validate {
-		// Building the policy and the masker is most of what can go wrong in
-		// a config, and -validate that skips it is a check people stop
-		// trusting. With a detector attached this also proves the entity
-		// names resolve.
-		if _, perr := cfg.BuildPolicy(det); perr != nil {
-			fmt.Fprintln(os.Stderr, "hoop-inspect:", perr)
+		// Building every lane is most of what can go wrong in a config, and
+		// a -validate that skips it is a check people stop trusting. With a
+		// detector attached this also proves the entity names resolve.
+		lanes, lerr := buildLanes(cfg, det)
+		if lerr != nil {
+			fmt.Fprintln(os.Stderr, "hoop-inspect:", lerr)
 			os.Exit(1)
 		}
-		if cfg.Mask.Enabled {
-			if _, merr := buildMasker(cfg, det); merr != nil {
-				fmt.Fprintln(os.Stderr, "hoop-inspect:", merr)
-				os.Exit(1)
+		fmt.Println("config OK:", len(lanes), "listener(s)")
+		for _, ln := range lanes {
+			mode := "observe-only"
+			if ln.policy != nil {
+				mode = fmt.Sprintf("enforcing %d rule(s)", len(ln.rules))
 			}
+			if ln.opaURL != "" {
+				mode += " + opa"
+			}
+			if ln.masker != nil {
+				mode += " + masking"
+			}
+			fmt.Printf("  %-16s %-9s %s\n", ln.name, ln.cfg.Protocol, mode)
 		}
-		fmt.Println("config OK:", len(cfg.Listeners), "listener(s)")
 		return
 	}
 
@@ -151,38 +172,43 @@ func Run(cfg *Config, det Plugin) error {
 		log.Info("detection plugin attached")
 	}
 
-	pol, err := cfg.BuildPolicy(det)
+	lanes, err := buildLanes(cfg, det)
 	if err != nil {
 		return err
-	}
-	if pol == nil {
-		log.Warn("running in observe-only mode; no statement will be denied",
-			"hint", "set policy.enforce=true to enforce")
-	}
-
-	masker, err := buildMasker(cfg, det)
-	if err != nil {
-		return err
-	}
-	if masker != nil {
-		log.Info("response masking enabled")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	servers := make([]*proxy.Server, 0, len(cfg.Listeners))
-	for _, lc := range cfg.Listeners {
-		srv, serr := buildServer(lc, cfg, pol, auditSink, masker, log)
+	servers := make([]*proxy.Server, 0, len(lanes))
+	for _, ln := range lanes {
+		srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
 		if serr != nil {
 			return serr
 		}
 		servers = append(servers, srv)
+
+		// One line per lane naming what it will actually enforce. Inheritance
+		// is invisible in the config file, so a startup log that reports the
+		// RESOLVED stack is the difference between "why did this not deny"
+		// taking a minute or an afternoon.
+		log.Info("lane ready",
+			"listener", ln.name,
+			"protocol", ln.cfg.Protocol,
+			"upstream", ln.cfg.Upstream,
+			"enforcing", ln.policy != nil,
+			"rules", len(ln.rules),
+			"opa", ln.opaURL,
+			"masking", ln.masker != nil)
+		if ln.policy == nil {
+			log.Warn("lane is observe-only; no statement will be denied",
+				"listener", ln.name, "hint", "set policy.enforce=true on this listener or at the top level")
+		}
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, ac, log)
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, lanes, ac, log)
 	}
 
 	var wg sync.WaitGroup
@@ -195,7 +221,7 @@ func Run(cfg *Config, det Plugin) error {
 				log.Error("listener failed", "listener", name, "error", serr)
 				errCh <- serr
 			}
-		}(srv, cfg.Listeners[i].displayName(i))
+		}(srv, lanes[i].name)
 	}
 
 	<-ctx.Done()
@@ -226,24 +252,130 @@ func (l ListenerConfig) displayName(i int) string {
 	return fmt.Sprintf("listener[%d]", i)
 }
 
-// buildServer turns one listener config into a running-capable Server.
+// lane is one listener's fully resolved enforcement stack: the listener
+// itself plus the evaluator and masker built from its merged config.
+//
+// It exists so the merge happens exactly once, at startup, in one place.
+// Resolving per connection would put slice concatenation on the accept path
+// and let two lanes disagree about what they inherited.
+type lane struct {
+	cfg    ListenerConfig
+	name   string
+	policy policy.Evaluator
+	masker gate.Masker
+
+	// rules and opaURL are the resolved facts the startup log and the
+	// /config endpoint report. Kept alongside the built evaluator because a
+	// policy.Chain cannot be asked what went into it.
+	rules  []string
+	opaURL string
+}
+
+// buildLanes resolves and builds every listener's stack.
+//
+// Exhaustive rather than fail-fast, matching Validate: a config with three
+// broken lanes reports three problems in one run. Fixing a fleet config one
+// error per restart is the misery this avoids.
+func buildLanes(cfg *Config, det Plugin) ([]lane, error) {
+	out := make([]lane, 0, len(cfg.Listeners))
+	var problems []string
+
+	for i, lc := range cfg.Listeners {
+		name := lc.displayName(i)
+		pc, mc := cfg.resolve(lc)
+
+		if errs := checkPIIEntities(pc, det); len(errs) > 0 {
+			for _, e := range errs {
+				problems = append(problems, name+": "+e)
+			}
+			continue
+		}
+
+		pol, err := buildPolicy(pc, det)
+		if err != nil {
+			problems = append(problems, name+": "+err.Error())
+			continue
+		}
+		masker, err := buildMasker(mc, det, hoopinspect.Protocol(lc.Protocol))
+		if err != nil {
+			problems = append(problems, name+": "+err.Error())
+			continue
+		}
+
+		ln := lane{cfg: lc, name: name, policy: pol, masker: masker}
+		if pol != nil {
+			ln.rules = make([]string, 0, len(pc.Rules))
+			for _, r := range pc.Rules {
+				ln.rules = append(ln.rules, r.Name)
+			}
+			if pc.OPA != nil {
+				ln.opaURL = pc.OPA.URL
+			}
+		}
+		out = append(out, ln)
+	}
+
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
+	}
+	return out, nil
+}
+
+// checkPIIEntities rejects a pii rule naming an entity the detector was not
+// configured to find.
+//
+// Without this the rule loads and evaluates cleanly: matchesPII intersects
+// what the scanner reported with what the rule listed, so an entity the
+// engine never looks for simply never appears, and the rule silently allows
+// every statement it was written to deny. That is the worst kind of
+// guardrail — one an operator believes is working.
+func checkPIIEntities(pc PolicyConfig, det Plugin) []string {
+	if det == nil {
+		return nil // buildPolicy already refuses pii rules with no scanner
+	}
+	var known map[string]bool
+	var problems []string
+
+	for _, r := range pc.Rules {
+		if r.Type != policy.MatchPII {
+			continue
+		}
+		if known == nil {
+			active := det.Entities()
+			known = make(map[string]bool, len(active))
+			for _, e := range active {
+				known[e] = true
+			}
+		}
+		for _, want := range r.Entities {
+			if !known[want] {
+				problems = append(problems, fmt.Sprintf(
+					"rule %q names entity %q, which the detector is not configured to find; "+
+						"add it to pii.entities or the rule will never match",
+					r.Name, want))
+			}
+		}
+	}
+	return problems
+}
+
+// buildServer turns one resolved lane into a running-capable Server.
 func buildServer(
-	lc ListenerConfig,
-	cfg *Config,
-	pol policy.Evaluator,
+	ln lane,
+	ac AuditConfig,
 	sink audit.Sink,
-	masker gate.Masker,
 	log *slog.Logger,
 ) (*proxy.Server, error) {
+	lc := ln.cfg
 	upstreamTLS, err := lc.UpstreamTLS.BuildTLS()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", lc.Connection, err)
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if upstreamTLS != nil && upstreamTLS.InsecureSkipVerify {
 		// Warn loudly. A proxy whose whole purpose is inspecting sensitive
 		// traffic should not quietly accept any upstream certificate.
 		log.Warn("upstream certificate verification is DISABLED",
-			"listener", lc.Connection, "upstream", lc.Upstream)
+			"listener", ln.name, "upstream", lc.Upstream)
 	}
 
 	var identityFn func(net.Conn) session.Identity
@@ -258,32 +390,41 @@ func buildServer(
 		UpstreamTLS:      upstreamTLS,
 		Protocol:         hoopinspect.Protocol(lc.Protocol),
 		Connection:       lc.Connection,
-		Policy:           pol,
+		Policy:           ln.policy,
 		Audit:            sink,
-		Masker:           masker,
-		FailOnAuditError: cfg.Audit.FailClosed,
+		Masker:           ln.masker,
+		FailOnAuditError: ac.FailClosed,
 		DenyWriter:       proxy.ProtocolDenyWriter{},
 		IdentityFn:       identityFn,
 		IdleTimeout:      time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:         lc.MaxConns,
-		Logger:           log.With("listener", lc.displayName(0)),
+		Logger:           log.With("listener", ln.name),
 	})
 }
 
-// buildMasker asks the plugin to compile the "mask" config section.
+// buildMasker asks the plugin to compile one lane's "mask" section.
 //
-// Masking needs a detection engine, and this package deliberately links none.
-// So a config that enables masking without a plugin is refused rather than
-// quietly forwarding responses unmasked — the failure that would otherwise be
-// discovered by finding an SSN in a screenshot.
-func buildMasker(cfg *Config, det Plugin) (gate.Masker, error) {
-	if !cfg.Mask.Enabled {
+// Two refusals rather than silent downgrades, because both failures are
+// discovered the same way — by finding an unmasked SSN in a screenshot:
+//
+//   - No plugin. Masking needs a detection engine and this package links
+//     none, so an enabled mask section without one cannot work.
+//   - A protocol whose framing cannot survive substitution. The rules would
+//     load, validate, and never fire.
+//
+// Validate reports both at startup; these are the belt to its braces, for a
+// caller reaching Run without going through LoadConfig.
+func buildMasker(mc MaskConfig, det Plugin, proto hoopinspect.Protocol) (gate.Masker, error) {
+	if !mc.on() {
 		return nil, nil
 	}
 	if det == nil {
 		return nil, fmt.Errorf("mask.enabled is true but this build has no detection plugin")
 	}
-	return det.BuildMasker(cfg.Mask.Rules)
+	if !gate.MaskSupported(proto) {
+		return nil, fmt.Errorf("mask.enabled is true but masking is not supported on %s", proto)
+	}
+	return det.BuildMasker(mc.Rules)
 }
 
 func newLogger(level string) *slog.Logger {
@@ -368,6 +509,7 @@ func serveAdmin(
 	ctx context.Context,
 	addr string,
 	servers []*proxy.Server,
+	lanes []lane,
 	ac auditChain,
 	log *slog.Logger,
 ) {
@@ -380,24 +522,80 @@ func serveAdmin(
 
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		type stat struct {
+			Name   string `json:"name"`
 			Addr   string `json:"addr"`
 			Active int64  `json:"active"`
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
 		out := make([]stat, 0, len(servers))
-		for _, s := range servers {
+		for i, s := range servers {
 			active, total, denied := s.Stats()
 			a := ""
 			if s.Addr() != nil {
 				a = s.Addr().String()
 			}
-			out = append(out, stat{Addr: a, Active: active, Total: total, Denied: denied})
+			// servers and lanes are built in lockstep from cfg.Listeners, so
+			// the index is the join. Named because "which of these two
+			// postgres listeners denied something" is the question.
+			out = append(out, stat{
+				Name: lanes[i].name, Addr: a,
+				Active: active, Total: total, Denied: denied,
+			})
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"version":   Version,
 			"listeners": out,
+		})
+	})
+
+	// The resolved enforcement stack, per lane.
+	//
+	// Inheritance is invisible in the config file: a lane's rules are its own
+	// plus whatever the top level contributed, and reading the file cannot
+	// tell you the result. "Which rules is this lane actually running" is the
+	// first question anyone debugging a missing denial asks, and this is the
+	// answer.
+	//
+	// Rule NAMES only. A rule's pattern_regex can encode business logic, and
+	// this endpoint already sits beside a read interface to the audit trail.
+	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
+		type laneView struct {
+			Name      string   `json:"name"`
+			Protocol  string   `json:"protocol"`
+			Listen    string   `json:"listen"`
+			Upstream  string   `json:"upstream"`
+			Enforcing bool     `json:"enforcing"`
+			Rules     []string `json:"rules"`
+			OPA       string   `json:"opa,omitempty"`
+			Masking   bool     `json:"masking"`
+			MaskNote  string   `json:"mask_note,omitempty"`
+		}
+		out := make([]laneView, 0, len(lanes))
+		for _, ln := range lanes {
+			v := laneView{
+				Name:      ln.name,
+				Protocol:  ln.cfg.Protocol,
+				Listen:    ln.cfg.Listen,
+				Upstream:  ln.cfg.Upstream,
+				Enforcing: ln.policy != nil,
+				Rules:     ln.rules,
+				OPA:       ln.opaURL,
+				Masking:   ln.masker != nil,
+			}
+			if v.Rules == nil {
+				v.Rules = []string{} // render [] rather than null
+			}
+			if !v.Masking && !gate.MaskSupported(hoopinspect.Protocol(ln.cfg.Protocol)) {
+				v.MaskNote = "masking is not supported on this protocol"
+			}
+			out = append(out, v)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"version": Version,
+			"lanes":   out,
 		})
 	})
 

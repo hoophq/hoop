@@ -145,10 +145,71 @@ type Statement struct {
 	// so a policy can branch on its presence.
 	HTTP *HTTPDetail `json:"http,omitempty"`
 
+	// Result is set on a FromServer statement from a wire-database codec and
+	// carries the shape of a result set: which columns came back and how
+	// many rows. Nil on every request, and nil for a codec that does not
+	// decode responses.
+	//
+	// It is what makes a response-side policy possible at all: "this query
+	// returned a column named ssn" is a question no request-side rule can
+	// answer, because `SELECT *` does not name it.
+	Result *ResultDetail `json:"result,omitempty"`
+
 	// Metadata carries protocol-specific details a policy may want: the
 	// prepared-statement name for a Postgres Parse, the HTTP request method.
 	// Keys are stable per protocol and documented on each codec.
 	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// ResultDetail describes the shape of a result set travelling back to the
+// client, without carrying the values.
+//
+// The values are deliberately absent for the same reason mask.Result omits
+// them: a Statement becomes an audit record, and a record holding the rows it
+// masked has un-masked them. What survives is the metadata a policy can act
+// on — column names, types, row count.
+//
+// Columns come from the protocol's own description of the result (Postgres
+// RowDescription), so they are exact, not inferred. That is strictly more
+// than a pattern detector can know: "the column is named ssn" beats "these
+// nine digits look like an SSN", and it is the only way to protect a column
+// whose contents no detector recognizes.
+type ResultDetail struct {
+	// Columns names the result columns in order.
+	Columns []Column `json:"columns,omitempty"`
+
+	// RowCount is how many rows were seen in this batch. A large result set
+	// is delivered over several statements, so this is not necessarily the
+	// total the client will receive.
+	RowCount int `json:"row_count"`
+
+	// Truncated reports that the codec stopped decoding rows for this batch
+	// because it hit its buffering limit. A policy MUST treat a truncated
+	// batch as inconclusive rather than as proof a value is absent.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+// ReframeResult reports what one response-rewriting pass changed.
+//
+// It lives here rather than in gate or a codec because both sides name it: a
+// codec produces it, the gate consumes it, and neither may import the other.
+type ReframeResult struct {
+	// Cells is how many values were rewritten.
+	Cells int
+
+	// Rows is how many rows contained at least one rewritten value.
+	Rows int
+}
+
+// Column is one field of a result set.
+type Column struct {
+	// Name is the column name as the server reported it.
+	Name string `json:"name"`
+
+	// DataTypeOID is the protocol's type identifier, kept as-is because
+	// mapping it to a name is a lookup table that goes stale. Zero when the
+	// protocol did not say.
+	DataTypeOID uint32 `json:"data_type_oid,omitempty"`
 }
 
 // HTTPDetail is the HTTP-shaped half of a Statement.
@@ -302,6 +363,14 @@ func (i *Inspector) SetMaxBuffer(n int) {
 
 // Protocol reports the protocol being inspected.
 func (i *Inspector) Protocol() Protocol { return i.codec.Protocol() }
+
+// Codec returns the codec driving this Inspector.
+//
+// It exists so a caller can discover an OPTIONAL capability a particular
+// codec offers beyond the Codec interface — response re-framing, for
+// instance — with a type assertion, rather than the library growing a method
+// every codec must stub out.
+func (i *Inspector) Codec() Codec { return i.codec }
 
 // Inspect feeds one chunk of the stream and returns the statements it
 // completes. Bytes belonging to a partial trailing message are retained for

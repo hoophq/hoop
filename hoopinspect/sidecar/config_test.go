@@ -19,6 +19,14 @@ func writeConfig(t *testing.T, body string) string {
 	return p
 }
 
+// ptr is the three-state-field literal helper: Enforce and Enabled are
+// pointers so a listener can say "off" against an enabled default.
+//
+// Go 1.26's new(expr) would replace this, but the module's go directive is
+// 1.24 and this package compiles under that toolchain by design. Revisit when
+// the directive moves.
+func ptr[T any](v T) *T { return &v }
+
 func TestLoadValidConfig(t *testing.T) {
 	p := writeConfig(t, `{
       "listeners": [{
@@ -140,15 +148,12 @@ func TestMaskEnabledWithNoRulesFailsAtLoad(t *testing.T) {
 // raised where the knowledge lives. Masking enabled with no plugin at all is
 // a refusal, never a silent pass-through.
 func TestMaskWithoutPluginIsRefused(t *testing.T) {
-	cfg := &Config{
-		Listeners: []ListenerConfig{{Protocol: "postgres", Listen: ":1", Upstream: "h:1"}},
-		Mask: MaskConfig{
-			Enabled: true,
-			Rules:   []byte(`[{"name":"r","entity":"US_SSN","strategy":"redact"}]`),
-		},
+	mc := MaskConfig{
+		Enabled: ptr(true),
+		Rules:   []byte(`[{"name":"r","entity":"US_SSN","strategy":"redact"}]`),
 	}
 
-	m, err := buildMasker(cfg, nil)
+	m, err := buildMasker(mc, nil, hoopinspect.HTTP)
 	if err == nil {
 		t.Fatal("masking without a plugin must fail, not forward responses unmasked")
 	}
@@ -169,9 +174,10 @@ func TestEnforceDefaultsOff(t *testing.T) {
 			}},
 		},
 	}
-	pol, err := cfg.BuildPolicy(nil)
+	pc, _ := cfg.resolve(cfg.Listeners[0])
+	pol, err := buildPolicy(pc, nil)
 	if err != nil {
-		t.Fatalf("BuildPolicy: %v", err)
+		t.Fatalf("buildPolicy: %v", err)
 	}
 	if pol != nil {
 		t.Error("rules were active with enforce=false — observe-only must not deny")
@@ -179,23 +185,21 @@ func TestEnforceDefaultsOff(t *testing.T) {
 }
 
 func TestBuildPolicyChainsLocalRulesThenOPA(t *testing.T) {
-	cfg := &Config{
-		Policy: PolicyConfig{
-			Enforce: true,
-			Rules: []policy.Rule{{
-				Name: "no-drop", Type: policy.MatchOperation,
-				Operations: []hoopinspect.Operation{hoopinspect.OpDrop},
-			}},
-			OPA: &OPAConfig{URL: "http://opa:8181/v1/data/hoop"},
-		},
+	pc := PolicyConfig{
+		Enforce: ptr(true),
+		Rules: []policy.Rule{{
+			Name: "no-drop", Type: policy.MatchOperation,
+			Operations: []hoopinspect.Operation{hoopinspect.OpDrop},
+		}},
+		OPA: &OPAConfig{URL: "http://opa:8181/v1/data/hoop"},
 	}
-	pol, err := cfg.BuildPolicy(nil)
+	pol, err := buildPolicy(pc, nil)
 	if err != nil {
-		t.Fatalf("BuildPolicy: %v", err)
+		t.Fatalf("buildPolicy: %v", err)
 	}
 	chain, ok := pol.(policy.Chain)
 	if !ok {
-		t.Fatalf("BuildPolicy returned %T, want policy.Chain", pol)
+		t.Fatalf("buildPolicy returned %T, want policy.Chain", pol)
 	}
 	if len(chain) != 2 {
 		t.Fatalf("chain length = %d, want 2 (local rules then OPA)", len(chain))

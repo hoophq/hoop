@@ -1,6 +1,7 @@
 package sidecar
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -14,19 +15,25 @@ import (
 	"github.com/hoophq/hoopinspect/policy"
 )
 
-// Config is the on-disk configuration. JSON rather than YAML because the
-// module ships zero dependencies and the stdlib has no YAML parser; adding
-// one would break the auditability claim for a syntax preference.
+// Config is the on-disk configuration.
+//
+// JSON is the native syntax because the module ships zero dependencies and
+// the stdlib has no YAML parser. YAML is available through the nested module
+// github.com/hoophq/hoopinspect/config/yaml, which transcodes to JSON and
+// hands the bytes to LoadConfigBytes — one schema, two syntaxes, and the
+// dependency stays out of anything that does not ask for it.
 type Config struct {
 	// Listeners is the set of protocol endpoints to serve. A sidecar
 	// typically runs one, but a per-user pod fronting both a database and an
 	// API runs two in one process rather than two containers.
 	Listeners []ListenerConfig `json:"listeners"`
 
-	// Policy configures the local rule set and the optional OPA client.
+	// Policy is the DEFAULT rule set and OPA client, applied to every
+	// listener that does not override it. See ListenerConfig.Policy.
 	Policy PolicyConfig `json:"policy"`
 
-	// Mask configures response rewriting.
+	// Mask is the DEFAULT response rewriting, applied to every listener that
+	// does not override it. See ListenerConfig.Mask.
 	Mask MaskConfig `json:"mask"`
 
 	// Audit configures where events go.
@@ -48,7 +55,8 @@ type Config struct {
 	LogLevel string `json:"log_level"`
 }
 
-// ListenerConfig is one protocol endpoint.
+// ListenerConfig is one protocol endpoint: one Envoy cluster's worth of
+// traffic, with its own enforcement stack.
 type ListenerConfig struct {
 	// Name identifies the listener in logs. Defaults to Connection.
 	Name string `json:"name"`
@@ -92,6 +100,25 @@ type ListenerConfig struct {
 
 	// MaxConns bounds concurrency. Zero is unlimited.
 	MaxConns int `json:"max_conns"`
+
+	// Policy overrides the top-level default for this listener.
+	//
+	// Rules CONCATENATE, this listener's first: every rule type denies and
+	// evaluation is first-match-wins, so concatenating is monotonic in the
+	// allow/deny outcome and order decides only which name and message get
+	// reported. Listener-first means a lane's specific message beats a
+	// generic default for the same statement.
+	//
+	// OPA and Enforce REPLACE when set. Merging two decision endpoints is
+	// meaningless, and a lane that says enforce:false means it.
+	Policy *PolicyConfig `json:"policy,omitempty"`
+
+	// Mask overrides the top-level default for this listener.
+	//
+	// Rules REPLACE rather than concatenate: a rule owns an entity type, and
+	// concatenating two lists produces two rewrites competing for one entity
+	// with the winner decided by slice order. Enabled replaces when set.
+	Mask *MaskConfig `json:"mask,omitempty"`
 }
 
 // TLSConfig configures an upstream TLS connection.
@@ -128,7 +155,11 @@ type PolicyConfig struct {
 	// audited, nothing is denied. This is the mode a team runs for a week
 	// before turning enforcement on, and it is the default so a misconfigured
 	// rule cannot take production down on first deploy.
-	Enforce bool `json:"enforce"`
+	//
+	// A pointer so a listener can distinguish "inherit" from an explicit
+	// false: a lane rolling out behind an enforcing default needs to say
+	// observe-only, and a zero bool cannot express that.
+	Enforce *bool `json:"enforce,omitempty"`
 }
 
 // OPAConfig configures the OPA client.
@@ -148,9 +179,17 @@ type OPAConfig struct {
 // belongs to whichever detector plugin is wired in, and this package must not
 // link one. The plugin decodes them.
 type MaskConfig struct {
-	Enabled bool            `json:"enabled"`
-	Rules   json.RawMessage `json:"rules"`
+	// Enabled is a pointer for the same reason as PolicyConfig.Enforce: a
+	// listener must be able to say "off" against an enabled default, which a
+	// zero bool reads as "inherit".
+	Enabled *bool           `json:"enabled,omitempty"`
+	Rules   json.RawMessage `json:"rules,omitempty"`
 }
+
+// on reports whether masking is switched on, treating an absent Enabled as
+// off. Rules alone do not enable it: a config that lists rules without
+// enabling them is stating an intent to keep them dormant.
+func (m MaskConfig) on() bool { return m.Enabled != nil && *m.Enabled }
 
 // AuditConfig configures the event sink.
 type AuditConfig struct {
@@ -215,8 +254,18 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
+	return LoadConfigBytes(data)
+}
+
+// LoadConfigBytes parses and validates JSON config bytes.
+//
+// Exported so a caller holding config from somewhere other than a file — a
+// ConfigMap, a secret manager, or the YAML transcoder in the nested module
+// github.com/hoophq/hoopinspect/config/yaml — gets the same strict decode and
+// the same validation as the file path.
+func LoadConfigBytes(data []byte) (*Config, error) {
 	var cfg Config
-	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields() // a typo in a key must not silently disable a control
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -227,6 +276,54 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// resolve merges a listener's overrides onto the top-level defaults.
+//
+// Policy rules concatenate with the listener's first; OPA and Enforce replace
+// when the listener sets them. Mask replaces wholesale. See the field
+// documentation on ListenerConfig for why each field merges the way it does.
+//
+// Pure: it reads config and returns config, so a test can assert the merge
+// without building an evaluator, and /config can render it without side
+// effects.
+func (c *Config) resolve(lc ListenerConfig) (PolicyConfig, MaskConfig) {
+	pc := PolicyConfig{
+		Rules:   c.Policy.Rules,
+		OPA:     c.Policy.OPA,
+		Enforce: c.Policy.Enforce,
+	}
+	if o := lc.Policy; o != nil {
+		if len(o.Rules) > 0 {
+			// A fresh slice: appending onto c.Policy.Rules would let one
+			// listener's rules land in another's through a shared backing
+			// array.
+			merged := make([]policy.Rule, 0, len(o.Rules)+len(c.Policy.Rules))
+			merged = append(merged, o.Rules...)
+			merged = append(merged, c.Policy.Rules...)
+			pc.Rules = merged
+		}
+		if o.OPA != nil {
+			pc.OPA = o.OPA
+		}
+		if o.Enforce != nil {
+			pc.Enforce = o.Enforce
+		}
+	}
+
+	mc := c.Mask
+	if o := lc.Mask; o != nil {
+		if o.Enabled != nil {
+			mc.Enabled = o.Enabled
+		}
+		if len(o.Rules) > 0 {
+			mc.Rules = o.Rules
+		}
+	}
+	return pc, mc
+}
+
+// enforcing reports whether a resolved policy denies anything.
+func (p PolicyConfig) enforcing() bool { return p.Enforce != nil && *p.Enforce }
+
 // Validate checks the config, returning every problem found.
 func (c *Config) Validate() error {
 	var problems []string
@@ -236,10 +333,7 @@ func (c *Config) Validate() error {
 	}
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
-		name := l.Name
-		if name == "" {
-			name = fmt.Sprintf("listeners[%d]", i)
-		}
+		name := l.displayName(i)
 		if l.Protocol == "" {
 			problems = append(problems, name+": no protocol")
 		} else if _, err := hoopinspect.New(hoopinspect.Protocol(l.Protocol)); err != nil {
@@ -259,31 +353,54 @@ func (c *Config) Validate() error {
 			problems = append(problems, fmt.Sprintf("%s: duplicate listen address %q", name, l.Listen))
 		}
 		seen[key] = true
-	}
 
-	// Compile the rules here so a bad regex fails at startup rather than on
-	// the first request that happens to hit it. With a pii section present
-	// the real check happens in Main against the actual detector; a pii rule
-	// has no scanner yet at this point and would fail for the wrong reason.
-	if len(c.Policy.Rules) > 0 && len(c.PII) == 0 {
-		if _, err := policy.NewRules(c.Policy.Rules); err != nil {
-			problems = append(problems, err.Error())
-		}
-	}
-	// Mask rules are not validated here: their shape belongs to the plugin,
-	// and only the plugin can tell a typo from an entity it detects. Main
-	// builds the masker for real, which is the check that counts.
-	if c.Mask.Enabled && len(c.Mask.Rules) == 0 {
-		problems = append(problems, "mask.enabled is true but mask.rules is empty")
-	}
-	if c.Policy.OPA != nil && c.Policy.OPA.URL == "" {
-		problems = append(problems, "policy.opa set but url is empty")
+		problems = append(problems, c.validateLane(l, name)...)
 	}
 
 	if len(problems) > 0 {
 		return fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 	return nil
+}
+
+// validateLane checks one listener's RESOLVED stack.
+//
+// Checking the resolved form rather than the two halves separately is the
+// point: an operator reads "this lane is broken", not "some default you
+// inherited conflicts with something you set".
+func (c *Config) validateLane(lc ListenerConfig, name string) []string {
+	var problems []string
+	pc, mc := c.resolve(lc)
+
+	// Compile the rules so a bad regex fails at startup rather than on the
+	// first request that happens to hit it. With a pii section present the
+	// real check happens in Main against the actual detector; a pii rule has
+	// no scanner yet at this point and would fail for the wrong reason.
+	if len(pc.Rules) > 0 && len(c.PII) == 0 {
+		if _, err := policy.NewRules(pc.Rules); err != nil {
+			problems = append(problems, name+": "+err.Error())
+		}
+	}
+	if pc.OPA != nil && pc.OPA.URL == "" {
+		problems = append(problems, name+": policy.opa set but url is empty")
+	}
+
+	// Mask rule SHAPE belongs to the plugin and is checked when the masker is
+	// built. What can be checked here is whether masking can work at all on
+	// this protocol.
+	if mc.on() {
+		if len(mc.Rules) == 0 {
+			problems = append(problems, name+": mask.enabled is true but mask.rules is empty")
+		}
+		if p := hoopinspect.Protocol(lc.Protocol); p != "" && !gate.MaskSupported(p) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: mask.enabled is true but masking is not supported on %s "+
+					"(its rows are length-prefixed binary frames; rewriting bytes in place "+
+					"desynchronizes the client). Set mask.enabled false on this listener.",
+				name, lc.Protocol))
+		}
+	}
+	return problems
 }
 
 // Plugin is the optional detection engine: it scans statements for the PII
@@ -302,6 +419,12 @@ type Plugin interface {
 	// ScanText implements policy.Scanner for the pii rule type.
 	ScanText(text string) []string
 
+	// Entities lists the entity types this engine will look for. Used to
+	// reject a pii rule naming an entity the engine was not configured to
+	// detect: the rule would load, evaluate, and never match, which is a
+	// guardrail that silently allows everything it was written to stop.
+	Entities() []string
+
 	// BuildMasker decodes the "mask" config section and returns something
 	// the gate can call. rawRules is the JSON array from MaskConfig.Rules;
 	// its shape belongs to the plugin.
@@ -310,39 +433,40 @@ type Plugin interface {
 	BuildMasker(rawRules []byte) (gate.Masker, error)
 }
 
-// BuildPolicy assembles the evaluator chain: local rules first, OPA second.
-// Returns nil in observe-only mode.
+// buildPolicy assembles one lane's evaluator chain: local rules first, OPA
+// second, so an obviously-forbidden statement never costs a round trip.
 //
-// det may be nil; a config with pii rules then fails to build, which is the
-// point — a guardrail that cannot see must not start.
-func (c *Config) BuildPolicy(det Plugin) (policy.Evaluator, error) {
-	if !c.Policy.Enforce {
+// Returns nil in observe-only mode. det may be nil; a lane with pii rules then
+// fails to build, which is the point — a guardrail that cannot see must not
+// start.
+func buildPolicy(pc PolicyConfig, det Plugin) (policy.Evaluator, error) {
+	if !pc.enforcing() {
 		return nil, nil
 	}
 
 	var chain policy.Chain
-	if len(c.Policy.Rules) > 0 {
+	if len(pc.Rules) > 0 {
 		var rules *policy.Rules
 		var err error
 		if det != nil {
-			rules, err = policy.NewRulesWithScanner(c.Policy.Rules, det)
+			rules, err = policy.NewRulesWithScanner(pc.Rules, det)
 		} else {
-			rules, err = policy.NewRules(c.Policy.Rules)
+			rules, err = policy.NewRules(pc.Rules)
 		}
 		if err != nil {
 			return nil, err
 		}
 		chain = append(chain, rules)
 	}
-	if c.Policy.OPA != nil && c.Policy.OPA.URL != "" {
-		timeout := time.Duration(c.Policy.OPA.TimeoutSec) * time.Second
+	if pc.OPA != nil && pc.OPA.URL != "" {
+		timeout := time.Duration(pc.OPA.TimeoutSec) * time.Second
 		if timeout <= 0 {
 			timeout = 2 * time.Second
 		}
 		chain = append(chain, &policy.OPAClient{
-			URL:      c.Policy.OPA.URL,
+			URL:      pc.OPA.URL,
 			Timeout:  timeout,
-			FailOpen: c.Policy.OPA.FailOpen,
+			FailOpen: pc.OPA.FailOpen,
 		})
 	}
 	if len(chain) == 0 {

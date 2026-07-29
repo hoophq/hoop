@@ -319,6 +319,10 @@ func (m stubMasker) Mask(data []byte) ([]byte, []string, int) {
 	return bytes.ReplaceAll(data, []byte(m.find), []byte(m.replace)), []string{"email"}, n
 }
 
+func (m stubMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
+	return m.Mask(value)
+}
+
 func TestResponseMaskingRewritesAndAudits(t *testing.T) {
 	sink := &recordingSink{}
 	// HTTP, not Postgres: masking is protocol-gated because byte
@@ -574,16 +578,15 @@ func TestHTTPResponsePolicy(t *testing.T) {
 	}
 }
 
-// Byte substitution changes payload LENGTH. A length-prefixed binary protocol
-// carries that length in a frame header the masker cannot see, so masking a
-// Postgres DataRow in place desynchronizes the client:
+// Byte substitution changes payload LENGTH, and a pgwire DataRow carries that
+// length in a frame header the masker cannot see. Substituting in place made
+// psql report "lost synchronization with server" — a real bug caught against
+// a live database.
 //
-//	ada@example.com (15 bytes) -> [REDACTED:email] (16 bytes)
-//
-// psql reports "lost synchronization with server". This was a real bug caught
-// by running the sidecar against a live database; the gate now refuses to
-// mask protocols it cannot re-frame.
-func TestMaskingIsRefusedOnLengthPrefixedProtocols(t *testing.T) {
+// The gate no longer refuses; the codec re-frames instead. The property that
+// matters is not "was it masked" but "is the result still valid pgwire", so
+// this test re-parses the output the way a client would.
+func TestMaskingReframesLengthPrefixedProtocols(t *testing.T) {
 	sink := &recordingSink{}
 	g, _ := gate.New(newSession(), gate.Config{
 		Protocol: hoopinspect.Postgres,
@@ -591,18 +594,41 @@ func TestMaskingIsRefusedOnLengthPrefixedProtocols(t *testing.T) {
 		Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED:email]"},
 	})
 
-	// A DataRow-shaped payload: the value is preceded by its length.
-	body := []byte("D\x00\x00\x00\x19\x00\x01\x00\x00\x00\x0fada@example.com")
-	d := g.Response(context.Background(), body)
+	// RowDescription naming one column, then a DataRow carrying the value.
+	desc := []byte("T\x00\x00\x00\x1b\x00\x01mail\x00" +
+		"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\x00\x00\x00\x00\x00\x00\x00\x00")
+	row := []byte("D\x00\x00\x00\x19\x00\x01\x00\x00\x00\x0fada@example.com")
+	done := []byte("C\x00\x00\x00\x0bSELECT 1\x00")
 
-	if d.MaskedCount != 0 {
-		t.Errorf("MaskedCount = %d — masking a length-prefixed frame corrupts it", d.MaskedCount)
+	var out []byte
+	for _, chunk := range [][]byte{desc, row, done} {
+		d := g.Response(context.Background(), chunk)
+		out = append(out, d.Payload...)
 	}
-	if !bytes.Equal(d.Payload, body) {
-		t.Error("the pgwire payload was rewritten; the client would desynchronize")
+	out = append(out, g.FlushResponse()...)
+
+	if bytes.Contains(out, []byte("ada@example.com")) {
+		t.Error("the value survived masking")
 	}
-	if sink.find(audit.KindMasked) != nil {
-		t.Error("a masked event was recorded though nothing was masked")
+	if !bytes.Contains(out, []byte("[REDACTED:email]")) {
+		t.Errorf("nothing was masked: %q", out)
+	}
+	if sink.find(audit.KindMasked) == nil {
+		t.Error("no masked event recorded")
+	}
+
+	// The decisive check: a client parsing this must not desynchronize. A
+	// wrong length prefix shows up here exactly as it would in psql.
+	insp, err := hoopinspect.New(hoopinspect.Postgres)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmts, err := insp.Inspect(hoopinspect.FromServer, out)
+	if err != nil {
+		t.Fatalf("re-framed stream is not valid pgwire: %v", err)
+	}
+	if len(stmts) != 1 || stmts[0].Result == nil || stmts[0].Result.RowCount != 1 {
+		t.Errorf("re-framed stream lost its row: %+v", stmts)
 	}
 }
 

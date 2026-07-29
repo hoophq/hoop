@@ -30,6 +30,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/hoophq/hoopinspect"
@@ -40,15 +41,43 @@ import (
 
 // Masker rewrites sensitive values out of a payload.
 //
-// Declared here as a narrow interface rather than imported from mask/ so a
-// caller can supply their own engine — a shop with an existing DLP service
-// plugs it in without forking the gate.
+// Declared here as a narrow interface rather than imported from a masking
+// package so a caller can supply their own engine — a shop with an existing
+// DLP service plugs it in without forking the gate.
 type Masker interface {
 	// Mask returns the rewritten payload, the entity names that were
 	// rewritten, and how many values changed. It must never return the
 	// masked VALUES: an audit record of what you masked, in the clear, has
 	// un-masked it.
 	Mask(data []byte) (out []byte, entities []string, count int)
+
+	// MaskCell rewrites one already-delimited value, such as a database
+	// result-set cell, and is told the column it came from.
+	//
+	// It exists because Mask scans for values inside an opaque blob, which
+	// is the wrong question once the protocol has already told you where the
+	// values are and what they are called. A rule can then say "mask the ssn
+	// column" — deterministic, and the only way to protect a column whose
+	// contents no pattern detector recognizes.
+	//
+	// column is empty when the protocol did not name it.
+	MaskCell(column string, value []byte) (out []byte, entities []string, count int)
+}
+
+// Reframer masks a length-prefixed response stream by rebuilding its frames.
+//
+// A codec implements it when byte substitution would corrupt the protocol:
+// every Postgres DataRow declares its own size and the size of each column, so
+// replacing a value without recomputing both desynchronizes the client. The
+// codec decodes the frames, hands each cell to the masker, and re-encodes.
+//
+// Rewrite MAY return fewer bytes than it received: rows are held until their
+// result set ends, because a row cannot be rebuilt once forwarded. Flush
+// releases whatever is held and MUST be called when the connection closes, or
+// the client's last rows are silently dropped.
+type Reframer interface {
+	Rewrite(data []byte, mask func(column string, value []byte) []byte) ([]byte, hoopinspect.ReframeResult, error)
+	Flush(mask func(column string, value []byte) []byte) []byte
 }
 
 // Config assembles a Gate.
@@ -134,6 +163,11 @@ type Gate struct {
 	polCtx  map[string]string
 	started bool
 
+	// reframer is the server-side codec when it can rebuild its own frames,
+	// nil otherwise. Set from the server Inspector's codec at construction,
+	// so the data path does not type-assert per packet.
+	reframer Reframer
+
 	// mu guards the counters, which Close reads while a data-path goroutine
 	// may still be incrementing them. The inspectors are not guarded: they
 	// are per-direction and each direction has one reader.
@@ -173,7 +207,7 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	}
 
 	sess.Protocol = cfg.Protocol
-	return &Gate{
+	g := &Gate{
 		cfg:    cfg,
 		sess:   sess,
 		client: client,
@@ -182,7 +216,15 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		audit:  cfg.Audit,
 		masker: cfg.Masker,
 		polCtx: sess.PolicyContext(),
-	}, nil
+	}
+	// Discover the optional re-framing capability once, so the data path
+	// does not type-assert per packet. A codec that cannot rebuild its own
+	// frames leaves this nil and masking falls back to substitution, which
+	// MaskSupported gates.
+	if rf, ok := server.Codec().(Reframer); ok {
+		g.reframer = rf
+	}
+	return g, nil
 }
 
 // Session returns the session this gate is inspecting.
@@ -230,6 +272,31 @@ func (g *Gate) Request(ctx context.Context, data []byte) Decision {
 // rather than forwarding what it already has in hand.
 func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, hoopinspect.FromServer, data)
+}
+
+// FlushResponse returns any response bytes the codec is still holding.
+//
+// A re-framing codec buffers rows until their result set ends, because a row
+// cannot be rebuilt once forwarded. If the connection closes mid-result-set
+// those rows would be dropped, silently truncating the client's output — a
+// worse failure than masking late. The relay MUST call this before it stops
+// pumping, and forward whatever comes back.
+//
+// Returns nil when nothing is held or the codec does not re-frame.
+func (g *Gate) FlushResponse() []byte {
+	if g.reframer == nil {
+		return nil
+	}
+	if g.masker == nil {
+		return g.reframer.Flush(nil)
+	}
+	return g.reframer.Flush(func(column string, value []byte) []byte {
+		out, _, n := g.masker.MaskCell(column, value)
+		if n == 0 {
+			return value
+		}
+		return out
+	})
 }
 
 func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []byte) Decision {
@@ -298,48 +365,119 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 	// change the statement the upstream executes, which is a correctness
 	// change, not a privacy control.
 	//
-	// It is also protocol-gated. Byte substitution changes the payload
-	// LENGTH, and a length-prefixed binary protocol carries that length in a
-	// frame header the masker knows nothing about. Masking a Postgres
-	// DataRow in place desynchronizes the client instantly:
+	// Two mechanisms, because two kinds of framing:
 	//
-	//   ada@example.com  (15 bytes) -> [REDACTED:email] (16 bytes)
-	//
-	// and psql reports "lost synchronization with server". Doing this
-	// correctly requires re-framing inside the codec, which is real work
-	// (see maskSafe). Until then, refusing to mask is the only honest
-	// option: half-masked binary output is both corrupt AND still leaking.
-	if dir == hoopinspect.FromServer && g.masker != nil && len(data) > 0 && maskSafe(g.cfg.Protocol) {
-		out, entities, count := g.masker.Mask(data)
-		if count > 0 {
-			// Masking changes the body LENGTH, and for HTTP the length is
-			// also declared in a header the masker never looked at. Leaving
-			// Content-Length stale makes the client read exactly that many
-			// bytes and stop mid-document — the response is truncated, which
-			// looks like a corrupt upstream rather than a masking bug.
-			out = retagContentLength(out, len(out)-len(data))
-			d.Payload = out
-			d.Masked = entities
-			d.MaskedCount = count
-			g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, count))
+	//   - Byte substitution, for a payload whose length is declared in a
+	//     header the gate can find and correct (HTTP's Content-Length).
+	//   - Re-framing, for a length-prefixed binary protocol where every row
+	//     and column carries its own size. Substituting bytes there
+	//     desynchronizes the client instantly; the codec rebuilds the frames
+	//     instead.
+	if dir == hoopinspect.FromServer && g.masker != nil && len(data) > 0 {
+		switch {
+		case g.reframer != nil:
+			g.maskByReframing(ctx, &d, data)
+		case substitutionSafe(g.cfg.Protocol):
+			g.maskBySubstitution(ctx, &d, data)
 		}
 	}
 
 	return d
 }
 
-// maskSafe reports whether in-place byte substitution can be applied to a
-// protocol's response payload without corrupting its framing.
+// maskBySubstitution rewrites the payload in place and corrects the declared
+// length. HTTP only.
+func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte) {
+	out, entities, count := g.masker.Mask(data)
+	if count == 0 {
+		return
+	}
+	// Masking changes the body LENGTH, and for HTTP the length is also
+	// declared in a header the masker never looked at. Leaving Content-Length
+	// stale makes the client read exactly that many bytes and stop
+	// mid-document — the response is truncated, which looks like a corrupt
+	// upstream rather than a masking bug.
+	out = retagContentLength(out, len(out)-len(data))
+	d.Payload = out
+	d.Masked = entities
+	d.MaskedCount = count
+	g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, count))
+}
+
+// maskByReframing hands the stream to the codec, which masks each cell and
+// rebuilds the frames around the results.
 //
-// Only HTTP qualifies today. Its body length is declared in a Content-Length
-// header the gate can find and rewrite (see retagContentLength), or it is
-// chunked, in which case the relay forwards whole chunks and the framing is
-// already self-describing.
+// The codec may return FEWER bytes than it was given: rows are held back until
+// their result set ends, because a row cannot be rebuilt once forwarded. That
+// is safe for a relay — the held bytes arrive on a later call or on Close —
+// and it is why Gate.Close flushes.
+func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
+	var (
+		entities []string
+		seen     = map[string]bool{}
+	)
+	out, res, err := g.reframer.Rewrite(data, func(column string, value []byte) []byte {
+		masked, names, n := g.masker.MaskCell(column, value)
+		if n == 0 {
+			return value
+		}
+		for _, e := range names {
+			if !seen[e] {
+				seen[e] = true
+				entities = append(entities, e)
+			}
+		}
+		return masked
+	})
+	if err != nil {
+		// A malformed response is not a masking failure. Forward what the
+		// codec produced and record it; the upstream's own client is the
+		// authority on its protocol.
+		d.Err = errors.Join(d.Err, err)
+		g.writeAudit(ctx, audit.ErrorEvent(g.sess, err))
+	}
+
+	d.Payload = out
+	if res.Cells > 0 {
+		sort.Strings(entities)
+		d.Masked = entities
+		d.MaskedCount = res.Cells
+		g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, res.Cells))
+	}
+}
+
+// MaskSupported reports whether a protocol's response payload can be masked
+// at all, by either mechanism.
 //
-// The wire-database protocols all length-prefix their rows in binary frames.
-// Supporting them means teaching each codec to re-frame after substitution,
-// which is the natural next step and is deliberately not faked here.
-func maskSafe(p hoopinspect.Protocol) bool {
+// Two ways a payload can be rewritten safely:
+//
+//   - Substitution, when the length is declared in a header the gate can
+//     correct. HTTP's Content-Length; see retagContentLength.
+//   - Re-framing, when the codec can rebuild its own frames around the new
+//     values. Postgres, whose every row and column is length-prefixed; see
+//     the Reframer interface.
+//
+// Answered by asking the codec rather than by listing protocols, so adding a
+// re-framing codec does not require also remembering to edit this.
+//
+// Exported so a configuration layer can REFUSE masking on a protocol that
+// supports neither, instead of accepting the setting and silently never
+// masking. One predicate, so the config check and the data path cannot drift.
+func MaskSupported(p hoopinspect.Protocol) bool {
+	if p == hoopinspect.HTTP {
+		return true
+	}
+	insp, err := hoopinspect.New(p)
+	if err != nil {
+		return false
+	}
+	_, ok := insp.Codec().(Reframer)
+	return ok
+}
+
+// substitutionSafe reports whether the byte-substitution path applies. It is
+// the narrow question the data path asks after finding no reframer.
+func substitutionSafe(p hoopinspect.Protocol) bool {
 	return p == hoopinspect.HTTP
 }
 

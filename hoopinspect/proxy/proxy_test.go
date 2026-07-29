@@ -302,6 +302,10 @@ func (emailMasker) Mask(data []byte) ([]byte, []string, int) {
 	return bytes.ReplaceAll(data, []byte(target), []byte("[REDACTED]")), []string{"email"}, n
 }
 
+func (m emailMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
+	return m.Mask(value)
+}
+
 // Masking runs on HTTP, whose body length is carried in a header the relay
 // forwards as a unit. It is deliberately refused on the length-prefixed
 // binary protocols, where substitution would desynchronize the client — see

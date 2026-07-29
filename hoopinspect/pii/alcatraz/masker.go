@@ -58,7 +58,19 @@ const DefaultKeepLast = 4
 // DefaultMaskChar is the replacement character when MaskChar is unset.
 const DefaultMaskChar = '*'
 
-// Rule pairs an entity type with the rewrite applied to it.
+// Rule says what to rewrite and how.
+//
+// A rule matches EITHER by detected entity type or by column name. Both are
+// useful and they answer different questions:
+//
+//	{"entity": "US_SSN", "strategy": "partial"}   // wherever an SSN appears
+//	{"columns": ["ssn"], "strategy": "redact"}    // whatever is in that column
+//
+// The column form is only available where the protocol names its values — a
+// database result set — and it is strictly stronger there. It is
+// deterministic rather than probabilistic, it protects a column whose
+// contents no detector recognizes (an internal risk score, a free-text note),
+// and it does not care that alcatraz declines 123-45-6789 as a placeholder.
 type Rule struct {
 	// Name identifies the rule in configuration errors. Defaults to
 	// "rule[<index>]".
@@ -66,9 +78,21 @@ type Rule struct {
 
 	// Entity is the alcatraz entity type this rule rewrites, named as the
 	// constants in github.com/hoophq/alcatraz/entities ("US_SSN", "BR_CPF")
-	// or one of AWSAccessKey / JWT / PrivateKey. It is what appears in
-	// Result.Entities and therefore in the audit trail.
-	Entity string `json:"entity"`
+	// or one of AWSAccessKey / JWT / PrivateKey.
+	//
+	// Required unless Columns is set. When both are set the rule masks the
+	// named columns and reports them under this entity name, which is how a
+	// column rule gets a meaningful label in the audit trail.
+	Entity string `json:"entity,omitempty"`
+
+	// Columns names result-set columns to mask outright, compared
+	// case-insensitively. Ignored for protocols that do not name their
+	// values; a rule with only Columns therefore never fires on HTTP.
+	//
+	// The whole cell is rewritten, not a span within it: if the operator
+	// says the column is sensitive, its contents are sensitive whether or
+	// not a detector agrees.
+	Columns []string `json:"columns,omitempty"`
 
 	// Strategy is the rewrite. Empty means StrategyRedact: an unconfigured
 	// rule should fail towards showing less, not more.
@@ -82,6 +106,17 @@ type Rule struct {
 	// MaskChar is the replacement rune for StrategyMask and StrategyPartial.
 	// Zero means DefaultMaskChar.
 	MaskChar rune `json:"mask_char,omitempty"`
+}
+
+// entityName is the label a rule's matches are reported under.
+func (r Rule) entityName() string {
+	if r.Entity != "" {
+		return r.Entity
+	}
+	// A column-only rule still needs a name in the audit trail. "column:ssn"
+	// says both what happened and why, without inventing an entity type that
+	// no detector produces.
+	return "column:" + strings.ToLower(strings.Join(r.Columns, ","))
 }
 
 // Result reports what a Mask call rewrote.
@@ -113,6 +148,11 @@ type Masker struct {
 
 	// entities is the sorted set the rules cover, and the Analyze restriction.
 	entities []string
+
+	// byColumn holds the column-name rules, keyed lowercased. Only consulted
+	// by MaskCell: a protocol that does not name its values cannot match
+	// these, and Mask over an opaque blob never sees a column.
+	byColumn map[string]columnRule
 }
 
 // NewMasker compiles a rule set against a detector's engine.
@@ -140,6 +180,7 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 	perEntity := make(map[string]anonymizer.Operator, len(rules))
 	seen := make(map[string]string, len(rules))
 	entities := make([]string, 0, len(rules))
+	byColumn := make(map[string]columnRule, len(rules))
 
 	for i, r := range rules {
 		name := r.Name
@@ -147,10 +188,39 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 			name = fmt.Sprintf("rule[%d]", i)
 		}
 
+		op, err := r.operator(name)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+
+		// A column rule needs no detector: the operator has already decided
+		// the column is sensitive, so there is nothing to detect.
+		if len(r.Columns) > 0 {
+			label := r.entityName()
+			for _, col := range r.Columns {
+				key := strings.ToLower(strings.TrimSpace(col))
+				if key == "" {
+					problems = append(problems, name+": empty column name")
+					continue
+				}
+				if prev, dup := byColumn[key]; dup {
+					problems = append(problems, fmt.Sprintf(
+						"%s: column %q already masked by %s", name, key, prev.rule))
+					continue
+				}
+				byColumn[key] = columnRule{op: op, entity: label, rule: name}
+			}
+			// An entity named alongside columns labels them; it does not also
+			// enable content detection, which would be two rules in one.
+			continue
+		}
+
 		switch {
 		case r.Entity == "":
-			// Without a name the audit event cannot say what was masked.
-			problems = append(problems, name+": no entity")
+			// Without either, the rule matches nothing and the audit event
+			// could not say what was masked.
+			problems = append(problems, name+": no entity or columns")
 			continue
 		case !claims[r.Entity]:
 			problems = append(problems, fmt.Sprintf(
@@ -165,12 +235,6 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 		if prev, dup := seen[r.Entity]; dup {
 			problems = append(problems, fmt.Sprintf(
 				"%s: entity %q already rewritten by %s", name, r.Entity, prev))
-			continue
-		}
-
-		op, err := r.operator(name)
-		if err != nil {
-			problems = append(problems, err.Error())
 			continue
 		}
 
@@ -191,6 +255,7 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 		eng:      d.eng,
 		opts:     opts,
 		entities: entities,
+		byColumn: byColumn,
 		cfg: anonymizer.Config{
 			// Every entity has an explicit rule, so the default is only
 			// reached if alcatraz reports a type we did not ask for. Redact
@@ -199,6 +264,14 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 			PerEntity: perEntity,
 		},
 	}, nil
+}
+
+// columnRule is a compiled Columns entry: which operator rewrites the cell,
+// what to call it in the audit trail, and which rule to blame in an error.
+type columnRule struct {
+	op     anonymizer.Operator
+	entity string
+	rule   string
 }
 
 // operator turns one rule into the anonymizer Operator that renders it.
@@ -318,6 +391,44 @@ func (m *Masker) Mask(data []byte) ([]byte, Result) {
 	return []byte(out), Result{Entities: names, Count: len(results)}
 }
 
+// MaskCell rewrites one already-delimited value from a named column.
+//
+// This is the database path, and it asks a better question than Mask does.
+// Mask scans an opaque blob for anything that LOOKS sensitive; MaskCell is
+// told where the value ends and what the server calls it. So it can honor a
+// rule like {"columns": ["ssn"]} deterministically, with no detector involved
+// and no argument about whether 123-45-6789 is a real SSN or a fixture.
+//
+// Precedence: a column rule wins outright and the cell is not scanned at all.
+// The operator naming a column has already made the decision, and running a
+// detector afterwards could only disagree with them. Otherwise the cell falls
+// back to entity detection, which is Mask restricted to one value.
+func (m *Masker) MaskCell(column string, value []byte) ([]byte, []string, int) {
+	if len(value) == 0 {
+		return value, nil, 0
+	}
+
+	if cr, ok := m.byColumn[strings.ToLower(column)]; ok {
+		return []byte(cr.op(cr.entity, string(value))), []string{cr.entity}, 1
+	}
+
+	if len(m.entities) == 0 {
+		return value, nil, 0
+	}
+	out, res := m.Mask(value)
+	return out, res.Entities, res.Count
+}
+
+// Columns returns the column names this Masker rewrites outright, sorted.
+func (m *Masker) Columns() []string {
+	out := make([]string, 0, len(m.byColumn))
+	for c := range m.byColumn {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // MaskString is Mask over a string.
 func (m *Masker) MaskString(s string) (string, Result) {
 	out, res := m.Mask([]byte(s))
@@ -364,4 +475,8 @@ type maskAdapter struct{ m *Masker }
 func (a maskAdapter) Mask(data []byte) ([]byte, []string, int) {
 	out, res := a.m.Mask(data)
 	return out, res.Entities, res.Count
+}
+
+func (a maskAdapter) MaskCell(column string, value []byte) ([]byte, []string, int) {
+	return a.m.MaskCell(column, value)
 }

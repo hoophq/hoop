@@ -355,6 +355,18 @@ func (s *Server) pump(
 	dir hoopinspect.Direction,
 	log *slog.Logger,
 ) {
+	// A re-framing codec holds rows back until their result set ends. Every
+	// exit from this loop must release them, or the client silently loses
+	// the tail of its output — which reads as a truncated result, not as a
+	// masking bug. Only the server direction can hold anything.
+	if dir == hoopinspect.FromServer {
+		defer func() {
+			if tail := g.FlushResponse(); len(tail) > 0 {
+				_, _ = dst.Write(tail)
+			}
+		}()
+	}
+
 	buf := make([]byte, 32*1024)
 	for {
 		if s.cfg.IdleTimeout > 0 {

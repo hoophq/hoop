@@ -31,12 +31,36 @@ import (
 	"github.com/hoophq/hoopinspect"
 )
 
-func init() { hoopinspect.Register(func() hoopinspect.Codec { return Codec{} }) }
+func init() { hoopinspect.Register(func() hoopinspect.Codec { return &Codec{} }) }
 
 // Codec implements hoopinspect.Codec for PostgreSQL.
-type Codec struct{}
+//
+// It is stateful on the response side: a RowDescription describes every
+// DataRow that follows it, and those messages routinely land in different
+// TCP reads. One Codec per connection — the registry hands out a factory for
+// exactly this reason.
+type Codec struct {
+	// rowDesc is the column layout of the result set currently streaming,
+	// nil between result sets.
+	rowDesc *rowDescription
 
-func (Codec) Protocol() hoopinspect.Protocol { return hoopinspect.Postgres }
+	// rowCount and truncated accumulate across reads until a terminator.
+	rowCount  int
+	truncated bool
+
+	// Rewrite state. Separate from the decode state above because the two
+	// run on independent copies of the stream: Decode inspects, Rewrite
+	// rebuilds, and a caller may use either alone.
+	//
+	// held buffers complete DataRow messages awaiting masking; pending holds
+	// a trailing partial message until its remainder arrives; maskCols is the
+	// current column layout the masker is shown.
+	held     []byte
+	pending  []byte
+	maskCols []string
+}
+
+func (*Codec) Protocol() hoopinspect.Protocol { return hoopinspect.Postgres }
 
 // Message type tags we care about. The rest are skipped generically.
 const (
@@ -67,14 +91,15 @@ var ErrMalformed = errors.New("hoopinspect/postgres: malformed message")
 //
 // Metadata keys set on returned statements:
 //
-//	"pg.message"   — "Query" or "Parse"
+//	"pg.message"   — "Query", "Parse" or "ErrorResponse"
 //	"pg.statement" — prepared-statement name, only for a named Parse
-func (c Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.Statement, int, error) {
-	// Server → client carries results, not statements. Consume everything so
-	// the caller's buffer does not grow; response-side inspection (redaction)
-	// is a separate feature with a different shape.
-	if dir != hoopinspect.FromClient {
-		return nil, len(data), nil
+//
+// Server → client messages yield one statement per completed result set,
+// carrying Statement.Result: the column names the server described and the
+// row count. See response.go.
+func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.Statement, int, error) {
+	if dir == hoopinspect.FromServer {
+		return c.decodeResponse(data)
 	}
 
 	var stmts []hoopinspect.Statement

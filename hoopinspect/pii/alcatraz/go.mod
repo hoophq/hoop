@@ -8,3 +8,9 @@ require (
 )
 
 replace github.com/hoophq/hoopinspect => ../..
+
+require github.com/hoophq/hoopinspect/config/yaml v0.0.0
+
+require gopkg.in/yaml.v3 v3.0.1 // indirect
+
+replace github.com/hoophq/hoopinspect/config/yaml => ../../config/yaml
