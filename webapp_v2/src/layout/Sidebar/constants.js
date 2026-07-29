@@ -86,7 +86,7 @@ export const ORGANIZATION_ITEMS = [
     icon: Puzzle,
     adminOnly: true,
     children: [
-      { label: 'Authentication', path: '/integrations/authentication', adminOnly: true },
+      { label: 'Authentication', path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
       { label: 'Jira', path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
       { label: 'Webhooks', path: '/integrations/webhooks', adminOnly: true },
       { label: 'Slack', path: '/integrations/slack', adminOnly: true }

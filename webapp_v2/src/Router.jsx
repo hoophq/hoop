@@ -481,9 +481,15 @@ function Router() {
           </ProtectedRoute>
         }
       />
-      {/* Legacy URL absorbed into the Configuration tab — keep old bookmarks working */}
+      {/* Legacy URLs absorbed into the Configuration tab — keep old bookmarks working.
+          /plugins/manage/jira still exists in the CLJS bidi routes but its panel was
+          deleted, so without this redirect it renders an infinite loading spinner. */}
       <Route
         path="/settings/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+      <Route
+        path="/plugins/manage/jira"
         element={<Navigate to="/jira-templates?tab=configuration" replace />}
       />
 

@@ -7,7 +7,7 @@ export function IconBtn({ icon, label, path, action, onClick }) {
   const Icon = icon;
   const location = useLocation();
   const navigate = useNavigate();
-  const active = path ? isActive(path, location.pathname) : false;
+  const active = path ? isActive(path, location.pathname, location.search) : false;
 
   return (
     <Tooltip label={label} position="right" withArrow>
