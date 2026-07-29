@@ -78,7 +78,7 @@ export default function EventCatalogTab() {
                   <Button
                     variant="subtle"
                     color="gray"
-                    size="xs"
+                    size="sm"
                     rightSection={<ChevronRight size={12} />}
                     onClick={() => setEventDetail(e)}
                   >

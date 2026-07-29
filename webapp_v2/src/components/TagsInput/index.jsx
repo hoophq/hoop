@@ -12,5 +12,5 @@ import { TagsInput as MantineTagsInput } from '@mantine/core'
  *   />
  */
 export default function TagsInput(props) {
-  return <MantineTagsInput radius="sm" {...props} />
+  return <MantineTagsInput {...props} />
 }

@@ -47,7 +47,7 @@ function LeftPanel() {
           </Text>
         </Flex>
 
-        <Text fz="xs" fw={700} tt="uppercase" c="gray.4" mb="md" className={classes.eyebrow}>
+        <Text fz="xs" fw={700} tt="uppercase" mb="md" className={`${classes.eyebrow} ${classes.navyText}`}>
           Instance ready
         </Text>
 
@@ -55,13 +55,13 @@ function LeftPanel() {
           The first account becomes the root admin.
         </Title>
 
-        <Text size="sm" c="gray.6" className={classes.heroBody}>
+        <Text size="sm" className={`${classes.heroBody} ${classes.navyText}`}>
           {'Once you sign up, the gateway starts intercepting connections. Everything below runs on your machine.'}
         </Text>
       </Box>
 
       <Box my="xl">
-        <Text fz="xs" fw={700} tt="uppercase" c="gray.7" mb="sm" className={classes.eyebrow}>
+        <Text fz="xs" fw={700} tt="uppercase" mb="sm" className={`${classes.eyebrow} ${classes.navyTextSubtle}`}>
           Trusted in production by
         </Text>
 
@@ -69,7 +69,7 @@ function LeftPanel() {
           {TRUSTED_BY.map((name, i) => (
             <Group key={name} gap="xs" align="center">
               {i > 0 && <span className={classes.dot} />}
-              <Text size="sm" fw={700} c="gray.5">
+              <Text size="sm" fw={700} className={classes.navyText}>
                 {name}
               </Text>
             </Group>
@@ -84,8 +84,8 @@ function LeftPanel() {
             <Text component="span" size="xs" fw={700} c="white">
               Staff Engineer
             </Text>
-            <Text component="span" size="xs" c="gray.6">·</Text>
-            <Text component="span" size="xs" fw={500} c="gray.6">
+            <Text component="span" size="xs" className={classes.navyText}>·</Text>
+            <Text component="span" size="xs" fw={500} className={classes.navyText}>
               RD Station
             </Text>
           </Flex>
@@ -93,13 +93,13 @@ function LeftPanel() {
       </Box>
 
       <Flex align="center" gap="xs">
-        <Text size="xs" ff="monospace" c="gray.7">
+        <Text size="xs" ff="monospace" className={classes.navyTextSubtle}>
           localhost:8009
         </Text>
         <Box className={classes.statusDivider} />
         <Flex align="center" gap={6}>
           <Box className={classes.pulseDot} />
-          <Text size="xs" fw={700} tt="uppercase" c="gray.6" className={classes.gatewayOnline}>
+          <Text size="xs" fw={700} tt="uppercase" className={`${classes.gatewayOnline} ${classes.navyText}`}>
             Gateway online
           </Text>
         </Flex>
@@ -221,7 +221,7 @@ function Setup() {
                 </Text>
               )}
 
-              <Button type="submit" size="md" fullWidth loading={loading} disabled={loading}>
+              <Button type="submit" fullWidth loading={loading} disabled={loading}>
                 {loading ? 'Creating account...' : 'Create admin account'}
               </Button>
 

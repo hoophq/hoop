@@ -46,7 +46,7 @@ export default function AIDataMaskingSection() {
             </Alert>}
           <Button
             variant="default"
-            size="xs"
+            size="sm"
             leftSection={<ArrowUpRight size={14} />}
             component="a"
             href="https://hoop.dev/docs/features/ai-data-masking"
@@ -58,7 +58,7 @@ export default function AIDataMaskingSection() {
           {redactProvider === 'mspresidio' &&
             <Button
               variant="default"
-              size="xs"
+              size="sm"
               leftSection={<ExternalLink size={14} />}
               component="a"
               href="/ai-data-masking"

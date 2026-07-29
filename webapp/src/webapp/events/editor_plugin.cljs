@@ -63,6 +63,9 @@
  ::editor-plugin->set-script-success
  (fn [{:keys [db]} [_ data script]]
    (let [status (if (= "running" (:output_status data)) :running :success)]
+     ;; Notify the React shell that a session now exists — the sidebar
+     ;; Config Status checklist reacts instantly to "Run your first session".
+     (.dispatchEvent js/window (js/CustomEvent. "hoop:session-executed"))
      {:db (assoc-in db [:editor-plugin->script] {:status status
                                                  :data (merge data {:script script})})
       :fx [[:dispatch [:activation-journey/advance-terminal-banner]]]})))

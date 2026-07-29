@@ -32,7 +32,7 @@ export default function SourcedInput({
   rightSection,
   rightSectionWidth,
   rightSectionPointerEvents,
-  size = 'sm',
+  size = 'md',
   minRows,
 }) {
   const Input = INPUT_BY_TYPE[type] || TextInput

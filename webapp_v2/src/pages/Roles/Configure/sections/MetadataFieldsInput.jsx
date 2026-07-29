@@ -37,7 +37,6 @@ export default function MetadataFieldsInput() {
                 <ActionIcon
                   variant="subtle"
                   color="red"
-                  size="lg"
                   onClick={() => removeField(i)}
                   aria-label="Remove field"
                 >

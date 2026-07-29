@@ -1,6 +1,7 @@
-import { Stack, Text, Anchor, Table, Title, Grid, Box, Flex, ActionIcon } from '@mantine/core';
+import { Stack, Text, Anchor, Title, Grid, Box, Flex, ActionIcon } from '@mantine/core';
 import { CopyButton } from '@mantine/core';
 import { Copy } from 'lucide-react';
+import Table from '@/components/Table';
 import CodeSnippet from '@/components/CodeSnippet';
 import DocsBtnCallOut from '@/components/DocsBtnCallOut';
 import { docsUrl } from '@/utils/docsUrl';
@@ -11,7 +12,7 @@ function InlineCopy({ value }) {
   return (
     <CopyButton value={value}>
       {({ copy }) =>
-        <ActionIcon variant="subtle" color="gray" size="xs" onClick={copy}>
+        <ActionIcon variant="subtle" color="gray" size="sm" onClick={copy}>
           <Copy size={12} />
         </ActionIcon>}
     </CopyButton>
@@ -43,7 +44,7 @@ export function DockerDeployment({ hoopKey }) {
         <Text size="sm" fw={700}>
           Environment variables
         </Text>
-        <Table verticalSpacing="sm" horizontalSpacing="md" withTableBorder>
+        <Table>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>env-var</Table.Th>

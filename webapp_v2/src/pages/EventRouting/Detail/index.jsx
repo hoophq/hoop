@@ -256,7 +256,7 @@ function DispatchHistory({ subId }) {
             <Button
               variant="subtle"
               color="gray"
-              size="xs"
+              size="sm"
               leftSection={<RotateCcw size={12} />}
               onClick={() => setReplayTarget(d)}
               disabled={d.status === "pending" || d.status === "processing"}
@@ -396,7 +396,6 @@ export default function EventRoutingDetail() {
         </Stack>
         <Group gap="sm" wrap="nowrap">
           <Button
-            size="sm"
             variant="light"
             color={sub.status === "active" ? "gray" : "green"}
             leftSection={
@@ -407,7 +406,6 @@ export default function EventRoutingDetail() {
             {sub.status === "active" ? "Pause" : "Resume"}
           </Button>
           <Button
-            size="sm"
             variant="solid"
             leftSection={<Pencil size={14} />}
             onClick={() => navigate(`/features/event-routing/${sub.id}/edit`)}
@@ -418,7 +416,6 @@ export default function EventRoutingDetail() {
             <ActionIcon
               variant="light"
               color="red"
-              size={36}
               onClick={deleteControls.open}
             >
               <Trash2 size={16} />

@@ -10,7 +10,7 @@
             :on-click on-click
             :class (str "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors "
                         (if primary?
-                          "bg-white text-[--sidebar-bg] hover:bg-[--accent-2]"
+                          "bg-white text-[var(--brand-navy,#1F2D5C)] hover:bg-[--accent-2]"
                           "bg-white/10 text-white hover:bg-white/20"))}
    label])
 
@@ -22,12 +22,18 @@
   - :title / :subtitle  override the default copy
   - :badge-label        badge next to the title (default \"Enterprise\")
   - :primary            {:label :on-click} light action button
-  - :secondary          {:label :on-click} translucent action button"
-  [{:keys [title subtitle badge-label primary secondary]}]
-  ;; --sidebar-bg is the app's dark navy, defined once in the React shell
-  ;; theme (webapp_v2/src/theme.js) and available on every route since the
-  ;; shell wraps the CLJS pages — changing the theme updates both stacks.
-  [:> Box {:class "bg-[--sidebar-bg] rounded-2 px-4 py-3"}
+  - :secondary          {:label :on-click} translucent action button
+  - :flat?              square corners, for banners attached to another
+                        surface (e.g. glued under the terminal tabs). The
+                        default rounded card stays for standalone placements."
+  [{:keys [title subtitle badge-label primary secondary flat?]}]
+  ;; --brand-navy is the brand's dark navy (the old sidemenu blue), defined
+  ;; once in the React shell theme (webapp_v2/src/theme.js) and available on
+  ;; every route since the shell wraps the CLJS pages — changing the theme
+  ;; updates both stacks. The literal fallback keeps the banner dark if the
+  ;; CLJS bundle ever renders outside the shell.
+  [:> Box {:class (str "bg-[var(--brand-navy,#1F2D5C)] px-4 py-3"
+                       (when-not flat? " rounded-2"))}
    [:> Flex {:align "center" :justify "between" :gap "4"}
     [:> Flex {:direction "column" :gap "1"}
      [:> Flex {:align "center" :gap "2"}
@@ -35,7 +41,7 @@
        (or title default-title)]
       ;; Plain span instead of Radix Badge: this is a custom dark surface and
       ;; the themed badge colors would fight the Tailwind overrides.
-      [:span {:class "rounded-sm bg-white px-1.5 py-0.5 text-xs font-medium text-[--sidebar-bg]"}
+      [:span {:class "rounded-sm bg-white px-1.5 py-0.5 text-xs font-medium text-[var(--brand-navy,#1F2D5C)]"}
        (or badge-label "Enterprise")]]
      [:> Text {:as "p" :size "1" :class "text-white/70"}
       (or subtitle default-subtitle)]]

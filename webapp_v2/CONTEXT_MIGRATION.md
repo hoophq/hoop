@@ -53,6 +53,7 @@ Gateway backend (port 8009)
 | `window.hoopRemount()` | Called on remount to re-render Reagent without refetching user data |
 | `localStorage.jwt-token` | Shared auth token. Both apps read/write the same key |
 | `localStorage.react-shell = true` | Guards double-render of sidebar in CLJS mode |
+| `hoop:session-executed` (DOM CustomEvent on `window`) | Emitted by the CLJS web terminal on exec success (`editor_plugin.cljs`); the React Config Status widget listens and refreshes instantly |
 
 ### Routing Split (Router.jsx)
 
@@ -291,6 +292,6 @@ this section — when scheduling migration work.
 - **Free vs Enterprise license** is checked from `/api/serverinfo` in `useUserStore`. Some nav items are hidden or locked for free tier.
 - **`isAdmin` is derived** from user data (`user.role === 'admin'`). Admin-only routes are guarded in Sidebar and ProtectedRoute.
 - **`window.hoopRemount()`** must be called on ClojureApp remount (not initial mount) to avoid re-fetching user data when React Router re-renders the component.
-- **Radix → Mantine gray mapping**: legacy webapp uses Radix `--gray-11` (`#8d8d8d`) for secondary text. In `webapp_v2/src/theme.js` this corresponds to `gray.8` (index 8), **not** `gray.6` (`#d9d9d9` — too light). `main.jsx` overrides `--mantine-color-dimmed` to point at `gray.8`, so `c="dimmed"` works out of the box. If you reach for `c="gray.N"` directly, remember the offset: Radix has 12 steps, Mantine has 10; Radix shade N ≈ Mantine N-1 (away from the extremes).
+- **Radix → Mantine gray mapping**: the `gray` scale in `webapp_v2/src/theme.js` is a slate-tinted ramp (`gray.0` `#f0f0f3` … `gray.9` `#4d4d60`); the Radix Slate text steps live outside the array as semantic tokens set in `cssVariablesResolver()` — `--mantine-color-dimmed` = slate11 `#60646c` and `--mantine-color-text` = slate12 `#1c2024` — so `c="dimmed"` works out of the box. Note `gray.9` is a mid slate, not near-black: to get body-text black, omit the color prop and inherit `--mantine-color-text`.
 - **CSS Layers for Mantine vs CSS Modules**: `main.jsx` imports `@mantine/core/styles.layer.css` (not `styles.css`), and `src/layers.css` declares `@layer mantine, app;`. Mantine's built-in CSS lives in the `mantine` layer; CSS Modules stay unlayered, so they always win the cascade. Without this, `classes.item` of a CSS Module would compete with `.mantine-Accordion-item` at equal specificity and the result would depend on bundle order.
 - **CLJS stylesheet toggle**: `ClojureApp.jsx` loads `/css/site.css` as a `<link data-cljs-css>` and toggles `link.disabled` on mount/unmount. This keeps the parsed stylesheet in memory (no re-fetch, no flash) but removes its rules from the cascade while a React-only route is active — otherwise Tailwind/Radix rules persist in `<head>` after any visit to a CLJS route and override every React page. Do NOT replace the `<link>` with `<style>@import url(...)</style>` — that serializes the fetch through the CSS parser and produces a visible FOUC.

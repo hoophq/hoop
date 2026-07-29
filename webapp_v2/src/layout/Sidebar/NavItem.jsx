@@ -18,7 +18,7 @@ export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, defaultOpened,
     <SidebarNavLink
       label={item.label}
       aria-label={item.label}
-      leftSection={<item.icon size={24} aria-hidden="true" />}
+      leftSection={<item.icon size={18} aria-hidden="true" />}
       defaultOpened={defaultOpened}
     >
       {item.children.map((child) => (
@@ -59,7 +59,7 @@ export function NavItem({ item, isAdmin, isSelfHosted }) {
       <SidebarNavLink
         label={item.label}
         aria-label={item.label}
-        leftSection={item.icon ? <item.icon size={24} aria-hidden="true" /> : undefined}
+        leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
         rightSection={<ItemBadge badge={item.badge} shortcut={item.shortcut} />}
         onClick={() => { item.action(); closeMobile(); }}
       />
@@ -73,7 +73,7 @@ export function NavItem({ item, isAdmin, isSelfHosted }) {
       label={item.label}
       aria-label={item.label}
       aria-current={active ? 'page' : undefined}
-      leftSection={item.icon ? <item.icon size={24} aria-hidden="true" /> : undefined}
+      leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
       rightSection={<ItemBadge badge={item.badge} shortcut={item.shortcut} />}
       active={active}
       onClick={closeMobile}
