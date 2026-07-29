@@ -33,6 +33,8 @@ import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import Guardrails from '@/pages/Guardrails'
+import GuardrailForm from '@/pages/Guardrails/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -388,6 +390,44 @@ function Router() {
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Guardrails */}
+      <Route
+        path="/guardrails"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <Guardrails />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guardrails/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <GuardrailForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guardrails/edit/:id"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <GuardrailForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
