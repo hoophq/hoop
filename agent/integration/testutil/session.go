@@ -30,6 +30,13 @@ func BuildPGEnvVars(host, port, user, pass, dbname, sslmode string) map[string]a
 }
 
 func BuildSessionOpenPacket(sessionID, connType string, envVars map[string]any) *pb.Packet {
+	return BuildSessionOpenPacketWithGuardRails(sessionID, connType, envVars, nil)
+}
+
+// BuildSessionOpenPacketWithGuardRails is BuildSessionOpenPacket with guardrail
+// rules attached to the connection params, so the agent-side proxy enforces them
+// (the gateway normally fetches these from the DB and sets them here).
+func BuildSessionOpenPacketWithGuardRails(sessionID, connType string, envVars map[string]any, guardRailRules []byte) *pb.Packet {
 	connParams := &pb.AgentConnectionParams{
 		ConnectionName: "test-connection",
 		ConnectionType: connType,
@@ -40,6 +47,7 @@ func BuildSessionOpenPacket(sessionID, connType string, envVars map[string]any) 
 		ClientArgs:     nil,
 		ClientVerb:     "connect",
 		ClientOrigin:   "client",
+		GuardRailRules: guardRailRules,
 	}
 
 	encParams, err := pb.GobEncode(connParams)

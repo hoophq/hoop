@@ -27,9 +27,11 @@
   ;; Expose functions for the React shell (microfrontend)
   (set! (.-hoopRemount js/window) mount-root)
   ;; Set active panel directly from a URL path (no pushState side-effect)
+  ;; routes/parse returns nil for unknown paths — fall back to :home instead
+  ;; of blowing up on (name nil)
   (set! (.-hoopSetRoute js/window)
         (fn [path]
-          (let [route (routes/parse path)
+          (let [route (or (routes/parse path) {:handler :home})
                 panel (keyword (str (name (:handler route)) "-panel"))]
             (re-frame/dispatch-sync [::events/set-active-panel panel]))))
   ;; Generic Re-frame dispatch bridge for the React shell.

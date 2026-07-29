@@ -353,10 +353,19 @@ func (p *Provider) GetIssuerURL() string { return p.IssuerURL }
 // issuer and asserts that the token was minted for the given resource URI as required
 // by the MCP OAuth 2.1 Resource Server profile (RFC 8707, MCP 2025-11-25).
 //
-// The check is strict: it rejects opaque tokens, rejects tokens whose `aud` claim does
-// not contain expectedResource, and returns the parsed claims so callers can extract
-// subject, email, and groups without re-parsing.
-func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
+// staticClientIDs lists statically pre-registered OAuth client IDs (see the MCP
+// auth DCR shim) whose tokens are also accepted. IdPs without RFC 8707
+// resource-indicator support don't bind tokens to the resource URI: depending
+// on the IdP the client binding surfaces as `aud` = client ID (JumpCloud,
+// Entra ID) or as `azp` = client ID with an IdP-chosen `aud` (Auth0-style), so
+// both claims are checked. The static client must therefore be dedicated to
+// MCP access for this gateway. Empty entries are ignored.
+//
+// The check is strict: it rejects opaque tokens, and rejects tokens bound to
+// neither expectedResource (via `aud`) nor a static client (via `aud`/`azp`).
+// It returns the parsed claims so callers can extract subject, email, and
+// groups without re-parsing.
+func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource string, staticClientIDs ...string) (idptypes.ProviderUserInfo, jwt.MapClaims, error) {
 	var uinfo idptypes.ProviderUserInfo
 	if expectedResource == "" {
 		return uinfo, nil, fmt.Errorf("missing expected resource (aud) for token validation")
@@ -383,17 +392,13 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 		return uinfo, nil, fmt.Errorf("'sub' claim is missing or empty")
 	}
 
-	// Do no validate the azp claim, cause of the DCR
-	// if err := p.validateOidcAzpClaim(claims); err != nil {
-	// 	return uinfo, nil, err
-	// }
-
 	if iss, _ := claims["iss"].(string); iss != "" && iss != p.IssuerURL {
 		return uinfo, nil, fmt.Errorf("untrusted issuer, got=%q, want=%q", iss, p.IssuerURL)
 	}
 
-	if !audienceContains(claims["aud"], expectedResource) {
-		return uinfo, nil, fmt.Errorf("audience mismatch, expected=%q", expectedResource)
+	if !audienceContains(claims["aud"], expectedResource) && !tokenBoundToClient(claims, staticClientIDs) {
+		return uinfo, nil, fmt.Errorf("audience mismatch, got aud=%v azp=%v, want %q or a static client of %v",
+			claims["aud"], claims["azp"], expectedResource, staticClientIDs)
 	}
 
 	uinfo = p.parseUserInfo(claims)
@@ -425,8 +430,54 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 }
 
 // audienceContains returns true when the JWT `aud` claim (which may be a string or
-// an array per RFC 7519 §4.1.3) explicitly includes expected.
+// an array per RFC 7519 §4.1.3) includes expected. URI-shaped values are compared
+// in canonical form so cosmetic variances between the configured resource URI and
+// the IdP-minted audience (trailing slash, host case, explicit default port) do
+// not reject a semantically identical resource.
 func audienceContains(claim any, expected string) bool {
+	switch v := claim.(type) {
+	case string:
+		return resourceAudienceEquals(v, expected)
+	case []any:
+		for _, raw := range v {
+			if s, _ := raw.(string); resourceAudienceEquals(s, expected) {
+				return true
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if resourceAudienceEquals(s, expected) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tokenBoundToClient reports whether the token is bound to one of the
+// statically pre-registered client IDs, either through the `aud` claim (IdPs
+// that mint the client ID as audience) or the `azp` authorized-party claim
+// (OIDC Core §3.1.3.7 — IdPs that keep their own default `aud` and record the
+// requesting client in `azp`). Client IDs are compared exactly and
+// case-sensitively; empty entries are ignored.
+func tokenBoundToClient(claims jwt.MapClaims, clientIDs []string) bool {
+	azp, _ := claims["azp"].(string)
+	for _, clientID := range clientIDs {
+		if clientID == "" {
+			continue
+		}
+		if azp == clientID || audienceContainsExact(claims["aud"], clientID) {
+			return true
+		}
+	}
+	return false
+}
+
+// audienceContainsExact reports whether the `aud` claim includes expected,
+// compared byte-exactly. Used for OAuth client IDs, which are opaque
+// identifiers even when URL-shaped (RFC 6749 §2.2) — canonicalizing them
+// could conflate distinct clients.
+func audienceContainsExact(claim any, expected string) bool {
 	switch v := claim.(type) {
 	case string:
 		return v == expected
@@ -444,6 +495,38 @@ func audienceContains(claim any, expected string) bool {
 		}
 	}
 	return false
+}
+
+// resourceAudienceEquals reports whether two audience values denote the same
+// resource. Absolute http(s) URIs are compared canonically per RFC 3986 §6;
+// anything else (opaque client IDs) falls back to exact, case-sensitive
+// comparison.
+func resourceAudienceEquals(a, b string) bool {
+	return canonicalResourceURI(a) == canonicalResourceURI(b)
+}
+
+// canonicalResourceURI lowercases the scheme and host, strips the scheme's
+// default port, and trims trailing slashes from the path. The query component
+// is preserved verbatim so resources distinguished by query parameters never
+// compare equal. Values that are not absolute http(s) URIs are returned
+// unchanged.
+func canonicalResourceURI(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return s
+	}
+	host := strings.ToLower(u.Host)
+	switch u.Scheme {
+	case "http":
+		host = strings.TrimSuffix(host, ":80")
+	case "https":
+		host = strings.TrimSuffix(host, ":443")
+	}
+	canonical := u.Scheme + "://" + host + strings.TrimRight(u.EscapedPath(), "/")
+	if u.RawQuery != "" {
+		canonical += "?" + u.RawQuery
+	}
+	return canonical
 }
 
 func (p *Provider) userInfoEndpoint(accessToken string) (*idptypes.ProviderUserInfo, error) {

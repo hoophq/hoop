@@ -1202,6 +1202,8 @@ type LicensePayload struct {
 	AllowedHosts []string `json:"allowed_hosts" example:"johnwick.org,homolog.jhonwick.org,*.system.johnwick.org"`
 	// The description containing information about the license
 	Description string `json:"description" example:"John Wick's Bad Organization"`
+	// Features enabled by this license. Omitted or empty means all features are enabled
+	Features []string `json:"features,omitempty" example:"access-control,provisioning-hub"`
 }
 
 type License struct {
@@ -1309,6 +1311,8 @@ type ServerLicenseInfo struct {
 	VerifyError string `json:"verify_error" example:"unable to verify license"`
 	// The verified host (API_URL env)
 	VerifiedHost string `json:"verified_host" example:"homolog.johnwick.org"`
+	// Features enabled by the license. Empty means all features are enabled
+	Features []string `json:"features" example:"access-control,provisioning-hub"`
 }
 
 type PublicServerInfo struct {
@@ -2465,10 +2469,23 @@ type ServerMcpAuthConfig struct {
 	// to Hoop-issued bearer tokens.
 	Enabled bool `json:"enabled"`
 	// Canonical resource URI used for RFC 8707 audience binding. Defaults to
-	// "<API_URL>/mcp" when empty. Must match the `aud` claim of inbound JWTs.
-	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/mcp"`
+	// "<API_URL>/api/mcp" when empty. Compared against the `aud` claim of
+	// inbound JWTs in canonical URI form (host case, default port, and
+	// trailing slashes are ignored).
+	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/api/mcp"`
 	// JWT claim name from which user groups are extracted. Defaults to "groups".
 	GroupsClaim string `json:"groups_claim" example:"groups"`
+	// Statically pre-registered OAuth client ID at the IdP, for IdPs without
+	// RFC 7591 Dynamic Client Registration support (e.g. JumpCloud, Okta,
+	// Entra ID). When set, the gateway advertises itself as the authorization
+	// server and serves a Dynamic Client Registration shim that returns this
+	// client to MCP clients; tokens whose `aud` claim matches this client ID
+	// are accepted in addition to resource_uri.
+	ClientID string `json:"client_id" example:"hoop-mcp"`
+	// Optional client secret paired with client_id. Leave empty to use a
+	// public client with PKCE (recommended): the registration shim discloses
+	// this value to any registering MCP client.
+	ClientSecret string `json:"client_secret" example:""`
 }
 
 type GenerateApiKeyResponse struct {

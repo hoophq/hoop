@@ -1,9 +1,9 @@
 import { Card, Group, Stack, Text } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
 import { Send } from 'lucide-react'
 import Button from '@/components/Button'
 import Code from '@/components/Code'
 import Modal from '@/components/Modal'
+import { showSnackbar } from '@/utils/snackbar'
 import { useEventRoutingStore } from '../store'
 import DispatchBadge from './DispatchBadge'
 
@@ -17,9 +17,9 @@ export default function ReplayDispatchModal({ subId }) {
     if (!replayTarget || !subId) return
     try {
       await replayDispatch(subId, replayTarget.id)
-      notifications.show({ message: 'Dispatch replayed.', color: 'green' })
+      showSnackbar({ level: 'success', text: 'Dispatch replayed.' })
     } catch (e) {
-      notifications.show({ message: e?.response?.data?.message || 'Failed to replay.', color: 'red' })
+      showSnackbar({ level: 'error', text: e?.response?.data?.message || 'Failed to replay.' })
     } finally {
       setReplayTarget(null)
     }

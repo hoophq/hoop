@@ -17,15 +17,18 @@
      - :action - alternative action instead of navigation (opens command palette, etc)
      - :badge - optional badge component
      - :feature-flag - optional feature-flag keyword; when set, link is hidden unless flag is enabled
+     - :license-feature - optional license feature key; when set, link is hidden unless the gateway license enables it
      - :free-feature? - whether the feature is available on the free license
      - :free-license? - whether the current org is on the free license
      - :upgrade-plan-route - upgrade route (defaults to :upgrade-plan)
      - :on-activate - callback after activation (e.g. close mobile sidebar)"
-  [{:keys [uri icon label feature-flag free-feature? admin-only? admin? current-route free-license? navigate action badge upgrade-plan-route on-activate]
+  [{:keys [uri icon label feature-flag license-feature free-feature? admin-only? admin? current-route free-license? navigate action badge upgrade-plan-route on-activate]
     :or {upgrade-plan-route :upgrade-plan}}]
   (let [blocked? (and free-license? (not free-feature?))
         feature-flag? (not (nil? feature-flag))
         feature-flag-blocked? (and feature-flag? (not @(rf/subscribe [:gateway->feature-flag-enabled? feature-flag])))
+        license-feature-blocked? (and license-feature
+                                      (not @(rf/subscribe [:gateway->license-feature-enabled? license-feature])))
         active? (= uri current-route)
         base-class (str (styles/hover-side-menu-link uri current-route)
                         (:enabled styles/link-styles))
@@ -40,7 +43,7 @@
                      badge])
                   (when (fn? badge)
                     [badge])]]]
-    (when-not (or (and admin-only? (not admin?)) feature-flag-blocked?)
+    (when-not (or (and admin-only? (not admin?)) feature-flag-blocked? license-feature-blocked?)
       [:li
        (if action
          [:button {:on-click (fn []

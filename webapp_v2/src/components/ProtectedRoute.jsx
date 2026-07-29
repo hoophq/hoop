@@ -7,10 +7,11 @@ import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
-function ProtectedRoute({ children, adminOnly = false }) {
+function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
   const { user, isAdmin, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
+  const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
@@ -56,6 +57,14 @@ function ProtectedRoute({ children, adminOnly = false }) {
             initAnalytics(userData)
           }
           currentUser = userData
+        }
+
+        // Retry /serverinfo when a previous fetch failed or was skipped:
+        // license gating fails closed without it, so gated routes would
+        // otherwise stay blocked until a full reload.
+        if (!useUserStore.getState().serverInfoLoaded) {
+          const serverInfo = await authService.getServerInfo().catch(() => null)
+          if (serverInfo) setServerInfo(serverInfo)
         }
 
         // Get feature flag
@@ -117,6 +126,13 @@ function ProtectedRoute({ children, adminOnly = false }) {
   }
 
   if (adminOnly && !isAdmin) {
+    return <Navigate to="/" replace />
+  }
+
+  // License gating: fails closed — while /serverinfo is unknown the check
+  // returns false. Once loaded, an empty feature list means everything is
+  // enabled; otherwise the feature key must be present.
+  if (licenseFeature && !isLicenseFeatureEnabled(licenseFeature)) {
     return <Navigate to="/" replace />
   }
 

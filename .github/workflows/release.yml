@@ -893,8 +893,8 @@ jobs:
   # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart
   # points at. Every job here is continue-on-error and NOT a dependency of
   # publish-release: a hiccup, or a clean base that isn't published yet, must
-  # never fail the release workflow (which would also block auto-deploy). The
-  # authoritative AGPL/SSPL gating lives in agent-tools-build.yml.
+  # never fail the release workflow. The authoritative AGPL/SSPL gating lives in
+  # agent-tools-build.yml.
   docker-publish-hoop-ng:
     runs-on: ubuntu-latest
     name: Publish clean gateway (hoop-ng)
