@@ -16,25 +16,25 @@ export function StepItem({ step, opened, onToggle, onNavigate }) {
         {step.done
           ? <ActionIcon
               component="div"
-              variant="light"
+              variant="filled"
               color="green"
-              size="sm"
+              size="xs"
               radius="xl"
               aria-hidden="true"
               className={classes.stepActionIcon}
             >
-              <CircleCheckBig size={16} />
+              <CircleCheckBig size={16} strokeWidth={1.5} />
             </ActionIcon>
           : <ActionIcon
               component="div"
               variant="light"
               color="gray"
-              size="sm"
+              size="xs"
               radius="xl"
               aria-hidden="true"
               className={classes.stepActionIcon}
             >
-              <step.icon size={16} className={classes.stepIcon} strokeWidth={1} />
+              <step.icon size={16} className={classes.stepIcon} strokeWidth={1.5} />
             </ActionIcon>}
         <Text component="span" className={classes.stepTitle} data-done={step.done || undefined}>
           {step.title}
