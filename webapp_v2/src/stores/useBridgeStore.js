@@ -6,15 +6,10 @@ import { clojureDispatch } from '@/utils/clojureDispatch'
 // component" — wrap every dispatch in a store method so the
 // underlying mechanism can be swapped when the CLJS side is removed.
 //
-// snackbar: dispatched to CLJS so React pages share the same look
-// (top-right, 10s, dark) as the legacy snackbar component. Levels
-// match the CLJS handler at events/components/toast.cljs: 'success',
-// 'error', 'info'.
+// Snackbars are NOT bridged: the CLJS Toaster only exists while the
+// CLJS tree is mounted, so a dispatch from a React-only route would be
+// lost. Use `showSnackbar` from '@/utils/snackbar' instead.
 export const useBridgeStore = create(() => ({
-  showSnackbar: ({ level, text, details, description }) => {
-    clojureDispatch('show-snackbar', { level, text, details, description })
-  },
-
   // Refetch the current user in the CLJS app-db. Needed after React mutates
   // user-affecting state (e.g. applying a protection profile) so CLJS events
   // like :onboarding/check-user don't act on a stale cached user. No-op when

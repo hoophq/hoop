@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 type MockTransport struct {
@@ -31,9 +32,11 @@ func NewMockTransport() *MockTransport {
 }
 
 func (m *MockTransport) Send(pkt *pb.Packet) error {
+	pkt = proto.Clone(pkt).(*pb.Packet)
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.closed {
+	closed := m.closed
+	m.mu.RUnlock()
+	if closed {
 		return fmt.Errorf("transport closed")
 	}
 	select {
@@ -61,11 +64,12 @@ func (m *MockTransport) StartKeepAlive() {}
 
 func (m *MockTransport) Close() (error, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.closed {
+		m.mu.Unlock()
 		return nil, nil
 	}
 	m.closed = true
+	m.mu.Unlock()
 	// Cancel the context but deliberately do NOT close sendCh/recvCh.
 	// Long-lived helpers (the agent recv loop, the bridge pumps for the
 	// DB protocols, the demux) send on these channels and only stop when

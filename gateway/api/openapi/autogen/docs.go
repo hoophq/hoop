@@ -24,6 +24,38 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/.well-known/oauth-authorization-server": {
+            "get": {
+                "description": "RFC 8414 authorization-server metadata mirroring the configured IdP, with registration_endpoint pointing at the gateway's RFC 7591 registration shim.\nServed unauthenticated at the gateway root (outside the /api base path) as /.well-known/oauth-authorization-server and /.well-known/openid-configuration.\nReturns 404 unless MCP OAuth is enabled with a static client configured; 502 when the IdP discovery document cannot be resolved.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get MCP OAuth Authorization Server Metadata",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/mcpauth.AuthorizationServerMetadata"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/access-requests/rules": {
             "get": {
                 "description": "List all access request rules for the organization with pagination",
@@ -5075,6 +5107,52 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/mcp/oauth/register": {
+            "post": {
+                "description": "RFC 7591 Dynamic Client Registration shim for IdPs without native DCR support: accepts any registration request and answers with the statically pre-registered OAuth client, echoing the caller's client metadata.\nServed unauthenticated per RFC 7591. Returns 404 unless MCP OAuth is enabled with a static client configured.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Register MCP OAuth Client",
+                "parameters": [
+                    {
+                        "description": "RFC 7591 client metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/mcpauth.ClientRegistration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/mcpauth.ClientRegistration"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10268,6 +10346,97 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "mcpauth.AuthorizationServerMetadata": {
+            "type": "object",
+            "properties": {
+                "authorization_endpoint": {
+                    "type": "string"
+                },
+                "code_challenge_methods_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "grant_types_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "jwks_uri": {
+                    "type": "string"
+                },
+                "registration_endpoint": {
+                    "type": "string"
+                },
+                "response_types_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scopes_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "token_endpoint": {
+                    "type": "string"
+                },
+                "token_endpoint_auth_methods_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "mcpauth.ClientRegistration": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "client_secret": {
+                    "type": "string"
+                },
+                "client_secret_expires_at": {
+                    "type": "integer"
+                },
+                "grant_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "response_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "token_endpoint_auth_method": {
+                    "type": "string"
+                }
+            }
+        },
         "openapi.AIAgentCreateRequest": {
             "type": "object",
             "required": [
@@ -16934,6 +17103,16 @@ const docTemplate = `{
         "openapi.ServerMcpAuthConfig": {
             "type": "object",
             "properties": {
+                "client_id": {
+                    "description": "Statically pre-registered OAuth client ID at the IdP, for IdPs without\nRFC 7591 Dynamic Client Registration support (e.g. JumpCloud, Okta,\nEntra ID). When set, the gateway advertises itself as the authorization\nserver and serves a Dynamic Client Registration shim that returns this\nclient to MCP clients; tokens whose ` + "`" + `aud` + "`" + ` claim matches this client ID\nare accepted in addition to resource_uri.",
+                    "type": "string",
+                    "example": "hoop-mcp"
+                },
+                "client_secret": {
+                    "description": "Optional client secret paired with client_id. Leave empty to use a\npublic client with PKCE (recommended): the registration shim discloses\nthis value to any registering MCP client.",
+                    "type": "string",
+                    "example": ""
+                },
                 "enabled": {
                     "description": "Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition\nto Hoop-issued bearer tokens.",
                     "type": "boolean"
@@ -16944,9 +17123,9 @@ const docTemplate = `{
                     "example": "groups"
                 },
                 "resource_uri": {
-                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/mcp\" when empty. Must match the ` + "`" + `aud` + "`" + ` claim of inbound JWTs.",
+                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/api/mcp\" when empty. Compared against the ` + "`" + `aud` + "`" + ` claim of\ninbound JWTs in canonical URI form (host case, default port, and\ntrailing slashes are ignored).",
                     "type": "string",
-                    "example": "https://use.hoop.dev/mcp"
+                    "example": "https://use.hoop.dev/api/mcp"
                 }
             }
         },

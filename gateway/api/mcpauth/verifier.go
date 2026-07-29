@@ -19,13 +19,15 @@ import (
 )
 
 type effectiveConfig struct {
-	Enabled     bool
-	ResourceURI string
-	GroupsClaim string
-	IssuerURL   string
-	OrgID       string
-	GrpcURL     string
-	Provider    idptypes.ProviderType
+	Enabled      bool
+	ResourceURI  string
+	GroupsClaim  string
+	ClientID     string
+	ClientSecret string
+	IssuerURL    string
+	OrgID        string
+	GrpcURL      string
+	Provider     idptypes.ProviderType
 }
 
 func loadConfig() (effectiveConfig, bool) {
@@ -59,6 +61,8 @@ func loadConfig() (effectiveConfig, bool) {
 		cfg.Enabled = mcp.Enabled
 		cfg.ResourceURI = mcp.ResourceURI
 		cfg.GroupsClaim = mcp.GroupsClaim
+		cfg.ClientID = mcp.ClientID
+		cfg.ClientSecret = mcp.ClientSecret
 	}
 	if cfg.ResourceURI == "" {
 		cfg.ResourceURI = appconfig.Get().ApiURL() + McpResourcePath()
@@ -83,7 +87,7 @@ func authenticateOAuth21(c *gin.Context, bearer string, cfg effectiveConfig) err
 		return fmt.Errorf("oidc verifier does not support resource-bound validation")
 	}
 
-	uinfo, claims, err := provider.VerifyAccessTokenForResource(bearer, cfg.ResourceURI)
+	uinfo, claims, err := provider.VerifyAccessTokenForResource(bearer, cfg.ResourceURI, cfg.ClientID)
 	if err != nil {
 		return err
 	}
