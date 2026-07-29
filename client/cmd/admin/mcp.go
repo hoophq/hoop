@@ -11,8 +11,10 @@ import (
 const mcpAuthEndpoint = "/api/serverconfig/mcp-auth"
 
 var (
-	mcpAuthResourceURIFlag string
-	mcpAuthGroupsClaimFlag string
+	mcpAuthResourceURIFlag  string
+	mcpAuthGroupsClaimFlag  string
+	mcpAuthClientIDFlag     string
+	mcpAuthClientSecretFlag string
 )
 
 var mcpCmd = &cobra.Command{
@@ -36,12 +38,7 @@ var mcpAuthEnableCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		current := mcpAuthGetOrEmpty()
 		current["enabled"] = true
-		if mcpAuthResourceURIFlag != "" {
-			current["resource_uri"] = mcpAuthResourceURIFlag
-		}
-		if mcpAuthGroupsClaimFlag != "" {
-			current["groups_claim"] = mcpAuthGroupsClaimFlag
-		}
+		mcpAuthApplyFlags(cmd, current)
 		mcpAuthPutOrDie(current)
 		fmt.Println(styles.Fainted("MCP OAuth authentication enabled."))
 		mcpAuthPrintStatus(current)
@@ -71,24 +68,44 @@ var mcpAuthStatusCmd = &cobra.Command{
 var mcpAuthConfigureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Update MCP OAuth configuration without changing enabled state",
-	Long: `Update the MCP OAuth resource URI or groups claim without toggling enable/disable.
+	Long: `Update the MCP OAuth configuration without toggling enable/disable.
 Use --resource-uri to change the canonical RFC 8707 audience binding.
-Use --groups-claim to change the JWT claim from which user groups are extracted.`,
+Use --groups-claim to change the JWT claim from which user groups are extracted.
+Use --client-id/--client-secret to set a statically pre-registered OAuth client
+for IdPs without RFC 7591 Dynamic Client Registration support (JumpCloud, Okta,
+Entra ID). Prefer a public client (no secret) with PKCE: the registration shim
+discloses the secret to any registering MCP client.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if mcpAuthResourceURIFlag == "" && mcpAuthGroupsClaimFlag == "" {
-			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri and/or --groups-claim")
+		if !cmd.Flags().Changed("resource-uri") && !cmd.Flags().Changed("groups-claim") &&
+			!cmd.Flags().Changed("client-id") && !cmd.Flags().Changed("client-secret") {
+			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri, --groups-claim, --client-id and/or --client-secret")
 		}
 		current := mcpAuthGetOrEmpty()
-		if mcpAuthResourceURIFlag != "" {
-			current["resource_uri"] = mcpAuthResourceURIFlag
-		}
-		if mcpAuthGroupsClaimFlag != "" {
-			current["groups_claim"] = mcpAuthGroupsClaimFlag
-		}
+		mcpAuthApplyFlags(cmd, current)
 		mcpAuthPutOrDie(current)
 		fmt.Println(styles.Fainted("MCP OAuth configuration updated."))
 		mcpAuthPrintStatus(current)
 	},
+}
+
+// mcpAuthApplyFlags copies explicitly provided flags into the config payload.
+// Cobra's changed-state distinguishes an omitted flag (stored value preserved)
+// from an explicitly empty one (value cleared), so operators can remove a
+// static client (--client-id "") or downgrade a confidential client to public
+// PKCE (--client-secret "").
+func mcpAuthApplyFlags(cmd *cobra.Command, current map[string]any) {
+	if cmd.Flags().Changed("resource-uri") {
+		current["resource_uri"] = mcpAuthResourceURIFlag
+	}
+	if cmd.Flags().Changed("groups-claim") {
+		current["groups_claim"] = mcpAuthGroupsClaimFlag
+	}
+	if cmd.Flags().Changed("client-id") {
+		current["client_id"] = mcpAuthClientIDFlag
+	}
+	if cmd.Flags().Changed("client-secret") {
+		current["client_secret"] = mcpAuthClientSecretFlag
+	}
 }
 
 func mcpAuthGetOrEmpty() map[string]any {
@@ -111,9 +128,11 @@ func mcpAuthGetOrEmpty() map[string]any {
 func mcpAuthPutOrDie(payload map[string]any) {
 	conf := clientconfig.GetClientConfigOrDie()
 	body := map[string]any{
-		"enabled":      mcpAuthBool(payload["enabled"]),
-		"resource_uri": mcpAuthString(payload["resource_uri"]),
-		"groups_claim": mcpAuthString(payload["groups_claim"]),
+		"enabled":       mcpAuthBool(payload["enabled"]),
+		"resource_uri":  mcpAuthString(payload["resource_uri"]),
+		"groups_claim":  mcpAuthString(payload["groups_claim"]),
+		"client_id":     mcpAuthString(payload["client_id"]),
+		"client_secret": mcpAuthString(payload["client_secret"]),
 	}
 	if _, err := httpBodyRequest(&apiResource{
 		suffixEndpoint: mcpAuthEndpoint,
@@ -134,15 +153,25 @@ func mcpAuthPrintStatus(cfg map[string]any) {
 	if groupsClaim == "" {
 		groupsClaim = "(default: groups)"
 	}
+	clientID := mcpAuthString(cfg["client_id"])
+	staticClient := clientID
+	if clientID == "" {
+		staticClient = "(none: Dynamic Client Registration via IdP)"
+	} else if mcpAuthString(cfg["client_secret"]) != "" {
+		staticClient += " (confidential)"
+	} else {
+		staticClient += " (public, PKCE)"
+	}
 	state := "disabled"
 	if enabled {
 		state = "enabled"
 	}
 	fmt.Printf(`MCP OAuth Status:
-  State:        %s
-  Resource URI: %s
-  Groups Claim: %s
-`, state, resourceURI, groupsClaim)
+  State:         %s
+  Resource URI:  %s
+  Groups Claim:  %s
+  Static Client: %s
+`, state, resourceURI, groupsClaim, staticClient)
 }
 
 func mcpAuthBool(v any) bool {
