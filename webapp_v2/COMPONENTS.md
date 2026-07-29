@@ -592,7 +592,7 @@ useAuthStore.getState().token
 | `agents.js` | CRUD `/agents` and `/agents/:id` |
 | `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
 | `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
-| `guardrails.js` | GET `/guardrails` |
+| `guardrails.js` | CRUD `/guardrails` and `/guardrails/:id` |
 | `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
 | `attributes.js` | CRUD `/attributes` |
 | `search.js` | GET `/search?term=` |
