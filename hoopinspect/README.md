@@ -7,11 +7,11 @@ structured statements into allow/deny verdicts.
 no TLS, routes nothing. You hand it bytes you already have, and whatever holds
 the connection keeps holding it.
 
-**The relay owns a socket.** `cmd/hoop-inspect` wraps the
-library in a TCP listener that accepts a connection, dials one upstream, and
-pumps bytes through the gate in both directions. It runs behind something that
-already owns TLS and identity, typically Envoy forwarding plaintext over
-loopback or a unix socket.
+**The relay owns a socket.** The nested `cmd` module builds `hoop-inspect`,
+which wraps the library in a TCP listener that accepts a connection, dials one
+upstream, and pumps bytes through the gate in both directions. It runs behind
+something that already owns TLS and identity, typically Envoy forwarding
+plaintext over loopback or a unix socket.
 
 **Zero dependencies.** Standard library only, tests included, no `go.sum`. You
 vendor nothing and get no version skew with whatever links it.
@@ -33,6 +33,297 @@ for _, s := range stmts {
 }
 ```
 
+## Run it locally: the POC stack
+
+The fastest way to watch all of this work is the compose stack in
+[`deploy/docker-compose/envoy-poc`](../deploy/docker-compose/envoy-poc). Envoy
+terminates TLS and calls OPA for reachability, `hoop-inspect` sits behind it as
+an ordinary upstream, and a Postgres database and an HTTP service sit behind
+that. No hoop gateway, no agent, no control-plane database: the sidecar reads
+one YAML file.
+
+Needs `docker`, `curl`, `openssl` and `python3`.
+
+**1. Bring it up.** The first run takes about a minute. It mints a self-signed
+cert for Envoy, builds `hoop-inspect:local` from the `hoopinspect` tree, and
+starts six containers. From the repo root:
+
+```bash
+cd deploy/docker-compose/envoy-poc
+./run.sh
+```
+
+**2. Check the sidecar is healthy**, and read what each lane resolved:
+
+```bash
+curl -s localhost:19000/healthz                        # ok
+curl -s localhost:19000/config | python3 -m json.tool
+```
+
+**3. Walk the lanes.** `./demo.sh` runs every one of these in order and prints
+the audit trail at the end. The individual pieces:
+
+```bash
+# Tier 1: OPA answers reachability and nothing else.
+curl -sk https://localhost:8443/json -H 'X-Hoop-User: alice' -o /dev/null -w '%{http_code}\n'  # 200
+curl -sk https://localhost:8443/json -H 'X-Hoop-User: bob'   -o /dev/null -w '%{http_code}\n'  # 403
+
+# Tier 2, postgres. Envoy forwarded these bytes as opaque TCP and consulted
+# nobody, so the sidecar is the only thing that can judge them.
+PG="docker compose exec -T client env PGPASSWORD=apppass PGSSLMODE=disable \
+  psql -h envoy -p 5432 -U appuser -d appdb"
+$PG -c 'DELETE FROM customers WHERE id = 1;'      # refused in a real pgwire ErrorResponse
+$PG -c 'SELECT name, email, ssn FROM customers;'  # the result set comes back masked
+
+# Tier 2, http: a denial on the RESPONSE, which no ext_authz config can express.
+curl -sk https://localhost:8443/status/503 -H 'X-Hoop-User: alice' -w '\n%{http_code}\n'  # 403
+```
+
+**4. Read the evidence** the sidecar recorded:
+
+```bash
+curl -s localhost:19000/stats                  | python3 -m json.tool
+curl -s 'localhost:19000/api/sessions?limit=1' | python3 -m json.tool
+docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
+```
+
+**5. Rebuild after changing this library**, and tear down when you are done:
+
+```bash
+./run.sh --rebuild
+./run.sh down          # includes volumes
+```
+
+| Port | Serves |
+|---|---|
+| 8443 | Envoy HTTPS, to the `httpbin` lane |
+| 5433 | Envoy TCP, to the `appdb` lane |
+| 19000 | sidecar admin: `/healthz`, `/stats`, `/config`, `/events`, `/api/*` |
+| 9901 | Envoy admin |
+
+That Postgres listener is `envoy:5432` inside the compose network and `5433` on
+the host, because a laptop usually has something on 5432 already. It is why the
+`psql` line above runs from the `client` container.
+
+`PGSSLMODE=disable` is required: nothing terminates TLS on that lane, so a
+client negotiating it would leave no plaintext to parse.
+
+For the code path behind each command, a per-command runbook and a
+troubleshooting table, read
+[docs/adr/hoopinspect-flow.md](../docs/adr/hoopinspect-flow.md).
+
+## Running the relay yourself
+
+The binary lives in the nested `cmd` module, which is where the optional
+plugins get linked (the YAML front end and alcatraz PII detection) so the root
+module stays dependency-free.
+
+```bash
+cd cmd
+go build -o hoop-inspect .
+
+./hoop-inspect -validate -config config.yaml   # check the config and exit
+./hoop-inspect -config config.yaml             # run
+./hoop-inspect -version
+```
+
+As a container, with the `hoopinspect` tree as the build context. From the repo
+root:
+
+```bash
+docker build -f deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile \
+  -t hoop-inspect:local hoopinspect/
+```
+
+There are no build tags. Every capability is decided by the config file, so an
+operator turning on PII detection does not also have to swap the binary. Omit
+the `pii` section and detection is off, which makes masking unavailable and a
+`pii` policy rule a config error: both are refused at startup rather than
+silently skipped.
+
+To embed the relay in your own process, call `sidecar.Run(cfg, det)` and skip
+the `cmd` module entirely.
+
+## Configuring it: config.yaml
+
+One file is the whole configuration. The process reads it at startup, resolves
+every listener, and then tells you what it resolved. YAML and JSON both work
+and the extension picks the parser: `.yaml` and `.yml` go through the nested
+`config/yaml` module, anything else is read as JSON. Decoding is strict, so a
+mistyped key fails the startup instead of silently disabling a control.
+
+### 1. Write the file
+
+Top-level `policy` and `mask` are DEFAULTS. Each listener is one upstream, and
+inherits those defaults unless it overrides them.
+
+```yaml
+log_level: info
+
+admin:
+  listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
+
+audit:
+  file: "-"                 # stdout as JSON lines; a path appends to that file
+  async_queue_size: 1024    # a slow sink must not block a user's query
+  memory_buffer: 256        # last N events, readable at GET /events
+  query_sessions: 500       # backs GET /api/sessions
+  fail_closed: false        # true refuses a statement whose audit write failed
+
+pii:                        # omit the section to disable detection entirely
+  entities: [EMAIL_ADDRESS, US_SSN, CREDIT_CARD, BR_CPF, IBAN_CODE]
+
+policy:                     # inherited by every listener
+  enforce: true             # false is observe-only: inspect and audit, deny nothing
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:                       # inherited by every listener
+  enabled: true
+  rules:
+    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    connection: appdb       # the name audit rows and policy key on
+    policy:
+      rules:
+        - name: no-destructive-sql
+          type: operation   # classifier-derived, so SELECT 'DROP TABLE x' is a select
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on appdb
+    mask:
+      rules:                # REPLACES the default list rather than extending it
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+    connection: httpbin
+    policy:
+      opa:
+        url: http://opa:8181/v1/data/hoop/inspect
+        fail_open: false
+      rules:
+        - name: no-admin-api
+          type: http_resource
+          resources: ["/admin/**"]
+          message: the admin API is not reachable through this proxy
+        - name: no-upstream-5xx
+          type: http_status   # response-side, so ext_authz cannot ask it
+          statuses: ["5xx"]
+          message: upstream failure suppressed by policy
+```
+
+Rule types and what each one matches are in [Policy](#policy); masking
+strategies and the entity-versus-column choice are in
+[Masking and PII](#masking-and-pii).
+
+Other listener fields worth knowing: `network: unix` binds a filesystem socket
+instead of a port, `upstream_tls` wraps the connection to the backend,
+`idle_timeout_sec` closes an idle connection (leave it unset for interactive
+sessions, since psql idles between keystrokes), and `max_conns` bounds
+concurrency.
+
+### 2. Know how a listener inherits
+
+| Field | Merge | Why |
+|---|---|---|
+| `policy.rules` | concatenate, listener first | Every rule denies and the first match wins, so concatenating cannot change the allow/deny outcome. Order only picks which message the user reads. |
+| `policy.opa` | replace | One lane has one decision endpoint. |
+| `policy.enforce` | replace | A lane rolling out behind an enforcing default has to be able to say observe-only. |
+| `mask` | replace | A rule owns an entity type, and two concatenated lists leave two rules competing for one entity. |
+
+### 3. Validate before you deploy
+
+Nothing needs to be running. Here it is against the POC's own config, from the
+`hoopinspect` directory:
+
+```bash
+cd cmd && go build -o hoop-inspect . && \
+  ./hoop-inspect -validate -config ../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+```
+
+```
+config OK: 2 listener(s)
+  appdb            postgres  enforcing 2 rule(s) + masking
+  httpbin          http      enforcing 4 rule(s) + masking
+```
+
+Each line is the RESOLVED lane, so the counts include what it inherited. A lane
+with an `opa` block reads `+ opa`, and one with `enforce: false` reads
+`observe-only`.
+
+Validation builds every lane, so it catches what a syntax check cannot, and it
+reports every problem in one run rather than one per restart. Four things it
+refuses outright:
+
+- `mask.enabled` on a protocol whose codec can carry neither masking
+  mechanism, naming the lane.
+- A `pii` rule naming an entity absent from `pii.entities`, naming the entity.
+  Without this check the rule loads, evaluates, and matches nothing, so a
+  guardrail looks live while allowing everything it was written to stop.
+- A key typo, in YAML or JSON.
+- A bad regex in any lane's rules, naming the lane.
+
+### 4. Ask the running process what it resolved
+
+Reading the file cannot tell you which rules a lane ended up with, because
+inheritance happens at startup. Debugging a denial that never fired starts
+here, again against the POC config:
+
+```bash
+curl -s localhost:19000/config | python3 -m json.tool
+```
+
+```json
+{"lanes": [
+  {"name": "appdb", "protocol": "postgres", "enforcing": true,
+   "rules": ["no-destructive-sql", "no-cpf-in-query"], "masking": true},
+  {"name": "httpbin", "protocol": "http", "enforcing": true,
+   "rules": ["no-admin-api", "no-internal-ids", "no-upstream-5xx",
+             "no-cpf-in-query"], "masking": true}
+]}
+```
+
+Both lanes inherited `no-cpf-in-query`, and neither inherited the other's
+rules. Rule names only: a `pattern_regex` can encode business logic, and this
+endpoint already sits beside a read interface to the audit trail.
+
+### Sharing a rule block between lanes
+
+This is the reason to prefer YAML. Anchors let several listeners reference one
+block, and a top-level key starting `x-` is dropped before validation, so an
+anchor does not need a matching config field.
+
+```yaml
+x-readonly: &readonly
+  - name: no-writes
+    type: operation
+    operations: [insert, update, delete, drop, truncate]
+    message: this credential is read-only
+
+policy:
+  enforce: true   # without this every lane below is observe-only
+
+listeners:
+  - {name: replica-a, protocol: postgres, listen: 0.0.0.0:15432, upstream: a:5432, policy: {rules: *readonly}}
+  - {name: replica-b, protocol: postgres, listen: 0.0.0.0:15433, upstream: b:5432, policy: {rules: *readonly}}
+```
+
+`enforce` defaults to false so a misconfigured rule cannot take production down
+on first deploy. A lane running observe-only says so in the startup log and in
+`/config`.
+
 ## Overlap with Envoy
 
 Envoy already parses some of this.
@@ -49,6 +340,7 @@ The boundary:
 |---|---|---|
 | Postgres SQL parse | `postgres_proxy`, best effort | full statement text |
 | Postgres granularity | `table.db` + operation verb | statement, operation, tables |
+| Postgres **response** | ✗ | result columns, row count, and masking by re-framing |
 | HTTP request | `ext_authz`: method, path, headers, bounded body | same, plus normalized resource |
 | HTTP **response** | ✗, ext_authz decides before the upstream is called | status, headers, body |
 | Deny UX | RBAC/ext_authz drops or returns a bare 403 | operator-authored message |
@@ -58,10 +350,16 @@ gaps named above are the narrow ones. Envoy is not blind here.
 
 ## Protocols
 
-| Protocol | Messages decoded | Stateful |
-|---|---|---|
-| `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | no |
-| `http` | HTTP/1.x requests and responses | no |
+| Protocol | Request messages | Response messages | Stateful |
+|---|---|---|---|
+| `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
+| `http` | HTTP/1.x requests | HTTP/1.x responses | no |
+
+The Postgres codec is stateful because one `RowDescription` describes every
+`DataRow` after it, and those land in different TCP reads. That is why the
+registry hands out a factory rather than an instance: two connections sharing
+one codec would corrupt each other's reassembly, and one tenant's SQL would
+surface in another tenant's audit trail. Give every connection its own.
 
 MySQL, MSSQL and MongoDB codecs are **not shipped**. The `Codec` interface
 and the shared SQL classifier are protocol-agnostic, so adding one means a new
@@ -87,9 +385,15 @@ type Statement struct {
     Tables    []string          // SQL relations, or the HTTP resource
     Database  string            // when the protocol states it
     HTTP      *HTTPDetail       // http only; nil for the wire-database codecs
+    Result    *ResultDetail     // response side: columns and row count, never values
     Metadata  map[string]string // protocol-specific, documented per codec
 }
 ```
+
+`Result` is what makes a response-side SQL rule possible: `SELECT *` does not
+name the column it returned, so "this query came back with a column named ssn"
+is a question no request-side rule can answer. It carries the column names and
+a row count, never the rows.
 
 For SQL, `Operation` comes from a lexer that strips comments and string
 literals first, so `SELECT 'DROP TABLE customers'` classifies as `select`.
@@ -179,6 +483,26 @@ Masking covers the response side, where Envoy has no equivalent for any
 protocol: Envoy consults `ext_authz` before calling the upstream, so it never
 sees the row that comes back.
 
+Requests are never rewritten. Changing the statement the upstream executes is a
+correctness change wearing a privacy label, so a value the client put in a
+`WHERE` clause is a matter for a `pii` policy rule instead.
+
+Two mechanisms carry it, and the gate picks per protocol by asking the codec
+rather than by consulting a list of protocol names:
+
+- **Substitution**, where the payload length is declared in a header the gate
+  can find and correct. HTTP, whose `Content-Length` is retagged after the
+  rewrite. Leave it stale and the client reads the old count and stops
+  mid-document, which reads as a corrupt upstream rather than a masking bug.
+- **Re-framing**, where every row and column carries its own length prefix.
+  Postgres, whose codec rebuilds each changed `DataRow` around the new values.
+  Substituting bytes there desynchronizes the client, and `psql` reports "lost
+  synchronization with server".
+
+A codec offering neither gets its `mask` section refused at startup, because
+accepting a masking config that can never fire is the failure that ends with an
+unmasked SSN in a screenshot.
+
 Detection and rewriting both come from
 [alcatraz](https://github.com/hoophq/alcatraz): 45 entity types across 12
 countries, 25 of them checksum-verified with Luhn on cards, ISO 7064 mod-97 on
@@ -256,16 +580,15 @@ Read these before writing a policy against it.
   "could not determine", **never** "touches nothing". Use
   `RequireTableMatch: true` on rules protecting something critical, and accept
   the false positives.
-- **HTTP response inspection works; SQL response inspection does not.** For
-  the database codecs `FromServer` bytes are consumed and yield no statements,
-  because the redaction path is unbuilt. The HTTP codec inspects both
-  directions.
-- **Masking is HTTP-only.** The wire-database protocols length-prefix their
-  rows in binary frames, and substituting bytes in place desynchronizes the
-  client (`psql` reports "lost synchronization with server"). The gate refuses
-  rather than half-masking: corrupt *and* still leaking is the worst outcome.
-  Re-framing per codec is the next step. `pii` policy rules work on every
-  protocol, because denying a statement changes no bytes.
+- **A response batch can be truncated.** Both shipped codecs inspect and mask
+  in each direction, but the Postgres codec stops decoding columns past 1000
+  rows in one result set, to keep the relay's memory out of the query's hands.
+  It keeps counting and marks the batch `Truncated`. A policy MUST read that as
+  inconclusive, never as proof a value is absent.
+- **A response statement carries no verb.** For the database codecs a
+  `FromServer` statement reports `OpUnknown`, because the operation belongs to
+  the request the audit trail already recorded. Key a response-side SQL rule on
+  `Result`, not on `Operation`.
 - **PII detection is neither sound nor complete.** A checksum-verified
   identifier is solid; everything else is a pattern. Detecting a name column
   takes NER, which this module does not wire, and a caller can split a value
@@ -282,25 +605,19 @@ Read these before writing a policy against it.
 - **Statements are not transactions.** The gate evaluates each one
   independently, with no cross-statement session state.
 
-## Building the relay
-
-The binary lives in the nested `cmd` module, so the root stays
-dependency-free. Build it from there:
-
-```bash
-cd cmd && go build -o hoop-inspect .
-./hoop-inspect -validate -config config.yaml
-```
-
-Config decides the features, not a build tag. Omit the `pii` section and
-detection is off: masking is unavailable and a `pii` policy rule is a config
-error, both refused at startup rather than silently skipped.
-
 ## Testing
 
 ```bash
 go test ./...           # unit
 go test -race ./...     # concurrency
+```
+
+That covers the root module only. Each nested module has its own `go.mod`, so
+`./...` does not reach it:
+
+```bash
+(cd pii/alcatraz && go test ./...)
+(cd store/sqlite && go test ./...)
 ```
 
 Each codec runs a split-read matrix: the tests feed the same message in two
