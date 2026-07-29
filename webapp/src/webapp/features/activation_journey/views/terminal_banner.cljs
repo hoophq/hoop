@@ -45,23 +45,26 @@
     (when (and admin? (not requested?))
       (rf/dispatch [:activation-journey/init {}]))
     (when banner
-      [:> Box {:class "px-2 pt-2"}
+      [:> Box
        (case (:variant banner)
          :unlock
          [enterprise-banner/main
-          {:primary {:label "See features"
+          {:flat? true
+           :primary {:label "See features"
                      :on-click #(features-modal/open! props)}}]
 
          :protect
          [enterprise-banner/main
-          {:title "Protect your resource with our features"
+          {:flat? true
+           :title "Protect your resource with our features"
            :primary {:label "See features"
                      :on-click #(features-modal/open! props)}
            :secondary {:label "Not now" :on-click dismiss!}}]
 
          :template
          [enterprise-banner/main
-          {:title (:title banner)
+          {:flat? true
+           :title (:title banner)
            :badge-label (:label banner)
            :subtitle (:description banner)
            :primary {:label (:banner-cta banner)

@@ -22,14 +22,18 @@
   - :title / :subtitle  override the default copy
   - :badge-label        badge next to the title (default \"Enterprise\")
   - :primary            {:label :on-click} light action button
-  - :secondary          {:label :on-click} translucent action button"
-  [{:keys [title subtitle badge-label primary secondary]}]
+  - :secondary          {:label :on-click} translucent action button
+  - :flat?              square corners, for banners attached to another
+                        surface (e.g. glued under the terminal tabs). The
+                        default rounded card stays for standalone placements."
+  [{:keys [title subtitle badge-label primary secondary flat?]}]
   ;; --brand-navy is the brand's dark navy (the old sidemenu blue), defined
   ;; once in the React shell theme (webapp_v2/src/theme.js) and available on
   ;; every route since the shell wraps the CLJS pages — changing the theme
   ;; updates both stacks. The literal fallback keeps the banner dark if the
   ;; CLJS bundle ever renders outside the shell.
-  [:> Box {:class "bg-[var(--brand-navy,#1F2D5C)] rounded-2 px-4 py-3"}
+  [:> Box {:class (str "bg-[var(--brand-navy,#1F2D5C)] px-4 py-3"
+                       (when-not flat? " rounded-2"))}
    [:> Flex {:align "center" :justify "between" :gap "4"}
     [:> Flex {:direction "column" :gap "1"}
      [:> Flex {:align "center" :gap "2"}
