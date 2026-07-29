@@ -161,6 +161,24 @@ type AuditConfig struct {
 	// Zero disables it.
 	MemoryBuffer int `json:"memory_buffer"`
 
+	// QuerySessions enables the queryable in-memory store that backs the
+	// admin query API (/api/sessions, /api/events, /api/stats) — the
+	// endpoints a UI will render. The value bounds how many sessions are
+	// retained; when full the oldest session and its whole timeline are
+	// evicted, and the API reports the drop count so a reader can tell the
+	// window is partial.
+	//
+	// Deliberately in-memory. A durable, queryable backend lives in the
+	// nested module github.com/hoophq/hoopinspect/store/sqlite, which this
+	// binary does NOT import: linking a database driver here would give the
+	// sidecar a dependency tree, and staying dependency-free is what makes
+	// it auditable. A deployment that wants durable queries embeds the
+	// library and supplies the SQLite store itself.
+	//
+	// Zero disables the query API entirely; the JSONL file remains the
+	// record of truth either way.
+	QuerySessions int `json:"query_sessions"`
+
 	// FailClosed denies a statement when its audit record cannot be written.
 	//
 	// Default false, and the default is the uncomfortable one. Turn this on

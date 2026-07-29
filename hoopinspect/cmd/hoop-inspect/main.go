@@ -48,6 +48,7 @@ import (
 	"github.com/hoophq/hoopinspect/policy"
 	"github.com/hoophq/hoopinspect/proxy"
 	"github.com/hoophq/hoopinspect/session"
+	"github.com/hoophq/hoopinspect/store"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -90,10 +91,11 @@ func main() {
 func run(cfg *Config) error {
 	log := newLogger(cfg.LogLevel)
 
-	auditSink, memBuf, err := buildAudit(cfg.Audit)
+	ac, err := buildAudit(cfg.Audit)
 	if err != nil {
 		return err
 	}
+	auditSink := ac.sink
 	defer func() {
 		// Close flushes buffered events. Losing the tail of an audit trail on
 		// shutdown is the failure mode this defer exists to prevent.
@@ -135,7 +137,7 @@ func run(cfg *Config) error {
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, memBuf, log)
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, ac, log)
 	}
 
 	var wg sync.WaitGroup
@@ -253,43 +255,58 @@ func newLogger(level string) *slog.Logger {
 	return l
 }
 
-// buildAudit assembles the sink chain. Returns the sink plus the in-memory
-// ring when one is configured, so the admin endpoint can read it.
-func buildAudit(cfg AuditConfig) (audit.Sink, *audit.MemorySink, error) {
+// auditChain is what buildAudit assembles: the sink the gate writes to, plus
+// the read-side handles the admin endpoint needs.
+type auditChain struct {
+	sink  audit.Sink
+	mem   *audit.MemorySink
+	query *store.MemoryStore
+}
+
+// buildAudit assembles the sink chain.
+//
+// Order matters: the durable JSONL sink is first so it records even if a
+// later sink errors, and MultiSink attempts every sink regardless.
+func buildAudit(cfg AuditConfig) (auditChain, error) {
 	opts := audit.SinkOptions{
 		RedactStatements:  cfg.RedactStatements,
 		MaxStatementBytes: cfg.MaxStatementBytes,
 	}
 
+	var out auditChain
 	var sinks []audit.Sink
 
 	switch cfg.File {
-	case "":
+	case "", "-":
 		// No file configured: still record to stdout rather than silently
 		// discarding. A deployment that genuinely wants no audit trail has
 		// to say so by pointing the file at /dev/null.
 		sinks = append(sinks, audit.NewJSONLSink(os.Stdout, opts))
-	case "-":
-		sinks = append(sinks, audit.NewJSONLSink(os.Stdout, opts))
 	default:
 		f, err := os.OpenFile(cfg.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open audit file: %w", err)
+			return out, fmt.Errorf("open audit file: %w", err)
 		}
 		sinks = append(sinks, audit.NewJSONLSink(f, opts))
 	}
 
-	var mem *audit.MemorySink
 	if cfg.MemoryBuffer > 0 {
-		mem = audit.NewMemorySink(cfg.MemoryBuffer)
-		sinks = append(sinks, mem)
+		out.mem = audit.NewMemorySink(cfg.MemoryBuffer)
+		sinks = append(sinks, out.mem)
 	}
 
-	var sink audit.Sink = audit.NewMultiSink(sinks...)
-	if cfg.AsyncQueueSize > 0 {
-		sink = audit.NewAsyncSink(sink, cfg.AsyncQueueSize)
+	// The query store is both a sink and the read side, so it indexes on the
+	// same write that records the event. Two pipelines would drift.
+	if cfg.QuerySessions > 0 {
+		out.query = store.NewMemoryStore(cfg.QuerySessions)
+		sinks = append(sinks, out.query)
 	}
-	return sink, mem, nil
+
+	out.sink = audit.NewMultiSink(sinks...)
+	if cfg.AsyncQueueSize > 0 {
+		out.sink = audit.NewAsyncSink(out.sink, cfg.AsyncQueueSize)
+	}
+	return out, nil
 }
 
 // serveAdmin exposes health and stats.
@@ -300,7 +317,7 @@ func serveAdmin(
 	ctx context.Context,
 	addr string,
 	servers []*proxy.Server,
-	mem *audit.MemorySink,
+	ac auditChain,
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -333,18 +350,34 @@ func serveAdmin(
 		})
 	})
 
-	if mem != nil {
+	if ac.mem != nil {
 		// The recent-events endpoint is a debugging aid, not an audit
 		// interface: the ring drops old events, so anything reading this for
 		// compliance is reading an incomplete record.
 		mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"events":  mem.Events(),
-				"dropped": mem.Dropped(),
+				"events":  ac.mem.Events(),
+				"dropped": ac.mem.Dropped(),
 				"warning": "in-memory ring buffer; not a complete audit trail",
 			})
 		})
+	}
+
+	// The query API: the endpoints a UI renders. Mounted under /api so the
+	// operational endpoints above (/healthz, /stats) stay stable and
+	// separately scrapeable.
+	//
+	// Deliberately on the ADMIN listener, not the data path. This is a read
+	// interface to every statement every user ran; it belongs behind
+	// whatever already decides who may see audit data, and the data-path
+	// ports must never serve it.
+	if ac.query != nil {
+		api := store.NewAPI(ac.query)
+		api.BasePath = "/api"
+		mux.Handle("/api/", api)
+		log.Info("query API mounted",
+			"paths", "/api/sessions, /api/sessions/{id}, /api/sessions/{id}/events, /api/events, /api/stats")
 	}
 
 	srv := &http.Server{
