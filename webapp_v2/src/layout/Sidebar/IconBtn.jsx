@@ -21,7 +21,7 @@ export function IconBtn({ icon, label, path, action, onClick }) {
           if (path) navigate(path);
         }}
       >
-        <Icon size={24} aria-hidden="true" />
+        <Icon size={18} aria-hidden="true" />
         <span className={classes.srOnly}>{label}</span>
       </button>
     </Tooltip>
