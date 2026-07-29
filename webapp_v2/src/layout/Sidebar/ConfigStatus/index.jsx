@@ -12,7 +12,7 @@ import { computeProgress, STEP_DEFS } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
 
-// Admin setup checklist (EVL-98). Figma behavior annotations:
+// EVL-98: admin setup checklist. Figma behavior annotations:
 // - only one step open at a time; opening another closes the rest
 // - opening the widget auto-opens the first incomplete step
 // - interacting with anything outside the widget collapses it
@@ -59,9 +59,11 @@ export function ConfigStatus() {
   }, [isAdmin, fetchStatus])
 
   // Faster feedback while the admin is actually looking at the open checklist.
+  // TTL-respecting on purpose: the 10s tick nudges often, but the store's TTL
+  // caps the real probe rate so an expanded widget never bursts the API.
   useEffect(() => {
     if (!opened) return undefined
-    const interval = setInterval(() => fetchStatus({ force: true }), 10_000)
+    const interval = setInterval(() => fetchStatus(), 10_000)
     return () => clearInterval(interval)
   }, [opened, fetchStatus])
 

@@ -9,7 +9,7 @@ import { dataMaskingService } from '@/services/dataMasking'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { useUserStore } from '@/stores/useUserStore'
 
-// Backs the sidebar Config Status checklist (EVL-98). Every check derives
+// EVL-98: backs the sidebar Config Status checklist. Every check derives
 // from real configuration state — nothing is persisted or manually ticked —
 // so the widget updates automatically as the admin configures the org.
 
@@ -153,9 +153,14 @@ export const useConfigStatusStore = create((set, get) => ({
       }
 
       set((state) => ({
+        // When the authenticated user changed, never merge over the previous
+        // user's snapshot — failed probes must yield `false`, not user A's
+        // leftovers stamped with user B's id.
+        execConnectionName: sameUser ? state.execConnectionName : null,
+        firstConnectionName: sameUser ? state.firstConnectionName : null,
         ...patch,
         checks: {
-          ...state.checks,
+          ...(sameUser ? state.checks : INITIAL_CHECKS),
           ...patch.checks,
           // Derived synchronously from the already-loaded /userinfo payload.
           protectionLevelSet: user?.default_protection_profile != null,
