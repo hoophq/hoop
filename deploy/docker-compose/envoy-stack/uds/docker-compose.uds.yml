@@ -1,0 +1,71 @@
+# Overlay: Envoy reaches hoop-inspect over unix sockets instead of TCP.
+#
+#   docker compose -f docker-compose.yml -f uds/docker-compose.uds.yml up -d
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the image at least once.
+#
+# What changes: a shared volume at /run/hoop-inspect, and two config files
+# pointing both sides at it. What does not change: the codecs, the policy, the
+# masking, the audit trail and the TLS hop to appdb.
+#
+# Why bother. A TCP listener on 15432 is reachable by anything that can route
+# to the pod. With sockets there is no port at all, so reachability becomes a
+# filesystem question — which is the argument for a sidecar that shares a
+# network namespace with exactly one workload.
+#
+# The cost is that both containers must share a volume, which is why the
+# default stack stays on TCP: it makes the "hoop-inspect is an ordinary
+# upstream" claim without asking anyone to mount anything.
+
+services:
+  # Two permission facts collide here, and both are easy to miss.
+  #
+  # 1. The shared volume arrives root-owned, and the relay image runs as uid
+  #    10001, so it cannot create a socket in it: "bind: permission denied".
+  # 2. Connecting to a unix socket needs WRITE permission on it, not just
+  #    read. Envoy's process runs as uid 101 (`envoy`), NOT root — `docker
+  #    exec` hands you a root shell, which hides this. A socket left at the
+  #    default 0755 is unreachable for uid 101 and Envoy reports UF /
+  #    upstream_cx_connect_fail with nothing in its log.
+  #
+  # So: the directory is owned by the relay's uid, and both it and the sockets
+  # carry group 101 with group write. The relay runs with 101 as a
+  # supplementary group so the sockets it creates inherit that group via
+  # setgid on the directory.
+  socket-dir:
+    image: alpine:3.20
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /run/hoop-inspect
+        chown 10001:101 /run/hoop-inspect
+        chmod 2775 /run/hoop-inspect
+    volumes:
+      - inspect-sockets:/run/hoop-inspect
+
+  hoop-inspect:
+    # Run with envoy's gid as the primary group and a permissive umask, so
+    # every socket the relay creates comes out group-writable and Envoy (uid
+    # 101) can connect. Go gives a listening socket 0777&^umask; the default
+    # 022 clears the group write bit that a unix connect() requires.
+    user: "10001:101"
+    entrypoint: ["sh", "-c", "umask 0002 && exec /usr/local/bin/hoop-inspect -config /etc/hoop-inspect/config.yaml"]
+    volumes:
+      - ./uds/config-uds.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+      - inspect-sockets:/run/hoop-inspect
+    depends_on:
+      socket-dir: { condition: service_completed_successfully }
+      appdb: { condition: service_healthy }
+      httpbin: { condition: service_started }
+
+  envoy:
+    volumes:
+      - ./uds/envoy-uds.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+      - inspect-sockets:/run/hoop-inspect
+
+volumes:
+  inspect-sockets:
