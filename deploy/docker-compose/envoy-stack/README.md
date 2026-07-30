@@ -46,6 +46,11 @@ admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
 is only the host-side publication, because a laptop usually has something on
 5432 already.
 
+Envoy reaches the sidecar over TCP here, which keeps the topology to one
+claim: hoop-inspect is an ordinary upstream. To close the last port and have
+Envoy reach it over a unix socket instead, add the overlay in
+[`uds/`](uds/README.md) — same lanes, same policy, no data port open at all.
+
 For the code path behind these commands, a per-command runbook and a
 troubleshooting table, read
 [docs/adr/hoopinspect-flow.md](../../../docs/adr/hoopinspect-flow.md).

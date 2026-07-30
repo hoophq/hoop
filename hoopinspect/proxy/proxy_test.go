@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -520,4 +522,211 @@ func TestDenyFrameFallsBackToAGenericMessage(t *testing.T) {
 	if !bytes.Contains(frame, []byte("denied by policy")) {
 		t.Error("an empty message produced no fallback text")
 	}
+}
+
+// --- unix sockets ---------------------------------------------------------
+
+// udsPath returns a socket path short enough for the platform's sun_path
+// limit (104 bytes on darwin, 108 on linux). t.TempDir() under the default
+// TMPDIR can exceed it on macOS, and the failure reads as "invalid argument".
+func udsPath(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "uds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "s.sock")
+}
+
+// startUnixServer is startServer for a listener whose address the caller
+// chose. startServer overwrites Listen with 127.0.0.1:0, which is right for
+// an ephemeral TCP port and wrong for a socket path.
+func startUnixServer(t *testing.T, cfg proxy.Config) *proxy.Server {
+	t.Helper()
+	if cfg.Logger == nil {
+		cfg.Logger = quietLogger()
+	}
+	s, err := proxy.NewServer(cfg)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = s.Serve(ctx) }()
+
+	// Serve binds asynchronously; wait for the socket to answer.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, derr := net.Dial("unix", cfg.Listen); derr == nil {
+			c.Close()
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	t.Cleanup(func() { cancel(); s.Close() })
+	return s
+}
+
+// A unix socket is the tightest way to put Envoy in front of the relay:
+// filesystem permissions decide who connects, and nothing on the network can
+// reach it at all.
+func TestUnixSocketRelaysTraffic(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	sock := udsPath(t)
+
+	startUnixServer(t, proxy.Config{
+		Network:    "unix",
+		Listen:     sock,
+		Upstream:   up.addr(),
+		Protocol:   hoopinspect.Postgres,
+		Connection: "appdb",
+		Policy:     denyDrops(t),
+		Audit:      audit.NewMemorySink(64),
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	})
+
+	c, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatalf("dial unix: %v", err)
+	}
+	defer c.Close()
+
+	if _, err := c.Write(pgQuery("SELECT 1")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !bytes.Contains(up.got(), []byte("SELECT 1")) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if got := up.got(); !bytes.Contains(got, []byte("SELECT 1")) {
+		t.Errorf("upstream received %q, want it to contain SELECT 1", got)
+	}
+}
+
+// Policy must not weaken because the transport changed. A denial over a unix
+// socket has to stop the statement exactly as it does over TCP.
+func TestUnixSocketStillDenies(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	sock := udsPath(t)
+
+	startUnixServer(t, proxy.Config{
+		Network:    "unix",
+		Listen:     sock,
+		Upstream:   up.addr(),
+		Protocol:   hoopinspect.Postgres,
+		Connection: "appdb",
+		Policy:     denyDrops(t),
+		Audit:      audit.NewMemorySink(64),
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	})
+
+	c, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatalf("dial unix: %v", err)
+	}
+	defer c.Close()
+
+	if _, err := c.Write(pgQuery("DROP TABLE customers")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	reply := make([]byte, 256)
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _ := c.Read(reply)
+	if n == 0 || reply[0] != 'E' {
+		t.Errorf("expected a pgwire ErrorResponse, got %q", reply[:n])
+	}
+	if len(up.got()) > 0 {
+		t.Errorf("the denied statement reached the upstream: %q", up.got())
+	}
+}
+
+// Go unlinks the socket on an orderly close, so only a SIGKILL, an OOM kill
+// or `docker kill` leaves the file behind. Without this reclaim every restart
+// after one of those fails with "bind: address already in use" until a human
+// deletes a file, which is a bad way to spend an outage.
+func TestUnixSocketReclaimsAStaleFile(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	sock := udsPath(t)
+
+	// A leftover socket file with nothing listening on it.
+	stale, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uln, ok := stale.(*net.UnixListener); ok {
+		uln.SetUnlinkOnClose(false) // reproduce the unclean exit
+	}
+	if err := stale.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sock); err != nil {
+		t.Fatalf("test setup left no stale socket: %v", err)
+	}
+
+	startUnixServer(t, proxy.Config{
+		Network:    "unix",
+		Listen:     sock,
+		Upstream:   up.addr(),
+		Protocol:   hoopinspect.Postgres,
+		Connection: "appdb",
+		Policy:     denyDrops(t),
+		Audit:      audit.NewMemorySink(64),
+	})
+
+	c, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatalf("dial after reclaim: %v", err)
+	}
+	c.Close()
+}
+
+// The reclaim must not steal a socket someone is answering on. Two relays
+// sharing one path would split a client's connections between them at random,
+// which is worse than refusing to start.
+func TestUnixSocketRefusesToStealALiveSocket(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	sock := udsPath(t)
+
+	startUnixServer(t, proxy.Config{
+		Network:    "unix",
+		Listen:     sock,
+		Upstream:   up.addr(),
+		Protocol:   hoopinspect.Postgres,
+		Connection: "appdb",
+		Policy:     denyDrops(t),
+		Audit:      audit.NewMemorySink(64),
+	})
+
+	second, err := proxy.NewServer(proxy.Config{
+		Network:    "unix",
+		Listen:     sock,
+		Upstream:   up.addr(),
+		Protocol:   hoopinspect.Postgres,
+		Connection: "appdb",
+		Policy:     denyDrops(t),
+		Audit:      audit.NewMemorySink(64),
+		Logger:     quietLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	err = second.Serve(context.Background())
+	if err == nil {
+		t.Fatal("the second server bound a socket another process owns")
+	}
+	if !strings.Contains(err.Error(), "live socket") {
+		t.Errorf("error %q does not name the conflict", err)
+	}
+
+	// The original must still be serving.
+	c, derr := net.Dial("unix", sock)
+	if derr != nil {
+		t.Fatalf("the first server stopped serving: %v", derr)
+	}
+	c.Close()
 }

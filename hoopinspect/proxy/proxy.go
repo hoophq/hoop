@@ -24,6 +24,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -155,8 +156,49 @@ func NewServer(cfg Config) (*Server, error) {
 	}, nil
 }
 
+// reclaimStaleSocket removes a leftover unix socket file so a restart can
+// bind.
+//
+// Go unlinks the socket when the listener closes, so an orderly shutdown
+// leaves nothing behind. A SIGKILL, an OOM kill or `docker kill` skips that,
+// and the file outlives the process: every later start then fails with
+// "bind: address already in use" and the relay never comes back without
+// someone deleting a file by hand. That is a bad way to spend an outage.
+//
+// It only unlinks a socket nothing answers on. A successful dial means a live
+// process owns this path, so the file stays and net.Listen reports the
+// conflict, which is the correct outcome: two relays sharing one socket would
+// split a client's connections between them at random.
+func (s *Server) reclaimStaleSocket() error {
+	if s.cfg.Network != "unix" {
+		return nil
+	}
+	if _, err := os.Stat(s.cfg.Listen); err != nil {
+		return nil // nothing there, or unreadable; let net.Listen report it
+	}
+
+	// A short timeout, because this runs on the startup path against a local
+	// filesystem socket: it either answers immediately or it is dead.
+	if c, err := net.DialTimeout("unix", s.cfg.Listen, 100*time.Millisecond); err == nil {
+		c.Close()
+		return fmt.Errorf("hoopinspect/proxy: %s is a live socket; another relay is already listening on it",
+			s.cfg.Listen)
+	}
+
+	if err := os.Remove(s.cfg.Listen); err != nil {
+		return fmt.Errorf("hoopinspect/proxy: removing stale socket %s: %w", s.cfg.Listen, err)
+	}
+	s.log.Warn("removed a stale socket file left by an unclean shutdown",
+		"listen", s.cfg.Listen)
+	return nil
+}
+
 // Serve listens and accepts until ctx is cancelled or Close is called.
 func (s *Server) Serve(ctx context.Context) error {
+	if err := s.reclaimStaleSocket(); err != nil {
+		return err
+	}
+
 	ln, err := net.Listen(s.cfg.Network, s.cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("hoopinspect/proxy: listen %s %s: %w",

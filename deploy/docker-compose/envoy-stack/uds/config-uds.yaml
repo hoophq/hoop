@@ -1,0 +1,94 @@
+# hoop-inspect listening on unix sockets instead of TCP ports.
+#
+# Identical to ../hoopinspect/config.yaml except for the two `network`/`listen`
+# pairs. Policy, masking, audit and upstream TLS are untouched: the transport
+# under the relay does not change what the relay does.
+#
+# Validate without starting anything:
+#   cd hoopinspect/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/uds/config-uds.yaml
+
+log_level: info
+
+admin:
+  # Still TCP. The admin API is for humans and scrapers, and putting it on a
+  # socket would mean exec-ing into the container to read /healthz.
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+policy:
+  enforce: true
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  enabled: true
+  rules:
+    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
+    - {name: cards, entity: CREDIT_CARD, strategy: partial, keep_last: 4}
+    - {name: cpf, entity: BR_CPF, strategy: redact}
+    - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    # A filesystem path, not an address. Nothing on the network can reach this
+    # lane: no port is open, so a misconfigured NetworkPolicy or a neighbouring
+    # pod cannot connect to it at all.
+    network: unix
+    listen: /run/hoop-inspect/pg.sock
+    upstream: appdb:5432
+    connection: appdb
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+    policy:
+      rules:
+        - name: no-destructive-sql
+          type: operation
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on appdb
+    mask:
+      rules:
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+        - {name: cpf, entity: BR_CPF, strategy: redact}
+        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+
+  - name: httpbin
+    protocol: http
+    network: unix
+    listen: /run/hoop-inspect/http.sock
+    upstream: httpbin:8080
+    connection: httpbin
+    policy:
+      rules:
+        - name: no-admin-api
+          type: http_resource
+          resources: ["/admin/**"]
+          message: the admin API is not reachable through this proxy
+        - name: no-internal-ids
+          type: http_resource
+          resources: ["/anything/users/*/orders/*"]
+          message: direct id access is not permitted; use the search endpoint
+        - name: no-upstream-5xx
+          type: http_status
+          statuses: ["5xx"]
+          message: upstream failure suppressed by policy
