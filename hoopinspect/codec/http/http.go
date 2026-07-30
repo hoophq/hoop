@@ -111,6 +111,10 @@ func (i *Inspector) Protocol() hoopinspect.Protocol { return hoopinspect.HTTP }
 // libhoop's ReverseProxy.inspectHandler enters here, holding both values
 // already.
 func (i *Inspector) InspectRequest(r *http.Request, body []byte) hoopinspect.Statement {
+	return i.inspectRequest(r, drained{data: body})
+}
+
+func (i *Inspector) inspectRequest(r *http.Request, b drained) hoopinspect.Statement {
 	path := r.URL.Path
 	if path == "" {
 		path = "/"
@@ -127,7 +131,7 @@ func (i *Inspector) InspectRequest(r *http.Request, body []byte) hoopinspect.Sta
 	if q := r.URL.Query(); len(q) > 0 {
 		d.Query = q
 	}
-	i.attachBody(d, body)
+	i.attachBody(d, b)
 
 	return hoopinspect.Statement{
 		Protocol:  hoopinspect.HTTP,
@@ -149,6 +153,10 @@ func (i *Inspector) InspectRequest(r *http.Request, body []byte) hoopinspect.Sta
 // libhoop's ReverseProxy.modifyResponse enters here, with resp.Request
 // available.
 func (i *Inspector) InspectResponse(resp *http.Response, req *http.Request, body []byte) hoopinspect.Statement {
+	return i.inspectResponse(resp, req, drained{data: body})
+}
+
+func (i *Inspector) inspectResponse(resp *http.Response, req *http.Request, b drained) hoopinspect.Statement {
 	d := &hoopinspect.HTTPDetail{
 		StatusCode:  resp.StatusCode,
 		ContentType: contentType(resp.Header),
@@ -167,7 +175,7 @@ func (i *Inspector) InspectResponse(resp *http.Response, req *http.Request, body
 		d.Host = requestHost(req)
 		d.Resource = NormalizePath(path)
 	}
-	i.attachBody(d, body)
+	i.attachBody(d, b)
 
 	return hoopinspect.Statement{
 		Protocol:  hoopinspect.HTTP,
@@ -208,13 +216,13 @@ func (i *Inspector) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspec
 			if err != nil {
 				return stmts, pos, ErrMalformed
 			}
-			body, complete := drainBody(resp.Body, i.opts.MaxBodyBytes)
+			b, complete := drainBody(resp.Body, i.opts.MaxBodyBytes)
 			resp.Body.Close()
 			if !complete {
 				return stmts, pos, nil // body still arriving
 			}
 			consumed := len(rest) - br.Buffered()
-			stmts = append(stmts, i.InspectResponse(resp, nil, body))
+			stmts = append(stmts, i.inspectResponse(resp, nil, b))
 			pos += consumed
 			continue
 		}
@@ -223,13 +231,13 @@ func (i *Inspector) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspec
 		if err != nil {
 			return stmts, pos, ErrMalformed
 		}
-		body, complete := drainBody(req.Body, i.opts.MaxBodyBytes)
+		b, complete := drainBody(req.Body, i.opts.MaxBodyBytes)
 		req.Body.Close()
 		if !complete {
 			return stmts, pos, nil
 		}
 		consumed := len(rest) - br.Buffered()
-		stmts = append(stmts, i.InspectRequest(req, body))
+		stmts = append(stmts, i.inspectRequest(req, b))
 		pos += consumed
 	}
 
@@ -249,40 +257,57 @@ func headEndIndex(b []byte) int {
 	return -1
 }
 
-// drainBody reads a body, capping the retained bytes at limit while still
+// drained is one message body as drainBody recovered it: the retained
+// prefix, plus whether bytes followed it.
+//
+// The flag has to travel with the bytes. A caller cannot infer truncation
+// from the length, because a body cut at the limit and a body that happens
+// to end there are the same slice.
+type drained struct {
+	data      []byte
+	truncated bool
+}
+
+// drainBody reads a body, retaining at most limit bytes while still
 // consuming the rest so the reader lands on the next message boundary.
 // complete is false when the body was cut short, meaning more bytes are on
 // the way.
-func drainBody(rc io.ReadCloser, limit int) (body []byte, complete bool) {
+//
+// The remainder past limit goes to io.Discard rather than into a buffer that
+// is then sliced away: the limit exists to bound what this package holds in
+// memory, and a 2 GiB upload must not allocate 2 GiB to throw it away.
+func drainBody(rc io.ReadCloser, limit int) (b drained, complete bool) {
 	if rc == nil {
-		return nil, true
+		return drained{}, true
 	}
 	var buf bytes.Buffer
-	_, err := io.Copy(&buf, rc)
-	if err != nil {
+	if _, err := io.Copy(&buf, io.LimitReader(rc, int64(limit))); err != nil {
 		// An unexpected EOF means the body is still in flight.
-		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
-			return nil, false
-		}
-		return nil, false
+		return drained{}, false
 	}
-	b := buf.Bytes()
-	if len(b) > limit {
-		b = b[:limit]
+	rest, err := io.Copy(io.Discard, rc)
+	if err != nil {
+		return drained{}, false
 	}
-	return b, true
+	return drained{data: buf.Bytes(), truncated: rest > 0}, true
 }
 
-func (i *Inspector) attachBody(d *hoopinspect.HTTPDetail, body []byte) {
-	if !i.opts.CaptureBody || len(body) == 0 {
+// attachBody records the body on the detail, flagging a prefix as such.
+//
+// Truncation arrives two ways and both must set the flag: drainBody reports
+// it for a stream it capped itself, and a caller entering at InspectRequest
+// hands over a whole body that this function caps here.
+func (i *Inspector) attachBody(d *hoopinspect.HTTPDetail, b drained) {
+	if !i.opts.CaptureBody || len(b.data) == 0 {
 		return
 	}
-	if len(body) > i.opts.MaxBodyBytes {
-		d.Body = string(body[:i.opts.MaxBodyBytes])
+	if len(b.data) > i.opts.MaxBodyBytes {
+		d.Body = string(b.data[:i.opts.MaxBodyBytes])
 		d.BodyTruncated = true
 		return
 	}
-	d.Body = string(body)
+	d.Body = string(b.data)
+	d.BodyTruncated = b.truncated
 }
 
 // pickHeaders returns only the allowlisted headers, and nil when the

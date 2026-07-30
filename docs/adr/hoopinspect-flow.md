@@ -252,6 +252,11 @@ envoy :5432 ──cluster hoop_inspect_pg────> :15432  lane "appdb"     
                                                    └─ one process
 ```
 
+Each lane binds a TCP port or a unix socket, chosen by its `network` field.
+TCP is the default and what the diagram above shows; the same two lanes over
+sockets are in [Transport: TCP or unix socket](#transport-tcp-or-unix-socket),
+below.
+
 The top-level `policy:` and `mask:` blocks in `config.yaml` set defaults. A
 listener overrides them:
 
@@ -321,6 +326,82 @@ A re-framing codec holds rows back until their result set ends, so `pump`
 defers a `FlushResponse` on the server direction. Skipping that flush drops the
 tail of a client's output, and the user reads it as a truncated result rather
 than as a masking bug.
+
+## Transport: TCP or unix socket
+
+`proxy.Server.Serve` calls `net.Listen(cfg.Network, cfg.Listen)`, and the
+listener's type is the whole of the difference. Everything downstream of
+`Accept` takes a `net.Conn` and never asks what produced it, so policy,
+masking, audit and upstream TLS are identical either way.
+
+```
+config                     proxy.Server                  what binds
+─────────────────────────  ────────────────────────────  ─────────────────────
+listen: 0.0.0.0:15432      Network "" defaults to "tcp"  a port
+network: unix              net.Listen("unix", path)      a filesystem socket
+listen: /run/.../pg.sock
+```
+
+The default lives in `proxy.NewServer`: an empty `Network` becomes `tcp`, so a
+config written before the field existed keeps working. `sidecar` validation
+accepts only `tcp` or `unix` and names the lane on anything else.
+
+Over sockets the topology is the same picture with two edges relabelled:
+
+```
+envoy :8443 ──cluster hoop_inspect_http──> /run/hoop-inspect/http.sock
+envoy :5432 ──cluster hoop_inspect_pg────> /run/hoop-inspect/pg.sock
+```
+
+On the Envoy side that is a `pipe:` endpoint instead of a `socket_address:`,
+and the cluster becomes `STATIC` rather than `STRICT_DNS`, because a path is
+not a name to resolve:
+
+```yaml
+- name: hoop_inspect_pg
+  type: STATIC
+  load_assignment:
+    endpoints:
+      - lb_endpoints:
+          - endpoint:
+              address:
+                pipe: { path: /run/hoop-inspect/pg.sock }
+```
+
+### Reading which transport a lane bound
+
+`GET /stats` reports the post-bind address, so it describes what happened
+rather than what the file asked for:
+
+```json
+{"listeners": [
+  {"name": "appdb",   "addr": "/run/hoop-inspect/pg.sock"},
+  {"name": "httpbin", "addr": "/run/hoop-inspect/http.sock"}
+]}
+```
+
+A path is unix, a `host:port` is TCP. The startup log carries the same fact as
+an explicit `network` field, and for a socket lane `ls -l` shows the leading
+`s` of a socket inode.
+
+### The two failure modes worth knowing
+
+**A permission error on connect is nearly silent.** `connect()` on a unix
+socket needs write permission on the socket file, not read. Go creates a
+listening socket at `0777 &^ umask`, and the default 022 clears the group-write
+bit a peer with a different uid depends on. Envoy then reports `flags=UF` and
+increments `upstream_cx_connect_fail` while still calling the cluster healthy,
+because the endpoint resolved fine. Nothing in either log names permissions.
+
+**A stale socket blocks a restart.** Go unlinks on an orderly close, so this
+only follows a SIGKILL, an OOM kill or `docker kill`. `proxy.reclaimStaleSocket`
+runs before `net.Listen`: it dials the path first, unlinks a socket nothing
+answers on, and refuses to touch one that answers. Without the dial the reclaim
+would let a second relay steal a live socket, and the two would split a client's
+connections at random.
+
+Both are exercised by `deploy/docker-compose/envoy-stack/uds/`, which runs the
+relay with Envoy's gid and `umask 0002` for exactly this reason.
 
 ## Inside the Gate
 

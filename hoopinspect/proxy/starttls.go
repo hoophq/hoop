@@ -182,3 +182,99 @@ func stripChannelBinding(data []byte) ([]byte, bool) {
 	binary.BigEndian.PutUint32(out[1:5], length-uint32(len(want)))
 	return out, true
 }
+
+// maxSASLFrame bounds what saslReassembler will hold for a split
+// AuthenticationSASL message.
+//
+// A real offer is well under a hundred bytes: two mechanism names and their
+// terminators. The cap is what stops a server that sends 'R' followed by a
+// 4 GiB length from making the relay buffer until it dies -- a frame the
+// reassembler will not wait for is forwarded immediately instead.
+const maxSASLFrame = 8 << 10
+
+// saslReassembler rebuilds a split AuthenticationSASL message so
+// stripChannelBinding is handed a whole frame.
+//
+// # Why pump cannot just call the strip function
+//
+// stripChannelBinding refuses to rewrite a fragment, and it is right to: the
+// message declares its own size, so shrinking the length field of a partial
+// frame points the client at a boundary that is not there and desynchronizes
+// the rest of the connection. But pump feeds it whatever one Read returned,
+// and TCP delivers bytes, not messages. The 43-byte offer usually arrives
+// whole; when a TLS record boundary lands inside it the strip silently does
+// nothing, the -PLUS mechanism reaches a client that knows its own
+// connection is plaintext, and libpq fails the login before a query runs.
+// Intermittently, which is the worst way to find out.
+//
+// # Why the hold cannot outlast authentication
+//
+// Only the first server->client frame is ever held. AuthenticationSASL is
+// the first message a Postgres server sends, so once one complete frame has
+// passed there is no offer still coming, and every later byte is forwarded
+// untouched. Buffering past that point would put reassembly on the path of
+// every result set.
+type saslReassembler struct {
+	pending []byte
+	done    bool
+}
+
+// feed takes one read from the server and returns the bytes to forward, plus
+// whether the mechanism was stripped from them.
+//
+// An empty return means the chunk was a partial authentication frame and is
+// being held; the caller forwards nothing and reads again.
+func (r *saslReassembler) feed(chunk []byte) (out []byte, stripped bool) {
+	if r.done || len(chunk) == 0 {
+		return chunk, false
+	}
+
+	data := chunk
+	if len(r.pending) > 0 {
+		r.pending = append(r.pending, chunk...)
+		data = r.pending
+	}
+
+	// Every authentication message carries the 'R' tag. Anything else means
+	// the server is past authentication or never began it.
+	if data[0] != pgTagAuth {
+		return r.release(data), false
+	}
+	if len(data) < 5 {
+		return r.hold(data), false
+	}
+
+	// length counts itself but not the tag, so the message spans 1+length.
+	length := binary.BigEndian.Uint32(data[1:5])
+	total := int(length) + 1
+	if length < 8 || total > maxSASLFrame {
+		// Not a frame worth waiting for. Forward it and let the client's own
+		// parser be the authority on its protocol.
+		return r.release(data), false
+	}
+	if total > len(data) {
+		return r.hold(data), false
+	}
+
+	// A complete authentication frame, so no SASL offer can still be in
+	// flight: this is the last chunk the reassembler inspects, whether or not
+	// it turned out to be the offer.
+	rewritten, changed := stripChannelBinding(data)
+	return r.release(rewritten), changed
+}
+
+// hold keeps a partial frame until the rest of it arrives.
+func (r *saslReassembler) hold(data []byte) []byte {
+	if len(r.pending) == 0 {
+		// data aliases pump's read buffer, which the next Read overwrites.
+		r.pending = append([]byte(nil), data...)
+	}
+	return nil
+}
+
+// release forwards data and retires the reassembler.
+func (r *saslReassembler) release(data []byte) []byte {
+	r.done = true
+	r.pending = nil
+	return data
+}

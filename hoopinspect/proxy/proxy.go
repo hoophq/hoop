@@ -436,6 +436,16 @@ func (s *Server) pump(
 			}
 		}()
 	}
+	// Reassembly of the server's SASL offer is needed only where the relay
+	// terminated the upstream TLS the offer would have bound to. Every other
+	// listener keeps the copy path untouched: nil here means pump never
+	// looks at a frame boundary.
+	var sasl *saslReassembler
+	if dir == hoopinspect.FromServer &&
+		s.cfg.Protocol == hoopinspect.Postgres &&
+		s.cfg.UpstreamTLS != nil {
+		sasl = &saslReassembler{}
+	}
 
 	buf := make([]byte, 32*1024)
 	for {
@@ -451,12 +461,28 @@ func (s *Server) pump(
 			// may offer channel binding the client cannot satisfy. Drop that
 			// mechanism before anything else looks at the bytes; see
 			// stripChannelBinding for why relaying it fails the connection.
-			if dir == hoopinspect.FromServer && s.cfg.UpstreamTLS != nil {
-				if stripped, changed := stripChannelBinding(chunk); changed {
+			//
+			// sasl holds a partial offer rather than forwarding it: the
+			// rewrite needs a whole frame and a Read boundary can land
+			// anywhere. It retires itself after the first complete
+			// authentication message, so nothing past login is buffered.
+			if sasl != nil {
+				stripped, changed := sasl.feed(chunk)
+				if changed {
 					log.Debug("removed SCRAM channel binding from the server's SASL offer",
 						"reason", "upstream TLS terminates here, so the client cannot bind to it")
-					chunk = stripped
 				}
+				if len(stripped) == 0 {
+					if readErr != nil {
+						// Held bytes go nowhere: an incomplete frame is not
+						// safe to rewrite and not useful to forward.
+						log.Debug("server ended mid-authentication",
+							"error", readErr, "held", len(chunk))
+						return
+					}
+					continue // a partial frame; wait for the rest
+				}
+				chunk = stripped
 			}
 
 			var d gate.Decision

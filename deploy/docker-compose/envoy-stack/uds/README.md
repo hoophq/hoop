@@ -33,17 +33,32 @@ port at all, so reachability stops being a network question and becomes a
 filesystem one — which is the argument for a sidecar sharing a namespace with
 exactly one workload.
 
-Check it. Both data ports are gone, and the lanes still work:
+Check it. Ask the sidecar what it bound:
 
 ```bash
-docker compose -f docker-compose.yml -f uds/docker-compose.uds.yml \
-  exec -T client sh -c 'for p in 18080 15432; do (echo > /dev/tcp/hoop-inspect/$p) 2>/dev/null && echo "$p OPEN" || echo "$p closed"; done'
+CF=(-f docker-compose.yml -f uds/docker-compose.uds.yml)   # bash: CF="-f ... -f ..."
+docker compose "${CF[@]}" exec -T hoop-inspect netstat -ltn
 ```
 
 ```
-18080 closed
-15432 closed
+tcp  0  0  127.0.0.11:44787  0.0.0.0:*  LISTEN     docker's internal resolver
+tcp  0  0  :::19000          :::*       LISTEN     the admin API
 ```
+
+That is the whole list. On the default stack the same command also shows
+`:::15432` and `:::18080`; here the data lanes have no TCP presence at all.
+
+From a peer, the same fact from the outside:
+
+```bash
+docker compose "${CF[@]}" exec -T client \
+  sh -c 'nc -z -w2 hoop-inspect 15432 && echo OPEN || echo closed'   # closed
+```
+
+Use `nc`, not `(echo > /dev/tcp/host/port)`. The latter is a bash builtin; the
+`client` image runs BusyBox `sh`, where it fails with no such device and calls
+every port closed — including the open ones on the default stack, which makes
+it a check that always passes and proves nothing.
 
 The admin listener stays on TCP 19000 on purpose. It serves `/healthz` to a
 container healthcheck and `/stats` to a scraper, and moving it to a socket
@@ -84,10 +99,14 @@ matters.
 ## Verify a run
 
 ```bash
-CF="-f docker-compose.yml -f uds/docker-compose.uds.yml"
+# COMPOSE_FILE rather than a $CF variable holding "-f a -f b": that idiom
+# relies on the unquoted word splitting bash does and zsh does not, so on zsh
+# the whole string arrives as one argument and docker compose reports
+# "no such file or directory" for a path with a space in it.
+export COMPOSE_FILE=docker-compose.yml:uds/docker-compose.uds.yml
 
 # sockets exist, group-writable, owned by the relay
-docker compose $CF exec -T envoy ls -l /run/hoop-inspect/
+docker compose exec -T envoy ls -l /run/hoop-inspect/
 #  srwxrwxr-x 1 10001 envoy 0 http.sock
 #  srwxrwxr-x 1 10001 envoy 0 pg.sock
 
@@ -96,14 +115,19 @@ curl -sk https://localhost:8443/json -H 'X-Hoop-User: alice' -o /dev/null -w '%{
 curl -sk https://localhost:8443/json -H 'X-Hoop-User: bob'   -o /dev/null -w '%{http_code}\n'   # 403
 
 # masking and the guardrail, over the socket
-PG="docker compose $CF exec -T client env PGPASSWORD=apppass PGSSLMODE=disable \
-  psql -h envoy -p 5432 -U appuser -d appdb"
-$PG -c 'SELECT name, email, ssn FROM customers;'   # redacted email, masked ssn
-$PG -c 'DELETE FROM customers WHERE id=1;'         # FATAL: destructive statements ...
+pg() {
+  docker compose exec -T client env PGPASSWORD=apppass PGSSLMODE=disable \
+    psql -h envoy -p 5432 -U appuser -d appdb "$@"
+}
+pg -c 'SELECT name, email, ssn FROM customers;'   # redacted email, masked ssn
+pg -c 'DELETE FROM customers WHERE id=1;'         # FATAL: destructive statements ...
 
 # the TLS hop to appdb is unaffected
-$PG -c 'SELECT ssl, version FROM pg_stat_ssl WHERE pid=pg_backend_pid();'   # t | TLSv1.3
+pg -c 'SELECT ssl, version FROM pg_stat_ssl WHERE pid=pg_backend_pid();'   # t | TLSv1.3
 ```
+
+`COMPOSE_FILE` applies to every `docker compose` in the shell, `./demo.sh`
+included, so the overlay stays selected without repeating the flags.
 
 ## Why the default stack stays on TCP
 

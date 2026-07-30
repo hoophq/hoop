@@ -93,19 +93,29 @@ func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, erro
 	return cfg, det, nil
 }
 
+// ErrUsage marks a command-line misuse: a missing or unparseable flag, as
+// opposed to a bad config or a failed start. Main wraps it so a caller can
+// exit 2 for misuse and 1 for everything else, the convention every other
+// CLI on the box follows.
+var ErrUsage = errors.New("usage")
+
 // Main is the command-line entry point.
 //
 // version is stamped by the caller's -ldflags. load is the optional config
 // reader; nil means JSON only. build is the optional detection plugin
 // constructor; nil disables masking and makes any pii policy rule a config
-// error. Main calls os.Exit, so it goes last in a main.
+// error.
+//
+// Main never exits the process: it returns the error and leaves the exit
+// code and the error format to the main that called it. Report it and exit
+// 2 when it matches ErrUsage, 1 otherwise.
 //
 // Usage:
 //
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -validate -config config.yaml   # check and exit
 //	hoop-inspect -version
-func Main(version string, load Loader, build PluginBuilder) {
+func Main(version string, load Loader, build PluginBuilder) error {
 	Version = version
 
 	syntax := "JSON"
@@ -113,46 +123,51 @@ func Main(version string, load Loader, build PluginBuilder) {
 		syntax = "YAML or JSON"
 	}
 
+	// A local FlagSet rather than flag.CommandLine: the global one is
+	// ExitOnError, so a typo in an argument would kill the process from
+	// inside this package before any of the code below ran.
+	fs := flag.NewFlagSet("hoop-inspect", flag.ContinueOnError)
 	var (
-		configPath = flag.String("config", "", "path to the config file ("+syntax+")")
-		validate   = flag.Bool("validate", false, "validate the config and exit")
-		showVer    = flag.Bool("version", false, "print the version and exit")
+		configPath = fs.String("config", "", "path to the config file ("+syntax+")")
+		validate   = fs.Bool("validate", false, "validate the config and exit")
+		showVer    = fs.Bool("version", false, "print the version and exit")
 	)
-	flag.Parse()
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		// -h is a request, not a mistake. ContinueOnError has already
+		// printed the usage for both cases.
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("%w: %w", ErrUsage, err)
+	}
 
 	if *showVer {
 		fmt.Println("hoop-inspect", version)
-		return
+		return nil
 	}
 	if *configPath == "" {
-		fmt.Fprintln(os.Stderr, "hoop-inspect: -config is required")
-		flag.Usage()
-		os.Exit(2)
+		fs.Usage()
+		return fmt.Errorf("%w: -config is required", ErrUsage)
 	}
 
 	cfg, det, err := Setup(*configPath, load, build)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
-		os.Exit(1)
+		return err
 	}
 
 	if *validate {
-		lanes, lerr := Validate(cfg, det)
-		if lerr != nil {
-			fmt.Fprintln(os.Stderr, "hoop-inspect:", lerr)
-			os.Exit(1)
+		lanes, err := Validate(cfg, det)
+		if err != nil {
+			return err
 		}
 		fmt.Println("config OK:", len(lanes), "listener(s)")
 		for _, ln := range lanes {
 			fmt.Printf("  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
 		}
-		return
+		return nil
 	}
 
-	if err := Run(cfg, det); err != nil {
-		fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
-		os.Exit(1)
-	}
+	return Run(cfg, det)
 }
 
 // LaneInfo is one resolved listener, as Validate reports it.

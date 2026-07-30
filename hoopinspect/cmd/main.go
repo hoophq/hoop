@@ -63,6 +63,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 
 	configyaml "github.com/hoophq/hoopinspect/config/yaml"
 	"github.com/hoophq/hoopinspect/pii/alcatraz"
@@ -75,10 +78,20 @@ import (
 var version = "0.1.0"
 
 func main() {
-	sidecar.Main(version, configyaml.Load, func(raw json.RawMessage) (sidecar.Plugin, error) {
+	err := sidecar.Main(version, configyaml.Load, func(raw json.RawMessage) (sidecar.Plugin, error) {
 		// A nil alcatraz.Plugin converts to a nil sidecar.Plugin, so "no pii
 		// section" stays nil rather than becoming a non-nil interface holding
 		// a nil pointer, which the sidecar would call through.
 		return alcatraz.PluginFromConfig(raw)
 	})
+	if err == nil {
+		return
+	}
+	// The one exit in the program. sidecar.Main returns instead of exiting so
+	// the format of the message and the code live in one place.
+	fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
+	if errors.Is(err, sidecar.ErrUsage) {
+		os.Exit(2)
+	}
+	os.Exit(1)
 }

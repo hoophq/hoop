@@ -11,8 +11,9 @@ no TLS, routes nothing. You hand it bytes you already have, and whatever holds
 the connection keeps holding it.
 
 **The relay owns a socket.** The nested `cmd` module builds `hoop-inspect`,
-which wraps the library in a TCP listener that accepts a connection, dials one
-upstream, and pumps bytes through the gate in both directions. It runs behind
+which wraps the library in a listener that accepts a connection, dials one
+upstream, and pumps bytes through the gate in both directions. A TCP port or a
+unix socket, your choice per lane (see [Transport](#transport)). It runs behind
 something that already owns TLS and identity, typically Envoy forwarding
 plaintext over loopback or a unix socket.
 
@@ -251,10 +252,11 @@ strategies and the entity-versus-column choice are in
 [Masking and PII](#masking-and-pii).
 
 Other listener fields worth knowing: `network: unix` binds a filesystem socket
-instead of a port, `upstream_tls` encrypts the connection to the backend (see
-[Upstream TLS](#upstream-tls)), `idle_timeout_sec` closes an idle connection
-(leave it unset for interactive sessions, since psql idles between
-keystrokes), and `max_conns` bounds concurrency.
+instead of a port (see [Transport](#transport)), `upstream_tls` encrypts the
+connection to the backend (see [Upstream TLS](#upstream-tls)),
+`idle_timeout_sec` closes an idle connection (leave it unset for interactive
+sessions, since psql idles between keystrokes), and `max_conns` bounds
+concurrency.
 
 ### 2. Know how a listener inherits
 
@@ -592,6 +594,126 @@ the text.
 
 **Masking requires the plugin.** The gate refuses `mask.enabled` with no
 detection wired in at startup rather than passing traffic through unmasked.
+
+## Transport
+
+Each lane binds a TCP port or a unix socket. One field decides it, per
+listener, and **TCP is the default**: omit `network` and you get a port.
+
+```yaml
+listeners:
+  - name: appdb-tcp
+    listen: 0.0.0.0:15432          # network omitted -> tcp
+
+  - name: appdb-uds
+    network: unix                   # the only line that changes it
+    listen: /run/hoop-inspect/pg.sock
+```
+
+`network` accepts `tcp` or `unix`; anything else is refused at startup, naming
+the lane. Lanes in one process can differ, so a deployment can move one lane to
+a socket without touching the other.
+
+Nothing above the transport changes. Policy, masking, audit and `upstream_tls`
+behave identically, because the gate reads a `net.Conn` and never asks what
+kind it is.
+
+### Why pick a socket
+
+A TCP listener on 15432 is reachable by anything that can route to the host. A
+NetworkPolicy narrows that; it does not remove it. A unix socket opens no port
+at all, so reachability becomes a filesystem question — which is the point of a
+sidecar that shares a namespace with exactly one workload.
+
+The cost is coordination: both processes need the same directory, and their
+uids have to agree. That is cheap in a pod spec and awkward on a laptop, which
+is why the compose stack defaults to TCP and keeps the socket variant in an
+overlay.
+
+### Which one is running
+
+Three places say it, and they agree because they read the same resolved config.
+
+**The startup log**, one line per lane:
+
+```json
+{"msg":"hoop-inspect listening","listener":"appdb","network":"unix",
+ "listen":"/run/hoop-inspect/pg.sock","protocol":"postgres"}
+```
+
+**`GET /stats`**, whose `addr` is whatever the listener actually bound:
+
+```bash
+curl -s localhost:19000/stats | python3 -m json.tool
+```
+
+```json
+{"listeners": [
+  {"name": "appdb",   "addr": "/run/hoop-inspect/pg.sock",   "active": 0, "total": 9},
+  {"name": "httpbin", "addr": "/run/hoop-inspect/http.sock", "active": 0, "total": 7}
+]}
+```
+
+A path means unix. A `host:port` means TCP. This is the post-bind address, not
+the configured string, so it reflects what happened rather than what was asked
+for.
+
+**The filesystem**, for a socket lane:
+
+```bash
+ls -l /run/hoop-inspect/
+# srwxrwxr-x 1 10001 envoy 0 pg.sock      the leading s is a socket
+```
+
+And the negative check, which is the one worth running, because it proves the
+port is gone rather than merely unused. Ask the relay's own namespace what it
+bound:
+
+```bash
+netstat -ltn        # or: ss -ltn
+```
+
+On a socket-only deployment the admin port is the only line left; the data
+lanes are absent entirely. From a peer, `nc -z -w2 <host> 15432` says the same
+thing from the outside.
+
+Do not reach for `(echo > /dev/tcp/host/port)`: that is a bash builtin, and
+under `sh` (BusyBox, dash) it fails with no such device and reports every port
+as closed, including open ones. It looks like a passing check and proves
+nothing.
+
+### Two permission traps
+
+Both cost real time, and neither produces a useful error on its own.
+
+**Creating the socket.** The relay needs write permission on the directory. A
+volume that mounts root-owned against a non-root image gives:
+
+```
+listen unix /run/hoop-inspect/pg.sock: bind: permission denied
+```
+
+**Connecting to it.** `connect()` on a unix socket requires **write**
+permission on the socket file, not read. Go creates a listening socket at
+`0777 &^ umask`, and the usual 022 clears exactly the group-write bit a peer
+needs. The peer then fails with nothing useful in either log — under Envoy it
+surfaces only as `flags=UF` and an `upstream_cx_connect_fail` counter, while
+the cluster still reports healthy because the endpoint resolved.
+
+Run the relay with the peer's gid and `umask 0002` so its sockets come out
+group-writable. `deploy/docker-compose/envoy-stack/uds/` does exactly this and
+is worth reading before you write your own.
+
+### Stale sockets after an unclean exit
+
+Go unlinks the socket when the listener closes, so an orderly shutdown leaves
+nothing behind. A SIGKILL, an OOM kill or `docker kill` skips that and the file
+outlives the process.
+
+The relay reclaims it: at startup it dials the path, and a socket nothing
+answers on gets unlinked with a warning. One that DOES answer is left alone and
+the bind fails, naming the conflict, because two relays sharing a socket would
+split a client's connections between them at random.
 
 ## Upstream TLS
 

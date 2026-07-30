@@ -51,6 +51,22 @@ claim: hoop-inspect is an ordinary upstream. To close the last port and have
 Envoy reach it over a unix socket instead, add the overlay in
 [`uds/`](uds/README.md) — same lanes, same policy, no data port open at all.
 
+**Which transport is running.** `/stats` reports the address each lane
+actually bound, so it answers the question without reading any config:
+
+```bash
+curl -s localhost:19000/stats | python3 -m json.tool
+```
+
+| `addr` reads | Transport |
+|---|---|
+| `[::]:15432` | TCP — the default stack |
+| `/run/hoop-inspect/pg.sock` | unix socket — the `uds/` overlay |
+
+The startup log carries the same fact as an explicit field:
+`docker compose logs hoop-inspect | grep listening` prints `"network":"tcp"`
+or `"network":"unix"` per lane.
+
 For the code path behind these commands, a per-command runbook and a
 troubleshooting table, read
 [docs/adr/hoopinspect-flow.md](../../../docs/adr/hoopinspect-flow.md).

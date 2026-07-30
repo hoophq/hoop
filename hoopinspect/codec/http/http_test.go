@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -265,6 +266,69 @@ func TestDecodeChunkedBody(t *testing.T) {
 	}
 	if len(stmts) != 1 {
 		t.Fatalf("got %d statements, want 1", len(stmts))
+	}
+}
+
+// The stream path caps the body itself, so it -- not attachBody's length
+// check -- is what has to report the truncation. A policy reading a prefix
+// as a whole body is a false negative: the pattern sits past the cut.
+func TestDecodeFlagsTruncatedBody(t *testing.T) {
+	insp := hi.New(hi.Options{CaptureBody: true, MaxBodyBytes: 10})
+	body := strings.Repeat("x", 40) + "SECRET"
+	raw := fmt.Sprintf("POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: %d\r\n\r\n%s",
+		len(body), body)
+
+	stmts, _, err := insp.Decode(hoopinspect.FromClient, []byte(raw))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(stmts) != 1 {
+		t.Fatalf("got %d statements, want 1", len(stmts))
+	}
+	if got := stmts[0].HTTP.Body; got != strings.Repeat("x", 10) {
+		t.Errorf("Body = %q, want the first 10 bytes", got)
+	}
+	if !stmts[0].HTTP.BodyTruncated {
+		t.Error("BodyTruncated not set on a body the decoder capped")
+	}
+}
+
+// A body that fits is not truncated. Guards the obvious over-correction:
+// flagging every captured body.
+func TestDecodeWholeBodyNotFlagged(t *testing.T) {
+	insp := hi.New(hi.Options{CaptureBody: true, MaxBodyBytes: 10})
+	raw := "POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 5\r\n\r\nhello"
+
+	stmts, _, err := insp.Decode(hoopinspect.FromClient, []byte(raw))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(stmts) != 1 {
+		t.Fatalf("got %d statements, want 1", len(stmts))
+	}
+	if stmts[0].HTTP.Body != "hello" {
+		t.Errorf("Body = %q", stmts[0].HTTP.Body)
+	}
+	if stmts[0].HTTP.BodyTruncated {
+		t.Error("BodyTruncated set on a body that fit")
+	}
+}
+
+// A body exactly at the limit is the case a length check cannot see: the
+// retained slice looks identical whether or not bytes followed it.
+func TestDecodeBodyExactlyAtLimit(t *testing.T) {
+	insp := hi.New(hi.Options{CaptureBody: true, MaxBodyBytes: 5})
+	raw := "POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 5\r\n\r\nhello"
+
+	stmts, _, err := insp.Decode(hoopinspect.FromClient, []byte(raw))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(stmts) != 1 {
+		t.Fatalf("got %d statements, want 1", len(stmts))
+	}
+	if stmts[0].HTTP.BodyTruncated {
+		t.Error("BodyTruncated set on a body that ended at the limit")
 	}
 }
 
