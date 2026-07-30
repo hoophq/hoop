@@ -250,7 +250,9 @@ func issueOrRefreshCredential(
 		}
 
 		// Reuse the stable password: refresh expiration, keep the same row.
-		if plaintext := recoverSecretKey(existing); plaintext != "" {
+		// A revoked password is never reused — if any row sharing this hash
+		// was revoked, fall through and generate a new key instead.
+		if plaintext := recoverSecretKey(existing); plaintext != "" && !secretKeyRevoked(orgID, existing.SecretKeyHash) {
 			if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
 				return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
 			}
@@ -259,10 +261,10 @@ func issueOrRefreshCredential(
 			return plaintext, existing, nil
 		}
 
-		// The password cannot be recovered (row has neither a plaintext nor a
-		// decryptable encrypted copy). Rotate the secret key in place so the
-		// user still keeps the same credential id, but they will observe a
-		// one-time token change.
+		// The password cannot be reused (the row has neither a plaintext nor a
+		// decryptable encrypted copy, or the previous key was revoked). Rotate
+		// the secret key in place so the user still keeps the same credential
+		// id and receives a newly generated key.
 		newSecret, newHash, genErr := generateSecretKey(connType)
 		if genErr != nil {
 			return "", nil, fmt.Errorf("failed to generate secret key: %w", genErr)
@@ -467,10 +469,12 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	var db *models.ConnectionCredentials
 	var secretKey string
 	if existingCred != nil {
-		secretKey = recoverSecretKey(existingCred)
+		if existingCred.RevokedAt == nil && !secretKeyRevoked(ctx.OrgID, existingCred.SecretKeyHash) {
+			secretKey = recoverSecretKey(existingCred)
+		}
 		if secretKey == "" {
-			// Unrecoverable legacy row: rotate in place, keeping the same
-			// credential id. One-time token change.
+			// Unrecoverable legacy row or revoked key: rotate in place,
+			// keeping the same credential id, with a newly generated key.
 			newSecret, newHash, genErr := generateSecretKey(connType)
 			if genErr != nil {
 				log.Warnf("failed to create access credentials, err=%v", genErr)
@@ -493,9 +497,11 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		// the token stays stable across review cycles.
 		secretKeyHash := ""
 		if prior, perr := models.GetActiveCredentialByUserAndConnection(ctx.OrgID, ctx.UserID, conn.Name); perr == nil {
-			if plaintext := recoverSecretKey(prior); plaintext != "" {
-				secretKey = plaintext
-				secretKeyHash = prior.SecretKeyHash
+			if !secretKeyRevoked(ctx.OrgID, prior.SecretKeyHash) {
+				if plaintext := recoverSecretKey(prior); plaintext != "" {
+					secretKey = plaintext
+					secretKeyHash = prior.SecretKeyHash
+				}
 			}
 		} else if perr != models.ErrNotFound {
 			log.Errorf("failed looking up prior credential, err=%v", perr)
@@ -571,13 +577,25 @@ func RevokeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if cred.SessionID != "" {
-		if err := models.SetSessionCredentialsRevokedAt(ctx.OrgID, cred.SessionID, time.Now().UTC()); err != nil {
-			log.Warnf("failed setting session credentials revoked_at metadata, err=%v", err)
-		}
+	// Revocation burns the password: sibling rows sharing the same hash were
+	// also revoked by the model call, so mark their sessions and tear down
+	// their in-flight proxy sessions as well.
+	siblings, err := models.ListConnectionCredentialsBySecretKeyHash(ctx.OrgID, cred.SecretKeyHash)
+	if err != nil {
+		log.Warnf("failed listing credentials sharing the revoked password, err=%v", err)
 	}
 
-	terminateActiveCredentialSessions(cred, conn)
+	siblings = append(siblings, cred)
+
+	now := time.Now().UTC()
+	for _, sib := range siblings {
+		if sib.SessionID != "" {
+			if err := models.SetSessionCredentialsRevokedAt(ctx.OrgID, sib.SessionID, now); err != nil {
+				log.Warnf("failed setting session credentials revoked_at metadata, err=%v", err)
+			}
+		}
+		terminateActiveCredentialSessions(sib, conn)
+	}
 
 	c.Status(204)
 }
@@ -1109,6 +1127,20 @@ func recoverSecretKey(cred *models.ConnectionCredentials) string {
 		cred.SecretKey = &plaintext
 	}
 	return plaintext
+}
+
+// secretKeyRevoked reports whether the password behind the given hash was
+// burned by a revocation. Revoke marks every sibling row sharing the hash,
+// but rows revoked before that behavior existed can leave a non-revoked
+// sibling still carrying the dead password, so reuse paths check the hash
+// itself. Fails closed: a lookup error counts as revoked, forcing a fresh key.
+func secretKeyRevoked(orgID, secretKeyHash string) bool {
+	revoked, err := models.HasRevokedCredentialWithHash(orgID, secretKeyHash)
+	if err != nil {
+		log.Warnf("failed checking revoked credentials for hash reuse, err=%v", err)
+		return true
+	}
+	return revoked
 }
 
 func generateSecretKey(connType proto.ConnectionType) (string, string, error) {

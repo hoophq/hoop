@@ -43,12 +43,23 @@ func GetConnectionCredentialsByID(orgID, id string) (*ConnectionCredentials, err
 func GetValidConnectionCredentialsBySecretKey(connectionTypes []string, secretKeyHash string) (*ConnectionCredentials, error) {
 	var resp ConnectionCredentials
 	err := DB.Table("private.connection_credentials").
-		Where("connection_type IN ? AND secret_key_hash = ? AND revoked_at IS NULL", connectionTypes, secretKeyHash).
+		Where("connection_type IN ? AND secret_key_hash = ?", connectionTypes, secretKeyHash).
+		Order("created_at DESC").
 		First(&resp).
 		Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	if resp.RevokedAt != nil {
 		return nil, ErrNotFound
 	}
+
 	return &resp, err
 }
 
@@ -176,15 +187,21 @@ func CloseExpiredCredentialSessions() error {
 	return nil
 }
 
-// RevokeConnectionCredentials marks a credential as revoked. Revoked rows are
-// kept for forensic queries but are excluded from lookup by hash
-// (GetValidConnectionCredentialsBySecretKey) and from stable-key reuse
-// (GetActiveCredentialByUserAndConnection). The next CreateConnectionCredentials
-// call for the same (user, connection) generates a fresh row with a new key.
+// RevokeConnectionCredentials marks a credential as revoked. Because the
+// stable-password contract can leave several rows sharing the same
+// secret_key_hash (e.g. a review/Resume row plus the persistent row for the
+// same user and connection), revocation burns the password itself: every
+// non-revoked row with the same hash is marked, so neither proxy auth
+// (GetValidConnectionCredentialsBySecretKey) nor stable-key reuse
+// (GetActiveCredentialByUserAndConnection) can resurrect it. Revoked rows are
+// kept for forensic queries. The next CreateConnectionCredentials call for the
+// same (user, connection) generates a fresh row with a new key.
 func RevokeConnectionCredentials(orgID, credentialID string) error {
 	now := time.Now().UTC()
 	return DB.Table("private.connection_credentials").
-		Where("org_id = ? AND id = ? AND revoked_at IS NULL", orgID, credentialID).
+		Where(`org_id = ? AND revoked_at IS NULL AND secret_key_hash = (
+			SELECT secret_key_hash FROM private.connection_credentials WHERE org_id = ? AND id = ?)`,
+			orgID, orgID, credentialID).
 		Updates(map[string]any{
 			"revoked_at": now,
 			// Also push expire_at into the past so any proxy that still reads
@@ -192,4 +209,28 @@ func RevokeConnectionCredentials(orgID, credentialID string) error {
 			// immediately.
 			"expire_at": now.Add(-time.Hour),
 		}).Error
+}
+
+// ListConnectionCredentialsBySecretKeyHash returns every credential row sharing
+// the given secret key hash. Used by revocation to tear down in-flight proxy
+// sessions across all rows that share the burned password.
+func ListConnectionCredentialsBySecretKeyHash(orgID, secretKeyHash string) ([]*ConnectionCredentials, error) {
+	var resp []*ConnectionCredentials
+	err := DB.Table("private.connection_credentials").
+		Where("org_id = ? AND secret_key_hash = ? AND revoked_at IS NULL", orgID, secretKeyHash).
+		Find(&resp).Error
+	return resp, err
+}
+
+// HasRevokedCredentialWithHash reports whether any credential row carrying the
+// given secret key hash has been revoked. Reuse paths call this to refuse
+// re-issuing a burned password: revocation marks every sibling row sharing the
+// hash, but rows revoked by the legacy single-row revoke can leave a
+// non-revoked sibling still holding the dead password.
+func HasRevokedCredentialWithHash(orgID, secretKeyHash string) (bool, error) {
+	var count int64
+	err := DB.Table("private.connection_credentials").
+		Where("org_id = ? AND secret_key_hash = ? AND revoked_at IS NOT NULL", orgID, secretKeyHash).
+		Count(&count).Error
+	return count > 0, err
 }
