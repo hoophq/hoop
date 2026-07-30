@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Card, Group, Stack, Text, Title } from '@mantine/core'
-import { Shapes, Tag } from 'lucide-react'
+import { ListVideo, Rotate3d } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
@@ -106,7 +106,7 @@ export default function DataMasking() {
 
       <Group gap="sm">
         <AsyncValueFilter
-          icon={Shapes}
+          icon={Rotate3d}
           label="Resource Role"
           placeholder="Search resource roles"
           selected={selectedRole}
@@ -121,7 +121,7 @@ export default function DataMasking() {
           onOpen={roleFilter.ensureLoaded}
         />
         <ValueFilter
-          icon={Tag}
+          icon={ListVideo}
           label="Attribute"
           values={attributeFilterValues}
           selected={selectedAttribute}
