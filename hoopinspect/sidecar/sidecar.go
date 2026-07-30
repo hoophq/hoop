@@ -50,9 +50,10 @@ import (
 	"github.com/hoophq/hoopinspect/store"
 )
 
-// Version is reported by the admin /stats endpoint and the -version flag.
-// Main sets it from its argument; a caller embedding Run directly sets it.
-var Version = "dev"
+// Version is the library release, reported by the admin /stats endpoint and
+// the -version flag. Main overwrites it with the version its binary was
+// stamped with; a caller embedding Run keeps this unless it assigns its own.
+var Version = "0.1.0"
 
 // Loader reads and validates a config file. It lets a build accept YAML
 // without the root module linking a YAML parser: pass

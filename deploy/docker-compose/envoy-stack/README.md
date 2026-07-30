@@ -1,4 +1,6 @@
-# Envoy + OPA + hoop-inspect — POC
+# Envoy + OPA + hoop-inspect
+
+> hoop-inspect 0.1.0
 
 A local replica of the common enterprise topology: **Envoy owns TLS and the
 network path, OPA owns policy, hoop stitches in behind them.** No UDS, no PROXY
@@ -46,7 +48,7 @@ is only the host-side publication, because a laptop usually has something on
 
 For the code path behind these commands, a per-command runbook and a
 troubleshooting table, read
-[docs/hoopinspect-flow.md](../../../docs/hoopinspect-flow.md).
+[docs/adr/hoopinspect-flow.md](../../../docs/adr/hoopinspect-flow.md).
 
 `run.sh` builds `hoop-inspect:local` from `../../../hoopinspect` on first run
 and reuses it afterwards. After a library change:
@@ -68,7 +70,7 @@ starting anything:
 
 ```bash
 cd ../../../hoopinspect/cmd && go run . -validate \
-  -config ../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+  -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
 ```
 
 ## The tiers
@@ -169,7 +171,7 @@ docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
 
 ## Identity
 
-Every session in this POC records `principal: anonymous`, and that is honest
+Every session in this stack records `principal: anonymous`, and that is honest
 rather than broken. `session.Identity` carries a Subject, and
 `proxy.Config.IdentityFn` is the seam a deployment fills from a verified JWT,
 an mTLS peer cert or a credential token
@@ -183,7 +185,7 @@ So the actor column is wired end to end and unpopulated. Filling it is one
 function, not an architecture change — and `X-Hoop-User` is already on
 every request that reaches the sidecar.
 
-## Known gaps in this POC
+## Known gaps
 
 - **Masking needs a codec that can carry it.** `gate.MaskSupported` asks the
   codec rather than listing protocols. HTTP declares its length in a header
@@ -213,7 +215,7 @@ every request that reaches the sidecar.
   at any fidelity**, so every service reached over SSH is entirely unpoliced
   by the Envoy+OPA layer.
 
-## What this demonstrates
+## What this stack shows
 
 1. hoop deploys behind Envoy as a plain upstream, with **zero Envoy
    extensions** — no ext_proc, no WASM, no custom filter. Compose config and

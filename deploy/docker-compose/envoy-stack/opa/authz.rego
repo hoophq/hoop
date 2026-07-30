@@ -11,7 +11,7 @@
 #
 # Identity source: X-Hoop-User. In the real deployment this is the verified
 # JWT subject that Envoy's jwt_authn filter drops into dynamic metadata
-# (input.attributes.metadataContext.filterMetadata). A header keeps the POC
+# (input.attributes.metadataContext.filterMetadata). A header keeps the stack
 # honest about the shape without dragging an IdP into docker-compose.
 
 package envoy.authz

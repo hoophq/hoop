@@ -1,7 +1,8 @@
 # How a request flows through hoop-inspect
 
 - **Status:** Current as of 2026-07-30
-- **Code:** [`hoopinspect/`](../hoopinspect), [`deploy/docker-compose/envoy-poc/`](../deploy/docker-compose/envoy-poc)
+- **Version:** hoop-inspect 0.1.0
+- **Code:** [`hoopinspect/`](../../hoopinspect), [`deploy/docker-compose/envoy-stack/`](../../deploy/docker-compose/envoy-stack)
 - **Run it:** [Running the whole thing](#running-the-whole-thing), below
 
 This traces one connection from the client through Envoy, through the
@@ -10,7 +11,7 @@ policy denial happens, why postgres masking takes a different path from HTTP
 masking, and which knob in `config.yaml` controls which line of code.
 
 Every command below runs against the compose stack in
-[`deploy/docker-compose/envoy-poc/`](../deploy/docker-compose/envoy-poc), and
+[`deploy/docker-compose/envoy-stack/`](../../deploy/docker-compose/envoy-stack), and
 every output is copied from a real run.
 
 ## Running the whole thing
@@ -18,7 +19,7 @@ every output is copied from a real run.
 Install `docker`, `curl`, `openssl` and `python3`. Then:
 
 ```bash
-cd deploy/docker-compose/envoy-poc
+cd deploy/docker-compose/envoy-stack
 ./run.sh          # cert, sidecar image, compose up. First run takes a minute.
 ./demo.sh         # walks every lane and prints the audit trail
 ```
@@ -158,7 +159,7 @@ curl -s localhost:19000/stats | python3 -m json.tool
 {"listeners": [
   {"name": "appdb",   "addr": "[::]:15432", "active": 0, "total": 18, "denied": 7},
   {"name": "httpbin", "addr": "[::]:18080", "active": 0, "total": 16, "denied": 7}
-], "version": "poc"}
+], "version": "0.1.0"}
 ```
 
 ```bash
@@ -224,7 +225,7 @@ flowchart TB
 Envoy calls OPA on the HTTPS lane only. The postgres lane has no filter to
 attach a policy hook to, so those bytes reach the sidecar unexamined.
 
-The POC stack runs no hoop gateway and no hoop agent. The sidecar carries
+The stack runs no hoop gateway and no hoop agent. The sidecar carries
 tier 2 alone: the `hoopinspect` library running as a process.
 
 Envoy sees less on each lane going down the table.
@@ -583,7 +584,7 @@ Check a change without starting anything:
 
 ```bash
 cd hoopinspect/cmd && go run . -validate \
-  -config ../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+  -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
 ```
 
 ```
@@ -644,7 +645,7 @@ sequenceDiagram
     G->>A: session_end (statements, denied)
 ```
 
-That sequence is copied from a real run. Two psql commands against the POC
+That sequence is copied from a real run. Two psql commands against the stack
 produce exactly these records:
 
 ```
@@ -750,7 +751,7 @@ already gates audit access, and the data ports must never serve it.
 
 ## Identity
 
-Every session in the POC records `principal: anonymous`. The plumbing runs end
+Every session records `principal: anonymous`. The plumbing runs end
 to end and nobody fills it.
 
 `session.Identity` carries a Subject, and `proxy.Config.IdentityFn` is the seam a
@@ -791,7 +792,7 @@ every lane.
   still holds: Envoy ships no SSH filter at any fidelity, so every service
   reached over SSH sits unpoliced by the Envoy and OPA layer.
 
-## What the POC demonstrates
+## What the stack shows
 
 1. hoop deploys behind Envoy as a plain upstream with zero Envoy extensions. No
    ext_proc, no WASM, no custom filter. Compose config and one YAML file.

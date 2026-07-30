@@ -69,8 +69,10 @@ import (
 	"github.com/hoophq/hoopinspect/sidecar"
 )
 
-// version is set at build time with -ldflags "-X main.version=...".
-var version = "dev"
+// version is the release this binary reports at -version and on the admin
+// /stats endpoint. A build overrides it with -ldflags "-X main.version=...";
+// the shipped image stamps the same value from the Dockerfile.
+var version = "0.1.0"
 
 func main() {
 	sidecar.Main(version, configyaml.Load, func(raw json.RawMessage) (sidecar.Plugin, error) {

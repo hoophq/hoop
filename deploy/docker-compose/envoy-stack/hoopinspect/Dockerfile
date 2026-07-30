@@ -7,7 +7,7 @@
 # One edge deep, no vendor directory, no transitive tree to review.
 #
 # Build from the repo root:
-#   docker build -f deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile \
+#   docker build -f deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile \
 #     -t hoop-inspect:local hoopinspect/
 
 FROM golang:1.24-alpine AS build
@@ -18,8 +18,9 @@ COPY . .
 WORKDIR /src/cmd
 RUN go mod download
 # CGO off and a static build so the runtime stage can be distroless-thin.
+# The version matches hoopinspect/cmd/main.go; bump both together.
 RUN CGO_ENABLED=0 go build \
-    -ldflags "-s -w -X main.version=poc" \
+    -ldflags "-s -w -X main.version=0.1.0" \
     -o /out/hoop-inspect .
 
 FROM alpine:3.20

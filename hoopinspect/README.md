@@ -1,5 +1,8 @@
 # hoopinspect
 
+> **0.1.0** — the API is settling. Expect the config schema to hold and the Go
+> interfaces to move.
+
 Turn raw database wire-protocol bytes into structured statements, and
 structured statements into allow/deny verdicts.
 
@@ -33,10 +36,10 @@ for _, s := range stmts {
 }
 ```
 
-## Run it locally: the POC stack
+## Run it locally: the Envoy stack
 
 The fastest way to watch all of this work is the compose stack in
-[`deploy/docker-compose/envoy-poc`](../deploy/docker-compose/envoy-poc). Envoy
+[`deploy/docker-compose/envoy-stack`](../deploy/docker-compose/envoy-stack). Envoy
 terminates TLS and calls OPA for reachability, `hoop-inspect` sits behind it as
 an ordinary upstream, and a Postgres database and an HTTP service sit behind
 that. No hoop gateway, no agent, no control-plane database: the sidecar reads
@@ -49,7 +52,7 @@ cert for Envoy, builds `hoop-inspect:local` from the `hoopinspect` tree, and
 starts six containers. From the repo root:
 
 ```bash
-cd deploy/docker-compose/envoy-poc
+cd deploy/docker-compose/envoy-stack
 ./run.sh
 ```
 
@@ -149,7 +152,7 @@ As a container, with the `hoopinspect` tree as the build context. From the repo
 root:
 
 ```bash
-docker build -f deploy/docker-compose/envoy-poc/hoopinspect/Dockerfile \
+docker build -f deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile \
   -t hoop-inspect:local hoopinspect/
 ```
 
@@ -264,12 +267,12 @@ keystrokes), and `max_conns` bounds concurrency.
 
 ### 3. Validate before you deploy
 
-Nothing needs to be running. Here it is against the POC's own config, from the
+Nothing needs to be running. Here it is against the Envoy stack's own config, from the
 `hoopinspect` directory:
 
 ```bash
 cd cmd && go build -o hoop-inspect . && \
-  ./hoop-inspect -validate -config ../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+  ./hoop-inspect -validate -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
 ```
 
 ```
@@ -298,7 +301,7 @@ refuses outright:
 
 Reading the file cannot tell you which rules a lane ended up with, because
 inheritance happens at startup. Debugging a denial that never fired starts
-here, again against the POC config:
+here, again against the stack config:
 
 ```bash
 curl -s localhost:19000/config | python3 -m json.tool

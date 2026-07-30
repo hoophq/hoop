@@ -658,7 +658,7 @@ func TestMaskingAppliesToHTTP(t *testing.T) {
 // body past the length the client was told to read, so the client stops
 // mid-token and reports a corrupt upstream.
 //
-// This was a live bug: about 3-10% of responses through the POC stack came
+// This was a live bug: about 3-10% of responses through the Envoy stack came
 // back truncated, whenever the upstream's header and body landed in separate
 // TCP reads.
 func TestMaskingSkipsBodyWhoseLengthCannotBeCorrected(t *testing.T) {

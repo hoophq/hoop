@@ -9,7 +9,7 @@
 #
 # Validate without starting anything:
 #   cd hoopinspect/cmd && go run . -validate \
-#     -config ../../deploy/docker-compose/envoy-poc/hoopinspect/config.yaml
+#     -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
 
 log_level: info
 

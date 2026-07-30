@@ -25,9 +25,11 @@ protocol between a client and a database or API, evaluates each statement
 against policy, records an audit trail, and masks sensitive values on the way
 back.
 
-It routes nothing and terminates no TLS. Run it behind something that already
-owns the network path and identity, typically an Envoy sidecar forwarding
-plaintext over loopback or a unix socket.
+It routes nothing and terminates no DOWNSTREAM TLS. Run it behind something
+that already owns the network path and identity, typically an Envoy sidecar
+forwarding plaintext over loopback or a unix socket. The hop to the backend
+can be TLS (upstream_tls): the relay originates it and still inspects, since
+it is the client on that hop and decrypts what it reads.
 
 Every capability is decided by the config file, so turning on PII detection
 does not require a different binary. The file may be YAML or JSON; the

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Brings up the POC:
+# Brings up the stack:
 #
 #   1. mint a self-signed cert for Envoy
 #   2. build the hoop-inspect sidecar image from the local hoopinspect tree
