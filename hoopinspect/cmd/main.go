@@ -15,6 +15,10 @@
 // YAML config front end -- and a main in the root could not import those
 // without putting their dependencies in the root's go.mod.
 //
+// The same relay is reachable as `hoop start inspect`, which links the same
+// two plugins into the hoop CLI. Prefer this binary for a sidecar container
+// that should carry nothing else.
+//
 // # What the config turns on
 //
 // There is one binary and no build tags. Every capability below is decided by
@@ -59,9 +63,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
-	"fmt"
-	"os"
 
 	configyaml "github.com/hoophq/hoopinspect/config/yaml"
 	"github.com/hoophq/hoopinspect/pii/alcatraz"
@@ -71,95 +72,11 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-// piiFile is the "pii" section of the shared config file. It is read here
-// rather than in the sidecar package, so the sidecar never has to know what
-// an alcatraz Options looks like.
-type piiFile struct {
-	PII *struct {
-		Entities  []string `json:"entities"`
-		Ignored   []string `json:"ignored,omitempty"`
-		Threshold float64  `json:"threshold,omitempty"`
-		AllowList []string `json:"allow_list,omitempty"`
-		Language  string   `json:"language,omitempty"`
-	} `json:"pii"`
-}
-
 func main() {
-	// The config path is parsed twice: once here for the "pii" section, once
-	// by sidecar.Main for everything else. Peeking rather than taking over
-	// the flag set keeps one owner of the CLI contract.
-	cfgPath := peekConfigPath()
-
-	det, err := buildDetector(cfgPath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
-		os.Exit(1)
-	}
-	// A nil *alcatraz.Detector in a non-nil interface would make the sidecar
-	// think a detector is present and call through it. Pass an untyped nil.
-	if det == nil {
-		sidecar.Main(version, nil, configyaml.Load)
-		return
-	}
-	sidecar.Main(version, det, configyaml.Load)
-}
-
-// peekConfigPath finds -config without consuming the flag set, so
-// sidecar.Main still owns flag parsing, -help and the error messages.
-func peekConfigPath() string {
-	fs := flag.NewFlagSet("peek", flag.ContinueOnError)
-	fs.SetOutput(os.NewFile(0, os.DevNull))
-	path := fs.String("config", "", "")
-	fs.Bool("validate", false, "")
-	fs.Bool("version", false, "")
-	_ = fs.Parse(os.Args[1:])
-	return *path
-}
-
-// buildDetector reads the "pii" section and constructs the detector. A missing
-// section means no detector: the relay then runs with detection disabled,
-// which is the right answer for a config written before the section existed.
-func buildDetector(cfgPath string) (*alcatraz.Detector, error) {
-	if cfgPath == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(cfgPath)
-	if err != nil {
-		// Let sidecar.Main report an unreadable config; it owns that message.
-		return nil, nil
-	}
-
-	// The sidecar accepts YAML or JSON, so this second read of the same file
-	// has to agree about the syntax. Transcoding here rather than parsing
-	// YAML directly keeps one definition of the "pii" section: the JSON tags
-	// below.
-	if configyaml.IsYAML(cfgPath) {
-		converted, cerr := configyaml.ToJSON(raw)
-		if cerr != nil {
-			// A malformed config is the sidecar's error to report.
-			return nil, nil
-		}
-		raw = converted
-	}
-
-	var f piiFile
-	if err := json.Unmarshal(raw, &f); err != nil {
-		// Same: a malformed config is the sidecar's error to report.
-		return nil, nil
-	}
-	if f.PII == nil {
-		return nil, nil
-	}
-
-	det, err := alcatraz.NewDetector(alcatraz.Options{
-		Entities:  f.PII.Entities,
-		Ignored:   f.PII.Ignored,
-		Threshold: f.PII.Threshold,
-		AllowList: f.PII.AllowList,
-		Language:  f.PII.Language,
+	sidecar.Main(version, configyaml.Load, func(raw json.RawMessage) (sidecar.Plugin, error) {
+		// A nil alcatraz.Plugin converts to a nil sidecar.Plugin, so "no pii
+		// section" stays nil rather than becoming a non-nil interface holding
+		// a nil pointer, which the sidecar would call through.
+		return alcatraz.PluginFromConfig(raw)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("config %s: %w", cfgPath, err)
-	}
-	return det, nil
 }

@@ -114,16 +114,30 @@ troubleshooting table, read
 
 ## Running the relay yourself
 
-The binary lives in the nested `cmd` module, which is where the optional
+Two ways, same relay.
+
+**Through the hoop CLI**, which links the same plugins into the binary the
+release pipeline already builds. Nothing extra to compile or ship:
+
+```bash
+hoop start inspect --config config.yaml --validate   # check the config and exit
+hoop start inspect --config config.yaml              # run
+```
+
+`--config` also reads `HOOP_INSPECT_CONFIG`, which is the shape a Kubernetes
+deployment wants: mount the ConfigMap, set the variable, pass no arguments.
+
+**As a standalone binary**, when a sidecar container should carry the relay and
+nothing else. It lives in the nested `cmd` module, which is where the optional
 plugins get linked (the YAML front end and alcatraz PII detection) so the root
-module stays dependency-free.
+module stays dependency-free:
 
 ```bash
 cd cmd
 go build -o hoop-inspect .
 
-./hoop-inspect -validate -config config.yaml   # check the config and exit
-./hoop-inspect -config config.yaml             # run
+./hoop-inspect -validate -config config.yaml
+./hoop-inspect -config config.yaml
 ./hoop-inspect -version
 ```
 
@@ -141,8 +155,9 @@ the `pii` section and detection is off, which makes masking unavailable and a
 `pii` policy rule a config error: both are refused at startup rather than
 silently skipped.
 
-To embed the relay in your own process, call `sidecar.Run(cfg, det)` and skip
-the `cmd` module entirely.
+To embed the relay in your own process, call `sidecar.Setup` to load the config
+and build the detector, then `sidecar.Run`. That is all `hoop start inspect`
+does; read `client/cmd/startinspect.go` for the whole of it.
 
 ## Configuring it: config.yaml
 

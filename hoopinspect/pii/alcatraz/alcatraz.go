@@ -59,7 +59,6 @@ import (
 	"github.com/hoophq/alcatraz/analyzer"
 	"github.com/hoophq/alcatraz/entities"
 	"github.com/hoophq/alcatraz/recognizers"
-	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
 )
 
@@ -160,15 +159,8 @@ type Detector struct {
 
 var (
 	_ policy.Scanner = (*Detector)(nil)
-	_ sidecarPlugin  = (*Detector)(nil)
+	_ Plugin         = (*Detector)(nil)
 )
-
-// sidecarPlugin mirrors sidecar.Plugin. Asserted structurally rather than by
-// importing sidecar, which would be a cycle: the binary imports both.
-type sidecarPlugin interface {
-	ScanText(text string) []string
-	BuildMasker(rawRules []byte) (gate.Masker, error)
-}
 
 // newEngine builds the alcatraz engine this package uses: the full built-in
 // recognizer set plus the credential recognizers in secrets.go.

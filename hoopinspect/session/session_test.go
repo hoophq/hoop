@@ -77,6 +77,11 @@ func TestDurationBeforeAndAfterEnd(t *testing.T) {
 	if !s.IsOpen() {
 		t.Error("a new session is not open")
 	}
+	// StartedAt is stored as UTC, which strips the monotonic reading, so an
+	// open session's duration comes off the coarse wall clock. Sleep past its
+	// granularity: without this the elapsed time reads as exactly zero and
+	// the assertion below fails on a fast machine.
+	time.Sleep(2 * time.Millisecond)
 	if s.Duration() <= 0 {
 		t.Error("an open session reports a non-positive duration")
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -649,5 +650,68 @@ func TestMaskingAppliesToHTTP(t *testing.T) {
 	}
 	if bytes.Contains(d.Payload, []byte("ada@example.com")) {
 		t.Error("the sensitive value survived masking on an HTTP response")
+	}
+}
+
+// A body that arrives without its header block cannot have Content-Length
+// corrected, because the header already went out. Masking it anyway grows the
+// body past the length the client was told to read, so the client stops
+// mid-token and reports a corrupt upstream.
+//
+// This was a live bug: about 3-10% of responses through the POC stack came
+// back truncated, whenever the upstream's header and body landed in separate
+// TCP reads.
+func TestMaskingSkipsBodyWhoseLengthCannotBeCorrected(t *testing.T) {
+	g, _ := gate.New(session.New(hoopinspect.HTTP, session.Identity{Subject: "alice"}),
+		gate.Config{
+			Protocol: hoopinspect.HTTP,
+			Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED:email]"},
+		})
+
+	// The header block, forwarded on its own. Content-Length is now committed.
+	head := []byte("HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\n")
+	if d := g.Response(context.Background(), head); !bytes.Equal(d.Payload, head) {
+		t.Fatalf("header block was rewritten: %q", d.Payload)
+	}
+
+	// The body, in the next read. Masking would take it from 15 bytes to 16.
+	body := []byte("ada@example.com")
+	d := g.Response(context.Background(), body)
+
+	if len(d.Payload) != 15 {
+		t.Errorf("payload is %d bytes but the client will read 15, truncating it: %q",
+			len(d.Payload), d.Payload)
+	}
+	if d.MaskedCount != 0 {
+		t.Errorf("MaskedCount = %d: reported masking a body it could not safely rewrite",
+			d.MaskedCount)
+	}
+}
+
+// The same buffer, whole, MUST still be masked and retagged: the skip above
+// is about what the gate cannot correct, never a blanket retreat.
+func TestMaskingStillAppliesWhenHeaderAndBodyArriveTogether(t *testing.T) {
+	g, _ := gate.New(session.New(hoopinspect.HTTP, session.Identity{Subject: "alice"}),
+		gate.Config{
+			Protocol: hoopinspect.HTTP,
+			Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED:email]"},
+		})
+
+	whole := []byte("HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\nada@example.com")
+	d := g.Response(context.Background(), whole)
+
+	if d.MaskedCount != 1 {
+		t.Fatalf("MaskedCount = %d, want 1", d.MaskedCount)
+	}
+	// Assert the invariant, not the header's spelling: what a client acts on
+	// is the number, and the retag preserves the upstream's own spacing.
+	head, body, _ := bytes.Cut(d.Payload, []byte("\r\n\r\n"))
+	_, value, _ := bytes.Cut(head, []byte("Content-Length:"))
+	declared, err := strconv.Atoi(string(bytes.TrimSpace(value)))
+	if err != nil {
+		t.Fatalf("unparseable Content-Length in %q", head)
+	}
+	if declared != len(body) {
+		t.Errorf("declared %d but body is %d bytes: %q", declared, len(body), d.Payload)
 	}
 }

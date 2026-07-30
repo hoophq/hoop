@@ -59,25 +59,56 @@ var Version = "dev"
 // github.com/hoophq/hoopinspect/config/yaml's Load, or nil for JSON only.
 type Loader func(path string) (*Config, error)
 
+// PluginBuilder constructs the detection plugin from a config's "pii"
+// section, the raw JSON of Config.PII.
+//
+// It is a function rather than a ready-made Plugin because the detector is
+// built FROM the config: taking one already built would force every caller to
+// read and parse the config file a second time before handing it over. Return
+// a nil Plugin for an absent section. Pass nil to disable detection outright.
+type PluginBuilder func(rawPII json.RawMessage) (Plugin, error)
+
+// Setup loads a config file and builds its detection plugin.
+//
+// This is the whole startup sequence short of binding a port, so a caller
+// embedding the relay reaches Validate or Run with two lines and no
+// opportunity to wire the two halves together differently than the shipped
+// binary does.
+func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, error) {
+	if load == nil {
+		load = LoadConfig
+	}
+	cfg, err := load(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if build == nil {
+		return cfg, nil, nil
+	}
+	det, err := build(cfg.PII)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, det, nil
+}
+
 // Main is the command-line entry point.
 //
-// version is stamped by the caller's -ldflags. det is the optional detection
-// plugin: nil disables masking and makes any pii policy rule a config error.
-// load is the optional config reader; nil means JSON only. Main calls
-// os.Exit, so it goes last in a main.
+// version is stamped by the caller's -ldflags. load is the optional config
+// reader; nil means JSON only. build is the optional detection plugin
+// constructor; nil disables masking and makes any pii policy rule a config
+// error. Main calls os.Exit, so it goes last in a main.
 //
 // Usage:
 //
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -validate -config config.yaml   # check and exit
 //	hoop-inspect -version
-func Main(version string, det Plugin, load Loader) {
+func Main(version string, load Loader, build PluginBuilder) {
 	Version = version
 
 	syntax := "JSON"
-	if load == nil {
-		load = LoadConfig
-	} else {
+	if load != nil {
 		syntax = "YAML or JSON"
 	}
 
@@ -98,44 +129,21 @@ func Main(version string, det Plugin, load Loader) {
 		os.Exit(2)
 	}
 
-	cfg, err := load(*configPath)
+	cfg, det, err := Setup(*configPath, load, build)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hoop-inspect:", err)
 		os.Exit(1)
 	}
 
-	// A "pii" section in a build with no detector is a fatal error. Dropping
-	// it silently would leave an operator believing their national-ID masking
-	// is on when the binary cannot do it.
-	if len(cfg.PII) > 0 && det == nil {
-		fmt.Fprintln(os.Stderr, "hoop-inspect: config has a \"pii\" section but this build "+
-			"has no PII detector; build github.com/hoophq/hoopinspect/cmd, or pass a "+
-			"detector to Main, or remove the section")
-		os.Exit(1)
-	}
-
 	if *validate {
-		// Building every lane covers most of what can go wrong in a config,
-		// and a -validate that skips it is a check you stop trusting. With a
-		// detector attached this also proves the entity names resolve.
-		lanes, lerr := buildLanes(cfg, det)
+		lanes, lerr := Validate(cfg, det)
 		if lerr != nil {
 			fmt.Fprintln(os.Stderr, "hoop-inspect:", lerr)
 			os.Exit(1)
 		}
 		fmt.Println("config OK:", len(lanes), "listener(s)")
 		for _, ln := range lanes {
-			mode := "observe-only"
-			if ln.policy != nil {
-				mode = fmt.Sprintf("enforcing %d rule(s)", len(ln.rules))
-			}
-			if ln.opaURL != "" {
-				mode += " + opa"
-			}
-			if ln.masker != nil {
-				mode += " + masking"
-			}
-			fmt.Printf("  %-16s %-9s %s\n", ln.name, ln.cfg.Protocol, mode)
+			fmt.Printf("  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
 		}
 		return
 	}
@@ -146,12 +154,86 @@ func Main(version string, det Plugin, load Loader) {
 	}
 }
 
+// LaneInfo is one resolved listener, as Validate reports it.
+//
+// Reporting the RESOLVED stack is the point: the config file does not show
+// what a lane inherited, so a caller checking a config needs the merge
+// result rather than the fields as written.
+type LaneInfo struct {
+	Name      string
+	Protocol  string
+	Enforcing bool
+	Rules     int
+	OPA       bool
+	Masking   bool
+}
+
+// Summary renders a LaneInfo as the one-line mode description the -validate
+// output and the CLI both print.
+func (l LaneInfo) Summary() string {
+	mode := "observe-only"
+	if l.Enforcing {
+		mode = fmt.Sprintf("enforcing %d rule(s)", l.Rules)
+	}
+	if l.OPA {
+		mode += " + opa"
+	}
+	if l.Masking {
+		mode += " + masking"
+	}
+	return mode
+}
+
+// Validate builds every lane and reports what each one resolved to, without
+// binding a port.
+//
+// Building the lanes covers most of what can go wrong in a config, and a
+// check that skips it is one you stop trusting. With a detector attached it
+// also proves the entity names resolve.
+func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
+	if err := checkPIIPlugin(cfg, det); err != nil {
+		return nil, err
+	}
+	lanes, err := buildLanes(cfg, det)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LaneInfo, 0, len(lanes))
+	for _, ln := range lanes {
+		out = append(out, LaneInfo{
+			Name:      ln.name,
+			Protocol:  ln.cfg.Protocol,
+			Enforcing: ln.policy != nil,
+			Rules:     len(ln.rules),
+			OPA:       ln.opaURL != "",
+			Masking:   ln.masker != nil,
+		})
+	}
+	return out, nil
+}
+
+// checkPIIPlugin rejects a "pii" section in a build with no detector.
+//
+// Dropping it silently would leave an operator believing their national-ID
+// masking is on when the binary cannot do it.
+func checkPIIPlugin(cfg *Config, det Plugin) error {
+	if len(cfg.PII) > 0 && det == nil {
+		return errors.New("config has a \"pii\" section but this build has no PII " +
+			"detector; build github.com/hoophq/hoopinspect/cmd, or pass a detector, " +
+			"or remove the section")
+	}
+	return nil
+}
+
 // Run starts the sidecar and blocks until the process is signalled.
 //
 // det is the optional detection plugin. Passing nil disables masking and
 // rejects any pii policy rule. Call Run to embed the relay in your own
 // binary; the shipped one goes through Main.
 func Run(cfg *Config, det Plugin) error {
+	if err := checkPIIPlugin(cfg, det); err != nil {
+		return err
+	}
 	log := newLogger(cfg.LogLevel)
 
 	ac, err := buildAudit(cfg.Audit)

@@ -143,6 +143,13 @@ type Decision struct {
 	Err error
 }
 
+// errMaskSkippedStaleLength records a response body forwarded unmasked
+// because its Content-Length could not be corrected. See maskBySubstitution.
+var errMaskSkippedStaleLength = errors.New(
+	"hoopinspect/gate: response body forwarded unmasked: its header block is " +
+		"not in this buffer, so Content-Length cannot be corrected and a " +
+		"masked body would be truncated by the client")
+
 // Gate inspects one connection.
 //
 // It is stateful, because the underlying codec reassembles messages across
@@ -383,6 +390,11 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 
 // maskBySubstitution rewrites the payload in place and corrects the declared
 // length. HTTP only.
+//
+// Masking and retagging are one decision, not two. If the length cannot be
+// corrected the ORIGINAL bytes go out unmasked, because a masked body behind
+// a stale Content-Length is read to the old length and stops mid-token: the
+// client sees a corrupt response rather than a protected one.
 func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte) {
 	out, entities, count := g.masker.Mask(data)
 	if count == 0 {
@@ -393,7 +405,18 @@ func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte)
 	// stale makes the client read exactly that many bytes and stop
 	// mid-document. The truncated response looks like a corrupt upstream
 	// rather than a masking bug.
-	out = retagContentLength(out, len(out)-len(data))
+	out, ok := retagContentLength(out, len(out)-len(data))
+	if !ok {
+		// Commonly a body chunk whose header block already went out, which
+		// happens whenever the upstream's header and body land in separate
+		// TCP reads. Nothing here can move the number the client was given.
+		//
+		// Audited, never silent: this is sensitive data going out in the
+		// clear, and an operator comparing a masked response against an
+		// unmasked one needs the reason in the same trail as everything else.
+		g.writeAudit(ctx, audit.ErrorEvent(g.sess, errMaskSkippedStaleLength))
+		return
+	}
 	d.Payload = out
 	d.Masked = entities
 	d.MaskedCount = count

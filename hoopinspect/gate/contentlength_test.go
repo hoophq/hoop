@@ -68,7 +68,10 @@ func TestRetagKeepsHeaderConsistentWithBody(t *testing.T) {
 			masked := bytes.Replace(original,
 				bodyOf(t, original), []byte(tc.body), 1)
 
-			out := retagContentLength(masked, tc.delta)
+			out, ok := retagContentLength(masked, tc.delta)
+			if !ok {
+				t.Fatalf("refused to retag a complete, well-formed response")
+			}
 
 			if got, want := declaredLength(t, out), len(tc.body); got != want {
 				t.Errorf("Content-Length = %d, body is %d bytes: a client would %s",
@@ -84,7 +87,10 @@ func TestRetagKeepsHeaderConsistentWithBody(t *testing.T) {
 
 func TestRetagNoopOnZeroDelta(t *testing.T) {
 	in := resp("", `{"a":"b"}`)
-	out := retagContentLength(in, 0)
+	out, ok := retagContentLength(in, 0)
+	if !ok {
+		t.Error("a length-preserving mask left the declared length accurate; want ok")
+	}
 	if &out[0] != &in[0] {
 		t.Error("zero delta should return the input unchanged, not a copy")
 	}
@@ -141,7 +147,11 @@ func TestRetagRefusesWhenItCannotBeSure(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out := retagContentLength(tc.payload, tc.delta)
+			out, ok := retagContentLength(tc.payload, tc.delta)
+			if ok {
+				t.Error("reported success on a payload it cannot correct; the caller " +
+					"would ship a masked body behind a stale Content-Length")
+			}
 			if !bytes.Equal(out, tc.payload) {
 				t.Errorf("payload was modified when it should have been left alone:\n got %q\nwant %q",
 					out, tc.payload)
@@ -156,7 +166,10 @@ func TestRetagMatchesHeaderCaseInsensitively(t *testing.T) {
 	body := `{"email":"[REDACTED:email]"}`
 	for _, name := range []string{"Content-Length", "content-length", "CONTENT-LENGTH", "Content-length"} {
 		payload := []byte("HTTP/1.1 200 OK\r\n" + name + ": " + strconv.Itoa(len(body)-1) + "\r\n\r\n" + body)
-		out := retagContentLength(payload, +1)
+		out, ok := retagContentLength(payload, +1)
+		if !ok {
+			t.Fatalf("refused header name %q", name)
+		}
 		if got := declaredLength(t, out); got != len(body) {
 			t.Errorf("%s: Content-Length = %d, want %d", name, got, len(body))
 		}
@@ -169,7 +182,7 @@ func TestRetagPreservesEverythingElse(t *testing.T) {
 	original := resp("Set-Cookie: a=b\r\nX-Trace: 12345\r\n", strings.Repeat("y", len(body)-1))
 	masked := bytes.Replace(original, bodyOf(t, original), []byte(body), 1)
 
-	out := retagContentLength(masked, +1)
+	out, _ := retagContentLength(masked, +1)
 
 	for _, want := range []string{"Set-Cookie: a=b", "X-Trace: 12345", "Content-Type: application/json", "HTTP/1.1 200 OK"} {
 		if !bytes.Contains(out, []byte(want)) {
@@ -185,7 +198,7 @@ func TestRetagPreservesEverythingElse(t *testing.T) {
 func TestRetagNeverEmitsNegative(t *testing.T) {
 	payload := []byte("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n")
 	// delta -5 with an empty body present: declared 5, body 0, so 0 == 5-5.
-	out := retagContentLength(payload, -5)
+	out, _ := retagContentLength(payload, -5)
 	if got := declaredLength(t, out); got != 0 {
 		t.Errorf("Content-Length = %d, want 0", got)
 	}
@@ -206,7 +219,7 @@ func TestClientReadsTheWholeMaskedBody(t *testing.T) {
 		payload := bytes.Replace(original, bodyOf(t, original), []byte(masked), 1)
 		delta := len(masked) - 20
 
-		out := retagContentLength(payload, delta)
+		out, _ := retagContentLength(payload, delta)
 
 		// Simulate the client: read exactly Content-Length bytes of body.
 		n := declaredLength(t, out)
@@ -225,7 +238,7 @@ func ExampleretagContentLength() {
 	payload := []byte("HTTP/1.1 200 OK\r\nContent-Length: " +
 		strconv.Itoa(len(body)-1) + "\r\n\r\n" + body)
 
-	out := retagContentLength(payload, +1)
+	out, _ := retagContentLength(payload, +1)
 
 	head, _, _ := bytes.Cut(out, []byte("\r\n\r\n"))
 	fmt.Println(strings.ReplaceAll(string(head), "\r\n", " | "))
