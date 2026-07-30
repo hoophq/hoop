@@ -193,9 +193,14 @@ every request that reaches the sidecar.
 - **Two codecs ship: postgres and http.** MySQL, MSSQL and MongoDB were
   removed to keep the surface to what is exercised end to end. Adding one is a
   new `codec/<name>` package and nothing else.
-- **`psql` must disable SSL** (`PGSSLMODE=disable`). The sidecar does not
-  terminate TLS, and Envoy passes the TCP stream through untouched. In
-  production Envoy would terminate on that listener too.
+- **`psql` must disable SSL** (`PGSSLMODE=disable`) on the CLIENT leg. Nothing
+  terminates TLS between psql and the sidecar: Envoy passes that TCP stream
+  through untouched. In production Envoy would terminate on that listener too.
+  The SIDECAR-to-`appdb` leg is a separate hop and it IS encrypted (TLSv1.3,
+  verified against the cert `./run.sh` mints). Check it from a client session:
+  `SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid();`
+  Masking and policy are unaffected, because the sidecar is the TLS client on
+  that hop and decrypts what it reads.
 - **OPA runs under `linux/amd64`.** `openpolicyagent/opa:*-envoy` publishes no
   arm64 image. Fine under emulation; drop the `platform:` line on amd64.
 - **Identity is a header.** `X-Hoop-User` stands in for a verified JWT

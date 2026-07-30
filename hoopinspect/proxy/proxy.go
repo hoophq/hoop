@@ -335,12 +335,40 @@ func (s *Server) handle(ctx context.Context, client net.Conn) {
 	wg.Wait()
 }
 
+// dialUpstream connects to the backend, negotiating TLS when configured.
+//
+// The TLS handshake is protocol-aware: see startTLS. On any TLS failure the
+// raw connection is closed before returning, so a refused handshake does not
+// leak a socket per attempt.
 func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
 	d := &net.Dialer{Timeout: s.cfg.DialTimeout}
-	if s.cfg.UpstreamTLS != nil {
-		return tls.DialWithDialer(d, "tcp", s.cfg.Upstream, s.cfg.UpstreamTLS)
+	conn, err := d.DialContext(ctx, "tcp", s.cfg.Upstream)
+	if err != nil || s.cfg.UpstreamTLS == nil {
+		return conn, err
 	}
-	return d.DialContext(ctx, "tcp", s.cfg.Upstream)
+
+	// The dial timeout has to cover the negotiation too: without a deadline a
+	// server that accepts the TCP connection and then says nothing would hang
+	// this goroutine for as long as the client waits.
+	if s.cfg.DialTimeout > 0 {
+		if derr := conn.SetDeadline(time.Now().Add(s.cfg.DialTimeout)); derr != nil {
+			conn.Close()
+			return nil, derr
+		}
+	}
+
+	tc, err := startTLS(conn, s.cfg.Upstream, s.cfg.Protocol, s.cfg.UpstreamTLS)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	// Clear the handshake deadline: the relay's own IdleTimeout governs the
+	// session from here, and leaving this set would kill a long query.
+	if err := tc.SetDeadline(time.Time{}); err != nil {
+		tc.Close()
+		return nil, err
+	}
+	return tc, nil
 }
 
 // pump copies src -> dst, running every chunk through the gate first.
@@ -375,11 +403,25 @@ func (s *Server) pump(
 
 		n, readErr := src.Read(buf)
 		if n > 0 {
+			chunk := buf[:n]
+
+			// The server negotiated TLS with US, not with the client, so it
+			// may offer channel binding the client cannot satisfy. Drop that
+			// mechanism before anything else looks at the bytes; see
+			// stripChannelBinding for why relaying it fails the connection.
+			if dir == hoopinspect.FromServer && s.cfg.UpstreamTLS != nil {
+				if stripped, changed := stripChannelBinding(chunk); changed {
+					log.Debug("removed SCRAM channel binding from the server's SASL offer",
+						"reason", "upstream TLS terminates here, so the client cannot bind to it")
+					chunk = stripped
+				}
+			}
+
 			var d gate.Decision
 			if dir == hoopinspect.FromClient {
-				d = g.Request(ctx, buf[:n])
+				d = g.Request(ctx, chunk)
 			} else {
-				d = g.Response(ctx, buf[:n])
+				d = g.Response(ctx, chunk)
 			}
 
 			if d.Err != nil {

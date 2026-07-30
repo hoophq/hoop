@@ -24,7 +24,7 @@ die()    { printf '\033[31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
 if [[ "${1:-}" == "down" ]]; then
     docker compose down -v --remove-orphans
-    rm -rf envoy/certs
+    rm -rf envoy/certs upstream/certs
     exit 0
 fi
 
@@ -34,8 +34,10 @@ REBUILD=""
 need() { command -v "$1" >/dev/null || die "missing required tool: $1"; }
 need docker; need curl; need openssl; need python3
 
-# --------------------------------------------------------------- 0. TLS cert
-# Envoy terminates TLS. Self-signed is fine; every client below uses -k.
+# --------------------------------------------------------------- 0. TLS certs
+# Two independent hops, two certs.
+#
+# Envoy terminates the client's TLS; every client below uses -k.
 c_step "TLS certificate for Envoy"
 if [[ ! -f envoy/certs/server.crt ]]; then
     mkdir -p envoy/certs
@@ -47,6 +49,28 @@ if [[ ! -f envoy/certs/server.crt ]]; then
     c_ok "generated envoy/certs/server.crt"
 else
     c_ok "reusing envoy/certs/server.crt"
+fi
+
+# appdb terminates the SIDECAR's TLS. This is the hop that used to be
+# plaintext: hoop-inspect now speaks pgwire StartTLS to the database, so the
+# bytes between the two containers are encrypted while the sidecar still sees
+# decrypted statements and can mask the rows coming back.
+#
+# The key must be owned by the postgres uid (999) and mode 0600, or the server
+# refuses to start. Copying it into a file we chown here avoids depending on
+# whatever the host's umask happens to be.
+c_step "TLS certificate for appdb"
+if [[ ! -f upstream/certs/server.crt ]]; then
+    mkdir -p upstream/certs
+    openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+        -keyout upstream/certs/server.key -out upstream/certs/server.crt \
+        -subj "/CN=appdb" \
+        -addext "subjectAltName=DNS:appdb" \
+        2>/dev/null
+    chmod 600 upstream/certs/server.key
+    c_ok "generated upstream/certs/server.crt (CN=appdb)"
+else
+    c_ok "reusing upstream/certs/server.crt"
 fi
 
 # ------------------------------------------------------------ 1. build sidecar

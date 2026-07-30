@@ -208,13 +208,13 @@ flowchart TB
     end
 
     H["httpbin:8080"]
-    D["appdb:5432"]
+    D["appdb:5432<br/>ssl=on"]
 
     C -- TLS --> L8443
     C -- TCP --> L5432
     L8443 -. "gRPC, fails closed" .-> OPA
     L8443 --> LH --> H
-    L5432 --> LP --> D
+    L5432 --> LP -- "TLS (pgwire StartTLS)" --> D
 
     style OPA fill:#8a5a2b,color:#fff
     style si fill:#1e3a5f,color:#fff

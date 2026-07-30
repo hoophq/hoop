@@ -67,6 +67,18 @@ listeners:
     listen: 0.0.0.0:15432
     upstream: appdb:5432
     connection: appdb
+    # The hop to the database is encrypted. hoop-inspect speaks the pgwire
+    # SSLRequest handshake, then wraps the connection: it is the TLS CLIENT,
+    # so it decrypts on read and the gate below still inspects and masks
+    # plaintext. Envoy covers the client's leg; this covers ours.
+    #
+    # The cert is the self-signed one ./run.sh mints for appdb, so the CA is
+    # the certificate itself. ca_file rather than insecure_skip_verify: a
+    # relay that accepts any certificate on the path it exists to protect is
+    # the wrong default to demonstrate.
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
     policy:
       rules:
         # Envoy cannot see this: there is no pgwire parser in its filter

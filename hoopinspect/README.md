@@ -105,8 +105,12 @@ That Postgres listener is `envoy:5432` inside the compose network and `5433` on
 the host, because a laptop usually has something on 5432 already. It is why the
 `psql` line above runs from the `client` container.
 
-`PGSSLMODE=disable` is required: nothing terminates TLS on that lane, so a
-client negotiating it would leave no plaintext to parse.
+`PGSSLMODE=disable` is required on the CLIENT: nothing terminates TLS between
+psql and the sidecar on that lane, so a client negotiating it would leave no
+plaintext to parse.
+
+The hop from the sidecar to `appdb` IS encrypted, and separately so. See
+[Upstream TLS](#upstream-tls).
 
 For the code path behind each command, a per-command runbook and a
 troubleshooting table, read
@@ -244,10 +248,10 @@ strategies and the entity-versus-column choice are in
 [Masking and PII](#masking-and-pii).
 
 Other listener fields worth knowing: `network: unix` binds a filesystem socket
-instead of a port, `upstream_tls` wraps the connection to the backend,
-`idle_timeout_sec` closes an idle connection (leave it unset for interactive
-sessions, since psql idles between keystrokes), and `max_conns` bounds
-concurrency.
+instead of a port, `upstream_tls` encrypts the connection to the backend (see
+[Upstream TLS](#upstream-tls)), `idle_timeout_sec` closes an idle connection
+(leave it unset for interactive sessions, since psql idles between
+keystrokes), and `max_conns` bounds concurrency.
 
 ### 2. Know how a listener inherits
 
@@ -586,6 +590,56 @@ the text.
 **Masking requires the plugin.** The gate refuses `mask.enabled` with no
 detection wired in at startup rather than passing traffic through unmasked.
 
+## Upstream TLS
+
+The hop from the relay to the backend can be encrypted, and it does not cost
+you inspection.
+
+```yaml
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt   # omit to use the host trust store
+      server_name: appdb                           # defaults to the upstream host
+      # cert_file / key_file    for mTLS
+      # insecure_skip_verify    logs a warning; do not ship it
+```
+
+**Masking and policy are unaffected.** The relay is the TLS *client* on that
+hop, so it decrypts on read and the gate inspects plaintext exactly as it does
+without TLS. Encryption protects the bytes crossing the network, not the bytes
+the relay was built to read. A relay that could not read them would have
+nothing to mask.
+
+Do not confuse this with the client's leg. Nothing terminates downstream TLS
+here: if the CLIENT negotiates TLS end-to-end, there is no plaintext at this
+point in the path and inspection is impossible. That is the limit below, and
+it is a different hop.
+
+**Postgres negotiates in-band.** A TLS-on-connect dial fails against it: the
+server expects an 8-byte `SSLRequest` and a one-byte `S`/`N` reply before any
+handshake, and sending a ClientHello instead gets you `received direct SSL
+connection request` in the server log and a closed connection. The relay
+speaks that exchange, so `upstream_tls` on a `postgres` lane works the way the
+field name implies.
+
+**A refusal is an error, never a downgrade.** If the server answers `N`, the
+connection fails with a message naming the likely cause. An operator who
+configured `upstream_tls` asked for an encrypted hop; sending credentials in
+the clear because the server declined is the outcome they were preventing.
+
+**Channel binding is dropped from the server's offer.** With TLS terminating
+at the relay, `SCRAM-SHA-256-PLUS` cannot work: the server binds to its
+session with the relay, and the client has a different connection. Worse,
+libpq refuses a `-PLUS` mechanism offered over a link it knows is unencrypted,
+so relaying the offer fails the connection outright. The relay removes that
+one mechanism, leaving plain `SCRAM-SHA-256`, which authenticates the same
+password against the same verifier. If you need channel binding end to end,
+you need a path with no inspection in it.
+
 ## Limits
 
 Read these before writing a policy against it.
@@ -615,8 +669,10 @@ Read these before writing a policy against it.
 - **Path normalization is conservative.** Numeric, UUID, hex and long opaque
   segments collapse; short slugs do not. A policy comes out too narrow rather
   than too broad.
-- **Plaintext only.** If the client negotiates TLS to the server, there is
-  nothing to parse. Termination is your problem.
+- **Plaintext DOWNSTREAM only.** If the client negotiates TLS end-to-end past
+  the relay, there is nothing to parse; terminating that leg is your problem,
+  and Envoy is the usual answer. The UPSTREAM leg may be TLS: the relay
+  originates it and still inspects. See [Upstream TLS](#upstream-tls).
 - **Statements are not transactions.** The gate evaluates each one
   independently, with no cross-statement session state.
 
