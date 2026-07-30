@@ -54,35 +54,45 @@ export function formatTooltipDate(date) {
   })
 }
 
-/** "Jul 23rd - Jul 30th" — the range covered, as shown under a chart heading. */
+/** First day covered by a range. 24h covers today only; the rest reach back. */
+function rangeStart(days) {
+  const today = startOfLocalDay()
+  return days === 1 ? today : addDays(today, -days)
+}
+
+/** "Jul 23rd - Jul 30th", or a single date when the range is one day. */
 export function rangeLabel(days) {
   const today = startOfLocalDay()
-  return `${formatOrdinalDate(addDays(today, -days))} - ${formatOrdinalDate(today)}`
+  const start = rangeStart(days)
+
+  return start.getTime() === today.getTime()
+    ? formatOrdinalDate(today)
+    : `${formatOrdinalDate(start)} - ${formatOrdinalDate(today)}`
 }
 
 /**
  * Query window for the Redacted Data chart.
  *
- * A one-day range sends only `start_date` and lets the gateway default
- * `end_date` to tomorrow; every longer range pins `end_date` to today.
+ * `end_date` is always tomorrow. The gateway compares against
+ * `TO_TIMESTAMP(end_date, 'YYYY-MM-DD')` — midnight *starting* that day — so
+ * sending today would silently drop everything redacted today.
  */
 export function redactedRangeParams(days) {
-  const today = startOfLocalDay()
-
-  if (days === 1) {
-    return { startDate: localDateKey(today), rangeLabel: rangeLabel(days) }
-  }
-
   return {
-    startDate: localDateKey(addDays(today, -days)),
-    endDate: localDateKey(today),
+    startDate: localDateKey(rangeStart(days)),
+    endDate: localDateKey(addDays(startOfLocalDay(), 1)),
     rangeLabel: rangeLabel(days),
   }
 }
 
 /** Query window for the "Today's overview" redaction total. */
 export function todayReportParams() {
-  return { startDate: localDateKey(startOfLocalDay()) }
+  const today = startOfLocalDay()
+
+  return {
+    startDate: localDateKey(today),
+    endDate: localDateKey(addDays(today, 1)),
+  }
 }
 
 /**
