@@ -6,12 +6,13 @@ import { useAuthStore } from '@/stores/useAuthStore'
 import { useNavigate } from 'react-router-dom'
 import { NavItem } from './NavItem'
 import { ProfileDisclosure } from './ProfileDisclosure'
+import { ConfigStatus } from './ConfigStatus'
 import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
 import classes from './Sidebar.module.css'
 
 function SectionLabel({ label, id }) {
   return (
-    <Text id={id} size="xs" fw={600} c="white" mb="sm">
+    <Text id={id} size="xs" fw={700} mb="sm">
       {label}
     </Text>
   )
@@ -42,7 +43,7 @@ export function SidebarExpanded({ skipLink, navKey }) {
 
       <Box mb="xl" mt="xl" className={classes.logoExpanded}>
         <img
-          src="/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png"
+          src="/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png"
           alt="Hoop"
           width={160}
           style={{ display: 'block' }}
@@ -53,11 +54,12 @@ export function SidebarExpanded({ skipLink, navKey }) {
         key={navKey}
         scrollbars="y"
         type="hover"
-        data-mantine-color-scheme="dark"
         scrollbarSize={10}
         classNames={{ root: classes.expandedScrollArea }}
       >
         <Box px="md">
+          <ConfigStatus />
+
           <Box component="ul" role="list" aria-labelledby="sidebar-main-heading" className={classes.navList}>
             <Stack gap="xsAlt" mb="sm">
               {MAIN_ITEMS.map(item =>

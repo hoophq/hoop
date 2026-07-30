@@ -1,0 +1,12 @@
+apiVersion: v2
+# Clean image line (DEP-66). Thin wrapper over hoopagent-chart that defaults the
+# agent image to the clean-only, no-dirty-history hoophq/hoopdev-ng repo. All
+# templates and other values are inherited from hoopagent-chart (no duplication).
+name: hoopagent-ng-chart
+description: Clean-only (AGPL/SSPL-free) Hoop agent chart
+type: application
+version: 0.0.1
+dependencies:
+  - name: hoopagent-chart
+    version: "0.0.1"
+    repository: "file://../agent"

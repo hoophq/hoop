@@ -9,7 +9,6 @@ import {
   Title,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -24,6 +23,7 @@ import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
+import { showSnackbar } from '@/utils/snackbar'
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -87,11 +87,11 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
   async function handleSubmit(e) {
     e.preventDefault()
     if (!name.trim()) {
-      notifications.show({ message: 'Name is required.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Name is required.' })
       return
     }
     if (formType === 'create' && !email.trim()) {
-      notifications.show({ message: 'Email is required.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Email is required.' })
       return
     }
     setSaving(true)
@@ -106,15 +106,15 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
       }
       if (formType === 'create') {
         await usersService.create(payload)
-        notifications.show({ message: 'User created.', color: 'green' })
+        showSnackbar({ level: 'success', text: 'User created.' })
       } else {
         await usersService.update(user.id, payload)
-        notifications.show({ message: 'User updated.', color: 'green' })
+        showSnackbar({ level: 'success', text: 'User updated.' })
       }
       onSaved()
       onClose()
     } catch {
-      notifications.show({ message: `Failed to ${formType === 'create' ? 'create' : 'update'} user.`, color: 'red' })
+      showSnackbar({ level: 'error', text: `Failed to ${formType === 'create' ? 'create' : 'update'} user.` })
     } finally {
       setSaving(false)
     }
@@ -182,7 +182,7 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
                 </Text>
                 <Group gap="sm" wrap="nowrap">
                   <PasswordInput value={password} readOnly flex={1} />
-                  <CopyButton value={password} label="Copy password" size="md" />
+                  <CopyButton value={password} label="Copy password" />
                 </Group>
               </Stack>
             </>
@@ -306,7 +306,7 @@ export default function Users() {
                         </Badge>
                       </Table.Td>
                       <Table.Td>
-                        <Button variant="subtle" color="gray" size="xs" onClick={() => handleEdit(user)}>
+                        <Button variant="subtle" color="gray" size="sm" onClick={() => handleEdit(user)}>
                           Edit
                         </Button>
                       </Table.Td>

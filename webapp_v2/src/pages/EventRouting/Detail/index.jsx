@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { Box, Card, Group, Stack, Text, Title } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
-import { notifications } from "@mantine/notifications"
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,6 +21,7 @@ import Code from "@/components/Code"
 import Modal from "@/components/Modal"
 import PageLoader from "@/components/PageLoader"
 import Tooltip from "@/components/Tooltip"
+import { showSnackbar } from "@/utils/snackbar"
 import { useEventRoutingStore } from "../store"
 import StatusBadge from "../components/StatusBadge"
 import DispatchBadge from "../components/DispatchBadge"
@@ -256,7 +256,7 @@ function DispatchHistory({ subId }) {
             <Button
               variant="subtle"
               color="gray"
-              size="xs"
+              size="sm"
               leftSection={<RotateCcw size={12} />}
               onClick={() => setReplayTarget(d)}
               disabled={d.status === "pending" || d.status === "processing"}
@@ -330,17 +330,17 @@ export default function EventRoutingDetail() {
   const handleTogglePause = async () => {
     try {
       await togglePause(sub.id)
-      notifications.show({
-        message:
+      showSnackbar({
+        level: "success",
+        text:
           sub.status === "active"
             ? "Subscription paused."
             : "Subscription resumed.",
-        color: "green",
       })
     } catch (e) {
-      notifications.show({
-        message: e?.response?.data?.message || "Failed.",
-        color: "red",
+      showSnackbar({
+        level: "error",
+        text: e?.response?.data?.message || "Failed.",
       })
     }
   }
@@ -349,12 +349,12 @@ export default function EventRoutingDetail() {
     setDeleting(true)
     try {
       await deleteSubscription(sub.id)
-      notifications.show({ message: `Deleted "${sub.name}".`, color: "green" })
+      showSnackbar({ level: "success", text: `Deleted "${sub.name}".` })
       navigate("/features/event-routing")
     } catch (e) {
-      notifications.show({
-        message: e?.response?.data?.message || "Failed to delete.",
-        color: "red",
+      showSnackbar({
+        level: "error",
+        text: e?.response?.data?.message || "Failed to delete.",
       })
       setDeleting(false)
     }
@@ -396,7 +396,6 @@ export default function EventRoutingDetail() {
         </Stack>
         <Group gap="sm" wrap="nowrap">
           <Button
-            size="sm"
             variant="light"
             color={sub.status === "active" ? "gray" : "green"}
             leftSection={
@@ -407,7 +406,6 @@ export default function EventRoutingDetail() {
             {sub.status === "active" ? "Pause" : "Resume"}
           </Button>
           <Button
-            size="sm"
             variant="solid"
             leftSection={<Pencil size={14} />}
             onClick={() => navigate(`/features/event-routing/${sub.id}/edit`)}
@@ -418,7 +416,6 @@ export default function EventRoutingDetail() {
             <ActionIcon
               variant="light"
               color="red"
-              size={36}
               onClick={deleteControls.open}
             >
               <Trash2 size={16} />

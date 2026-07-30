@@ -6,8 +6,8 @@ import Sidebar from './Sidebar';
 
 const SIDEBAR_WIDTH = 310;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
-const SIDEBAR_BG = '#182449';
-const SIDEBAR_BORDER = 'rgba(255, 255, 255, 0.1)';
+const SIDEBAR_BG = 'var(--mantine-color-gray-0)';
+const SIDEBAR_BORDER = 'var(--mantine-color-gray-2)';
 
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
@@ -31,7 +31,7 @@ function Layout({ children }) {
           collapsed: { mobile: true }, // desktop only — mobile uses Drawer below
         }}
         styles={{
-          navbar: { backgroundColor: SIDEBAR_BG, borderRight: 'none', overflow: 'hidden' },
+          navbar: { backgroundColor: SIDEBAR_BG, borderRight: `1px solid ${SIDEBAR_BORDER}`, overflow: 'hidden' },
           header: { backgroundColor: SIDEBAR_BG, borderBottom: `1px solid ${SIDEBAR_BORDER}` },
         }}
       >
@@ -42,7 +42,6 @@ function Layout({ children }) {
               opened={sidebarOpen}
               onClick={toggleSidebar}
               size="sm"
-              color="white"
               aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}
             />
           </Group>

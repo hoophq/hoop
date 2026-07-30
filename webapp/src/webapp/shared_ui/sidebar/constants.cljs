@@ -57,10 +57,6 @@
                              "w-6 h-6")]
               [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
                      :class css-size}]))
-   "webhooks" (fn [& [{:keys [size] :or {size 24}}]]
-                [:> PackageSearch {:size size}])
-   "slack" (fn [& [{:keys [size] :or {size 24}}]]
-             [:> PackageSearch {:size size}])
    "infrastructure" (fn [& [{:keys [size] :or {size 24}}]]
                       [:> LayoutDashboard {:size size}])
    "license" (fn [& [{:keys [size] :or {size 24}}]]
@@ -97,7 +93,8 @@
     :icon (get icons-registry "Runbooks")
     :uri (routes/url-for :runbooks)
     :navigate :runbooks
-    :admin-only? false}
+    :admin-only? false
+    :license-feature "runbooks"}
    {:name "Sessions"
     :label "Sessions"
     :icon (get icons-registry "Sessions")
@@ -109,7 +106,8 @@
     :icon (get icons-registry "Provisioning")
     :uri (routes/url-for :provisioning)
     :navigate :provisioning
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "provisioning-hub"}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")
@@ -128,43 +126,43 @@
     :icon (get icons-registry "AccessRequest")
     :uri (routes/url-for :access-request)
     :navigate :access-request
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "access-requests"}
    {:name "RunbooksSetup"
     :label "Runbooks Setup"
     :icon (get icons-registry "RunbooksSetup")
     :uri (routes/url-for :runbooks-setup)
     :navigate :runbooks-setup
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "runbooks"}
    {:name "Guardrails"
     :label "Guardrails"
     :icon (get icons-registry "Guardrails")
     :uri (routes/url-for :guardrails)
     :navigate :guardrails
-    :admin-only? true}
-   {:name "JiraTemplates"
-    :label "Jira Templates"
-    :icon (get icons-registry "JiraTemplates")
-    :uri (routes/url-for :jira-templates)
-    :navigate :jira-templates
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "guardrails"}
    {:name "AISessionAnalyzer"
     :label "AI Session Analyzer"
     :icon (get icons-registry "AISessionAnalyzer")
     :uri (routes/url-for :ai-session-analyzer)
     :navigate :ai-session-analyzer
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "ai-session-analyzer"}
    {:name "AIDataMasking"
     :label "Live Data Masking"
     :icon (get icons-registry "AIDataMasking")
     :uri (routes/url-for :ai-data-masking)
     :navigate :ai-data-masking
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "data-masking"}
    {:name "AccessControl"
     :label "Access Control"
     :icon (get icons-registry "AccessControl")
     :uri (routes/url-for :access-control)
     :navigate :access-control
-    :admin-only? true}
+    :admin-only? true
+    :license-feature "access-control"}
    #_{:name "JustInTimeAccess"
       :label "Just-in-Time Access"
       :icon (fn []
@@ -178,13 +176,15 @@
     :uri (routes/url-for :integrations-aws-connect)
     :navigate :integrations-aws-connect
     :admin-only? true
+    :license-feature "resource-discovery"
     :badge "BETA"}
    {:name "MachineIdentities"
     :label "Machine Identities"
     :icon (get icons-registry "MachineIdentities")
     :uri (routes/url-for :machine-identities)
     :navigate :machine-identities
-    :admin-only? true}])
+    :admin-only? true
+    :license-feature "machine-identities"}])
 
 ;; Seção Settings
 (def organization-routes
@@ -199,28 +199,10 @@
 (def integrations-management
   [{:name "authentication"
     :label "Authentication"
-    :plugin? false
     :uri (routes/url-for :integrations-authentication)
     :navigate :integrations-authentication
     :admin-only? true
-    :selfhosted-only? true}
-   {:name "jira"
-    :label "Jira"
-    :plugin? false
-    :uri (routes/url-for :settings-jira)
-    :navigate :settings-jira
-    :admin-only? true
-    :selfhosted-only? false}
-   {:name "webhooks"
-    :label "Webhooks"
-    :plugin? true
-    :admin-only? true
-    :selfhosted-only? false}
-   {:name "slack"
-    :label "Slack"
-    :plugin? true
-    :admin-only? true
-    :selfhosted-only? false}])
+    :selfhosted-only? true}])
 
 ;; Settings
 (def settings-management

@@ -1,6 +1,19 @@
 import { createTheme, rem } from '@mantine/core';
 import { SpotlightTheme } from '@/components/Spotlight/theme';
 import { AppShellTheme } from '@/components/AppShell/theme';
+import { PillTheme } from '@/components/Pill/theme';
+import {
+  InputTheme,
+  InputBaseTheme,
+  InputWrapperTheme,
+  TextareaTheme,
+  MultiSelectTheme,
+  TagsInputTheme,
+  PillsInputTheme,
+} from '@/components/Input/theme';
+import { PaperTheme } from '@/components/Paper/theme';
+import { ButtonTheme } from '@/components/Button/theme';
+import { ActionIconTheme } from '@/components/ActionIcon/theme';
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -15,117 +28,145 @@ import { AppShellTheme } from '@/components/AppShell/theme';
 //
 // Font sizes: Radix --font-size-* scale (12/14/16/18/20px for xs–xl).
 
-export function cssVariablesResolver() {
+export function cssVariablesResolver(theme) {
   return {
     variables: {
-      '--sidebar-bg': '#182449',
-      '--sidebar-border': 'rgba(255, 255, 255, 0.1)',
-      // gray[8] and gray[9] are not typical palette picks — wired here as semantic tokens.
-      '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f8f9fa is too tinted for body)
-      '--mantine-color-text': '#212529', // gray[9]  — body text, headings
-      '--mantine-color-dimmed': '#343a40', // gray[8]  — secondary text, icons
-      '--mantine-color-placeholder': '#868e96' // gray[6] — placeholder text
+      // Brand navy — dark surface color for auth/upsell visuals (MethodCard,
+      // SelectionCard, EnterpriseBanner, AuthPageLoader) and the CLJS
+      // enterprise banner. Not tied to the sidebar, which uses the gray scale.
+      '--brand-navy': '#1F2D5C',
+
+      // Control height scale — the single source of truth for Button,
+      // ActionIcon, and every Input-based component. md is the app-wide
+      // default (no size prop at call sites); xs/sm/lg are the variants.
+      // Consumed by the vars resolvers in components/{Button,ActionIcon,Input}/theme.js
+      // and by CSS Modules that must match a control's height (SourcedInput).
+      '--hoop-control-height-xs': rem(24),
+      '--hoop-control-height-sm': rem(32),
+      '--hoop-control-height-md': rem(40),
+      '--hoop-control-height-lg': rem(48),
     },
-    light: {},
+    // Scheme-dependent semantic tokens. Mantine emits its own defaults for
+    // these under :root[data-mantine-color-scheme="light"], which outranks a
+    // plain :root declaration — so overrides MUST live in this bucket, not in
+    // `variables`, to win deterministically.
+    //
+    // Note: component-scoped variables (--input-bd, --paper-border-color,
+    // --tab-hover-color, ...) cannot be overridden here at all — Mantine
+    // declares them directly on the component element, which beats any
+    // inherited value. Override those via Component.extend() in
+    // src/components/[Name]/theme.js (see components/Input/theme.js).
+    light: {
+      // Radix Slate steps 11/12 are not in the 10-slot gray array — wired here
+      // as semantic tokens (see the gray scale comment below).
+      '--mantine-color-body': '#fcfcfd', // near-white — page background (gray[0] #f0f0f3 is too tinted for body)
+      '--mantine-color-text': '#212529', // slate12 — body text, headings
+      '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
+      '--mantine-color-default-border': theme.colors.gray[2],
+      '--mantine-color-placeholder': '#807f8f', // gray[5] — placeholder text
+    },
     dark: {}
   };
 }
 
 export const theme = createTheme({
   primaryColor: 'indigo',
-  primaryShade: 8, // → Radix shade 9, the solid/saturated action color
+  primaryShade: 5, // → Radix shade 9, the solid/saturated action color
   defaultRadius: 'md',
 
   fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif",
   fontFamilyMonospace: "Menlo, Consolas, 'Bitstream Vera Sans Mono', monospace",
+  white: "#FCFCFD",
+  black: "#212529",
 
   colors: {
     // Radix Indigo — primary action color
     indigo: [
-      '#fdfdfe', // shade 1  — near-white tint
-      '#f7f9ff', // shade 2
-      '#edf2fe', // shade 3
-      '#e1e9ff', // shade 4
-      '#d2deff', // shade 5
-      '#c1d0ff', // shade 6
-      '#abbdf9', // shade 7
-      '#8da4ef', // shade 8
-      '#3e63dd', // shade 9  ← primaryShade (index 8)
-      '#3358d4' // shade 10
+      '#eaf1ff',
+      '#d5defd',
+      '#a9bbf3',
+      '#7b95e9',
+      '#5475e1',
+      '#3e63dd',
+      '#2c56db',
+      '#1d47c3',
+      '#153fb0',
+      '#02359c'
     ],
 
-    // Radix Slate — neutral scale (light mode), slate1–10 mapped sequentially.
-    // slate11 (#60646c) and slate12 (#1c2024) are not in this array — they are
-    // wired as semantic tokens in cssVariablesResolver:
-    //   --mantine-color-dimmed → slate11   (secondary text, icons, placeholders)
-    //   --mantine-color-text   → slate12   (body text, headings)
+    // Slate-tinted neutral ramp (light mode), anchored on the Figma hoop/colors
+    // gray tokens (gray/0 #f0f0f3 … gray/9 #4d4d60). The Radix Slate text steps
+    // are not in this array — they are wired as semantic tokens in
+    // cssVariablesResolver:
+    //   --mantine-color-dimmed → slate11 #60646c (secondary text, icons)
+    //   --mantine-color-text   → slate12 #1c2024 (body text, headings)
     gray: [
-      '#f8f9fa', // 0 — app background
-      '#f1f3f5', // 1 — subtle background
-      '#e9ecef', // 2 — hovered background
-      '#dee2e6', // 3 — selected/active background
-      '#ced4da', // 4 — subtle border
-      '#adb5bd', // 5 — border
-      '#868e96', // 6 — hovered border / placeholder
-      '#495057', // 7 — solid/contrast fills
-      '#343a40', // 8 — secondary text, icons
-      '#212529' // 9 — body text, headings
+      '#f0f0f3',
+      '#e5e5e5',
+      '#c8c8cb',
+      '#aaaab2',
+      '#90909c',
+      '#807f8f',
+      '#77778a',
+      '#666577',
+      '#5a5a6c',
+      '#4d4d60'
     ],
 
     // Radix Green — success / positive feedback
     green: [
-      '#fbfefc', // shade 1
-      '#f4fbf6', // shade 2
-      '#e6f6eb', // shade 3
-      '#d6f1df', // shade 4
-      '#c4e8d1', // shade 5
-      '#adddc0', // shade 6
-      '#8eceaa', // shade 7
-      '#5bb98b', // shade 8
-      '#30a46c', // shade 9  ← primaryShade (index 8)
-      '#2b9a66' // shade 10
+      "#e9fbf0",
+      "#d1f1dd",
+      "#b9e6cb",
+      "#8bcea5",
+      "#5cb67f",
+      "#1f9d57",   // shade 5 — primary in light
+      "#1a8c4e",
+      "#157c45",
+      "#116c3c",
+      "#0d5c33"
     ],
 
     // Radix Amber — warning / caution
     amber: [
-      '#fefdfb', // shade 1
-      '#fefbe9', // shade 2
-      '#fff7c2', // shade 3
-      '#ffee9c', // shade 4
-      '#fbe577', // shade 5
-      '#f3d673', // shade 6
-      '#e9c162', // shade 7
-      '#e2a336', // shade 8
-      '#ffc53d', // shade 9  ← primaryShade (index 8)
-      '#ffba18' // shade 10
+      "#fff8e1",
+      "#fcefc5",
+      "#f8e6a8",
+      "#efd180",
+      "#e7bb53",
+      "#e0a400",
+      "#c59100",
+      "#ab7e00",
+      "#926c00",
+      "#7a5a00"
     ],
 
     // Radix Red — error / destructive actions
     red: [
-      '#fffcfc', // shade 1
-      '#fff7f7', // shade 2
-      '#feebec', // shade 3
-      '#ffdbdc', // shade 4
-      '#ffcdce', // shade 5
-      '#fdbdbe', // shade 6
-      '#f4a9aa', // shade 7
-      '#eb8e90', // shade 8
-      '#e5484d', // shade 9  ← primaryShade (index 8)
-      '#dc3e42' // shade 10
+      "#ffe9ea",
+      "#fdbdbe",
+      "#faa0a1",
+      "#f86b6d",
+      "#f64141",
+      "#f52825",
+      "#f61a17",
+      "#db0f0d",
+      "#c40609",
+      "#ab0004"
     ],
 
     // Radix Sky — informational / neutral highlight
     sky: [
-      '#f9feff', // shade 1
-      '#f1fafd', // shade 2
-      '#e1f6fd', // shade 3
-      '#d1f0fa', // shade 4
-      '#bee7f5', // shade 5
-      '#a9daed', // shade 6
-      '#8dcae3', // shade 7
-      '#60b3d7', // shade 8
-      '#7ce2fe', // shade 9  ← primaryShade (index 8)
-      '#74daf8' // shade 10
+      "#e5faff",
+      "#d5eff9",
+      "#a9daed",
+      "#82c8e3",
+      "#5fb7da",
+      "#48acd5",
+      "#39a7d3",
+      "#2792bc",
+      "#1582a9",
+      "#007196"
     ]
   },
   spacing: {
@@ -179,6 +220,23 @@ export const theme = createTheme({
 
   components: {
     Spotlight: SpotlightTheme,
-    AppShell: AppShellTheme
+    AppShell: AppShellTheme,
+    Pill: PillTheme,
+    Input: InputTheme,
+    // Input-family components with local `size: 'sm'` defaults that would
+    // otherwise beat the Input theme default — see components/Input/theme.js.
+    InputBase: InputBaseTheme,
+    InputWrapper: InputWrapperTheme,
+    Textarea: TextareaTheme,
+    MultiSelect: MultiSelectTheme,
+    TagsInput: TagsInputTheme,
+    PillsInput: PillsInputTheme,
+    // PickerInputBase (under @mantine/dates DatePickerInput) is not exported,
+    // so a plain theme entry stands in for Component.extend().
+    PickerInputBase: { defaultProps: { size: 'md' } },
+    Paper: PaperTheme,
+    Button: ButtonTheme,
+    ActionIcon: ActionIconTheme,
   }
 });
+

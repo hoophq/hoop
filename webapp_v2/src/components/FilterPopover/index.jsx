@@ -92,7 +92,6 @@ export default function FilterPopover({
 						value={searchTerm}
 						onChange={(event) => setSearchTerm(event.currentTarget.value)}
 						leftSection={<Search size={14} />}
-						size="xs"
 					/>
 					{filtered.length > 0 ? (
 						<Stack gap={0} mah={288} style={{ overflowY: "auto" }}>

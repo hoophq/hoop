@@ -182,6 +182,20 @@ func (a *Api) BuildEngine() *gin.Engine {
 	route.GET("/.well-known/oauth-protected-resource", apimcpauth.MetadataHandler)
 	route.GET("/.well-known/oauth-protected-resource"+apimcpauth.McpResourcePath(), apimcpauth.MetadataHandler)
 
+	// Authorization-server metadata mirror + RFC 7591 DCR shim, served only
+	// when a static MCP OAuth client is configured (404 otherwise). Both the
+	// RFC 8414 path-insertion and OIDC-discovery suffix derivations of the
+	// issuer URL are registered so any well-known probing strategy resolves.
+	route.GET("/.well-known/oauth-authorization-server", apimcpauth.AuthorizationServerMetadataHandler)
+	route.GET("/.well-known/openid-configuration", apimcpauth.AuthorizationServerMetadataHandler)
+	if baseURL != "" {
+		route.GET("/.well-known/oauth-authorization-server"+baseURL, apimcpauth.AuthorizationServerMetadataHandler)
+		route.GET("/.well-known/openid-configuration"+baseURL, apimcpauth.AuthorizationServerMetadataHandler)
+		route.GET(baseURL+"/.well-known/oauth-authorization-server", apimcpauth.AuthorizationServerMetadataHandler)
+		route.GET(baseURL+"/.well-known/openid-configuration", apimcpauth.AuthorizationServerMetadataHandler)
+	}
+	route.POST(apimcpauth.RegistrationPath(), apimcpauth.ClientRegistrationHandler)
+
 	ssmGroup := route.Group(baseURL + "/ssm")
 	ssmInstance := ssmproxy.GetServerInstance()
 	ssmInstance.AttachHandlers(ssmGroup)
@@ -722,6 +736,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apiorgs.UpdateOrgHideRoleInfo)
+
+	r.GET("/orgs/protection-profile",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.GetOrgProtectionProfile)
+	r.PUT("/orgs/protection-profile",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiorgs.UpdateOrgProtectionProfile)
 
 	r.PUT("/orgs/features",
 		apiroutes.AdminOnlyAccessRole,

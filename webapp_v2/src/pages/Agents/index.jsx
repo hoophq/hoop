@@ -11,7 +11,6 @@ import {
   Flex,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, CircleDashed } from 'lucide-react'
@@ -22,6 +21,7 @@ import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
 import PageLoader from '@/components/PageLoader'
 import { useMinDelay } from '@/hooks/useMinDelay'
+import { showSnackbar } from '@/utils/snackbar'
 
 function AgentStatusBadge({ status }) {
   const isOnline = status === 'CONNECTED'
@@ -83,7 +83,7 @@ function AgentRow({ agent, isAdmin, isLast, onDelete }) {
           <AgentStatusBadge status={agent.status} />
           {isAdmin && (
             <Button
-              size="xs"
+              size="sm"
               variant="light"
               color="red"
               leftSection={<Trash2 size={14} />}
@@ -120,9 +120,9 @@ function Agents() {
   const handleDeleteConfirm = async () => {
     try {
       await deleteAgent(selectedAgent.id)
-      notifications.show({ message: `Agent "${selectedAgent.name}" removed.`, color: 'green' })
+      showSnackbar({ level: 'success', text: `Agent "${selectedAgent.name}" removed.` })
     } catch {
-      notifications.show({ message: 'Failed to delete agent.', color: 'red' })
+      showSnackbar({ level: 'error', text: 'Failed to delete agent.' })
     } finally {
       close()
       setSelectedAgent(null)

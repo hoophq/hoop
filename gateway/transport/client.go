@@ -289,6 +289,18 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 // into an empty NON-nil slice. A nil-ness check made every ruleless
 // connection look guarded, which the fail-closed admission check (DEP-48)
 // then refused for connection types without guardrail enforcement.
+func configuredGuardRailRules(rules []guardrails.DataRules) []guardrails.DataRules {
+	n := 0
+	for _, rule := range rules {
+		if len(rule.Items) == 0 {
+			continue
+		}
+		rules[n] = rule
+		n++
+	}
+	return rules[:n]
+}
+
 func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
@@ -311,7 +323,8 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 		}
 	}
 
-	// no rules to enforce -> no guardrail payload
+	inputRules = configuredGuardRailRules(inputRules)
+	outputRules = configuredGuardRailRules(outputRules)
 	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
@@ -331,36 +344,19 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 	return guardRailRulesJsonData, nil
 }
 
-// connectionTypeSupportsGuardRails reports the connection types whose native
-// proxies evaluate guardrail rules. Database Web Exec is checked separately
-// because it uses the agent's terminal-exec path rather than the native proxy.
-func connectionTypeSupportsGuardRails(connType pb.ConnectionType) bool {
-	switch connType {
-	case pb.ConnectionTypePostgres,
-		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeHttpProxy,
-		pb.ConnectionTypeSSH,
-		pb.ConnectionTypeCommandLine:
-		return true
-	default:
-		return false
-	}
-}
-
-// sessionSupportsGuardRails reports whether this particular session has an
-// agent-side enforcement path. MSSQL is supported only for Web Exec: the
-// session API uses ClientAPI + exec and the agent's doExec path passes the
-// rules to the command/DB-exec redactor. Native MSSQL protocol sessions must
-// remain rejected because mssql.go does not inspect guardrails.
-func sessionSupportsGuardRails(pctx plugintypes.Context) bool {
-	if connectionTypeSupportsGuardRails(pctx.ProtoConnectionType()) {
-		return true
-	}
-
-	return pctx.ProtoConnectionType() == pb.ConnectionTypeMSSQL &&
-		pctx.ClientVerb == pb.ClientVerbExec &&
-		pctx.ClientOrigin == pb.ConnectionOriginClientAPI
-}
+// Guardrail enforcement admission is NOT checked here. The authoritative
+// fail-closed check (DEP-48) lives in libhoop at proxy construction: native
+// proxies without a guardrail evaluation path (mysql, mongodb, ssm, raw tcp)
+// refuse guarded sessions at the agent, at the point of enforcement. Gateways
+// and agents are upgraded together, so a gateway-side duplicate of that list
+// would only drift (it did: DEP-48 → #1611 → the mysql/mongodb web terminal
+// regression).
+//
+// MSSQL is no longer in that fail-closed list: its native proxy evaluates INPUT
+// guardrails (DEP-69), and refuses at construction when only output rules are
+// configured (which it cannot enforce). There is no gateway-side knob — native
+// MSSQL enforcement is driven purely by whether the connection has guardrail
+// rules configured, exactly like Postgres and MySQL.
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
@@ -529,16 +525,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 				return err
 			}
 
-			// Fail closed for connection types whose agent proxy does not
-			// evaluate guardrails (mysql, mssql, mongodb): a guarded session of
-			// those types would run unguarded, so refuse it at session-open
-			// (DEP-48).
-			//
-			// Guardrails are enforced by the agent's built-in pattern-matching
-			// engine (deny-word / regex — see gateway/guardrails), NOT by a DLP
-			// provider, so Presidio is NOT required to enforce them. The earlier
-			// Presidio requirement here refused sessions on deployments that rely
-			// on that built-in engine and is intentionally not enforced.
+			// Guardrail rules are shipped to the agent, which enforces them
+			// in-process (deny-word / RE2 via localguardrails; no DLP service
+			// required) and fails closed at proxy construction for protocol
+			// paths that cannot evaluate them — see libhoop's
+			// CheckGuardRailEnforcement (DEP-48).
 			//
 			// ClientVerbPlainExec is intentionally exempt (the enclosing branch):
 			// plain-exec is a gateway-internal verb gated by a per-process secret in
@@ -548,15 +539,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// input, so guardrail rules are not fetched nor enforced for it — the
 			// same long-standing behavior as DLP redaction, which is also disabled
 			// for plain-exec sessions.
-			if len(guardRailRulesJsonData) > 0 {
-				logCtx := log.With("sid", pctx.SID, "connection", pctx.ConnectionName)
-				if connType := pctx.ProtoConnectionType(); !sessionSupportsGuardRails(pctx) {
-					logCtx.Warnf("refusing session: connection type %q does not support guardrail enforcement", connType)
-					return status.Errorf(codes.FailedPrecondition,
-						"this connection has guardrails configured, but connection type %q does not support guardrail enforcement; "+
-							"remove the guardrails from this connection or use a supported connection type", connType)
-				}
-			}
+			//
+			// The rules are shipped as-is when the connection has them; there is no
+			// gateway-side connection-type or feature-flag gate. libhoop is the sole
+			// authority — it enforces the input rules in-process and fails closed at
+			// proxy construction for protocol paths that cannot evaluate them.
 		}
 
 		// Resolve the AI session analyzer config for HTTP-family connections.

@@ -24,6 +24,38 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/.well-known/oauth-authorization-server": {
+            "get": {
+                "description": "RFC 8414 authorization-server metadata mirroring the configured IdP, with registration_endpoint pointing at the gateway's RFC 7591 registration shim.\nServed unauthenticated at the gateway root (outside the /api base path) as /.well-known/oauth-authorization-server and /.well-known/openid-configuration.\nReturns 404 unless MCP OAuth is enabled with a static client configured; 502 when the IdP discovery document cannot be resolved.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get MCP OAuth Authorization Server Metadata",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/mcpauth.AuthorizationServerMetadata"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/access-requests/rules": {
             "get": {
                 "description": "List all access request rules for the organization with pagination",
@@ -5082,6 +5114,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/mcp/oauth/register": {
+            "post": {
+                "description": "RFC 7591 Dynamic Client Registration shim for IdPs without native DCR support: accepts any registration request and answers with the statically pre-registered OAuth client, echoing the caller's client metadata.\nServed unauthenticated per RFC 7591. Returns 404 unless MCP OAuth is enabled with a static client configured.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Register MCP OAuth Client",
+                "parameters": [
+                    {
+                        "description": "RFC 7591 client metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/mcpauth.ClientRegistration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/mcpauth.ClientRegistration"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/metrics/sessions": {
             "get": {
                 "description": "Query session metrics data with advanced filtering. Supports AND/OR logic for combining filters. Filter by resource types (connection_type), resource subtypes (connection_subtype), resources (connection_name), Presidio data types (info_type), masked/unmasked status, date ranges, session dates, and session duration.",
@@ -5619,6 +5697,88 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/orgs/protection-profile": {
+            "get": {
+                "description": "Get the organization's default protection profile. A null profile means manual configuration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Protection Profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Select the organization's default protection profile. The backend materializes the profile's managed rules and attribute and tags every connection. Passing a null profile switches to manual configuration and deletes all Hoop-managed protection rules.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Organization Protection Profile",
+                "parameters": [
+                    {
+                        "description": "The protection profile selection",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgProtectionProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10186,6 +10346,97 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "mcpauth.AuthorizationServerMetadata": {
+            "type": "object",
+            "properties": {
+                "authorization_endpoint": {
+                    "type": "string"
+                },
+                "code_challenge_methods_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "grant_types_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "jwks_uri": {
+                    "type": "string"
+                },
+                "registration_endpoint": {
+                    "type": "string"
+                },
+                "response_types_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scopes_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "token_endpoint": {
+                    "type": "string"
+                },
+                "token_endpoint_auth_methods_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "mcpauth.ClientRegistration": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "client_secret": {
+                    "type": "string"
+                },
+                "client_secret_expires_at": {
+                    "type": "integer"
+                },
+                "grant_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "response_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "token_endpoint_auth_method": {
+                    "type": "string"
+                }
+            }
+        },
         "openapi.AIAgentCreateRequest": {
             "type": "object",
             "required": [
@@ -10581,6 +10832,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
                 },
                 "name": {
                     "description": "Unique name for the rule",
@@ -11063,6 +11320,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; only approval settings and group lists can be\nchanged on managed rules, and they cannot be deleted",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "min_approvals": {
                     "description": "Minimum number of approvals required",
                     "type": "integer",
@@ -11527,6 +11790,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this\nattribute. When set (e.g. \"hoop\" for protection profiles), the\nattribute cannot be modified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The name of the attribute",
                     "type": "string",
@@ -11622,7 +11891,7 @@ const docTemplate = `{
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "attributes": {
-                    "description": "Attributes associated with this connection",
+                    "description": "Attributes associated with this connection. Includes Hoop-managed\nattributes (e.g. the active protection profile attribute); omitting a\nmanaged name on update detaches the connection from it.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -11694,6 +11963,17 @@ const docTemplate = `{
                     "description": "JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.\nWhen set, the user cannot choose a custom duration and must request access for this exact window.",
                     "type": "integer",
                     "example": 1800
+                },
+                "managed_attributes": {
+                    "description": "Hoop-managed attributes associated with this connection (e.g. the\nactive protection profile attribute). Computed on reads; manage the\nassociation through the attributes field.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "hoop_protection_profile-soc2_type2"
+                    ]
                 },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
@@ -12679,6 +12959,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who manages this rule.\nWhen set (e.g. \"hoop\" for protection profiles), the rule cannot be\nmodified or deleted directly.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
@@ -13284,6 +13570,12 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "managed_by": {
+                    "description": "Set to \"hoop\" when the rule is materialized and lifecycle-managed by a\nprotection profile; managed rules are read-only through this API",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hoop"
+                },
                 "name": {
                     "description": "Unique name for the rule",
                     "type": "string",
@@ -13661,6 +13953,17 @@ const docTemplate = `{
                     "type": "integer",
                     "format": "timestamp",
                     "example": 1722997969
+                },
+                "features": {
+                    "description": "Features enabled by this license. Omitted or empty means all features are enabled",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "access-control",
+                        "provisioning-hub"
+                    ]
                 },
                 "issued_at": {
                     "description": "The time in timestamp the license was issued",
@@ -14138,6 +14441,50 @@ const docTemplate = `{
                     "type": "string",
                     "format": "dsn",
                     "example": "grpcs://default:\u003csecret-key\u003e@127.0.0.1:8010"
+                }
+            }
+        },
+        "openapi.OrgProtectionProfileRequest": {
+            "type": "object",
+            "required": [
+                "source"
+            ],
+            "properties": {
+                "profile": {
+                    "description": "The protection profile id, or null for manual configuration",
+                    "type": "string",
+                    "enum": [
+                        "hipaa-ready",
+                        "soc2-type2",
+                        "protection-permissive",
+                        "protection-medium",
+                        "protection-high"
+                    ],
+                    "example": "protection-medium"
+                },
+                "source": {
+                    "description": "Where the selection happened; used for analytics only",
+                    "type": "string",
+                    "enum": [
+                        "onboarding",
+                        "settings"
+                    ],
+                    "example": "onboarding"
+                }
+            }
+        },
+        "openapi.OrgProtectionProfileResponse": {
+            "type": "object",
+            "properties": {
+                "attribute_name": {
+                    "description": "The Hoop-managed attribute that binds the profile's rules to\nconnections; null when no profile is active",
+                    "type": "string",
+                    "example": "hoop_protection_profile-protection_medium"
+                },
+                "profile": {
+                    "description": "The active protection profile id; null means manual configuration",
+                    "type": "string",
+                    "example": "protection-medium"
                 }
             }
         },
@@ -15053,6 +15400,17 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "attributes": {
+                    "description": "Attributes associated with this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
                 },
                 "command": {
                     "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
@@ -16718,6 +17076,17 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1722261422
                 },
+                "features": {
+                    "description": "Features enabled by the license. Empty means all features are enabled",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "access-control",
+                        "provisioning-hub"
+                    ]
+                },
                 "is_valid": {
                     "description": "Report if the license is valid",
                     "type": "boolean"
@@ -16756,6 +17125,16 @@ const docTemplate = `{
         "openapi.ServerMcpAuthConfig": {
             "type": "object",
             "properties": {
+                "client_id": {
+                    "description": "Statically pre-registered OAuth client ID at the IdP, for IdPs without\nRFC 7591 Dynamic Client Registration support (e.g. JumpCloud, Okta,\nEntra ID). When set, the gateway advertises itself as the authorization\nserver and serves a Dynamic Client Registration shim that returns this\nclient to MCP clients; tokens whose ` + "`" + `aud` + "`" + ` claim matches this client ID\nare accepted in addition to resource_uri.",
+                    "type": "string",
+                    "example": "hoop-mcp"
+                },
+                "client_secret": {
+                    "description": "Optional client secret paired with client_id. Leave empty to use a\npublic client with PKCE (recommended): the registration shim discloses\nthis value to any registering MCP client.",
+                    "type": "string",
+                    "example": ""
+                },
                 "enabled": {
                     "description": "Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition\nto Hoop-issued bearer tokens.",
                     "type": "boolean"
@@ -16766,9 +17145,9 @@ const docTemplate = `{
                     "example": "groups"
                 },
                 "resource_uri": {
-                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/mcp\" when empty. Must match the ` + "`" + `aud` + "`" + ` claim of inbound JWTs.",
+                    "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/api/mcp\" when empty. Compared against the ` + "`" + `aud` + "`" + ` claim of\ninbound JWTs in canonical URI form (host case, default port, and\ntrailing slashes are ignored).",
                     "type": "string",
-                    "example": "https://use.hoop.dev/mcp"
+                    "example": "https://use.hoop.dev/api/mcp"
                 }
             }
         },
@@ -17648,6 +18027,17 @@ const docTemplate = `{
                 "email"
             ],
             "properties": {
+                "default_protection_profile": {
+                    "description": "The organization's default protection profile id; null means manual\nconfiguration or that no profile was ever selected.",
+                    "type": "string",
+                    "enum": [
+                        "hipaa-ready",
+                        "soc2-type2",
+                        "protection-permissive",
+                        "protection-medium",
+                        "protection-high"
+                    ]
+                },
                 "email": {
                     "description": "Email address of the user",
                     "type": "string",

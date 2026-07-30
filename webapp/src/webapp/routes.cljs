@@ -61,17 +61,16 @@
      "/integrations" [["/aws-connect" :integrations-aws-connect]
                       ["/aws-connect/setup" :integrations-aws-connect-setup]
                       ["/authentication" :integrations-authentication]]
-     "/jira-templates" [["" :jira-templates]
-                        ["/new" :create-jira-template]
-                        [["/edit/" :jira-template-id] :edit-jira-template]]
      "/login" :login-hoop
      "/logout" :logout-hoop
      "/plugins" [["/manage/jira" :manage-jira]
-                 [["/reviews/" :review-id] :reviews-plugin-details]
-                 [["/manage/" :plugin-name] :manage-plugin]]
+                 [["/reviews/" :review-id] :reviews-plugin-details]]
      "/organization" [["/users" :users]]
      "/onboarding" [["" :onboarding]
                     ["/aws-connect" :onboarding-aws-connect]
+                    ;; Rendered by the React shell (webapp_v2) — the bidi entry
+                    ;; exists only so CLJS events can navigate to it.
+                    ["/protection-rules" :onboarding-protection-rules]
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]
                     ["/setup/agent" :onboarding-setup-agent]
@@ -89,8 +88,7 @@
                   ["/audit-logs" :settings-audit-logs]
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
-                  ["/attributes/edit" :settings-attributes-edit]
-                  ["/jira" :settings-jira]
+                  [["/attributes/edit/" :name] :settings-attributes-edit]
                   ["/api-keys" :settings-api-keys]
                   ["/api-keys/new" :settings-api-keys-new]
                   ["/api-keys/created" :settings-api-keys-created]
@@ -205,6 +203,50 @@
 ;; Function wrapper to wrap selfhosted components
 (defn wrap-selfhosted-only [component]
   [selfhosted-only component])
+
+;; Component wrapper to check if a feature is enabled by the gateway
+;; license. An empty license feature list means every feature is
+;; enabled (see /serverinfo license_info.features contract).
+;; Until /serverinfo has loaded successfully nothing is rendered:
+;; an absent payload is NOT treated as an unrestricted license, so a
+;; page refresh (or a serverinfo failure) never fails open.
+(defn license-feature-only []
+  (let [gateway-info (rf/subscribe [:gateway->info])]
+    (fn [feature component]
+      (let [info @gateway-info
+            data (:data info)
+            features (get-in data [:license_info :features])
+            enabled? (and (some? data)
+                          (or (empty? features)
+                              (boolean (some #(= % feature) features))))]
+        (cond
+          ;; serverinfo unknown (still loading or failed): fail closed.
+          ;; While a fetch is in-flight render nothing to avoid flashes;
+          ;; after a failure show a loader instead of granting access.
+          (nil? data)
+          (if (:loading info)
+            [:<>]
+            [:div {:class "flex items-center justify-center h-full"}
+             [:div {:class "text-center"}
+              [loaders/page-loading-screen {:full-page false
+                                            :message "Loading..."
+                                            :description "Waiting for the gateway server information."}]]])
+
+          enabled?
+          component
+
+          :else
+          (do
+            (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
+            [:div {:class "flex items-center justify-center h-full"}
+             [:div {:class "text-center"}
+              [loaders/page-loading-screen {:full-page false
+                                            :message "Redirecting..."
+                                            :description "This feature is not enabled by your license."}]]]))))))
+
+;; Function wrapper to wrap license-gated components
+(defn wrap-license-feature [feature component]
+  [license-feature-only feature component])
 
 ;; Example of usage:
 ;; Instead of:

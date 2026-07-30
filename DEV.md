@@ -242,7 +242,9 @@ Make sure to change the version of each asset with the new tag.
 
 ## Building Docker Agent Tools Image
 
-The docker image agent tools is build manually. It requires Docker and [Docker Buildx](https://github.com/docker/buildx)
+The `agent-tools` image is normally built and published by the `agent-tools`
+GitHub Actions workflow whenever `Dockerfile.tools` changes. To build it manually
+you need Docker and [Docker Buildx](https://github.com/docker/buildx):
 
 ```sh
 docker buildx build \
@@ -250,6 +252,31 @@ docker buildx build \
   -f Dockerfile.tools \
   --tag hoophq/agent-tools:noble-20251013 \
   --push .
+```
+
+### Two image trains (AGPL/SSPL, DEP-66)
+
+`Dockerfile.tools` builds two trains, selected by the `INCLUDE_LEGACY_MONGO`
+build arg:
+
+- **legacy** (`INCLUDE_LEGACY_MONGO=true`, the default) — includes the legacy
+  MongoDB 5.0 shell, which is **SSPL-licensed**. Published as
+  `hoophq/agent-tools:noble-<date>-<sha>` and consumed by `hoophq/hoopdev`.
+- **clean** (`INCLUDE_LEGACY_MONGO=false`) — drops the SSPL shell and relies on
+  `mongosh` (Apache-2.0). Published with a `-clean` tag suffix and consumed by
+  the clean image line (`hoophq/hoop-ng` / `hoophq/hoopdev-ng`, see the helm
+  `hoop-ng` / `hoopagent-ng` charts).
+
+The CI license gate is two-layered: Trivy scans the apt/language layer, and
+`scripts/ci/check-manual-binaries.py` covers hand-installed (curl/tarball/zip)
+binaries that Trivy cannot see — every such binary must be declared in
+`licenses/manual-binaries.toml`, and an AGPL/SSPL binary may only appear on a
+train that explicitly allows it. To run the provenance gate against a built
+image locally:
+
+```sh
+python3 scripts/ci/check-manual-binaries.py \
+  --image hoophq/agent-tools:<tag> --train legacy   # or: --train clean
 ```
 
 ## Feature Flags

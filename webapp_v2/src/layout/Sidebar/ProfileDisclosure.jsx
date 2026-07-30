@@ -31,16 +31,6 @@ export function ProfileDisclosure({ user, onLogout, gatewayVersion }) {
     >
       <SidebarNavLink
         profileItem
-        component="a"
-        href="https://github.com/hoophq/hoop/issues"
-        target="_blank"
-        rel="noopener noreferrer"
-        label="Feature request"
-        aria-label="Feature request"
-        leftSection={<MessageSquarePlus size={24} aria-hidden="true" />}
-      />
-      <SidebarNavLink
-        profileItem
         id="intercom-support-trigger"
         label="Contact support"
         aria-label="Contact support"

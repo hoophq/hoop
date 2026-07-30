@@ -65,16 +65,20 @@ func UpdateMcpAuthConfig(c *gin.Context) {
 	}
 	existent.OrgID = ctx.OrgID
 	existent.McpAuthConfig = &models.ServerMcpAuthConfig{
-		Enabled:     req.Enabled,
-		ResourceURI: req.ResourceURI,
-		GroupsClaim: req.GroupsClaim,
+		Enabled:      req.Enabled,
+		ResourceURI:  req.ResourceURI,
+		GroupsClaim:  req.GroupsClaim,
+		ClientID:     req.ClientID,
+		ClientSecret: req.ClientSecret,
 	}
 
 	evt := audit.NewEvent(audit.ResourceAuthConfig, audit.ActionUpdate).
 		Set("scope", "mcp_auth").
 		Set("enabled", req.Enabled).
 		Set("resource_uri", req.ResourceURI).
-		Set("groups_claim", req.GroupsClaim)
+		Set("groups_claim", req.GroupsClaim).
+		Set("client_id", req.ClientID).
+		Set("has_client_secret", req.ClientSecret != "")
 	defer func() { evt.Log(c) }()
 
 	resp, err := models.UpdateServerAuthConfig(existent)
@@ -91,8 +95,10 @@ func toMcpAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerMcpAuthConfig
 		return &openapi.ServerMcpAuthConfig{}
 	}
 	return &openapi.ServerMcpAuthConfig{
-		Enabled:     cfg.McpAuthConfig.Enabled,
-		ResourceURI: cfg.McpAuthConfig.ResourceURI,
-		GroupsClaim: cfg.McpAuthConfig.GroupsClaim,
+		Enabled:      cfg.McpAuthConfig.Enabled,
+		ResourceURI:  cfg.McpAuthConfig.ResourceURI,
+		GroupsClaim:  cfg.McpAuthConfig.GroupsClaim,
+		ClientID:     cfg.McpAuthConfig.ClientID,
+		ClientSecret: cfg.McpAuthConfig.ClientSecret,
 	}
 }

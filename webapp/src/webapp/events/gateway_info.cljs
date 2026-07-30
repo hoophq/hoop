@@ -10,7 +10,16 @@
     :fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/serverinfo"
-                      :on-success #(rf/dispatch [::gateway->set-info %])}]]]}))
+                      :on-success #(rf/dispatch [::gateway->set-info %])
+                      :on-failure #(rf/dispatch [::gateway->set-info-failure %])}]]]}))
+
+;; Settle the loading state on failure so consumers gating on it (e.g. the
+;; activation-journey ready? sub) don't wait forever; any previously loaded
+;; data is kept.
+(rf/reg-event-db
+ ::gateway->set-info-failure
+ (fn [db [_ error]]
+   (update db :gateway->info merge {:loading false :error error})))
 
 (rf/reg-event-fx
  ::gateway->set-info
@@ -84,3 +93,27 @@
  :gateway->feature-flag-enabled?
  (fn [db [_ flag-name]]
    (boolean (get-in db [:gateway->info :data :feature_flags (keyword flag-name)] false))))
+
+;; Features enabled by the gateway license. An empty list means every
+;; feature is enabled (see /serverinfo license_info.features contract).
+(rf/reg-sub
+ :gateway->license-features
+ (fn [db _]
+   (get-in db [:gateway->info :data :license_info :features])))
+
+;; True once /serverinfo has been loaded at least once. Gating decisions
+;; must not be made before this — an absent payload is NOT the same as
+;; an unrestricted license (fail closed while unknown).
+(rf/reg-sub
+ :gateway->license-features-known?
+ (fn [db _]
+   (some? (get-in db [:gateway->info :data]))))
+
+(rf/reg-sub
+ :gateway->license-feature-enabled?
+ (fn [db [_ feature]]
+   (let [data (get-in db [:gateway->info :data])
+         features (get-in data [:license_info :features])]
+     (and (some? data)
+          (or (empty? features)
+              (boolean (some #(= % (name feature)) features)))))))

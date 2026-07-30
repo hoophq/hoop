@@ -471,6 +471,8 @@
       (rf/dispatch [:plugins->get-my-plugins])
       (rf/dispatch [:jira-templates->get-all])
       (rf/dispatch [:jira-integration->get])
+      ;; Activation-journey banner data (admin-only; no-op otherwise).
+      (rf/dispatch [:activation-journey/init {}])
       ;; Surface the gcp_oauth consent outcome when Google redirects back here.
       (rf/dispatch [:federation/consume-oauth-return]))
 

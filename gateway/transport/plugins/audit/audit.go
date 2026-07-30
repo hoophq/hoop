@@ -72,6 +72,16 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 
 	isMachine := pctx.IdentityType == identityTypeMachine
 
+	// client-api sessions are created by the HTTP layer before connecting, so
+	// the full upsert below is skipped for them. Reviewed sessions arrive here
+	// in the ready status set at approval time; flip them to open so the
+	// session reports the execution in flight (no-op for any other status).
+	if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
+		if _, err := models.SetSessionStatusOpenIfReady(models.DB, pctx.OrgID, pctx.SID); err != nil {
+			log.With("sid", pctx.SID).Warnf("failed setting session status to open, reason=%v", err)
+		}
+	}
+
 	// persist session for public gRPC clients
 	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
 		ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
@@ -344,6 +354,15 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 		if cerr := p.closeSessionWAL(pctx, err); cerr != nil {
 			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 				Warnf("failed closing session, reason=%v", cerr)
+		}
+
+		// A one-time review stays PROCESSING while its execution runs in the
+		// agent; the finished session is what marks it consumed. The update
+		// only applies when the session was effectively marked done.
+		if updated, rerr := models.SetReviewStatusExecutedIfFinished(models.DB, pctx.OrgID, pctx.SID); rerr != nil {
+			log.With("sid", pctx.SID).Warnf("failed settling review status, reason=%v", rerr)
+		} else if updated {
+			log.With("sid", pctx.SID).Infof("review status settled as EXECUTED")
 		}
 		eventbroker.Default.Remove(pctx.SID)
 

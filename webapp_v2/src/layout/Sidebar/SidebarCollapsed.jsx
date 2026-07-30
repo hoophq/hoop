@@ -11,6 +11,7 @@ export function SidebarCollapsed({ skipLink }) {
   const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
   const { user, isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
+  const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
   return (
     <Stack
@@ -24,7 +25,7 @@ export function SidebarCollapsed({ skipLink }) {
 
       <Box mb="xl" mt="xl" className={classes.logoCollapsed}>
         <img
-          src="/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
+          src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
           alt="Hoop"
           height={24}
           style={{ display: 'block' }}
@@ -34,12 +35,11 @@ export function SidebarCollapsed({ skipLink }) {
       <ScrollArea
         scrollbars="y"
         type="hover"
-        data-mantine-color-scheme="dark"
         scrollbarSize={10}
         classNames={{ root: classes.collapsedScrollArea }}
       >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
-          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled)).map((item) => (
+          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
               <IconBtn {...item} />
             </Box>
@@ -50,7 +50,7 @@ export function SidebarCollapsed({ skipLink }) {
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label="Discover">
-              {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled)).map((item) => (
+              {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
                 <Box component="li" key={item.path} className={classes.listItem}>
                   <IconBtn {...item} />
                 </Box>
@@ -63,7 +63,7 @@ export function SidebarCollapsed({ skipLink }) {
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label="Organization">
-              {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled)).map((item) =>
+              {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) =>
                 item.children ? (
                   <Box component="li" key={item.label} className={classes.listItem}>
                     <IconBtn

@@ -10,7 +10,7 @@
       :on-click #(on-click key value)
       :class (str (when (= value selected-tab) "border-b border-[--gray-a6] ")
                   "uppercase cursor-pointer text-[--gray-a11]"
-                  " whitespace-nowrap font-medium text-xxs"
+                  " whitespace-nowrap font-medium text-xs"
                   " py-small px-small text-center")
       :role "tab"
       :aria-label aria-label
@@ -45,15 +45,13 @@
   "
   [{:keys [on-click selected-tab tabs]}]
   (let [tabs-vec (vec tabs)]
-    [:div {:class "mb-regular"}
-     [:div {:class "sm:block"}
-      [:div
-       [:nav {:class "-mb-px flex gap-small"
-              :aria-label "Output tabs"
-              :role "tablist"}
-        (doall (map-indexed
-                (fn [idx [key value]]
-                  ^{:key key}
-                  [list-item key value selected-tab on-click (zero? idx) tabs-vec])
-                tabs))]]]]))
+    [:div {:class "sm:block"}
+     [:nav {:class "-mb-px flex gap-small"
+            :aria-label "Output tabs"
+            :role "tablist"}
+      (doall (map-indexed
+              (fn [idx [key value]]
+                ^{:key key}
+                [list-item key value selected-tab on-click (zero? idx) tabs-vec])
+              tabs))]]))
 

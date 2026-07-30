@@ -12,6 +12,11 @@
            (seq connections))
        {:fx [[:dispatch [:navigate :editor-plugin]]]}
 
+       ;; No protection profile applied yet — onboarding starts at the
+       ;; protection-rules step (rendered by the React shell).
+       (nil? (:default_protection_profile user))
+       {:fx [[:dispatch [:navigate :onboarding-protection-rules]]]}
+
        ;; Otherwise redirect to setup
        :else
        {:fx [[:dispatch [:navigate :onboarding-setup]]]}))))

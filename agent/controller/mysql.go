@@ -51,6 +51,11 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
 	}
 
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
+
 	// var analyzerMetricsRules string
 	// if connParams.AnalyzerMetricsRules != nil {
 	// 	analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
@@ -67,6 +72,7 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
 		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
+		"guard_rail_rules":          guardRailRules,
 		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
 		// on more intensive environments this is a problem, we can enable it later based on specific rules
 		// "analyzer_metrics_rules":    analyzerMetricsRules,

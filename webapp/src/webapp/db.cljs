@@ -3,11 +3,18 @@
             [webapp.features.workflows.events :as workflows-events]))
 
 (def default-db
-  {:agents {:status :loading, :data []}
+  {:activation-journey {:masking-rules {:status :idle :data []}
+                        :roles []
+                        :terminal-banner-index 0
+                        :terminal-banner-dismissed? false}
+   :agents {:status :loading, :data []}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
    :audit->session-stream {}
+   ;; reviewed exec state per session id ({:status :executing|:running|:done}),
+   ;; kept outside the modal so it survives closing and reopening it
+   :audit->execution {}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
    :audit-logs {:status :idle
                 :data []

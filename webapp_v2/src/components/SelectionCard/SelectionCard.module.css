@@ -12,16 +12,16 @@
 }
 
 .card[data-selected] {
-  background-color: var(--sidebar-bg);
-  border-color: var(--sidebar-bg);
+  background-color: var(--brand-navy);
+  border-color: var(--brand-navy);
 }
 
 .card[data-selected]:hover {
-  background-color: var(--sidebar-bg);
+  background-color: var(--brand-navy);
 }
 
-/* Dark-on-dark exception (mirrors Sidebar.module.css): Mantine's gray palette is
-   calibrated for light backgrounds, so we paint icon contrast with rgba white. */
+/* Dark-on-dark exception: Mantine's gray palette is calibrated for light
+   backgrounds, so we paint icon contrast with rgba white. */
 .card[data-selected] .icon {
   background-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);

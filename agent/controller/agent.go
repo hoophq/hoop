@@ -130,6 +130,12 @@ type (
 		kubernetesInsecureSkipVerify bool
 
 		experimentalRedactRows string
+
+		// resultMetadata carries the connection's RESULT_METADATA setting for
+		// the driver-based SQL exec path. Normalized to "on"/"off" by
+		// parseConnectionEnvVars; only MySQL consumes it (the other engines'
+		// CLIs already print result metadata in batch mode).
+		resultMetadata string
 	}
 	ioMetricFlush struct {
 		client pb.ClientTransport
@@ -814,6 +820,19 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, errors.New("missing required secrets for mysql connection [HOST, USER, PASS]")
+		}
+		// RESULT_METADATA toggles the interactive-style result feedback lines
+		// ("N rows in set", "Query OK, N rows affected") on the driver-based
+		// exec path. Defaults to on; "off" keeps the clean batch TSV output
+		// for scripting consumers.
+		switch strings.ToLower(envVarS.Getenv("RESULT_METADATA")) {
+		case "", "on", "true", "1":
+			env.resultMetadata = "on"
+		case "off", "false", "0":
+			env.resultMetadata = "off"
+		default:
+			return nil, fmt.Errorf("wrong option (%q) for RESULT_METADATA, accept only: %v",
+				envVarS.Getenv("RESULT_METADATA"), []string{"on", "off", "true", "false", "1", "0"})
 		}
 	case pb.ConnectionTypeMSSQL:
 		if env.port == "" {

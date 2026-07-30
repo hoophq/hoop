@@ -12,10 +12,23 @@
 
 (defn request-demo
   []
-  (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+  (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])
+        user (:data @(rf/subscribe [:users->current-user]))]
     (if analytics-tracking
-      (when js/window.Intercom
-        (js/window.Intercom "showNewMessage" "I want to upgrade my current plan"))
+      (do
+        ;; Self-heal the messenger before opening it. The app-boot
+        ;; :initialize-intercom runs when the user loads and reads
+        ;; analytics_tracking from gateway->info; when the user resolves
+        ;; first it shuts Intercom down and skips the boot, leaving
+        ;; showNewMessage with a blank (unbooted) messenger window.
+        (when-not (.-Intercom js/window)
+          (rf/dispatch-sync [:tracking->load-scripts]))
+        (when (and (.-Intercom js/window)
+                   (not (.-booted js/window.Intercom)))
+          (rf/dispatch-sync [:initialize-intercom user]))
+        (if (.-Intercom js/window)
+          (js/window.Intercom "showNewMessage" "I want to upgrade my current plan")
+          (.open js/window "https://hoop.dev/meet" "_blank")))
       (.open js/window "https://hoop.dev/meet" "_blank"))))
 
 (defn feature-item
@@ -176,30 +189,6 @@
          :primary-text (if empty-state?
                          "Create new Guardrails"
                          "Request demo")}))]))
-
-(defn jira-templates-promotion
-  "Specific component for Jira templates"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "JIRA Templates"
-    :mode mode
-    :image "jira-pomotion.png"
-    :description "Automate change management and security workflows."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Automated Change Management"
-                     :description "Reduce manual documentation and administrative overhead by automatically creating and tracking Jira tickets for every infrastructure access request."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Seamless Workflow Integration"
-                     :description "Link access requests directly to Jira projects and request types with contextual information."}
-                    {:icon [:> FileLock2 {:size 20}]
-                     :title "Flexible User Prompts & Data Collection"
-                     :description "Request additional information from users during access workflows. Map manual or automated data to Jira fields."}]
-    :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :settings-jira])
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Configure Jira Integration"
-                    "Request demo")}])
 
 (defn runbooks-promotion
   "Specific component for Runbooks"

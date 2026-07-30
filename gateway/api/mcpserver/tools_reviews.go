@@ -172,12 +172,11 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancelFn()
 
-	reviewStatus := models.ReviewStatusExecuted
-	defer func() {
-		if err := models.UpdateReviewStatus(review.OrgID, review.ID, reviewStatus); err != nil {
-			log.With("sid", sid).Warnf("failed updating review to status=%v, err=%v", reviewStatus, err)
+	setReviewStatus := func(status models.ReviewStatusType) {
+		if err := models.UpdateReviewStatus(review.OrgID, review.ID, status); err != nil {
+			log.With("sid", sid).Warnf("failed updating review to status=%v, err=%v", status, err)
 		}
-	}()
+	}
 
 	select {
 	case resp := <-respCh:
@@ -185,9 +184,10 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 		// account (gcp_oauth) before this approved query can run. Keep the
 		// review APPROVED (not EXECUTED) so it can be retried after consent.
 		if oauthEnv, ok := federationConsentEnvelopeFromResponse(sc, resp); ok {
-			reviewStatus = models.ReviewStatusApproved
+			setReviewStatus(models.ReviewStatusApproved)
 			return jsonResult(oauthEnv)
 		}
+		setReviewStatus(models.ReviewStatusExecuted)
 		env := map[string]any{
 			"session_id":        resp.SessionID,
 			"output":            resp.Output,
@@ -204,7 +204,8 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 		return jsonResult(env)
 	case <-timeoutCtx.Done():
 		client.Close()
-		reviewStatus = models.ReviewStatusUnknown
+		// the review stays PROCESSING while the execution continues in the
+		// agent; it settles as EXECUTED when the session finishes
 		return jsonResult(map[string]any{
 			"session_id": session.ID,
 			"status":     "running",

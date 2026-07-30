@@ -1,0 +1,50 @@
+# Validates the Helm charts on every PR that touches them. Its main job is to
+# catch breakage in the DEP-66 clean-line wrapper charts (hoop-ng / hoopagent-ng)
+# before release: they depend on the base charts via file:// and only override
+# image defaults, so a base-chart rename or version bump can break only the
+# wrappers — which otherwise wouldn't surface until `make build-helm-chart` at
+# release time.
+name: helm-charts
+
+on:
+  pull_request:
+    paths:
+      - deploy/helm-chart/**
+      - .github/workflows/helm-charts.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    name: Lint + render charts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.20.2
+      - name: Build wrapper dependencies
+        run: |
+          helm dependency build ./deploy/helm-chart/chart/hoop-ng
+          helm dependency build ./deploy/helm-chart/chart/hoopagent-ng
+      - name: Lint charts
+        run: |
+          helm lint ./deploy/helm-chart/chart/gateway
+          helm lint ./deploy/helm-chart/chart/agent
+          helm lint ./deploy/helm-chart/chart/hoop-ng
+          helm lint ./deploy/helm-chart/chart/hoopagent-ng
+      - name: Assert clean line renders the -ng images
+        run: |
+          set -euo pipefail
+          gw=$(helm template t ./deploy/helm-chart/chart/hoop-ng \
+            --set hoop-chart.config.POSTGRES_DB_URI=postgres://u:p@h:5432/db \
+            --set hoop-chart.config.API_URL=https://example.tld \
+            --set hoop-chart.defaultAgent.enabled=true)
+          echo "$gw" | grep -q 'hoophq/hoop-ng:' \
+            || { echo "::error::hoop-ng did not render hoophq/hoop-ng"; exit 1; }
+          echo "$gw" | grep -q 'hoophq/hoopdev-ng:' \
+            || { echo "::error::hoop-ng did not render hoophq/hoopdev-ng"; exit 1; }
+          ag=$(helm template t ./deploy/helm-chart/chart/hoopagent-ng)
+          echo "$ag" | grep -q 'hoophq/hoopdev-ng:' \
+            || { echo "::error::hoopagent-ng did not render hoophq/hoopdev-ng"; exit 1; }
+          echo "clean-line charts resolve dependencies and render the -ng images"

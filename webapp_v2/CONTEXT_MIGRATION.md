@@ -53,6 +53,7 @@ Gateway backend (port 8009)
 | `window.hoopRemount()` | Called on remount to re-render Reagent without refetching user data |
 | `localStorage.jwt-token` | Shared auth token. Both apps read/write the same key |
 | `localStorage.react-shell = true` | Guards double-render of sidebar in CLJS mode |
+| `hoop:session-executed` (DOM CustomEvent on `window`) | Emitted by the CLJS web terminal on exec success (`editor_plugin.cljs`); the React Config Status widget listens and refreshes instantly |
 
 ### Routing Split (Router.jsx)
 
@@ -61,6 +62,7 @@ Gateway backend (port 8009)
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
+| `/setup` | React | Done |
 | `/auth/callback` | React | Done |
 | `/signup/callback` | React | Done (IDP signup callback) |
 | `/agents` | React | Done |
@@ -74,6 +76,8 @@ Gateway backend (port 8009)
 | `/settings/attributes` | React | Done |
 | `/settings/attributes/new` | React | Done |
 | `/settings/attributes/edit/:name` | React | Done |
+| `/settings/protection-rules` | React | Done |
+| `/onboarding/protection-rules` | React | Done (chrome-less, above the `/onboarding/*` splat) |
 | `/settings/audit-logs` | React | Done |
 | `/settings/experimental` | React | Done |
 | `/organization/users` | React | Done |
@@ -81,7 +85,23 @@ Gateway backend (port 8009)
 | `/features/data-masking/new` | React | Done |
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
-| `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
+| `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
+| `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
+| `/features/event-routing` | React | Done |
+| `/features/event-routing/new` | React | Done |
+| `/features/event-routing/:id/edit` | React | Done |
+| `/features/event-routing/:id` | React | Done |
+| `/ai-agents-identities` | React | Done |
+| `/ai-agents-identities/new` | React | Done |
+| `/ai-agents-identities/created` | React | Done |
+| `/ai-agents-identities/:id/configure` | React | Done |
+| `/jira-templates` | React | Done |
+| `/jira-templates/new` | React | Done |
+| `/jira-templates/edit/:id` | React | Done |
+| `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
+| `/integrations/slack` | React | Done |
+| `/integrations/webhooks` | React | Done |
+| `/*` (catch-all) | ClojureApp (CLJS) | Ongoing — see `MIGRATION_ROADMAP.md` for the wave plan |
 
 ---
 
@@ -98,38 +118,49 @@ Gateway backend (port 8009)
 
 ```
 /                             home (redirects to onboarding)
-/onboarding/*                 first-run setup
+/onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
 /dashboard
-/sessions/:id?
-/connections/*
-/resources/*
+/sessions, /sessions/filtered, /sessions/:id
+/workflows/:correlation-id
+/resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
+/resource-catalog
+/provisioning
 /guardrails/*
-/agents (being migrated)
 /features/access-control/*
 /features/access-request/*
-/features/runbooks/*
+/features/machine-identities/*   (decision gate vs React /ai-agents-identities)
+/features/runbooks/setup, /features/runbooks/rules/*
 /features/ai-session-analyzer/*
 /guardrails/*
-/jira-templates/*
-/settings/jira  (belongs to Integrations — route will be renamed when migrated)
-/plugins/*
+/plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
 /client (SQL editor)
+/runbooks (runner)
+/slack/user/new/:id, /slack/organization/new
 /upgrade-plan
-/auth/* (login, callback, etc.)
+/idplogin, /logout
 ```
+
+Dead bidi entries (route exists, panel deleted — cleanup planned in
+`MIGRATION_ROADMAP.md` Track A): `/404`, `/hoop-app`, `/plugins/manage/jira`
+(hangs on an infinite spinner today), `/plugins/reviews/:review-id`,
+`/features/runbooks/edit/:connection-id`.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
 | Component | CLJS file | Migrated? |
 |-----------|-----------|-----------|
 | Sidebar | `shared_ui/sidebar/main.cljs` | ✅ Yes — `layout/Sidebar.jsx` |
-| Command Palette (cmd+k) | `shared_ui/cmdk/command_palette.cljs` | ✅ Yes — `features/CommandPalette/` |
-| Modal system | `components/modal.cljs` | ❌ Not yet |
-| Snackbar / Toast | `components/snackbar.cljs` | ❌ Not yet |
-| Confirmation Dialog | `components/dialog.cljs` | ❌ Not yet |
-| Page loader | Re-frame `:page-loader-status` | ❌ Not yet |
+| Command Palette (cmd+k) | `shared_ui/cmdk/command_palette.cljs` | ✅ Yes — `features/CommandPalette/` (Native Client action still bridges to CLJS) |
+| Modal system | `components/modal.cljs` | ✅ Pattern replaced — `components/Modal` + colocated `useDisclosure` (no global registry by design) |
+| Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
+| Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — no shared ConfirmDialog yet; pages build ad-hoc confirmations (planned: roadmap Wave 1) |
+| Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` + `hooks/useMinDelay` |
+| Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ❌ Not yet — hard blocker; React CommandPalette dispatches into CLJS (roadmap Wave 4) |
+| org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
+| Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ❌ CLJS-only today — React has Segment `identify()` + Intercom only (roadmap Parity track) |
+| Clipboard copy/cut blocking | `events/clipboard.cljs` | 🔶 Partial — React hides copy buttons but has no document-level listeners (roadmap Parity track) |
 
 ---
 
@@ -220,25 +251,33 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - React shell architecture (Layout, Sidebar, Header)
 - CommandPalette (cmd+k / Spotlight) — fully functional with search and connection actions
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
-- Auth pages — Login, Register (local), Signup (IDP org setup), Callback, SignupCallback
+- Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
+- Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
+- Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
+- Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)
+- Toast/snackbar parity — `utils/snackbar.jsx` + `Toast.jsx` (same sonner library as CLJS)
+- Page loaders (`PageLoader`, `AuthPageLoader`, `useMinDelay`)
 - Auth store, User store, UI store, Agent store
 - ClojureApp bridge component
 - Re-frame dispatch bridge — React can trigger CLJS actions via `window.hoopDispatch` (wrapped in Zustand stores)
 - Vite proxy setup for CLJS and backend
 - Onboarding flow 
 - Auth pages
+- Slack & Webhooks integration pages (`/integrations/slack`, `/integrations/webhooks`) — legacy `/plugins/manage/*` route removed from CLJS
 
 ### In Progress / Known Gaps 🔄
-- Modal/Snackbar/Dialog system not yet in React (CLJS still owns this)
-- No notification/toast system in React
+- No shared ConfirmDialog component yet (pages build ad-hoc confirmations)
+- Native-client-access flow still lives in CLJS and the React CommandPalette depends on it via the bridge
+- Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
+- Slack/Webhooks plugin pages are being migrated on EVL-101 (PR #1633, in review — adds `/integrations/{slack,webhooks}` + legacy redirects)
 
-### Pages Prioritized for Migration (rough order)
-1. Dashboard
-2. Plugins / Integrations
-3. Features (Access Control, Runbooks, Data Masking)
-4. Settings (Users, License, Infrastructure)
+### Migration order
+
+The full wave plan (remaining pages, dead-CLJS cleanup batches, parity items,
+bundle-removal endgame) lives in **`MIGRATION_ROADMAP.md`**. Update that file — not
+this section — when scheduling migration work.
 
 ---
 
@@ -253,6 +292,6 @@ Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bott
 - **Free vs Enterprise license** is checked from `/api/serverinfo` in `useUserStore`. Some nav items are hidden or locked for free tier.
 - **`isAdmin` is derived** from user data (`user.role === 'admin'`). Admin-only routes are guarded in Sidebar and ProtectedRoute.
 - **`window.hoopRemount()`** must be called on ClojureApp remount (not initial mount) to avoid re-fetching user data when React Router re-renders the component.
-- **Radix → Mantine gray mapping**: legacy webapp uses Radix `--gray-11` (`#8d8d8d`) for secondary text. In `webapp_v2/src/theme.js` this corresponds to `gray.8` (index 8), **not** `gray.6` (`#d9d9d9` — too light). `main.jsx` overrides `--mantine-color-dimmed` to point at `gray.8`, so `c="dimmed"` works out of the box. If you reach for `c="gray.N"` directly, remember the offset: Radix has 12 steps, Mantine has 10; Radix shade N ≈ Mantine N-1 (away from the extremes).
+- **Radix → Mantine gray mapping**: the `gray` scale in `webapp_v2/src/theme.js` is a slate-tinted ramp (`gray.0` `#f0f0f3` … `gray.9` `#4d4d60`); the Radix Slate text steps live outside the array as semantic tokens set in `cssVariablesResolver()` — `--mantine-color-dimmed` = slate11 `#60646c` and `--mantine-color-text` = slate12 `#1c2024` — so `c="dimmed"` works out of the box. Note `gray.9` is a mid slate, not near-black: to get body-text black, omit the color prop and inherit `--mantine-color-text`.
 - **CSS Layers for Mantine vs CSS Modules**: `main.jsx` imports `@mantine/core/styles.layer.css` (not `styles.css`), and `src/layers.css` declares `@layer mantine, app;`. Mantine's built-in CSS lives in the `mantine` layer; CSS Modules stay unlayered, so they always win the cascade. Without this, `classes.item` of a CSS Module would compete with `.mantine-Accordion-item` at equal specificity and the result would depend on bundle order.
 - **CLJS stylesheet toggle**: `ClojureApp.jsx` loads `/css/site.css` as a `<link data-cljs-css>` and toggles `link.disabled` on mount/unmount. This keeps the parsed stylesheet in memory (no re-fetch, no flash) but removes its rules from the cascade while a React-only route is active — otherwise Tailwind/Radix rules persist in `<head>` after any visit to a CLJS route and override every React page. Do NOT replace the `<link>` with `<style>@import url(...)</style>` — that serializes the fetch through the CSS parser and produces a visible FOUC.

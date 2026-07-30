@@ -540,6 +540,18 @@ func UpdateSessionStatus(orgID, sessionID, status string) error {
 		UpdateColumn("status", status).Error
 }
 
+// SetSessionStatusOpenIfReady flips a session from ready to open when its
+// execution starts. Reviewed sessions are created ahead of the execution and
+// approved into the ready status; without this flip they would keep reporting
+// ready while the agent runs them. It is a no-op (false, nil) when the session
+// is in any other status.
+func SetSessionStatusOpenIfReady(db *gorm.DB, orgID, sessionID string) (bool, error) {
+	res := db.Table("private.sessions").
+		Where("org_id = ? AND id = ? AND status = ?", orgID, sessionID, "ready").
+		UpdateColumn("status", "open")
+	return res.RowsAffected > 0, res.Error
+}
+
 // SetSessionCredentialsExpireAt stores the credential expiry time in the session metadata.
 // The frontend reads metadata.credentials_expire_at to display validity and toggle the connect button.
 func SetSessionCredentialsExpireAt(orgID, sessionID string, expireAt time.Time) error {

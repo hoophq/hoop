@@ -126,27 +126,29 @@ When something in `pages/[Page]/components/` starts getting reused outside the p
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 
-The legacy CLJS app shows toasts through `sonner` via a `:show-snackbar` re-frame event.
-While the migration is in progress, the React side uses the **same library** (`sonner`)
-through a thin wrapper at `src/utils/snackbar.js` so users see one consistent toast
-style across CLJS and React routes.
+The legacy CLJS app shows toasts through `sonner` at the **top-right** of the screen.
+The React side uses the **same library** (`sonner`) through a thin wrapper at
+`src/utils/snackbar.jsx`, rendered by `src/components/Snackbar/Toast.jsx` (a
+one-to-one port of the legacy toast), so users see one consistent toast style
+across CLJS and React routes.
 
 ```jsx
 import { showSnackbar } from '@/utils/snackbar'
 
-showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
+showSnackbar({ level: 'success', text: 'Connection enabled.' })
 showSnackbar({ level: 'error',   text: 'Failed to update.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
 ```
 
 **Rules:**
-- Do NOT import `notifications` from `@mantine/notifications` in new code — it produces
-  a completely different visual from v1 and breaks parity.
+- Do NOT use `@mantine/notifications` — the dependency has been removed from the project
+  (it produced a completely different visual from v1 and broke parity). Do not re-add it.
 - The `<Toaster>` is mounted once at `src/App.jsx`. Do not add additional Toaster instances.
 - The wrapper accepts the same `{ level, text, description }` shape as the CLJS
   `:show-snackbar` event so the mental model stays identical on both sides.
-- Pre-existing pages still using Mantine `notifications.show()` should be migrated to
-  `showSnackbar` opportunistically whenever you touch them.
+- Do NOT show snackbars through the CLJS bridge (`clojureDispatch('show-snackbar', ...)`) —
+  the CLJS Toaster only exists while the CLJS tree is mounted, so toasts fired from
+  React-only routes would be silently lost. Always use `showSnackbar` from `@/utils/snackbar`.
 
 ## Authentication Flow
 
@@ -321,8 +323,9 @@ var(--mantine-color-{name}-light-color)  /* light variant text */
 
 ## Text color — use Mantine tokens, not raw names
 
-- For secondary text use `c="dimmed"`. The `--mantine-color-dimmed` variable is overridden globally in `src/main.jsx` to match the legacy webapp's Radix `--gray-11` (`gray.8` = `#8d8d8d`). Mantine's default (`gray.6` = `#d9d9d9`) has ~1.8:1 contrast on white — fails WCAG AA.
-- Never use raw names like `c="dark"` or `c="light"` — those palettes are not defined in `theme.js` and silently fall back to Mantine defaults. Use `c="gray.9"` for near-black, or simply omit the prop to inherit `var(--mantine-color-text)`.
+- For secondary text use `c="dimmed"`. The `--mantine-color-dimmed` variable is set in `theme.js` `cssVariablesResolver()` to Radix slate11 (`#60646c`, ~5.7:1 on white — passes WCAG AA). Body text is `--mantine-color-text` = slate12 (`#1c2024`).
+- Never use raw names like `c="dark"` or `c="light"` — those palettes are not defined in `theme.js` and silently fall back to Mantine defaults. For near-black text simply omit the prop to inherit `var(--mantine-color-text)`; `gray.9` is `#4d4d60` (a mid slate), not near-black.
+- On dark navy surfaces (`--brand-navy`), never color text with the gray scale — it is calibrated for light backgrounds. Use white color-mix tones instead (see `EnterpriseBanner.module.css`, `pages/Auth/Setup/Setup.module.css`).
 - When adding a new palette or changing `primaryColor`, re-verify `c="dimmed"` contrast in DevTools.
 
 ## CSS Layers — do not disable
@@ -350,7 +353,7 @@ Debug checklist:
 1. Is the CSS Module imported in the JSX? (Vite only bundles it if there's `import classes from './X.module.css'`.)
 2. Are classes applied via `classNames={{ slot: classes.foo }}`, not `className`? Internal slots of Mantine components ignore `className`.
 3. Is the slot name correct? Check the "Styles API" section of the Mantine component's docs.
-4. Does the CSS Module use only `var(--mantine-*)` values? Hardcoded hex/px are forbidden by the styling hierarchy — exception: `Sidebar.module.css` uses `rgba(255,255,255,…)` intentionally because it paints dark-on-dark where Mantine's gray palette (calibrated for light) would not fit.
+4. Does the CSS Module use only `var(--mantine-*)` values? Hardcoded hex/px are forbidden by the styling hierarchy — the only sanctioned literals are Figma alpha-overlay tints that have no Mantine variable (e.g. `rgba(0, 0, 51, 0.06)` Neutral Alpha and `rgba(0, 0, 0, 0.05)` Black Alpha, used by `Pill/theme.js` and `Sidebar.module.css` hover/active states), and rgba-white contrast painting on the dark `--brand-navy` surfaces (`SelectionCard`).
 5. If it still doesn't apply and `layers.css` is imported, inspect the rule in DevTools and confirm it's inside `@layer mantine` — if not, the `styles.layer.css` import was broken.
 
 ## Reference Implementation

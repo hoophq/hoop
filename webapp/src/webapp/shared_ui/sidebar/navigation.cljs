@@ -49,6 +49,7 @@
                           :icon (:icon route)
                           :label (:name route)
                           :feature-flag (:feature-flag route)
+                          :license-feature (:license-feature route)
                           :free-feature? (:free-feature? route)
                           :admin-only? (:admin-only? route)
                           :admin? admin?
@@ -78,6 +79,7 @@
                             :icon (:icon route)
                             :label (:label route)
                             :feature-flag (:feature-flag route)
+                            :license-feature (:license-feature route)
                             :free-feature? (:free-feature? route)
                             :admin-only? (:admin-only? route)
                             :admin? admin?
@@ -99,6 +101,7 @@
                             :icon (:icon route)
                             :label (:label route)
                             :feature-flag (:feature-flag route)
+                            :license-feature (:license-feature route)
                             :free-feature? (:free-feature? route)
                             :admin-only? (:admin-only? route)
                             :admin? admin?
@@ -129,18 +132,23 @@
                                            :aria-hidden "true"}])]
                       [:> (.-Panel ui/Disclosure) {:as "ul"
                                                    :class "mt-1 px-2"}
-                       (for [plugin sidebar-constants/integrations-management]
+                       (for [plugin sidebar-constants/integrations-management
+                             :let [lf (:license-feature plugin)
+                                   data (:data @gateway-info)
+                                   features (get-in data [:license_info :features])]
+                             ;; fail closed: gated entries stay hidden until
+                             ;; /serverinfo has loaded successfully
+                             :when (or (nil? lf)
+                                       (and (some? data)
+                                            (or (empty? features)
+                                                (some #(= % lf) features))))]
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
                            ^{:key (:name plugin)}
                            [:li
-                            [:a {:href (if (:plugin? plugin)
-                                         (str "/plugins/manage/" (:name plugin))
-                                         (:uri plugin))
+                            [:a {:href (:uri plugin)
                                  :on-click (fn [e]
                                              (.preventDefault e)
-                                             (if (:plugin? plugin)
-                                               (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
-                                               (rf/dispatch [:navigate (:navigate plugin)]))
+                                             (rf/dispatch [:navigate (:navigate plugin)])
                                              (when is-mobile?
                                                (rf/dispatch [:sidebar-mobile->close])))
                                  :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "

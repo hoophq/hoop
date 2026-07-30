@@ -27,6 +27,11 @@ export const useUserStore = create((set, get) => ({
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
+  // Features enabled by the gateway license; empty/null = all enabled.
+  // Only meaningful once serverInfoLoaded is true — gating fails closed
+  // while /serverinfo hasn't been fetched successfully.
+  licenseFeatures: null,
+  serverInfoLoaded: false,
   apiUrl: null,
   hasRedactCredentials: false,
   loading: false,
@@ -41,6 +46,7 @@ export const useUserStore = create((set, get) => ({
     const featureFlags = serverInfo?.feature_flags || {}
     const redactProvider = serverInfo?.redact_provider || null
     const apiUrl = serverInfo?.api_url || null
+    const licenseFeatures = serverInfo?.license_info?.features || null
     set({ 
       isFreeLicense, 
       gatewayVersion: serverInfo?.version || null, 
@@ -50,11 +56,20 @@ export const useUserStore = create((set, get) => ({
       featureFlags, 
       redactProvider, 
       apiUrl,
+      licenseFeatures,
+      serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
+  isLicenseFeatureEnabled: (name) => {
+    const { serverInfoLoaded, licenseFeatures } = get()
+    // Unknown license state (serverinfo missing or failed) never grants
+    // access to a gated feature.
+    if (!serverInfoLoaded) return false
+    return !licenseFeatures?.length || licenseFeatures.includes(name)
+  },
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
@@ -68,6 +83,8 @@ export const useUserStore = create((set, get) => ({
       disableClipboard: false, 
       gatewayVersion: null, 
       featureFlags: {}, 
+      licenseFeatures: null,
+      serverInfoLoaded: false,
       redactProvider: null, 
       apiUrl: null,
       hasRedactCredentials: false,
@@ -96,6 +113,20 @@ export const useUserStore = create((set, get) => ({
 
     // Script creates a stub immediately — safe to call boot right away
     window.Intercom('boot', config)
+  },
+
+  // Opens the Intercom messenger with a prefilled message, booting it first
+  // when the app-boot initialization was skipped or shut down (the CLJS boot
+  // races gateway info on load and can leave the messenger unbooted, which
+  // renders as a blank white window). Returns false when Intercom is
+  // unavailable so callers can fall back to the sales page.
+  showIntercomMessage: (message) => {
+    const { analyticsTracking, user } = get()
+    if (!analyticsTracking) return false
+    if (!window.Intercom?.booted) get().initIntercom(user)
+    if (!window.Intercom) return false
+    window.Intercom('showNewMessage', message)
+    return true
   },
 
   initAnalytics: (user) => {

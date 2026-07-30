@@ -9,7 +9,6 @@ import (
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
@@ -121,83 +120,6 @@ func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
 	}
 }
 
-func TestConnectionTypeSupportsGuardRails(t *testing.T) {
-	supported := []pb.ConnectionType{
-		pb.ConnectionTypePostgres,
-		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeHttpProxy,
-		pb.ConnectionTypeSSH,
-		pb.ConnectionTypeCommandLine,
-	}
-	for _, ct := range supported {
-		if !connectionTypeSupportsGuardRails(ct) {
-			t.Errorf("expected connection type %q to support guardrails", ct)
-		}
-	}
-
-	// MySQL, MSSQL and MongoDB native proxies do not evaluate guardrails, so
-	// native sessions of these types must be refused (fail closed), not run
-	// unguarded (DEP-48).
-	unsupported := []pb.ConnectionType{
-		pb.ConnectionTypeMySQL,
-		pb.ConnectionTypeMSSQL,
-		pb.ConnectionTypeMongoDB,
-		pb.ConnectionTypeTCP,
-	}
-	for _, ct := range unsupported {
-		if connectionTypeSupportsGuardRails(ct) {
-			t.Errorf("expected connection type %q to NOT support guardrails", ct)
-		}
-	}
-}
-
-func TestSessionSupportsGuardRails(t *testing.T) {
-	tests := []struct {
-		name string
-		ctx  plugintypes.Context
-		want bool
-	}{
-		{
-			name: "mssql web exec",
-			ctx: plugintypes.Context{
-				ConnectionType:    string(pb.ConnectionTypeMSSQL),
-				ConnectionSubType: "mssql",
-				ClientVerb:        pb.ClientVerbExec,
-				ClientOrigin:      pb.ConnectionOriginClientAPI,
-			},
-			want: true,
-		},
-		{
-			name: "mssql native session",
-			ctx: plugintypes.Context{
-				ConnectionType:    string(pb.ConnectionTypeMSSQL),
-				ConnectionSubType: "",
-				ClientVerb:        pb.ClientVerbExec,
-				ClientOrigin:      pb.ConnectionOriginClient,
-			},
-			want: false,
-		},
-		{
-			name: "mssql non-exec API session",
-			ctx: plugintypes.Context{
-				ConnectionType:    string(pb.ConnectionTypeMSSQL),
-				ConnectionSubType: "",
-				ClientVerb:        pb.ClientVerbPlainExec,
-				ClientOrigin:      pb.ConnectionOriginClientAPI,
-			},
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := sessionSupportsGuardRails(tt.ctx); got != tt.want {
-				t.Fatalf("sessionSupportsGuardRails() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestEncodeGuardRailRules(t *testing.T) {
 	t.Run("nil rules yield no payload", func(t *testing.T) {
 		payload, err := encodeGuardRailRules(nil)
@@ -226,6 +148,19 @@ func TestEncodeGuardRailRules(t *testing.T) {
 		}
 	})
 
+	t.Run("attached rules with empty directions yield no payload", func(t *testing.T) {
+		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
+			GuardRailInputRules:  []byte(`[{"rules":[]}]`),
+			GuardRailOutputRules: []byte(`[{"rules":[]}]`),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if payload != nil {
+			t.Fatalf("expected nil payload for empty rule directions, got %q", string(payload))
+		}
+	})
+
 	t.Run("absent rule columns yield no payload", func(t *testing.T) {
 		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{})
 		if err != nil {
@@ -237,10 +172,10 @@ func TestEncodeGuardRailRules(t *testing.T) {
 	})
 
 	t.Run("real rules yield a payload", func(t *testing.T) {
-		inputRules := []byte(`[{"items":[{"type":"deny_words_list","words":["DENYWORD"]}]}]`)
+		inputRules := []byte(`[{"rules":[{"type":"deny_words_list","words":["DENYWORD"]}]}]`)
 		payload, err := encodeGuardRailRules(&models.ConnectionGuardRailRules{
 			GuardRailInputRules:  inputRules,
-			GuardRailOutputRules: []byte("[]"),
+			GuardRailOutputRules: []byte(`[{"rules":[]}]`),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -276,6 +211,22 @@ func TestBuildLegacyGuardRailErrorMessage_InvalidPayload(t *testing.T) {
 	msg, ok := buildLegacyGuardRailErrorMessage([]byte("{bad-json"))
 	if ok || msg != "" {
 		t.Fatalf("expected no message for invalid payload, got ok=%v msg=%q", ok, msg)
+	}
+}
+
+func TestUpdateGuardRailsInfoFromPacketSkipsEmptyData(t *testing.T) {
+	for name, raw := range map[string][]byte{
+		"absent":     nil,
+		"empty list": []byte("[]"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			pkt := &pb.Packet{Spec: map[string][]byte{
+				pb.SpecClientGuardRailsInfoKey: raw,
+			}}
+			if updateGuardRailsInfoFromPacket(nil, pkt) {
+				t.Fatal("empty guardrails metadata must not be persisted")
+			}
+		})
 	}
 }
 

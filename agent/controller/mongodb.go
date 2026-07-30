@@ -51,6 +51,11 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
 	}
 
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
+
 	log.With("sid", sid, "conn", clientConnectionID, "legacy", connenv.connectionString == "").
 		Infof("starting mongodb connection at %v", connenv.Address())
 
@@ -70,6 +75,7 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"dlp_masking_character":     "#",
+		"guard_rail_rules":          guardRailRules,
 		// TODO: make it disable for now, it consumes too much resources only for collecting metrics
 		// on more intensive environments this is a problem, we can enable it later based on specific rules
 		// "analyzer_metrics_rules":    analyzerMetricsRules,

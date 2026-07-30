@@ -76,7 +76,6 @@ function FileRow({ rowKey, displayName, content, writeOnly, stagedAction, onComm
         <ActionIcon
           variant="subtle"
           color="red"
-          size="lg"
           onClick={onRemove}
           aria-label={'Remove configuration file ' + displayName}
         >

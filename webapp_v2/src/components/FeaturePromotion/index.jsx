@@ -78,7 +78,6 @@ export default function FeaturePromotion({
             target="_blank"
             rel="noopener noreferrer"
             variant="default"
-            size="md"
             w="fit-content"
             rightSection={<ArrowUpRight size={16} />}
           >
@@ -87,7 +86,7 @@ export default function FeaturePromotion({
         )}
 
         {onPrimaryClick && buttonText && (
-          <Button onClick={onPrimaryClick} size="md" w="fit-content">
+          <Button onClick={onPrimaryClick} w="fit-content">
             {buttonText}
           </Button>
         )}

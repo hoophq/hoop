@@ -250,7 +250,9 @@
              :clearable? true
              :on-change #(rf/dispatch [:connection-setup/set-jira-template-id (js->clj %)])}]]
 
-          [:> Link {:href (routes/url-for :jira-templates)}
+          ;; The Jira Templates page is owned by the React shell (webapp_v2),
+          ;; so this links to the React route instead of a bidi route.
+          [:> Link {:href "/jira-templates"}
            [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
             [:> Callout.Icon
              [:> ArrowUpRight {:size 16}]]

@@ -109,7 +109,6 @@ function HeaderRow({
         <ActionIcon
           variant="subtle"
           color="red"
-          size={36}
           onClick={onRemove}
           aria-label={'Remove ' + displayName}
         >

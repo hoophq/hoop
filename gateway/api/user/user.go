@@ -472,6 +472,11 @@ func GetUserInfo(c *gin.Context) {
 		WebAppUsersManagement:  webappUsersManagement,
 		IntercomUserHmacDigest: intercomUserHash,
 	}
+	if org, err := models.GetOrganizationByNameOrID(ctx.OrgID); err == nil {
+		userInfoData.DefaultProtectionProfile = org.DefaultProtectionProfile
+	} else {
+		log.Warnf("failed loading org for default protection profile, err=%v", err)
+	}
 	if ctx.IsAnonymous() {
 		intercomUserHash, _ := analytics.GenerateIntercomHmacDigest(ctx.UserAnonEmail)
 		userInfoData.IntercomUserHmacDigest = intercomUserHash

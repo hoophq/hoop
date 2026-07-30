@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
@@ -21,6 +21,8 @@ import SettingsApiKeysForm from '@/pages/Settings/ApiKeys/Form'
 import SettingsApiKeysCreated from '@/pages/Settings/ApiKeys/Created'
 import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
+import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
+import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
@@ -34,6 +36,10 @@ import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
+import JiraTemplates from '@/pages/JiraTemplates'
+import JiraTemplateForm from '@/pages/JiraTemplates/Form'
+import IntegrationsSlack from '@/pages/Integrations/Slack'
+import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 
 /**
  * Routing strategy:
@@ -219,6 +225,20 @@ function Router() {
         }
       />
 
+      {/* Protection Rules */}
+      <Route
+        path="/settings/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsProtectionRules />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Audit Logs */}
       <Route
         path="/settings/audit-logs"
@@ -251,7 +271,7 @@ function Router() {
       <Route
         path="/rulepacks"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="rulepacks">
             <Layout>
               <PageLayout>
                 <Rulepacks />
@@ -263,7 +283,7 @@ function Router() {
       <Route
         path="/rulepacks/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="rulepacks">
             <Layout>
               <PageLayout>
                 <RulepackDetail />
@@ -291,7 +311,7 @@ function Router() {
       <Route
         path="/features/event-routing"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRouting />
@@ -303,7 +323,7 @@ function Router() {
       <Route
         path="/features/event-routing/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingForm />
@@ -315,7 +335,7 @@ function Router() {
       <Route
         path="/features/event-routing/:id/edit"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingForm />
@@ -327,7 +347,7 @@ function Router() {
       <Route
         path="/features/event-routing/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingDetail />
@@ -340,7 +360,7 @@ function Router() {
       <Route
         path="/features/data-masking"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMasking />
@@ -352,7 +372,7 @@ function Router() {
       <Route
         path="/features/data-masking/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
@@ -364,7 +384,7 @@ function Router() {
       <Route
         path="/features/data-masking/edit/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
@@ -378,7 +398,7 @@ function Router() {
       <Route
         path="/ai-agents-identities"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentities />
@@ -390,7 +410,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
@@ -402,7 +422,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/created"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesCreated />
@@ -414,7 +434,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/:id/configure"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
@@ -424,7 +444,99 @@ function Router() {
         }
       />
 
+      {/* Jira Templates (includes the Jira integration Configuration tab) */}
+      <Route
+        path="/jira-templates"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="jira-integration">
+            <Layout>
+              <PageLayout>
+                <JiraTemplates />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="jira-integration">
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/edit/:id"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="jira-integration">
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      {/* Legacy URLs absorbed into the Configuration tab — keep old bookmarks working.
+          /plugins/manage/jira still exists in the CLJS bidi routes but its panel was
+          deleted, so without this redirect it renders an infinite loading spinner. */}
+      <Route
+        path="/settings/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+      <Route
+        path="/plugins/manage/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+
+      {/* Integrations */}
+      {/* Legacy plugin-manage URLs — keep old bookmarks working */}
+      <Route
+        path="/plugins/manage/slack"
+        element={<Navigate to="/integrations/slack" replace />}
+      />
+      <Route
+        path="/plugins/manage/webhooks"
+        element={<Navigate to="/integrations/webhooks" replace />}
+      />
+      <Route
+        path="/integrations/slack"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsSlack />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/integrations/webhooks"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsWebhooks />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
+      <Route
+        path="/onboarding/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <OnboardingProtectionRules />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/onboarding/*"
         element={
