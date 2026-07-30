@@ -36,11 +36,19 @@ RUN apt-get update -y && \
         libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
-# onnxruntime-gpu must be pinned to the CUDA 12 line: 1.21+ moved to CUDA 13
+# onnxruntime-gpu must be pinned to the CUDA 12 line: 1.27+ moved to CUDA 13
 # (the wheel then needs libcudart.so.13) while declaring NO nvidia/* runtime
-# dependencies, so an unbounded pin resolved to 1.27 and crashed at import with
-# "libcudart.so.13: cannot open shared object file". 1.20.1 is the last CUDA 12
-# release.
+# dependencies by default, so an unbounded pin resolved to 1.27 and crashed at
+# import with "libcudart.so.13: cannot open shared object file".
+#
+# The pin is 1.20.2 — NOT 1.20.1, which the previous pin used until upstream
+# DELETED that release from PyPI (2026-07-29, mid-release-cycle: the same
+# unchanged Dockerfile published fine at 12:16 UTC and failed at 14:45 with
+# "No matching distribution found for onnxruntime-gpu==1.20.1"). 1.20.2 is the
+# same CUDA 12 / cuDNN 9 build of the 1.20 line: its
+# libonnxruntime_providers_cuda.so links exactly the same sonames
+# (libcudart.so.12, libcublas[Lt].so.12, libcudnn*.so.9, libcufft.so.11,
+# libcurand.so.10, libnvrtc.so.12), so the pinned wheel set below is unchanged.
 #
 # This image is FROM the hoop base (no CUDA libs of its own), so the CUDA 12
 # runtime libraries the provider links against are installed explicitly as
@@ -55,7 +63,7 @@ RUN apt-get update -y && \
 RUN python3 -m venv /opt/ocr-venv && \
     /opt/ocr-venv/bin/pip install --no-cache-dir \
         "rapidocr==3.8.4" \
-        "onnxruntime-gpu==1.20.1" \
+        "onnxruntime-gpu==1.20.2" \
         "nvidia-cuda-runtime-cu12==12.9.79" \
         "nvidia-cublas-cu12==12.9.2.10" \
         "nvidia-cudnn-cu12==9.23.2.1" \
