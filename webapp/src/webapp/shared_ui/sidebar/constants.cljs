@@ -12,8 +12,6 @@
 (def icons-registry
   {"Resources" (fn [& [{:keys [size] :or {size 24}}]]
                  [:> Package {:size size}])
-   "Dashboard" (fn [& [{:keys [size] :or {size 24}}]]
-                 [:> LayoutDashboard {:size size}])
    "Terminal" (fn [& [{:keys [size] :or {size 24}}]]
                 [:> SquareCode {:size size}])
    "Runbooks" (fn [& [{:keys [size] :or {size 24}}]]
@@ -76,12 +74,6 @@
     :uri (routes/url-for :resources)
     :navigate :resources
     :admin-only? false}
-   {:name "Dashboard"
-    :label "Dashboard"
-    :icon (get icons-registry "Dashboard")
-    :uri (routes/url-for :dashboard)
-    :navigate :dashboard
-    :admin-only? true}
    {:name "Terminal"
     :label "Terminal"
     :icon (get icons-registry "Terminal")
