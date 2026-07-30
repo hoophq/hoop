@@ -88,13 +88,26 @@ is still compiled into the bundle. Deleting early shrinks the bundle and reduces
 
 Two ordering constraints govern everything:
 
-1. **bidi throws at namespace load.** `shared_ui/sidebar/constants.cljs` calls
-   `(routes/url-for …)` at load time for `:agents :settings-api-keys
-   :settings-attributes :settings-infrastructure :settings-experimental
-   :settings-audit-logs :license-management :users :ai-data-masking
-   :integrations-authentication`. `bidi/path-for` throws on an unknown handler, so
-   sidebar constants must be pruned in a PR that lands **strictly before** the
-   route-entry removal.
+1. **bidi fails *silently*, so route deletions need a manual grep gate.**
+   `bidi/path-for` does **not** throw on an unknown handler (verified against the
+   bidi 2.1.6 jar: `bidi.cljc:391-397` `path-for*` throws only for a literally `nil`
+   handler; `bidi.cljc:324-326` `unmatch-pair` uses `when-let` and returns `nil`
+   otherwise). `routes.cljs:114-116` `url-for` is a thin `bidi/path-for` wrapper, so
+   a stale reference yields `nil` → `<a href=nil>` (dead link), and
+   `routes.cljs:126-136` `navigate!` computes `(str nil "")` = `""` →
+   `pushy/set-token! ""` → **silent misnavigation**. Nothing — not the compiler, not
+   the runtime, not CI — catches a missed reference.
+   Consequence: **before deleting any route entry**,
+   `grep -rn "url-for :<kw>\|:navigate :<kw>" webapp/src` must return zero hits
+   outside the files that PR deletes, with the output pasted into the PR
+   description. `shared_ui/sidebar/constants.cljs` calls `(routes/url-for …)` at
+   load time for `:agents :settings-api-keys :settings-attributes
+   :settings-infrastructure :settings-experimental :settings-audit-logs
+   :license-management :users :ai-data-masking :integrations-authentication`, so its
+   prune still lands **strictly before** the route-entry removal — for
+   reviewability, not because bidi throws.
+   Worked example already waiting for A3: `features/attributes/events.cljs:74,108,131`
+   each dispatch `[:navigate :settings-attributes]`, and A3 **keeps** that file.
 2. **`webapp.events.auth` is load-bearing but only required by dead code.**
    `auth/views/signup.cljs` (dead) is the only app-reachable require of
    `events/auth`, which powers live flows (`:auth->logout` from onboarding pages and
@@ -102,20 +115,32 @@ Two ordering constraints govern everything:
    `/idplogin` panel). Add `[webapp.events.auth]` to `app.cljs` requires **before**
    deleting signup, or logout/idplogin silently break.
 
-### PR A1 — Safety prep (S) — must land first
+### PR A1 — Safety prep (S) — EVL-116 — must land first
 
 - Add `[webapp.events.auth]` to `webapp/src/webapp/app.cljs` requires.
 - Prune from `shared_ui/sidebar/constants.cljs` the entries whose `url-for` targets
   A2/A3 will delete: `:agents :settings-api-keys :settings-attributes
   :settings-infrastructure :settings-experimental :settings-audit-logs
-  :license-management :users`. Do **not** touch `:ai-data-masking` or
-  `:integrations-authentication` (still needed — see keep-list below).
+  :license-management :users`, plus the 4 `icons-registry` keys this orphans
+  (`"Agents" "infrastructure" "license" "users"`) and the now-unused `BrainCog`
+  refer. Do **not** touch `:ai-data-masking` or `:integrations-authentication`
+  (still needed — see keep-list below), nor the `"authentication"` icon.
+  `organization-routes` and `settings-management` are left as empty vectors: their
+  five consumers are all `for`/`mapcat`/`concat` and inert over `[]`. Deleting the
+  defs, the dead Settings disclosure in `navigation.cljs:158-197`, and the
+  pre-existing `icons-registry` orphans (`"Reviews" "JiraTemplates" "jira"`) is A3.
 - Remove two latent no-op dispatches (their registering namespaces are never
   loaded into the bundle): `events/users.cljs:143`
   (`:slack->send-message->user`) and `events/connections.cljs:88`
   (`:connections->filter-connections`).
+- Close the ⌘K gap the prune opens. The CLJS palette is still live in shell mode
+  (`app.cljs` renders it in the `react-shell` branch; `spotlight.js` delegates to it
+  on every CLJS route) and its Quick Access list is built from the pruned vectors.
+  Add the four entries React's palette lacks — API Keys, Attributes, Experimental,
+  Internal Audit Logs — to `features/CommandPalette/constants.js`, gating mirrored
+  from `layout/Sidebar/constants.js`.
 
-### PR A2 — Dead settings/admin panels + routes (M)
+### PR A2 — Dead settings/admin panels + routes (M) — EVL-117
 
 Delete files + their `app.cljs` requires/defmethods + `routes.cljs` entries:
 
@@ -137,7 +162,7 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
 `:signup-callback-hoop` (url-for in `events/auth` + logout view),
 `:onboarding-protection-rules` (navigated from onboarding effects).
 
-### PR A3 — Dead auth/users/org (M)
+### PR A3 — Dead auth/users/org (M) — EVL-118
 
 - `auth/local/*`, `auth/views/login_panel.cljs` (fully orphaned — zero requires),
   `auth/views/signup.cljs` (safe: A1 landed), `events/localauth.cljs`.
@@ -330,7 +355,10 @@ Now ──► Wave 1 + Sentry ────┘
 2. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
    behavior-fragile; vendor `rle.js` unchanged, port the fetch-ReadableStream
    pattern verbatim, add side-by-side manual comparison to the test plan.
-3. **bidi load-time throws during cleanup** — sidebar constants prune (A1) strictly
-   before route deletions (A2/A3); never delete the keep-list route entries.
+3. **bidi silent failures during cleanup** — a deleted route entry produces a dead
+   link or a no-op navigation, never an error, and CI cannot catch it. A2/A3 must run
+   the `url-for` / `:navigate` grep gate per deleted keyword (see Track A constraint
+   #1) and never delete the keep-list route entries. The sidebar constants prune (A1)
+   still lands before the route deletions.
 4. **Pending product decision** — Machine Identities has a default outcome (stays
    on CLJS) so no wave stalls, but it must close before the Endgame.
