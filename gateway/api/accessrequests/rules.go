@@ -38,10 +38,6 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 		return fmt.Errorf("access_type must be either 'jit' or 'command'")
 	}
 
-	if len(req.ApprovalRequiredGroups) == 0 {
-		return fmt.Errorf("approval_required_groups must have at least 1 entry")
-	}
-
 	if len(req.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
 	}
@@ -387,10 +383,6 @@ func updateManagedAccessRequestRule(c *gin.Context, rule *models.AccessRequestRu
 		return
 	}
 
-	if len(req.ApprovalRequiredGroups) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "approval_required_groups must have at least 1 entry"})
-		return
-	}
 	if len(req.ReviewersGroups) == 0 {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "reviewers_groups must have at least 1 entry"})
 		return

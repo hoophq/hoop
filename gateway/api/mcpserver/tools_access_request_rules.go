@@ -26,7 +26,7 @@ type accessRequestRulesCreateInput struct {
 	Description            *string  `json:"description,omitempty" jsonschema:"human-readable description"`
 	AccessType             string   `json:"access_type" jsonschema:"access type: jit or command"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
-	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"groups that must approve"`
+	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
@@ -40,7 +40,7 @@ type accessRequestRulesUpdateInput struct {
 	Description            *string  `json:"description,omitempty" jsonschema:"human-readable description"`
 	AccessType             string   `json:"access_type" jsonschema:"access type: jit or command"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
-	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"groups that must approve"`
+	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
@@ -355,9 +355,6 @@ func validateAccessRequestRuleInput(args *accessRequestRulesCreateInput) error {
 	if args.AccessType != "jit" && args.AccessType != "command" {
 		return fmt.Errorf("access_type must be either 'jit' or 'command'")
 	}
-	if len(args.ApprovalRequiredGroups) == 0 {
-		return fmt.Errorf("approval_required_groups must have at least 1 entry")
-	}
 	if len(args.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
 	}
@@ -373,9 +370,6 @@ func validateAccessRequestRuleInputForUpdate(args *accessRequestRulesUpdateInput
 	}
 	if args.AccessType != "jit" && args.AccessType != "command" {
 		return fmt.Errorf("access_type must be either 'jit' or 'command'")
-	}
-	if len(args.ApprovalRequiredGroups) == 0 {
-		return fmt.Errorf("approval_required_groups must have at least 1 entry")
 	}
 	if len(args.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
@@ -396,12 +390,12 @@ func ensureStringArray(s []string) []string {
 
 func accessRequestRuleToMap(rule *models.AccessRequestRule) map[string]any {
 	m := map[string]any{
-		"id":                       rule.ID.String(),
-		"name":                     rule.Name,
-		"access_type":              rule.AccessType,
-		"all_groups_must_approve":  rule.AllGroupsMustApprove,
-		"created_at":               rule.CreatedAt,
-		"updated_at":               rule.UpdatedAt,
+		"id":                      rule.ID.String(),
+		"name":                    rule.Name,
+		"access_type":             rule.AccessType,
+		"all_groups_must_approve": rule.AllGroupsMustApprove,
+		"created_at":              rule.CreatedAt,
+		"updated_at":              rule.UpdatedAt,
 	}
 	if rule.Description != nil {
 		m["description"] = *rule.Description
