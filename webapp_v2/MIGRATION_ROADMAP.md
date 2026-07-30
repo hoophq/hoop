@@ -90,24 +90,30 @@ Two ordering constraints govern everything:
 
 1. **bidi fails *silently*, so route deletions need a manual grep gate.**
    `bidi/path-for` does **not** throw on an unknown handler (verified against the
-   bidi 2.1.6 jar: `bidi.cljc:391-397` `path-for*` throws only for a literally `nil`
+   bidi 2.1.6 jar: `bidi.cljc:391-398` `path-for*` throws only for a literally `nil`
    handler; `bidi.cljc:324-326` `unmatch-pair` uses `when-let` and returns `nil`
    otherwise). `routes.cljs:114-116` `url-for` is a thin `bidi/path-for` wrapper, so
-   a stale reference yields `nil` → `<a href=nil>` (dead link), and
-   `routes.cljs:126-136` `navigate!` computes `(str nil "")` = `""` →
+   a stale reference yields `nil` — the anchor renders with no `href` at all (dead
+   link) — and `routes.cljs:126-136` `navigate!` computes `(str nil "")` = `""` →
    `pushy/set-token! ""` → **silent misnavigation**. Nothing — not the compiler, not
    the runtime, not CI — catches a missed reference.
    Consequence: **before deleting any route entry**,
    `grep -rn "url-for :<kw>\|:navigate :<kw>" webapp/src` must return zero hits
    outside the files that PR deletes, with the output pasted into the PR
-   description. `shared_ui/sidebar/constants.cljs` calls `(routes/url-for …)` at
-   load time for `:agents :settings-api-keys :settings-attributes
-   :settings-infrastructure :settings-experimental :settings-audit-logs
-   :license-management :users :ai-data-masking :integrations-authentication`, so its
-   prune still lands **strictly before** the route-entry removal — for
-   reviewability, not because bidi throws.
-   Worked example already waiting for A3: `features/attributes/events.cljs:74,108,131`
-   each dispatch `[:navigate :settings-attributes]`, and A3 **keeps** that file.
+   description. **The gate — not PR ordering — is the safety mechanism**, so a route
+   entry and its sidebar entry may be removed in the *same* PR (EVL-119 did exactly
+   that for `:dashboard`). A1's separate prune of `shared_ui/sidebar/constants.cljs`
+   (which calls `(routes/url-for …)` at load time for `:agents :settings-api-keys
+   :settings-attributes :settings-infrastructure :settings-experimental
+   :settings-audit-logs :license-management :users :ai-data-masking
+   :integrations-authentication`) is kept for reviewability, not because bidi throws.
+   Worked example waiting for A3: `features/attributes/events.cljs:74,108,131` each
+   dispatch `[:navigate :settings-attributes]` in a file A3 **keeps**. It is not a
+   live risk — those three `-success` handlers fire only from
+   `features/attributes/views/form.cljs:52,53,80`, which A3 deletes in the same PR
+   (live callers use `:attributes/create-inline`, which does not navigate) — so the
+   gate hit must be resolved by **deleting the three handlers**, not by repointing
+   them at a surviving route.
 2. **`webapp.events.auth` is load-bearing but only required by dead code.**
    `auth/views/signup.cljs` (dead) is the only app-reachable require of
    `events/auth`, which powers live flows (`:auth->logout` from onboarding pages and
@@ -125,20 +131,30 @@ Two ordering constraints govern everything:
   (`"Agents" "infrastructure" "license" "users"`) and the now-unused `BrainCog`
   refer. Do **not** touch `:ai-data-masking` or `:integrations-authentication`
   (still needed — see keep-list below), nor the `"authentication"` icon.
-  `organization-routes` and `settings-management` are left as empty vectors: their
-  five consumers are all `for`/`mapcat`/`concat` and inert over `[]`. Deleting the
-  defs, the dead Settings disclosure in `navigation.cljs:158-197`, and the
-  pre-existing `icons-registry` orphans (`"Reviews" "JiraTemplates" "jira"`) is A3.
+  `organization-routes` and `settings-management` are left as empty vectors. Their
+  five consumers iterate with `for`/`mapcat`/`concat` and emit nothing, but two of
+  them still render their own chrome over an empty vector: the Settings disclosure
+  at `navigation.cljs:158-197` and its collapsed-sidebar twin at
+  `main.cljs:210-219` (icon + "Settings" label + empty panel). No user sees it
+  because `app.cljs:260` drops `sidebar/main` entirely in shell mode — the defs are
+  harmless because the CLJS sidebar is unreachable, not because the consumers
+  degrade gracefully. The legacy `app.cljs:288` (`STATIC_UI_PATH`) path would show
+  the empty section. Deleting the defs, those two consumers, and the pre-existing
+  `icons-registry` orphans (`"Reviews" "JiraTemplates" "jira"`) is A3.
 - Remove two latent no-op dispatches (their registering namespaces are never
   loaded into the bundle): `events/users.cljs:143`
   (`:slack->send-message->user`) and `events/connections.cljs:88`
   (`:connections->filter-connections`).
-- Close the ⌘K gap the prune opens. The CLJS palette is still live in shell mode
-  (`app.cljs` renders it in the `react-shell` branch; `spotlight.js` delegates to it
-  on every CLJS route) and its Quick Access list is built from the pruned vectors.
-  Add the four entries React's palette lacks — API Keys, Attributes, Experimental,
+- Add the four entries React's palette lacks — API Keys, Attributes, Experimental,
   Internal Audit Logs — to `features/CommandPalette/constants.js`, gating mirrored
-  from `layout/Sidebar/constants.js`.
+  from `layout/Sidebar/constants.js`. **This closes a separate, pre-existing gap in
+  the React palette — it does not restore what the prune removes.** The CLJS palette
+  is still the only one rendered on CLJS routes (`app.cljs` renders it in the
+  `react-shell` branch; `spotlight.js` delegates to it there) and builds its Quick
+  Access from the pruned vectors, so it does lose 8 entries. All 8 pages stay one
+  click away in the React sidebar, which is the shell and renders on every route, so
+  the loss is ⌘K discoverability on CLJS routes only — accepted, and it disappears
+  as those routes migrate.
 
 ### PR A2 — Dead settings/admin panels + routes (M) — EVL-117
 
@@ -178,6 +194,30 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
   identities, access control until those migrate).
 - **Deferred:** `events/reviews_plugin.cljs` (46 LOC) — session details still
   approves/rejects reviews through it; delete in Wave 6's cleanup commit.
+
+**Traps found while landing A1 — read before starting A3:**
+
+- `navigation.cljs:158-197` is **not** a whole-line deletion. The disclosure form
+  closes at line 197 *column 60*; the trailing `]])` on that same line closes the
+  enclosing `[:ul]` (95), `[:li]` (93) and `(when admin?)` (92). Those three closers
+  must survive.
+- Removing that disclosure leaves `navigation.cljs:94`'s
+  `[section-title "Organization"]` hollow — delete it too, or the section renders a
+  heading with no items.
+- The `:settings-attributes` grep-gate hit is resolved by **deleting** the three
+  `-success` handlers in `features/attributes/events.cljs` (74, 108, 131), not by
+  repointing them — see Track A constraint #1.
+- A3 must state explicitly that it removes the corresponding `routes.cljs` entries;
+  the grep gate also flags `features/users/main.cljs:27` and the users
+  `views/empty_state`.
+- `events/connections_filters.cljs` is now 100% dead (A1 removed its last dangling
+  dispatch site); confirm the deletion above actually lands, or the file lingers as
+  a false signal that connection filtering flows through it.
+- **Cross-PR orphan:** `LayoutDashboard` in the `lucide-react` refer of
+  `shared_ui/sidebar/constants.cljs` had two consumers — the `"Dashboard"` icon key
+  (removed by EVL-119) and `"infrastructure"` (removed by A1). Each PR is correct
+  alone; once both are merged the refer has zero consumers. Sweep it with the other
+  `icons-registry` orphans here.
 
 ---
 
