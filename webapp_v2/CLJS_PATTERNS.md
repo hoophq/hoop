@@ -266,6 +266,24 @@ Common mappings:
 
 ---
 
+## Recurring CLJS features → shared React building blocks
+
+Several CLJS patterns recur across feature pages and already have shared React
+equivalents. **Reach for these before writing a new one** (full props in `COMPONENTS.md`):
+
+| CLJS pattern | React building block | Use it for |
+|--------------|----------------------|------------|
+| `features/promotion` (`*-promotion`) | `components/FeaturePromotion` + `layout/FullBleed` | Empty/gated feature pages (split marketing panel + illustration). |
+| `resource-role-filter` / `attribute-filter` (full list) | `components/ValueFilter` | Single-value table/list filter over a fully loaded array. |
+| `resource-role-filter` (paginated) | `components/AsyncValueFilter` | Single-value filter over a paginated, server-searched source. |
+| `components/multiselect` `paginated` | `components/PaginatedMultiSelect` | Generic multi-select over a paginated, server-searched source. |
+| `components/connections-select` | `components/ConnectionsMultiSelect` | Resource-role (connection) picker with infinite scroll + search. |
+| `:connections->pagination` slice | `hooks/usePaginatedConnections` | Paginated connection option source (data layer for the two above). |
+
+Infinite scroll uses Mantine's built-in `useIntersection` (sentinel at list bottom) — no bespoke component. The full `/connections` load stays only where a page must resolve every `connection_ids → name` (e.g. list displays); dropdowns paginate.
+
+---
+
 ## Finding CLJS Source Files
 
 Common locations:

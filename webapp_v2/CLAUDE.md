@@ -1,15 +1,14 @@
 # Hoop WebApp V2 - Development Guidelines
 
 ## Stack
-- **React 19** + JavaScript (no TypeScript)
-- **Vite** - Build tool
-- **Mantine v8** - Component library (sole styling solution, no Tailwind)
-- **Zustand** - State management
-- **Axios** - HTTP client
-- **React Router v7** - Routing
+
+React 19 + JavaScript (no TypeScript) · Vite · Mantine v8 (sole styling — no
+Tailwind) · Zustand · Axios · React Router v7 · lucide-react. Setup and
+details: `README.md`.
 
 ## Commands
-- Development: `npm run dev`
+- Development (recommended): `npm run dev:full` — Vite + shadow-cljs together; ports, proxy and HMR caveats in `README.md`
+- Development (Vite only): `npm run dev`
 - Build: `npm run build`
 - Lint: `npm run lint`
 - Preview production: `npm run preview`
@@ -180,8 +179,7 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 6. **OAuth Signup**: On `/signup/callback`, extract token, redirect to `/signup` for org setup
 
 ### Environment Variables
-- `VITE_API_URL` (optional): Custom API endpoint. Defaults to `/api` (relative to current domain)
-- `SEGMENT_WRITE_KEY` (optional, build-time): Segment write key baked into the bundle at `npm run build`. Same env var as the CLJS bundle, so a single setting controls both webapps. Defaults to the hoop.dev production key — override only when pointing a build at a different Segment workspace.
+Env vars (`VITE_API_URL`, `SEGMENT_WRITE_KEY`, `API_URL`, `VITE_CLJS_URL`): see the table in `README.md` (Environment Variables).
 
 ## Re-frame Interop (CLJS ↔ React)
 

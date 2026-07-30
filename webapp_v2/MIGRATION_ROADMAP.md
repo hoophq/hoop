@@ -12,16 +12,15 @@ one draft PR, branch names from Linear. Every PR gates on: webapp compiles
 (shadow-cljs release), `npm run lint && npm run build` in `webapp_v2`, and smoke
 navigation of touched routes.
 
-**Excluded — in flight elsewhere:**
-- `/plugins/manage/:name` (Slack + Webhooks) is being migrated on EVL-101
-  (PR #1633): adds `pages/Integrations/{Slack,Webhooks}` at
+**Landed elsewhere (context):**
+- `/plugins/manage/:name` (Slack + Webhooks) migrated on EVL-101 (PR #1633,
+  merged): `pages/Integrations/{Slack,Webhooks}` live at
   `/integrations/{slack,webhooks}` with legacy redirects for
-  `/plugins/manage/{slack,webhooks}`, deletes the `Plugins/` stub, and removes the
-  CLJS `:manage-plugin` route/panel + plugin views + `events/slack_plugin.cljs`.
-  It does **not** redirect `/plugins/manage/jira` (still PR 0.1) and keeps the
-  `:manage-jira`/`:reviews-plugin-details` bidi entries (still Track A2). Nothing
-  in this roadmap touches `pages/Integrations` or `pages/Plugins` until it merges.
-- Snackbar unification is done on EVL-104 (PR #1638): all
+  `/plugins/manage/{slack,webhooks}`; the `Plugins/` stub and the CLJS
+  `:manage-plugin` route/panel + plugin views + `events/slack_plugin.cljs` are
+  gone. The `:manage-jira`/`:reviews-plugin-details` bidi entries remain
+  (still Track A2).
+- Snackbar unification landed on EVL-104 (PR #1638): all
   `@mantine/notifications` call sites moved to `showSnackbar`, the dependency
   removed, and `useBridgeStore.showSnackbar` deleted (the `show-snackbar` bridge
   event no longer exists).
@@ -30,7 +29,7 @@ navigation of touched routes.
 
 ## Phase 0 — Quick Wins (2 PRs, no dependencies)
 
-### PR 0.1 — Shell bug fixes (S) — EVL-105, PR #1641 (in review)
+### PR 0.1 — Shell bug fixes (S) — EVL-105, PR #1641 (merged)
 
 Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
 
@@ -59,13 +58,19 @@ Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
   `/plugins/manage/{slack,webhooks}` — the jira gap is ours; expect a trivial
   `Router.jsx` merge conflict with #1633 in the redirect block.
 
-### PR 0.2 — Scaffolding deletion + doc refresh (S)
+### PR 0.2 — Scaffolding deletion + doc refresh (S) — EVL-115 (this PR)
 
-- Delete the unrouted, unreferenced 7-line stubs from the initial shell commit:
+- ✅ Delete the unrouted, unreferenced 7-line stubs from the initial shell commit:
   `pages/{Connections (incl. Setup/), Dashboard, Sessions, Reviews, Guardrails,
   Resources}`. Verified: zero imports anywhere; Sidebar/CommandPalette reference
-  those features by *path* only (they land in the CLJS catch-all).
-  Integrations/Plugins stubs are EVL-101 turf — untouched.
+  those features by *path* only (they land in the CLJS catch-all). Also deleted
+  the orphaned `pages/Integrations/Authentication` stub — EVL-101 merged without
+  touching it, and B3.7 rebuilds that page from scratch.
+- ✅ Reorganize the webapp_v2 docs to "single owner per topic": each topic lives
+  in exactly one of the 7 md files (see the Documentation map in `README.md`);
+  store/service inventories replaced by pointers to `src/stores/`/`src/services/`
+  (the filesystem is the source of truth) plus non-obvious notes in
+  `COMPONENTS.md`.
 - ~~Switch the bridge snackbar call sites to `@/utils/snackbar`~~ — resolved:
   `Roles/Configure` by EVL-104 (PR #1638, which also deletes
   `useBridgeStore.showSnackbar`), `Onboarding/ProtectionRules` already local since
@@ -122,8 +127,8 @@ Delete files + their `app.cljs` requires/defmethods + `routes.cljs` entries:
   initial-state key).
 - Orphan `:audit-plugin-panel` defmethod (no route points at it).
 - Route entries `:404 :runbooks-edit :hoop-app :reviews-plugin-details` (bidi
-  entries with no panel and no references) and `:manage-jira` — the latter **only
-  after** PR 0.1's React redirect is merged.
+  entries with no panel and no references) and `:manage-jira` — gate satisfied:
+  PR 0.1's React redirect merged with EVL-105/#1641.
 
 Route entries that must **stay** (url-for/`:navigate` from live code):
 `:configure-role` (navigated from live `/resources` pages), the `:ai-data-masking`
@@ -183,7 +188,7 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 | B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
 | B3.5 Runbooks Setup | `/features/runbooks/setup` + rules new/edit (git repo config + path rules) | M | Independent of the runbooks *runner* (Wave 5) |
 | B3.6 Machine Identities | **Decision gate — see below** | S or M | |
-| B3.7 Integrations Authentication | `/integrations/authentication` (~324 LOC but **sensitive**: switches gateway auth method, rotates API key; admin + selfhosted only). Land **after EVL-101 merges**; requires a dedicated manual test pass on a selfhosted instance — CI green is not enough. Only afterwards may `:integrations-authentication` be pruned from CLJS sidebar/routes | M | |
+| B3.7 Integrations Authentication | `/integrations/authentication` (~324 LOC but **sensitive**: switches gateway auth method, rotates API key; admin + selfhosted only). EVL-101 merged — unblocked; requires a dedicated manual test pass on a selfhosted instance — CI green is not enough. Only afterwards may `:integrations-authentication` be pruned from CLJS sidebar/routes | M | |
 
 **Decision gate — Machine Identities (product decision pending):**
 CLJS `/features/machine-identities` (API `/machineidentities`, 812 LOC) and React
@@ -208,7 +213,7 @@ decision must close before the Endgame.
 | B4.1 Resources list + wizard core | `/resources` list (537 LOC) + multi-step wizard skeleton (state machine, step chrome); port `events/connections.cljs`; reuse the kept `agents/deployment` logic as a React service | XL pt.1 | Everything below |
 | B4.2 Resources new/configure/add-role | `/resources/new`, `/resources/configure/:id`, `/resources/:id/add-role`: federation OAuth, MCP OAuth popup + polling, terminal/native access tabs (needs B4.0). Reuse patterns from the already-React `/roles/:name/configure` — don't duplicate | XL pt.2 | Onboarding reuse |
 | B4.3 Resource catalog + onboarding | `/resource-catalog` (562 LOC, no API — seeds wizard state) + `/onboarding(+setup, setup/resource, setup/agent, resource-providers)` chrome (~700 LOC) on a no-sidebar layout, reusing the B4.1/B4.2 wizard | L | Kills the `/onboarding/*` ClojureApp route in `Router.jsx` |
-| B4.4 AWS Connect wizard | One shared wizard, two modes: `/integrations/aws-connect(+setup)` + `/onboarding/aws-connect` (~1,660 LOC). Port `events/jobs.cljs` 5s polling as a shared `useJobPolling` hook. **After EVL-101** (Integrations dir) | L | `useJobPolling` reused by Provisioning |
+| B4.4 AWS Connect wizard | One shared wizard, two modes: `/integrations/aws-connect(+setup)` + `/onboarding/aws-connect` (~1,660 LOC). Port `events/jobs.cljs` 5s polling as a shared `useJobPolling` hook. | L | `useJobPolling` reused by Provisioning |
 
 ### Wave 5 — Runner stack + Provisioning (parallel lanes)
 
@@ -297,7 +302,7 @@ after EVL-104: `users->get-user` (refreshLegacyUser), `command-palette->toggle`
   `MIGRATION_CHECKLIST.md`; update root `CLAUDE.md` / `DEV.md`.
 
 **Exit checklist before E1 starts:** all wave tickets merged; Parity table complete;
-Machine Identities decision closed; EVL-101 merged; one full week of production
+Machine Identities decision closed; EVL-101 merged (✅ done); one full week of production
 traffic with catch-all hit-count telemetry at zero (add a cheap counter/log to
 `ClojureApp.jsx` mount during Wave 7 to prove it).
 
@@ -311,7 +316,6 @@ Now ──► Track A (A1→A2→A3) ─┤ parallel
 Now ──► Wave 1 + Sentry ────┘
         Wave 2 + Segment track + clipboard + Clarity
         Wave 3 (parallel CRUD) + org-migration dialog + MI decision gate
-                                        [B3.7 & B4.4 wait for EVL-101]
         Wave 4 (B4.0 first, then wizard chain)
         Wave 5 (runner lane ∥ provisioning lane)
         Wave 6 (session details, 2 PRs)
@@ -321,16 +325,12 @@ Now ──► Wave 1 + Sentry ────┘
 
 ## Top Risks
 
-1. **EVL-101 collisions** — PR 0.1's jira redirect, B3.7 and B4.4 touch Integrations
-   territory; all are gated on the EVL-101 merge (PR #1633, in review), everything
-   else avoids those directories. Both #1633 and #1638 also edit
-   `CONTEXT_MIGRATION.md` — whoever merges last rebases the doc tables.
-2. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
+1. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
    4-way PR split and reusing the already-React `/roles/:name/configure` patterns.
-3. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
+2. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
    behavior-fragile; vendor `rle.js` unchanged, port the fetch-ReadableStream
    pattern verbatim, add side-by-side manual comparison to the test plan.
-4. **bidi load-time throws during cleanup** — sidebar constants prune (A1) strictly
+3. **bidi load-time throws during cleanup** — sidebar constants prune (A1) strictly
    before route deletions (A2/A3); never delete the keep-list route entries.
-5. **Pending product decision** — Machine Identities has a default outcome (stays
+4. **Pending product decision** — Machine Identities has a default outcome (stays
    on CLJS) so no wave stalls, but it must close before the Endgame.
