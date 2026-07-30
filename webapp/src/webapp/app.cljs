@@ -47,6 +47,7 @@
    [webapp.events.agents]
    [webapp.events.ask-ai]
    [webapp.events.audit]
+   [webapp.events.auth]
    [webapp.events.clarity]
    [webapp.events.components.dialog]
    [webapp.events.components.draggable-card]
