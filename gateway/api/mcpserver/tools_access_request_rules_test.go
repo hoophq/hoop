@@ -2,6 +2,9 @@ package mcpserver
 
 import (
 	"testing"
+
+	"github.com/hoophq/hoop/gateway/models"
+	"github.com/lib/pq"
 )
 
 func intPtr(v int) *int { return &v }
@@ -135,6 +138,49 @@ func TestValidateAccessRequestRuleInputForUpdate(t *testing.T) {
 			err := validateAccessRequestRuleInputForUpdate(in)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("validateAccessRequestRuleInputForUpdate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// approval_required_groups carries meaning when empty (the rule applies to all
+// user groups), so it must always be present in MCP responses — otherwise a
+// client cannot tell "applies to everyone" from "key was dropped".
+func TestAccessRequestRuleToMapAlwaysReportsApprovalRequiredGroups(t *testing.T) {
+	tests := []struct {
+		name   string
+		groups pq.StringArray
+		want   []string
+	}{
+		{name: "empty list", groups: pq.StringArray{}, want: []string{}},
+		{name: "nil list", groups: nil, want: []string{}},
+		{name: "populated list", groups: pq.StringArray{"developers"}, want: []string{"developers"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := accessRequestRuleToMap(&models.AccessRequestRule{
+				Name:                   "default-rule",
+				AccessType:             "jit",
+				ApprovalRequiredGroups: tc.groups,
+			})
+			got, ok := m["approval_required_groups"]
+			if !ok {
+				t.Fatal("approval_required_groups missing from the response map")
+			}
+			groups, ok := got.([]string)
+			if !ok {
+				t.Fatalf("approval_required_groups = %T, want []string", got)
+			}
+			if groups == nil {
+				t.Error("approval_required_groups is nil, want an empty slice so it marshals to []")
+			}
+			if len(groups) != len(tc.want) {
+				t.Fatalf("approval_required_groups = %v, want %v", groups, tc.want)
+			}
+			for i := range tc.want {
+				if groups[i] != tc.want[i] {
+					t.Errorf("approval_required_groups[%d] = %q, want %q", i, groups[i], tc.want[i])
+				}
 			}
 		})
 	}

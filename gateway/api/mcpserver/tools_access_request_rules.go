@@ -403,9 +403,10 @@ func accessRequestRuleToMap(rule *models.AccessRequestRule) map[string]any {
 	if len(rule.ConnectionNames) > 0 {
 		m["connection_names"] = []string(rule.ConnectionNames)
 	}
-	if len(rule.ApprovalRequiredGroups) > 0 {
-		m["approval_required_groups"] = []string(rule.ApprovalRequiredGroups)
-	}
+	// Always emitted: an empty list is a meaningful configuration here — the
+	// rule applies to all user groups — so omitting the key would make the
+	// response ambiguous and break read-modify-write for MCP clients.
+	m["approval_required_groups"] = ensureStringArray(rule.ApprovalRequiredGroups)
 	if len(rule.ReviewersGroups) > 0 {
 		m["reviewers_groups"] = []string(rule.ReviewersGroups)
 	}
