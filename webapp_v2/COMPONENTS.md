@@ -167,6 +167,63 @@ import RingProgress from '@/components/RingProgress'
 <RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
 ```
 
+### `BarChart`
+Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
+```jsx
+import BarChart from '@/components/BarChart'
+
+// Grouped bars, no axes (identification via tooltip):
+<BarChart
+  h={300}
+  data={buckets}
+  dataKey="label"
+  withXAxis={false}
+  withYAxis={false}
+  barProps={{ radius: 4 }}
+  series={[
+    { name: 'approved', label: 'Approved', color: 'green.5' },
+    { name: 'rejected', label: 'Rejected', color: 'red.5' },
+  ]}
+/>
+```
+Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
+
+### `DonutChart`
+Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
+```jsx
+import DonutChart from '@/components/DonutChart'
+
+<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
+```
+Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
+
+### `CHART_SERIES_COLORS` (theme export, not a component)
+The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
+```jsx
+import { CHART_SERIES_COLORS } from '@/theme'
+
+const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
+```
+**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
+
+### `SegmentedControl`
+Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
+```jsx
+import SegmentedControl from '@/components/SegmentedControl'
+
+<SegmentedControl
+  size="xs"
+  value={range}
+  onChange={setRange}
+  lockedTooltip="Available on Enterprise plan only."
+  data={[
+    { value: '1', label: '24h', locked: isFreeLicense },
+    { value: '7', label: '7d' },
+  ]}
+/>
+```
+Locked items render dimmed, show `lockedTooltip` on hover, and are dropped in `onChange`. Do **not** reach for Mantine's `disabled` instead: it sets `pointer-events: none`, which kills hover, so the tooltip would never open and the user would see a greyed-out option with no explanation.
+
 ### `StepAccordion`
 Multi-step accordion that mirrors the CLJS wizard pattern.
 ```jsx
@@ -652,6 +709,11 @@ Non-obvious notes only:
   the service boundary.
 - `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
   existence/total probe.
+- `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
+  is **exclusive** (the gateway compares against midnight *starting* that day, so
+  send tomorrow to include today). Never send `group_by`.
+- `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
+  is unbounded; fetch it once and filter client-side.
 
 ---
 

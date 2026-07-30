@@ -64,6 +64,7 @@ Gateway backend (port 8009)
 | `/setup` | React | Done |
 | `/auth/callback` | React | Done |
 | `/signup/callback` | React | Done (IDP signup callback) |
+| `/dashboard` | React | Done (admin-only; lazily loaded — it owns the recharts chunk) |
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
@@ -121,7 +122,6 @@ Gateway backend (port 8009)
 ```
 /                             home (redirects to onboarding)
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
-/dashboard
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
@@ -200,6 +200,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
+- Dashboard (`/dashboard`, admin-only) — three charts + today's overview. First chart consumer: introduced `@mantine/charts`, the `BarChart`/`DonutChart`/`SegmentedControl` wrappers and `CHART_SERIES_COLORS` in `theme.js`
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
