@@ -339,13 +339,13 @@
                           :disabled (every? (set (map :value @(:reviewers-groups state)))
                                             (map :value user-groups-options))
                           :on-click #(reset! (:reviewers-groups state) user-groups-options)}
-               "Select all"]
+               "Select all groups"]
               [:> Button {:size "1"
                           :variant "ghost"
                           :type "button"
                           :disabled (empty? @(:reviewers-groups state))
                           :on-click #(reset! (:reviewers-groups state) [])}
-               "Clear all"]]]
+               "Clear all groups"]]]
             [:> Flex {:align "center" :gap "3" :class "pt-4"}
              [:> Switch {:checked @(:all-groups-must-approve state)
                          :size "3"
