@@ -310,15 +310,19 @@
                              (reset! (:attribute-names state) names)))}]]
 
            [form-section {:title "User groups requiring review"
-                          :description "Users in these groups must go through an approval review when requesting access with this rule. Leave empty to require review from all users."}
-            [multiselect/main
-             {:label "User Groups"
-              :id "approval-required-groups-input"
-              :name "approval-required-groups-input"
-              :options user-groups-options
-              :default-value @(:approval-required-groups state)
-              :placeholder "Select groups..."
-              :on-change #(reset! (:approval-required-groups state) (js->clj % :keywordize-keys true))}]]
+                          :description "Users in these groups must go through an approval review when requesting access with this rule."}
+            [:> Box {:class "space-y-1"}
+             [multiselect/main
+              {:label "User Groups"
+               :id "approval-required-groups-input"
+               :name "approval-required-groups-input"
+               :options user-groups-options
+               :not-margin-bottom? true
+               :default-value @(:approval-required-groups state)
+               :placeholder "Select groups..."
+               :on-change #(reset! (:approval-required-groups state) (js->clj % :keywordize-keys true))}]
+             [:> Text {:size "1" :class "text-[--gray-11]"}
+              "Leave empty to require review from all users."]]]
 
            [form-section {:title "Approver user groups"
                           :description "Select which user groups can approve access requests in this rule. Each group counts as one approval."}
