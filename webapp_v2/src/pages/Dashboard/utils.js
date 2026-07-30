@@ -135,14 +135,19 @@ export function countReviewsToday(reviews = []) {
  * (`created_at.slice(0, 10)`) but rendered the label in local time, so a review
  * created just after UTC midnight was filed under one day and labelled another.
  *
- * A review in any other status still opens a bucket, which then renders as a
- * zero-height bar.
+ * A review in any other status is skipped rather than creating a bucket. The
+ * legacy `cond` had no `:else` branch and wrote a literal nil key, leaving a
+ * `{approved: 0, rejected: 0}` entry that rendered as a zero-height bar for
+ * dates whose only activity was pending.
  */
 export function buildReviewBuckets(reviews = [], days) {
   const cutoff = Date.now() - days * MS_PER_DAY
   const buckets = new Map()
 
   for (const review of reviews) {
+    const countedAs = COUNTED_REVIEW_STATUSES[review.status]
+    if (!countedAs) continue
+
     const createdAt = new Date(review.created_at)
     const time = createdAt.getTime()
     if (!Number.isFinite(time) || time <= cutoff) continue
@@ -153,9 +158,7 @@ export function buildReviewBuckets(reviews = [], days) {
       bucket = { label: formatTooltipDate(createdAt), approved: 0, rejected: 0 }
       buckets.set(key, bucket)
     }
-
-    const countedAs = COUNTED_REVIEW_STATUSES[review.status]
-    if (countedAs) bucket[countedAs] += 1
+    bucket[countedAs] += 1
   }
 
   return [...buckets.entries()]
