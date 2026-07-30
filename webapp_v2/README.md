@@ -2,6 +2,21 @@
 
 Modern React-based web application for Hoop.
 
+## Documentation map
+
+| File | Read it for |
+|------|-------------|
+| `README.md` | Setup, dev servers/ports, HMR caveats, env vars (this file) |
+| `CLAUDE.md` | Coding + styling rules, auth flow, snackbar/CSS-layer rules |
+| `CONTEXT_MIGRATION.md` | Shell/bridge architecture, routing split, migration status |
+| `COMPONENTS.md` | Catalog of components/hooks + non-obvious store/service notes |
+| `MIGRATION_CHECKLIST.md` | Step-by-step process for migrating one CLJS page |
+| `CLJS_PATTERNS.md` | CLJS → React rosetta stone (incl. reusable building blocks) |
+| `MIGRATION_ROADMAP.md` | Wave plan — what's left, in what order |
+
+Each topic has exactly one owner file (the one listed above); everything else
+is a pointer. When updating docs, edit the owner — don't re-duplicate content.
+
 ## Tech Stack
 
 - **React 19** - UI framework
@@ -10,6 +25,7 @@ Modern React-based web application for Hoop.
 - **Zustand** - State management
 - **React Router v7** - Client-side routing
 - **Axios** - HTTP client
+- **lucide-react** - Icons (the only icon library)
 
 ## Getting Started
 
@@ -79,31 +95,23 @@ npm run preview
 
 ### Environment Variables
 
-A `.env` file is **optional**. All variables documented in `.env.sample` have
-working defaults baked into `vite.config.js`, so the dev server runs out of
-the box with no setup. Only create a `.env` if you need to override one of:
+A `.env` file is **optional** — `vite.config.js` bakes in working defaults for
+everything, so the dev server runs out of the box with no setup (see also
+`.env.sample`). Only create a `.env` if you need to override one of:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `VITE_API_URL` | `/api` (relative) | Custom backend base URL at runtime |
-| `VITE_GATEWAY_URL` | `http://localhost:8009` | Vite dev proxy target for `/api` |
-| `VITE_CLJS_URL` | `http://localhost:8280` | Vite dev proxy target for CLJS assets |
+| `VITE_API_URL` | `/api` (relative) | Custom backend base URL at runtime (`services/api.js`) |
+| `API_URL` | `http://localhost:8009` | Vite dev proxy target for `/api` — same env var the CLJS build reads via shadow-cljs closure-defines |
+| `VITE_CLJS_URL` | `http://localhost:8280` | Vite dev proxy target for CLJS assets (`/js`, `/css`, `/images`, …) |
+| `SEGMENT_WRITE_KEY` | hoop.dev production key | Build-time: Segment write key baked into the bundle at `npm run build`. Same env var as the CLJS bundle, so one setting controls both webapps — override only when pointing a build at a different Segment workspace |
 
 ## Authentication
 
-This app supports two authentication methods:
-
-1. **Local Auth**: Email/password authentication via `/localauth/login`
-2. **OAuth/IDP**: SSO authentication via configured identity providers
-
-The authentication method is automatically detected from the gateway configuration.
-
-### Auth Flow
-
-- Token is stored in localStorage as `jwt-token`
-- Token can be received via cookies (`hoop_access_token`) or query params (`?token=xxx`)
-- On 401 responses, the app saves the current URL and redirects to login
-- After successful auth, redirects back to the saved URL
+Supports local auth (email/password) and OAuth/IDP, auto-detected from the
+gateway configuration. The token lives in `localStorage.jwt-token` (shared
+with the legacy CLJS app). Full flow, key files, and 401 handling:
+`CLAUDE.md` "Authentication Flow".
 
 ## Project Structure
 

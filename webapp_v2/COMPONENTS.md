@@ -608,53 +608,58 @@ Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, 
 
 ## Stores (`src/stores/`)
 
-| Hook | Responsibility | Key state / actions |
-|------|---------------|---------------------|
-| `useAuthStore` | JWT token lifecycle | `token`, `setToken()`, `logout()`, `redirectUrl` |
-| `useUserStore` | Current user data | `user`, `isAdmin`, `isFreeLicense`, `fetchUser()` |
-| `useUIStore` | Sidebar open/collapsed | `sidebarOpened`, `toggle()`, `pendingSection` |
-| `useBridgeStore` | Cross-cutting CLJS re-frame dispatches | `showSnackbar()`, `refreshLegacyUser()`, `openNativeClientAccess()`, `openNativeClientAccessWhenReady()` |
-| `useConfigStatusStore` | Sidebar setup-checklist snapshot (admin only) | `status`, `checks`, `execConnectionName`, `fetchStatus({force})` |
-| `useAgentStore` | Agents CRUD | `agents`, `loading`, `error`, `agentKey`, `fetchAgents()`, `createAgent()`, `deleteAgent()` |
-| `useCommandPaletteStore` | Command palette state | `page`, `context`, `searchStatus`, `results`, `search()` |
+One Zustand store per concern — **the filesystem is the source of truth**
+(`ls src/stores/`); store names describe their responsibility. Check the
+directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
 useAuthStore.getState().token
 ```
 
+Non-obvious notes only:
+
+- `useBridgeStore` — wraps `window.hoopDispatch` re-frame bridge calls; never
+  call `hoopDispatch` from a component (rule in `CLAUDE.md` "Re-frame Interop").
+  Current methods: `refreshLegacyUser()`, `openNativeClientAccess()`,
+  `openNativeClientAccessWhenReady()`, `syncPrimaryConnectionFromUrl()`.
+  Snackbars are NOT bridged — use `showSnackbar` from `@/utils/snackbar`.
+- `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only;
+  refreshes on the `hoop:session-executed` DOM event from the CLJS terminal.
+- `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
+  credential field schemas + connection icons; `load()` is idempotent.
+
 ---
 
 ## Services (`src/services/`)
 
-| File | What it wraps |
-|------|--------------|
-| `api.js` | Base Axios instance — adds Bearer token, handles 401 logout |
-| `auth.js` | Login, register, OAuth, user info, server info |
-| `agents.js` | CRUD `/agents` and `/agents/:id` |
-| `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
-| `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
-| `guardrails.js` | GET `/guardrails` |
-| `sessions.js` | GET `/sessions` (`list(params)` — e.g. `{ limit: 1 }` as a cheap existence/total probe) |
-| `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
-| `attributes.js` | CRUD `/attributes` |
-| `search.js` | GET `/search?term=` |
-| `infrastructure.js` | GET/PUT `/serverconfig/misc` |
-| `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
-| `protectionProfiles.js` | GET/PUT `/orgs/protection-profile` (protection rules profile; `profile: null` = manual) |
+One Axios service file per API domain — **the filesystem is the source of
+truth** (`ls src/services/`). Check the directory before creating a new file;
+when adding one, follow the pattern in `services/agents.js`.
 
-When adding a new service file, follow the pattern in `services/agents.js`.
+Non-obvious notes only:
+
+- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
+  URL + logout). Every other service imports it; never call axios directly.
+- `analytics.js` — Segment (`identify()` only today), not a gateway API
+  wrapper; the write key is a build-time define (see the env table in
+  `README.md`).
+- `connections.js` — both `getConnections()` (full list — only for resolving
+  every `connection_ids → name`, e.g. list displays) and
+  `getConnectionsPaginated({page,pageSize,search,connectionIds})` for
+  infinite-scroll dropdowns.
+- `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
+  the service boundary.
+- `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
+  existence/total probe.
 
 ---
 
 ## Notifications — `showSnackbar`
 
-Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
-same library the legacy CLJS app uses — and renders through
-`src/components/Snackbar/Toast.jsx`, a one-to-one port of the legacy
-`webapp.components.toast`, so snackbars appear at the **top-right** and look
-identical across React and CLJS routes.
-The single `<Toaster>` is mounted in `src/App.jsx`.
+Use the `showSnackbar` helper from `@/utils/snackbar`. Rules (never
+`@mantine/notifications`, single `<Toaster>` in `App.jsx`, never via the CLJS
+bridge): see `CLAUDE.md` "Snackbars / Toasts".
 
 ```js
 import { showSnackbar } from '@/utils/snackbar'
@@ -672,9 +677,7 @@ showSnackbar({
 ```
 
 Error toasts auto-dismiss after 10 seconds (mirrors v1); other levels use sonner's
-default. Do NOT use `@mantine/notifications` — the dependency has been removed from
-the project (it rendered a completely different visual and broke parity with v1).
-See the "Snackbars / Toasts" section of `CLAUDE.md` for the full rule.
+default.
 
 ---
 
