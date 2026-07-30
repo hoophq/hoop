@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -415,5 +416,96 @@ func TestEmptyChainAllows(t *testing.T) {
 	var empty policy.Chain
 	if empty.Evaluate(stmt("DROP TABLE t", hoopinspect.OpDrop)).Denied {
 		t.Error("an empty chain denied")
+	}
+}
+
+// stubEvaluator returns a fixed verdict and records that it ran.
+type stubEvaluator struct {
+	verdict policy.Verdict
+	ran     bool
+}
+
+func (s *stubEvaluator) Evaluate(hoopinspect.Statement) policy.Verdict {
+	s.ran = true
+	return s.verdict
+}
+
+// The bug: the chain stopped on any non-nil Err, so a fail-open evaluator --
+// which reports Denied=false with Err set, exactly as OPAClient.failure and
+// Rules.Evaluate do -- silently disabled every evaluator behind it. One
+// unreachable OPA or one uncompilable regex would turn the rest of the
+// policy off, which is the opposite of what fail-open asks for.
+func TestChainContinuesPastAFailOpenError(t *testing.T) {
+	degraded := &stubEvaluator{verdict: policy.Verdict{Err: errors.New("opa unreachable")}}
+	strict := &stubEvaluator{verdict: policy.Deny("no-drop", "no drops here")}
+	chain := policy.Chain{degraded, strict}
+
+	v := chain.Evaluate(stmt("DROP TABLE t", hoopinspect.OpDrop, "t"))
+	if !strict.ran {
+		t.Fatal("a fail-open error stopped the chain; the later evaluator never ran")
+	}
+	if !v.Denied {
+		t.Fatal("the DROP was allowed despite a later evaluator denying it")
+	}
+	if v.Rule != "no-drop" || v.Message != "no drops here" {
+		t.Errorf("verdict lost the denying rule: %+v", v)
+	}
+	// The denial carries the earlier failure too: an operator needs to know
+	// their first evaluator was degraded, even though the second caught this
+	// statement anyway.
+	if v.Err == nil || !strings.Contains(v.Err.Error(), "opa unreachable") {
+		t.Errorf("Err = %v, want the accumulated fail-open error", v.Err)
+	}
+}
+
+// With no denial anywhere, the chain allows and hands back every error it
+// collected, so gate.inspect can audit them.
+func TestChainAccumulatesErrorsWhenNothingDenies(t *testing.T) {
+	first := &stubEvaluator{verdict: policy.Verdict{Err: errors.New("regex did not compile")}}
+	second := &stubEvaluator{verdict: policy.Verdict{Err: errors.New("opa unreachable")}}
+	third := &stubEvaluator{verdict: policy.Allow()}
+
+	v := policy.Chain{first, second, third}.Evaluate(stmt("SELECT 1", hoopinspect.OpSelect))
+	if v.Denied {
+		t.Fatal("the chain denied although no evaluator did")
+	}
+	if !third.ran {
+		t.Error("the last evaluator never ran")
+	}
+	for _, want := range []string{"regex did not compile", "opa unreachable"} {
+		if v.Err == nil || !strings.Contains(v.Err.Error(), want) {
+			t.Errorf("Err = %v, want it to mention %q", v.Err, want)
+		}
+	}
+}
+
+// A clean run must not invent an error. gate.inspect logs a warning on any
+// non-nil Err, so a spurious one is noise on every statement.
+func TestChainReportsNoErrorWhenEveryEvaluatorIsHealthy(t *testing.T) {
+	chain := policy.Chain{&stubEvaluator{verdict: policy.Allow()}, &stubEvaluator{verdict: policy.Allow()}}
+
+	if v := chain.Evaluate(stmt("SELECT 1", hoopinspect.OpSelect)); v.Err != nil {
+		t.Errorf("Err = %v on a healthy chain", v.Err)
+	}
+}
+
+// Fail-closed is unchanged: an evaluator that turns its error into a denial
+// still stops the chain, because the denial does.
+func TestChainStopsOnAFailClosedError(t *testing.T) {
+	closed := &stubEvaluator{verdict: policy.Verdict{
+		Denied: true, Message: "policy engine unavailable; denying",
+		Rule: "opa", Err: errors.New("opa unreachable"),
+	}}
+	later := &stubEvaluator{verdict: policy.Allow()}
+
+	v := policy.Chain{closed, later}.Evaluate(stmt("SELECT 1", hoopinspect.OpSelect))
+	if !v.Denied {
+		t.Fatal("a fail-closed error did not deny")
+	}
+	if later.ran {
+		t.Error("evaluation continued past a denial")
+	}
+	if v.Err == nil {
+		t.Error("the denial dropped its cause")
 	}
 }

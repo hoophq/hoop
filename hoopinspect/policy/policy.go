@@ -26,6 +26,7 @@
 package policy
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -303,19 +304,38 @@ func (r Rule) matches(stmt hoopinspect.Statement) (bool, error) {
 
 // --- chaining ------------------------------------------------------------
 
-// Chain evaluates each evaluator in order and returns the first denial.
+// Chain evaluates every evaluator in order and returns the first denial.
 //
 // The intended order is local rules first, OPA second: a statement that a
 // local rule already forbids never costs a network round-trip, and OPA stays
 // off the hot path for the obvious cases.
+//
+// # Only a denial stops the chain
+//
+// An evaluator reports a broken evaluation through Err and decides for
+// itself whether that means deny; a fail-open evaluator returns
+// Denied=false with Err set. Treating a non-nil Err as a stop condition
+// would let a fail-open evaluator suppress every evaluator behind it, so one
+// unreachable OPA or one uncompilable regex would silently disable the rest
+// of the policy -- the opposite of what an operator asked for by choosing
+// fail-open for availability.
+//
+// So Err accumulates and evaluation continues. The errors travel on the
+// returned Verdict either way, including on a denial, because the caller
+// audits them and a degraded evaluator is worth recording even when a later
+// one denied anyway.
 type Chain []Evaluator
 
 // Evaluate implements Evaluator.
 func (c Chain) Evaluate(stmt hoopinspect.Statement) Verdict {
+	var errs error
 	for _, e := range c {
-		if v := e.Evaluate(stmt); v.Denied || v.Err != nil {
+		v := e.Evaluate(stmt)
+		if v.Denied {
+			v.Err = errors.Join(errs, v.Err)
 			return v
 		}
+		errs = errors.Join(errs, v.Err)
 	}
-	return Allow()
+	return Verdict{Err: errs}
 }
