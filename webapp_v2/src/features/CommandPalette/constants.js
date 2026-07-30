@@ -14,6 +14,10 @@ import {
   ExternalLink,
   Layers,
   Users,
+  KeyRound,
+  Tags,
+  FlaskConical,
+  ScrollText,
 } from 'lucide-react'
 
 // Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature)
@@ -42,4 +46,8 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'settings-infra', label: 'Infrastructure', description: 'Infrastructure settings', icon: LayoutDashboard, path: '/settings/infrastructure', adminOnly: true, selfhostedOnly: true },
   { id: 'license', label: 'License', description: 'License management', icon: ShieldCheck, path: '/settings/license', adminOnly: true },
   { id: 'users', label: 'Users', description: 'Manage organization users', icon: Users, path: '/organization/users', adminOnly: true },
+  { id: 'settings-api-keys', label: 'API Keys', description: 'Manage API keys', icon: KeyRound, path: '/settings/api-keys', adminOnly: true },
+  { id: 'settings-attributes', label: 'Attributes', description: 'Manage user attributes', icon: Tags, path: '/settings/attributes', adminOnly: true },
+  { id: 'settings-experimental', label: 'Experimental', description: 'Toggle experimental features', icon: FlaskConical, path: '/settings/experimental', adminOnly: true },
+  { id: 'settings-audit-logs', label: 'Internal Audit Logs', description: 'Browse internal audit logs', icon: ScrollText, path: '/settings/audit-logs', adminOnly: true },
 ]
