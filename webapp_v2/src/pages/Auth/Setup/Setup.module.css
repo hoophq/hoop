@@ -43,6 +43,17 @@
   letter-spacing: 0.08em;
 }
 
+/* Text tones for the dark navy panel. Color-mixed from the white token
+   (mirrors EnterpriseBanner) instead of the gray scale, which is calibrated
+   for light surfaces and would fail contrast here. */
+.navyText {
+  color: color-mix(in srgb, var(--mantine-color-white) 75%, transparent);
+}
+
+.navyTextSubtle {
+  color: color-mix(in srgb, var(--mantine-color-white) 50%, transparent);
+}
+
 .heroHeading {
   font-size: 24px;
   font-weight: 700;
@@ -61,11 +72,11 @@
   border-radius: 50%;
   display: inline-block;
   flex-shrink: 0;
-  background: var(--mantine-color-gray-7);
+  background: color-mix(in srgb, var(--mantine-color-white) 40%, transparent);
 }
 
 .brandsDivider {
-  border-bottom: 1px solid var(--mantine-color-gray-8);
+  border-bottom: 1px solid color-mix(in srgb, var(--mantine-color-white) 15%, transparent);
   padding-bottom: var(--mantine-spacing-md);
   margin-bottom: var(--mantine-spacing-md);
 }
@@ -73,23 +84,23 @@
 .blockquote {
   margin: 0;
   padding-left: var(--mantine-spacing-md);
-  border-left: 2px solid var(--mantine-color-gray-4);
+  border-left: 2px solid color-mix(in srgb, var(--mantine-color-white) 30%, transparent);
   font-size: var(--mantine-font-size-sm);
   line-height: var(--mantine-line-height-md);
-  color: var(--mantine-color-gray-4);
+  color: color-mix(in srgb, var(--mantine-color-white) 75%, transparent);
 }
 
 .statusDivider {
   flex: 1;
   height: 1px;
-  background: var(--mantine-color-gray-8);
+  background: color-mix(in srgb, var(--mantine-color-white) 15%, transparent);
 }
 
 .pulseDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--mantine-color-gray-4);
+  background: color-mix(in srgb, var(--mantine-color-white) 80%, transparent);
   animation: pulse 1.6s ease-in-out infinite;
 }
 

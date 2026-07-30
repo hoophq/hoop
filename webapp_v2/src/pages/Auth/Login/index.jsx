@@ -32,7 +32,7 @@ function getLoginErrorMessage(error) {
 
 function AuthCard({ children }) {
   return (
-    <Center style={{ minHeight: '100vh', backgroundColor: 'var(--mantine-color-gray-1)' }}>
+    <Center style={{ minHeight: '100vh', backgroundColor: 'var(--mantine-color-gray-0)' }}>
       <Box style={{ width: '90%', maxWidth: 400 }}>
         <Paper shadow="sm" p={40} radius="lg">
           <img

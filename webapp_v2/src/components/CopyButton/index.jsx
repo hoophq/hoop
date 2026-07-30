@@ -10,7 +10,7 @@ import { useUserStore } from '@/stores/useUserStore'
  *   <CopyButton value="secret-key-here" />
  *   <CopyButton value={key} label="Copy API Key" />
  */
-export default function CopyButton({ value, label, size = 'sm', ...props }) {
+export default function CopyButton({ value, label, ...props }) {
   const disableClipboard = useUserStore(s => s.disableClipboard)
   if (disableClipboard) return null
 
@@ -22,7 +22,6 @@ export default function CopyButton({ value, label, size = 'sm', ...props }) {
             color={copied ? 'green' : 'gray'}
             variant="subtle"
             onClick={copy}
-            size={size}
             aria-label={label ?? 'Copy'}
             {...props}
           >

@@ -60,7 +60,7 @@ export default function TerminalAccessTab({ connection }) {
         learnMore={
           <Button
             variant="default"
-            size="xs"
+            size="sm"
             leftSection={<ArrowUpRight size={14} />}
             w="fit-content"
             component="a"
@@ -91,7 +91,7 @@ export default function TerminalAccessTab({ connection }) {
         />
         <Button
           variant="default"
-          size="xs"
+          size="sm"
           leftSection={<ArrowUpRight size={14} />}
           w="fit-content"
           component={Link}
@@ -118,7 +118,7 @@ export default function TerminalAccessTab({ connection }) {
         />
         <Button
           variant="default"
-          size="xs"
+          size="sm"
           leftSection={<ArrowUpRight size={14} />}
           w="fit-content"
           component={Link}

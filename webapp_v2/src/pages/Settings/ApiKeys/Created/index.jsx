@@ -35,9 +35,8 @@ export default function ApiKeysCreated() {
                 readOnly
                 flex={1}
                 ff="monospace"
-                size="sm"
               />
-              <CopyButton value={rawKey} label="Copy API Key" size="md" />
+              <CopyButton value={rawKey} label="Copy API Key" />
             </Group>
           </Stack>
 

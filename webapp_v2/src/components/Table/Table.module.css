@@ -1,11 +1,11 @@
 .surface {
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--mantine-color-gray-2);
   border-radius: var(--mantine-radius-md);
   overflow: hidden;
 }
 
 .thead {
-  background-color: var(--mantine-color-gray-1);
+  background-color: var(--mantine-color-gray-0);
 }
 
 /* Applies to both column headers (thead th) and row headers (tbody th) */

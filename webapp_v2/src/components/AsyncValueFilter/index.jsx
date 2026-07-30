@@ -111,7 +111,6 @@ export default function AsyncValueFilter({
             value={searchValue}
             onChange={(event) => onSearchChange?.(event.currentTarget.value)}
             leftSection={<Search size={14} />}
-            size="xs"
           />
           <ScrollArea
             h={288}

@@ -83,7 +83,7 @@ function AgentRow({ agent, isAdmin, isLast, onDelete }) {
           <AgentStatusBadge status={agent.status} />
           {isAdmin && (
             <Button
-              size="xs"
+              size="sm"
               variant="light"
               color="red"
               leftSection={<Trash2 size={14} />}

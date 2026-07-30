@@ -11,5 +11,5 @@ import { DatePickerInput as MantineDatePickerInput } from '@mantine/dates'
  *   <DatePickerInput type="range" label="Date range" value={range} onChange={setRange} />
  */
 export default function DatePickerInput({ type = 'default', ...props }) {
-  return <MantineDatePickerInput type={type} radius="sm" clearable {...props} />
+  return <MantineDatePickerInput type={type} clearable {...props} />
 }

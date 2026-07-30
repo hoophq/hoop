@@ -42,10 +42,12 @@ export const MAIN_ITEMS = [
   }
 ]
 
+// Alphabetical, mirroring the sidebar component in Figma (Components | Custom).
 export const DISCOVER_ITEMS = [
-  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true, licenseFeature: 'ai-agents' },
+  { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true, licenseFeature: 'access-control' },
   { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true, licenseFeature: 'access-requests' },
-  { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true, licenseFeature: 'runbooks' },
+  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true, licenseFeature: 'ai-agents' },
+  { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   {
     label: 'Event Routing',
     path: '/features/event-routing',
@@ -55,18 +57,9 @@ export const DISCOVER_ITEMS = [
   },
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true, licenseFeature: 'guardrails' },
   { label: 'Jira Templates', path: '/jira-templates', icon: Layers, adminOnly: true, licenseFeature: 'jira-integration' },
-  { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { label: 'Live Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true, licenseFeature: 'data-masking' },
-  { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true, licenseFeature: 'access-control' },
+  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true, licenseFeature: 'machine-identities' },
   { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true, licenseFeature: 'provisioning-hub' },
-  {
-    label: 'Rulepacks',
-    path: '/rulepacks',
-    icon: WandSparkles,
-    adminOnly: true,
-    featureFlag: 'experimental.rulepacks',
-    licenseFeature: 'rulepacks'
-  },
   {
     label: 'Resource Discovery',
     path: '/integrations/aws-connect',
@@ -75,7 +68,15 @@ export const DISCOVER_ITEMS = [
     badge: { text: 'BETA', color: 'indigo' },
     licenseFeature: 'resource-discovery'
   },
-  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true, licenseFeature: 'machine-identities' }
+  {
+    label: 'Rulepacks',
+    path: '/rulepacks',
+    icon: WandSparkles,
+    adminOnly: true,
+    featureFlag: 'experimental.rulepacks',
+    licenseFeature: 'rulepacks'
+  },
+  { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true, licenseFeature: 'runbooks' }
 ]
 
 export const ORGANIZATION_ITEMS = [
@@ -85,7 +86,7 @@ export const ORGANIZATION_ITEMS = [
     icon: Puzzle,
     adminOnly: true,
     children: [
-      { label: 'Authentication', path: '/integrations/authentication', adminOnly: true },
+      { label: 'Authentication', path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
       { label: 'Jira', path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
       { label: 'Webhooks', path: '/integrations/webhooks', adminOnly: true },
       { label: 'Slack', path: '/integrations/slack', adminOnly: true }
