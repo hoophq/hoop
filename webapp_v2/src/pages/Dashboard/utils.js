@@ -18,21 +18,16 @@ const COUNTED_REVIEW_STATUSES = {
 /* -------------------------------------------------------------------------- */
 /* Dates                                                                      */
 /*                                                                            */
-/* The legacy app mixes two bases and this port reproduces both: cljs-time     */
-/* `today-at-midnight` is UTC midnight (the Sessions card and the Reviews      */
-/* count) while `today` is the local calendar date (the Redacted card, every   */
-/* range and every label).                                                     */
+/* Everything here works in the user's LOCAL calendar day. The legacy app      */
+/* mixed two bases — cljs-time `today-at-midnight` is UTC midnight while       */
+/* `today` is the local date — so its "today" cards disagreed with each other  */
+/* for as many hours as the user's UTC offset.                                 */
 /* -------------------------------------------------------------------------- */
 
 export function startOfLocalDay(date = new Date()) {
   const start = new Date(date)
   start.setHours(0, 0, 0, 0)
   return start
-}
-
-/** cljs-time `today-at-midnight` — midnight of the current *UTC* day. */
-export function startOfUtcDay(date = new Date()) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
 }
 
 export function addDays(date, days) {
@@ -98,12 +93,11 @@ export function todayReportParams() {
  * a separate un-limited COUNT query, so we pay for one row instead of twenty.
  */
 export function todaySessionParams() {
-  const start = startOfUtcDay()
-  const end = new Date(start.getTime() + 23 * 3600_000 + 59 * 60_000 + 59_000)
+  const start = startOfLocalDay()
 
   return {
     start_date: start.toISOString(),
-    end_date: end.toISOString(),
+    end_date: new Date(addDays(start, 1).getTime() - 1).toISOString(),
     limit: 1,
   }
 }
@@ -114,21 +108,22 @@ export function todaySessionParams() {
 
 /** Reviews created today, in any status. */
 export function countReviewsToday(reviews = []) {
-  const start = startOfUtcDay().getTime()
+  const start = startOfLocalDay().getTime()
   const end = start + MS_PER_DAY
 
   return reviews.filter((review) => {
     const createdAt = new Date(review.created_at).getTime()
-    return Number.isFinite(createdAt) && createdAt > start && createdAt < end
+    return Number.isFinite(createdAt) && createdAt >= start && createdAt < end
   }).length
 }
 
 /**
  * Approved/rejected counts per day over the last `days`, oldest first.
  *
- * Buckets are keyed by the UTC date embedded in `created_at` while the label is
- * rendered in local time, and the label is overwritten by whichever review in
- * the bucket is visited last.
+ * Buckets are keyed by the local calendar date so the grouping always agrees
+ * with the label shown in the tooltip. The legacy version keyed on the UTC date
+ * (`created_at.slice(0, 10)`) but rendered the label in local time, so a review
+ * created just after UTC midnight was filed under one day and labelled another.
  *
  * A review in any other status still opens a bucket, which then renders as a
  * zero-height bar.
@@ -142,13 +137,12 @@ export function buildReviewBuckets(reviews = [], days) {
     const time = createdAt.getTime()
     if (!Number.isFinite(time) || time <= cutoff) continue
 
-    const key = String(review.created_at).slice(0, 10)
+    const key = localDateKey(createdAt)
     let bucket = buckets.get(key)
     if (!bucket) {
-      bucket = { label: '', approved: 0, rejected: 0 }
+      bucket = { label: formatTooltipDate(createdAt), approved: 0, rejected: 0 }
       buckets.set(key, bucket)
     }
-    bucket.label = formatTooltipDate(createdAt)
 
     const countedAs = COUNTED_REVIEW_STATUSES[review.status]
     if (countedAs) bucket[countedAs] += 1
