@@ -322,30 +322,15 @@
 
            [form-section {:title "Approver user groups"
                           :description "Select which user groups can approve access requests in this rule. Each group counts as one approval."}
-            [:> Box
-             [multiselect/main
-              {:label "User Groups"
-               :id "reviewers-groups-input"
-               :name "reviewers-groups-input"
-               :options user-groups-options
-               :required? true
-               :default-value @(:reviewers-groups state)
-               :placeholder "Select groups..."
-               :on-change #(reset! (:reviewers-groups state) (js->clj % :keywordize-keys true))}]
-             [:> Flex {:gap "5" :justify "end"}
-              [:> Button {:size "1"
-                          :variant "ghost"
-                          :type "button"
-                          :disabled (every? (set (map :value @(:reviewers-groups state)))
-                                            (map :value user-groups-options))
-                          :on-click #(reset! (:reviewers-groups state) user-groups-options)}
-               "Select all groups"]
-              [:> Button {:size "1"
-                          :variant "ghost"
-                          :type "button"
-                          :disabled (empty? @(:reviewers-groups state))
-                          :on-click #(reset! (:reviewers-groups state) [])}
-               "Clear all groups"]]]
+            [multiselect/main
+             {:label "User Groups"
+              :id "reviewers-groups-input"
+              :name "reviewers-groups-input"
+              :options user-groups-options
+              :required? true
+              :default-value @(:reviewers-groups state)
+              :placeholder "Select groups..."
+              :on-change #(reset! (:reviewers-groups state) (js->clj % :keywordize-keys true))}]
             [:> Flex {:align "center" :gap "3" :class "pt-4"}
              [:> Switch {:checked @(:all-groups-must-approve state)
                          :size "3"
