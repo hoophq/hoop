@@ -67,7 +67,7 @@ export default function DataMasking() {
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
-  const hasFilters = Boolean(selectedRole || selectedAttribute)
+  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
 
   const goCreate = () => navigate('/features/data-masking/new')
 
@@ -135,7 +135,7 @@ export default function DataMasking() {
           <Stack gap={4} align="center" ta="center">
             <Text fw={600}>No Live Data Masking rules match your filters</Text>
             <Text size="sm" c="dimmed">
-              Try clearing the {hasFilters ? 'filters' : 'filter'} above.
+              {`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
             </Text>
           </Stack>
         </Card>
