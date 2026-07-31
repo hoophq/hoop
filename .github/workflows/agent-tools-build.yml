@@ -74,6 +74,7 @@ jobs:
             echo "MONGOSH_VERSION=2.9.2"
             echo "MONGODB_TOOLS_VERSION=8.0.28"
             echo "GCLOUD_VERSION=578.0.0-0"
+            echo "AWS_CLI_VERSION=2.36.14"
             echo "GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0"
             echo "CLEAN_ARGS_EOF"
           } >> "$GITHUB_OUTPUT"
