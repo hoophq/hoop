@@ -473,24 +473,36 @@
         ;; "client-stdio" is the laptop of whoever runs `hoop connect`.
         client-stdio? (= transport "client-stdio")
         stdio? (or (= transport "stdio") client-stdio?)
-        authorized? (not (cs/blank? (get credentials "HEADER_AUTHORIZATION" "")))
         status (:status mcp-state :idle)
         busy? (contains? #{:authorizing :pending} status)
         show-selector? (= connection-method "secrets-manager")
         set-cred (fn [k v] (rf/dispatch [:resource-setup->update-role-credentials role-index k v]))
         on-change (fn [k] #(set-cred k (-> % .-target .-value)))
         selected-entry (first (filter #(= (:name %) server) (:entries catalog)))
-        ;; A static-auth provider names the header its key must ride in. The
-        ;; credential key embeds that name so config->json can emit it verbatim
-        ;; — upper-casing or hyphenating it would silently authenticate as
-        ;; nobody (context7 wants CONTEXT7_API_KEY, not CONTEXT7-API-KEY).
-        static-header (mcp-catalog/static-header-name selected-entry)
-        static-token? (some? static-header)
-        static-token-key (str "HEADER_" static-header)]
+        ;; How this connection authenticates is the admin's choice, not the
+        ;; catalog's: a provider's documented default is only a default, and
+        ;; several (github, linear, stripe) accept either an OAuth login or a
+        ;; personal access token. The catalog seeds the mode; this reads back
+        ;; whatever the admin settled on.
+        auth-mode (mcp-catalog/cred-value
+                   (get credentials "mcp_auth_mode"
+                        (mcp-catalog/default-auth-mode selected-entry)))
+        ;; The credential key embeds the header name so config->json emits it
+        ;; verbatim — upper-casing or hyphenating it would silently
+        ;; authenticate as nobody (context7 wants CONTEXT7_API_KEY, not
+        ;; CONTEXT7-API-KEY).
+        static-token-key (mcp-catalog/static-token-key credentials)
+        static-header (subs static-token-key (count "HEADER_"))
+        authorized? (not (cs/blank? (mcp-catalog/cred-value
+                                     (get credentials "HEADER_AUTHORIZATION"))))]
     ;; Defaults, applied once: an absent MCP_TRANSPORT fails agent-side
-    ;; validation, and the insecure switch needs a concrete boolean.
+    ;; validation, MCP_AUTH must match the mode the form is rendering, and the
+    ;; insecure switch needs a concrete boolean.
     (when (nil? (get credentials "mcp_transport"))
       (set-cred "mcp_transport" "streamable-http"))
+    (when (nil? (get credentials "mcp_auth_mode"))
+      (set-cred "mcp_auth_mode" auth-mode)
+      (set-cred "mcp_auth" (mcp-catalog/mcp-auth-env auth-mode)))
     (when (nil? (get credentials "insecure"))
       (set-cred "insecure" false))
     (when (= (:status catalog) :idle)
@@ -554,16 +566,19 @@
                                         [connection-method/source-selector role-index "remote_url"])}])
 
      ;; ---- Authorization ---------------------------------------------------
-     ;; Two shapes, chosen by the catalog entry's auth mode:
+     ;; The admin picks how this connection authenticates. The catalog seeds
+     ;; the choice with what the provider documents, but does not fix it:
+     ;; github, linear and stripe all accept either an OAuth login or a token,
+     ;; and only the admin knows which credential they hold.
      ;;
-     ;;  static  the provider issues an API key or PAT. The admin pastes it and
-     ;;          it rides in the header that provider expects — which is NOT
-     ;;          always Authorization (context7 wants CONTEXT7_API_KEY,
-     ;;          google-maps wants X-Goog-Api-Key). Sending it under the wrong
-     ;;          name is an unauthenticated request, so the name is taken from
-     ;;          the catalog rather than guessed.
      ;;  oauth   hoop brokers the login through /mcp-oauth and freezes the
      ;;          result into HEADER_AUTHORIZATION.
+     ;;  static  the admin pastes a key or PAT. It rides in the header that
+     ;;          provider expects — which is NOT always Authorization
+     ;;          (context7 wants CONTEXT7_API_KEY, google-maps wants
+     ;;          X-Goog-Api-Key). Sending it under the wrong name is an
+     ;;          unauthenticated request, so the name comes from the catalog.
+     ;;  none    public server, no credential.
      ;;
      ;; stdio backends authenticate through their child environment instead.
      (when-not stdio?
@@ -572,23 +587,33 @@
          [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
           "MCP Authorization"]
          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-          (if static-token?
-            (str "This server authenticates with an API key sent in the "
-                 static-header " header.")
-            "Log in to the MCP server to obtain an access token. The token is stored in this connection's Authorization header.")]]
+          "How Hoop authenticates to this server. Every user of this connection shares the credential configured here."]]
 
-        (if static-token?
-          ;; The key is stored under the header the provider named. The
-          ;; credential key carries the header name verbatim so the emission
-          ;; step can preserve it exactly.
-          [forms/input {:label (str static-header " value")
-                        :placeholder "Paste the API key or token issued by the provider"
-                        :value (get credentials static-token-key "")
-                        :required true
-                        :type "password"
-                        :on-change (on-change static-token-key)
-                        :start-adornment (when show-selector?
-                                           [connection-method/source-selector role-index static-token-key])}]
+        [forms/select {:label "Authentication method"
+                       :selected auth-mode
+                       :full-width? true
+                       :not-margin-bottom? true
+                       :on-change #(rf/dispatch [:mcp-catalog/select-auth-mode role-index %])
+                       :options mcp-catalog/auth-modes}]
+
+        (case auth-mode
+          "none"
+          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+           "No credential is sent. Public servers, and servers that authenticate by IP, need nothing here."]
+
+          "static"
+          [:> Box {:class "space-y-2"}
+           [forms/input {:label (str static-header " value")
+                         :placeholder "Paste the API key or token issued by the provider"
+                         :value (mcp-catalog/cred-value (get credentials static-token-key))
+                         :required true
+                         :type "password"
+                         :not-margin-bottom? true
+                         :on-change (on-change static-token-key)
+                         :start-adornment (when show-selector?
+                                            [connection-method/source-selector role-index static-token-key])}]
+           [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+            (str "Sent to the server in the " static-header " header.")]]
 
           (cond
             authorized?
@@ -612,7 +637,7 @@
               [:> ShieldCheck {:size 16}]
               (if busy? "Authorizing…" "Authorize with MCP")]
              [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-              "Servers that issue a static API key instead can add it as a header below."]
+              "Hoop discovers the server's authorization server, logs in, and stores the resulting access token in this connection's Authorization header."]
              (when (= status :error)
                [:> Text {:as "p" :size "2" :class "text-[--red-11]"}
                 (or (:error mcp-state) "Authorization failed")])]))])

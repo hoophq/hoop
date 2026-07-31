@@ -51,6 +51,14 @@
     (nil? v) ""
     :else (str v)))
 
+(def mcp-ui-only-credentials
+  "MCP Gateway form state that must never become a connection env var: the
+  catalog entry that pre-filled the form, the auth mode the admin selected,
+  and the header name a pasted token rides in. All three are already
+  represented in what the agent does read — MCP_TRANSPORT, MCP_AUTH, and the
+  HEADER_<name> key itself."
+  ["mcp_server" "mcp_auth_mode" "mcp_static_header"])
+
 (defn claude-code-vertex-remote-url
   "Builds the Google Vertex AI host the agent proxies claude-code traffic to,
   from the configured GCP region. A blank or \"global\" region resolves to the
@@ -111,11 +119,15 @@
         credentials (cond
                       ssh-local? {}
                       :else
-                      ;; mcp_server records which catalog entry pre-filled the
-                      ;; form. It is a UI affordance, not a connection setting:
-                      ;; emitting it would create an MCP_SERVER env var the
-                      ;; agent does not read.
-                      (cond-> (dissoc raw-credentials "auth-method" "connection-type" "mcp_server")
+                      ;; The MCP form keeps three keys the agent never reads:
+                      ;; which catalog entry pre-filled the form, which auth
+                      ;; mode the admin chose, and which header a pasted token
+                      ;; rides in (already encoded in that token's own key).
+                      ;; Emitting them would create MCP_SERVER / MCP_AUTH_MODE /
+                      ;; MCP_STATIC_HEADER env vars nothing consumes. The mode
+                      ;; still reaches the agent, as MCP_AUTH.
+                      (cond-> (apply dissoc raw-credentials
+                                     "auth-method" "connection-type" mcp-ui-only-credentials)
                         mcpproxy-stdio? (dissoc "command" "remote_url" "insecure")))
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])

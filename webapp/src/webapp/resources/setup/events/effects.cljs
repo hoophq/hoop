@@ -263,6 +263,16 @@
                        value)]
        (assoc-in db [:resource-setup :roles role-index :credentials key] new-value)))))
 
+;; Drops a credential entirely, rather than blanking it. A blank value is not
+;; the same thing: config->json filters blanks out of the payload, but the key
+;; stays in app-db and reappears the moment the form re-reads it. Switching a
+;; connection's auth mode has to actually forget the credential the previous
+;; mode collected.
+(rf/reg-event-db
+ :resource-setup->remove-role-credential
+ (fn [db [_ role-index key]]
+   (update-in db [:resource-setup :roles role-index :credentials] dissoc key)))
+
 (rf/reg-event-db
  :resource-setup->update-role-metadata-credentials
  (fn [db [_ role-index key value source]]
