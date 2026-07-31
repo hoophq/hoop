@@ -85,10 +85,6 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
-        {{- with $.Values.existingSecret }}
-        - secretRef:
-            name: {{ . }}
-        {{- end }}
       {{ end -}}
       {{- if .Values.persistence.enabled }}
       volumes:
