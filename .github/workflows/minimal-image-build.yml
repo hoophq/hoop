@@ -74,3 +74,18 @@ jobs:
           uid="$(docker run --rm --entrypoint id hoopdev-minimal:pr-smoke -u)"
           echo "runtime uid: ${uid}"
           test "${uid}" = "10001"
+      # DEP-91: strict vulnerability gate for the minimal image. Unlike the fat
+      # agent-tools base (report-only, since it bundles upstream CLIs whose CVEs
+      # cannot be rebuilt), the minimal image is fully controlled by us and MUST
+      # stay free of fixable CRITICAL/HIGH vulnerabilities. --ignore-unfixed
+      # skips vulns with no upstream fix. Note: the PR-smoke image carries a
+      # placeholder binary, so this enforces the OS/base layer; the agent binary
+      # is kept clean at the source (patched Go toolchain + dependency bumps).
+      - name: Gate on fixable CRITICAL/HIGH vulnerabilities (Trivy)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            hoopdev-minimal:pr-smoke

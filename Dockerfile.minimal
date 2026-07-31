@@ -39,6 +39,15 @@ RUN groupadd --gid 10001 hoop && \
     mkdir -p /opt/hoop/sessions && \
     mkdir -p /opt/hoop/bin && \
     apt-get update -y && \
+    # Pull current base security updates (e.g. gpgv) so this low-CVE image does
+    # not ship OS vulnerabilities already fixed upstream of the pinned base.
+    # INTENTIONAL TRADE-OFF: apt-get upgrade floats OS packages ahead of the
+    # pinned FROM digest, so rebuilds of the same commit are NOT bit-identical
+    # and may pull newer patches over time. That is deliberate: this is the
+    # low-CVE production base, and its enforcing Trivy gate stays green by
+    # tracking upstream security fixes. Pin/snapshot APT if you need
+    # deterministic rebuilds.
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         tini \
         ca-certificates \

@@ -176,6 +176,30 @@ jobs:
             --image "hoophq/agent-tools:${{ steps.p.outputs.tag }}" \
             --train "${{ matrix.train }}"
 
+      # DEP-91: report-only vulnerability visibility. This fat image bundles
+      # upstream CLIs (kubectl, gcloud, aws, node, oracle) whose own CVEs cannot
+      # be rebuilt away here, so enforcing a CRITICAL/HIGH gate would only force
+      # a large ignore-list — the suppression sprawl this effort exists to end.
+      # The STRICT fixable CRITICAL/HIGH gate lives on the minimal image
+      # (minimal-image-build.yml); here we only surface the fixable count/trend.
+      - name: Report fixable CRITICAL/HIGH vulnerabilities (Trivy, non-blocking)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --quiet --format json \
+            "hoophq/agent-tools:${{ steps.p.outputs.tag }}" > trivy-vuln.json || true
+          n=$(jq '[.Results[]?.Vulnerabilities // []]|add|length' trivy-vuln.json 2>/dev/null || echo "?")
+          {
+            echo "### agent-tools ${{ matrix.train }} (amd64) — fixable CRITICAL/HIGH: ${n} (report-only)"
+            echo ""
+            echo "Strict gate is on hoophq/hoopdev-minimal. Top packages:"
+            echo '```'
+            jq -r '[.Results[]?.Vulnerabilities // []]|add|group_by(.PkgName)|map({p:.[0].PkgName,c:length})|sort_by(-.c)|.[]|"\(.c)\t\(.p)"' trivy-vuln.json 2>/dev/null | head -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Login to Docker Hub
         if: needs.meta.outputs.publish == 'true'
         uses: docker/login-action@v2
@@ -272,6 +296,26 @@ jobs:
           python3 scripts/ci/check-manual-binaries.py \
             --image "hoophq/agent-tools:${{ steps.p.outputs.tag }}" \
             --train "${{ matrix.train }}"
+
+      # DEP-91: report-only vuln visibility (see the amd64 job for rationale).
+      # The strict CRITICAL/HIGH gate is on the minimal image, not the fat base.
+      - name: Report fixable CRITICAL/HIGH vulnerabilities (Trivy, non-blocking)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --quiet --format json \
+            "hoophq/agent-tools:${{ steps.p.outputs.tag }}" > trivy-vuln.json || true
+          n=$(jq '[.Results[]?.Vulnerabilities // []]|add|length' trivy-vuln.json 2>/dev/null || echo "?")
+          {
+            echo "### agent-tools ${{ matrix.train }} (arm64) — fixable CRITICAL/HIGH: ${n} (report-only)"
+            echo ""
+            echo "Strict gate is on hoophq/hoopdev-minimal. Top packages:"
+            echo '```'
+            jq -r '[.Results[]?.Vulnerabilities // []]|add|group_by(.PkgName)|map({p:.[0].PkgName,c:length})|sort_by(-.c)|.[]|"\(.c)\t\(.p)"' trivy-vuln.json 2>/dev/null | head -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Push
         if: needs.meta.outputs.publish == 'true'
