@@ -76,3 +76,23 @@ image:
 ```
 
 An explicit `image.repository` always takes precedence over `image.minimal`.
+
+## Image tags and patch cadence
+
+`hoophq/hoopdev-minimal` is republished on every release and **re-patched weekly**
+between releases: a scheduled job rebuilds it against current OS security updates
+(`apt-get upgrade`) and, only if the OS layer is free of fixable CRITICAL/HIGH
+vulnerabilities, republishes these tags:
+
+| Tag | Moves? | Use it when |
+| --- | --- | --- |
+| `:latest` | Yes — latest weekly OS patches | You want the most-patched base and rebuild your derived image regularly. |
+| `:<release>-<YYYYMMDD>` | Once per weekly rebuild | You want a base pinned to a specific week's patch set. For a guarantee the bytes never change, pin by digest (`@sha256:...`) — a manual same-day rebuild republishes the dated tag. |
+| `:<release>` | No — the original release image | You need the exact bytes shipped at that release (no post-release OS patches). |
+
+For fully reproducible builds, pin by digest (`hoophq/hoopdev-minimal@sha256:...`);
+a digest always refers to the same bytes regardless of which tags point at it.
+
+The shipped agent binary's own dependency/toolchain CVEs are fixed by cutting a
+release (dependency bumps gated by `govulncheck`), not by the weekly OS rebuild —
+so track releases for those and `:latest` for OS patches.
