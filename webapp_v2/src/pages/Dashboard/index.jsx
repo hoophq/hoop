@@ -20,21 +20,21 @@ import {
   rangeLabel,
 } from './utils'
 
-// Deep green against soft coral rather than the two saturated shades this page
-// started with. The muting is the point, but the pairing is not free-hand: red
-// and green sit almost on top of each other for red-green colour blindness, so
-// the two have to be pulled apart in lightness to stay legible.
+// Two deep shades rather than the saturated pair this page started with. The
+// pairing is not free-hand: red and green nearly coincide under red-green colour
+// blindness, so they have to be separated by lightness, and the ramps only allow
+// that in a narrow window. Saturated reds against this green measure a CVD ΔE of
+// 2.5–3.7 — one bar, effectively — and evenly muting both is worse, not better.
 //
-// Verified with the dataviz palette validator (light surface): CVD ΔE 12.5
-// (protan) — comfortably over the 8 target, where the previous green.5/red.5
-// scored 7.5 and evenly-muted variants collapsed to 3.6.
+// Verified with the dataviz palette validator (light surface): CVD ΔE 9.8
+// (deutan), normal-vision ΔE 31.7, both inside the lightness band, both over the
+// chroma floor, both over 3:1 against the surface. No warnings.
 //
-// The soft coral sits at 2.8:1 against the page, under the 3:1 mark, which
-// obliges a visible label — hence `withLegend` on the chart below. That is also
-// the rule for any two-series chart: identity must never rest on colour alone.
+// The legend below is not optional either way: identity on a two-series chart
+// must never rest on colour alone.
 const REVIEW_SERIES = [
-  { name: 'approved', label: 'Approved', color: 'green.8' },
-  { name: 'rejected', label: 'Rejected', color: 'red.3' },
+  { name: 'approved', label: 'Approved', color: 'green.7' },
+  { name: 'rejected', label: 'Rejected', color: 'red.7' },
 ]
 
 const REDACTED_SERIES = [{ name: 'redactTotal', label: 'Redacted', color: 'indigo.6' }]
