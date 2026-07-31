@@ -5,6 +5,15 @@
 *.so
 *.dylib
 
+# Bare binaries dropped in the repo root by `go build ./<module>/cmd/<name>/`
+# (without -o). Listed explicitly rather than by pattern because these names are
+# only safe to ignore while nothing else at the root uses them — note ./gateway
+# is deliberately absent, as it would shadow the gateway module directory.
+/openapi-gen
+/rdpbench
+/spiffe-mint
+/hsh-tunneld
+
 # Test binary, built with `go test -c`
 *.test
 
