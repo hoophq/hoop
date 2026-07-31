@@ -192,6 +192,19 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
 - `features/attributes/{main.cljs,views/form.cljs}` — **keep** `events.cljs` +
   `subs.cljs` (used by live guardrails, resource setup/configure, machine
   identities, access control until those migrate).
+- **The sidebar scaffolding A1 left empty** — `organization-routes` and
+  `settings-management` in `shared_ui/sidebar/constants.cljs`, plus all five
+  consumers: `navigation.cljs:98` (the `organization-routes` loop) and `:158-197`
+  (the Settings disclosure), `main.cljs:186-198` and `:210-219` (their
+  collapsed-rail twins), and the four references in
+  `command_palette_constants.cljs:24,26,70,72`. Until this lands, an admin opening
+  the raw shadow-cljs dev server (`:8280`, `react-shell` unset) sees a "Settings"
+  disclosure that expands to nothing and a collapsed-rail gear that opens an empty
+  panel. Nothing throws and no deployment is affected — every packaging path
+  (`Makefile:256-258`, `scripts/dev/build-webapp.sh`) merges React's `index.html`
+  over the CLJS resources, so `STATIC_UI_PATH` always serves the shell and
+  `app.cljs:288` never runs. Flagged by Qodo on PR #1655; deliberately deferred
+  here rather than patched with a `(seq …)` guard on a literal `[]`.
 - **Deferred:** `events/reviews_plugin.cljs` (46 LOC) — session details still
   approves/rejects reviews through it; delete in Wave 6's cleanup commit.
 
