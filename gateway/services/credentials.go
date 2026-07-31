@@ -158,15 +158,23 @@ func BuildCredentialInfo(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
-		scheme := "http"
-		host := serverHost
-		if appconfig.Get().GatewayTLSKey() != "" {
-			scheme = "https"
-			if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
-				host = apiURL.Hostname()
-			}
+	case proto.ConnectionTypeMcpProxy:
+		// Protocol-aware MCP (ADR-0004): same listener and proxy-token auth as
+		// httpproxy, but the agent's MCP gateway serves only "/mcp" and the
+		// client authenticates by header, so the browser bootstrap URL does
+		// not apply. See buildConnectionCredentialsResponse for the twin.
+		scheme, host := httpProxyPublicOrigin(serverHost)
+		endpoint := fmt.Sprintf("%s://%s:%s/mcp", scheme, host, serverPort)
+		info.ConnectionType = connectionType.String()
+		info.HTTPProxy = &HTTPProxyCredentialInfo{
+			ProxyToken: secretKey,
+			Command: `{
+				"mcp": "` + endpoint + `",
+				"curl": "curl -H 'Authorization: ` + secretKey + `' ` + endpoint + `"
+			}`,
 		}
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
+		scheme, host := httpProxyPublicOrigin(serverHost)
 		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, host, serverPort)
 		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
 		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
@@ -182,6 +190,25 @@ func BuildCredentialInfo(
 	}
 
 	return info
+}
+
+// httpProxyPublicOrigin resolves the scheme and host a client should dial for
+// a connection served by the shared HTTP proxy listener. With TLS enabled the
+// listen address is unusable — the certificate's SAN matches the API URL's
+// hostname, not the bind address — and wildcard binds are rewritten to
+// localhost so a copy-pasted URL works on a local install.
+func httpProxyPublicOrigin(serverHost string) (scheme, host string) {
+	scheme, host = "http", serverHost
+	if appconfig.Get().GatewayTLSKey() != "" {
+		scheme = "https"
+		if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
+			host = apiURL.Hostname()
+		}
+	}
+	if host == "0.0.0.0" || host == "127.0.0.1" {
+		host = "localhost"
+	}
+	return scheme, host
 }
 
 func toConnectionType(connectionType, subtype string) proto.ConnectionType {
@@ -225,7 +252,7 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
 		}
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeMcpProxy:
 		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
 			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}

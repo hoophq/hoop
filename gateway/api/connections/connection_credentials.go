@@ -870,21 +870,28 @@ func buildConnectionCredentialsResponse(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
+	case proto.ConnectionTypeMcpProxy:
+		// Protocol-aware MCP (ADR-0004) shares the httpproxy listener and its
+		// proxy-token auth, but not its URL shape: the agent's MCP gateway
+		// serves a single "/mcp" endpoint, and MCP clients authenticate with
+		// an Authorization header rather than the browser path/cookie
+		// bootstrap. Emitting the root/subdomain URLs here would hand the user
+		// a link that 404s, so this arm surfaces the endpoint the client
+		// actually needs.
+		scheme, host := httpProxyPublicOrigin(serverHost)
+		endpoint := fmt.Sprintf("%s://%s:%s/mcp", scheme, host, serverPort)
+		base.ConnectionType = proto.ConnectionType(connectionType).String()
+		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
+			Hostname:   host,
+			Port:       serverPort,
+			ProxyToken: secretKey,
+			Command: `{
+				"mcp": "` + endpoint + `",
+				"curl": "curl -H 'Authorization: ` + secretKey + `' ` + endpoint + `"
+			}`,
+		}
 	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
-		scheme := "http"
-		host := serverHost
-		if appconfig.Get().GatewayTLSKey() != "" {
-			scheme = "https"
-			// When TLS is enabled, use the API URL's hostname instead of the listen address.
-			// The TLS certificate's SAN must match the hostname used by clients.
-			// Example: server listens on 0.0.0.0:18888 but certificate is valid for dev.hoop.dev:PORT
-			if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
-				host = apiURL.Hostname()
-			}
-		}
-		if host == "0.0.0.0" || host == "127.0.0.1" {
-			host = "localhost"
-		}
+		scheme, host := httpProxyPublicOrigin(serverHost)
 		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, host, serverPort)
 		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
 		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
@@ -917,6 +924,27 @@ func buildConnectionCredentialsResponse(
 	}
 
 	return &base
+}
+
+// httpProxyPublicOrigin resolves the scheme and host a client should dial for
+// a connection served by the shared HTTP proxy listener.
+//
+// With TLS enabled the listen address is not usable: the certificate's SAN
+// matches the API URL's hostname, not the bind address (the server may listen
+// on 0.0.0.0:18888 while the cert is valid for dev.hoop.dev). Wildcard binds
+// are rewritten to localhost so a copy-pasted URL works on a local install.
+func httpProxyPublicOrigin(serverHost string) (scheme, host string) {
+	scheme, host = "http", serverHost
+	if appconfig.Get().GatewayTLSKey() != "" {
+		scheme = "https"
+		if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
+			host = apiURL.Hostname()
+		}
+	}
+	if host == "0.0.0.0" || host == "127.0.0.1" {
+		host = "localhost"
+	}
+	return scheme, host
 }
 
 // decodeConnectionEnv returns the plaintext value of a connection env-var
@@ -973,7 +1001,7 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
 		}
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeMcpProxy:
 		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
 			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}

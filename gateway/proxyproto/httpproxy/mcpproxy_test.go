@@ -72,10 +72,17 @@ func TestMCPPacketTypesAreDistinct(t *testing.T) {
 	}
 }
 
-// The mcpproxy connection type must resolve from its subtype under both parent
-// types, and must not collide with the legacy "mcp" httpproxy alias.
+// The mcpproxy connection type must resolve from its subtype under every
+// parent type the UI can file it under, and must not collide with the legacy
+// "mcp" httpproxy alias.
+//
+// The httpproxy parent is the load-bearing case: every MCP surface in the
+// webapp files connections there (that is where the legacy "mcp" subtype
+// lives), and the parent used to short-circuit before reading the subtype.
+// A regression is silent — the session resolves to the byte relay, the agent
+// never reaches its MCP adapter, and no policy or audit event is produced.
 func TestMcpProxyConnectionTypeResolution(t *testing.T) {
-	for _, parent := range []string{"application", "custom"} {
+	for _, parent := range []string{"application", "custom", "httpproxy"} {
 		if got := pb.ToConnectionType(parent, "mcpproxy"); got != pb.ConnectionTypeMcpProxy {
 			t.Fatalf("ToConnectionType(%q, mcpproxy) = %q, want %q", parent, got, pb.ConnectionTypeMcpProxy)
 		}
@@ -84,5 +91,12 @@ func TestMcpProxyConnectionTypeResolution(t *testing.T) {
 	// untouched so the new path carries zero regression risk.
 	if got := pb.ToConnectionType("httpproxy", "mcp"); got != pb.ConnectionTypeHttpProxy {
 		t.Fatalf("legacy mcp subtype = %q, want %q", got, pb.ConnectionTypeHttpProxy)
+	}
+	// A plain httpproxy connection (no subtype, or any other subtype) must
+	// keep taking the byte relay.
+	for _, subtype := range []string{"", "httpproxy", "grafana"} {
+		if got := pb.ToConnectionType("httpproxy", subtype); got != pb.ConnectionTypeHttpProxy {
+			t.Fatalf("ToConnectionType(httpproxy, %q) = %q, want %q", subtype, got, pb.ConnectionTypeHttpProxy)
+		}
 	}
 }

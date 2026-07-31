@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -180,7 +181,7 @@ func buildMCPGateway(
 		Command:   connParams.CmdList,
 		Env:       connenv.mcpEnv,
 		URL:       connenv.httpProxyRemoteURL,
-		Headers:   connenv.httpProxyHeaders,
+		Headers:   mcpBackendHeaders(connenv.httpProxyHeaders),
 		Auth:      connenv.mcpAuth,
 	}
 
@@ -336,6 +337,73 @@ func stripPrefixKeys(in map[string]string, prefix string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// mcpBackendHeaders turns the connection's HEADER_* env vars into real HTTP
+// header names for the MCP backend.
+//
+// The env store preserves the original key, so the map arrives as
+// {HEADER_AUTHORIZATION: "Bearer x"}; mcpproxy's remote and SSE backends call
+// req.Header.Set verbatim. Without this the upstream receives a bogus
+// "HEADER_AUTHORIZATION" and no "Authorization" at all, breaking every static
+// and frozen-token OAuth backend. The httpproxy path does the same normalization
+// in libhoop's parseHeaderOpts; underscores become hyphens because
+// HEADER_X_API_KEY must reach the wire as X-Api-Key, and header names may not
+// contain underscores.
+func mcpBackendHeaders(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range stripPrefixKeys(in, "header_") {
+		out[strings.ReplaceAll(k, "_", "-")] = strings.TrimSpace(v)
+	}
+	return out
+}
+
+// validateMCPProxyEnv rejects a misconfigured MCP connection at parse time.
+//
+// Without this, an unknown transport or a missing REMOTE_URL surfaces from
+// mcpproxy's backend factory on the first tool call, as an opaque session
+// close long after the admin saved the connection. The stdio COMMAND is not
+// checked here because it travels in AgentConnectionParams, not the env vars;
+// buildMCPGateway covers it.
+func validateMCPProxyEnv(env *connEnv) error {
+	switch env.mcpTransport {
+	case "stdio":
+	case "streamable-http", "sse":
+		if env.httpProxyRemoteURL == "" {
+			return fmt.Errorf("missing required environment for mcpproxy connection [REMOTE_URL]")
+		}
+		if _, err := url.Parse(env.httpProxyRemoteURL); err != nil {
+			return fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
+		}
+	case "":
+		return fmt.Errorf("missing required environment for mcpproxy connection [MCP_TRANSPORT]")
+	default:
+		return fmt.Errorf("invalid MCP_TRANSPORT %q, accept only: %v",
+			env.mcpTransport, []string{"stdio", "streamable-http", "sse"})
+	}
+
+	// The agent supplies no outbound TokenSource: hoop brokers OAuth itself
+	// and freezes the result into HEADER_AUTHORIZATION, which the static path
+	// carries. Accepting "oauth" or "passthrough" here would silently produce
+	// an unauthenticated backend, so they are refused until the token-store
+	// seam is wired (ADR-0004 phase 6).
+	switch env.mcpAuth {
+	case "", "none", "static":
+	default:
+		return fmt.Errorf("unsupported MCP_AUTH %q, accept only: %v",
+			env.mcpAuth, []string{"none", "static"})
+	}
+
+	switch env.mcpOnRugPull {
+	case "", "kill", "alert":
+	default:
+		return fmt.Errorf("invalid MCP_ON_RUG_PULL %q, accept only: %v",
+			env.mcpOnRugPull, []string{"kill", "alert"})
+	}
+	return nil
 }
 
 // mcpPolicy converts the connection's env-var settings into the gateway's

@@ -955,6 +955,10 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		if _, err := url.Parse(env.httpProxyRemoteURL); err != nil {
 			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
 		}
+	case pb.ConnectionTypeMcpProxy:
+		if err := validateMCPProxyEnv(env); err != nil {
+			return nil, err
+		}
 	case pb.ConnectionTypeSSM:
 		env.awsAccessKeyID = envVarS.Getenv("AWS_ACCESS_KEY_ID")
 		env.awsSecretAccessKey = envVarS.Getenv("AWS_SECRET_ACCESS_KEY")

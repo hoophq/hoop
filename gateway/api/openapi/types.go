@@ -2358,6 +2358,31 @@ type MCPOAuthTokenResponse struct {
 	ServerURL string `json:"server_url" example:"https://mcp.figma.com/mcp"`
 }
 
+// MCPCatalogEntry describes one publicly hosted remote MCP server from the
+// built-in catalog. The connection create page renders these as a server
+// picker that pre-fills REMOTE_URL / MCP_TRANSPORT / MCP_AUTH for an
+// "mcpproxy" connection; "custom" falls back to the raw form.
+type MCPCatalogEntry struct {
+	// Name is the catalog key, unique and stable (e.g. "linear").
+	Name string `json:"name" example:"linear"`
+	// Description is a one-line summary of what the server exposes.
+	Description string `json:"description" example:"Linear issue tracking (official)"`
+	// URL is the MCP endpoint, the value for the connection's REMOTE_URL.
+	URL string `json:"url" example:"https://mcp.linear.app/mcp"`
+	// Transport is the backend protocol: "streamable-http" or "sse". It is
+	// the value for MCP_TRANSPORT.
+	Transport string `json:"transport" example:"streamable-http"`
+	// Auth is how the server authenticates: "none", "static" or "oauth".
+	// Static entries expect a credential in Header; oauth entries drive the
+	// /mcp-oauth flow. It is the value for MCP_AUTH.
+	Auth string `json:"auth" example:"oauth"`
+	// Header names the static credential header and its value template, in
+	// "Name: value" form. Empty unless Auth is "static".
+	Header string `json:"header,omitempty" example:"Authorization: Bearer ${TOKEN}"`
+	// Notes carries provider caveats worth reading before enabling.
+	Notes string `json:"notes,omitempty"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`

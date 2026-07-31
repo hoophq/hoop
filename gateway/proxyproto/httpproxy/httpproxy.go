@@ -216,10 +216,12 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var proxyToken string
 
 	// Check if token is in URL path: /<proxy-token> or /<proxy-token>/...
-	// This is the initial browser request to set the cookie
+	// This is the initial browser request to set the cookie. Tokens are minted
+	// with a per-type prefix (keys.GenerateSecureRandomKey), so the bootstrap
+	// must recognise every type served by this listener — mcpproxy included,
+	// or its "/<token>" URL is treated as a request path and 404s upstream.
 	pathParts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
-	if len(pathParts) > 0 && strings.HasPrefix(pathParts[0], "httpproxy") {
-		// Token found in path (tokens start with "httpproxy")
+	if len(pathParts) > 0 && (strings.HasPrefix(pathParts[0], "httpproxy-") || strings.HasPrefix(pathParts[0], "mcpproxy-")) {
 		proxyToken = pathParts[0]
 
 		// Detect if request is over HTTPS (directly or via reverse proxy)
