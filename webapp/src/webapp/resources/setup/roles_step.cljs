@@ -8,6 +8,7 @@
    [webapp.components.multiselect :as multi-select]
    [webapp.resources.constants :as constants]
    [webapp.resources.setup.configuration-inputs :as configuration-inputs]
+   [webapp.resources.setup.events.mcp-catalog :as mcp-catalog]
    [webapp.resources.setup.connection-method :as connection-method]))
 
 
@@ -446,6 +447,251 @@
         "Skip SSL certificate verification for HTTPS connections."]]]]))
 
 
+;; MCP Gateway (mcpproxy) role form — the protocol-aware MCP type (ADR-0004).
+;;
+;; Unlike the `mcp` subtype, which relays MCP as opaque HTTP, this connection
+;; parses every JSON-RPC message, so the form exposes what that makes
+;; expressible: a backend transport (including local stdio servers) and
+;; tool-level policy.
+;;
+;; The server dropdown is fed by GET /mcp-catalog, which serves mcpproxy's
+;; built-in catalog of hosted servers. Picking one pre-fills the endpoint,
+;; transport and auth; "Custom" leaves every field editable.
+;;
+;; Credential keys map to connection env vars in process-role-secret. Keys are
+;; upper-cased on the way out (helpers/config->json), so "mcp_transport"
+;; becomes MCP_TRANSPORT — the exact name the agent parses.
+(defn mcpproxy-role-form [role-index]
+  (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        catalog @(rf/subscribe [:mcp-catalog/state])
+        mcp-state @(rf/subscribe [:mcp-oauth/state role-index])
+        server (get credentials "mcp_server" "")
+        transport (get credentials "mcp_transport" "streamable-http")
+        stdio? (= transport "stdio")
+        authorized? (not (cs/blank? (get credentials "HEADER_AUTHORIZATION" "")))
+        status (:status mcp-state :idle)
+        busy? (contains? #{:authorizing :pending} status)
+        show-selector? (= connection-method "secrets-manager")
+        set-cred (fn [k v] (rf/dispatch [:resource-setup->update-role-credentials role-index k v]))
+        on-change (fn [k] #(set-cred k (-> % .-target .-value)))
+        selected-entry (first (filter #(= (:name %) server) (:entries catalog)))
+        ;; A static-auth provider names the header its key must ride in. The
+        ;; credential key embeds that name so config->json can emit it verbatim
+        ;; — upper-casing or hyphenating it would silently authenticate as
+        ;; nobody (context7 wants CONTEXT7_API_KEY, not CONTEXT7-API-KEY).
+        static-header (mcp-catalog/static-header-name selected-entry)
+        static-token? (some? static-header)
+        static-token-key (str "HEADER_" static-header)]
+    ;; Defaults, applied once: an absent MCP_TRANSPORT fails agent-side
+    ;; validation, and the insecure switch needs a concrete boolean.
+    (when (nil? (get credentials "mcp_transport"))
+      (set-cred "mcp_transport" "streamable-http"))
+    (when (nil? (get credentials "insecure"))
+      (set-cred "insecure" false))
+    (when (= (:status catalog) :idle)
+      (rf/dispatch [:mcp-catalog/fetch]))
+
+    [:> Box {:class "space-y-6"}
+     ;; ---- Server picker -------------------------------------------------
+     [:> Box {:class "space-y-3"}
+      [forms/select {:label "MCP Server"
+                     :placeholder (if (= (:status catalog) :loading)
+                                    "Loading servers…"
+                                    "Select a server or configure your own")
+                     :selected server
+                     :full-width? true
+                     :not-margin-bottom? true
+                     :on-change #(rf/dispatch [:mcp-catalog/select-server role-index %])
+                     :options (conj (mapv (fn [e] {:text (:name e) :value (:name e)})
+                                          (:entries catalog))
+                                    {:text "Custom / self-hosted" :value "custom"})}]
+      (when-let [description (:description selected-entry)]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"} description])
+      (when-let [notes (:notes selected-entry)]
+        [:> Text {:as "p" :size "2" :class "text-[--amber-11]"} notes])
+      (when (= (:status catalog) :error)
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+         "Server catalog unavailable — configure the endpoint manually below."])]
+
+     ;; ---- Transport + endpoint -------------------------------------------
+     [forms/select {:label "Transport"
+                    :selected transport
+                    :full-width? true
+                    :on-change #(set-cred "mcp_transport" %)
+                    :options [{:text "Streamable HTTP (remote)" :value "streamable-http"}
+                              {:text "HTTP + SSE (legacy remote)" :value "sse"}
+                              {:text "Stdio (local server run by the agent)" :value "stdio"}]}]
+
+     (if stdio?
+       ;; A stdio backend is spawned by the agent; it has no URL, and its
+       ;; secrets travel as MCPENV_* so they reach the child's environment
+       ;; rather than being read as connection settings.
+       [:> Box {:class "space-y-4"}
+        [forms/input {:label "Command"
+                      :placeholder "e.g. npx -y @modelcontextprotocol/server-filesystem /data"
+                      :value (get credentials "command" "")
+                      :required true
+                      :type "text"
+                      :on-change (on-change "command")}]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+         "The agent runs this command as a child process. Add secrets it needs as environment variables prefixed with MCPENV_ below."]]
+
+       [forms/input {:label "MCP Server URL"
+                     :placeholder "e.g. https://mcp.linear.app/mcp"
+                     :value (get credentials "remote_url" "")
+                     :required true
+                     :type "text"
+                     :on-change (on-change "remote_url")
+                     :start-adornment (when show-selector?
+                                        [connection-method/source-selector role-index "remote_url"])}])
+
+     ;; ---- Authorization ---------------------------------------------------
+     ;; Two shapes, chosen by the catalog entry's auth mode:
+     ;;
+     ;;  static  the provider issues an API key or PAT. The admin pastes it and
+     ;;          it rides in the header that provider expects — which is NOT
+     ;;          always Authorization (context7 wants CONTEXT7_API_KEY,
+     ;;          google-maps wants X-Goog-Api-Key). Sending it under the wrong
+     ;;          name is an unauthenticated request, so the name is taken from
+     ;;          the catalog rather than guessed.
+     ;;  oauth   hoop brokers the login through /mcp-oauth and freezes the
+     ;;          result into HEADER_AUTHORIZATION.
+     ;;
+     ;; stdio backends authenticate through their child environment instead.
+     (when-not stdio?
+       [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
+        [:> Box
+         [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+          "MCP Authorization"]
+         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+          (if static-token?
+            (str "This server authenticates with an API key sent in the "
+                 static-header " header.")
+            "Log in to the MCP server to obtain an access token. The token is stored in this connection's Authorization header.")]]
+
+        (if static-token?
+          ;; The key is stored under the header the provider named. The
+          ;; credential key carries the header name verbatim so the emission
+          ;; step can preserve it exactly.
+          [forms/input {:label (str static-header " value")
+                        :placeholder "Paste the API key or token issued by the provider"
+                        :value (get credentials static-token-key "")
+                        :required true
+                        :type "password"
+                        :on-change (on-change static-token-key)
+                        :start-adornment (when show-selector?
+                                           [connection-method/source-selector role-index static-token-key])}]
+
+          (cond
+            authorized?
+            [:> Flex {:align "center" :justify "between" :gap "3"}
+             [:> Flex {:align "center" :gap "2"}
+              [:> Check {:size 16 :class "text-[--grass-11]"}]
+              [:> Text {:size "2" :weight "medium" :class "text-[--grass-11]"}
+               "Authorized — access token stored"]]
+             [:> Flex {:gap "2"}
+              [:> Button {:size "2" :type "button" :variant "soft" :disabled busy?
+                          :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
+               "Re-authorize"]
+              [:> Button {:size "2" :type "button" :variant "ghost" :color "red" :pt "3"
+                          :on-click #(rf/dispatch [:mcp-oauth/clear role-index])}
+               "Clear"]]]
+
+            :else
+            [:> Box {:class "space-y-2"}
+             [:> Button {:size "2" :type "button" :variant "solid" :disabled busy?
+                         :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
+              [:> ShieldCheck {:size 16}]
+              (if busy? "Authorizing…" "Authorize with MCP")]
+             [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+              "Servers that issue a static API key instead can add it as a header below."]
+             (when (= status :error)
+               [:> Text {:as "p" :size "2" :class "text-[--red-11]"}
+                (or (:error mcp-state) "Authorization failed")])]))])
+
+     ;; ---- Tool policy -----------------------------------------------------
+     ;; The reason this connection type exists: control that names a tool.
+     ;; Empty means "no restriction"; deny wins over allow.
+     [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Tool policy"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Comma-separated tool name patterns, e.g. read_*, create_issue. Denied tools are removed from the server's tool list before the model sees them."]]
+      [forms/input {:label "Allowed tools"
+                    :placeholder "Leave empty to allow every tool"
+                    :value (get credentials "mcp_allowed_tools" "")
+                    :type "text"
+                    :on-change (on-change "mcp_allowed_tools")}]
+      [forms/input {:label "Denied tools"
+                    :placeholder "e.g. delete_*, admin_*"
+                    :value (get credentials "mcp_denied_tools" "")
+                    :type "text"
+                    :on-change (on-change "mcp_denied_tools")}]
+      [forms/input {:label "Tools requiring approval"
+                    :placeholder "e.g. create_issue"
+                    :value (get credentials "mcp_approval_tools" "")
+                    :type "text"
+                    :on-change (on-change "mcp_approval_tools")}]
+      ;; Reviews are ADR-0004 phase 5. Until they ship the pipeline fails
+      ;; closed, so saying so here avoids a surprising denial in production.
+      [:> Text {:as "p" :size "2" :class "text-[--amber-11]"}
+       "Approval routing is not available yet — matched tools are denied until it ships."]]
+
+     ;; ---- Budgets and protocol gates --------------------------------------
+     [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
+      [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+       "Limits"]
+      [forms/input {:label "Max tool calls per session"
+                    :placeholder "Leave empty for no limit"
+                    :value (get credentials "mcp_max_calls" "")
+                    :type "number"
+                    :on-change (on-change "mcp_max_calls")}]
+      [forms/input {:label "Max result size (KB)"
+                    :placeholder "Leave empty for no limit"
+                    :value (get credentials "mcp_max_result_kb" "")
+                    :type "number"
+                    :on-change (on-change "mcp_max_result_kb")}]
+      [forms/select {:label "When a tool changes mid-session"
+                     :selected (get credentials "mcp_on_rug_pull" "kill")
+                     :full-width? true
+                     :on-change #(set-cred "mcp_on_rug_pull" %)
+                     :options [{:text "Kill the session (recommended)" :value "kill"}
+                               {:text "Record an alert and continue" :value "alert"}]}]
+      [:> Flex {:align "center" :gap "3"}
+       [:> Switch {:checked (not= (get credentials "mcp_block_sampling") "false")
+                   :size "3"
+                   :onCheckedChange #(set-cred "mcp_block_sampling" (if % "true" "false"))}]
+       [:> Box
+        [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+         "Block sampling requests"]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+         "Prevent the server from driving your LLM through sampling/createMessage."]]]
+      [:> Flex {:align "center" :gap "3"}
+       [:> Switch {:checked (not= (get credentials "mcp_block_elicitation") "false")
+                   :size "3"
+                   :onCheckedChange #(set-cred "mcp_block_elicitation" (if % "true" "false"))}]
+       [:> Box
+        [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+         "Block elicitation requests"]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+         "Prevent the server from prompting your users with its own dialogs."]]]]
+
+     ;; Headers for a static-credential server (and MCPENV_* for stdio).
+     [configuration-inputs/http-headers-section role-index]
+
+     (when-not stdio?
+       [:> Flex {:align "center" :gap "3"}
+        [:> Switch {:checked (get credentials "insecure" false)
+                    :size "3"
+                    :onCheckedChange #(set-cred "insecure" %)}]
+        [:> Box
+         [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+          "Allow insecure SSL"]
+         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+          "Skip SSL certificate verification for HTTPS connections."]]])]))
+
 ;; Custom/Metadata-driven role form (includes databases)
 (defn metadata-driven-role-form [role-index]
   (let [connection @(rf/subscribe [:resource-setup/current-connection-metadata])
@@ -641,6 +887,9 @@
 
         (= resource-subtype "mcp")
         [mcp-role-form role-index]
+
+        (= resource-subtype "mcpproxy")
+        [mcpproxy-role-form role-index]
 
         (contains? constants/http-proxy-subtypes resource-subtype)
         [http-proxy-role-form role-index]

@@ -101,9 +101,19 @@
         ;; Local SSH runs on the agent host itself, so it carries no credentials.
         ssh-local? (and (= subtype "ssh")
                         (= (get (:credentials role) "connection-type") "local"))
-        credentials (if ssh-local?
-                      {}
-                      (dissoc raw-credentials "auth-method" "connection-type"))
+        ;; A stdio MCP server's command becomes the connection's command array
+        ;; (see process-role), so it must not also be emitted as an env var.
+        mcpproxy-stdio? (and (= subtype "mcpproxy")
+                             (= (get (:credentials role) "mcp_transport") "stdio"))
+        credentials (cond
+                      ssh-local? {}
+                      :else
+                      ;; mcp_server records which catalog entry pre-filled the
+                      ;; form. It is a UI affordance, not a connection setting:
+                      ;; emitting it would create an MCP_SERVER env var the
+                      ;; agent does not read.
+                      (cond-> (dissoc raw-credentials "auth-method" "connection-type" "mcp_server")
+                        mcpproxy-stdio? (dissoc "command" "remote_url" "insecure")))
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])
         config-files (or (:configuration-files role) [])
@@ -137,13 +147,27 @@
                                  env-vars)
 
         ;; Special handling for httpproxy headers
-        all-env-vars (if (http-proxy-subtypes subtype)
+        all-env-vars (cond
+                       ;; A stdio MCP server needs its secrets in the child
+                       ;; process environment, which the agent collects from
+                       ;; the MCPENV_ carve-out prefix. HEADER_ would make them
+                       ;; outbound HTTP headers, which a subprocess never sees.
+                       mcpproxy-stdio?
+                       (concat all-credential-env-vars
+                               (mapv (fn [{:keys [key value]}]
+                                       {:key (str "MCPENV_" key)
+                                        :value (extract-value value connection-method (keyword key) secrets-provider)})
+                                     (:environment-variables role [])))
+
+                       (http-proxy-subtypes subtype)
                        (let [headers (:environment-variables role [])
                              processed-headers (mapv (fn [{:keys [key value]}]
                                                        {:key (str "HEADER_" key)
                                                         :value (extract-value value connection-method (keyword key) secrets-provider)})
                                                      headers)]
                          (concat all-credential-env-vars processed-headers))
+
+                       :else
                        (concat all-credential-env-vars processed-env-vars))
 
         envvar-result (helpers/config->json all-env-vars "envvar:" subtype)
@@ -184,10 +208,20 @@
         ;; Extract just the values
 
         command-args (:command-args role [])
-        command (if (and (= type "custom")
-                         (= subtype "linux-vm"))
+        ;; A stdio MCP server is spawned by the agent from the connection's
+        ;; command array (AgentConnectionParams.CmdList), so the command the
+        ;; admin typed belongs there rather than in an env var. Split on
+        ;; whitespace: the field takes a plain command line.
+        mcpproxy-stdio-command (when (and (= raw-subtype "mcpproxy")
+                                          (= (get (:credentials role) "mcp_transport") "stdio"))
+                                 (->> (str/split (or (get (:credentials role) "command") "") #"\s+")
+                                      (remove str/blank?)
+                                      vec))
+        command (cond
+                  (seq mcpproxy-stdio-command) mcpproxy-stdio-command
+                  (and (= type "custom") (= subtype "linux-vm"))
                   (mapv #(get % "value") command-args)
-                  (or command-role []))]
+                  :else (or command-role []))]
 
     {:name (:name role)
      :type type

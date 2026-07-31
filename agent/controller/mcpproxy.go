@@ -344,19 +344,23 @@ func stripPrefixKeys(in map[string]string, prefix string) map[string]string {
 //
 // The env store preserves the original key, so the map arrives as
 // {HEADER_AUTHORIZATION: "Bearer x"}; mcpproxy's remote and SSE backends call
-// req.Header.Set verbatim. Without this the upstream receives a bogus
+// req.Header.Set verbatim. Without stripping, the upstream receives a bogus
 // "HEADER_AUTHORIZATION" and no "Authorization" at all, breaking every static
-// and frozen-token OAuth backend. The httpproxy path does the same normalization
-// in libhoop's parseHeaderOpts; underscores become hyphens because
-// HEADER_X_API_KEY must reach the wire as X-Api-Key, and header names may not
-// contain underscores.
+// and frozen-token OAuth backend.
+//
+// Only the prefix is removed. The rest of the name is passed through byte for
+// byte because providers disagree on the separator and getting it wrong is an
+// unauthenticated request, not a warning: context7 requires
+// CONTEXT7_API_KEY while google-maps requires X-Goog-Api-Key. Translating
+// underscores to hyphens (as libhoop's httpproxy parseHeaderOpts does for its
+// own provider set) would silently break the former.
 func mcpBackendHeaders(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(in))
 	for k, v := range stripPrefixKeys(in, "header_") {
-		out[strings.ReplaceAll(k, "_", "-")] = strings.TrimSpace(v)
+		out[k] = strings.TrimSpace(v)
 	}
 	return out
 }

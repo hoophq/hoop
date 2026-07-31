@@ -33,6 +33,7 @@
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.mcp-oauth]
+   [webapp.resources.setup.events.mcp-catalog]
    [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]

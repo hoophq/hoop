@@ -101,18 +101,25 @@ func TestParseConnectionEnvVarsMcpProxyValidation(t *testing.T) {
 }
 
 // The env store preserves the original key, so headers arrive prefixed. The
-// MCP backends call req.Header.Set verbatim: without normalization the
-// upstream receives "HEADER_AUTHORIZATION" and no "Authorization" at all,
-// breaking every static and frozen-token OAuth backend.
-func TestMcpBackendHeadersNormalizesEnvKeys(t *testing.T) {
+// MCP backends call req.Header.Set verbatim: without stripping, the upstream
+// receives "HEADER_AUTHORIZATION" and no "Authorization" at all, breaking
+// every static and frozen-token OAuth backend.
+//
+// Everything after the prefix must survive byte for byte. Catalog providers
+// disagree on the separator — context7 requires CONTEXT7_API_KEY, google-maps
+// requires X-Goog-Api-Key — and a rewritten name authenticates as nobody.
+func TestMcpBackendHeadersStripsOnlyThePrefix(t *testing.T) {
 	got := mcpBackendHeaders(map[string]string{
-		"HEADER_AUTHORIZATION": "Bearer token-value",
-		"HEADER_X_API_KEY":     "  sk-secret  ",
+		"HEADER_Authorization":    "Bearer token-value",
+		"HEADER_CONTEXT7_API_KEY": "  ctx-secret  ",
+		"HEADER_X-Goog-Api-Key":   "gmaps-secret",
 	})
 	want := map[string]string{
-		"AUTHORIZATION": "Bearer token-value",
-		// Header names may not contain underscores on the wire.
-		"X-API-KEY": "sk-secret",
+		"Authorization": "Bearer token-value",
+		// Underscores are legal in a header name and this provider requires
+		// them; rewriting to CONTEXT7-API-KEY would break authentication.
+		"CONTEXT7_API_KEY": "ctx-secret",
+		"X-Goog-Api-Key":   "gmaps-secret",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d headers, want %d: %v", len(got), len(want), got)
@@ -122,8 +129,10 @@ func TestMcpBackendHeadersNormalizesEnvKeys(t *testing.T) {
 			t.Fatalf("header %q = %q, want %q (full: %v)", k, got[k], v, got)
 		}
 	}
-	if _, ok := got["HEADER_AUTHORIZATION"]; ok {
-		t.Fatalf("prefixed key survived normalization: %v", got)
+	for k := range got {
+		if strings.HasPrefix(strings.ToLower(k), "header_") {
+			t.Fatalf("prefixed key survived stripping: %v", got)
+		}
 	}
 }
 

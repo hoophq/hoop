@@ -22,5 +22,9 @@
   (get role-configs-required (keyword (str type "/" subtype))))
 
 (def http-proxy-subtypes
-  "Set of connection subtypes that use HTTP proxy logic"
-  #{"httpproxy" "kibana" "grafana" "claude-code" "mcp"})
+  "Set of connection subtypes that use HTTP proxy logic.
+
+  mcpproxy is the protocol-aware MCP type (ADR-0004). It is not a byte relay,
+  but it shares every trait this set gates: HEADER_ prefixing for credentials,
+  no web terminal, native-client access, and a credential-source selector."
+  #{"httpproxy" "kibana" "grafana" "claude-code" "mcp" "mcpproxy"})
