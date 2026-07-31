@@ -49,6 +49,28 @@ const (
 	// for the MCP client. The gateway records it and does not forward it.
 	SpecMCPEventKey string = "mcp.event"
 
+	// SpecMCPStdioBackendKey scopes a client-hosted MCP child to one backend
+	// within a session. A hoop session runs one MCP connection today, but the
+	// gateway supports several backends under one session, and reusing the
+	// session id alone would make two backends share a child.
+	SpecMCPStdioBackendKey string = "mcp.stdio_backend"
+	// SpecMCPStdioRequestKey correlates an MCPStdioRequest with the
+	// MCPStdioReply answering it. JSON-RPC ids cannot serve: notifications
+	// have none, and the id is chosen by the MCP client, so two concurrent
+	// sessions could collide.
+	SpecMCPStdioRequestKey string = "mcp.stdio_request_id"
+	// SpecMCPStdioErrorKey carries a spawn or write failure from the client
+	// back to the agent's backend, which surfaces it as a JSON-RPC error
+	// rather than a silent timeout.
+	SpecMCPStdioErrorKey string = "mcp.stdio_error"
+	// SpecMCPStdioCommandKey carries the command line the client must run,
+	// gob-encoded []string. It originates from the connection's configuration
+	// on the gateway, never from the client.
+	SpecMCPStdioCommandKey string = "mcp.stdio_command"
+	// SpecMCPStdioEnvKey carries the child's environment, gob-encoded
+	// map[string]string, sourced from the connection's MCPENV_* settings.
+	SpecMCPStdioEnvKey string = "mcp.stdio_env"
+
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"

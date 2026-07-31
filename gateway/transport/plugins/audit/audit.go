@@ -330,6 +330,14 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		// recording, and the spec key lets the session viewer render the
 		// structured ones as a tool-call timeline instead of a byte blob.
 		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
+	case pbclient.MCPStdioRequest:
+		// A tool call being handed to an MCP server on the user's own
+		// machine. It left the inspection pipeline, so recording it as input
+		// keeps the session replay complete: without this arm the reverse
+		// stdio transport would show tool calls with no counterpart.
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+	case pbagent.MCPStdioReply:
+		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 	}
 	return nil, nil
 }

@@ -32,6 +32,14 @@ var (
 		"MCP_ON_RUG_PULL":    "alert",
 		"MCPENV_FIGMA_TOKEN": "sk-1",
 	}
+	// The client-stdio form emits the same shape as stdio: the command goes
+	// into the connection's command array, never an env var, so the only
+	// difference on the wire is the transport value itself.
+	webappClientStdioFormEnvs = map[string]string{
+		"MCP_TRANSPORT":       "client-stdio",
+		"MCP_DENIED_TOOLS":    "delete_*",
+		"MCPENV_GITHUB_TOKEN": "ghp-1",
+	}
 )
 
 func encodeEnvs(envs map[string]string) map[string]any {
@@ -175,5 +183,32 @@ func TestWebappStaticTokenHeadersReachBackendVerbatim(t *testing.T) {
 					tt.server, tt.header, got, tt.value, headers)
 			}
 		})
+	}
+}
+
+// A client-stdio connection built in the webapp must reach the agent intact.
+// The transport string is the whole switch: a mismatch between the form's
+// value and the agent's constant routes the connection to a local child on
+// the agent host, which is the exact behaviour this transport exists to
+// avoid — and it would look like it worked.
+func TestWebappClientStdioFormParses(t *testing.T) {
+	env, err := parseConnectionEnvVars(encodeEnvs(webappClientStdioFormEnvs), pb.ConnectionTypeMcpProxy)
+	if err != nil {
+		t.Fatalf("webapp client-stdio form rejected by the agent: %v", err)
+	}
+	if env.mcpTransport != mcpTransportClientStdio {
+		t.Fatalf("transport = %q, want %q", env.mcpTransport, mcpTransportClientStdio)
+	}
+	// No REMOTE_URL is required, unlike the HTTP transports.
+	if env.httpProxyRemoteURL != "" {
+		t.Fatalf("remote url = %q, want empty for a stdio transport", env.httpProxyRemoteURL)
+	}
+	// MCPENV_* must land in the child's environment with the prefix stripped;
+	// this is how a client-hosted server receives its tokens.
+	if got := env.mcpEnv["GITHUB_TOKEN"]; got != "ghp-1" {
+		t.Fatalf("child env GITHUB_TOKEN = %q, want ghp-1 (env = %v)", got, env.mcpEnv)
+	}
+	if len(env.mcpDeniedTools) != 1 || env.mcpDeniedTools[0] != "delete_*" {
+		t.Fatalf("denied tools = %v, want [delete_*]", env.mcpDeniedTools)
 	}
 }

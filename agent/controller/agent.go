@@ -91,6 +91,20 @@ type (
 		// connection multiplexed on the same agent.
 		mcpProxyQueues sync.Map
 
+		// mcpGateways holds one *mcpGatewayHolder per session. The mcpproxy
+		// gateway owns the MCP session state (the Mcp-Session-Id it minted on
+		// initialize), so it must outlive the single HTTP request that
+		// created it — the hoop gateway mints a fresh connection id per
+		// request. Entries are removed and closed in sessionCleanup.
+		mcpGateways sync.Map
+
+		// mcpStdioBackends indexes live client-hosted MCP backends by
+		// "sessionID:backendID" so a reply arriving from the user's machine
+		// finds the backend that asked for it. mcpStdioSeq mints the backend
+		// half of that key. Both are cleared in sessionCleanup.
+		mcpStdioBackends sync.Map
+		mcpStdioSeq      sync.Map
+
 		// gcpTokenSources caches one oauth2.TokenSource per session (keyed by
 		// gateway session ID) for claude-code connections that federate to
 		// Google Vertex AI. The source is built once from the connection's
@@ -289,6 +303,12 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	// protocol-aware MCP (ADR-0004)
 	case pbagent.MCPProxyConnectionWrite:
 		a.processMCPProxyWriteServer(pkt)
+
+	// Reply from an MCP server running on the connecting user's machine.
+	// Handled inline: it only hands the payload to a buffered waiter, so it
+	// cannot block the recv loop.
+	case pbagent.MCPStdioReply:
+		a.processMCPStdioReply(pkt)
 
 	// SSH protocol
 	case pbagent.SSHConnectionWrite:
@@ -524,6 +544,7 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	// Drop any cached Vertex token source so the service-account-derived
 	// credential does not outlive the session in agent memory.
 	a.gcpTokenSources.Delete(sessionID)
+	a.mcpStdioSeq.Delete(sessionID)
 }
 
 func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {

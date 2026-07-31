@@ -468,7 +468,11 @@
         mcp-state @(rf/subscribe [:mcp-oauth/state role-index])
         server (get credentials "mcp_server" "")
         transport (get credentials "mcp_transport" "streamable-http")
-        stdio? (= transport "stdio")
+        ;; Both stdio transports configure a command instead of a URL. They
+        ;; differ only in WHICH machine runs it: "stdio" is the agent host,
+        ;; "client-stdio" is the laptop of whoever runs `hoop connect`.
+        client-stdio? (= transport "client-stdio")
+        stdio? (or (= transport "stdio") client-stdio?)
         authorized? (not (cs/blank? (get credentials "HEADER_AUTHORIZATION" "")))
         status (:status mcp-state :idle)
         busy? (contains? #{:authorizing :pending} status)
@@ -521,12 +525,13 @@
                     :on-change #(set-cred "mcp_transport" %)
                     :options [{:text "Streamable HTTP (remote)" :value "streamable-http"}
                               {:text "HTTP + SSE (legacy remote)" :value "sse"}
-                              {:text "Stdio (local server run by the agent)" :value "stdio"}]}]
+                              {:text "Stdio (local server run by the agent)" :value "stdio"}
+                              {:text "Stdio (server runs on the user's machine)" :value "client-stdio"}]}]
 
      (if stdio?
-       ;; A stdio backend is spawned by the agent; it has no URL, and its
-       ;; secrets travel as MCPENV_* so they reach the child's environment
-       ;; rather than being read as connection settings.
+       ;; A stdio backend is spawned from a command rather than reached at a
+       ;; URL, and its secrets travel as MCPENV_* so they reach the child's
+       ;; environment rather than being read as connection settings.
        [:> Box {:class "space-y-4"}
         [forms/input {:label "Command"
                       :placeholder "e.g. npx -y @modelcontextprotocol/server-filesystem /data"
@@ -535,7 +540,9 @@
                       :type "text"
                       :on-change (on-change "command")}]
         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-         "The agent runs this command as a child process. Add secrets it needs as environment variables prefixed with MCPENV_ below."]]
+         (if client-stdio?
+           "Each user runs this command on their own machine through `hoop connect`, so the server sees their filesystem and their credentials. Every tool call is still inspected by hoop before it reaches them."
+           "The agent runs this command as a child process. Add secrets it needs as environment variables prefixed with MCPENV_ below.")]]
 
        [forms/input {:label "MCP Server URL"
                      :placeholder "e.g. https://mcp.linear.app/mcp"

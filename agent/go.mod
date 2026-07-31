@@ -6,12 +6,6 @@ replace github.com/hoophq/hoop/common => ../common
 
 replace libhoop => ../libhoop
 
-// mcpproxy is developed alongside hoop (ADR-0004) in a sibling checkout.
-// LOCAL DEVELOPMENT ONLY: this path assumes hoophq/mcpproxy is cloned next to
-// hoophq/hoop. Replace with a published version tag before merging, or CI and
-// container builds will fail to resolve the module.
-replace github.com/hoophq/mcpproxy => ../../mcpproxy
-
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
@@ -24,6 +18,7 @@ require (
 	github.com/getsentry/sentry-go v0.45.1
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/hoophq/mcpproxy v0.1.0
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/stretchr/testify v1.11.1
@@ -84,7 +79,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
-	github.com/hoophq/mcpproxy v0.0.0-00010101000000-000000000000 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect

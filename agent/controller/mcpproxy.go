@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -111,17 +112,7 @@ func (a *Agent) handleMCPProxyWrite(pkt *pb.Packet) {
 
 	opts := mcpProxyOpts(connenv, connParams, sessionID, clientConnectionID)
 
-	// Guardrails and masking come from the same redactor configuration every
-	// other protocol uses; the gateway calls them at the points where MCP has
-	// free text (tool arguments, tool descriptions, result leaves).
-	hooks, err := libhoop.NewMCPHooks(opts)
-	if err != nil {
-		log.Infof("failed building mcp hooks, err=%v", err)
-		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed configuring data protection: %v", err))
-		return
-	}
-
-	gw, err := buildMCPGateway(connenv, connParams, sessionID, hooks, a.mcpAuditSink(sessionID, pkt.Spec))
+	gw, err := a.mcpGatewayFor(sessionID, connenv, connParams, opts, pkt.Spec)
 	if err != nil {
 		log.Infof("failed building mcp gateway, err=%v", err)
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed starting mcp proxy: %v", err))
@@ -131,12 +122,13 @@ func (a *Agent) handleMCPProxyWrite(pkt *pb.Packet) {
 	streamClient := pb.NewStreamWriter(a.client, pbclient.MCPProxyConnectionWrite, pkt.Spec)
 	chunkedClient := pb.NewChunkedWriter(streamClient, mcpResponseChunkSize)
 
-	// gw.Close tears down every MCP session and stdio child; the adapter calls
-	// it after its HTTP server has stopped, so nothing is mid-call.
-	proxy, err := libhoop.NewMCPProxy(context.Background(), chunkedClient, gw.Handler(), gw.Close, opts)
+	// The adapter is per HTTP request; the gateway behind it is not. Closing
+	// the gateway here would destroy the MCP session state every later
+	// request depends on, so the adapter's onClose is a no-op and the
+	// gateway is torn down by closeMCPProxyConnections at session cleanup.
+	proxy, err := libhoop.NewMCPProxy(context.Background(), chunkedClient, gw.Handler(), func() {}, opts)
 	if err != nil {
 		log.Infof("failed starting mcp proxy, err=%v", err)
-		gw.Close()
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed starting mcp proxy: %v", err))
 		return
 	}
@@ -162,14 +154,68 @@ func (a *Agent) handleMCPProxyWrite(pkt *pb.Packet) {
 	}
 }
 
+// mcpGatewayHolder memoises one gateway per hoop session. sync.Once rather
+// than a plain LoadOrStore because building the gateway is expensive and, for
+// the client-stdio transport, has side effects (it registers a backend
+// registry entry); two concurrent HTTP requests on a fresh session must not
+// both run it.
+type mcpGatewayHolder struct {
+	once sync.Once
+	gw   *mcpgateway.Gateway
+	err  error
+}
+
+// mcpGatewayFor returns the session's mcpproxy gateway, building it once.
+//
+// One gateway per hoop SESSION, not per HTTP request. An MCP session lives
+// inside exactly one gateway: the gateway mints an Mcp-Session-Id on
+// `initialize` and resolves every later message against its own session map,
+// answering 404 on a miss. The hoop gateway's HTTP listener mints a fresh
+// connection id per inbound request (that id is its response-routing key), so
+// building a gateway per connection id meant the client's second message
+// reached a gateway that had never seen its session — `initialize` worked and
+// every tools/list and tools/call after it failed, while each request leaked
+// another gateway and another stdio child.
+//
+// Sharing is safe: gateway.Options is frozen at construction and never
+// mutated here, and the gateway guards its own session map, which is exactly
+// the concurrency the standalone daemon runs under.
+func (a *Agent) mcpGatewayFor(
+	sessionID string,
+	connenv *connEnv,
+	connParams *pb.AgentConnectionParams,
+	opts map[string]string,
+	spec map[string][]byte,
+) (*mcpgateway.Gateway, error) {
+	obj, _ := a.mcpGateways.LoadOrStore(sessionID, &mcpGatewayHolder{})
+	holder := obj.(*mcpGatewayHolder)
+	holder.once.Do(func() {
+		// Guardrails and masking come from the same redactor configuration
+		// every other protocol uses; the gateway calls them at the points
+		// where MCP has free text (tool arguments, descriptions, results).
+		hooks, err := libhoop.NewMCPHooks(opts)
+		if err != nil {
+			holder.err = fmt.Errorf("failed configuring data protection: %v", err)
+			return
+		}
+		holder.gw, holder.err = a.buildMCPGateway(
+			connenv, connParams, sessionID, hooks, a.mcpAuditSink(sessionID, spec))
+	})
+	if holder.err != nil {
+		// Leave nothing memoised: a transient failure (e.g. the client's
+		// stdio child refusing to spawn) must not poison the session.
+		a.mcpGateways.Delete(sessionID)
+		return nil, holder.err
+	}
+	return holder.gw, nil
+}
+
 // buildMCPGateway assembles the mcpproxy gateway for one MCP connection.
 //
-// One gateway per (session, connection): mcpproxy freezes gateway.Options at
-// construction and reads Backends unsynchronised on every new MCP session, so
-// a shared, mutated gateway would be a data race. Per-connection construction
-// also gives each connection its own policy, which the library's
-// per-backend policy override does not actually implement.
-func buildMCPGateway(
+// One gateway per hoop session (see mcpGatewayFor): mcpproxy freezes
+// gateway.Options at construction, so the options map built here is never
+// mutated afterwards.
+func (a *Agent) buildMCPGateway(
 	connenv *connEnv,
 	connParams *pb.AgentConnectionParams,
 	sessionID string,
@@ -209,9 +255,20 @@ func buildMCPGateway(
 	if name == "" {
 		name = "mcp"
 	}
+
+	// mcpTransportClientStdio runs the MCP server on the connecting user's
+	// machine instead of this agent, so the backend is a tunnel down the
+	// client stream rather than a local child process. Everything after this
+	// point — pipeline, policy, masking, audit — is identical: the gateway
+	// only ever sees a backend.Backend.
+	factory := mcpbackend.NewFactory(name, backendCfg, nil)
+	if connenv.mcpTransport == mcpTransportClientStdio {
+		factory = a.clientStdioFactory(name, sessionID)
+	}
+
 	return mcpgateway.New(mcpgateway.Options{
 		Backends: map[string]mcpbackend.Factory{
-			name: mcpbackend.NewFactory(name, backendCfg, nil),
+			name: factory,
 		},
 		Pipeline: pipeline,
 		Sink:     sink,
@@ -261,8 +318,9 @@ func mcpProxyOpts(connenv *connEnv, connParams *pb.AgentConnectionParams, sessio
 	}
 }
 
-// closeMCPProxyConnections tears down every MCP proxy belonging to a session.
-// Called from session cleanup so a disconnect never orphans a stdio child.
+// closeMCPProxyConnections tears down every MCP resource belonging to a
+// session. Called from session cleanup so a disconnect never orphans a stdio
+// child, a tunnelled backend, or a dispatch slot.
 func (a *Agent) closeMCPProxyConnections(sessionID string) {
 	prefix := sessionID + ":"
 	a.mcpProxyQueues.Range(func(key, _ any) bool {
@@ -272,6 +330,17 @@ func (a *Agent) closeMCPProxyConnections(sessionID string) {
 		}
 		return true
 	})
+	// The per-request adapters are closed by the connStore loop in
+	// sessionCleanup, but the gateway outlives them by design (it holds the
+	// MCP session state they share), so it is closed here. gw.Close shuts
+	// down every MCP session, which closes every backend: a local stdio
+	// child is signalled and reaped, a tunnelled one releases its waiters.
+	if obj, ok := a.mcpGateways.LoadAndDelete(sessionID); ok {
+		if holder, _ := obj.(*mcpGatewayHolder); holder != nil && holder.gw != nil {
+			holder.gw.Close()
+		}
+	}
+	a.closeClientStdioBackends(sessionID)
 }
 
 // ---- env parsing helpers ---------------------------------------------------
@@ -374,7 +443,7 @@ func mcpBackendHeaders(in map[string]string) map[string]string {
 // buildMCPGateway covers it.
 func validateMCPProxyEnv(env *connEnv) error {
 	switch env.mcpTransport {
-	case "stdio":
+	case "stdio", mcpTransportClientStdio:
 	case "streamable-http", "sse":
 		if env.httpProxyRemoteURL == "" {
 			return fmt.Errorf("missing required environment for mcpproxy connection [REMOTE_URL]")
@@ -386,7 +455,7 @@ func validateMCPProxyEnv(env *connEnv) error {
 		return fmt.Errorf("missing required environment for mcpproxy connection [MCP_TRANSPORT]")
 	default:
 		return fmt.Errorf("invalid MCP_TRANSPORT %q, accept only: %v",
-			env.mcpTransport, []string{"stdio", "streamable-http", "sse"})
+			env.mcpTransport, []string{"stdio", mcpTransportClientStdio, "streamable-http", "sse"})
 	}
 
 	// The agent supplies no outbound TokenSource: hoop brokers OAuth itself

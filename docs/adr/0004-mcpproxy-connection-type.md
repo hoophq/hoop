@@ -37,7 +37,8 @@ That path treats MCP as opaque HTTP. Consequences:
 
 ### What exists to build on
 
-- **`github.com/hoophq/mcpproxy`** — a standalone MCP gateway module. It
+- **`github.com/hoophq/mcpproxy`** — a standalone, open-source MCP gateway
+  module (https://github.com/hoophq/mcpproxy), pinned at `v0.1.0`. It
   terminates MCP streamable-HTTP on the front, parses every JSON-RPC message
   in both directions through an ordered check pipeline
   (allow/deny/hold/kill), and bridges to backends over three transports:
@@ -117,8 +118,8 @@ collects `HEADER_*` prefixes and b64 `envvar:` entries):
 
 | Env | Meaning |
 |---|---|
-| `MCP_TRANSPORT` | `stdio` \| `streamable-http` \| `sse` |
-| `COMMAND`, `envvar:*` | stdio: child command + environment (secrets via secrets manager) |
+| `MCP_TRANSPORT` | `stdio` \| `client-stdio` \| `streamable-http` \| `sse` |
+| `COMMAND`, `envvar:*` | stdio and client-stdio: child command + environment (secrets via secrets manager) |
 | `REMOTE_URL`, `HEADER_*` | remote endpoints + static credentials |
 | `MCP_AUTH` | `none` \| `static` \| `passthrough` \| `oauth` |
 | `MCP_ALLOWED_TOOLS`, `MCP_DENIED_TOOLS`, `MCP_APPROVAL_TOOLS` | tool globs (deny > allow; approval matches hold for review) |
@@ -128,6 +129,50 @@ A small gateway endpoint exposes mcpproxy's embedded catalog so the
 connection form can open with a server picker (Linear, Stripe, Notion, …)
 that pre-fills URL / transport / auth mode; "custom" falls back to the raw
 form.
+
+### Client-hosted stdio (`MCP_TRANSPORT=client-stdio`)
+
+`stdio` runs the MCP server as a child of the agent. That is wrong whenever
+the server needs the developer's own machine — their working tree, their SSH
+agent, their already-authenticated CLIs — and it is the common case for
+filesystem, git and shell MCP servers.
+
+`client-stdio` keeps every inspection stage in the agent and moves only the
+process:
+
+```
+MCP client → hoop connect (local port) → gateway → agent
+  → mcpproxy gateway (policy, budgets, rug-pull, masking, audit)
+  → clientStdioBackend  ══tunnel══>  hoop connect → child stdin/stdout
+```
+
+The backend is a hoop-local `backend.Backend` (`agent/controller/mcpstdio.go`)
+swapped into `gateway.Options.Backends`. mcpproxy needs no change: `Backends`
+is a `map[string]backend.Factory` and `Factory` is a bare closure, so a host
+can supply a transport the library has never heard of. `backend.NewFactory` is
+a convenience switch, not a chokepoint.
+
+Wire protocol, one packet pair:
+
+| Packet | Direction | Carries |
+|---|---|---|
+| `pbclient.MCPStdioRequest` | agent → client | one JSON-RPC envelope + the command/env to spawn with |
+| `pbagent.MCPStdioReply` | client → agent | the write ack (with a request id), or a line the server printed (without one) |
+| `pbclient.MCPStdioClose` | agent → client | reap the child |
+
+`Send` returns on the ack, not on the MCP response: responses arrive
+asynchronously on `Recv` where the gateway matches them by JSON-RPC id, and a
+server may interleave notifications. Waiting for the response inside `Send`
+deadlocks that. The ack exists only because the write happens on another
+machine — without it a server that cannot spawn produces neither error nor
+reply, and the gateway waits out its full request timeout.
+
+The CLI (`client/proxy/mcpstdio.go`) spawns lazily on the first request, so a
+session that never issues a call starts no process. Children run in their own
+process group and are reaped on `MCPStdioClose`, session close, or CLI exit.
+
+Both transports coexist: the choice is one connection setting, and everything
+downstream of the backend — policy, guardrails, masking, audit — is identical.
 
 ### OAuth
 
@@ -191,6 +236,15 @@ grants later reuse the same flow keyed `(connection, user)`.
    silently running an unauthenticated backend: hoop brokers OAuth itself
    (`/mcp-oauth/*`) and freezes the result into `HEADER_AUTHORIZATION`,
    which the static path carries.
+7. **Done.** Client-hosted stdio (`MCP_TRANSPORT=client-stdio`): the
+   `MCPStdioRequest`/`MCPStdioReply`/`MCPStdioClose` packets,
+   `agent/controller/mcpstdio.go`, `client/proxy/mcpstdio.go`, the
+   `mcpproxy` case in `hoop connect`, and the transport option in the webUI
+   form. Fixed alongside it: the agent keyed its mcpproxy gateway on
+   `sid:connID` while the proxy listener mints a connection id per HTTP
+   request, so every message after `initialize` reached a gateway that had
+   never issued the session id the client presented. The gateway is now
+   memoised per session and closed in `sessionCleanup`.
 
 Each phase is independently shippable; phases 1–2 carry no coordination cost
 with gateway owners.
@@ -207,21 +261,18 @@ connection behaves the same.
 
 ### Remaining work before merge
 
-- **`mcpproxy` has no published version.** `agent/go.mod` and `gateway/go.mod`
-  both carry `replace github.com/hoophq/mcpproxy => ../../mcpproxy`. Because
-  `go.work` lists every module, *no* module resolves without that sibling
-  checkout — CI and container builds fail. Either publish and tag the module,
-  or adopt the libhoop precedent (gitignored in-repo checkout plus a CI clone
-  step).
-- **webUI.** The frontend has no `mcpproxy` surface. Registration points: the
-  connection catalog metadata entry (`{type: httpproxy, subtype: mcpproxy}`,
-  which drives the card, icon and labels in both apps), a create-flow role
-  form in CLJS (`resources/setup/roles_step.cljs`), an edit renderer in both
-  CLJS (`configure_role/credentials_tab.cljs`) and React
-  (`Roles/Configure/sections/credentials/index.jsx`, cloning
-  `McpRenderer.jsx`), env emission/hydration for the `MCP_*` keys in
-  `process_form.cljs`, and the native-client Connect modal. The existing
-  `/mcp-oauth` popup machinery is subtype-agnostic and reusable as-is.
+- **webUI edit renderers.** The create flow is complete: the catalog metadata
+  entry (`{type: httpproxy, subtype: mcpproxy}`, in `hoophq/documentation`'s
+  `store/connections/mcpproxy.yml`, which drives the card, icon and labels in
+  both apps), the CLJS role form (`resources/setup/roles_step.cljs`), env
+  emission for the `MCP_*` / `MCPENV_*` keys (`process_form.cljs`) and the
+  native-client Connect modal all ship. Editing an existing connection does
+  not: both `resources/configure_role/credentials_tab.cljs` and
+  `Roles/Configure/sections/credentials/index.jsx` fall through to the generic
+  HTTP-proxy renderer, so the transport and tool-policy fields are invisible
+  after creation. Clone `mcp-edit-form` / `McpRenderer.jsx` for the subtype.
+  The existing `/mcp-oauth` popup machinery is subtype-agnostic and reusable
+  as-is.
 - **Session timeline.** The agent emits one JSON audit line per protocol event
   and the gateway records it, but the `mcp.event` marker is dropped between
   the WAL and both the SSE stream and the persisted blob (`eventbroker.Event`

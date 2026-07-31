@@ -371,6 +371,43 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				if jsonMode {
 					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port})
 				}
+			case pb.ConnectionTypeMcpProxy:
+				// Two listeners, one session. The HTTP proxy is the front
+				// door the user points Claude Code or Cursor at; it behaves
+				// exactly like the httpproxy case, only the packet type
+				// differs so the agent routes to its MCP adapter.
+				proxyPort := "8081"
+				if c.proxyPort != "" {
+					proxyPort = c.proxyPort
+				}
+				srv := proxy.NewHttpProxy(proxyPort, c.client, pbagent.MCPProxyConnectionWrite)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				// The second half is the reverse leg: when the connection is
+				// configured with MCP_TRANSPORT=client-stdio the agent asks
+				// this process to run the MCP server locally. It owns no
+				// port and starts nothing until the agent asks, so it costs
+				// nothing for the remote transports.
+				stdio := proxy.NewMCPStdio(c.client, string(sessionID))
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.connStore.Set(mcpStdioStoreKey(string(sessionID)), stdio)
+				c.printHeader(connectionType, pkt)
+				fmt.Println()
+				fmt.Println("---------------------mcp-connection-------------------")
+				fmt.Printf("     endpoint=http://%s:%s/mcp\n", srv.Host().Host, srv.Host().Port)
+				fmt.Println("------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+				if jsonMode {
+					emitReady(map[string]string{
+						"host":     srv.Host().Host,
+						"port":     srv.Host().Port,
+						"endpoint": fmt.Sprintf("http://%s:%s/mcp", srv.Host().Host, srv.Host().Port),
+					})
+				}
+				ossig.shutdownFn = func() { loader.Stop(); _ = stdio.Close(); srv.Close() }
 			case pb.ConnectionTypeKubernetes:
 				srv := proxy.NewHttpProxy(c.proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
 				if err := srv.Serve(string(sessionID)); err != nil {
@@ -530,6 +567,30 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 					c.processGracefulExit(errMsg)
 				}
 			}
+		case pbclient.MCPProxyConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if srv, ok := c.connStore.Get(string(sessionID)).(*proxy.HttpProxy); ok {
+				_, err := srv.PacketWriteClient(connectionID, pkt)
+				if err != nil {
+					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+					c.processGracefulExit(errMsg)
+				}
+			}
+		case pbclient.MCPStdioRequest:
+			// The agent asks this machine to run the MCP server. Handled on
+			// its own goroutine: spawning a child and waiting on its first
+			// line must not stall the receive loop, which is also carrying
+			// the HTTP traffic of the request that triggered it.
+			sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+			if stdio, ok := c.connStore.Get(mcpStdioStoreKey(sessionID)).(*proxy.MCPStdio); ok {
+				go stdio.PacketWriteClient(pkt)
+			}
+		case pbclient.MCPStdioClose:
+			sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+			if stdio, ok := c.connStore.Get(mcpStdioStoreKey(sessionID)).(*proxy.MCPStdio); ok {
+				go stdio.PacketCloseClient(pkt)
+			}
 		case pbclient.TCPConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
@@ -590,6 +651,11 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 		}
 	}
 }
+
+// mcpStdioStoreKey scopes the client-hosted MCP server owner in the session
+// store. The HTTP proxy already occupies the bare session id — both belong to
+// one mcpproxy session and must be reachable independently.
+func mcpStdioStoreKey(sessionID string) string { return sessionID + ":mcp-stdio" }
 
 func (c *connect) processGracefulExit(err error) {
 	if err == nil {

@@ -103,8 +103,11 @@
                         (= (get (:credentials role) "connection-type") "local"))
         ;; A stdio MCP server's command becomes the connection's command array
         ;; (see process-role), so it must not also be emitted as an env var.
+        ;; Both stdio transports do this — they differ only in which machine
+        ;; runs the command, never in how it is carried.
         mcpproxy-stdio? (and (= subtype "mcpproxy")
-                             (= (get (:credentials role) "mcp_transport") "stdio"))
+                             (contains? #{"stdio" "client-stdio"}
+                                        (get (:credentials role) "mcp_transport")))
         credentials (cond
                       ssh-local? {}
                       :else
@@ -208,12 +211,14 @@
         ;; Extract just the values
 
         command-args (:command-args role [])
-        ;; A stdio MCP server is spawned by the agent from the connection's
-        ;; command array (AgentConnectionParams.CmdList), so the command the
-        ;; admin typed belongs there rather than in an env var. Split on
-        ;; whitespace: the field takes a plain command line.
+        ;; A stdio MCP server is spawned from the connection's command array
+        ;; (AgentConnectionParams.CmdList), so the command the admin typed
+        ;; belongs there rather than in an env var. Split on whitespace: the
+        ;; field takes a plain command line. client-stdio travels identically;
+        ;; only the machine that runs it differs.
         mcpproxy-stdio-command (when (and (= raw-subtype "mcpproxy")
-                                          (= (get (:credentials role) "mcp_transport") "stdio"))
+                                          (contains? #{"stdio" "client-stdio"}
+                                                     (get (:credentials role) "mcp_transport")))
                                  (->> (str/split (or (get (:credentials role) "command") "") #"\s+")
                                       (remove str/blank?)
                                       vec))

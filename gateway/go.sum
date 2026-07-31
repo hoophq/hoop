@@ -272,6 +272,8 @@ github.com/honeycombio/otel-config-go v1.17.0 h1:3/zig0L3IGnfgiCrEfAwBsM0rF57+TK
 github.com/honeycombio/otel-config-go v1.17.0/go.mod h1:g2mMdfih4sYKfXBtz2mNGvo3HiQYqX4Up4pdA8JOF2s=
 github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24 h1:+wITGsODwbN6oxhnZJU66EUFAYduKZwiz91HjYJicuA=
 github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24/go.mod h1:KB9v21/CvG9YnC49ZfEjnj4LtO5r5nU1J8SOBKXZsEA=
+github.com/hoophq/mcpproxy v0.1.0 h1:NEBx+6Gd9XzGP6amRvJCjK4AB0fIJ7iElZGcoaePuA8=
+github.com/hoophq/mcpproxy v0.1.0/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
