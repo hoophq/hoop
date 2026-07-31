@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -41,6 +42,25 @@ TRIVY_IMAGE = "aquasec/trivy:0.72.0"
 # Core published line documented per release. The -ng clean-line images are a
 # separate train / mirror and are intentionally out of scope here.
 IMAGE_REPOS = ["hoophq/hoop", "hoophq/hoopdev", "hoophq/hoopdev-minimal"]
+
+# Bundled CLI versions recorded in the manifest for the fat agent image, per
+# issue #1643 ("bundled tool versions"). Sourced from Dockerfile.tools' ARG
+# defaults — the legacy-train pins hoophq/hoopdev is built from. The
+# CycloneDX/SPDX SBOMs remain the complete component inventory; this is a
+# convenience summary of the CLIs the ticket calls out.
+TOOLS_DOCKERFILE = os.path.join(os.path.dirname(__file__), "..", "..", "Dockerfile.tools")
+BUNDLED_TOOL_ARGS = {
+    "KUBECTL_VERSION": "kubectl",
+    "SQLCMD_VERSION": "sqlcmd",
+    "MONGOSH_VERSION": "mongosh",
+    "MONGODB_TOOLS_VERSION": "mongodb-tools",
+    "NODE_VERSION": "node",
+    "AWS_CLI_VERSION": "aws-cli",
+    "GCLOUD_VERSION": "gcloud",
+    "GCLOUD_GKE_AUTHN_PLUGIN_VERSION": "gke-gcloud-auth-plugin",
+}
+# Only the fat agent bundles those CLIs; the gateway and minimal agent do not.
+BUNDLED_TOOL_IMAGES = {"hoophq/hoopdev"}
 
 # Docker Hub can lag before a just-pushed multi-arch manifest becomes visible;
 # mirror the retry the release workflow already uses for freshly-pushed tags.
@@ -57,7 +77,7 @@ def resolve_image(ref: str):
 
     Returns (index_digest, {platform: child_digest}) or None if the tag never
     becomes visible. A single-manifest (non-index) image yields an empty
-    platform map and is scanned without --platform.
+    platform map; the caller then resolves its real platform and scans by digest.
     """
     raw = None
     for attempt in range(VISIBILITY_RETRIES):
@@ -92,6 +112,23 @@ def resolve_image(ref: str):
         if plat.get("os") == "linux" and plat.get("architecture") and plat.get("architecture") != "unknown":
             children[f"linux/{plat['architecture']}"] = m.get("digest", "")
     return index_digest, children
+
+
+def single_platform(ref: str) -> str | None:
+    """Return 'os/arch' for a single-manifest (non-index) image, or None.
+
+    Used only for the fallback when a tag is not a multi-arch index: read the
+    real platform from the image config instead of assuming one.
+    """
+    cp = _run(
+        ["docker", "buildx", "imagetools", "inspect", ref,
+         "--format", "{{.Image.OS}}/{{.Image.Architecture}}"],
+        capture_output=True, text=True,
+    )
+    val = cp.stdout.strip() if cp.returncode == 0 else ""
+    if val and "/" in val and "<no value>" not in val:
+        return val
+    return None
 
 
 def trivy(cache: str, outdir: str, *args: str) -> None:
@@ -132,18 +169,44 @@ def component_count(cdx_path: str) -> int:
         return len(json.load(f).get("components", []) or [])
 
 
-def scan_platform(cache: str, outdir: str, ref: str, short: str, platform: str) -> dict:
-    """Generate per-platform SBOMs + vuln summary; return the manifest entry."""
+def bundled_tools() -> dict:
+    """Read bundled-CLI versions from Dockerfile.tools' ARG defaults.
+
+    Best-effort: an ARG that is renamed or removed is simply omitted (the SBOMs
+    still carry the full component inventory), so this never fails the release.
+    """
+    try:
+        with open(TOOLS_DOCKERFILE) as f:
+            text = f.read()
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    for arg, name in BUNDLED_TOOL_ARGS.items():
+        m = re.search(rf"^ARG {arg}=(.+)$", text, re.M)
+        if m:
+            out[name] = m.group(1).strip()
+    return out
+
+
+def scan_platform(cache: str, outdir: str, scan_ref: str, short: str,
+                  platform: str, use_platform: bool) -> dict:
+    """Generate per-platform SBOMs + vuln summary; return the manifest entry.
+
+    scan_ref is an immutable digest reference (repo@sha256:...) for a resolved
+    multi-arch child, so the SBOM describes exactly the bytes recorded in the
+    manifest even if the tag moves between resolve and scan. Only the non-index
+    fallback scans by tag, pinning the arch with --platform.
+    """
     arch = platform.split("/")[-1]
     base = f"{short}-{arch}"
-    plat_args = ["--platform", platform]
+    plat_args = ["--platform", platform] if use_platform else []
     trivy(cache, outdir, "image", "--quiet", *plat_args,
-          "--format", "cyclonedx", "--output", f"/out/{base}.cdx.json", ref)
+          "--format", "cyclonedx", "--output", f"/out/{base}.cdx.json", scan_ref)
     trivy(cache, outdir, "image", "--quiet", *plat_args,
-          "--format", "spdx-json", "--output", f"/out/{base}.spdx.json", ref)
+          "--format", "spdx-json", "--output", f"/out/{base}.spdx.json", scan_ref)
     trivy(cache, outdir, "image", "--quiet", *plat_args,
           "--scanners", "vuln", "--severity", "CRITICAL,HIGH",
-          "--format", "json", "--output", f"/out/{base}.vuln.json", ref)
+          "--format", "json", "--output", f"/out/{base}.vuln.json", scan_ref)
 
     os_str, counts = summarize(os.path.join(outdir, f"{base}.vuln.json"))
     cc = component_count(os.path.join(outdir, f"{base}.cdx.json"))
@@ -182,6 +245,7 @@ def main() -> int:
     }
 
     produced = False
+    tools = bundled_tools()
     for repo in IMAGE_REPOS:
         ref = f"{repo}:{tag}"
         short = repo.split("/")[-1]
@@ -190,13 +254,29 @@ def main() -> int:
             print(f"::warning::{ref} not visible after retries; skipping SBOM/manifest entry")
             continue
         index_digest, children = resolved
-        # Fall back to a single unqualified scan for a non-index (single-arch) tag.
-        platforms = children or {"linux/amd64": ""}
+        # A published tag is normally a multi-arch index. If it is instead a
+        # single manifest, resolve its real platform (never assume one) and scan
+        # it by its own digest (== index_digest); skip if the platform is unknown.
+        if children:
+            platforms = children
+        else:
+            plat = single_platform(ref)
+            if not plat:
+                print(f"::warning::{ref} is a single manifest of unknown platform; skipping SBOM/manifest entry")
+                continue
+            platforms = {plat: index_digest}
 
         entry = {"index_digest": index_digest, "platforms": {}}
+        if repo in BUNDLED_TOOL_IMAGES and tools:
+            entry["bundled_tools"] = tools
         for platform, child_digest in sorted(platforms.items()):
             print(f"Generating SBOMs for {ref} ({platform})")
-            plat_entry = scan_platform(cache, outdir, ref, short, platform)
+            # Scan the immutable child digest so the SBOM matches the manifest.
+            if child_digest:
+                scan_ref, use_platform = f"{repo}@{child_digest}", False
+            else:
+                scan_ref, use_platform = ref, True
+            plat_entry = scan_platform(cache, outdir, scan_ref, short, platform, use_platform)
             plat_entry["digest"] = child_digest
             entry["platforms"][platform] = plat_entry
         manifest["images"][ref] = entry

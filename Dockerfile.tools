@@ -142,7 +142,7 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   arm64) ARCH='aarch64';; \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
-  && curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$ARCH.zip" -o awscli-exe-linux.zip && \
+  && curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$ARCH-${AWS_CLI_VERSION}.zip" -o awscli-exe-linux.zip && \
     unzip -q awscli-exe-linux.zip && \
     aws/install && \
     aws --version && \
