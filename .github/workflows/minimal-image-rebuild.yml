@@ -1,0 +1,178 @@
+# Weekly base-OS re-patch of the minimal production agent image
+# (hoophq/hoopdev-minimal). Closes DEP-91 point 4: "weekly base-OS patches".
+#
+# hoophq/hoopdev-minimal is the low-CVE production base — Dockerfile.minimal runs
+# `apt-get upgrade -y`, so rebuilding it re-pulls current OS security patches
+# even when no code changed. Releases already rebuild every image; this fills the
+# gap BETWEEN releases so :latest does not accrue unpatched OS CVEs for weeks.
+#
+# The application binary is NOT rebuilt here. This job re-patches only the OS
+# layer under the exact binary of the latest published release (fetched from the
+# canonical release channel and checksum-verified, staged under the names
+# Dockerfile.minimal's glob expects), then republishes. Consequently the
+# ENFORCING gate is scoped to the OS layer (--pkg-types os) — the layer this
+# rebuild actually changes — and runs against EVERY published platform. The
+# shipped Go binary's dependency/toolchain CVEs are fixed by a RELEASE (source
+# bumps + the govulncheck PR gate + the release-time Trivy scan), never by an OS
+# rebuild, so they are only REPORTED here — otherwise a release lagging a Go fix
+# would perpetually block OS patching.
+#
+# Published tags:
+#   hoophq/hoopdev-minimal:latest                — moving, always the latest patches
+#   hoophq/hoopdev-minimal:<release>-<YYYYMMDD>  — patched snapshot, one per weekly run
+# The immutable release tag hoophq/hoopdev-minimal:<release> is left untouched so
+# existing digest pins keep resolving; track :latest (or a dated tag / a digest)
+# for patches.
+name: Minimal Agent Weekly Rebuild
+
+on:
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+concurrency:
+  group: minimal-rebuild
+  cancel-in-progress: false
+
+jobs:
+  rebuild-minimal:
+    runs-on: ubuntu-latest
+    name: Re-patch and publish hoophq/hoopdev-minimal
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Fetch the exact binary of the latest published release, staged under the
+      # names Dockerfile.minimal's glob expects: hoop_<ver>_Linux_<uname -m>.tar.gz
+      # (x86_64 for amd64, aarch64 for arm64). The multi-arch build selects the
+      # matching tar per platform. Verify both tarballs against the release
+      # checksums before building — fail closed on mismatch or if neither is
+      # verified, so a tampered/corrupt download can never be republished.
+      - name: Resolve latest release and stage binaries
+        id: rel
+        run: |
+          ver="$(curl -fsS https://releases.hoop.dev/release/latest.txt)"
+          if [ -z "$ver" ]; then
+            echo "::error::could not resolve the latest release version"; exit 1
+          fi
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          mkdir -p dist/binaries
+          for arch in x86_64 aarch64; do
+            curl -fsSL "https://releases.hoop.dev/release/${ver}/hoop_${ver}_Linux_${arch}.tar.gz" \
+              -o "dist/binaries/hoop_${ver}_Linux_${arch}.tar.gz"
+          done
+          curl -fsSL "https://releases.hoop.dev/release/${ver}/checksums.txt" \
+            -o dist/binaries/checksums.txt
+          # checksums.txt paths are ./dist/binaries/...; verify from the repo root.
+          # --ignore-missing skips the other-platform entries but still fails if
+          # a staged tarball mismatches or none were verified.
+          sha256sum -c --ignore-missing dist/binaries/checksums.txt
+          # The Dockerfile globs *.tar.gz from dist/binaries/; keep only the tars.
+          rm -f dist/binaries/checksums.txt
+          ls -lh dist/binaries/
+
+      # Build each published platform and load it for the OS-layer gate BEFORE
+      # publishing anything: a rebuild that regresses on EITHER arch must not
+      # reach :latest.
+      - name: Build (amd64, load for gates)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.minimal
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: false
+          load: true
+          tags: hoophq/hoopdev-minimal:cand-amd64
+
+      # The image must run as the unprivileged 'hoop' user (uid 10001). The USER
+      # directive is arch-independent, so assert it once on the amd64 candidate.
+      - name: Verify runtime user is unprivileged
+        run: |
+          uid="$(docker run --rm --entrypoint id hoophq/hoopdev-minimal:cand-amd64 -u)"
+          echo "runtime uid: ${uid}"
+          test "${uid}" = "10001"
+
+      - name: Gate on fixable CRITICAL/HIGH (amd64 OS layer, enforcing)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --pkg-types os --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            hoophq/hoopdev-minimal:cand-amd64
+
+      - name: Build (arm64, load for gate)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.minimal
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          push: false
+          load: true
+          tags: hoophq/hoopdev-minimal:cand-arm64
+
+      - name: Gate on fixable CRITICAL/HIGH (arm64 OS layer, enforcing)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --pkg-types os --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            hoophq/hoopdev-minimal:cand-arm64
+
+      # REPORT-ONLY: the shipped Go binary's fixable CVEs are fixed by a release
+      # (dependency bumps + the govulncheck gate), not by this OS rebuild. Surface
+      # them so a lagging release is visible, but never block an OS patch on them.
+      # The Go binary's deps are identical across arches, so report once.
+      - name: Report shipped-binary fixable CRITICAL/HIGH (Go layer, non-blocking)
+        run: |
+          if ! docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --pkg-types library --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --quiet --format json \
+            hoophq/hoopdev-minimal:cand-amd64 > go-vuln.json; then
+            echo "::warning::Go-layer vulnerability report unavailable"; exit 0
+          fi
+          n=$(jq '[.Results[]?.Vulnerabilities // []] | add | length' go-vuln.json 2>/dev/null || echo "?")
+          {
+            echo "### hoophq/hoopdev-minimal ${{ steps.rel.outputs.version }} — shipped-binary fixable CRITICAL/HIGH: ${n} (report-only)"
+            echo ""
+            echo "Fixed by cutting a release (dependency bumps + govulncheck gate), not by this OS rebuild."
+            echo '```'
+            jq -r '[.Results[]?.Vulnerabilities // []] | add | .[:20][] | "\(.Severity)\t\(.PkgName)\t\(.VulnerabilityID)\t-> \(.FixedVersion)"' go-vuln.json 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Both arches passed the OS gate: build both from the warm cache and push
+      # the moving :latest plus a dated snapshot. buildx publishes a multi-arch
+      # manifest list for each tag.
+      - name: Build and push (multiarch)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.minimal
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopdev-minimal:latest
+            hoophq/hoopdev-minimal:${{ steps.rel.outputs.version }}-${{ steps.rel.outputs.date }}
