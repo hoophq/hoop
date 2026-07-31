@@ -1272,6 +1272,52 @@ jobs:
           git tag "$GIT_TAG" 2>/dev/null || true
           git push origin "$GIT_TAG"
 
+  # DEP-91: attach supply-chain artifacts to the GitHub release. For each
+  # published image this uploads an SBOM (CycloneDX + SPDX) and a compact JSON
+  # manifest (base OS, component count, Trivy CRITICAL/HIGH summary) so
+  # downstream users building custom agents can verify shipped components and
+  # the vulnerability posture without re-pulling and re-scanning every image.
+  # continue-on-error and gated behind publish-release: a hiccup attaching these
+  # supplementary artifacts must never fail an already-shipped release. Depends
+  # on the minimal multiarch job too so its SBOM is included when it published
+  # (the generator skips any image tag that is not in the registry).
+  sbom-and-manifest:
+    runs-on: ubuntu-latest
+    name: SBOM + Release Manifest
+    environment: production
+    needs:
+      - publish-release
+      - docker-publish-hoopdev-minimal-multiarch
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      # Authenticate so `docker buildx imagetools inspect` and Trivy's registry
+      # pulls (per-platform) are not subject to anonymous Docker Hub rate limits.
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Generate SBOMs and release manifest
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          TRIVY_USERNAME: ${{ secrets.DOCKER_LOGIN }}
+          TRIVY_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          mkdir -p dist/sbom
+          python3 scripts/ci/generate-sbom-manifest.py "$GIT_TAG" dist/sbom
+      - name: Attach to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: gh release upload "$GIT_TAG" dist/sbom/* --clobber
+
   # Create a Linear release once the version has actually shipped. This job runs
   # only after `publish-release` succeeds, so a Linear release is never created
   # for a version that failed to publish.
