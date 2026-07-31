@@ -76,6 +76,14 @@ export default function DataMasking() {
     return <PageLoader h={300} />
   }
 
+  // A failed load leaves the list empty, which would otherwise fall through to
+  // the empty state and tell an admin they have no rules configured.
+  if (listStatus === 'error') {
+    return (
+      <PageLoader error h={300} message="Failed to load Live Data Masking rules." />
+    )
+  }
+
   if (list.length === 0) {
     return (
       <FullBleed>
