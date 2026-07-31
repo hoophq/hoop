@@ -4975,6 +4975,35 @@ const docTemplate = `{
                 }
             }
         },
+        "/mcp-catalog": {
+            "get": {
+                "description": "List the built-in catalog of publicly hosted remote MCP servers. Used by the connection create page to pre-fill an ` + "`" + `mcpproxy` + "`" + ` connection's endpoint, transport and auth mode from a picker.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List MCP Server Catalog",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.MCPCatalogEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/mcp-oauth/authorize": {
             "post": {
                 "description": "Discovers the MCP server's authorization server (RFC 9728 / RFC 8414), optionally performs Dynamic Client Registration (RFC 7591) when no client credentials are supplied, and returns the authorization URL for the admin's browser to complete an Authorization Code + PKCE login. The browser is redirected there; the upstream provider redirects back to the gateway callback, which exchanges the code for a token. Used by the connection create page.",
@@ -14124,6 +14153,45 @@ const docTemplate = `{
                 "login_url": {
                     "description": "The URL to redirect the user to the identity provider",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.MCPCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "auth": {
+                    "description": "Auth is how the server authenticates: \"none\", \"static\" or \"oauth\".\nStatic entries expect a credential in Header; oauth entries drive the\n/mcp-oauth flow. It is the value for MCP_AUTH.",
+                    "type": "string",
+                    "example": "oauth"
+                },
+                "description": {
+                    "description": "Description is a one-line summary of what the server exposes.",
+                    "type": "string",
+                    "example": "Linear issue tracking (official)"
+                },
+                "header": {
+                    "description": "Header names the static credential header and its value template, in\n\"Name: value\" form. Empty unless Auth is \"static\".",
+                    "type": "string",
+                    "example": "Authorization: Bearer ${TOKEN}"
+                },
+                "name": {
+                    "description": "Name is the catalog key, unique and stable (e.g. \"linear\").",
+                    "type": "string",
+                    "example": "linear"
+                },
+                "notes": {
+                    "description": "Notes carries provider caveats worth reading before enabling.",
+                    "type": "string"
+                },
+                "transport": {
+                    "description": "Transport is the backend protocol: \"streamable-http\" or \"sse\". It is\nthe value for MCP_TRANSPORT.",
+                    "type": "string",
+                    "example": "streamable-http"
+                },
+                "url": {
+                    "description": "URL is the MCP endpoint, the value for the connection's REMOTE_URL.",
+                    "type": "string",
+                    "example": "https://mcp.linear.app/mcp"
                 }
             }
         },
