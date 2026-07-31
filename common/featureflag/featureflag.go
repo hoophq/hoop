@@ -117,6 +117,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway, ComponentAgent},
 	},
+	"experimental.mcp_gateway": {
+		Name:        "experimental.mcp_gateway",
+		Description: "Offer the MCP Gateway (mcpproxy) resource type in the webapp catalog, so admins can create protocol-aware MCP connections: tool-level allow/deny, per-tool approval, rug-pull detection and structured tool-call audit, over remote (streamable-http/sse) or stdio backends run either on the agent or on each user's own machine. When off, the card is hidden and no new MCP Gateway connection can be created; connections that already exist keep working end to end, and their role form, edit view and Connect modal stay reachable.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.
