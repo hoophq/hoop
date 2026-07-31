@@ -53,42 +53,71 @@
       (rf/dispatch-sync event)
       (recur (dec guard)))))
 
-;; A slice of the real catalog: one oauth server whose notes advertise a PAT,
-;; one static server whose credential is NOT a bearer token, and one open
-;; server. These three shapes are the whole decision space.
-(def ^:private entries
-  [{:name "github"
-    :description "GitHub repositories, issues, PRs (official)"
-    :url "https://api.githubcopilot.com/mcp"
-    :transport "streamable-http"
-    :auth "static"
-    :header "Authorization: Bearer ${GITHUB_PAT}"
-    :notes "OAuth also supported; a fine-grained PAT is the simplest setup"}
-   {:name "linear"
-    :url "https://mcp.linear.app/mcp"
-    :transport "streamable-http"
-    :auth "oauth"
-    :notes "personal API keys also work as a static bearer"}
-   {:name "context7"
-    :url "https://mcp.context7.com/mcp"
-    :transport "streamable-http"
-    :auth "static"
-    :header "CONTEXT7_API_KEY: ${CONTEXT7_API_KEY}"}
-   {:name "excalidraw"
-    :url "https://mcp.excalidraw.com/mcp"
-    :transport "streamable-http"
-    :auth "none"}])
+;; The literal JSON GET /mcp-catalog returns, snake_case keys and all.
+;;
+;; Written as raw JSON on purpose. Hand-built ClojureScript fixtures hid a
+;; real bug: js->clj :keywordize-keys does NOT convert underscores to dashes,
+;; so "auth_modes" arrives as :auth_modes, and code reading :auth-modes got
+;; nil for every server. Fixtures spelled the kebab-case way agreed with the
+;; code and disagreed with the gateway, so the suite passed while the picker
+;; showed one mode for github.
+;;
+;; Anything that reaches app-db here goes through the same event the app uses.
+(def ^:private catalog-json
+  (js/JSON.stringify
+   (clj->js
+    [{:name "github"
+      :description "GitHub repositories, issues, PRs (official)"
+      :url "https://api.githubcopilot.com/mcp"
+      :transport "streamable-http"
+      :auth "static"
+      :auth_modes ["static" "oauth"]
+      :header "Authorization: Bearer ${GITHUB_PAT}"
+      :notes "OAuth also supported; a fine-grained PAT is the simplest setup"}
+     {:name "linear"
+      :url "https://mcp.linear.app/mcp"
+      :transport "streamable-http"
+      :auth "oauth"
+      :auth_modes ["oauth" "static"]
+      :notes "personal API keys also work as a static bearer"}
+     {:name "context7"
+      :url "https://mcp.context7.com/mcp"
+      :transport "streamable-http"
+      :auth "static"
+      :auth_modes ["static"]
+      :header "CONTEXT7_API_KEY: ${CONTEXT7_API_KEY}"}
+     {:name "notion"
+      :url "https://mcp.notion.com/mcp"
+      :transport "streamable-http"
+      :auth "oauth"
+      :auth_modes ["oauth"]}
+     {:name "excalidraw"
+      :url "https://mcp.excalidraw.com/mcp"
+      :transport "streamable-http"
+      :auth "none"
+      :auth_modes ["none"]}])))
+
+(defn- load-catalog!
+  "Feed the API payload through the real fetch-success handler."
+  []
+  (rf/dispatch-sync [:mcp-catalog/fetch-success (js/JSON.parse catalog-json)]))
+
+(defn- entries []
+  (get-in @rf-db/app-db [:mcp-catalog :entries]))
+
+(defn- entry [server]
+  (first (filter #(= (:name %) server) (entries))))
 
 (defn- reset-db!
-  "One mcpproxy role, manual-input, with the catalog already loaded."
+  "One mcpproxy role, manual-input, with the catalog loaded as the app loads it."
   []
   (reset! rf-db/app-db
-          {:mcp-catalog {:status :loaded :entries entries}
-           :resource-setup {:roles [{:name "mcp-role"
+          {:resource-setup {:roles [{:name "mcp-role"
                                      :type "httpproxy"
                                      :subtype "mcpproxy"
                                      :connection-method "manual-input"
                                      :credentials {}}]}})
+  (load-catalog!)
   (rf/clear-subscription-cache!))
 
 (defn- creds []
@@ -147,8 +176,96 @@
   (reset-db!)
   (pick! "linear")
   (is (= "static" (cred "mcp_auth")))
-  (mode! "none")
+  (reset-db!)
+  (pick! "excalidraw")
   (is (= "none" (cred "mcp_auth"))))
+
+;; ---------------------------------------------------------------------------
+;; What each server actually accepts
+;; ---------------------------------------------------------------------------
+
+;; The wire contract, pinned. The gateway sends "auth_modes"; js->clj
+;; :keywordize-keys leaves the underscore alone, so anything reading
+;; :auth-modes off the raw response gets nil and every server looks
+;; single-mode. That shipped once — github rendered only a token field.
+(deftest the-api-payloads-auth-modes-survive-parsing
+  (reset-db!)
+  (is (= ["static" "oauth"] (:auth-modes (entry "github")))
+      "auth_modes from the API must be readable as :auth-modes")
+  (is (= ["static"] (:auth-modes (entry "context7"))))
+  ;; The snake_case key must not survive alongside it, or the two spellings
+  ;; drift apart the next time someone reads one of them.
+  (is (not (contains? (entry "github") :auth_modes))))
+
+;; Offering a mode the provider cannot serve is its own bug: an OAuth login
+;; against context7 runs discovery on an endpoint publishing no authorization
+;; server, and the admin only finds out after clicking through.
+;;
+;; Options render in the form's own fixed order, not the order the gateway
+;; listed them: a dropdown whose entries reshuffle per server is a worse
+;; affordance than one that always reads the same way.
+(deftest a-server-offers-only-the-modes-it-supports
+  (reset-db!)
+  (let [modes (fn [server] (mapv :value (mcp-catalog/auth-modes (entry server))))]
+    (is (= ["oauth" "static"] (modes "github")))
+    (is (= ["oauth" "static"] (modes "linear")))
+    (is (= ["static"] (modes "context7")))
+    (is (= ["oauth"] (modes "notion")))
+    (is (= ["none"] (modes "excalidraw")))))
+
+;; hoop cannot know what a self-hosted server accepts; the admin can.
+(deftest an-unknown-server-offers-every-mode
+  (is (= ["oauth" "static" "none"]
+         (mapv :value (mcp-catalog/auth-modes nil)))))
+
+;; A gateway older than the auth_modes field sends only auth. Falling back to
+;; that single mode beats rendering an empty selector.
+(deftest an-entry-without-auth-modes-falls-back-to-its-documented-mode
+  (is (= ["oauth"] (mapv :value (mcp-catalog/auth-modes {:name "x" :auth "oauth"}))))
+  (is (= ["static"] (mapv :value (mcp-catalog/auth-modes {:name "x" :auth "static"}))))
+  ;; Same payload through the real parse path, since that is how it arrives.
+  (rf/dispatch-sync [:mcp-catalog/fetch-success
+                     (js/JSON.parse "[{\"name\":\"old\",\"auth\":\"oauth\"}]")])
+  (is (= ["oauth"] (mapv :value (mcp-catalog/auth-modes (entry "old"))))))
+
+;; Switching servers leaves the previous server's mode in the credentials.
+;; Rendering it would offer a flow the new server cannot complete.
+(deftest a-mode-the-server-cannot-serve-is-coerced-to-its-default
+  (reset-db!)
+  (let [context7 (entry "context7")
+        github (entry "github")]
+    (is (= "static" (mcp-catalog/coerce-auth-mode context7 "oauth")))
+    (is (= "static" (mcp-catalog/coerce-auth-mode context7 "none")))
+    ;; A supported mode is left alone, default or not.
+    (is (= "oauth" (mcp-catalog/coerce-auth-mode github "oauth")))
+    (is (= "static" (mcp-catalog/coerce-auth-mode github "static")))))
+
+(deftest changing-server-resets-a-mode-the-new-one-cannot-serve
+  (reset-db!)
+  (pick! "github")
+  (mode! "oauth")
+  (is (= "oauth" (cred "mcp_auth_mode")))
+  (pick! "context7")
+  (is (= "static" (cred "mcp_auth_mode")))
+  (is (= "static" (cred "mcp_auth"))))
+
+;; A mode both servers support survives the switch: the admin chose it.
+(deftest changing-server-keeps-a-mode-the-new-one-supports
+  (reset-db!)
+  (pick! "github")
+  (mode! "oauth")
+  (pick! "linear")
+  (is (= "oauth" (cred "mcp_auth_mode"))))
+
+;; A credential collected for the previous server authenticates to nobody at
+;; the new one, and left in place it would be saved with the connection.
+(deftest changing-server-forgets-the-previous-servers-credential
+  (reset-db!)
+  (pick! "github")
+  (set-cred! "HEADER_Authorization" "ghp_token")
+  (pick! "context7")
+  (is (not (contains? (creds) "HEADER_Authorization")))
+  (is (not (contains? (emitted) "HEADER_Authorization"))))
 
 ;; A server the catalog does not know still needs a working static field, and
 ;; the bearer convention is the only sane default.

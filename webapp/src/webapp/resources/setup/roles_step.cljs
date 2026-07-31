@@ -479,14 +479,17 @@
         set-cred (fn [k v] (rf/dispatch [:resource-setup->update-role-credentials role-index k v]))
         on-change (fn [k] #(set-cred k (-> % .-target .-value)))
         selected-entry (first (filter #(= (:name %) server) (:entries catalog)))
-        ;; How this connection authenticates is the admin's choice, not the
-        ;; catalog's: a provider's documented default is only a default, and
-        ;; several (github, linear, stripe) accept either an OAuth login or a
-        ;; personal access token. The catalog seeds the mode; this reads back
-        ;; whatever the admin settled on.
-        auth-mode (mcp-catalog/cred-value
-                   (get credentials "mcp_auth_mode"
-                        (mcp-catalog/default-auth-mode selected-entry)))
+        ;; How this connection authenticates is the admin's choice where the
+        ;; provider offers one: github, linear and stripe each take either an
+        ;; OAuth login or a long-lived token. The rest accept exactly one mode,
+        ;; and the gateway says which per entry — offering more would send the
+        ;; admin into a login the provider cannot serve.
+        auth-options (mcp-catalog/auth-modes selected-entry)
+        ;; Coerced, not read raw: switching the server picker leaves the
+        ;; previous server's mode sitting in the credentials.
+        auth-mode (mcp-catalog/coerce-auth-mode
+                   selected-entry
+                   (mcp-catalog/cred-value (get credentials "mcp_auth_mode")))
         ;; The credential key embeds the header name so config->json emits it
         ;; verbatim — upper-casing or hyphenating it would silently
         ;; authenticate as nobody (context7 wants CONTEXT7_API_KEY, not
@@ -500,7 +503,11 @@
     ;; insecure switch needs a concrete boolean.
     (when (nil? (get credentials "mcp_transport"))
       (set-cred "mcp_transport" "streamable-http"))
-    (when (nil? (get credentials "mcp_auth_mode"))
+    ;; Write the mode back whenever the rendered one differs from what is
+    ;; stored — on first render, and after a coercion dropped a mode the newly
+    ;; picked server does not accept. MCP_AUTH must agree with the widget the
+    ;; admin is looking at.
+    (when-not (= auth-mode (mcp-catalog/cred-value (get credentials "mcp_auth_mode")))
       (set-cred "mcp_auth_mode" auth-mode)
       (set-cred "mcp_auth" (mcp-catalog/mcp-auth-env auth-mode)))
     (when (nil? (get credentials "insecure"))
@@ -589,12 +596,18 @@
          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
           "How Hoop authenticates to this server. Every user of this connection shares the credential configured here."]]
 
-        [forms/select {:label "Authentication method"
-                       :selected auth-mode
-                       :full-width? true
-                       :not-margin-bottom? true
-                       :on-change #(rf/dispatch [:mcp-catalog/select-auth-mode role-index %])
-                       :options mcp-catalog/auth-modes}]
+        ;; A dropdown with one option is a decision the admin does not have.
+        ;; Where the provider accepts only one credential, say which and move
+        ;; on; the choice appears for the servers that genuinely offer it.
+        (if (next auth-options)
+          [forms/select {:label "Authentication method"
+                         :selected auth-mode
+                         :full-width? true
+                         :not-margin-bottom? true
+                         :on-change #(rf/dispatch [:mcp-catalog/select-auth-mode role-index %])
+                         :options auth-options}]
+          [:> Text {:as "p" :size "2" :weight "medium" :class "text-[--gray-12]"}
+           (:text (first auth-options))])
 
         (case auth-mode
           "none"

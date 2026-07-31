@@ -20,25 +20,50 @@
    ;; dispatches. Without these the form throws on a nil subscription.
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.effects]
-   [webapp.resources.setup.events.mcp-catalog]
+   [webapp.resources.setup.events.mcp-catalog :as mcp-catalog]
    [webapp.resources.setup.events.mcp-oauth]))
 
-(def ^:private entries
-  [{:name "github"
-    :url "https://api.githubcopilot.com/mcp"
-    :transport "streamable-http"
-    :auth "static"
-    :header "Authorization: Bearer ${GITHUB_PAT}"
-    :notes "OAuth also supported; a fine-grained PAT is the simplest setup"}
-   {:name "context7"
-    :url "https://mcp.context7.com/mcp"
-    :transport "streamable-http"
-    :auth "static"
-    :header "CONTEXT7_API_KEY: ${CONTEXT7_API_KEY}"}
-   {:name "linear"
-    :url "https://mcp.linear.app/mcp"
-    :transport "streamable-http"
-    :auth "oauth"}])
+;; The literal JSON GET /mcp-catalog returns, snake_case keys and all, fed
+;; through the real fetch-success handler below.
+;;
+;; Raw JSON on purpose: js->clj :keywordize-keys does NOT turn "auth_modes"
+;; into :auth-modes, and hand-built kebab-case fixtures agreed with the code
+;; while disagreeing with the gateway. The suite passed; github rendered a
+;; token field and no OAuth option.
+(def ^:private catalog-json
+  (js/JSON.stringify
+   (clj->js
+    [{:name "github"
+      :url "https://api.githubcopilot.com/mcp"
+      :transport "streamable-http"
+      :auth "static"
+      :auth_modes ["static" "oauth"]
+      :header "Authorization: Bearer ${GITHUB_PAT}"
+      :notes "OAuth also supported; a fine-grained PAT is the simplest setup"}
+     {:name "linear"
+      :url "https://mcp.linear.app/mcp"
+      :transport "streamable-http"
+      :auth "oauth"
+      :auth_modes ["oauth" "static"]
+      :notes "personal API keys also work as a static bearer"}
+     ;; Single-mode servers: context7 issues an API key under its own header
+     ;; name, and notion publishes no static credential at all.
+     {:name "context7"
+      :url "https://mcp.context7.com/mcp"
+      :transport "streamable-http"
+      :auth "static"
+      :auth_modes ["static"]
+      :header "CONTEXT7_API_KEY: ${CONTEXT7_API_KEY}"}
+     {:name "notion"
+      :url "https://mcp.notion.com/mcp"
+      :transport "streamable-http"
+      :auth "oauth"
+      :auth_modes ["oauth"]}
+     {:name "excalidraw"
+      :url "https://mcp.excalidraw.com/mcp"
+      :transport "streamable-http"
+      :auth "none"
+      :auth_modes ["none"]}])))
 
 ;; :fx dispatches are queued by re-frame's router for a later tick, and
 ;; dispatch-sync cannot nest inside a handler. Collect them here and run them
@@ -63,12 +88,14 @@
 
 (defn- reset-db! []
   (reset! rf-db/app-db
-          {:mcp-catalog {:status :loaded :entries entries}
-           :resource-setup {:roles [{:name "mcp-role"
+          {:resource-setup {:roles [{:name "mcp-role"
                                      :type "httpproxy"
                                      :subtype "mcpproxy"
                                      :connection-method "manual-input"
                                      :credentials {}}]}})
+  ;; Through the real handler, so the form sees exactly the entry shape the
+  ;; running app puts in app-db.
+  (rf/dispatch-sync [:mcp-catalog/fetch-success (js/JSON.parse catalog-json)])
   (rf/clear-subscription-cache!))
 
 (defn- rendered
@@ -93,10 +120,44 @@
 (defn- mode! [m]
   (dispatch! [:mcp-catalog/select-auth-mode 0 m]))
 
-;; Every remote MCP connection gets the choice, whatever the catalog says.
-(deftest the-auth-mode-selector-is-always-offered
+;; A server that documents two credentials gets a real choice.
+(deftest a-dual-mode-server-offers-both-of-its-modes
   (reset-db!)
   (pick! "github")
+  (let [texts (rendered)]
+    (is (shows? texts "Authentication method"))
+    (is (some #{"API key or personal access token"} texts))
+    (is (some #{"OAuth login (Hoop brokers the flow)"} texts))
+    ;; github does not accept anonymous access, so that option is absent.
+    (is (not (some #{"No authentication"} texts)))))
+
+;; A dropdown holding one option is a decision the admin does not have, and
+;; offering a mode the provider cannot serve is worse than not offering it:
+;; an OAuth login against context7 discovers no authorization server, and the
+;; dead end only shows up after the admin clicks.
+(deftest a-single-mode-server-offers-no-choice
+  (reset-db!)
+  (pick! "context7")
+  (let [texts (rendered)]
+    (is (not (shows? texts "Authentication method")))
+    (is (not (some #{"OAuth login (Hoop brokers the flow)"} texts)))
+    ;; Still says how it authenticates, and still asks for the credential.
+    (is (some #{"API key or personal access token"} texts))
+    (is (shows? texts "CONTEXT7_API_KEY value"))))
+
+(deftest an-oauth-only-server-offers-no-token-field
+  (reset-db!)
+  (pick! "notion")
+  (let [texts (rendered)]
+    (is (not (shows? texts "Authentication method")))
+    (is (shows? texts "Authorize with MCP"))
+    (is (not (shows? texts "Authorization value")))))
+
+;; A server the catalog does not know: hoop cannot know what it accepts, so
+;; the admin gets every mode.
+(deftest a-custom-server-offers-every-mode
+  (reset-db!)
+  (pick! "custom")
   (let [texts (rendered)]
     (is (shows? texts "Authentication method"))
     (doseq [option ["OAuth login (Hoop brokers the flow)"
@@ -125,6 +186,22 @@
     (is (shows? texts "Authorization value"))
     (is (not (shows? texts "Authorize with MCP")))))
 
+;; Changing the server must not leave the previous server's mode on screen.
+;; github -> OAuth -> context7 would otherwise render an OAuth button for a
+;; server that only takes an API key.
+(deftest changing-server-drops-a-mode-the-new-one-cannot-serve
+  (reset-db!)
+  (pick! "github")
+  (mode! "oauth")
+  (is (shows? (rendered) "Authorize with MCP"))
+  (pick! "context7")
+  (let [texts (rendered)]
+    (is (not (shows? texts "Authorize with MCP")))
+    (is (shows? texts "CONTEXT7_API_KEY value"))
+    (is (= "static" (mcp-catalog/cred-value
+                     (get-in @rf-db/app-db
+                             [:resource-setup :roles 0 :credentials "mcp_auth_mode"]))))))
+
 ;; The field must name the header the provider expects. An admin who pastes a
 ;; context7 key into a box labelled "Authorization" has been told the wrong
 ;; thing about where it goes.
@@ -137,8 +214,7 @@
 
 (deftest the-none-mode-asks-for-nothing
   (reset-db!)
-  (pick! "github")
-  (mode! "none")
+  (pick! "excalidraw")
   (let [texts (rendered)]
     (is (shows? texts "No credential is sent"))
     (is (not (shows? texts "Authorization value")))

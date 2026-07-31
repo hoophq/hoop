@@ -50,6 +50,46 @@ func ListMCPCatalog(c *gin.Context) {
 	c.JSON(http.StatusOK, entries)
 }
 
+// extraAuthModes names the catalog servers that accept a mode beyond the one
+// their entry records, and which mode that is.
+//
+// The catalog schema carries a single `auth` per server, so a provider that
+// takes more than one credential can only record its default. The rest of
+// that fact lives in the entry's free-text `notes`:
+//
+//	context7     auth: static  "anonymous access works with reduced rate limits"
+//	github       auth: static  "OAuth also supported; a fine-grained PAT is ..."
+//	huggingface  auth: none    "optional: Authorization: Bearer ${HF_TOKEN} ..."
+//	linear       auth: oauth   "personal API keys also work as a static bearer"
+//	stripe       auth: static  "use a restricted API key; OAuth also supported"
+//
+// Those notes are written for humans, and parsing English to decide which
+// credential flow to offer would break on the next wording change. This table
+// is the machine-readable half, kept beside the test that holds it to the
+// notes it came from.
+//
+// Servers absent here support exactly one mode. That matters: offering an
+// OAuth login for google-maps sends the admin into RFC 9728 discovery against
+// an endpoint that publishes no authorization server, and the dead end only
+// shows up after they click.
+var extraAuthModes = map[string]string{
+	"context7":    "none",
+	"github":      "oauth",
+	"huggingface": "static",
+	"linear":      "static",
+	"stripe":      "oauth",
+}
+
+// authModesFor lists every mode a server accepts, documented default first so
+// the form can seed its selection from AuthModes[0].
+func authModesFor(name string, e catalog.Entry) []string {
+	modes := []string{e.Auth}
+	if extra, ok := extraAuthModes[name]; ok && extra != e.Auth {
+		modes = append(modes, extra)
+	}
+	return modes
+}
+
 // mcpCatalog converts the embedded catalog into the API shape, sorted by name
 // so the picker renders in a stable order. The catalog's own types carry only
 // yaml tags, so the conversion is explicit rather than a re-marshal.
@@ -68,6 +108,7 @@ func mcpCatalog() ([]openapi.MCPCatalogEntry, error) {
 				URL:         e.URL,
 				Transport:   e.Transport,
 				Auth:        e.Auth,
+				AuthModes:   authModesFor(name, e),
 				Header:      e.Header,
 				Notes:       e.Notes,
 			})

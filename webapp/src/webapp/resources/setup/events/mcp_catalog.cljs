@@ -32,11 +32,26 @@
                                :on-success #(rf/dispatch [:mcp-catalog/fetch-success %])
                                :on-failure #(rf/dispatch [:mcp-catalog/fetch-failure %])}]]]})))
 
+;; JSON keys arrive exactly as the gateway spells them, and :keywordize-keys
+;; does NOT translate underscores to dashes: "auth_modes" becomes :auth_modes,
+;; never :auth-modes. Reading the kebab-case name downstream silently yields
+;; nil, which for the auth modes meant every server looked single-mode and the
+;; picker stopped offering a choice. Normalize once, here, so the rest of the
+;; namespace can use one spelling.
+(defn normalize-entry
+  "One catalog entry in the shape the rest of this namespace expects."
+  [entry]
+  (-> entry
+      (assoc :auth-modes (vec (or (:auth_modes entry) (:auth-modes entry))))
+      (dissoc :auth_modes)))
+
 (rf/reg-event-db
  :mcp-catalog/fetch-success
  (fn [db [_ response]]
-   (assoc db :mcp-catalog {:status :loaded
-                           :entries (js->clj response :keywordize-keys true)})))
+   (assoc db :mcp-catalog
+          {:status :loaded
+           :entries (mapv normalize-entry
+                          (js->clj response :keywordize-keys true))})))
 
 (rf/reg-event-db
  :mcp-catalog/fetch-failure
@@ -62,23 +77,50 @@
 ;; Auth mode
 ;; ---------------------------------------------------------------------------
 ;;
-;; A catalog entry records ONE auth mode, but that is the provider's default,
-;; not its only option. GitHub, Linear and Stripe all accept either an OAuth
-;; login or a personal access token, and their catalog notes say so in prose
-;; the form used to ignore: the widget was chosen by (:auth entry) alone, so
-;; an admin holding a PAT for an oauth-mode server had no field to paste it
-;; into, and vice versa.
+;; A catalog entry records ONE default auth mode, but for a few providers that
+;; is only a default: github, linear and stripe each accept either an OAuth
+;; login or a long-lived token. The form used to pick its widget from
+;; (:auth entry) alone, so an admin holding a PAT for an oauth-mode server had
+;; no field to paste it into, and vice versa.
 ;;
-;; So the mode is credential state the admin owns ("mcp_auth_mode"), seeded
-;; from the catalog and overridable. It is UI-only — process-role-secret drops
-;; it. What reaches the agent is MCP_AUTH plus whichever HEADER_* the chosen
-;; mode produced.
+;; The other 27 servers accept exactly one mode, and offering more is its own
+;; bug: an OAuth login against google-maps runs RFC 9728 discovery on an
+;; endpoint that publishes no authorization server, and the admin only learns
+;; that after clicking through. So the gateway sends :auth-modes per entry
+;; (see gateway/api/connections/connection_mcp_catalog.go) and the form offers
+;; exactly those.
+;;
+;; The chosen mode is credential state the admin owns ("mcp_auth_mode"). It is
+;; UI-only — process-role-secret drops it. What reaches the agent is MCP_AUTH
+;; plus whichever HEADER_* the chosen mode produced.
 
-(def auth-modes
-  "Selectable auth modes, in the order the form offers them."
+(def auth-mode-labels
+  "How each mode is described, in the order the form offers them."
   [{:value "oauth" :text "OAuth login (Hoop brokers the flow)"}
    {:value "static" :text "API key or personal access token"}
    {:value "none" :text "No authentication"}])
+
+(def ^:private all-auth-modes
+  (mapv :value auth-mode-labels))
+
+(defn auth-modes
+  "Modes to offer for a catalog entry, as {:value :text} options.
+
+  A server the catalog does not know (custom/self-hosted) gets all three: hoop
+  cannot know what it accepts, and the admin does. A known server gets exactly
+  what the gateway said it supports — anything else is a flow the provider
+  cannot complete.
+
+  An older gateway that predates :auth-modes sends nothing; fall back to the
+  entry's single documented mode rather than rendering an empty selector."
+  [entry]
+  (let [supported (cond
+                    (nil? entry) all-auth-modes
+                    (seq (:auth-modes entry)) (:auth-modes entry)
+                    (not (str/blank? (:auth entry))) [(:auth entry)]
+                    :else all-auth-modes)
+        supported (set supported)]
+    (filterv (comp supported :value) auth-mode-labels)))
 
 (defn static-header-name
   "Header name a catalog entry expects for a pasted credential, from its
@@ -118,6 +160,20 @@
     "none" "none"
     "static"))
 
+(defn coerce-auth-mode
+  "The mode to render, given what the admin last chose and what this server
+  accepts. A stored mode the server does not support falls back to its
+  default.
+
+  This is what makes changing the server picker safe: pick github, choose
+  OAuth, then switch to google-maps, and \"oauth\" is still sitting in the
+  credentials. Rendering it would offer a login google-maps cannot serve."
+  [entry mode]
+  (let [supported (set (map :value (auth-modes entry)))]
+    (if (contains? supported mode)
+      mode
+      (default-auth-mode entry))))
+
 (defn mcp-auth-env
   "MCP_AUTH the agent receives for a chosen mode.
 
@@ -149,47 +205,63 @@
 ;; Applying a selection
 ;; ---------------------------------------------------------------------------
 
+(defn auth-credential-keys
+  "Credential keys holding a credential the auth widget collected.
+
+  Every HEADER_* in a role's :credentials came from that widget: extra headers
+  an admin adds live in :environment-variables and only gain the HEADER_
+  prefix at emission (process-role-secret). So this is safe to clear wholesale
+  when the server or mode changes, and clearing wholesale is what makes the
+  two spellings the widget can produce — HEADER_AUTHORIZATION from the OAuth
+  flow, HEADER_Authorization from the default static header — both go."
+  [credentials]
+  (filter #(str/starts-with? (str/lower-case %) "header_") (keys credentials)))
+
 (rf/reg-event-fx
  :mcp-catalog/select-server
  (fn [{:keys [db]} [_ role-index server-name]]
    (let [entries (get-in db [:mcp-catalog :entries] [])
          entry (entry-by-name entries server-name)
-         set-cred (fn [k v] [:dispatch [:resource-setup->update-role-credentials role-index k v]])]
+         creds (get-in db [:resource-setup :roles role-index :credentials] {})
+         set-cred (fn [k v] [:dispatch [:resource-setup->update-role-credentials role-index k v]])
+         ;; A credential collected for the previous server authenticates to
+         ;; nobody here, and left in place it would be saved with the new
+         ;; connection.
+         forget (into [[:dispatch [:mcp-oauth/clear role-index]]]
+                      (map (fn [k] [:dispatch [:resource-setup->remove-role-credential role-index k]]))
+                      (auth-credential-keys creds))
+         mode (coerce-auth-mode entry (cred-value (get creds "mcp_auth_mode")))]
      (if (nil? entry)
-       ;; "custom": remember the choice and leave the fields as the admin left
-       ;; them. Clearing them here would discard a half-typed URL.
-       {:fx [(set-cred "mcp_server" "custom")
-             (set-cred "mcp_static_header" default-static-header)]}
-       (let [mode (default-auth-mode entry)]
-         {:fx [(set-cred "mcp_server" server-name)
-               (set-cred "remote_url" (:url entry))
-               (set-cred "mcp_transport" (:transport entry))
-               (set-cred "mcp_auth_mode" mode)
-               (set-cred "mcp_auth" (mcp-auth-env mode))
-               ;; Record which header the provider expects so the form can ask
-               ;; for the token by name instead of making the admin decode a
-               ;; "${CONTEXT7_API_KEY}" template.
-               (set-cred "mcp_static_header" (static-header-for entry))]})))))
+       ;; "custom": remember the choice and leave the endpoint fields as the
+       ;; admin left them. Clearing those would discard a half-typed URL.
+       {:fx (into forget
+                  [(set-cred "mcp_server" "custom")
+                   (set-cred "mcp_static_header" default-static-header)
+                   (set-cred "mcp_auth_mode" mode)
+                   (set-cred "mcp_auth" (mcp-auth-env mode))])}
+       {:fx (into forget
+                  [(set-cred "mcp_server" server-name)
+                   (set-cred "remote_url" (:url entry))
+                   (set-cred "mcp_transport" (:transport entry))
+                   (set-cred "mcp_auth_mode" mode)
+                   (set-cred "mcp_auth" (mcp-auth-env mode))
+                   ;; Record which header the provider expects so the form can
+                   ;; ask for the token by name instead of making the admin
+                   ;; decode a "${CONTEXT7_API_KEY}" template.
+                   (set-cred "mcp_static_header" (static-header-for entry))])}))))
 
-;; Switching mode forgets every credential the auth modes own, without regard
-;; for which mode wrote it. Forgetting is the point: a leftover token would
-;; silently authenticate under a mode the admin believes they replaced. It
-;; cannot be narrowed by key either — a frozen OAuth token and a bearer PAT
-;; both live in the Authorization header, and the two spellings the form can
-;; produce ("HEADER_AUTHORIZATION" from the OAuth flow, "HEADER_Authorization"
-;; from the default static header) canonicalize to one header upstream.
+;; Switching mode forgets the credential the previous mode collected. A
+;; leftover token would silently authenticate under a mode the admin believes
+;; they replaced, and it cannot be narrowed by key: a frozen OAuth token and a
+;; bearer PAT both live in the Authorization header.
 (rf/reg-event-fx
  :mcp-catalog/select-auth-mode
  (fn [{:keys [db]} [_ role-index mode]]
-   (let [creds (get-in db [:resource-setup :roles role-index :credentials] {})
-         owned? (let [owned (set (map str/lower-case
-                                      [(static-token-key creds) "HEADER_AUTHORIZATION"]))]
-                  (comp owned str/lower-case))]
+   (let [creds (get-in db [:resource-setup :roles role-index :credentials] {})]
      {:fx (into [[:dispatch [:resource-setup->update-role-credentials role-index "mcp_auth_mode" mode]]
                  [:dispatch [:resource-setup->update-role-credentials role-index "mcp_auth" (mcp-auth-env mode)]]
                  ;; Resets the OAuth widget too: left on :success it would
                  ;; render "Authorized" under a mode holding no token.
                  [:dispatch [:mcp-oauth/clear role-index]]]
-                (comp (filter owned?)
-                      (map (fn [k] [:dispatch [:resource-setup->remove-role-credential role-index k]])))
-                (keys creds))})))
+                (map (fn [k] [:dispatch [:resource-setup->remove-role-credential role-index k]]))
+                (auth-credential-keys creds))})))

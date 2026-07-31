@@ -2372,12 +2372,18 @@ type MCPCatalogEntry struct {
 	// Transport is the backend protocol: "streamable-http" or "sse". It is
 	// the value for MCP_TRANSPORT.
 	Transport string `json:"transport" example:"streamable-http"`
-	// Auth is how the server authenticates: "none", "static" or "oauth".
-	// Static entries expect a credential in Header; oauth entries drive the
-	// /mcp-oauth flow. It is the value for MCP_AUTH.
+	// Auth is the mode the provider documents as its default: "none",
+	// "static" or "oauth". It seeds the connection form's selection.
 	Auth string `json:"auth" example:"oauth"`
+	// AuthModes lists every mode this server actually accepts, always
+	// including Auth. Most servers accept exactly one; a few (github,
+	// linear, stripe) take either an OAuth login or a long-lived token, and
+	// only the admin knows which credential they hold. The form offers a
+	// choice when this has more than one entry, and offering a mode absent
+	// here would strand the admin on a flow the provider cannot complete.
+	AuthModes []string `json:"auth_modes" example:"oauth,static"`
 	// Header names the static credential header and its value template, in
-	// "Name: value" form. Empty unless Auth is "static".
+	// "Name: value" form. Empty when no mode in AuthModes is "static".
 	Header string `json:"header,omitempty" example:"Authorization: Bearer ${TOKEN}"`
 	// Notes carries provider caveats worth reading before enabling.
 	Notes string `json:"notes,omitempty"`
