@@ -20,10 +20,15 @@ RUN apt-get update && \
         python3 python3-pip libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
     rm -rf /var/lib/apt/lists/*
 
-# onnxruntime-gpu must be pinned to the CUDA 12 line. 1.21+ moved to CUDA 13
-# (needs libcudart.so.13) while declaring NO nvidia/* runtime deps, so an
-# open-ended pin resolved to 1.27 and crashed at import even on this CUDA 12
-# base. 1.20.1 is the last CUDA 12 release.
+# onnxruntime-gpu must be pinned to the CUDA 12 line. 1.27+ moved to CUDA 13
+# (needs libcudart.so.13) while declaring NO nvidia/* runtime deps by default,
+# so an open-ended pin resolved to 1.27 and crashed at import even on this
+# CUDA 12 base.
+#
+# The pin is 1.20.2 — NOT 1.20.1, which upstream DELETED from PyPI on
+# 2026-07-29 and which now fails to resolve ("No matching distribution
+# found"). 1.20.2 is the same CUDA 12 / cuDNN 9 build of the 1.20 line and
+# links identical sonames, so the wheel set below is unchanged.
 #
 # The full CUDA 12 runtime wheel set is installed explicitly and EXACT-pinned
 # (cudart, cublas, cudnn, curand, cufft, nvrtc, nvjitlink) so the engine is
@@ -35,7 +40,7 @@ RUN apt-get update && \
 # onnxruntime-cuda, no CPU fallback). Keep in sync with Dockerfile.agent-ocr-gpu.
 RUN pip3 install --no-cache-dir \
     "rapidocr==3.8.4" \
-    "onnxruntime-gpu==1.20.1" \
+    "onnxruntime-gpu==1.20.2" \
     "nvidia-cuda-runtime-cu12==12.9.79" \
     "nvidia-cublas-cu12==12.9.2.10" \
     "nvidia-cudnn-cu12==9.23.2.1" \

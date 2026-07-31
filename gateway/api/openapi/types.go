@@ -3188,7 +3188,8 @@ type AccessRequestRuleRequest struct {
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
-	// Groups that require approval
+	// User groups whose members require approval to access. An empty list makes
+	// the rule apply to all user groups (every requester requires approval)
 	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve
 	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`

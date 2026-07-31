@@ -78,21 +78,14 @@
 
 (rf/reg-event-fx
  :connections->get-connections
- (fn [{:keys [db]} [_ {:keys [filters on-success on-failure force-refresh?]
+ (fn [{:keys [db]} [_ {:keys [on-success on-failure force-refresh?]
                        :or {on-success [:connections->set-connections]
                             on-failure [:connections->set-connections-error]}}]]
 
-   (cond
-     filters
-     ;; If filters are provided, delegate to filter-connections
-     {:fx [[:dispatch [:connections->filter-connections filters]]]}
-
-     (and (not force-refresh?) (cache-valid? db))
+   (if (and (not force-refresh?) (cache-valid? db))
      ;; Use cached data if valid
      (let [cached-connections (get-cached-connections db)]
        {:fx [[:dispatch (conj on-success cached-connections)]]})
-
-     :else
      ;; Make fresh request
      {:db (assoc-in db [:connections :loading] true)
       :fx [[:dispatch [:fetch {:method "GET"

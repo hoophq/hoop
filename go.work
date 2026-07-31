@@ -7,6 +7,11 @@ use (
 	./client
 	./common
 	./gateway
+	./hoopinspect
+	./hoopinspect/cmd
+	./hoopinspect/config/yaml
+	./hoopinspect/pii/alcatraz
+	./hoopinspect/store/sqlite
 	./libhoop
 	./tunnel
 )

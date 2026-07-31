@@ -1,0 +1,169 @@
+# Envoy-fronted topology, fully local.
+#
+#   client ──TLS──> envoy ──ext_authz(gRPC)──> opa      (tier 1: fat gate)
+#                     │
+#                     ▼
+#                   hoop-inspect  :18080 http           (tier 2: inspection)
+#                                 :15432 postgres
+#                     │
+#                     ▼
+#                   httpbin / appdb                     (upstreams)
+#
+# Envoy owns TLS, identity and the network path. hoop-inspect is an ordinary
+# upstream behind it: it decodes the wire protocol, evaluates policy per
+# statement, records an audit trail and masks responses. No UDS, no PROXY
+# protocol, no MITM argument with InfoSec -- that is the entire point.
+#
+# There is no hoop gateway and no hoop agent here. The sidecar is the whole
+# tier-2 story.
+#
+# Bring up:  ./run.sh
+
+name: hoop-envoy-stack
+
+services:
+  # The upstream a DBA would actually care about.
+  #
+  # TLS is ON, so the hop from the sidecar is encrypted. That hop is the one
+  # an auditor asks about: Envoy already covers the client's leg, and without
+  # this the credentials and rows between hoop-inspect and the database cross
+  # the network in the clear.
+  #
+  # It costs no inspection. hoop-inspect is the TLS CLIENT here, so it
+  # decrypts on read and the gate still sees plaintext pgwire. Masking and
+  # policy work exactly as they do without it; ./demo.sh proves both.
+  appdb:
+    image: postgres:17.6
+    attach: false
+    networks: [inspect]
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      POSTGRES_DB: appdb
+      PGUSER: appuser
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgresql/certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgresql/certs/server.key
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      # 0600 and owned by the postgres uid, or the server refuses to start.
+      - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
+      - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "appuser", "-d", "appdb"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # Stand-in for one of the ~100 internal HTTP services.
+  httpbin:
+    image: mccutchen/go-httpbin:latest
+    networks: [inspect]
+
+  # Stands in for the sandbox: the only box a developer types on. It reaches
+  # nothing directly -- every lane below goes through Envoy.
+  client:
+    image: alpine:3.20
+    networks: [inspect]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - apk add --no-cache postgresql16-client curl >/dev/null
+        && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql && command -v curl"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "10s"
+
+  # The hoop-inspect sidecar: the hoopinspect library as a process.
+  #
+  # Envoy forwards to it instead of straight to the upstream. It decodes the
+  # wire protocol, evaluates policy, writes an audit trail, and masks
+  # sensitive values on the way back. It owns no routing and terminates no
+  # downstream TLS — Envoy keeps both. It DOES originate TLS upstream to
+  # appdb, which is a different thing: it is the client on that hop, so it
+  # decrypts what it reads and inspection is unaffected.
+  hoop-inspect:
+    image: hoop-inspect:local
+    build:
+      context: ../../../hoopinspect
+      dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+    networks: [inspect]
+    volumes:
+      - ./hoopinspect/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      # appdb's self-signed cert, used as the CA that verifies it.
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+    ports:
+      # Admin only: /healthz, /stats, /config and the audit query API. The
+      # data-path listeners are reached over the compose network by Envoy,
+      # never from the host.
+      - "19000:19000"
+    depends_on:
+      appdb: { condition: service_healthy }
+      # httpbin ships no healthcheck; service_started is the strongest
+      # condition available and the sidecar dials lazily anyway.
+      httpbin: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  opa:
+    image: openpolicyagent/opa:latest-envoy
+    # opa:*-envoy publishes amd64 only. Harmless under Rosetta/qemu locally;
+    # drop this line on an amd64 host.
+    platform: linux/amd64
+    networks: [inspect]
+    volumes:
+      - ./opa:/policy:ro
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --diagnostic-addr=0.0.0.0:8282
+      - --set=plugins.envoy_ext_authz_grpc.addr=:9191
+      - --set=plugins.envoy_ext_authz_grpc.path=envoy/authz/result
+      - --set=decision_logs.console=true
+      - --log-level=info
+      - /policy/authz.rego
+    healthcheck:
+      test: ["CMD", "/opa", "version"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 10
+      start_period: "10s"
+
+  envoy:
+    image: envoyproxy/envoy:v1.33-latest
+    networks: [inspect]
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      - "8443:8443"   # HTTPS lane -> hoop-inspect (http codec)
+      # 5433 on the host, because a developer laptop usually already has
+      # something on 5432.
+      - "5433:5432"   # TCP lane   -> hoop-inspect (postgres codec)
+      - "9901:9901"   # admin
+    command:
+      - envoy
+      - -c
+      - /etc/envoy/envoy.yaml
+      - --log-level
+      - warn
+      - --component-log-level
+      - ext_authz:info
+    depends_on:
+      opa: { condition: service_healthy }
+      hoop-inspect: { condition: service_healthy }
+
+networks:
+  inspect:

@@ -304,13 +304,12 @@ together (recommended). Individual targets:
 | shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev` |
 | Gateway (backend) | 8009 | see `Makefile` |
 
-Hot reload: Vite HMRs React sources instantly. shadow-cljs rebuilds
-`/js/app.js` and `/css/site.css`, which Vite **proxies** — so CLJS/Tailwind
-edits do NOT propagate as HMR into the running page. Hard-reload the tab
-(Cmd+Shift+R) after a CLJS change.
+Hot reload: CLJS/Tailwind edits do NOT propagate as HMR through the Vite
+proxy — hard-reload the tab (Cmd+Shift+R) after a CLJS change; details in
+`webapp_v2/README.md`.
 
-A `.env` in `webapp_v2/` is optional — `vite.config.js` defaults all dev
-proxy targets. Same goes for `webapp/.env`: only override `SENTRY_DSN`,
+A `.env` in `webapp_v2/` is optional — see `webapp_v2/README.md` (Environment
+Variables). Same goes for `webapp/.env`: only override `SENTRY_DSN`,
 `SEGMENT_WRITE_KEY` or `API_URL` if you need to (closure-defines in
 `shadow-cljs.edn` already supply usable defaults).
 

@@ -11386,7 +11386,7 @@ const docTemplate = `{
                     "example": false
                 },
                 "approval_required_groups": {
-                    "description": "Groups that require approval",
+                    "description": "User groups whose members require approval to access. An empty list makes\nthe rule apply to all user groups (every requester requires approval)",
                     "type": "array",
                     "items": {
                         "type": "string"
