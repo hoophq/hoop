@@ -183,6 +183,7 @@ jobs:
       # The STRICT fixable CRITICAL/HIGH gate lives on the minimal image
       # (minimal-image-build.yml); here we only surface the fixable count/trend.
       - name: Report fixable CRITICAL/HIGH vulnerabilities (Trivy, non-blocking)
+        continue-on-error: true
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -196,7 +197,7 @@ jobs:
             echo ""
             echo "Strict gate is on hoophq/hoopdev-minimal. Top packages:"
             echo '```'
-            jq -r '[.Results[]?.Vulnerabilities // []]|add|group_by(.PkgName)|map({p:.[0].PkgName,c:length})|sort_by(-.c)|.[]|"\(.c)\t\(.p)"' trivy-vuln.json 2>/dev/null | head -20
+            jq -r '[.Results[]?.Vulnerabilities // []]|add|group_by(.PkgName)|map({p:.[0].PkgName,c:length})|sort_by(-.c)|.[:20][]|"\(.c)\t\(.p)"' trivy-vuln.json 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -300,6 +301,7 @@ jobs:
       # DEP-91: report-only vuln visibility (see the amd64 job for rationale).
       # The strict CRITICAL/HIGH gate is on the minimal image, not the fat base.
       - name: Report fixable CRITICAL/HIGH vulnerabilities (Trivy, non-blocking)
+        continue-on-error: true
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -313,7 +315,7 @@ jobs:
             echo ""
             echo "Strict gate is on hoophq/hoopdev-minimal. Top packages:"
             echo '```'
-            jq -r '[.Results[]?.Vulnerabilities // []]|add|group_by(.PkgName)|map({p:.[0].PkgName,c:length})|sort_by(-.c)|.[]|"\(.c)\t\(.p)"' trivy-vuln.json 2>/dev/null | head -20
+            jq -r '[.Results[]?.Vulnerabilities // []]|add|group_by(.PkgName)|map({p:.[0].PkgName,c:length})|sort_by(-.c)|.[:20][]|"\(.c)\t\(.p)"' trivy-vuln.json 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
