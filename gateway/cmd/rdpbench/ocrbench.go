@@ -19,13 +19,26 @@ import (
 	"github.com/hoophq/hoop/gateway/rdp/ocr"
 )
 
+// piiMarkerRune reports whether r is a non-alphanumeric character that the
+// PII-shaped drop classifier keys on.
+//
+// Any such character MUST survive normalizeToken. If normalization erased one,
+// a candidate engine that lost it would normalize equal to the reference, the
+// token would never be reported as dropped, and the classifier would never get
+// to see it — silently missing exactly the loss this cross-check exists to
+// catch. Concretely: without '@' preserved, "a@b.com" and "ab.com" both
+// normalize to "abcom", so an engine dropping the '@' out of an email looks
+// clean. Digits, the classifier's other signal, survive as alphanumerics.
+func piiMarkerRune(r rune) bool { return r == '@' }
+
 // normalizeToken lowercases and strips characters that OCR renders
 // inconsistently (whitespace, punctuation used as separators) so token
-// comparison focuses on the alphanumeric content a PII scan keys on.
+// comparison focuses on the content a PII scan keys on: alphanumerics plus the
+// PII marker runes above.
 func normalizeToken(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || piiMarkerRune(r) {
 			b.WriteRune(r)
 		}
 	}
@@ -58,6 +71,25 @@ func droppedTokens(ref, got []string) []string {
 		}
 	}
 	return dropped
+}
+
+// probeHealth GETs an OCR server's /healthz and returns the trimmed body.
+// The banner it produces is informational, but a failure to read it means the
+// server is not actually usable, so the error is surfaced rather than silently
+// printing a blank line and benchmarking against a broken endpoint. The body
+// is read to completion before Close, whose error carries no extra signal for
+// a GET and is deliberately left to the deferred call.
+func probeHealth(client *http.Client, base string) ([]byte, error) {
+	resp, err := client.Get(base + "/healthz")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading /healthz response: %w", err)
+	}
+	return bytes.TrimSpace(body), nil
 }
 
 // runOCRBench isolates the OCR engine cost: it replays a fixture, carves out
@@ -116,13 +148,11 @@ func runOCRBench(args []string) error {
 		}
 	case "http":
 		client := &http.Client{Timeout: 30 * time.Second}
-		probe, err := client.Get(*url + "/healthz")
+		health, err := probeHealth(client, *url)
 		if err != nil {
 			return fmt.Errorf("OCR server not reachable at %s: %w", *url, err)
 		}
-		health, _ := io.ReadAll(probe.Body)
-		probe.Body.Close()
-		fmt.Printf("ocr server: %s\n", bytes.TrimSpace(health))
+		fmt.Printf("ocr server: %s\n", health)
 
 		// ocrWords posts a band to a server and returns its recognized words
 		// (in server order) plus the server-reported compute time.
@@ -160,13 +190,11 @@ func runOCRBench(args []string) error {
 
 		var cmpMismatch, cmpChecked, cmpPIIDrop int
 		if *compareURL != "" {
-			cprobe, err := client.Get(*compareURL + "/healthz")
+			chealth, err := probeHealth(client, *compareURL)
 			if err != nil {
 				return fmt.Errorf("compare OCR server not reachable at %s: %w", *compareURL, err)
 			}
-			chealth, _ := io.ReadAll(cprobe.Body)
-			cprobe.Body.Close()
-			fmt.Printf("compare server: %s\n", bytes.TrimSpace(chealth))
+			fmt.Printf("compare server: %s\n", chealth)
 		}
 
 		ocrState = func(rgba []byte, w, h int) (int, error) {
@@ -191,19 +219,22 @@ func runOCRBench(args []string) error {
 				// compare-url but absent from url.
 				dropped := droppedTokens(cwords, words)
 				// A token is PII-shaped if it carries >= 4 digits (phones,
-				// long numbers) or an '@' (emails) — the content a leak would
-				// expose. UI-chrome/segmentation noise is reported separately
-				// so it does not drown out the signal that matters.
+				// long numbers) or a PII marker rune such as '@' (emails) —
+				// the content a leak would expose. UI-chrome/segmentation
+				// noise is reported separately so it does not drown out the
+				// signal that matters. The marker test shares piiMarkerRune
+				// with normalizeToken so the two can never disagree about
+				// which characters must survive normalization.
 				var piiDropped []string
 				for _, d := range dropped {
 					digits := 0
-					hasAt := strings.ContainsRune(d, '@')
+					hasMarker := strings.ContainsFunc(d, piiMarkerRune)
 					for _, r := range d {
 						if r >= '0' && r <= '9' {
 							digits++
 						}
 					}
-					if digits >= 4 || hasAt {
+					if digits >= 4 || hasMarker {
 						piiDropped = append(piiDropped, d)
 					}
 				}
