@@ -22,6 +22,11 @@ import {
 const MESSAGE_TOOLTIP =
   'When this rule is violated, this message will be displayed to the user along the Rule Name and Configuration'
 
+// Row controls run one step below the app-wide md default (32px/14px instead
+// of 40px/16px). The column widths below are the legacy ones, sized for 14px
+// option labels — at 16px "Deny Word" and "Create custom rule" get clipped.
+const ROW_CONTROL_SIZE = 'sm'
+
 // The regex is kept in local state and committed on blur so the form is not
 // churned on every keystroke. The cell is keyed by rule in the parent, so
 // picking a different preset remounts it and re-seeds the draft.
@@ -32,6 +37,7 @@ function PatternCell({ row, onCommit }) {
     <Group gap="xs" wrap="nowrap">
       <TextInput
         flex={1}
+        size={ROW_CONTROL_SIZE}
         placeholder="Describe how this is used in your resource roles"
         value={draft}
         onChange={(event) => setDraft(event.currentTarget.value)}
@@ -64,6 +70,7 @@ function MessageCell({ row, onCommit }) {
       <Textarea
         autoFocus
         autosize={false}
+        size={ROW_CONTROL_SIZE}
         rows={3}
         placeholder="Describe the message shown to the user when this rule is triggered"
         value={draft}
@@ -91,6 +98,7 @@ function MessageCell({ row, onCommit }) {
       <ActionIcon
         variant="subtle"
         color="gray"
+        size={ROW_CONTROL_SIZE}
         onClick={startEditing}
         aria-label={
           row.message ? 'Edit custom error message' : 'Set a custom error message'
@@ -184,6 +192,7 @@ export default function RulesTable({
               <Table.Td>
                 <Select
                   placeholder="Select one"
+                  size={ROW_CONTROL_SIZE}
                   data={RULE_TYPE_OPTIONS}
                   value={row.type || null}
                   onChange={(value) => changeType(row, value)}
@@ -195,6 +204,7 @@ export default function RulesTable({
                 {row.type && (
                   <Select
                     placeholder="Select one"
+                    size={ROW_CONTROL_SIZE}
                     data={ruleOptions(row.type)}
                     value={row.rule || null}
                     onChange={(value) => changeRule(row, value)}
@@ -215,6 +225,7 @@ export default function RulesTable({
                 )}
                 {row.rule && row.type === 'deny_words_list' && (
                   <TagsInput
+                    size={ROW_CONTROL_SIZE}
                     value={row.words}
                     onChange={(values) => ops.patchRow(row.id, { words: values })}
                     aria-label="Denied words"

@@ -18,6 +18,7 @@ import { useDataMaskingStore } from '../store'
 import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
 import { clampRuleToFreePlan, findMaskingTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
+import classes from './Create.module.css'
 
 function SectionRow({ title, description, children }) {
   return (
@@ -148,7 +149,12 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
             : '1px solid var(--mantine-color-default-border)',
         }}
       >
-        <Title order={2}>
+        {/* Mantine's Title sets no tracking, so the header renders at the
+            browser default. -0.00625em is the Radix letter-spacing token
+            paired with the 24px type step, which is what the legacy heading
+            used. Kept local — theme-wide heading tracking is a call that
+            hasn't been made. */}
+        <Title order={2} lts="-0.00625em">
           {isEdit ? 'Edit Live Data Masking rule' : 'Create new Live Data Masking rule'}
         </Title>
         <Group gap="sm">
@@ -174,7 +180,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
         </Box>
       )}
 
-      <Stack gap="xxlAlt">
+      <Stack gap="xxlAlt" className={classes.form}>
         <SectionRow
           title="Set rule information"
           description="Used to identify the rule in your resource roles."

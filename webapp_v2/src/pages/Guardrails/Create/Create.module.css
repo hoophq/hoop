@@ -1,0 +1,16 @@
+/* Field labels match the "Input rules" heading (14px/700) instead of tracking
+   the md field size, which components/Input/theme.js pins them to (16px/500).
+
+   Scoped to this form on purpose: label typography is a theme-level decision
+   that hasn't been made yet, so this stays one rule to delete once it is.
+
+   Targets Mantine's static InputWrapper class so every field in the form is
+   covered — including the ones rendered by shared wrappers such as
+   ConnectionsMultiSelect, which don't expose a label className. Declared
+   outside @layer mantine, so it wins over Mantine's own label rules (whose
+   font-size reads an --input-label-size that Mantine sets inline on this
+   element, out of reach of a variable override). */
+.form :global(.mantine-InputWrapper-label) {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 700;
+}

@@ -15,6 +15,11 @@ import {
   createEmptyRow,
 } from '../../helpers'
 
+// Row controls run one step below the app-wide md default (32px/14px instead
+// of 40px/16px). The column widths below are sized for 14px option labels — at
+// 16px the Type and Rule selects clip their longer options.
+const ROW_CONTROL_SIZE = 'sm'
+
 function RuleCell({ row, freeLicense, onChange }) {
   if (!row.type) return null
 
@@ -28,6 +33,7 @@ function RuleCell({ row, freeLicense, onChange }) {
     return (
       <Select
         placeholder="Select preset"
+        size={ROW_CONTROL_SIZE}
         data={options}
         value={row.rule || null}
         onChange={(v) => onChange({ rule: v || '' })}
@@ -42,6 +48,7 @@ function RuleCell({ row, freeLicense, onChange }) {
   return (
     <TextInput
       placeholder="Rule Name"
+      size={ROW_CONTROL_SIZE}
       value={row.rule}
       onChange={(e) => onChange({ rule: e.currentTarget.value })}
       onBlur={(e) => {
@@ -72,6 +79,7 @@ function DetailsCell({ row, freeLicense, onChange }) {
     return (
       <MultiSelect
         placeholder="Select rules..."
+        size={ROW_CONTROL_SIZE}
         data={FIELD_OPTIONS}
         value={Array.isArray(row.details) ? row.details : []}
         onChange={(values) =>
@@ -85,6 +93,7 @@ function DetailsCell({ row, freeLicense, onChange }) {
   return (
     <TextInput
       placeholder="\b[A-Z]{2}[0-9]{3}\b"
+      size={ROW_CONTROL_SIZE}
       value={row.details}
       onChange={(e) => onChange({ details: e.currentTarget.value })}
     />
@@ -153,6 +162,7 @@ export default function RulesTable({
               <Table.Td>
                 <Select
                   placeholder="Select type"
+                  size={ROW_CONTROL_SIZE}
                   data={RULE_TYPES}
                   value={row.type || null}
                   onChange={(v) => changeType(idx, v || '')}

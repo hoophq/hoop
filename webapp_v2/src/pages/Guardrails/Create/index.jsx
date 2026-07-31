@@ -18,6 +18,7 @@ import { useGuardrailsStore } from '../store'
 import { apiRulesToRows, formToPayload, orphanMessageError } from '../helpers'
 import { findGuardrailTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
+import classes from './Create.module.css'
 
 function SectionRow({ title, badge, description, children }) {
   return (
@@ -162,7 +163,12 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
             : '1px solid var(--mantine-color-default-border)',
         }}
       >
-        <Title order={2}>
+        {/* Mantine's Title sets no tracking, so the header renders at the
+            browser default. -0.00625em is the Radix letter-spacing token
+            paired with the 24px type step, which is what the legacy heading
+            used. Kept local — theme-wide heading tracking is a call that
+            hasn't been made. */}
+        <Title order={2} lts="-0.00625em">
           {isEdit ? 'Configure Guardrail' : 'Create a new Guardrail'}
         </Title>
         <Group gap="sm">
@@ -188,7 +194,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
         </Box>
       )}
 
-      <Stack gap="xxlAlt">
+      <Stack gap="xxlAlt" className={classes.form}>
         <SectionRow
           title="Set Guardrail information"
           description="Used to identify your Guardrail in your resource roles."
