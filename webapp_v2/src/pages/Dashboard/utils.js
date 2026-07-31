@@ -9,10 +9,32 @@ dayjs.extend(advancedFormat)
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
-// Statuses the Reviews chart counts.
-const COUNTED_REVIEW_STATUSES = {
-  APPROVED: 'approved',
-  REJECTED: 'rejected',
+// A review carries exactly one decision, and its status keeps moving after that
+// decision is made:
+//
+//   PENDING ─┬─ approve → APPROVED ─┬─ run  → PROCESSING → EXECUTED
+//            │                      └─ JIT revoke → REVOKED
+//            └─ reject  → REJECTED  (terminal)
+//
+// So APPROVED is transient and REJECTED is terminal. Matching the two literals —
+// which is what the legacy chart did — counts only approvals that have not been
+// used yet, while every rejection ever made persists. On any real history the
+// chart then reads "we reject everything".
+//
+// The rule is therefore expressed as a derivation, not an allow-list: PENDING is
+// undecided, REJECTED is the only rejection, and everything else is downstream of
+// an approval (PROCESSING and EXECUTED are the normal path, UNKNOWN is the legacy
+// spelling of PROCESSING, and REVOKED means approved-then-withdrawn — the review
+// decision was still an approval). Deriving rather than enumerating is deliberate:
+// a status added to the gateway later shows up somewhere instead of silently
+// vanishing, which is exactly how EXECUTED went missing.
+const UNDECIDED_REVIEW_STATUS = 'PENDING'
+const REJECTED_REVIEW_STATUS = 'REJECTED'
+
+/** 'approved' | 'rejected' | null (still undecided). */
+export function reviewDecision(status) {
+  if (!status || status === UNDECIDED_REVIEW_STATUS) return null
+  return status === REJECTED_REVIEW_STATUS ? 'rejected' : 'approved'
 }
 
 /* -------------------------------------------------------------------------- */
@@ -135,8 +157,8 @@ export function countReviewsToday(reviews = []) {
  * (`created_at.slice(0, 10)`) but rendered the label in local time, so a review
  * created just after UTC midnight was filed under one day and labelled another.
  *
- * A review in any other status is skipped rather than creating a bucket. The
- * legacy `cond` had no `:else` branch and wrote a literal nil key, leaving a
+ * Undecided reviews are skipped rather than creating a bucket. The legacy `cond`
+ * had no `:else` branch and wrote a literal nil key, leaving a
  * `{approved: 0, rejected: 0}` entry that rendered as a zero-height bar for
  * dates whose only activity was pending.
  */
@@ -145,8 +167,8 @@ export function buildReviewBuckets(reviews = [], days) {
   const buckets = new Map()
 
   for (const review of reviews) {
-    const countedAs = COUNTED_REVIEW_STATUSES[review.status]
-    if (!countedAs) continue
+    const decision = reviewDecision(review.status)
+    if (!decision) continue
 
     const createdAt = new Date(review.created_at)
     const time = createdAt.getTime()
@@ -158,7 +180,7 @@ export function buildReviewBuckets(reviews = [], days) {
       bucket = { label: formatTooltipDate(createdAt), approved: 0, rejected: 0 }
       buckets.set(key, bucket)
     }
-    bucket[countedAs] += 1
+    bucket[decision] += 1
   }
 
   return [...buckets.entries()]
