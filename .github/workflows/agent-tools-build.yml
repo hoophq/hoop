@@ -8,9 +8,9 @@
 # hoophq/hoopdev preview build kept inheriting AGPL packages from the stale
 # base. This workflow makes that drift impossible:
 #
-#   - pull_request touching the recipe/gates: build (amd64, both trains) +
-#     license/provenance gates, no push — a recipe reintroducing AGPL/SSPL
-#     fails CI here, at the source.
+#   - pull_request touching the recipe/gates: build (amd64 + arm64, both trains)
+#     + license/provenance gates, no push — a recipe reintroducing AGPL/SSPL, or
+#     an arch-specific version/tag mismatch, fails CI here before merge.
 #   - push to main (or manual dispatch): build both arches natively for both
 #     trains, gate, push hoophq/agent-tools:noble-<date>-<sha>{,-clean} per-arch
 #     tags + multi-arch manifests, then open a PR bumping the base references in
@@ -51,6 +51,7 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       publish: ${{ steps.tag.outputs.publish }}
+      clean_build_args: ${{ steps.tag.outputs.clean_build_args }}
     steps:
       - id: tag
         run: |
@@ -61,6 +62,21 @@ jobs:
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
+          # DEP-91: clean-train tool versions live here, in one place. Legacy
+          # keeps the Dockerfile.tools ARG defaults (backward compat); the clean
+          # train (-ng, future default) builds with these latest releases.
+          {
+            echo "clean_build_args<<CLEAN_ARGS_EOF"
+            echo "INCLUDE_LEGACY_MONGO=false"
+            echo "KUBECTL_VERSION=v1.36.3"
+            echo "SQLCMD_VERSION=v1.10.0"
+            echo "NODE_VERSION=24.18.1"
+            echo "MONGOSH_VERSION=2.9.2"
+            echo "MONGODB_TOOLS_VERSION=8.0.28"
+            echo "GCLOUD_VERSION=578.0.0-0"
+            echo "GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0"
+            echo "CLEAN_ARGS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       # Fail fast on publish runs: bump-consumers needs the PAT at the very
       # end of the pipeline, and discovering it is missing only after the
@@ -94,10 +110,8 @@ jobs:
         id: p
         run: |
           if [ "${{ matrix.train }}" = "clean" ]; then
-            echo "include_legacy_mongo=false" >> "$GITHUB_OUTPUT"
             echo "tag=${{ needs.meta.outputs.tag }}-clean-amd64" >> "$GITHUB_OUTPUT"
           else
-            echo "include_legacy_mongo=true" >> "$GITHUB_OUTPUT"
             echo "tag=${{ needs.meta.outputs.tag }}-amd64" >> "$GITHUB_OUTPUT"
           fi
       - name: Build image
@@ -110,8 +124,7 @@ jobs:
           sbom: false
           load: true
           push: false
-          build-args: |
-            INCLUDE_LEGACY_MONGO=${{ steps.p.outputs.include_legacy_mongo }}
+          build-args: ${{ matrix.train == 'clean' && needs.meta.outputs.clean_build_args || 'INCLUDE_LEGACY_MONGO=true' }}
           tags: hoophq/agent-tools:${{ steps.p.outputs.tag }}
 
       # Regression guard for the train split: legacy must contain the legacy
@@ -177,7 +190,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
     name: Build ${{ matrix.train }} (arm64)
     needs: [meta]
-    if: needs.meta.outputs.publish == 'true'
+    # No job-level publish gate: on PRs this builds arm64 as a no-push smoke
+    # (both trains), matching build-amd64, so an arm64-only version/tag mismatch
+    # is caught before merge. Login + push are gated per-step below.
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -189,6 +204,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
+        if: needs.meta.outputs.publish == 'true'
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
@@ -197,10 +213,8 @@ jobs:
         id: p
         run: |
           if [ "${{ matrix.train }}" = "clean" ]; then
-            echo "include_legacy_mongo=false" >> "$GITHUB_OUTPUT"
             echo "tag=${{ needs.meta.outputs.tag }}-clean-arm64" >> "$GITHUB_OUTPUT"
           else
-            echo "include_legacy_mongo=true" >> "$GITHUB_OUTPUT"
             echo "tag=${{ needs.meta.outputs.tag }}-arm64" >> "$GITHUB_OUTPUT"
           fi
       - name: Build image
@@ -213,8 +227,7 @@ jobs:
           sbom: false
           load: true
           push: false
-          build-args: |
-            INCLUDE_LEGACY_MONGO=${{ steps.p.outputs.include_legacy_mongo }}
+          build-args: ${{ matrix.train == 'clean' && needs.meta.outputs.clean_build_args || 'INCLUDE_LEGACY_MONGO=true' }}
           tags: hoophq/agent-tools:${{ steps.p.outputs.tag }}
 
       - name: Assert train contents
@@ -261,6 +274,7 @@ jobs:
             --train "${{ matrix.train }}"
 
       - name: Push
+        if: needs.meta.outputs.publish == 'true'
         run: docker push "hoophq/agent-tools:${{ steps.p.outputs.tag }}"
 
   manifest:

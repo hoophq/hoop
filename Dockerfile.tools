@@ -6,6 +6,15 @@ ARG AWS_CLI_VERSION=2.28.6
 ARG GCLOUD_VERSION=533.0.0-0
 ARG GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0
 ARG NODE_VERSION=22.18.0
+# DEP-91: tool versions are ARG-driven so the two trains can diverge. The
+# defaults here are the LEGACY (hoophq/hoopdev) pins, kept stable for backward
+# compatibility. The CLEAN train (-ng, future default) overrides them to the
+# latest releases via build-args in the clean matrix leg of
+# .github/workflows/agent-tools-build.yml.
+ARG KUBECTL_VERSION=v1.29.15
+ARG SQLCMD_VERSION=v1.8.2
+ARG MONGOSH_VERSION=2.5.6
+ARG MONGODB_TOOLS_VERSION=8.0.12
 # The legacy MongoDB 5.0 shell (/usr/local/bin/mongo) is SSPL-licensed. It is
 # kept on the default "legacy" image train for backward compatibility, and
 # excluded from the "clean" train (INCLUDE_LEGACY_MONGO=false), which ships only
@@ -17,8 +26,6 @@ ARG INCLUDE_LEGACY_MONGO=true
 RUN mkdir -p /app && \
     apt update -y && \
     apt install -y \
-    python3-dev \
-    python3-pip \
     python3.12 \
     locales \
     tini \
@@ -35,19 +42,25 @@ RUN mkdir -p /app && \
     less \
     gettext-base \
     lsb-release \
-    alien \
     libaio1t64 \
-    elfutils \
-    libelf-dev \
+    # DEP-91: alien, elfutils, libelf-dev and python3-dev removed; they pull
+    # linux-libc-dev (kernel headers, ~891 CVEs) + libc6-dev via dpkg-dev/build
+    # deps, and nothing here uses them at runtime (all CLIs are prebuilt; Oracle
+    # ships a zip, not an rpm). python3-pip moved below to skip its dev recommend.
     bc \
     bzip2 \
+    # xz-utils: required to extract the Node.js .tar.xz below. Previously pulled
+    # transitively by alien/python3-pip recommends (both removed above), so it
+    # is now declared explicitly.
+    xz-utils \
     wget \
     redis-tools && \
-    # groff is only needed by `aws help` to render man pages to the terminal.
-    # Install it without Recommends: they pull ghostscript (AGPL), imagemagick,
-    # netpbm and psutils (GPL), which groff only uses for PostScript/PDF output
-    # that nothing in this image produces.
-    apt install -y --no-install-recommends groff && \
+    # groff (for `aws help`) and python3-pip are installed without Recommends:
+    # groff's recommends pull ghostscript (AGPL)/imagemagick/netpbm/psutils (GPL)
+    # for PostScript output nothing here produces; python3-pip's recommend pulls
+    # python3-dev -> linux-libc-dev, and boto3/requests are pure-Python wheels
+    # so pip needs no headers.
+    apt install -y --no-install-recommends groff python3-pip && \
     ln -s /usr/bin/python3 /usr/bin/python
 
 # https://github.com/nodejs/release-keys
@@ -93,7 +106,7 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && node --version \
     && npm --version
 
-RUN curl -sL "https://dl.k8s.io/release/v1.29.15/bin/linux/$(dpkg --print-architecture)/kubectl" -o kubectl && \
+RUN curl -sL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/$(dpkg --print-architecture)/kubectl" -o kubectl && \
   chmod 755 kubectl && \
   mv kubectl /usr/local/bin/kubectl
 
@@ -119,29 +132,24 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     dpkg -i session-manager-plugin.deb && \
     rm -f session-manager-plugin.deb
 
-RUN LIBSSL_1_1_REPO= && dpkgArch="$(dpkg --print-architecture)" \
-  && case "${dpkgArch##*-}" in \
-  amd64) LIBSSL_1_1_REPO='deb http://security.ubuntu.com/ubuntu focal-security main';; \
-  arm64) LIBSSL_1_1_REPO='deb http://ports.ubuntu.com/ubuntu-ports focal-security main';; \
-  *) echo "unsupported architecture"; exit 1 ;; \
-  esac \
-  && echo $LIBSSL_1_1_REPO | tee /etc/apt/sources.list.d/focal-security.list && \
-    wget -qO- https://www.mongodb.org/static/pgp/server-8.0.asc | tee /etc/apt/trusted.gpg.d/server-8.0.asc && \
+RUN wget -qO- https://www.mongodb.org/static/pgp/server-8.0.asc | tee /etc/apt/trusted.gpg.d/server-8.0.asc && \
     echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
     echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
     curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
     curl -sL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
 
 # legacy mongo client (MongoDB 5.0 shell, SSPL). Included only on the legacy
-# train; the clean train ships mongosh (Apache-2.0) instead. libssl1.1 is a
-# dependency of this shell alone, so it is installed inside the same guard.
+# train; the clean train ships mongosh (Apache-2.0) instead. libssl1.1 (and the
+# focal-security/Ubuntu-20.04 apt source it comes from) is set up inside this
+# guard so the clean train carries neither.
 RUN if [ "$INCLUDE_LEGACY_MONGO" = "true" ]; then \
-      ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+      ARCH= && LIBSSL_1_1_REPO= && dpkgArch="$(dpkg --print-architecture)" \
       && case "${dpkgArch##*-}" in \
-      amd64) ARCH='x86_64';; \
-      arm64) ARCH='aarch64';; \
+      amd64) ARCH='x86_64'; LIBSSL_1_1_REPO='deb http://security.ubuntu.com/ubuntu focal-security main';; \
+      arm64) ARCH='aarch64'; LIBSSL_1_1_REPO='deb http://ports.ubuntu.com/ubuntu-ports focal-security main';; \
       *) echo "unsupported architecture"; exit 1 ;; \
       esac \
+      && echo "$LIBSSL_1_1_REPO" > /etc/apt/sources.list.d/focal-security.list \
       && curl -fsSLO --compressed https://fastdl.mongodb.org/linux/mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz \
       && apt update -y && apt install libssl1.1 -y \
       && tar -xzf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz \
@@ -153,14 +161,16 @@ RUN if [ "$INCLUDE_LEGACY_MONGO" = "true" ]; then \
     fi
 
 RUN apt update -y && apt install -y \
-    mongodb-mongosh=2.5.6 \
-    mongodb-org-tools=8.0.12 \
+    mongodb-mongosh=${MONGOSH_VERSION} \
+    mongodb-org-tools=${MONGODB_TOOLS_VERSION} \
     default-mysql-client=1.1.0build1 \
-    unixodbc-dev=2.3.12-1ubuntu0.24.04.1 \
+    # DEP-91: runtime unixodbc (libodbc2 + isql), not the -dev headers which
+    # pull linux-libc-dev. Same source version; ODBC runtime preserved.
+    unixodbc=2.3.12-1ubuntu0.24.04.1 \
     postgresql-client-16=16.14-0ubuntu0.24.04.1 \
     google-cloud-cli=$GCLOUD_VERSION \
     google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_GKE_AUTHN_PLUGIN_VERSION && \
-    curl -fsSLO --compressed  https://github.com/microsoft/go-sqlcmd/releases/download/v1.8.2/sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 && \
+    curl -fsSLO --compressed  https://github.com/microsoft/go-sqlcmd/releases/download/${SQLCMD_VERSION}/sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 && \
       tar -xf sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 -C /usr/local/bin/ sqlcmd && \
       rm -f sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 && \
       sqlcmd --version && \
