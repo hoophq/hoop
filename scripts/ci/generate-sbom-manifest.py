@@ -162,7 +162,9 @@ def main() -> int:
     if len(sys.argv) != 3:
         print("usage: generate-sbom-manifest.py <tag> <outdir>", file=sys.stderr)
         return 2
-    tag, outdir = sys.argv[1], sys.argv[2]
+    # Absolute: outdir is bind-mounted into the Trivy container, and Docker
+    # rejects a relative path as an invalid volume name.
+    tag, outdir = sys.argv[1], os.path.abspath(sys.argv[2])
     os.makedirs(outdir, exist_ok=True)
     cache = os.path.abspath(".trivy-cache")
     os.makedirs(cache, exist_ok=True)
