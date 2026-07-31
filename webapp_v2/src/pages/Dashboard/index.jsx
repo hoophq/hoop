@@ -20,9 +20,21 @@ import {
   rangeLabel,
 } from './utils'
 
+// Deep green against soft coral rather than the two saturated shades this page
+// started with. The muting is the point, but the pairing is not free-hand: red
+// and green sit almost on top of each other for red-green colour blindness, so
+// the two have to be pulled apart in lightness to stay legible.
+//
+// Verified with the dataviz palette validator (light surface): CVD ΔE 12.5
+// (protan) — comfortably over the 8 target, where the previous green.5/red.5
+// scored 7.5 and evenly-muted variants collapsed to 3.6.
+//
+// The soft coral sits at 2.8:1 against the page, under the 3:1 mark, which
+// obliges a visible label — hence `withLegend` on the chart below. That is also
+// the rule for any two-series chart: identity must never rest on colour alone.
 const REVIEW_SERIES = [
-  { name: 'approved', label: 'Approved', color: 'green.5' },
-  { name: 'rejected', label: 'Rejected', color: 'red.5' },
+  { name: 'approved', label: 'Approved', color: 'green.8' },
+  { name: 'rejected', label: 'Rejected', color: 'red.3' },
 ]
 
 const REDACTED_SERIES = [{ name: 'redactTotal', label: 'Redacted', color: 'indigo.6' }]
@@ -143,6 +155,7 @@ function Dashboard() {
               series={REVIEW_SERIES}
               withXAxis={false}
               withYAxis={false}
+              withLegend
               barProps={{ radius: 4 }}
             />
           </ChartCard>
