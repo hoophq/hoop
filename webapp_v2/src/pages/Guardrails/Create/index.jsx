@@ -156,12 +156,8 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
         mb="xl"
         mx={-PAGE_PADDING}
         px={PAGE_PADDING}
-        style={{
-          zIndex: 10,
-          borderBottom: headerInView
-            ? '1px solid transparent'
-            : '1px solid var(--mantine-color-default-border)',
-        }}
+        className={classes.stickyHeader}
+        data-scrolled={!headerInView || undefined}
       >
         {/* Mantine's Title sets no tracking, so the header renders at the
             browser default. -0.00625em is the Radix letter-spacing token

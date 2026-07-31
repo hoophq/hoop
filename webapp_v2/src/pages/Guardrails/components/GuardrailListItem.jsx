@@ -1,23 +1,15 @@
 import { Box, Flex, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
-
-const BORDER = '1px solid var(--mantine-color-default-border)'
+import classes from './GuardrailListItem.module.css'
 
 // One row of the guardrails list. Rows stack into a single bordered block, so
 // only the first and last ones carry the outer corners.
 export default function GuardrailListItem({ guardrail, isFirst, isLast, onConfigure }) {
   return (
     <Box
-      style={{
-        borderLeft: BORDER,
-        borderRight: BORDER,
-        borderTop: isFirst ? BORDER : undefined,
-        borderBottom: BORDER,
-        borderTopLeftRadius: isFirst ? 'var(--mantine-radius-md)' : undefined,
-        borderTopRightRadius: isFirst ? 'var(--mantine-radius-md)' : undefined,
-        borderBottomLeftRadius: isLast ? 'var(--mantine-radius-md)' : undefined,
-        borderBottomRightRadius: isLast ? 'var(--mantine-radius-md)' : undefined,
-      }}
+      className={classes.row}
+      data-first={isFirst || undefined}
+      data-last={isLast || undefined}
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>
