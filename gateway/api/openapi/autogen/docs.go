@@ -14160,9 +14160,20 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "auth": {
-                    "description": "Auth is how the server authenticates: \"none\", \"static\" or \"oauth\".\nStatic entries expect a credential in Header; oauth entries drive the\n/mcp-oauth flow. It is the value for MCP_AUTH.",
+                    "description": "Auth is the mode the provider documents as its default: \"none\",\n\"static\" or \"oauth\". It seeds the connection form's selection.",
                     "type": "string",
                     "example": "oauth"
+                },
+                "auth_modes": {
+                    "description": "AuthModes lists every mode this server actually accepts, always\nincluding Auth. Most servers accept exactly one; a few (github,\nlinear, stripe) take either an OAuth login or a long-lived token, and\nonly the admin knows which credential they hold. The form offers a\nchoice when this has more than one entry, and offering a mode absent\nhere would strand the admin on a flow the provider cannot complete.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "oauth",
+                        "static"
+                    ]
                 },
                 "description": {
                     "description": "Description is a one-line summary of what the server exposes.",
@@ -14170,7 +14181,7 @@ const docTemplate = `{
                     "example": "Linear issue tracking (official)"
                 },
                 "header": {
-                    "description": "Header names the static credential header and its value template, in\n\"Name: value\" form. Empty unless Auth is \"static\".",
+                    "description": "Header names the static credential header and its value template, in\n\"Name: value\" form. Empty when no mode in AuthModes is \"static\".",
                     "type": "string",
                     "example": "Authorization: Bearer ${TOKEN}"
                 },
