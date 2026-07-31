@@ -1,0 +1,79 @@
+# hoophq/hoopdev-minimal — minimal, opt-in agent image (DEP-91, workstream D).
+#
+# A "bring-your-own-tools" production base: the hoop agent binary plus only the
+# runtime bits the agent process itself needs. It bundles NO database or cloud
+# CLIs (psql/mysql/mongosh/kubectl/aws/gcloud/...), no Node, no OCR/tesseract
+# and no -dev/header packages — so it does NOT carry the CVE surface those
+# stacks drag in.
+#
+# This image is ADDITIVE. The default fat agent image (hoophq/hoopdev, built
+# from Dockerfile.dev on the agent-tools base) is unchanged and stays the
+# default everywhere. Extend this one when you want a lean agent and add only
+# the clients your connections actually use — see docs/custom-agent-image.md.
+#
+# Connection types that work out of the box: native DB proxy (postgres, mysql,
+# mssql, mongo, oracle via libhoop), plus HTTP and TCP proxying. Exec-based
+# sessions and any connection that shells out to a client binary
+# (clickhouse-client, cloud CLIs, ...) need that binary added in a derived
+# image.
+FROM ubuntu:noble-20251013
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ACCEPT_EULA=y
+
+# Unprivileged runtime user (mirrors Dockerfile) and the minimal runtime the
+# agent process actually needs:
+#   tini            — PID 1 / signal reaping (ENTRYPOINT)
+#   ca-certificates — TLS trust store for the gateway gRPC/WS connection
+#   locales         — en_US.UTF-8 (matches Dockerfile; multi-byte-safe output)
+# The agent reaches targets via libhoop's in-process proxies and native Go SSH
+# (golang.org/x/crypto/ssh); it does not shell out to `ssh` or `envsubst` here
+# (the `ssh` exec lives in the client/`hoop connect` side, and rootfs — the only
+# envsubst consumer — is not copied). Deliberately NO openssh-client, gettext-base,
+# curl, xz-utils, procps, tesseract, DB/cloud CLIs, or any -dev/header package
+# (no linux-libc-dev / libc6-dev). Extenders add the client binaries their
+# connections need — see docs/custom-agent-image.md.
+RUN groupadd --gid 10001 hoop && \
+    useradd --uid 10001 --gid 10001 --no-create-home --shell /sbin/nologin hoop && \
+    mkdir -p /app && \
+    mkdir -p /opt/hoop/sessions && \
+    mkdir -p /opt/hoop/bin && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        tini \
+        ca-certificates \
+        locales && \
+    rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
+
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+
+# NOTE: rootfs/ is intentionally NOT copied. Every file it carries is a
+# fat-image integration shim for a bundled third-party CLI (kubectl, mongo,
+# mysql, bq/gcloud, aws ecs/ssm, PRE_EXEC bash) that execs a backing binary
+# this image does not ship, plus two docker-compose-only helpers. Copying them
+# would put broken DB/cloud CLI names on PATH — the exact opposite of a minimal
+# bring-your-own-tools agent. The OOTB connection types (native DB proxy,
+# HTTP, TCP) are served entirely by the hoop binary and need nothing from
+# rootfs. Extenders add the client binary (and any wrapper they need) in their
+# own layer — see docs/custom-agent-image.md.
+#
+# Agent-only image: no gateway/migrations. Binary is sourced exactly like
+# Dockerfile.dev — the release tar is staged under dist/binaries/ and extracted
+# in place (glob matches hoop_<version>_<uname -s>_<uname -m>.tar.gz).
+COPY dist/binaries/ /tmp/
+RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
+    chown -R hoop:hoop /app /opt/hoop && \
+    chmod 755 /app/hoop* && \
+    rm -rf /tmp/*
+
+ENV PATH="/app:${PATH}"
+ENV PATH="/opt/hoop/bin:${PATH}"
+
+USER hoop
+
+ENTRYPOINT ["tini", "--"]
+CMD ["hoop", "start", "agent"]

@@ -34,7 +34,14 @@ spec:
       serviceAccountName: hoopagent
       {{- end }}
       containers:
-      - image: '{{ .Values.image.repository |default "hoophq/hoopdev" }}:{{ .Values.image.tag |default "latest" }}'
+      # Default image is the fat agent (hoophq/hoopdev). Opt into the minimal,
+      # bring-your-own-tools image (hoophq/hoopdev-minimal) by setting
+      # image.minimal: true; an explicit image.repository always wins.
+      {{- $defaultImage := "hoophq/hoopdev" }}
+      {{- if .Values.image.minimal }}
+      {{- $defaultImage = "hoophq/hoopdev-minimal" }}
+      {{- end }}
+      - image: '{{ .Values.image.repository | default $defaultImage }}:{{ .Values.image.tag | default "latest" }}'
         name: agent
         imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
         {{- if .Values.resources }}
