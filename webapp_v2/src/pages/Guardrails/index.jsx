@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Card, Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { ListVideo, Rotate3d } from 'lucide-react'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import Button from '@/components/Button'
@@ -9,6 +9,7 @@ import PageLoader from '@/components/PageLoader'
 import ValueFilter from '@/components/ValueFilter'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
 import { useUserStore } from '@/stores/useUserStore'
 import { useGuardrailsStore } from './store'
@@ -140,14 +141,11 @@ export default function Guardrails() {
       </Group>
 
       {filteredGuardrails.length === 0 ? (
-        <Card padding="xl" withBorder>
-          <Stack gap={4} align="center" ta="center">
-            <Text fw={600}>No Guardrails match your filters</Text>
-            <Text size="sm" c="dimmed">
-              {`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
-            </Text>
-          </Stack>
-        </Card>
+        <EmptyState
+          compact
+          title="No Guardrails match your filters"
+          description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
+        />
       ) : (
         <Box>
           {filteredGuardrails.map((guardrail, idx) => (

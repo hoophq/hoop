@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Card, Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { ListVideo, Rotate3d } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
 import PageLoader from '@/components/PageLoader'
 import Button from '@/components/Button'
@@ -131,14 +132,11 @@ export default function DataMasking() {
       </Group>
 
       {filteredRules.length === 0 ? (
-        <Card padding="xl" withBorder>
-          <Stack gap={4} align="center" ta="center">
-            <Text fw={600}>No Live Data Masking rules match your filters</Text>
-            <Text size="sm" c="dimmed">
-              {`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
-            </Text>
-          </Stack>
-        </Card>
+        <EmptyState
+          compact
+          title="No Live Data Masking rules match your filters"
+          description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
+        />
       ) : (
         <Box>
           {filteredRules.map((rule, idx) => (

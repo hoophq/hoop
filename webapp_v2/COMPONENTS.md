@@ -61,19 +61,28 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 ```
 
 ### `EmptyState` (`src/layout/EmptyState/`)
-Empty list / zero-data state with icon, title, description, and optional CTA.
+Empty list / zero-data state: illustration, title, description, and optional CTA.
 ```jsx
 import EmptyState from '@/layout/EmptyState'
-import { Zap } from 'lucide-react'
 
 <EmptyState
-  icon={Zap}
   title="No agents yet"
   description="Set up your first agent to connect resources."
   action={{ label: 'Setup new Agent', onClick: () => navigate('/agents/new') }}
 />
+
+// Empty result inside a page that already renders its own header and filters
+<EmptyState
+  compact
+  title="No Guardrails match your filters"
+  description="Try clearing the filter above."
+/>
 ```
 `action` is optional — omit when the user has no permission to create.
+`compact` tightens the vertical space (drops the 50vh floor, smaller padding
+and gap; the illustration is unchanged) for an empty result rendered below a
+page header, callout or filter bar rather than as the whole screen.
+Optional `docsUrl` + `docsLabel` append a documentation line.
 
 ### `CodeSnippet`
 Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
