@@ -165,6 +165,12 @@ _ENGINE_PARAMS = {
     # Bound the engine's own det/rec/cls session thread pools (see above).
     "EngineConfig.onnxruntime.intra_op_num_threads": OCR_INTRA_OP_THREADS,
     "EngineConfig.onnxruntime.inter_op_num_threads": OCR_INTER_OP_THREADS,
+    # ...and give those sessions the same arena strategy as the ones built
+    # below, so the knob covers every session rather than only the bucket
+    # ones. The engine's det/rec sessions hold VRAM even in fp16 mode (where
+    # BucketDet/BucketRec serve the actual inferences), so they count toward
+    # the per-worker footprint the strategy is meant to control.
+    "EngineConfig.onnxruntime.cuda_ep_cfg.arena_extend_strategy": OCR_CUDA_ARENA_STRATEGY,
 }
 if REC_LANG == "en":
     _ENGINE_PARAMS["Rec.lang_type"] = LangRec.EN
