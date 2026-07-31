@@ -10,6 +10,18 @@ image: {}
   # pullPolicy: Always
   # tag: latest
   #
+  # Opt into the minimal, bring-your-own-tools agent image
+  # (hoophq/hoopdev-minimal) instead of the default fat image
+  # (hoophq/hoopdev). The minimal image ships only the agent binary plus a
+  # small runtime; it bundles NO database or cloud CLIs, so it supports the
+  # native DB proxy (postgres/mysql/mssql/mongo/oracle), HTTP and TCP
+  # connection types out of the box, while exec-based sessions and connections
+  # that shell out to a client (clickhouse-client, cloud CLIs, ...) require a
+  # custom image built FROM hoophq/hoopdev-minimal. See
+  # docs/custom-agent-image.md. An explicit `repository` above overrides this
+  # toggle.
+  # minimal: true
+  #
   # Realtime RDP PII guard: to enable agent-side PII analysis, use the
   # bundled-OCR agent image (the OCR engine runs on loopback inside the
   # container — screen pixels never leave the agent). Provide
