@@ -47,6 +47,10 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
+        {{- with .Values.existingSecret }}
+        - secretRef:
+            name: {{ . }}
+        {{- end }}
         resources:
           {{- toYaml .Values.resources.gw | nindent 10 }}
         {{- if .Values.persistence.enabled }}
@@ -81,6 +85,10 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
+        {{- with $.Values.existingSecret }}
+        - secretRef:
+            name: {{ . }}
+        {{- end }}
       {{ end -}}
       {{- if .Values.persistence.enabled }}
       volumes:
