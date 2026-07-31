@@ -7,8 +7,6 @@ import { OTHER_SUBTYPE } from './constants'
 // for every day of the month, including the 11th/12th/13th "th" exceptions.
 dayjs.extend(advancedFormat)
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000
-
 // A review carries exactly one decision, and its status keeps moving after that
 // decision is made:
 //
@@ -52,8 +50,18 @@ export function startOfLocalDay(date = new Date()) {
   return start
 }
 
+/**
+ * Calendar-day arithmetic, deliberately not 24-hour arithmetic.
+ *
+ * A local day is 23 or 25 hours long on a DST transition, so adding a fixed
+ * 86,400,000 ms to a local midnight lands at 01:00 or 23:00 rather than
+ * midnight twice a year — which would silently skew every "today" window and
+ * range boundary on this page. setDate keeps the local wall-clock time.
+ */
 export function addDays(date, days) {
-  return new Date(date.getTime() + days * MS_PER_DAY)
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
 }
 
 /** Local calendar date as `YYYY-MM-DD` — the only format /reports/sessions accepts. */
@@ -76,10 +84,15 @@ export function formatTooltipDate(date) {
   })
 }
 
-/** First day covered by a range. 24h covers today only; the rest reach back. */
+/**
+ * First day covered by a range, inclusive.
+ *
+ * Every window ends at tomorrow's midnight (exclusive), so an N-day range has to
+ * start N-1 days back to cover exactly N calendar days: 24h is today alone, 7d
+ * is today plus the six days before it.
+ */
 function rangeStart(days) {
-  const today = startOfLocalDay()
-  return days === 1 ? today : addDays(today, -days)
+  return addDays(startOfLocalDay(), -(days - 1))
 }
 
 /** "Jul 23rd - Jul 30th", or a single date when the range is one day. */
@@ -140,12 +153,14 @@ export function todaySessionParams() {
 
 /** Reviews created today, in any status. */
 export function countReviewsToday(reviews = []) {
-  const start = startOfLocalDay().getTime()
-  const end = start + MS_PER_DAY
+  const start = startOfLocalDay()
+  const end = addDays(start, 1)
 
   return reviews.filter((review) => {
     const createdAt = new Date(review.created_at).getTime()
-    return Number.isFinite(createdAt) && createdAt >= start && createdAt < end
+    return (
+      Number.isFinite(createdAt) && createdAt >= start.getTime() && createdAt < end.getTime()
+    )
   }).length
 }
 
@@ -163,7 +178,12 @@ export function countReviewsToday(reviews = []) {
  * dates whose only activity was pending.
  */
 export function buildReviewBuckets(reviews = [], days) {
-  const cutoff = Date.now() - days * MS_PER_DAY
+  // The same calendar window the Redacted Data chart queries and the subtitle
+  // announces. The legacy code used a rolling `now - N days` cutoff, which cuts
+  // the oldest day off partway through and lets "24h" reach into yesterday, so
+  // the bars never quite matched the label above them.
+  const start = rangeStart(days).getTime()
+  const end = addDays(startOfLocalDay(), 1).getTime()
   const buckets = new Map()
 
   for (const review of reviews) {
@@ -172,7 +192,7 @@ export function buildReviewBuckets(reviews = [], days) {
 
     const createdAt = new Date(review.created_at)
     const time = createdAt.getTime()
-    if (!Number.isFinite(time) || time <= cutoff) continue
+    if (!Number.isFinite(time) || time < start || time >= end) continue
 
     const key = localDateKey(createdAt)
     let bucket = buckets.get(key)
