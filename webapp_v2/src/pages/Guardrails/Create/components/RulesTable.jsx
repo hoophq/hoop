@@ -23,9 +23,18 @@ const MESSAGE_TOOLTIP =
   'When this rule is violated, this message will be displayed to the user along the Rule Name and Configuration'
 
 // Row controls run one step below the app-wide md default (32px/14px instead
-// of 40px/16px). The column widths below are the legacy ones, sized for 14px
-// option labels — at 16px "Deny Word" and "Create custom rule" get clipped.
+// of 40px/16px), which is the density the legacy table was designed at.
 const ROW_CONTROL_SIZE = 'sm'
+
+// Select columns are sized to their longest option plus the input's padding
+// and chevron. They cannot size themselves: Mantine's Select is an <input>,
+// whose intrinsic width is fixed, so a longer value scrolls out of view
+// instead of widening the cell — where the legacy Radix trigger was a
+// <button> that grew to fit its text, which is why porting the 160/220 widths
+// straight over clipped "Pattern Match" and "Require WHERE clause (DELETE)".
+// Revisit when adding an option longer than those.
+const TYPE_COLUMN_WIDTH = 180
+const RULE_COLUMN_WIDTH = 300
 
 // The regex is kept in local state and committed on blur so the form is not
 // churned on every keystroke. The cell is keyed by rule in the parent, so
@@ -164,8 +173,8 @@ export default function RulesTable({
         <Table.Thead>
           <Table.Tr>
             {selectMode && <Table.Th w={40} />}
-            <Table.Th w={160}>Type</Table.Th>
-            <Table.Th w={220}>Rule</Table.Th>
+            <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
+            <Table.Th w={RULE_COLUMN_WIDTH}>Rule</Table.Th>
             <Table.Th>Details</Table.Th>
             <Table.Th>
               <Group gap="xs" wrap="nowrap">

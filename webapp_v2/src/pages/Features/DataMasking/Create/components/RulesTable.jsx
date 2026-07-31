@@ -16,9 +16,16 @@ import {
 } from '../../helpers'
 
 // Row controls run one step below the app-wide md default (32px/14px instead
-// of 40px/16px). The column widths below are sized for 14px option labels — at
-// 16px the Type and Rule selects clip their longer options.
+// of 40px/16px), which is the density the legacy table was designed at.
 const ROW_CONTROL_SIZE = 'sm'
+
+// Select columns are sized to their longest option plus the input's padding
+// and chevron. They cannot size themselves: Mantine's Select is an <input>,
+// whose intrinsic width is fixed, so a longer value scrolls out of view
+// instead of widening the cell. Type holds "Presets"/"Fields"/"Custom"; Rule
+// holds the preset names, the longest being "Cryptocurrency Identifiers".
+const TYPE_COLUMN_WIDTH = 180
+const RULE_COLUMN_WIDTH = 280
 
 function RuleCell({ row, freeLicense, onChange }) {
   if (!row.type) return null
@@ -142,8 +149,8 @@ export default function RulesTable({
         <Table.Thead>
           <Table.Tr>
             {selectMode && <Table.Th w={40} />}
-            <Table.Th w={180}>Type</Table.Th>
-            <Table.Th w={220}>Rule</Table.Th>
+            <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
+            <Table.Th w={RULE_COLUMN_WIDTH}>Rule</Table.Th>
             <Table.Th>Details</Table.Th>
           </Table.Tr>
         </Table.Thead>
