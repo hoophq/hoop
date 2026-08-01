@@ -46,6 +46,13 @@ import (
 // runbook hook has its own (longer) timeout managed by transportsystem.
 const federationResolveTimeout = 30 * time.Second
 
+// mcpOAuthResolveTimeout caps the SessionOpen-time grant refresh. It exceeds
+// the token-endpoint timeout inside the service because the call may also wait
+// on the grant's row lock while another replica refreshes the same credential
+// — that wait ends with a token already renewed, so it is worth sitting
+// through.
+const mcpOAuthResolveTimeout = 45 * time.Second
+
 func requestProxyConnection(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
 	if !stream.IsAgentOnline() {
@@ -567,6 +574,15 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			return err
 		}
 
+		// MCP Gateway OAuth. An mcpproxy connection authorized against an
+		// OAuth-protected remote carries a durable grant; renew it and
+		// overwrite the frozen HEADER_AUTHORIZATION with the live credential.
+		// Runs after federation so the two never fight over the same env var:
+		// no federation provider emits HEADER_AUTHORIZATION today, and if one
+		// ever does, the credential minted for this specific MCP resource is
+		// the more specific answer.
+		resolveMCPOAuthForSession(&pctx)
+
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
 			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
@@ -745,6 +761,55 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 		len(res.EnvVars), len(supersededRemoved))
 	_ = stream // reserved for future stream-level acks; suppress unused param warning.
 	return nil
+}
+
+// resolveMCPOAuthForSession injects a live Authorization header for an
+// mcpproxy connection whose credential was brokered through the MCP OAuth
+// login.
+//
+// The connection's stored HEADER_AUTHORIZATION is the token that login
+// produced, frozen at create time. That value stops working the moment the
+// provider's TTL elapses, which is why the gateway also keeps the grant: here
+// the access token is renewed from its refresh token and the env var the agent
+// reads is overwritten for this session. The agent is untouched by design — it
+// still receives an ordinary static header and still refuses MCP_AUTH=oauth,
+// because the credential is resolved before the session starts, exactly as
+// federation resolves one.
+//
+// Renewal is therefore per session open, not mid-session: a session outliving
+// the token still breaks at the TTL. Every new session gets a live credential
+// instead of a permanently dead one, which is the whole difference.
+//
+// Failure is logged and the session proceeds on the frozen value. Refusing to
+// open would take down a connection that, before grants existed, would at
+// least have had a chance of working.
+func resolveMCPOAuthForSession(pctx *plugintypes.Context) {
+	if pctx.ConnectionSubType != services.MCPOAuthGrantSubType {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mcpOAuthResolveTimeout)
+	defer cancel()
+
+	header, err := services.ResolveMCPOAuthHeader(ctx, pctx.OrgID, pctx.ConnectionID)
+	if err != nil {
+		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+			Warnf("mcp oauth: failed resolving grant, session runs on the stored token: %v", err)
+		return
+	}
+	if header == "" {
+		// No grant for this connection: a static token or no credential at
+		// all. Leave the connection's own env vars exactly as configured.
+		return
+	}
+	if pctx.ConnectionSecret == nil {
+		pctx.ConnectionSecret = map[string]any{}
+	}
+	// Same wire contract as federation: keys are "envvar:NAME", values are
+	// base64 plaintext that the agent's env store decodes once.
+	pctx.ConnectionSecret["envvar:HEADER_AUTHORIZATION"] =
+		base64.StdEncoding.EncodeToString([]byte(header))
+	log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+		Infof("mcp oauth: resolved grant credential for session")
 }
 
 func clientArgsDecode(spec map[string][]byte) []string {

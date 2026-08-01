@@ -12092,6 +12092,11 @@ const docTemplate = `{
                         "tier"
                     ]
                 },
+                "mcp_oauth_flow_id": {
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype.\n\nThe login runs before the connection exists, so the token it obtained is\nkeyed by the flow rather than by connection. Passing the flow id here at\nsave time joins the two: the gateway stores the refresh token against\nthis connection and renews the access token at every session open,\ninstead of relying on the frozen HEADER_AUTHORIZATION value alone, which\nstops working when the provider's token expires.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                },
                 "min_review_approvals": {
                     "description": "Minimum number of review approvals required to execute this connection",
                     "type": "integer",

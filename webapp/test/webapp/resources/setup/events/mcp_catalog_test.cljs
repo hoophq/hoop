@@ -166,19 +166,55 @@
   (pick! "excalidraw")
   (is (= "none" (cred "mcp_auth_mode"))))
 
-;; The agent accepts only none|static; oauth is brokered by hoop and arrives
-;; frozen into a header. A mode that emitted MCP_AUTH=oauth would be rejected
-;; at connection time, long after the admin saved it.
+;; The agent accepts none|static|passthrough. OAuth is brokered by hoop and
+;; arrives frozen into a header, so it must collapse to static — a mode that
+;; emitted MCP_AUTH=oauth would be rejected at connection time, long after the
+;; admin saved it. Passthrough must NOT collapse: it is the one mode where no
+;; credential exists on the connection, and the agent has to know to take one
+;; off each inbound request instead of sending nothing.
 (deftest the-mode-maps-onto-an-auth-value-the-agent-accepts
   (is (= "static" (mcp-catalog/mcp-auth-env "oauth")))
   (is (= "static" (mcp-catalog/mcp-auth-env "static")))
   (is (= "none" (mcp-catalog/mcp-auth-env "none")))
+  (is (= "passthrough" (mcp-catalog/mcp-auth-env "passthrough")))
   (reset-db!)
   (pick! "linear")
   (is (= "static" (cred "mcp_auth")))
   (reset-db!)
   (pick! "excalidraw")
   (is (= "none" (cred "mcp_auth"))))
+
+;; Passthrough is a hoop capability, not a provider one: it sends a bearer
+;; credential in the same header a static token uses, only sourced per caller.
+;; So every server that documents a static credential can serve it, and the
+;; catalog never lists it. A server taking no credential at all cannot.
+(deftest passthrough-is-offered-wherever-a-static-token-works
+  (reset-db!)
+  (let [modes (fn [server]
+                (set (map :value (mcp-catalog/auth-modes (entry server)))))]
+    ;; github and context7 both take a static token.
+    (is (contains? (modes "github") "passthrough"))
+    (is (contains? (modes "context7") "passthrough"))
+    ;; excalidraw takes none, so there is nothing to pass through.
+    (is (not (contains? (modes "excalidraw") "passthrough")))
+    ;; A server the catalog does not know gets every mode.
+    (is (contains? (modes "no-such-server") "passthrough"))))
+
+;; Switching INTO passthrough must drop whatever credential the previous mode
+;; collected. A leftover HEADER_AUTHORIZATION would be emitted as a connection
+;; env var and authenticate every user as that shared identity, which is the
+;; precise thing the admin just chose to stop doing.
+(deftest switching-to-passthrough-forgets-the-shared-credential
+  (reset-db!)
+  (pick! "github")
+  (dispatch! [:resource-setup->update-role-credentials 0 "HEADER_Authorization" "Bearer shared-pat"])
+  (is (= "Bearer shared-pat" (cred "HEADER_Authorization")))
+  (mode! "passthrough")
+  (is (= "passthrough" (cred "mcp_auth")))
+  ;; Assert on the key, not cred: cred renders an absent key as "", which
+  ;; would pass even if the credential were still sitting there empty.
+  (is (not (contains? (creds) "HEADER_Authorization")))
+  (is (not (contains? (creds) "HEADER_AUTHORIZATION"))))
 
 ;; ---------------------------------------------------------------------------
 ;; What each server actually accepts
@@ -207,22 +243,26 @@
 (deftest a-server-offers-only-the-modes-it-supports
   (reset-db!)
   (let [modes (fn [server] (mapv :value (mcp-catalog/auth-modes (entry server))))]
-    (is (= ["oauth" "static"] (modes "github")))
-    (is (= ["oauth" "static"] (modes "linear")))
-    (is (= ["static"] (modes "context7")))
+    ;; Passthrough rides alongside static everywhere static is accepted: it
+    ;; sends the same kind of bearer credential, only sourced per caller, so
+    ;; the provider cannot tell the difference and the catalog never lists it.
+    (is (= ["oauth" "static" "passthrough"] (modes "github")))
+    (is (= ["oauth" "static" "passthrough"] (modes "linear")))
+    (is (= ["static" "passthrough"] (modes "context7")))
+    ;; notion takes only an OAuth login, so there is no bearer to pass through.
     (is (= ["oauth"] (modes "notion")))
     (is (= ["none"] (modes "excalidraw")))))
 
 ;; hoop cannot know what a self-hosted server accepts; the admin can.
 (deftest an-unknown-server-offers-every-mode
-  (is (= ["oauth" "static" "none"]
+  (is (= ["oauth" "static" "passthrough" "none"]
          (mapv :value (mcp-catalog/auth-modes nil)))))
 
 ;; A gateway older than the auth_modes field sends only auth. Falling back to
 ;; that single mode beats rendering an empty selector.
 (deftest an-entry-without-auth-modes-falls-back-to-its-documented-mode
   (is (= ["oauth"] (mapv :value (mcp-catalog/auth-modes {:name "x" :auth "oauth"}))))
-  (is (= ["static"] (mapv :value (mcp-catalog/auth-modes {:name "x" :auth "static"}))))
+  (is (= ["static" "passthrough"] (mapv :value (mcp-catalog/auth-modes {:name "x" :auth "static"}))))
   ;; Same payload through the real parse path, since that is how it arrives.
   (rf/dispatch-sync [:mcp-catalog/fetch-success
                      (js/JSON.parse "[{\"name\":\"old\",\"auth\":\"oauth\"}]")])

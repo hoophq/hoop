@@ -122,6 +122,8 @@ func Post(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
 	}
 
+	adoptMCPOAuthGrant(ctx.OrgID, resp.ID, req.SubType, req.MCPOAuthFlowID)
+
 	c.JSON(http.StatusCreated, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }
 
@@ -241,6 +243,8 @@ func Put(c *gin.Context) {
 	if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
+
+	adoptMCPOAuthGrant(ctx.OrgID, conn.ID, req.SubType, req.MCPOAuthFlowID)
 
 	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
 }

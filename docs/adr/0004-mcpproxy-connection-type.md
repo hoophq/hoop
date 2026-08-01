@@ -121,14 +121,13 @@ collects `HEADER_*` prefixes and b64 `envvar:` entries):
 | `MCP_TRANSPORT` | `stdio` \| `client-stdio` \| `streamable-http` \| `sse` |
 | `COMMAND`, `envvar:*` | stdio and client-stdio: child command + environment (secrets via secrets manager) |
 | `REMOTE_URL`, `HEADER_*` | remote endpoints + static credentials |
-| `MCP_AUTH` | `none` \| `static` \| `passthrough` \| `oauth` |
+| `MCP_AUTH` | `none` \| `static` \| `passthrough`. `oauth` is not an agent-side value: hoop brokers that login and resolves it into `HEADER_AUTHORIZATION` before the session opens, so it reaches the agent as `static`. `passthrough` stores no credential — each caller's MCP client sends `X-Hoop-Upstream-Authorization` and the agent forwards it upstream, so the server sees the user rather than a shared identity. |
 | `MCP_ALLOWED_TOOLS`, `MCP_DENIED_TOOLS`, `MCP_APPROVAL_TOOLS` | tool globs (deny > allow; approval matches hold for review) |
 | `MCP_MAX_CALLS`, `MCP_MAX_RESULT_KB`, `MCP_ON_RUG_PULL`, `MCP_BLOCK_SAMPLING`, `MCP_BLOCK_ELICITATION` | budgets and protocol gates |
 
 A small gateway endpoint exposes mcpproxy's embedded catalog so the
 connection form can open with a server picker (Linear, Stripe, Notion, …)
-that pre-fills URL / transport / auth mode; "custom" falls back to the raw
-form.
+that pre-fills URL / transport / auth mode; "custom" falls back to the raw form.
 
 ### Client-hosted stdio (`MCP_TRANSPORT=client-stdio`)
 
@@ -176,11 +175,40 @@ downstream of the backend — policy, guardrails, masking, audit — is identica
 
 ### OAuth
 
-`connection_mcp_oauth.go` is extended rather than replaced: persist the
-refresh token keyed by connection (today only the access token is frozen into
-a header), and let the agent pull/refresh tokens through mcpproxy's
-`outbound.TokenStore` seam instead of receiving a static header. Per-user
-grants later reuse the same flow keyed `(connection, user)`.
+**Done, gateway-side.** `connection_mcp_oauth.go` was extended rather than
+replaced. Two things changed.
+
+The OAuth protocol itself now comes from mcpproxy's
+`auth/outbound/oauth` (`gateway/services/mcp_oauth_client.go`), deleting ~390
+lines of untested in-tree discovery/DCR/PKCE/exchange and gaining the refresh
+grant, transport-security checks on discovered endpoints, S256 capability
+checks, multi-AS iteration and structured RFC 6749 §5.2 token errors. Two
+behaviors stay Hoop's: the origin-as-issuer fallback when a resource publishes
+no protected-resource metadata (the library errors instead), and
+`client_secret_post` at the token endpoint for hand-configured clients (the
+library always picks Basic when a secret is present).
+
+The credential is now durable. A completed login is adopted into
+`private.mcp_oauth_grants` when the connection is saved
+(`services.AdoptMCPOAuthGrant`, driven by `mcp_oauth_flow_id` on the connection
+payload — the login predates the connection row, so the save is the first
+moment both halves are known). At session open,
+`services.ResolveMCPOAuthHeader` renews the access token from the stored
+refresh token and the gateway overwrites `envvar:HEADER_AUTHORIZATION`, exactly
+as identity federation injects its env vars. The read-refresh-write runs inside
+one transaction holding `SELECT ... FOR UPDATE` on the grant row, because a
+provider that rotates refresh tokens turns two concurrent replica refreshes
+into a permanently dead grant.
+
+The agent is untouched: it still receives an ordinary static header and still
+refuses `MCP_AUTH=oauth`, because the credential is resolved before the session
+starts. The consequence is that renewal is per session open, not mid-session —
+a session outliving the token still breaks at the TTL. Wiring the agent's own
+`outbound.TokenSource` (below) removes that last gap; per-user grants are then
+a second row keyed `(connection, user)`, not a schema change.
+
+Scoped to the `mcpproxy` subtype. The legacy `mcp` subtype keeps the frozen
+header it has always had.
 
 ## Consequences
 
@@ -231,11 +259,14 @@ grants later reuse the same flow keyed `(connection, user)`.
    catalog. The webUI form pre-fill is still to build; see below.
 5. Reviews: `mcp-tool-call` review type, request/resolve packets, UI card.
    Until it ships, approval matches degrade to deny (fail closed).
-6. OAuth refresh persistence + agent token pull; per-user grants after.
-   Until then the agent refuses `MCP_AUTH=oauth|passthrough` rather than
-   silently running an unauthenticated backend: hoop brokers OAuth itself
-   (`/mcp-oauth/*`) and freezes the result into `HEADER_AUTHORIZATION`,
-   which the static path carries.
+6. **Done (gateway half).** OAuth refresh persistence: the mcpproxy
+   `auth/outbound/oauth` swap, `private.mcp_oauth_grants`, adoption on
+   connection save, and row-locked renewal at session open (see OAuth above).
+   The agent still holds no `outbound.TokenSource` and still refuses
+   `MCP_AUTH=oauth|passthrough`, because the gateway resolves the credential
+   into `HEADER_AUTHORIZATION` before the session opens and the static path
+   carries it. What remains is the agent-side token pull, which is what makes
+   renewal mid-session rather than per session; per-user grants after that.
 7. **Done.** Client-hosted stdio (`MCP_TRANSPORT=client-stdio`): the
    `MCPStdioRequest`/`MCPStdioReply`/`MCPStdioClose` packets,
    `agent/controller/mcpstdio.go`, `client/proxy/mcpstdio.go`, the

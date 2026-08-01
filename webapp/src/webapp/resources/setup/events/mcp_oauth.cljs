@@ -186,12 +186,12 @@
      {:fx [[:dispatch [:mcp-oauth/authorize-failure role-index {:message "Missing flow id"}]]]}
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri (str "/mcp-oauth/token/" flow-id)
-                               :on-success #(rf/dispatch [:mcp-oauth/fetch-token-success role-index %])
+                               :on-success #(rf/dispatch [:mcp-oauth/fetch-token-success role-index % flow-id])
                                :on-failure #(rf/dispatch [:mcp-oauth/authorize-failure role-index %])}]]]})))
 
 (rf/reg-event-fx
  :mcp-oauth/fetch-token-success
- (fn [{:keys [db]} [_ role-index response]]
+ (fn [{:keys [db]} [_ role-index response flow-id]]
    (let [auth-header (:authorization_header response)]
      (if (str/blank? auth-header)
        {:fx [[:dispatch [:mcp-oauth/authorize-failure role-index
@@ -201,7 +201,12 @@
                              {:status :success
                               :error nil
                               :server-url (:server_url response)
-                              :expires-in (:expires_in response)}))
+                              :expires-in (:expires_in response)
+                              ;; Kept so the connection save can adopt this
+                              ;; login into a durable grant. The header below
+                              ;; is the token as it stands now; the grant is
+                              ;; what renews it once the provider expires it.
+                              :flow-id flow-id}))
         :fx [[:dispatch [:resource-setup->update-role-credentials role-index "HEADER_AUTHORIZATION" auth-header]]
              [:dispatch [:show-snackbar {:level :success
                                          :text "MCP connection authorized"}]]]}))))

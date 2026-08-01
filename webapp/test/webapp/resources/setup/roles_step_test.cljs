@@ -135,12 +135,16 @@
 ;; offering a mode the provider cannot serve is worse than not offering it:
 ;; an OAuth login against context7 discovers no authorization server, and the
 ;; dead end only shows up after the admin clicks.
-(deftest a-single-mode-server-offers-no-choice
+;;
+;; context7 does get a choice, but a narrow one: static or passthrough, which
+;; differ only in where the bearer comes from. Its provider cannot serve an
+;; OAuth login, so that stays absent.
+(deftest a-single-mode-server-offers-no-oauth-option
   (reset-db!)
   (pick! "context7")
   (let [texts (rendered)]
-    (is (not (shows? texts "Authentication method")))
     (is (not (some #{"OAuth login (Hoop brokers the flow)"} texts)))
+    (is (not (shows? texts "Authorize with MCP")))
     ;; Still says how it authenticates, and still asks for the credential.
     (is (some #{"API key or personal access token"} texts))
     (is (shows? texts "CONTEXT7_API_KEY value"))))
@@ -230,3 +234,57 @@
     (is (not (shows? texts "MCP Authorization")))
     (is (not (shows? texts "Authentication method")))
     (is (shows? texts "Command"))))
+
+;; The OAuth widget must let an admin supply a pre-registered client.
+;;
+;; The bug: the widget was a button, a sentence and an error slot. When the
+;; provider's authorization server publishes no registration_endpoint — GitHub
+;; is exactly that case — the gateway answers 422 "does not support dynamic
+;; client registration; ... enter its Client ID", and the form rendered that
+;; instruction above no field to type into. Every retry re-sent the identical
+;; credential-less request and produced the identical error.
+;;
+;; The events already carried these values; only the inputs were missing, so
+;; the whole failure was invisible to every other test in this file.
+(deftest the-oauth-widget-accepts-a-pre-registered-client
+  (reset-db!)
+  (pick! "github")
+  (mode! "oauth")
+  (let [texts (rendered)]
+    (is (shows? texts "Client ID"))
+    (is (shows? texts "Client Secret"))
+    ;; The redirect URI is not guessable, and the provider rejects the login
+    ;; unless the OAuth app registers this exact value.
+    (is (shows? texts "/api/mcp-oauth/callback"))))
+
+;; Typing a client id must reach the authorize request. The inputs bind to
+;; mcp-state rather than :credentials on purpose — every credential key becomes
+;; a connection env var, and an OAuth client id is not one.
+(deftest client-credentials-stay-out-of-the-connection-env-vars
+  (reset-db!)
+  (pick! "github")
+  (mode! "oauth")
+  (dispatch! [:mcp-oauth/set-field 0 :client-id "Iv1.abc123"])
+  (dispatch! [:mcp-oauth/set-field 0 :client-secret "shhh"])
+  (let [role (get-in @rf-db/app-db [:resource-setup :roles 0])]
+    (is (= "Iv1.abc123" (get-in role [:mcp-oauth :client-id])))
+    (is (= "shhh" (get-in role [:mcp-oauth :client-secret])))
+    (is (not (contains? (:credentials role) "client_id")))
+    (is (not (contains? (:credentials role) "client_secret"))))
+  ;; And the value the admin typed is what the form shows back.
+  (is (shows? (rendered) "Iv1.abc123")))
+
+;; Passthrough asks for no credential — that is the point. What it owes the
+;; admin is the header their users must set, because nothing else in the
+;; product tells them and a missing header fails every tool call.
+(deftest the-passthrough-mode-asks-for-nothing-and-names-the-header
+  (reset-db!)
+  (pick! "github")
+  (mode! "passthrough")
+  (let [texts (rendered)]
+    (is (shows? texts "X-Hoop-Upstream-Authorization"))
+    (is (shows? texts "No credential is stored on this connection"))
+    ;; No token box: a value typed here would become a connection env var and
+    ;; re-introduce the shared credential the admin just opted out of.
+    (is (not (shows? texts "Authorization value")))
+    (is (not (shows? texts "Authorize with MCP")))))

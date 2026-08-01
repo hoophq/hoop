@@ -98,6 +98,7 @@
   "How each mode is described, in the order the form offers them."
   [{:value "oauth" :text "OAuth login (Hoop brokers the flow)"}
    {:value "static" :text "API key or personal access token"}
+   {:value "passthrough" :text "Each user sends their own credential"}
    {:value "none" :text "No authentication"}])
 
 (def ^:private all-auth-modes
@@ -106,10 +107,17 @@
 (defn auth-modes
   "Modes to offer for a catalog entry, as {:value :text} options.
 
-  A server the catalog does not know (custom/self-hosted) gets all three: hoop
-  cannot know what it accepts, and the admin does. A known server gets exactly
+  A server the catalog does not know (custom/self-hosted) gets every mode:
+  hoop cannot know what it accepts, and the admin does. A known server gets
   what the gateway said it supports — anything else is a flow the provider
   cannot complete.
+
+  Passthrough is the exception, and it is a hoop capability rather than a
+  provider one: it sends a bearer credential in exactly the same header a
+  static token uses, only sourced from each caller instead of the connection.
+  So any server that documents a static credential can serve it, and the
+  catalog never needs to list it. A server that takes no credential at all
+  (auth: none) still cannot.
 
   An older gateway that predates :auth-modes sends nothing; fall back to the
   entry's single documented mode rather than rendering an empty selector."
@@ -119,7 +127,10 @@
                     (seq (:auth-modes entry)) (:auth-modes entry)
                     (not (str/blank? (:auth entry))) [(:auth entry)]
                     :else all-auth-modes)
-        supported (set supported)]
+        supported (set supported)
+        supported (if (contains? supported "static")
+                    (conj supported "passthrough")
+                    supported)]
     (filterv (comp supported :value) auth-mode-labels)))
 
 (defn static-header-name
@@ -177,11 +188,20 @@
 (defn mcp-auth-env
   "MCP_AUTH the agent receives for a chosen mode.
 
-  The agent accepts only none|static (agent/controller/mcpproxy.go): an OAuth
-  login is brokered by hoop and frozen into a header, so by the time the agent
-  sees the connection it is indistinguishable from a static credential."
+  The agent accepts none|static|passthrough (agent/controller/mcpproxy.go).
+  OAuth is not among them and does not need to be: hoop brokers that login
+  itself and resolves the result into HEADER_AUTHORIZATION before the session
+  opens, so the agent sees a credential indistinguishable from a static one.
+
+  Passthrough is different in kind and must travel verbatim: there is no
+  credential on the connection for the agent to send, and it has to know to
+  take one off each inbound request instead. Collapsing it to \"static\" would
+  produce a backend that authenticates as nobody."
   [mode]
-  (if (= mode "none") "none" "static"))
+  (case mode
+    "none" "none"
+    "passthrough" "passthrough"
+    "static"))
 
 (defn cred-value
   "Plain string held by a role credential. A credential is either the raw value

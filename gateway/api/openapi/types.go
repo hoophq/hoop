@@ -451,6 +451,17 @@ type Connection struct {
 	// to external providers (AWS Secrets Manager, Vault, IAM RDS) do not
 	// affect this field.
 	SecretsUpdatedAt *time.Time `json:"secrets_updated_at,omitempty" readonly:"true" example:"2025-01-15T10:30:00Z"`
+	// MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant
+	// for this connection. Write-only, and only meaningful for the "mcpproxy"
+	// subtype.
+	//
+	// The login runs before the connection exists, so the token it obtained is
+	// keyed by the flow rather than by connection. Passing the flow id here at
+	// save time joins the two: the gateway stores the refresh token against
+	// this connection and renews the access token at every session open,
+	// instead of relying on the frozen HEADER_AUTHORIZATION value alone, which
+	// stops working when the provider's token expires.
+	MCPOAuthFlowID string `json:"mcp_oauth_flow_id,omitempty" writeonly:"true" example:"7c8a1234-5678-9abc-def0-123456789abc"`
 }
 
 type ConnectionPatch struct {

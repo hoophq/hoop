@@ -240,20 +240,28 @@
                   (mapv #(get % "value") command-args)
                   :else (or command-role []))]
 
-    {:name (:name role)
-     :type type
-     :subtype subtype
-     :agent_id agent-id
-     :secret secret
-     :command command
-     :attributes (vec (or (:attributes role) []))
-     :access_mode_runbooks "enabled"
-     :access_mode_exec "enabled"
-     :access_mode_connect "enabled"
-     :access_schema "enabled"
-     :redact_enabled false
-     :redact_types []
-     :reviewers []}))
+    (cond-> {:name (:name role)
+             :type type
+             :subtype subtype
+             :agent_id agent-id
+             :secret secret
+             :command command
+             :attributes (vec (or (:attributes role) []))
+             :access_mode_runbooks "enabled"
+             :access_mode_exec "enabled"
+             :access_mode_connect "enabled"
+             :access_schema "enabled"
+             :redact_enabled false
+             :redact_types []
+             :reviewers []}
+      ;; An MCP Gateway role that completed an OAuth login carries the flow id
+      ;; so the gateway can adopt that login into a durable grant for the
+      ;; connection it is about to create. Without it the connection keeps
+      ;; only the frozen HEADER_AUTHORIZATION, which stops working when the
+      ;; provider expires the token.
+      (and (= raw-subtype "mcpproxy")
+           (not (str/blank? (get-in role [:mcp-oauth :flow-id]))))
+      (assoc :mcp_oauth_flow_id (get-in role [:mcp-oauth :flow-id])))))
 
 (defn with-profile-attribute
   "While a protection profile is active, new roles carry its attribute so the

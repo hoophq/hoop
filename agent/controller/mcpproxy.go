@@ -27,6 +27,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/mcpproxy/audit"
+	"github.com/hoophq/mcpproxy/auth/outbound"
 	mcpbackend "github.com/hoophq/mcpproxy/backend"
 	"github.com/hoophq/mcpproxy/checks"
 	mcpconfig "github.com/hoophq/mcpproxy/config"
@@ -261,7 +262,11 @@ func (a *Agent) buildMCPGateway(
 	// client stream rather than a local child process. Everything after this
 	// point — pipeline, policy, masking, audit — is identical: the gateway
 	// only ever sees a backend.Backend.
-	factory := mcpbackend.NewFactory(name, backendCfg, nil)
+	//
+	// tokenSource is nil for every mode but passthrough: a static credential
+	// already rides in Headers, and an OAuth one was resolved into that same
+	// header by the gateway before the session opened.
+	factory := mcpbackend.NewFactory(name, backendCfg, a.mcpTokenSource(connenv))
 	if connenv.mcpTransport == mcpTransportClientStdio {
 		factory = a.clientStdioFactory(name, sessionID)
 	}
@@ -272,7 +277,23 @@ func (a *Agent) buildMCPGateway(
 		},
 		Pipeline: pipeline,
 		Sink:     sink,
-		Resolver: func(*http.Request) (inspect.Identity, error) {
+		Resolver: func(r *http.Request) (inspect.Identity, error) {
+			// Passthrough: the caller's own upstream credential travels on
+			// its own header and is moved onto the request context, which is
+			// where mcpproxy's passthrough token source reads it. The header
+			// is deleted so it never reaches the MCP server as a stray, and
+			// mcpproxy sets the real Authorization from the token source.
+			//
+			// The resolver is the only hook mcpproxy gives a host that sees
+			// the *http.Request, which is why this lives here rather than
+			// beside the backend it feeds.
+			if connenv.mcpAuth == mcpAuthPassthrough {
+				if v := r.Header.Get(mcpUpstreamAuthHeader); v != "" {
+					*r = *r.WithContext(outbound.WithClientToken(r.Context(),
+						outbound.TrimBearer(v)))
+				}
+				r.Header.Del(mcpUpstreamAuthHeader)
+			}
 			// The gateway authenticated the caller before the bytes ever
 			// reached this agent; re-authenticating here would be a second
 			// identity system disagreeing with the first.
@@ -289,6 +310,53 @@ func (a *Agent) buildMCPGateway(
 		// trip, so it must cover a human review rather than a network hop.
 		RequestTimeout: 30 * time.Minute,
 	})
+}
+
+// mcpAuthPassthrough is the MCP_AUTH value selecting per-caller upstream
+// identity: each user's MCP client sends its own credential and the agent
+// forwards that, instead of every user sharing one credential stored on the
+// connection.
+const mcpAuthPassthrough = "passthrough"
+
+// mcpUpstreamAuthHeader carries the caller's own upstream credential in
+// passthrough mode.
+//
+// It reuses the name libhoop's byte-relay httpproxy already defines
+// (X-Hoop-Upstream-Authorization) so one MCP client config works against both
+// MCP connection types. It is deliberately not "Authorization": that header
+// authenticates the caller to hoop, and a passthrough client presents two
+// credentials — one for hoop, one for the server behind it.
+const mcpUpstreamAuthHeader = "X-Hoop-Upstream-Authorization"
+
+// mcpTokenSource returns the outbound credential minter for a connection, or
+// nil when the backend needs none.
+//
+// Only passthrough needs one. Static credentials are already in the backend's
+// Headers map, and an OAuth grant was resolved into HEADER_AUTHORIZATION by
+// the gateway at session open, so both reach the server without a token
+// source. Passthrough cannot work that way: the credential differs per
+// request and only exists on the inbound call.
+//
+// mcpproxy's own NewPassthrough is not used, for one reason: its
+// missing-credential error names ITS header (X-Mcpproxy-Upstream-Authorization)
+// while hoop reads X-Hoop-Upstream-Authorization, so a user who forgot the
+// header would be told to set one that does nothing. The lookup is a context
+// read either way.
+func (a *Agent) mcpTokenSource(connenv *connEnv) func(context.Context) (string, error) {
+	if connenv.mcpAuth != mcpAuthPassthrough {
+		return nil
+	}
+	return func(ctx context.Context) (string, error) {
+		tok, ok := outbound.ClientTokenFrom(ctx)
+		if !ok {
+			// An error, not an empty token: reaching the server anonymously
+			// (or as whatever the connection happens to hold) is worse than
+			// a failure naming the header the caller must set.
+			return "", fmt.Errorf("this MCP connection forwards each user's own credential; set the %s header in your MCP client",
+				mcpUpstreamAuthHeader)
+		}
+		return tok, nil
+	}
 }
 
 // mcpProxyOpts assembles the flat opts map libhoop consumes, mirroring the
@@ -458,16 +526,35 @@ func validateMCPProxyEnv(env *connEnv) error {
 			env.mcpTransport, []string{"stdio", mcpTransportClientStdio, "streamable-http", "sse"})
 	}
 
-	// The agent supplies no outbound TokenSource: hoop brokers OAuth itself
-	// and freezes the result into HEADER_AUTHORIZATION, which the static path
-	// carries. Accepting "oauth" or "passthrough" here would silently produce
-	// an unauthenticated backend, so they are refused until the token-store
-	// seam is wired (ADR-0004 phase 6).
+	// MCP_AUTH selects where the upstream credential comes from:
+	//
+	//   none         no credential
+	//   static       one shared credential, already in HEADER_* on the connection
+	//   passthrough  each caller's own credential, off the inbound request
+	//
+	// "oauth" is deliberately absent as a value the agent accepts. The gateway
+	// brokers that login itself, keeps the grant, and resolves a live
+	// HEADER_AUTHORIZATION at session open
+	// (gateway/services/mcp_oauth_grant.go), so an OAuth-backed connection
+	// reaches here indistinguishable from a static one. Taking "oauth" here
+	// would instead hand mcpproxy's own outbound stack a backend it has no
+	// credential for: silently unauthenticated.
 	switch env.mcpAuth {
 	case "", "none", "static":
+	case mcpAuthPassthrough:
+		// Passthrough substitutes the caller's credential for the
+		// connection's, so a stdio child — which authenticates through its
+		// own environment and never sees an HTTP header — has nothing to
+		// substitute into. Accepting it there would silently run the child
+		// with whatever MCPENV_* it was configured with while the admin
+		// believes each user authenticates as themselves.
+		if env.mcpTransport == "stdio" || env.mcpTransport == mcpTransportClientStdio {
+			return fmt.Errorf("MCP_AUTH=%s requires a remote transport; a stdio server authenticates through its own environment (MCPENV_*)",
+				mcpAuthPassthrough)
+		}
 	default:
 		return fmt.Errorf("unsupported MCP_AUTH %q, accept only: %v",
-			env.mcpAuth, []string{"none", "static"})
+			env.mcpAuth, []string{"none", "static", mcpAuthPassthrough})
 	}
 
 	switch env.mcpOnRugPull {

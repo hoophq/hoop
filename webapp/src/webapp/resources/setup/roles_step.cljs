@@ -628,6 +628,22 @@
            [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
             (str "Sent to the server in the " static-header " header.")]]
 
+          ;; Passthrough stores nothing. The whole point is that no credential
+          ;; lives on the connection: each user's MCP client sends its own and
+          ;; the agent forwards that upstream, so the server sees the caller
+          ;; rather than a shared identity. All this branch owes the admin is
+          ;; the header their users must set.
+          "passthrough"
+          [:> Box {:class "space-y-2"}
+           [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+            (str "No credential is stored on this connection. Each user's MCP client sends its own "
+                 "token, and Hoop forwards it to the server — so the server sees who is calling, "
+                 "and access follows each user's own permissions.")]
+           [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+            "Users set this header in their MCP client configuration:"]
+           [:> Text {:as "p" :size "1" :class "text-[--gray-11] font-mono break-all"}
+            "X-Hoop-Upstream-Authorization: Bearer <their token>"]]
+
           (cond
             authorized?
             [:> Flex {:align "center" :justify "between" :gap "3"}
@@ -644,13 +660,40 @@
                "Clear"]]]
 
             :else
-            [:> Box {:class "space-y-2"}
+            [:> Box {:class "space-y-3"}
+             ;; Pre-registered client credentials. Left blank, Hoop registers a
+             ;; client dynamically (RFC 7591). Plenty of authorization servers
+             ;; do not offer that — GitHub's publishes no registration_endpoint
+             ;; — and for those an OAuth app the admin created by hand is the
+             ;; only way in. Without these inputs the gateway's own
+             ;; "provide client_id and client_secret" error is advice this
+             ;; form makes impossible to take.
+             ;;
+             ;; Auth-flow inputs only: they live in mcp-state, never in
+             ;; :credentials, because every credential here becomes a
+             ;; connection env var.
+             [forms/input {:label "Client ID (optional)"
+                           :placeholder "Leave blank to register automatically"
+                           :value (or (:client-id mcp-state) "")
+                           :type "text"
+                           :not-margin-bottom? true
+                           :on-change #(rf/dispatch [:mcp-oauth/set-field role-index :client-id (-> % .-target .-value)])}]
+             [forms/input {:label "Client Secret (optional)"
+                           :placeholder "Only if the provider issued one"
+                           :value (or (:client-secret mcp-state) "")
+                           :type "password"
+                           :not-margin-bottom? true
+                           :on-change #(rf/dispatch [:mcp-oauth/set-field role-index :client-secret (-> % .-target .-value)])}]
              [:> Button {:size "2" :type "button" :variant "solid" :disabled busy?
                          :on-click #(rf/dispatch [:mcp-oauth/authorize role-index])}
               [:> ShieldCheck {:size 16}]
               (if busy? "Authorizing…" "Authorize with MCP")]
              [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-              "Hoop discovers the server's authorization server, logs in, and stores the resulting access token in this connection's Authorization header."]
+              (str "Hoop discovers the server's authorization server, logs in, and stores the resulting "
+                   "access token in this connection's Authorization header. Register the callback below "
+                   "as the redirect URI of your OAuth app.")]
+             [:> Text {:as "p" :size "1" :class "text-[--gray-11] font-mono break-all"}
+              (str (.. js/window -location -origin) "/api/mcp-oauth/callback")]
              (when (= status :error)
                [:> Text {:as "p" :size "2" :class "text-[--red-11]"}
                 (or (:error mcp-state) "Authorization failed")])]))])

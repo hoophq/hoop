@@ -343,9 +343,15 @@
                  :access_max_duration (when access-max-duration
                                         (if (number? access-max-duration)
                                           access-max-duration
-                                          (js/parseInt access-max-duration 10)))}]
+                                          (js/parseInt access-max-duration 10)))}
+        ;; An MCP Gateway connection re-authorized on this screen carries the
+        ;; flow id so the gateway adopts that login into a durable grant. The
+        ;; header alone would go stale at the provider's TTL.
+        mcp-flow-id (get-in db [:connection-setup :mcp-oauth :flow-id])]
 
-    payload))
+    (cond-> payload
+      (and (= effective-subtype "mcpproxy") (not (str/blank? mcp-flow-id)))
+      (assoc :mcp_oauth_flow_id mcp-flow-id))))
 
 ;; Update an existing connection
 (defn is-base64? [str]

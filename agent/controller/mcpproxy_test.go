@@ -60,16 +60,31 @@ func TestParseConnectionEnvVarsMcpProxyValidation(t *testing.T) {
 			wantErr: "invalid MCP_TRANSPORT",
 		},
 		{
-			// The agent supplies no outbound TokenSource, so these modes would
-			// silently produce an unauthenticated backend rather than failing.
-			name:    "oauth auth is refused until the token store lands",
+			// OAuth is brokered by the gateway, which resolves the result into
+			// HEADER_AUTHORIZATION before the session opens. Taking it here
+			// would hand mcpproxy's outbound stack a backend with no
+			// credential: silently unauthenticated.
+			name:    "oauth auth is refused; the gateway resolves it into a header",
 			envs:    map[string]string{"MCP_TRANSPORT": "stdio", "MCP_AUTH": "oauth"},
 			wantErr: "MCP_AUTH",
 		},
 		{
-			name:    "passthrough auth is refused",
+			name: "passthrough auth is accepted on a remote transport",
+			envs: map[string]string{
+				"MCP_TRANSPORT": "streamable-http",
+				"REMOTE_URL":    "https://api.githubcopilot.com/mcp",
+				"MCP_AUTH":      "passthrough",
+			},
+		},
+		{
+			// A stdio child authenticates through its own environment and
+			// never sees an HTTP header, so there is nothing to substitute
+			// the caller's credential into. Accepting it would run the child
+			// on its configured MCPENV_* while the admin believes each user
+			// authenticates as themselves.
+			name:    "passthrough auth is refused on stdio",
 			envs:    map[string]string{"MCP_TRANSPORT": "stdio", "MCP_AUTH": "passthrough"},
-			wantErr: "MCP_AUTH",
+			wantErr: "requires a remote transport",
 		},
 		{
 			name: "static auth is accepted",
