@@ -451,19 +451,33 @@ func splitGlobList(v string) []string {
 	return out
 }
 
-// parseOptionalBool distinguishes "unset" from "false". The MCP policy treats
-// nil as "use the secure default" (block), so an absent setting must not be
-// read as an explicit opt-out.
-func parseOptionalBool(v string) *bool {
+// parseOptionalBool distinguishes "unset" from "false", and rejects anything
+// that is neither.
+//
+// The MCP policy treats nil as "use the secure default" (mcpproxy's
+// checks.boolOrTrue: block), so only an explicit false opens a gate. This used
+// to return false for every unrecognised value, which inverted that: a
+// connection saved with MCP_BLOCK_SAMPLING=flase — or "disabled", or "nope" —
+// read as a deliberate opt-out and let a server ask the user's MCP client to
+// run inference on its behalf, silently, with no error anywhere.
+//
+// Erroring rather than falling back to nil is deliberate. Both fail closed,
+// but a typo in a security toggle is a configuration bug the admin has to see:
+// treating it as unset leaves the connection working while the setting they
+// wrote does nothing.
+func parseOptionalBool(name, v string) (*bool, error) {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "":
-		return nil
+		return nil, nil
 	case "true", "1", "yes", "on":
 		t := true
-		return &t
-	default:
+		return &t, nil
+	case "false", "0", "no", "off":
 		f := false
-		return &f
+		return &f, nil
+	default:
+		return nil, fmt.Errorf("invalid %s %q, accept only: %v",
+			name, v, []string{"true", "1", "yes", "on", "false", "0", "no", "off"})
 	}
 }
 

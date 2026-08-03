@@ -99,6 +99,39 @@ func TestParseConnectionEnvVarsMcpProxyValidation(t *testing.T) {
 			name: "alert rug pull mode is accepted",
 			envs: map[string]string{"MCP_TRANSPORT": "stdio", "MCP_ON_RUG_PULL": "alert"},
 		},
+		{
+			// The reported bug. Anything non-empty that was not recognised as
+			// true used to parse as an explicit false, and an explicit false
+			// is the ONLY thing that opens these gates (mcpproxy
+			// checks.boolOrTrue treats nil as block). A typo therefore
+			// disabled the protection with no error anywhere.
+			name:    "misspelled block sampling is rejected, not read as false",
+			envs:    map[string]string{"MCP_TRANSPORT": "stdio", "MCP_BLOCK_SAMPLING": "flase"},
+			wantErr: "invalid MCP_BLOCK_SAMPLING",
+		},
+		{
+			name:    "misspelled block elicitation is rejected, not read as false",
+			envs:    map[string]string{"MCP_TRANSPORT": "stdio", "MCP_BLOCK_ELICITATION": "disabled"},
+			wantErr: "invalid MCP_BLOCK_ELICITATION",
+		},
+		{
+			// "no" is a plausible hand-written value and a real false, so it
+			// must opt out rather than fail the connection.
+			name: "spelled-out false values are accepted",
+			envs: map[string]string{
+				"MCP_TRANSPORT":         "stdio",
+				"MCP_BLOCK_SAMPLING":    "no",
+				"MCP_BLOCK_ELICITATION": "off",
+			},
+		},
+		{
+			name: "surrounding whitespace and case do not matter",
+			envs: map[string]string{
+				"MCP_TRANSPORT":         "stdio",
+				"MCP_BLOCK_SAMPLING":    "  False ",
+				"MCP_BLOCK_ELICITATION": "TRUE",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -113,6 +146,105 @@ func TestParseConnectionEnvVarsMcpProxyValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// What the connection settings resolve to in the policy the gateway enforces.
+//
+// The nil/false distinction is the whole point: mcpproxy resolves nil to
+// "block" (checks.boolOrTrue) and only an explicit false opens the gate, which
+// lets an MCP server ask the user's own client to run inference or prompt for
+// input on its behalf. A parser that turned a typo into false silently gave
+// away exactly that.
+func TestMcpPolicyBlockGatesFailClosed(t *testing.T) {
+	tests := []struct {
+		name                  string
+		envs                  map[string]string
+		sampling, elicitation *bool
+	}{
+		{
+			name:     "unset leaves both nil so the library blocks",
+			envs:     map[string]string{"MCP_TRANSPORT": "stdio"},
+			sampling: nil, elicitation: nil,
+		},
+		{
+			name: "explicit false is the only opt-out",
+			envs: map[string]string{
+				"MCP_TRANSPORT":         "stdio",
+				"MCP_BLOCK_SAMPLING":    "false",
+				"MCP_BLOCK_ELICITATION": "false",
+			},
+			sampling: new(false), elicitation: new(false),
+		},
+		{
+			name: "explicit true blocks",
+			envs: map[string]string{
+				"MCP_TRANSPORT":         "stdio",
+				"MCP_BLOCK_SAMPLING":    "true",
+				"MCP_BLOCK_ELICITATION": "1",
+			},
+			sampling: new(true), elicitation: new(true),
+		},
+		{
+			name: "one toggle set does not disturb the other",
+			envs: map[string]string{
+				"MCP_TRANSPORT":      "stdio",
+				"MCP_BLOCK_SAMPLING": "false",
+			},
+			sampling: new(false), elicitation: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env, err := parseConnectionEnvVars(mcpProxyEnvVars(tt.envs), pb.ConnectionTypeMcpProxy)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			policy := env.mcpPolicy()
+			assertGate(t, "BlockSampling", policy.BlockSampling, tt.sampling)
+			assertGate(t, "BlockElicitation", policy.BlockElicitation, tt.elicitation)
+		})
+	}
+}
+
+// The two toggles are validated only for mcpproxy connections, because only
+// mcpPolicy reads them. A database connection that happens to carry a stray
+// MCP_* var — copied between connections, left behind by a template — must
+// still open: failing a postgres session over an MCP setting nothing consumes
+// would turn a safety check into an outage.
+func TestMalformedMcpToggleDoesNotFailOtherConnectionTypes(t *testing.T) {
+	envs := mcpProxyEnvVars(map[string]string{
+		"HOST":               "127.0.0.1",
+		"USER":               "app",
+		"PASS":               "secret",
+		"DB":                 "app",
+		"MCP_BLOCK_SAMPLING": "flase",
+	})
+	if _, err := parseConnectionEnvVars(envs, pb.ConnectionTypePostgres); err != nil {
+		t.Fatalf("a postgres connection was rejected over an unused MCP setting: %v", err)
+	}
+}
+
+// assertGate compares a tri-state policy gate, keeping nil ("secure default")
+// distinct from a pointer to false ("explicitly opened").
+func assertGate(t *testing.T, name string, got, want *bool) {
+	t.Helper()
+	switch {
+	case got == nil && want == nil:
+	case got == nil || want == nil:
+		t.Fatalf("%s = %s, want %s", name, gateString(got), gateString(want))
+	case *got != *want:
+		t.Fatalf("%s = %s, want %s", name, gateString(got), gateString(want))
+	}
+}
+
+func gateString(v *bool) string {
+	if v == nil {
+		return "nil (library blocks)"
+	}
+	if *v {
+		return "true (blocked)"
+	}
+	return "false (OPEN)"
 }
 
 // The env store preserves the original key, so headers arrive prefixed. The

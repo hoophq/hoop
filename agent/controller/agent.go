@@ -858,17 +858,18 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		// MCP settings (ADR-0004). MCPENV_* is a carve-out prefix like
 		// HEADER_*: it names the stdio child's environment, distinct from the
 		// connection's own envvar:-stored settings.
-		mcpTransport:        envVarS.Getenv("MCP_TRANSPORT"),
-		mcpAuth:             envVarS.Getenv("MCP_AUTH"),
-		mcpEnv:              stripPrefixKeys(envVarS.Search(func(key string) bool { return strings.HasPrefix(strings.ToLower(key), "mcpenv_") }), "mcpenv_"),
-		mcpAllowedTools:     splitGlobList(envVarS.Getenv("MCP_ALLOWED_TOOLS")),
-		mcpDeniedTools:      splitGlobList(envVarS.Getenv("MCP_DENIED_TOOLS")),
-		mcpApprovalTools:    splitGlobList(envVarS.Getenv("MCP_APPROVAL_TOOLS")),
-		mcpBlockSampling:    parseOptionalBool(envVarS.Getenv("MCP_BLOCK_SAMPLING")),
-		mcpBlockElicitation: parseOptionalBool(envVarS.Getenv("MCP_BLOCK_ELICITATION")),
-		mcpOnRugPull:        envVarS.Getenv("MCP_ON_RUG_PULL"),
-		mcpMaxCalls:         parseIntOrZero(envVarS.Getenv("MCP_MAX_CALLS")),
-		mcpMaxResultKB:      parseIntOrZero(envVarS.Getenv("MCP_MAX_RESULT_KB")),
+		mcpTransport:     envVarS.Getenv("MCP_TRANSPORT"),
+		mcpAuth:          envVarS.Getenv("MCP_AUTH"),
+		mcpEnv:           stripPrefixKeys(envVarS.Search(func(key string) bool { return strings.HasPrefix(strings.ToLower(key), "mcpenv_") }), "mcpenv_"),
+		mcpAllowedTools:  splitGlobList(envVarS.Getenv("MCP_ALLOWED_TOOLS")),
+		mcpDeniedTools:   splitGlobList(envVarS.Getenv("MCP_DENIED_TOOLS")),
+		mcpApprovalTools: splitGlobList(envVarS.Getenv("MCP_APPROVAL_TOOLS")),
+		// mcpBlockSampling / mcpBlockElicitation are parsed in the mcpproxy
+		// case below: a malformed value is rejected there, and only that
+		// connection type reads them (see connEnv.mcpPolicy).
+		mcpOnRugPull:   envVarS.Getenv("MCP_ON_RUG_PULL"),
+		mcpMaxCalls:    parseIntOrZero(envVarS.Getenv("MCP_MAX_CALLS")),
+		mcpMaxResultKB: parseIntOrZero(envVarS.Getenv("MCP_MAX_RESULT_KB")),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -977,6 +978,15 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
 		}
 	case pb.ConnectionTypeMcpProxy:
+		// Parsed here rather than in the struct literal above: a malformed
+		// value must fail the connection, and only this type reads them.
+		var err error
+		if env.mcpBlockSampling, err = parseOptionalBool("MCP_BLOCK_SAMPLING", envVarS.Getenv("MCP_BLOCK_SAMPLING")); err != nil {
+			return nil, err
+		}
+		if env.mcpBlockElicitation, err = parseOptionalBool("MCP_BLOCK_ELICITATION", envVarS.Getenv("MCP_BLOCK_ELICITATION")); err != nil {
+			return nil, err
+		}
 		if err := validateMCPProxyEnv(env); err != nil {
 			return nil, err
 		}
