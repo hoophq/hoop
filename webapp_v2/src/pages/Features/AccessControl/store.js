@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { attributesService } from '@/services/attributes'
+import { connectionsService } from '@/services/connections'
 import { pluginsService } from '@/services/plugins'
 import { userGroupsService } from '@/services/userGroups'
 import {
@@ -11,6 +12,13 @@ import {
 } from './helpers'
 
 const ATTRIBUTES_PAGE_SIZE = 100 // gateway cap for /attributes
+const CONNECTIONS_CHUNK = 100 // /connections page_size cap
+
+function chunk(items, size) {
+  const out = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
 
 // The attribute picker drives a full-replace write, so a truncated list would
 // let an admin silently drop associations they never saw. Walk every page.
@@ -64,6 +72,11 @@ export const useAccessControlStore = create((set, get) => ({
   attributes: [],
   attributesStatus: 'idle',
 
+  // id -> connection, for the resource roles listed under each group. The
+  // plugin resolves their names but not their subtype, which is what picks the
+  // type icon.
+  connectionsById: {},
+
   submitting: false,
 
   fetchPlugin: async () => {
@@ -98,6 +111,25 @@ export const useAccessControlStore = create((set, get) => ({
       set({ attributes: await fetchAllAttributes(), attributesStatus: 'success' })
     } catch {
       set({ attributesStatus: 'error' })
+    }
+  },
+
+  // Best effort: a failure here only costs the type icons, so it stays silent
+  // rather than taking the whole list down.
+  fetchConnections: async (ids) => {
+    const missing = [...new Set(ids)].filter((id) => !get().connectionsById[id])
+    if (missing.length === 0) return
+    try {
+      const batches = await Promise.all(
+        chunk(missing, CONNECTIONS_CHUNK).map((batch) =>
+          connectionsService.getConnectionsByIds(batch),
+        ),
+      )
+      const resolved = {}
+      for (const rows of batches) for (const row of rows ?? []) resolved[row.id] = row
+      set((state) => ({ connectionsById: { ...state.connectionsById, ...resolved } }))
+    } catch {
+      // keep the fallback icon
     }
   },
 
