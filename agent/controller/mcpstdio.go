@@ -72,10 +72,25 @@ type clientStdioBackend struct {
 
 	reqSeq atomic.Uint64
 
-	// mu guards every field below and serialises Send against Close.
-	// backend.Backend does NOT promise serialised Send: the gateway's pump
-	// goroutine calls Send to deny a server-initiated request while a client
-	// POST is in flight (mcpproxy gateway/conn.go, inspectS2C).
+	// sendMu orders this backend's writes to the client stream against its
+	// own teardown. A holder may write; Close takes it before flipping
+	// closed, so no MCPStdioRequest can reach the wire after the
+	// MCPStdioClose that reaps the child it would be delivered to.
+	//
+	// Held only across the write, never across the wait for the ack: the ack
+	// arrives on the recv loop, and two concurrent Sends must not serialise
+	// on each other's round trips.
+	//
+	// Lock order is sendMu then mu, never the reverse. mu stays out of the
+	// write path so deliver — which runs on the agent's shared recv loop —
+	// never waits on the network.
+	sendMu sync.Mutex
+
+	// mu guards the fields below. It does NOT serialise Send against Close;
+	// sendMu does. backend.Backend does not promise serialised Send either:
+	// the gateway's pump goroutine calls Send to deny a server-initiated
+	// request while a client POST is in flight (mcpproxy gateway/conn.go,
+	// inspectS2C).
 	mu      sync.Mutex
 	closed  bool
 	started bool
@@ -164,17 +179,13 @@ func (b *clientStdioBackend) Err() error {
 // The ack exists because the write happens on another machine. Without it a
 // server that cannot spawn produces no error and no reply, and the gateway
 // waits out its full request timeout.
+//
+// The write is ordered against Close by sendMu (see writeRequest), so a
+// request can never land on the client after the MCPStdioClose that reaps the
+// child it was bound for. The wait below is deliberately outside that lock.
 func (b *clientStdioBackend) Send(ctx context.Context, msg []byte) error {
 	reqID := strconv.FormatUint(b.reqSeq.Add(1), 10)
 	ackC := make(chan *pb.Packet, 1)
-
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return mcpbackend.ErrClosed
-	}
-	b.waiters[reqID] = ackC
-	b.mu.Unlock()
 
 	defer func() {
 		b.mu.Lock()
@@ -182,6 +193,43 @@ func (b *clientStdioBackend) Send(ctx context.Context, msg []byte) error {
 		b.mu.Unlock()
 	}()
 
+	if err := b.writeRequest(reqID, ackC, msg); err != nil {
+		return err
+	}
+
+	select {
+	case ack, ok := <-ackC:
+		if !ok {
+			return mcpbackend.ErrClosed
+		}
+		if errMsg := string(ack.Spec[pb.SpecMCPStdioErrorKey]); errMsg != "" {
+			return fmt.Errorf("mcp stdio backend on client: %s", errMsg)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.done:
+		return mcpbackend.ErrClosed
+	}
+}
+
+// writeRequest registers the ack waiter and puts one MCPStdioRequest on the
+// wire, holding sendMu across both.
+//
+// Holding it across both is the point. Close takes sendMu before it flips
+// closed, so either this runs first — and the MCPStdioClose that follows reaps
+// whatever child the request spawned — or Close wins and the closed check here
+// rejects the request before it is written. Without that, Close could complete
+// entirely inside the gap between the check and the write, inverting the wire
+// order: the CLI reaps the child on MCPStdioClose, then the late
+// MCPStdioRequest finds no entry in its child map and spawns a REPLACEMENT MCP
+// server on the user's machine — one whose reaping packet has already been
+// spent, so it survives until the whole hoop session ends.
+//
+// b.mu is taken inside sendMu, never the other way round, and is released
+// before the write: deliver runs on the agent's shared recv loop and must
+// never wait on a network write (see deliver).
+func (b *clientStdioBackend) writeRequest(reqID string, ackC chan *pb.Packet, msg []byte) error {
 	pkt := &pb.Packet{
 		Type:    pbclient.MCPStdioRequest,
 		Spec:    b.newSpec(),
@@ -203,24 +251,21 @@ func (b *clientStdioBackend) Send(ctx context.Context, msg []byte) error {
 		pkt.Spec[pb.SpecMCPStdioEnvKey] = env
 	}
 
+	b.sendMu.Lock()
+	defer b.sendMu.Unlock()
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return mcpbackend.ErrClosed
+	}
+	b.waiters[reqID] = ackC
+	b.mu.Unlock()
+
 	if err := b.agent.client.Send(pkt); err != nil {
 		return fmt.Errorf("failed sending mcp stdio request: %v", err)
 	}
-
-	select {
-	case ack, ok := <-ackC:
-		if !ok {
-			return mcpbackend.ErrClosed
-		}
-		if errMsg := string(ack.Spec[pb.SpecMCPStdioErrorKey]); errMsg != "" {
-			return fmt.Errorf("mcp stdio backend on client: %s", errMsg)
-		}
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-b.done:
-		return mcpbackend.ErrClosed
-	}
+	return nil
 }
 
 // errMCPStdioRecvFull reports a server message dropped because the gateway's
@@ -267,7 +312,17 @@ func (b *clientStdioBackend) deliver(msg []byte) error {
 // Close terminates the backend and asks the client to reap its child.
 // Idempotent, and safe before Start: the recv and done channels must close
 // either way or the gateway's pump blocks forever.
+//
+// sendMu is taken first and held across the MCPStdioClose write. That is what
+// makes the reap final: an in-flight Send either completes before this (its
+// request precedes the close on the wire, so the child it spawns is reaped) or
+// finds closed=true and never writes. Releasing sendMu earlier would let a
+// request slip out behind the close and strand a fresh MCP server on the
+// user's machine (see writeRequest).
 func (b *clientStdioBackend) Close() error {
+	b.sendMu.Lock()
+	defer b.sendMu.Unlock()
+
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
