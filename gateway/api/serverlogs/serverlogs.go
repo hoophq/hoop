@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/serverlogs"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -30,32 +29,22 @@ const (
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	limit := parseIntQuery(c, "limit", defaultLimit, 1, maxLimit)
-	entries := merged(log.Tail.Snapshot(), serverlogs.AgentSnapshot(ctx.OrgID))
-	c.JSON(http.StatusOK, lastN(entries, limit))
+	c.JSON(http.StatusOK, lastN(toResponse(serverlogs.Snapshot(ctx.OrgID)), limit))
 }
 
-// merged wraps gateway and agent tail entries into the response schema and
-// sorts the combined slice by timestamp ascending.
-func merged(gw []log.TailEntry, ag []serverlogs.AgentLogEntry) []openapi.ServerLogEntry {
-	out := make([]openapi.ServerLogEntry, 0, len(gw)+len(ag))
-	for _, e := range gw {
+// toResponse maps buffered entries to the response schema, sorted by
+// timestamp ascending (agent batches arrive with a small shipping delay, so
+// ring order alone can interleave sources out of time order).
+func toResponse(entries []serverlogs.Entry) []openapi.ServerLogEntry {
+	out := make([]openapi.ServerLogEntry, 0, len(entries))
+	for _, e := range entries {
 		out = append(out, openapi.ServerLogEntry{
 			Timestamp: e.Timestamp,
 			Level:     e.Level,
 			Message:   e.Message,
 			Logger:    e.Logger,
 			Fields:    e.Fields,
-			Source:    "gateway",
-		})
-	}
-	for _, e := range ag {
-		out = append(out, openapi.ServerLogEntry{
-			Timestamp: e.Timestamp,
-			Level:     e.Level,
-			Message:   e.Message,
-			Logger:    e.Logger,
-			Fields:    e.Fields,
-			Source:    "agent",
+			Source:    e.Source,
 			AgentID:   e.AgentID,
 			AgentName: e.AgentName,
 		})

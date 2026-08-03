@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -14,11 +15,41 @@ const (
 	logShipBatchSize = 500
 )
 
-// runLogShipper periodically ships new entries from the process log tail to
-// the gateway as ClientAgentLogs packets. It only ships entries logged after
-// the shipper starts, so reconnects don't replay the whole buffer.
+// shipPending accumulates this process's log entries between shipper ticks;
+// each tick drains and sends it. Bounded at logShipBatchSize (newest kept —
+// tail semantics). The observer is registered once, on the first controller
+// run, and is shared across reconnects (runDefaultMode recreates the
+// controller). The ring storage lives on the gateway only.
+var (
+	shipMu           sync.Mutex
+	shipPending      []log.TailEntry
+	shipObserverOnce sync.Once
+)
+
+func shipObserver(e log.TailEntry) {
+	shipMu.Lock()
+	defer shipMu.Unlock()
+	shipPending = append(shipPending, e)
+	if len(shipPending) > logShipBatchSize {
+		shipPending = append([]log.TailEntry(nil), shipPending[len(shipPending)-logShipBatchSize:]...)
+	}
+}
+
+func drainPending() []log.TailEntry {
+	shipMu.Lock()
+	defer shipMu.Unlock()
+	entries := shipPending
+	shipPending = nil
+	return entries
+}
+
+// runLogShipper periodically ships this process's new log entries to the
+// gateway as ClientAgentLogs packets.
 func (a *Agent) runLogShipper() {
-	lastSeq := log.Tail.LatestSeq()
+	shipObserverOnce.Do(func() { log.TailObserve(shipObserver) })
+	// Ship only entries logged after this connection is established: discard
+	// anything buffered while disconnected instead of replaying it.
+	drainPending()
 	ticker := time.NewTicker(logShipInterval)
 	defer ticker.Stop()
 	for {
@@ -29,22 +60,17 @@ func (a *Agent) runLogShipper() {
 			return
 		case <-ticker.C:
 		}
-		entries, seq := log.Tail.Since(lastSeq)
+		entries := drainPending()
 		if len(entries) == 0 {
 			continue
 		}
-		if len(entries) > logShipBatchSize {
-			// tail semantics: keep the newest entries, drop the rest
-			entries = entries[len(entries)-logShipBatchSize:]
-		}
-		lastSeq = seq
 		payload, err := json.Marshal(entries)
 		if err != nil {
 			continue
 		}
 		if err := a.client.Send(&pb.Packet{Type: pbclient.AgentLogs, Payload: payload}); err != nil {
-			// Debug: captured only under LOG_LEVEL=debug, where a failed
-			// send adds at most one entry per tick — bounded, transient.
+			// Debug: below the default capture floor; under LOG_LEVEL=debug a
+			// failed send adds at most one entry per tick — bounded, transient.
 			log.Debugf("failed shipping agent logs to gateway, reason=%v", err)
 		}
 	}

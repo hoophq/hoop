@@ -1,14 +1,11 @@
 package log
 
 import (
+	"sync"
 	"time"
 
-	"github.com/hoophq/hoop/common/memory"
 	"go.uber.org/zap/zapcore"
 )
-
-// tailCapacity bounds how many recent log entries are kept in memory.
-const tailCapacity = 2000
 
 // TailEntry is one captured log record.
 type TailEntry struct {
@@ -19,13 +16,26 @@ type TailEntry struct {
 	Fields    map[string]any `json:"fields,omitempty"`
 }
 
-// Tail buffers the most recent log entries of this process. The capture
-// floor follows the process log level (LOG_LEVEL / SetDefaultLoggerLevel).
-var Tail = memory.NewRing[TailEntry](tailCapacity)
+// tailObservers holds the capture subscribers: at most one per role, added
+// at boot (the gateway registers its server-logs ring, the agent its ship
+// buffer; standalone registers both). When empty (CLI and any process that
+// never registers), capture costs one RLock per log call and nothing else.
+var (
+	tailMu        sync.RWMutex
+	tailObservers []func(TailEntry)
+)
 
-// tailCore is a zapcore.Core that appends every enabled entry to Tail. It
-// shares the logger's atomic level, so the capture floor tracks LOG_LEVEL
-// and runtime level changes.
+// TailObserve registers fn to receive every log entry this process captures
+// (level per LOG_LEVEL / SetDefaultLoggerLevel).
+func TailObserve(fn func(TailEntry)) {
+	tailMu.Lock()
+	defer tailMu.Unlock()
+	tailObservers = append(tailObservers, fn)
+}
+
+// tailCore is a zapcore.Core that forwards every enabled entry to the
+// registered tail observers. It shares the logger's atomic level, so the
+// capture floor tracks LOG_LEVEL and runtime level changes.
 type tailCore struct {
 	zapcore.LevelEnabler
 	fields []zapcore.Field
@@ -51,6 +61,12 @@ func (c *tailCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.C
 }
 
 func (c *tailCore) Write(ent zapcore.Entry, fs []zapcore.Field) error {
+	tailMu.RLock()
+	obs := tailObservers
+	tailMu.RUnlock()
+	if len(obs) == 0 {
+		return nil
+	}
 	var fields map[string]any
 	if len(c.fields)+len(fs) > 0 {
 		enc := zapcore.NewMapObjectEncoder()
@@ -66,13 +82,16 @@ func (c *tailCore) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 	if ent.Caller.Defined {
 		logger = ent.Caller.TrimmedPath()
 	}
-	Tail.Append(TailEntry{
+	entry := TailEntry{
 		Timestamp: ent.Time,
 		Level:     ent.Level.String(),
 		Message:   ent.Message,
 		Logger:    logger,
 		Fields:    fields,
-	})
+	}
+	for _, fn := range obs {
+		fn(entry)
+	}
 	return nil
 }
 

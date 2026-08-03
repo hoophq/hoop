@@ -50,11 +50,10 @@ func Stream(c *gin.Context) {
 	fmt.Fprint(c.Writer, ": connected\n\n")
 	flusher.Flush()
 
-	// Initial cursors and backlog, taken atomically per ring.
-	gwEntries, gwSeq := log.Tail.Since(0)
-	agEntries, agSeq := serverlogs.AgentSince(ctx.OrgID, 0)
+	// Initial cursor and backlog, taken atomically from the ring.
+	entries, seq := serverlogs.Since(ctx.OrgID, 0)
 	if backlog > 0 {
-		if err := writeEvents(c, flusher, lastN(merged(gwEntries, agEntries), backlog)); err != nil {
+		if err := writeEvents(c, flusher, lastN(toResponse(entries), backlog)); err != nil {
 			return
 		}
 	}
@@ -68,14 +67,12 @@ func Stream(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return
 		case <-poll.C:
-			gwNew, s1 := log.Tail.Since(gwSeq)
-			gwSeq = s1
-			agNew, s2 := serverlogs.AgentSince(ctx.OrgID, agSeq)
-			agSeq = s2
-			if len(gwNew)+len(agNew) == 0 {
+			var fresh []serverlogs.Entry
+			fresh, seq = serverlogs.Since(ctx.OrgID, seq)
+			if len(fresh) == 0 {
 				continue
 			}
-			if err := writeEvents(c, flusher, merged(gwNew, agNew)); err != nil {
+			if err := writeEvents(c, flusher, toResponse(fresh)); err != nil {
 				return
 			}
 		case <-keepalive.C:
@@ -98,9 +95,9 @@ func writeEvents(c *gin.Context, flusher http.Flusher, entries []openapi.ServerL
 			continue
 		}
 		if _, err := fmt.Fprintf(c.Writer, "event: log\ndata: %s\n\n", payload); err != nil {
-			// Debug: the handler returns right after, so even when the tail
-			// captures debug entries this never recurses into its own dead
-			// stream; other subscribers see at most one line per dead client.
+			// Debug: the handler returns right after, so this can never
+			// recurse into its own dead stream; other subscribers see at
+			// most one line per dead client, and only under LOG_LEVEL=debug.
 			log.Debugf("sse: server logs client write failed: %v", err)
 			return err
 		}
