@@ -5,6 +5,8 @@
 # MongoDB 5.0 shell slipped past the AGPL/SSPL gate. This manifest closes that
 # blind spot: it is the declared source of truth for hand-installed artifacts,
 # enforced in CI by scripts/ci/check-manual-binaries.py.
+# Versioned archive bytes are independently pinned in
+# licenses/agent-tools-checksums.sha256 and verified during the image build.
 #
 # Rules enforced against a built image, for a given train:
 #   1. Every file/symlink under `scan_dirs` that is not in the dpkg package file
