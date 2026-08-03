@@ -39,8 +39,15 @@ type fakeMCPServer struct {
 	// refreshCalls counts refresh-token grants specifically.
 	refreshCalls int
 	// currentRefresh is the only refresh token the server will accept. Each
-	// grant rotates it, so replaying a stale one fails as invalid_grant.
+	// grant rotates it, so replaying a stale one fails as invalid_grant —
+	// unless keepRefreshToken is set.
 	currentRefresh string
+	// keepRefreshToken makes the refresh-token grant behave like the many
+	// providers that do not rotate: the response omits refresh_token
+	// entirely (RFC 6749 §6 makes it OPTIONAL) and the original stays valid
+	// forever. A client that reads the omission as "the token is gone" can
+	// never refresh this grant again.
+	keepRefreshToken bool
 	// initialTTL is the lifetime of the token the login mints, and renewedTTL
 	// the lifetime of every token a refresh mints. They differ so a test can
 	// stage a grant that must be renewed on first use and then stays valid,
@@ -136,13 +143,19 @@ func (f *fakeMCPServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f.issued++
-	f.currentRefresh = fmt.Sprintf("refresh-%d", f.issued)
-	writeJSON(w, map[string]any{
-		"access_token":  fmt.Sprintf("access-%d", f.issued),
-		"token_type":    "Bearer",
-		"expires_in":    int(ttl.Seconds()),
-		"refresh_token": f.currentRefresh,
-	})
+	body := map[string]any{
+		"access_token": fmt.Sprintf("access-%d", f.issued),
+		"token_type":   "Bearer",
+		"expires_in":   int(ttl.Seconds()),
+	}
+	// A non-rotating server omits refresh_token on renewal only; the
+	// authorization-code grant always hands one out or there is nothing to
+	// renew with.
+	if !f.keepRefreshToken || r.Form.Get("grant_type") == "authorization_code" {
+		f.currentRefresh = fmt.Sprintf("refresh-%d", f.issued)
+		body["refresh_token"] = f.currentRefresh
+	}
+	writeJSON(w, body)
 }
 
 func (f *fakeMCPServer) counters() (issued, refreshes int) {
@@ -159,17 +172,29 @@ func writeJSON(w http.ResponseWriter, body any) {
 func writeTokenError(w http.ResponseWriter, status int, code, desc string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": code, "error_description": desc})
+	writeJSON(w, map[string]any{"error": code, "error_description": desc})
 }
 
 // completeMCPLogin drives the full three-hop OAuth login against the fake
 // server through the real gateway handlers and returns the flow id plus the
-// authorization header the create page received.
+// authorization header the create page received. The client is registered
+// dynamically, which the fake registers as a public one (auth method "none").
 func completeMCPLogin(t *testing.T, token string, fake *fakeMCPServer) (flowID, authHeader string) {
+	t.Helper()
+	return completeMCPLoginAs(t, token, fake, "", "")
+}
+
+// completeMCPLoginAs is completeMCPLogin with explicit client credentials.
+// Supplying both records token_auth_method=client_secret_post on the flow, and
+// therefore on the grant — the branch where Hoop builds the token request
+// itself instead of delegating to the oauth library.
+func completeMCPLoginAs(t *testing.T, token string, fake *fakeMCPServer, clientID, clientSecret string) (flowID, authHeader string) {
 	t.Helper()
 
 	authorize := testServer.Post(t, "/mcp-oauth/authorize", token, openapi.MCPOAuthAuthorizeRequest{
-		ServerURL: fake.url("/mcp"),
+		ServerURL:    fake.url("/mcp"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 	})
 	defer authorize.Body.Close()
 	testutil.RequireStatus(t, authorize, http.StatusOK)
@@ -405,6 +430,124 @@ func TestMCPOAuthGrantConcurrentRefresh(t *testing.T) {
 	if _, refreshes := fake.counters(); refreshes > callers {
 		t.Errorf("provider saw %d refresh grants for %d callers", refreshes, callers)
 	}
+}
+
+// A provider that does not rotate refresh tokens omits refresh_token from the
+// refresh response, meaning "keep using the one you have". Persisting that
+// omission as an empty value erases the only credential that can renew the
+// grant: the first refresh appears to work, and every session after it is
+// stranded on an expiring access token with no way back.
+//
+// Both token-endpoint auth methods are covered because they take different
+// code paths to the same persist call: "none" delegates to the oauth library,
+// while client_secret_post uses Hoop's own request builder. Only the second
+// reaches persistRefreshedGrant with an empty RefreshToken, so a test that
+// exercised only the first would pass with the erase fully restored.
+//
+// Each grant must survive two renewals across three session opens.
+func TestMCPOAuthGrantSurvivesNonRotatingProvider(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		suffix                 string
+		clientID, clientSecret string
+	}{
+		{name: "public client (auth method none)", suffix: "pub"},
+		{name: "confidential client (client_secret_post)", suffix: "conf",
+			clientID: "client-conf", clientSecret: "s3cret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			token := adminToken(t)
+			agentName := "mcp-grant-norotate-agent-" + tc.suffix
+			agentID := createAgentReturningID(t, token, agentName)
+			defer deleteAgent(t, token, agentName)
+
+			// Every token lands inside the refresh margin, so each session
+			// open renews and the stored refresh token is used again.
+			fake := newFakeMCPServer(t, 30*time.Second, 30*time.Second)
+			fake.keepRefreshToken = true
+			flowID, authHeader := completeMCPLoginAs(t, token, fake, tc.clientID, tc.clientSecret)
+
+			connName := "smoke-mcp-grant-norotate-" + tc.suffix
+			created := testServer.Post(t, "/connections", token, openapi.Connection{
+				Name:               connName,
+				Type:               "application",
+				SubType:            services.MCPOAuthGrantSubType,
+				AgentId:            agentID,
+				AccessModeRunbooks: "enabled",
+				AccessModeExec:     "enabled",
+				AccessModeConnect:  "enabled",
+				AccessSchema:       "disabled",
+				Secrets: map[string]any{
+					"envvar:MCP_TRANSPORT":        b64("streamable-http"),
+					"envvar:MCP_AUTH":             b64("static"),
+					"envvar:REMOTE_URL":           b64(fake.url("/mcp")),
+					"envvar:HEADER_AUTHORIZATION": b64(authHeader),
+				},
+				MCPOAuthFlowID: flowID,
+			})
+			defer created.Body.Close()
+			testutil.RequireStatus(t, created, http.StatusCreated)
+			var conn openapi.Connection
+			testutil.DecodeJSON(t, created, &conn)
+			defer func() {
+				del := testServer.Delete(t, "/connections/"+connName, token)
+				del.Body.Close()
+			}()
+
+			original, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, "")
+			if err != nil {
+				t.Fatalf("grant was not adopted: %v", err)
+			}
+			wantMethod := "none"
+			if tc.clientSecret != "" {
+				wantMethod = "client_secret_post"
+			}
+			if original.TokenAuthMethod != wantMethod {
+				t.Fatalf("grant token auth method = %q, want %q; this case is not exercising the intended refresh path",
+					original.TokenAuthMethod, wantMethod)
+			}
+			originalRefresh := decryptGrantRefreshToken(t, original)
+
+			// Three session opens, each one refreshing. The second is what
+			// fails when the omission is persisted: the grant no longer has a
+			// refresh token to renew with.
+			for i := range 3 {
+				header, err := services.ResolveMCPOAuthHeader(t.Context(), testGateway.OrgID, conn.ID)
+				if err != nil {
+					t.Fatalf("session open %d could not resolve the grant: %v", i+1, err)
+				}
+				if !strings.HasPrefix(header, "Bearer access-") {
+					t.Fatalf("session open %d produced %q, want a bearer token", i+1, header)
+				}
+				stored, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, "")
+				if err != nil {
+					t.Fatalf("grant disappeared after session open %d: %v", i+1, err)
+				}
+				if got := decryptGrantRefreshToken(t, stored); got != originalRefresh {
+					t.Fatalf("session open %d left refresh token %q, want the original %q preserved",
+						i+1, got, originalRefresh)
+				}
+			}
+
+			if _, refreshes := fake.counters(); refreshes != 3 {
+				t.Errorf("provider saw %d refresh grants, want 3 (one per session open)", refreshes)
+			}
+		})
+	}
+}
+
+// decryptGrantRefreshToken returns the grant's stored refresh token in the
+// clear, failing the test when the grant has none.
+func decryptGrantRefreshToken(t *testing.T, grant *models.MCPOAuthGrant) string {
+	t.Helper()
+	if len(grant.RefreshTokenEncrypted) == 0 {
+		t.Fatal("grant carries no refresh token; it can never be renewed again")
+	}
+	plain, err := models.DecryptCredentialSecretKey(grant.RefreshTokenEncrypted)
+	if err != nil {
+		t.Fatalf("failed decrypting the stored refresh token: %v", err)
+	}
+	return plain
 }
 
 // TestMCPOAuthGrantSkippedForLegacySubtype pins the blast radius: only the

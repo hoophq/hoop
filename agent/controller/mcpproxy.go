@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -163,6 +164,10 @@ func (a *Agent) handleMCPProxyWrite(pkt *pb.Packet) {
 type mcpGatewayHolder struct {
 	once sync.Once
 	gw   *mcpgateway.Gateway
+	// sink owns a goroutine draining the session's audit-event queue, so it
+	// is held here rather than left anonymous inside gateway.Options: the
+	// gateway has no way to stop it, and session cleanup must.
+	sink *mcpEventSink
 	err  error
 }
 
@@ -199,8 +204,16 @@ func (a *Agent) mcpGatewayFor(
 			holder.err = fmt.Errorf("failed configuring data protection: %v", err)
 			return
 		}
-		holder.gw, holder.err = a.buildMCPGateway(
-			connenv, connParams, sessionID, hooks, a.mcpAuditSink(sessionID, spec))
+		sink := a.mcpAuditSink(sessionID, spec)
+		holder.gw, holder.err = a.buildMCPGateway(connenv, connParams, sessionID, hooks, sink)
+		if holder.err != nil {
+			// The holder is discarded below, so cleanup will never see this
+			// sink; stop its goroutine here instead of leaking one per
+			// failed attempt.
+			sink.stop()
+			return
+		}
+		holder.sink = sink
 	})
 	if holder.err != nil {
 		// Leave nothing memoised: a transient failure (e.g. the client's
@@ -404,8 +417,14 @@ func (a *Agent) closeMCPProxyConnections(sessionID string) {
 	// down every MCP session, which closes every backend: a local stdio
 	// child is signalled and reaped, a tunnelled one releases its waiters.
 	if obj, ok := a.mcpGateways.LoadAndDelete(sessionID); ok {
-		if holder, _ := obj.(*mcpGatewayHolder); holder != nil && holder.gw != nil {
-			holder.gw.Close()
+		if holder, _ := obj.(*mcpGatewayHolder); holder != nil {
+			if holder.gw != nil {
+				holder.gw.Close()
+			}
+			// After the gateway, never before: closing it emits the session's
+			// last audit events, and stopping the sink first would drop them.
+			// stop flushes what is queued and ends the drain goroutine.
+			holder.sink.stop()
 		}
 	}
 	a.closeClientStdioBackends(sessionID)
@@ -583,22 +602,63 @@ func (c *connEnv) mcpPolicy() mcpconfig.Policy {
 
 // ---- audit sink -------------------------------------------------------------
 
+// mcpAuditQueueSize bounds one session's backlog of pending audit events.
+//
+// Events are single JSON lines (a tool name, a decision, a truncated result
+// preview), so a thousand of them is a few hundred KiB at worst — cheap
+// insurance against a slow gateway, and small enough that a session which
+// really is producing events faster than the stream drains them loses records
+// instead of growing agent memory without bound.
+const mcpAuditQueueSize = 1024
+
 // mcpAuditSink returns the sink that turns MCP protocol events into hoop
-// session events.
+// session events, and starts the goroutine that writes them.
 //
 // Each event is written back to the gateway on the client stream as a
 // structured line, so the existing session recorder stores it alongside the
 // protocol bytes and the session viewer renders a tool-call timeline rather
-// than HTTP blobs. Emit must not block the inspection pipeline, so a failed
-// write is logged and dropped rather than retried.
-func (a *Agent) mcpAuditSink(sessionID string, spec map[string][]byte) audit.Sink {
-	return &mcpEventSink{agent: a, sid: sessionID, spec: spec}
+// than HTTP blobs.
+//
+// The write does NOT happen on the caller's goroutine. Emit runs inside the
+// inspection pipeline, on the path of a tool call the user is waiting for,
+// while client.Send serializes every packet this agent produces behind one
+// mutex and one gRPC stream — including multi-megabyte response chunks for
+// other sessions. Auditing must never be what makes a tool call slow, so Emit
+// hands the packet to a bounded queue and this goroutine does the sending.
+//
+// Caller must stop the sink (see closeMCPProxyConnections) or the goroutine
+// outlives the session.
+func (a *Agent) mcpAuditSink(sessionID string, spec map[string][]byte) *mcpEventSink {
+	s := &mcpEventSink{
+		agent: a,
+		sid:   sessionID,
+		spec:  spec,
+		queue: make(chan *pb.Packet, mcpAuditQueueSize),
+		quit:  make(chan struct{}),
+		done:  make(chan struct{}),
+	}
+	go s.run()
+	return s
 }
 
 type mcpEventSink struct {
 	agent *Agent
 	sid   string
 	spec  map[string][]byte
+
+	// queue carries encoded packets to the single run goroutine, which is
+	// what preserves emission order: events are only meaningful as a
+	// sequence (call, approval, result), and dispatching each Send with `go`
+	// would let the mutex hand them to the stream in any order.
+	queue chan *pb.Packet
+
+	// quit asks the drain goroutine to flush and exit; done is closed by that
+	// goroutine on its way out, so a caller can tell the session's last events
+	// have been attempted.
+	quit     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+	dropped  atomic.Int64
 }
 
 func (s *mcpEventSink) Emit(_ context.Context, ev audit.Event) {
@@ -618,7 +678,68 @@ func (s *mcpEventSink) Emit(_ context.Context, ev audit.Event) {
 	// Tag the packet so the gateway records it as a protocol event rather than
 	// forwarding it to the MCP client as response bytes.
 	pkt.Spec[pb.SpecMCPEventKey] = []byte("1")
-	if err := s.agent.client.Send(pkt); err != nil {
+
+	select {
+	case s.queue <- pkt:
+	default:
+		// Dropping is the policy: blocking here would park the tool call
+		// behind the very stream congestion the queue exists to absorb. Log
+		// the first drop and then sparsely, because a full queue means the
+		// stream is wedged and per-event logging would pile onto that.
+		if n := s.dropped.Add(1); n == 1 || n%100 == 0 {
+			log.With("sid", s.sid).Warnf("mcp audit queue full, dropped %d event(s)", n)
+		}
+	}
+}
+
+// run drains the queue until the sink is stopped. A failed write is logged and
+// dropped rather than retried: the event is an audit record, not the user's
+// payload, and retrying would stall every event behind it.
+func (s *mcpEventSink) run() {
+	defer close(s.done)
+	for {
+		select {
+		case pkt := <-s.queue:
+			_ = s.send(pkt)
+		case <-s.quit:
+			s.flush()
+			return
+		}
+	}
+}
+
+// flush writes what is already buffered and returns. It never waits for new
+// events and gives up on the first error, so a dead or wedged stream cannot
+// keep this goroutine alive past the session that owns it.
+func (s *mcpEventSink) flush() {
+	for {
+		select {
+		case pkt := <-s.queue:
+			if s.send(pkt) != nil {
+				return
+			}
+		default:
+			if n := s.dropped.Load(); n > 0 {
+				log.With("sid", s.sid).Warnf("dropped %d mcp audit event(s) on a full queue", n)
+			}
+			return
+		}
+	}
+}
+
+func (s *mcpEventSink) send(pkt *pb.Packet) error {
+	err := s.agent.client.Send(pkt)
+	if err != nil {
 		log.With("sid", s.sid).Warnf("failed sending mcp audit event: %v", err)
 	}
+	return err
+}
+
+// stop ends the drain goroutine after a best-effort flush. Safe on a nil sink
+// (a gateway built without one) and safe to call twice.
+func (s *mcpEventSink) stop() {
+	if s == nil {
+		return
+	}
+	s.stopOnce.Do(func() { close(s.quit) })
 }

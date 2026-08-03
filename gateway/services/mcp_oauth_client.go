@@ -230,10 +230,30 @@ func ExchangeMCPCode(ctx context.Context, d *MCPDiscovery, clientID, clientSecre
 }
 
 // refreshMCPToken runs the refresh-token grant for a stored grant.
+//
+// Both branches guarantee a non-empty RefreshToken on success. RFC 6749 §6
+// makes refresh_token OPTIONAL in the response and a server that does not
+// rotate simply omits it, meaning "keep the one you have"; the caller persists
+// what comes back, so the carry-forward has to happen before it gets there.
+// oauth.Refresh does this too, but relying on that would put the invariant in
+// a dependency while the erase it prevents happens here.
 func refreshMCPToken(ctx context.Context, cfg oauth.ClientConfig, tokenAuthMethod, refreshToken string) (*outbound.Token, error) {
 	if refreshToken == "" {
 		return nil, errors.New("refresh called with an empty refresh token")
 	}
+	tok, err := postRefreshGrant(ctx, cfg, tokenAuthMethod, refreshToken)
+	if err != nil {
+		return nil, err
+	}
+	if tok.RefreshToken == "" {
+		tok.RefreshToken = refreshToken
+	}
+	return tok, nil
+}
+
+// postRefreshGrant sends the refresh-token request, choosing where the client
+// credentials travel. It returns the token endpoint's answer verbatim.
+func postRefreshGrant(ctx context.Context, cfg oauth.ClientConfig, tokenAuthMethod, refreshToken string) (*outbound.Token, error) {
 	if !usesSecretPost(tokenAuthMethod, cfg.ClientSecret) {
 		return oauth.Refresh(ctx, cfg, refreshToken)
 	}
@@ -244,16 +264,7 @@ func refreshMCPToken(ctx context.Context, cfg oauth.ClientConfig, tokenAuthMetho
 	if len(cfg.Scopes) > 0 {
 		form.Set("scope", strings.Join(cfg.Scopes, " "))
 	}
-	tok, err := postSecretInBody(ctx, cfg, form)
-	if err != nil {
-		return nil, err
-	}
-	// A server that does not rotate refresh tokens omits the field; dropping
-	// it would make the next refresh impossible.
-	if tok.RefreshToken == "" {
-		tok.RefreshToken = refreshToken
-	}
-	return tok, nil
+	return postSecretInBody(ctx, cfg, form)
 }
 
 // Token-endpoint authentication methods Hoop records on a flow or grant.

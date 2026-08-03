@@ -207,19 +207,27 @@ func resolveGrantHeader(ctx context.Context, tx *gorm.DB, grant *models.MCPOAuth
 }
 
 // persistRefreshedGrant writes a renewed token back onto the locked grant row.
+//
+// A refresh response that omits refresh_token means "keep using the one you
+// have" (RFC 6749 §6 makes the field OPTIONAL), so an empty fresh.RefreshToken
+// leaves the stored ciphertext alone. Overwriting it with nothing would erase
+// the only credential that can renew this grant: the next session would find
+// no refresh token, serve the stale access token until it expires, and then
+// fail with "re-authorize the connection" — for a grant the provider never
+// revoked.
 func persistRefreshedGrant(tx *gorm.DB, grant *models.MCPOAuthGrant, fresh *outbound.Token) error {
 	accessCipher, err := models.EncryptCredentialSecretKey(fresh.AccessToken)
 	if err != nil {
 		return fmt.Errorf("failed encrypting refreshed access token: %w", err)
 	}
-	var refreshCipher []byte
+	grant.AccessTokenEncrypted = accessCipher
 	if fresh.RefreshToken != "" {
-		if refreshCipher, err = models.EncryptCredentialSecretKey(fresh.RefreshToken); err != nil {
+		refreshCipher, err := models.EncryptCredentialSecretKey(fresh.RefreshToken)
+		if err != nil {
 			return fmt.Errorf("failed encrypting refreshed refresh token: %w", err)
 		}
+		grant.RefreshTokenEncrypted = refreshCipher
 	}
-	grant.AccessTokenEncrypted = accessCipher
-	grant.RefreshTokenEncrypted = refreshCipher
 	if fresh.TokenType != "" {
 		grant.TokenType = fresh.TokenType
 	}
