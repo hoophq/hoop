@@ -20,6 +20,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -39,6 +40,13 @@ const mcpTransportClientStdio = "client-stdio"
 // mcpStdioRecvBuffer bounds the queue of server-initiated messages waiting for
 // the gateway's pump goroutine. It matches the library's own stdio backend so
 // a burst of notifications behaves identically on both transports.
+//
+// What happens at the bound does NOT match, and cannot. A local stdio child
+// pushes back: its pump parks on the channel and the child's own stdout write
+// blocks, so nothing is lost. Here the producer is the agent's shared recv
+// loop, which must never park on one backend, so a full buffer drops (see
+// deliver). 64 is therefore a real ceiling on how far this backend's server
+// may run ahead of the gateway, not just a hint.
 const mcpStdioRecvBuffer = 64
 
 // clientStdioBackend implements mcpproxy's backend.Backend by tunnelling to a
@@ -73,6 +81,11 @@ type clientStdioBackend struct {
 	started bool
 	// waiters maps a request id to the channel its reply must land on.
 	waiters map[string]chan *pb.Packet
+	// dropped counts server messages deliver discarded because the pump had
+	// not drained recv. Nonzero means the gateway consumer is falling behind
+	// this backend's server, and each one is a message the MCP client will
+	// never see.
+	dropped uint64
 	err     error
 }
 
@@ -210,8 +223,32 @@ func (b *clientStdioBackend) Send(ctx context.Context, msg []byte) error {
 	}
 }
 
-// deliver pushes a message onto recv under the lock, so it cannot race Close
-// closing the channel — a send on a closed channel would panic the gateway.
+// errMCPStdioRecvFull reports a server message dropped because the gateway's
+// pump goroutine has not drained Recv. It is a distinct error because the
+// caller must tell chronic backpressure (operationally interesting) apart from
+// a backend that simply closed (routine).
+var errMCPStdioRecvFull = errors.New("mcp stdio recv buffer is full")
+
+// deliver hands one server-initiated message to the gateway's pump goroutine.
+// It never blocks.
+//
+// It used to block, and that could wedge the whole agent. deliver runs on the
+// recv loop, which carries every session and every protocol on this agent, and
+// the send it made was unbounded in practice: b.done is closed only under
+// b.mu, so a deliver parked on `b.recv <- msg` while holding that mutex could
+// never be woken by the `<-b.done` arm it selected on. Only the pump draining
+// Recv could release it — and the pump can be blocked on that same mutex,
+// because mcpproxy answers a denied server-initiated request by calling Send
+// (gateway/conn.go, inspectS2C) and Send takes b.mu. Recv loop waits on pump,
+// pump waits on mutex, mutex is held by the recv loop. Nothing breaks that.
+//
+// So an undrained buffer drops the message. Dropping is not free: if the lost
+// message was a tool-call response, the caller's request hangs until the
+// gateway's RequestTimeout instead of answering. That is one stalled request
+// against a permanently dead agent, which is not a close call.
+//
+// The lock stays. It is what keeps this send off a channel Close may already
+// have closed, which would panic the gateway rather than merely stall it.
 func (b *clientStdioBackend) deliver(msg []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -221,8 +258,9 @@ func (b *clientStdioBackend) deliver(msg []byte) error {
 	select {
 	case b.recv <- msg:
 		return nil
-	case <-b.done:
-		return mcpbackend.ErrClosed
+	default:
+		b.dropped++
+		return fmt.Errorf("%w, %d dropped on this backend", errMCPStdioRecvFull, b.dropped)
 	}
 }
 
@@ -283,8 +321,8 @@ func (b *clientStdioBackend) newSpec() map[string][]byte {
 // They are told apart by the request id, which only an ack carries: server
 // output is produced by the child's stdout reader, which has no idea which
 // request (if any) a given line answers. It runs on the agent's recv loop and
-// must not block — the ack channel is buffered, and delivery to a full Recv
-// buffer is bounded by the backend's own done channel.
+// must not block: both handoffs here are non-blocking, dropping rather than
+// waiting when the destination buffer is full (see deliver).
 func (a *Agent) processMCPStdioReply(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	backendID := string(pkt.Spec[pb.SpecMCPStdioBackendKey])
@@ -305,7 +343,15 @@ func (a *Agent) processMCPStdioReply(pkt *pb.Packet) {
 	// server-initiated notification or request. It goes onto Recv, where the
 	// gateway's S2C pipeline inspects it and matches responses by JSON-RPC id.
 	if requestID == "" {
-		if err := backend.deliver(pkt.Payload); err != nil {
+		switch err := backend.deliver(pkt.Payload); {
+		case err == nil:
+		case errors.Is(err, errMCPStdioRecvFull):
+			// Backpressure, not teardown: the gateway's pump is not draining
+			// this backend. Warn — the MCP client silently loses this message,
+			// and if it was a tool-call response that request hangs until the
+			// gateway's request timeout.
+			log.Warnf("dropping mcp server message: %v", err)
+		default:
 			log.Debugf("dropping mcp server message: %v", err)
 		}
 		return

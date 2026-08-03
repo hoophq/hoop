@@ -305,8 +305,8 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 		a.processMCPProxyWriteServer(pkt)
 
 	// Reply from an MCP server running on the connecting user's machine.
-	// Handled inline: it only hands the payload to a buffered waiter, so it
-	// cannot block the recv loop.
+	// Handled inline: every handoff it makes is non-blocking, so it cannot
+	// block the recv loop.
 	case pbagent.MCPStdioReply:
 		a.processMCPStdioReply(pkt)
 
