@@ -17,9 +17,10 @@ const (
 	SourceAgent   = "agent"
 )
 
-// ringCapacity bounds the server-logs tail shared by the gateway process and
-// all connected agents.
-const ringCapacity = 300
+// Capacity bounds the server-logs tail shared by the gateway process and all
+// connected agents. The API layer derives its limit/backlog clamps from it so
+// the published contract always matches what the buffer can actually hold.
+const Capacity = 500
 
 // Entry is one buffered log record. Gateway-sourced entries carry no org or
 // agent identity; agent-sourced entries are annotated with the authenticated
@@ -32,7 +33,7 @@ type Entry struct {
 	AgentName string
 }
 
-var ring = memory.NewRing[Entry](ringCapacity)
+var ring = memory.NewRing[Entry](Capacity)
 
 // The gateway's own log output feeds the same ring as agent logs. Package
 // init keeps this wiring boot-order free: any gateway binary that links the

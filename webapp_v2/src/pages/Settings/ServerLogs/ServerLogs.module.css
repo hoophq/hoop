@@ -1,26 +1,30 @@
+/* The terminal is intentionally dark in both color schemes, so colors come
+   from the fixed dark end of the Mantine palette rather than scheme-aware
+   aliases. rgba(...) values are hover/expanded overlays. */
+
 .terminal {
-  background-color: #0d1117;
-  border-radius: 8px;
-  border: 1px solid #21262d;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12px;
+  background-color: var(--mantine-color-dark-9);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--mantine-color-dark-5);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
   line-height: 1.7;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-  padding: 8px 0;
+  padding: var(--mantine-spacing-xs) 0;
 }
 
 .placeholder {
-  color: #6e7681;
-  padding: 16px;
+  color: var(--mantine-color-dark-2);
+  padding: var(--mantine-spacing-md);
 }
 
 .row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 0 16px;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-md);
   cursor: pointer;
   border: 0;
   width: 100%;
@@ -37,7 +41,7 @@
 }
 
 .time {
-  color: #6e7681;
+  color: var(--mantine-color-dark-2);
   flex-shrink: 0;
 }
 
@@ -49,36 +53,36 @@
 
 .levelDebug {
   composes: level;
-  color: #8b949e;
+  color: var(--mantine-color-dark-2);
 }
 
 .levelInfo {
   composes: level;
-  color: #3fb950;
+  color: var(--mantine-color-green-5);
 }
 
 .levelWarn {
   composes: level;
-  color: #d29922;
+  color: var(--mantine-color-yellow-6);
 }
 
 .levelError {
   composes: level;
-  color: #f85149;
+  color: var(--mantine-color-red-5);
 }
 
 .sourceGateway {
-  color: #a371f7;
+  color: var(--mantine-color-violet-4);
   flex-shrink: 0;
 }
 
 .sourceAgent {
-  color: #39c5cf;
+  color: var(--mantine-color-cyan-4);
   flex-shrink: 0;
 }
 
 .message {
-  color: #e6edf3;
+  color: var(--mantine-color-gray-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -86,32 +90,32 @@
 }
 
 .fieldsHint {
-  color: #6e7681;
+  color: var(--mantine-color-dark-2);
   flex-shrink: 0;
 }
 
 .details {
-  margin: 2px 16px 6px 16px;
-  padding: 8px 12px;
+  margin: 0 var(--mantine-spacing-md) var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
   background-color: rgba(255, 255, 255, 0.03);
-  border-left: 2px solid #30363d;
-  color: #8b949e;
+  border-left: 2px solid var(--mantine-color-dark-4);
+  color: var(--mantine-color-dark-2);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .detailsLabel {
-  color: #6e7681;
+  color: var(--mantine-color-dark-2);
   display: inline-block;
   width: 10ch;
 }
 
 .detailsValue {
-  color: #c9d1d9;
+  color: var(--mantine-color-gray-3);
 }
 
 .detailsFields {
-  color: #c9d1d9;
-  margin: 4px 0 0 0;
+  color: var(--mantine-color-gray-3);
+  margin: var(--mantine-spacing-xs) 0 0 0;
   font: inherit;
 }

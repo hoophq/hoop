@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultBacklog       = 500
+	defaultBacklog       = serverlogs.Capacity
 	streamPollInterval   = 1 * time.Second
 	sseKeepaliveInterval = 30 * time.Second
 )
@@ -26,7 +26,7 @@ const (
 //	@Description	Streams gateway and agent runtime logs in real-time via SSE. Sends a backlog of recent entries on connect, then each new entry as it is captured.
 //	@Tags			Server Logs
 //	@Produce		text/event-stream
-//	@Param			backlog	query		int	false	"Number of buffered entries to replay on connect (default 500, max 5000, 0 disables)"
+//	@Param			backlog	query		int	false	"Number of buffered entries to replay on connect; defaults to and is capped at the in-memory buffer capacity (300), 0 disables"
 //	@Success		200		{string}	string
 //	@Failure		500		{object}	openapi.HTTPError
 //	@Router			/server-logs/stream [get]

@@ -11,9 +11,12 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+// The limit clamp is derived from the ring capacity so the endpoint never
+// advertises more history than the buffer holds. The default returns the
+// full tail.
 const (
-	defaultLimit = 500
-	maxLimit     = 5000
+	defaultLimit = serverlogs.Capacity
+	maxLimit     = serverlogs.Capacity
 )
 
 // List Server Logs
@@ -22,7 +25,7 @@ const (
 //	@Description	Tail of recent in-memory runtime logs from the gateway process and connected agents
 //	@Tags			Server Logs
 //	@Produce		json
-//	@Param			limit	query		int	false	"Max number of most recent entries (default 500, max 5000)"
+//	@Param			limit	query		int	false	"Max number of most recent entries; defaults to and is capped at the in-memory buffer capacity"
 //	@Success		200		{array}		openapi.ServerLogEntry
 //	@Failure		500		{object}	openapi.HTTPError
 //	@Router			/server-logs [get]

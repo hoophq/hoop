@@ -8227,7 +8227,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Max number of most recent entries (default 500, max 5000)",
+                        "description": "Max number of most recent entries; defaults to and is capped at the in-memory buffer capacity",
                         "name": "limit",
                         "in": "query"
                     }
@@ -8264,7 +8264,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Number of buffered entries to replay on connect (default 500, max 5000, 0 disables)",
+                        "description": "Number of buffered entries to replay on connect; defaults to and is capped at the in-memory buffer capacity (300), 0 disables",
                         "name": "backlog",
                         "in": "query"
                     }

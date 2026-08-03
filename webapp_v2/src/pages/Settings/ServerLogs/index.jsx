@@ -5,6 +5,8 @@ import Select from '@/components/Select'
 import { serverLogsService } from '@/services/serverLogs'
 import classes from './ServerLogs.module.css'
 
+// Matches the gateway's in-memory ring capacity (gateway/serverlogs.Capacity);
+// the server clamps larger requests to it anyway.
 const BACKLOG = 500
 const MAX_ENTRIES = 2000
 const RECONNECT_DELAY_MS = 3000
