@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Test CI helpers
+        run: python3 -m unittest scripts/ci/test_generate_sbom_manifest.py
       - name: Setup Go
         uses: actions/setup-go@v6
         with:

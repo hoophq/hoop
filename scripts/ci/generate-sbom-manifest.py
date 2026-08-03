@@ -82,8 +82,13 @@ VISIBILITY_RETRIES = 5
 VISIBILITY_DELAY_S = 10
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=False, **kw)
+def _run(
+    cmd: list[str],
+    *,
+    check: bool = False,
+    **kw,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=check, **kw)
 
 
 def resolve_image(ref: str):
