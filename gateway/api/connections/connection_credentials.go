@@ -572,20 +572,19 @@ func RevokeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if err := models.RevokeConnectionCredentials(ctx.OrgID, credentialID); err != nil {
-		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to revoke credential: %v", err)})
-		return
-	}
-
-	// Revocation burns the password: sibling rows sharing the same hash were
-	// also revoked by the model call, so mark their sessions and tear down
-	// their in-flight proxy sessions as well.
-	siblings, err := models.ListConnectionCredentialsBySecretKeyHash(ctx.OrgID, cred.SecretKeyHash)
+	// Revocation burns the password: the model call below revokes every row
+	// sharing the same hash. Fetch the sibling rows first — the listing
+	// filters out revoked rows, so after the revoke they would be invisible —
+	// then mark their sessions and tear down their in-flight proxy sessions.
+	siblings, err := models.ListNonRevokedConnectionCredentialsBySecretKeyHash(ctx.OrgID, cred.SecretKeyHash)
 	if err != nil {
 		log.Warnf("failed listing credentials sharing the revoked password, err=%v", err)
 	}
 
-	siblings = append(siblings, cred)
+	if err := models.RevokeConnectionCredentials(ctx.OrgID, credentialID); err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to revoke credential: %v", err)})
+		return
+	}
 
 	now := time.Now().UTC()
 	for _, sib := range siblings {

@@ -211,10 +211,10 @@ func RevokeConnectionCredentials(orgID, credentialID string) error {
 		}).Error
 }
 
-// ListConnectionCredentialsBySecretKeyHash returns every credential row sharing
-// the given secret key hash. Used by revocation to tear down in-flight proxy
+// ListConnectionCredentialsNotRevokedBySecretKeyHash returns every credential row sharing
+// the given secret key hash that has not been revoked. Used by revocation to tear down in-flight proxy
 // sessions across all rows that share the burned password.
-func ListConnectionCredentialsBySecretKeyHash(orgID, secretKeyHash string) ([]*ConnectionCredentials, error) {
+func ListNonRevokedConnectionCredentialsBySecretKeyHash(orgID, secretKeyHash string) ([]*ConnectionCredentials, error) {
 	var resp []*ConnectionCredentials
 	err := DB.Table("private.connection_credentials").
 		Where("org_id = ? AND secret_key_hash = ? AND revoked_at IS NULL", orgID, secretKeyHash).
