@@ -4,4 +4,10 @@ export const userGroupsService = {
   // The gateway returns a bare string array, and `null` — not `[]` — when the
   // organization has no groups. Callers must coalesce.
   list: () => api.get('/users/groups'),
+  // Only `name` is read from the request body — the handler binds
+  // openapi.UserGroup, which has no other field, so a description would be
+  // accepted and silently dropped. Responds 409 when the group already exists.
+  create: (data) => api.post('/users/groups', data),
+  // 204 on success, 422 for the built-in admin group.
+  remove: (name) => api.delete(`/users/groups/${name}`),
 }
