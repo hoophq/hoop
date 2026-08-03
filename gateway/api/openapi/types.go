@@ -445,12 +445,61 @@ type Connection struct {
 	// active protection profile attribute). Computed on reads; manage the
 	// association through the attributes field.
 	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
+	// EffectiveFeatures reports which features will actually act on this connection,
+	// resolving attribute-based associations as well as direct ones. Only populated on
+	// the detail endpoint. Null means resolution failed — treat it as unknown, never
+	// as "nothing is active".
+	EffectiveFeatures *ConnectionEffectiveFeatures `json:"effective_features,omitempty" readonly:"true"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References
 	// to external providers (AWS Secrets Manager, Vault, IAM RDS) do not
 	// affect this field.
 	SecretsUpdatedAt *time.Time `json:"secrets_updated_at,omitempty" readonly:"true" example:"2025-01-15T10:30:00Z"`
+}
+
+// ConnectionEffectiveFeatures reports which hoop features will actually act on a
+// connection when it is used.
+//
+// This is deliberately distinct from the stored fields on Connection. Guardrails,
+// data masking and access requests can be attached either directly to the connection
+// or through an attribute — the mechanism protection profiles use — and the runtime
+// enforces the union of both. The stored fields only ever reflect direct associations,
+// so a connection governed by a protection profile reports empty guardrail_rules while
+// guardrails are in fact enforced.
+type ConnectionEffectiveFeatures struct {
+	// Guardrails is true when any guardrail rule resolves for this connection.
+	Guardrails bool `json:"guardrails" example:"true"`
+	// DataMasking is true when any data masking rule resolves for this connection AND
+	// the gateway has an active masking provider. Note that redact_enabled on the
+	// connection is a legacy display field that no runtime code reads.
+	DataMasking bool `json:"data_masking" example:"true"`
+	// AISessionAnalyzer is true when an analyzer rule resolves for this connection.
+	AISessionAnalyzer bool `json:"ai_session_analyzer" example:"false"`
+	// JiraTemplates is true when the connection has a Jira issue template. Projection
+	// of jira_issue_template_id — no attribute-based path exists for it.
+	JiraTemplates bool `json:"jira_templates" example:"false"`
+	// MandatoryMetadata is true when the connection requires metadata fields before a
+	// session starts. Projection of mandatory_metadata_fields — no attribute-based path
+	// exists for it.
+	MandatoryMetadata bool `json:"mandatory_metadata" example:"false"`
+	// AccessRequest reports approval coverage, split by access type.
+	AccessRequest ConnectionAccessRequestFeatures `json:"access_request"`
+}
+
+// ConnectionAccessRequestFeatures reports access-request coverage per access type.
+// The two types are not interchangeable: "command" gates exec verbs (the web Terminal,
+// runbooks, the CLI) and "jit" gates connect verbs (the native client). A caller must
+// pick the one matching how it will run, not assume either implies the other.
+type ConnectionAccessRequestFeatures struct {
+	// Command is true when an access request rule of type "command" resolves.
+	Command bool `json:"command" example:"true"`
+	// Jit is true when an access request rule of type "jit" resolves. The duration it
+	// enforces, when any, is reported by the connection's jit_access_duration_sec.
+	Jit bool `json:"jit" example:"false"`
+	// LegacyReviewers is true when the pre-rules review plugin has reviewer groups
+	// configured. It still applies on top of both access types.
+	LegacyReviewers bool `json:"legacy_reviewers" example:"false"`
 }
 
 type ConnectionPatch struct {

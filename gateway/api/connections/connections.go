@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -24,6 +27,8 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
+	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 )
 
 type Review struct {
@@ -535,12 +540,123 @@ func Get(c *gin.Context) {
 	}
 
 	apiConn := ToOpenApi(conn, ctx.OrgHideRoleInfo)
-	if orgID, err := uuid.Parse(ctx.OrgID); err == nil {
-		if rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit"); err == nil && rule != nil {
-			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
-		}
+
+	// Derived enrichment: a failure here must not take the whole connection down, but it
+	// must also not be reported as "nothing is active" — that is indistinguishable from a
+	// genuinely unprotected connection. Leaving effective_features null says "unknown".
+	features, jitDuration, err := resolveEffectiveFeatures(ctx.OrgID, conn)
+	if err != nil {
+		log.With("connection", conn.Name).Errorf("failed resolving effective features, err=%v", err)
+	} else {
+		apiConn.EffectiveFeatures = features
+		apiConn.JitAccessDurationSec = jitDuration
 	}
+
 	c.JSON(http.StatusOK, apiConn)
+}
+
+// resolveEffectiveFeatures reports which features will actually act on this connection,
+// and the JIT duration when a JIT rule applies.
+//
+// The stored columns are not sufficient. Guardrails, data masking and access requests can
+// be attached either directly or through an attribute — the mechanism protection profiles
+// use — and the runtime resolves the union of both. These are the same resolvers the
+// enforcement path calls (gateway/transport/client.go and the accessrequest interceptor),
+// composed the same way gateway/analytics/segment.go composes them, so what we report here
+// cannot drift from what actually happens.
+func resolveEffectiveFeatures(orgID string, conn *models.Connection) (*openapi.ConnectionEffectiveFeatures, *int, error) {
+	parsedOrgID, err := uuid.Parse(orgID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing org id: %w", err)
+	}
+
+	var (
+		guardrails  *models.ConnectionGuardRailRules
+		maskingRule json.RawMessage
+		commandRule *models.AccessRequestRule
+		jitRule     *models.AccessRequestRule
+		hasAnalyzer bool
+	)
+
+	group, _ := errgroup.WithContext(context.Background())
+	group.Go(func() error {
+		rules, err := services.GetGuardRailRulesForConnection(orgID, conn.Name)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("guardrails: %w", err)
+		}
+		guardrails = rules
+		return nil
+	})
+	group.Go(func() error {
+		// Mirrors the runtime gate: masking only runs when the provider is active,
+		// so reporting rules without it would promise something that never happens.
+		if appconfig.Get().DlpProvider() != "mspresidio" {
+			return nil
+		}
+		rules, err := services.GetDataMaskingRulesForConnection(orgID, conn.Name)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("data masking: %w", err)
+		}
+		maskingRule = rules
+		return nil
+	})
+	group.Go(func() error {
+		rule, err := services.GetRuleForConnection(parsedOrgID, conn.Name, "command")
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("command access request rule: %w", err)
+		}
+		commandRule = rule
+		return nil
+	})
+	group.Go(func() error {
+		rule, err := services.GetRuleForConnection(parsedOrgID, conn.Name, "jit")
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("jit access request rule: %w", err)
+		}
+		jitRule = rule
+		return nil
+	})
+	group.Go(func() error {
+		rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, parsedOrgID, conn.Name)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("ai session analyzer rule: %w", err)
+		}
+		hasAnalyzer = rule != nil
+		return nil
+	})
+
+	if err := group.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	var jitDuration *int
+	if jitRule != nil {
+		jitDuration = jitRule.AccessMaxDuration
+	}
+
+	return &openapi.ConnectionEffectiveFeatures{
+		Guardrails:        guardrails != nil && !guardrails.HasEmptyRules(),
+		DataMasking:       hasDataMaskingRules(maskingRule),
+		AISessionAnalyzer: hasAnalyzer,
+		JiraTemplates:     conn.JiraIssueTemplateID.String != "",
+		MandatoryMetadata: len(conn.MandatoryMetadataFields) > 0,
+		AccessRequest: openapi.ConnectionAccessRequestFeatures{
+			Command:         commandRule != nil,
+			Jit:             jitRule != nil,
+			LegacyReviewers: len(conn.Reviewers) > 0,
+		},
+	}, jitDuration, nil
+}
+
+// hasDataMaskingRules reports whether the masking resolver returned any rule. It
+// coalesces to the literal "[]" when nothing matches, so an emptiness check on the
+// raw bytes alone would read that as active.
+func hasDataMaskingRules(raw json.RawMessage) bool {
+	var rules []any
+	if err := json.Unmarshal(raw, &rules); err != nil {
+		return false
+	}
+	return len(rules) > 0
 }
 
 func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
