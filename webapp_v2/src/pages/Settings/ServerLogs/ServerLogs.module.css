@@ -1,0 +1,117 @@
+.terminal {
+  background-color: #0d1117;
+  border-radius: 8px;
+  border: 1px solid #21262d;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 0;
+}
+
+.placeholder {
+  color: #6e7681;
+  padding: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 16px;
+  cursor: pointer;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+}
+
+.row:hover,
+.row:focus-visible {
+  background-color: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+
+.time {
+  color: #6e7681;
+  flex-shrink: 0;
+}
+
+.level {
+  flex-shrink: 0;
+  font-weight: 600;
+  width: 5ch;
+}
+
+.levelDebug {
+  composes: level;
+  color: #8b949e;
+}
+
+.levelInfo {
+  composes: level;
+  color: #3fb950;
+}
+
+.levelWarn {
+  composes: level;
+  color: #d29922;
+}
+
+.levelError {
+  composes: level;
+  color: #f85149;
+}
+
+.sourceGateway {
+  color: #a371f7;
+  flex-shrink: 0;
+}
+
+.sourceAgent {
+  color: #39c5cf;
+  flex-shrink: 0;
+}
+
+.message {
+  color: #e6edf3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.fieldsHint {
+  color: #6e7681;
+  flex-shrink: 0;
+}
+
+.details {
+  margin: 2px 16px 6px 16px;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid #30363d;
+  color: #8b949e;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detailsLabel {
+  color: #6e7681;
+  display: inline-block;
+  width: 10ch;
+}
+
+.detailsValue {
+  color: #c9d1d9;
+}
+
+.detailsFields {
+  color: #c9d1d9;
+  margin: 4px 0 0 0;
+  font: inherit;
+}
