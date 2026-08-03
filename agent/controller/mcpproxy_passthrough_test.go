@@ -13,7 +13,6 @@ import (
 
 	"github.com/hoophq/hoop/agent/config"
 	pb "github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/mcpproxy/audit"
 	"libhoop/agent/mcpadapter"
 )
 
@@ -103,7 +102,7 @@ func newPassthroughGateway(t *testing.T, srv *recordingMCPServer, sessionID stri
 		ConnectionType: string(pb.ConnectionTypeMcpProxy),
 		UserID:         "user-1",
 		UserEmail:      "dev@example.com",
-	}, sessionID, mcpadapter.Hooks{}, audit.Discard)
+	}, sessionID, mcpadapter.Hooks{}, nil)
 	if err != nil {
 		t.Fatalf("building the mcp gateway: %v", err)
 	}
@@ -256,7 +255,7 @@ func TestStaticModeIgnoresTheClientSuppliedCredential(t *testing.T) {
 		ConnectionName: "gh-mcp",
 		ConnectionType: string(pb.ConnectionTypeMcpProxy),
 		UserID:         "user-1",
-	}, "sid-static", mcpadapter.Hooks{}, audit.Discard)
+	}, "sid-static", mcpadapter.Hooks{}, nil)
 	if err != nil {
 		t.Fatalf("building the mcp gateway: %v", err)
 	}

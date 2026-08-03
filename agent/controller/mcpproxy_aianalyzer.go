@@ -19,12 +19,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	aianalyzer "github.com/hoophq/hoop/common/aianalyzer"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	pbclient "github.com/hoophq/hoop/common/proto/client"
-	"github.com/hoophq/hoop/common/proto/spectypes"
 	"github.com/hoophq/mcpproxy/audit"
 	"github.com/hoophq/mcpproxy/checks"
 	"github.com/hoophq/mcpproxy/inspect"
@@ -41,6 +40,22 @@ const nameMCPAnalyzer = "ai_analyzer"
 // model, bounding latency and token cost. It mirrors the HTTP path's body cap
 // (common/aianalyzer.maxAnalyzedBodyBytes), which is unexported.
 const mcpMaxAnalyzedArgsBytes = 8 * 1024
+
+// mcpAnalyzerTimeout bounds one classification round trip.
+//
+// The context reaching Inspect on the tool-call path is the gateway's request
+// context, whose deadline is the held-call budget (pb.MCPHeldCallBudget) —
+// minutes, because a call parked for human review is meant to wait that long.
+// Inheriting it means a provider that accepts the connection and then never
+// answers stalls the tool call for the whole budget: the caller sees no
+// verdict, no error and no result, just a request that hangs. That is worse
+// than the outage the fail-open path was written for, because it is
+// indistinguishable from a slow tool.
+//
+// 30s is the same order as the HTTP path's own provider timeouts and long
+// enough for a real model call; past it, the failure is treated as any other
+// engine error and the call is forwarded unanalyzed.
+const mcpAnalyzerTimeout = 30 * time.Second
 
 // mcpAnalyzer classifies each tools/call before it reaches the backend.
 //
@@ -99,6 +114,11 @@ func (a *mcpAnalyzer) Name() string { return nameMCPAnalyzer }
 // — a classifier that blocks whenever it breaks is a classifier that takes the
 // connection down with it. The failure is logged and audited so a chronically
 // broken provider is visible rather than silently permissive.
+//
+// "Slow" is bounded rather than assumed: the classification runs under
+// mcpAnalyzerTimeout, not the caller's context, so a provider that accepts the
+// connection and stops answering costs the tool call 30 seconds and then takes
+// the same fail-open path an outright refusal does.
 func (a *mcpAnalyzer) Inspect(ctx context.Context, s inspect.Session, m *inspect.Msg) inspect.Decision {
 	if a.engine == nil || m == nil || m.Env == nil || m.Dir != inspect.C2S {
 		return inspect.AllowAll
@@ -116,9 +136,18 @@ func (a *mcpAnalyzer) Inspect(ctx context.Context, s inspect.Session, m *inspect
 	// else in the session.
 	tool := checks.RealToolName(s, p.Name)
 
-	decision, err := a.engine.AnalyzeRequest(ctx, mcp.MethodToolsCall, tool, mcpAnalyzedArgs(p.Arguments))
+	// The caller's context is the gateway's request context, whose deadline is
+	// the held-call budget. Classification gets its own, far shorter one — see
+	// mcpAnalyzerTimeout for why inheriting the budget makes a hung provider
+	// indistinguishable from a slow tool.
+	actx, cancel := context.WithTimeout(ctx, mcpAnalyzerTimeout)
+	defer cancel()
+
+	decision, err := a.engine.AnalyzeRequest(actx, mcp.MethodToolsCall, tool, mcpAnalyzedArgs(p.Arguments))
 	if err != nil {
 		log.With("sid", a.sid, "tool", tool).Warnf("ai session analyzer failed, forwarding the call unanalyzed: %v", err)
+		// ctx, not actx: the event must still be emitted when what expired is
+		// the analyzer's own deadline.
 		a.emit(ctx, s, audit.Event{
 			Type: audit.EventError, Backend: m.Backend, Tool: tool,
 			Rule: nameMCPAnalyzer, Reason: fmt.Sprintf("ai session analyzer failed: %v", err),
@@ -140,17 +169,26 @@ func (a *mcpAnalyzer) Inspect(ctx context.Context, s inspect.Session, m *inspect
 		return inspect.AllowAll
 	}
 
+	// One denial event, emitted by mcpproxy rather than here. A Deny returned
+	// from a check is audited centrally by the gateway (gateway/http.go,
+	// auditDeny) with this rule and this reason; emitting locally as well put
+	// two mcp.tool_denied records in the session for every blocked call, which
+	// double-counts blocks in the session metrics and shows the reviewer the
+	// same refusal twice.
+	//
+	// The structured detail the local event carried is not lost. inspect.
+	// Decision has no Fields to extend, so risk_level, explanation and
+	// rule_name travel where they already did: the verdict shipVerdict just
+	// put on the wire carries all three, typed, under the spec key the
+	// gateway's audit plugin reads. What the reason has to carry is what a
+	// human reads — and it is read twice over, since Denyf makes it the
+	// JSON-RPC error message the MCP client renders, so the caller learns why
+	// the call was refused rather than seeing a bare "policy denied".
 	reason := fmt.Sprintf("ai session analyzer blocked %q (%s risk): %s",
 		tool, decision.RiskLevel, decision.Title)
-	a.emit(ctx, s, audit.Event{
-		Type: audit.EventToolDenied, Backend: m.Backend, Tool: tool,
-		Rule: nameMCPAnalyzer, Reason: reason,
-		Fields: map[string]any{
-			"risk_level":  string(decision.RiskLevel),
-			"explanation": decision.Explanation,
-			"rule_name":   decision.RuleName,
-		},
-	})
+	if decision.Explanation != "" {
+		reason += " — " + decision.Explanation
+	}
 	return inspect.Denyf(m.Env, jsonrpc.CodePolicyDenied, nameMCPAnalyzer, reason)
 }
 
@@ -218,30 +256,26 @@ func insertBeforeAuditTap(pipeline []inspect.Check, extra inspect.Check) []inspe
 }
 
 // mcpVerdictEmitter returns the callback that ships an encoded analyzer verdict
-// to the gateway.
+// to the gateway, through the session's audit sink.
 //
-// It rides the same MCPProxyConnectionWrite packet the audit sink uses, tagged
+// It rides the same MCPProxyConnectionWrite packet the audit events use, tagged
 // as a protocol event so the gateway records it rather than forwarding it to
 // the MCP client. The verdict travels in the spec under the key the audit
 // plugin already reads (spectypes.AIAnalyzerInfoKey), so session metrics — risk
 // counts, blocked totals, the worst verdict — populate for MCP sessions with no
 // gateway-side change.
 //
-// The payload is the newline the recorder expects for an event line; the
-// verdict itself is spec metadata, not session content.
-func (a *Agent) mcpVerdictEmitter(sessionID string) func([]byte) {
-	return func(encoded []byte) {
-		pkt := &pb.Packet{
-			Type: pbclient.MCPProxyConnectionWrite,
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:     []byte(sessionID),
-				pb.SpecMCPEventKey:          []byte("1"),
-				spectypes.AIAnalyzerInfoKey: encoded,
-			},
-			Payload: []byte("\n"),
-		}
-		if err := a.client.Send(pkt); err != nil {
-			log.With("sid", sessionID).Warnf("failed sending mcp ai analyzer verdict: %v", err)
-		}
+// The sink, not client.Send. This callback fires from inside Inspect, on the
+// goroutine serving a tool call, so sending inline would grab the agent-wide
+// send mutex on the hot path — the same reason audit events were moved behind
+// the queue. Going through the sink also means the verdict inherits its
+// backpressure and its stop semantics instead of racing session cleanup.
+//
+// A nil sink (a gateway built without one) drops the verdict rather than
+// panicking: the analyzer is optional telemetry, not an enforcement path.
+func mcpVerdictEmitter(sink *mcpEventSink) func([]byte) {
+	if sink == nil {
+		return nil
 	}
+	return sink.shipVerdict
 }

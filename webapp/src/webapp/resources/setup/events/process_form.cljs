@@ -2,7 +2,7 @@
   (:require
    [clojure.string :as str]
    [webapp.resources.helpers :as helpers]
-   [webapp.resources.constants :refer [http-proxy-subtypes]]))
+   [webapp.resources.constants :refer [http-proxy-subtypes mcp-stdio-transports]]))
 
 (defn extract-value
   "Extract value from map or string, applying prefix based on the chosen source."
@@ -42,9 +42,18 @@
       :else
       final-value)))
 
-(defn- raw-credential-value
+(defn raw-credential-value
   "Returns the plain string held by a role credential, unwrapping the
-  {:value :source} secrets-manager shape."
+  {:value :source} secrets-manager shape.
+
+  Public because every read of a role credential has to go through it, not
+  just the ones in this namespace. A credential is a raw string until the
+  admin touches the connection-method radio, at which point
+  update-role-credentials-source rewraps EVERY credential — in both
+  directions, since switching back to manual-input rewraps too. Code that
+  compared a credential against a string therefore worked right up until the
+  admin toggled that radio, and then quietly stopped: for mcp_transport that
+  meant the stdio carve-outs below all reverted to the remote behaviour."
   [v]
   (cond
     (map? v) (str (:value v ""))
@@ -96,6 +105,34 @@
        "HEADER_X_API_KEY" (get credentials "HEADER_X_API_KEY")
        "insecure" insecure})))
 
+(defn mcpproxy-stdio?
+  "True when this role's credentials configure an MCP server hoop spawns as a
+  child process rather than reaches at a URL.
+
+  Both stdio transports answer yes: they differ only in WHICH machine runs the
+  command, never in how it is carried. Every stdio carve-out downstream keys
+  off this — the command leaves the env vars for the connection's command
+  array, secrets take the MCPENV_ prefix instead of HEADER_, and remote-only
+  settings are dropped — so all of them agree by construction."
+  [subtype credentials]
+  (and (= subtype "mcpproxy")
+       (contains? mcp-stdio-transports
+                  (raw-credential-value (get credentials "mcp_transport")))))
+
+(defn mcpproxy-stdio-command
+  "The connection command array for a stdio MCP role, or nil when the role is
+  not one.
+
+  A stdio server is spawned from the connection's command array
+  (AgentConnectionParams.CmdList), so the command the admin typed belongs
+  there rather than in an env var. Split on whitespace: the field takes a
+  plain command line."
+  [subtype credentials]
+  (when (mcpproxy-stdio? subtype credentials)
+    (->> (str/split (raw-credential-value (get credentials "command")) #"\s+")
+         (remove str/blank?)
+         vec)))
+
 (defn process-role-secret
   "Process role credentials into secret format with base64 encoding"
   [role]
@@ -108,14 +145,12 @@
         ;; auth-method and connection-type are UI-only role state, never secrets.
         ;; Local SSH runs on the agent host itself, so it carries no credentials.
         ssh-local? (and (= subtype "ssh")
-                        (= (get (:credentials role) "connection-type") "local"))
+                        (= (raw-credential-value
+                            (get (:credentials role) "connection-type"))
+                           "local"))
         ;; A stdio MCP server's command becomes the connection's command array
         ;; (see process-role), so it must not also be emitted as an env var.
-        ;; Both stdio transports do this — they differ only in which machine
-        ;; runs the command, never in how it is carried.
-        mcpproxy-stdio? (and (= subtype "mcpproxy")
-                             (contains? #{"stdio" "client-stdio"}
-                                        (get (:credentials role) "mcp_transport")))
+        stdio? (mcpproxy-stdio? subtype (:credentials role))
         credentials (cond
                       ssh-local? {}
                       :else
@@ -128,7 +163,7 @@
                       ;; still reaches the agent, as MCP_AUTH.
                       (cond-> (apply dissoc raw-credentials
                                      "auth-method" "connection-type" mcp-ui-only-credentials)
-                        mcpproxy-stdio? (dissoc "command" "remote_url" "insecure")))
+                        stdio? (dissoc "command" "remote_url" "insecure")))
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])
         config-files (or (:configuration-files role) [])
@@ -167,7 +202,7 @@
                        ;; process environment, which the agent collects from
                        ;; the MCPENV_ carve-out prefix. HEADER_ would make them
                        ;; outbound HTTP headers, which a subprocess never sees.
-                       mcpproxy-stdio?
+                       stdio?
                        (concat all-credential-env-vars
                                (mapv (fn [{:keys [key value]}]
                                        {:key (str "MCPENV_" key)
@@ -211,7 +246,9 @@
         ;; Local SSH is submitted with the wire subtype "ssh-local"; the role
         ;; keeps subtype "ssh" so process-role-secret drops its credentials.
         ssh-local? (and (= raw-subtype "ssh")
-                        (= (get (:credentials role) "connection-type") "local"))
+                        (= (raw-credential-value
+                            (get (:credentials role) "connection-type"))
+                           "local"))
         subtype (if ssh-local? "ssh-local" raw-subtype)
         secret (process-role-secret role)
         command-role (if command-role
@@ -223,19 +260,9 @@
         ;; Extract just the values
 
         command-args (:command-args role [])
-        ;; A stdio MCP server is spawned from the connection's command array
-        ;; (AgentConnectionParams.CmdList), so the command the admin typed
-        ;; belongs there rather than in an env var. Split on whitespace: the
-        ;; field takes a plain command line. client-stdio travels identically;
-        ;; only the machine that runs it differs.
-        mcpproxy-stdio-command (when (and (= raw-subtype "mcpproxy")
-                                          (contains? #{"stdio" "client-stdio"}
-                                                     (get (:credentials role) "mcp_transport")))
-                                 (->> (str/split (or (get (:credentials role) "command") "") #"\s+")
-                                      (remove str/blank?)
-                                      vec))
+        stdio-command (mcpproxy-stdio-command raw-subtype (:credentials role))
         command (cond
-                  (seq mcpproxy-stdio-command) mcpproxy-stdio-command
+                  (seq stdio-command) stdio-command
                   (and (= type "custom") (= subtype "linux-vm"))
                   (mapv #(get % "value") command-args)
                   :else (or command-role []))]

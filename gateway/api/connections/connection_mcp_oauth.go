@@ -13,14 +13,18 @@
 // private.mcp_oauth_flows table keyed by the OAuth state parameter rather than
 // by connection. The callback is unauthenticated because the upstream provider
 // redirects the browser to it directly; it is secured by the single-use,
-// TTL-bounded state row created at authorize time.
+// TTL-bounded state row created at authorize time, and only a pending flow may
+// change state there — a replay of a settled one is answered with the outcome
+// it already has rather than allowed to downgrade it.
 //
 // What happens to the token afterwards depends on the subtype. Both freeze it
 // into HEADER_AUTHORIZATION, which is what the agent reads. The mcpproxy
 // subtype additionally adopts the flow into a durable grant when the
 // connection is saved (services.AdoptMCPOAuthGrant), so the credential is
 // renewed from its refresh token at every session open instead of dying at the
-// provider's TTL. The legacy mcp subtype keeps the frozen header alone.
+// provider's TTL — but only when the flow authorized the server that
+// connection actually points at. The legacy mcp subtype keeps the frozen
+// header alone.
 //
 // The OAuth protocol itself lives in services/mcp_oauth_client.go, over
 // mcpproxy's auth/outbound/oauth.
@@ -28,6 +32,7 @@ package apiconnections
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -233,6 +238,25 @@ func MCPOAuthCallback(c *gin.Context) {
 		redirectBack = appconfig.Get().FullApiURL() + "/"
 	}
 
+	// This endpoint is unauthenticated by design — the provider redirects the
+	// browser here — so anyone holding the callback URL can replay it, and a
+	// browser back button is enough. Only a pending flow may still change
+	// state. Replaying one that already succeeded used to run the failure
+	// path below (the code is spent, so the exchange fails), flipping a good
+	// flow to error and destroying the credential a freshly created
+	// connection was about to adopt — an unauthenticated request silently
+	// breaking a connection an admin just saved. Answer the replay with the
+	// outcome the flow already has and touch nothing.
+	switch flow.Status {
+	case models.MCPOAuthFlowStatusCompleted, models.MCPOAuthFlowStatusConsumed:
+		log.With("flow-id", flow.ID).Infof("mcp oauth: ignoring callback replay for a %s flow", flow.Status)
+		c.Redirect(http.StatusTemporaryRedirect, withMCPOutcome(redirectBack, "success", flow.ID, ""))
+		return
+	case models.MCPOAuthFlowStatusError:
+		c.Redirect(http.StatusTemporaryRedirect, withMCPOutcome(redirectBack, "error", flow.ID, flow.ErrorReason))
+		return
+	}
+
 	// A terminal failure marks the flow rather than deleting it: the create
 	// page polls the token endpoint next and needs the reason to render. The
 	// row is consumed there, and any flow nobody ever polls is swept by
@@ -434,24 +458,33 @@ func withMCPOutcome(redirectURL, outcome, flowID, reason string) string {
 }
 
 // adoptMCPOAuthGrant promotes a completed OAuth login into a durable grant for
-// a freshly saved connection.
+// a freshly saved connection, and reports why it could not when it did not.
 //
-// Called after create and update, and a no-op unless the payload carried a
-// flow id for the mcpproxy subtype. Only that subtype gets renewal: the legacy
-// mcp subtype runs the byte-relay path, which has no notion of a grant.
+// Called after create and update, and a no-op (empty warning) unless the
+// payload carried a flow id for the mcpproxy subtype. Only that subtype gets
+// renewal: the legacy mcp subtype runs the byte-relay path, which has no
+// notion of a grant.
 //
-// Failure is logged, not returned. The connection is already written and its
-// frozen HEADER_AUTHORIZATION works exactly as it did before grants existed,
-// so refusing the save would turn a degraded credential lifecycle into a
-// broken create flow.
-func adoptMCPOAuthGrant(orgID, connectionID, subType, flowID string) {
+// A failure does not fail the save. The connection row is already written and
+// its frozen HEADER_AUTHORIZATION works exactly as it did before grants
+// existed, so refusing here would turn a degraded credential lifecycle into a
+// broken create flow. It is not silent either: the reason goes back on the
+// response, because the alternative is a 201 for a connection that quietly
+// stops working at the provider's token TTL — the admin finds out from a
+// failing session days later, with nothing pointing at the save that caused
+// it. The endpoint-mismatch refusal in services.AdoptMCPOAuthGrant is the case
+// that most needs saying out loud: it means the admin authorized one server
+// and saved another.
+func adoptMCPOAuthGrant(orgID string, conn *models.Connection, subType, flowID string) (warning string) {
 	if flowID == "" || subType != services.MCPOAuthGrantSubType {
-		return
+		return ""
 	}
-	if err := services.AdoptMCPOAuthGrant(orgID, connectionID, flowID); err != nil {
-		log.With("connection-id", connectionID, "flow-id", flowID).
+	if err := services.AdoptMCPOAuthGrant(orgID, conn.ID, flowID, conn.Envs); err != nil {
+		log.With("connection-id", conn.ID, "flow-id", flowID).
 			Warnf("mcp oauth: failed adopting grant, the connection keeps its frozen token: %v", err)
-		return
+		return fmt.Sprintf("the OAuth login was not attached to this connection, so its credential will not be renewed "+
+			"and the connection stops working when the provider expires the current token: %v", err)
 	}
-	log.With("connection-id", connectionID, "flow-id", flowID).Infof("mcp oauth: grant adopted")
+	log.With("connection-id", conn.ID, "flow-id", flowID).Infof("mcp oauth: grant adopted")
+	return ""
 }

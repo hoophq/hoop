@@ -4,6 +4,14 @@ go 1.26.2
 
 replace github.com/hoophq/hoop/common => ../common
 
+replace github.com/hoophq/hoop/agent => ../agent
+
+// Pulled in transitively: `go mod tidy` walks the tests of the modules this
+// one depends on, and agent/controller's tests import client/proxy. Without
+// the replace it tries to fetch a published client and fails on the
+// placeholder version agent pins.
+replace github.com/hoophq/hoop/client => ../client
+
 replace libhoop => ../libhoop
 
 require (

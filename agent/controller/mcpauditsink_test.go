@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/agent/config"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/proto/spectypes"
 	"github.com/hoophq/mcpproxy/audit"
 )
 
@@ -267,6 +270,172 @@ func TestMCPAuditSinkStopReturnsOnAStalledStream(t *testing.T) {
 	sink.stop()
 	close(transport.release) // the parked Send completes, then flush runs
 	waitSinkStopped(t, sink)
+}
+
+// failingTransport fails every Send after the first n succeed, and counts the
+// attempts. It is how flush's give-up-on-first-error branch becomes
+// observable: a wedged stream is indistinguishable from a slow one unless the
+// error is real.
+type failingTransport struct {
+	mu        sync.Mutex
+	okBefore  int
+	attempts  int
+	delivered int
+}
+
+func (t *failingTransport) Send(*pb.Packet) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.attempts++
+	if t.attempts <= t.okBefore {
+		t.delivered++
+		return nil
+	}
+	return errors.New("stream is gone")
+}
+
+func (t *failingTransport) counts() (attempts, delivered int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.attempts, t.delivered
+}
+
+func (t *failingTransport) Recv() (*pb.Packet, error)      { select {} }
+func (t *failingTransport) StreamContext() context.Context { return context.Background() }
+func (t *failingTransport) StartKeepAlive()                {}
+func (t *failingTransport) Close() (error, error)          { return nil, nil }
+
+// flush abandons the backlog on the first failing write rather than walking
+// it. The backlog can be a thousand events, and a stream that failed once at
+// session teardown is not coming back: retrying each one holds the drain
+// goroutine — and the sessionCleanup that is waiting on it — open for a
+// thousand more doomed gRPC calls.
+func TestMCPAuditSinkFlushAbandonsTheBacklogOnTheFirstError(t *testing.T) {
+	// A few writes land before the stream dies, so the test distinguishes
+	// "gave up at the error" from "never wrote anything".
+	const okBefore = 3
+	transport := &failingTransport{okBefore: okBefore}
+	agent := New(transport, &config.Config{}, nil)
+
+	sink := agent.mcpAuditSink("sid-flush", nil)
+	// Stop the drain goroutine before emitting anything: with no reader
+	// running, the whole batch lands in the queue and flush sees one backlog.
+	// The flush stop performs finds it empty and writes nothing.
+	sink.stop()
+	waitSinkStopped(t, sink)
+
+	const backlog = 50
+	for i := range backlog {
+		sink.Emit(context.Background(), testEvent(fmt.Sprintf("tool-%d", i)))
+	}
+	// The drain goroutine has already exited, so flush is invoked directly —
+	// this is the branch under test, not the lifecycle around it.
+	sink.flush()
+
+	attempts, delivered := transport.counts()
+	if delivered != okBefore {
+		t.Fatalf("delivered %d events, want %d: flush must drain what it can before the stream fails", delivered, okBefore)
+	}
+	if attempts != okBefore+1 {
+		t.Fatalf("flush attempted %d writes, want %d: it must abandon the backlog at the first error, not walk all %d",
+			attempts, okBefore+1, backlog)
+	}
+	// The events it gave up on stay queued rather than being silently
+	// consumed, so nothing pretends they were written.
+	if got, want := len(sink.queue), backlog-okBefore-1; got != want {
+		t.Errorf("queue holds %d events after the aborted flush, want %d", got, want)
+	}
+}
+
+// An analyzer verdict must leave through the sink's queue, never through
+// client.Send on the caller's goroutine.
+//
+// shipVerdict runs inside Inspect, on the path of a tool call the user is
+// waiting for. Sending inline takes the agent-wide send mutex there — behind
+// whatever multi-megabyte response chunk another session is writing — which is
+// the exact stall the sink was built to keep off this path.
+func TestMCPVerdictLeavesThroughTheSinkNotTheCallersGoroutine(t *testing.T) {
+	transport := newBlockingTransport()
+	agent := New(transport, &config.Config{}, nil)
+
+	sink := agent.mcpAuditSink("sid-verdict", nil)
+
+	// Park the drain goroutine inside Send, so the stream is as contended as
+	// it gets: anything that ships inline blocks here.
+	sink.Emit(context.Background(), testEvent("first"))
+	select {
+	case <-transport.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain goroutine never reached client.Send")
+	}
+
+	shipped := make(chan struct{})
+	go func() {
+		defer close(shipped)
+		mcpVerdictEmitter(sink)([]byte("encoded-verdict"))
+	}()
+	select {
+	case <-shipped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shipping a verdict blocked on the stream; it took client.Send on the tool-call goroutine instead of the sink queue")
+	}
+
+	// Queued, not sent: the parked Send still owns the stream.
+	if len(transport.packets()) != 0 {
+		t.Fatal("a packet reached the transport while the stream was parked; the verdict bypassed the queue")
+	}
+
+	close(transport.release)
+	sink.stop()
+	waitSinkStopped(t, sink)
+
+	var verdicts int
+	for _, pkt := range transport.packets() {
+		if raw := pkt.Spec[spectypes.AIAnalyzerInfoKey]; len(raw) > 0 {
+			verdicts++
+			if string(raw) != "encoded-verdict" {
+				t.Errorf("verdict payload = %q, want the encoded one", raw)
+			}
+			if len(pkt.Spec[pb.SpecMCPEventKey]) == 0 {
+				t.Error("verdict packet lost its event marker in the queue; the gateway would forward it to the MCP client as response bytes")
+			}
+			if pkt.Type != pbclient.MCPProxyConnectionWrite {
+				t.Errorf("verdict packet type = %q, want %q", pkt.Type, pbclient.MCPProxyConnectionWrite)
+			}
+		}
+	}
+	if verdicts != 1 {
+		t.Fatalf("%d verdicts reached the stream, want 1", verdicts)
+	}
+}
+
+// The verdict rides its own packet. Stamping the shared spec map instead would
+// leak the verdict onto every audit event emitted afterwards, and the gateway
+// dedupes on (ConnID, Seq) — so the duplicates would not even be visible as
+// duplicates, they would just re-attribute later events to this verdict.
+func TestMCPVerdictDoesNotContaminateLaterEvents(t *testing.T) {
+	transport := newBlockingTransport()
+	close(transport.release)
+	agent := New(transport, &config.Config{}, nil)
+
+	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte("sid-verdict-2")}
+	sink := agent.mcpAuditSink("sid-verdict-2", spec)
+
+	mcpVerdictEmitter(sink)([]byte("encoded-verdict"))
+	sink.Emit(context.Background(), testEvent("after"))
+	sink.stop()
+	waitSinkStopped(t, sink)
+
+	pkts := transport.packets()
+	if len(pkts) != 2 {
+		t.Fatalf("sent %d packets, want 2", len(pkts))
+	}
+	if len(pkts[1].Spec[spectypes.AIAnalyzerInfoKey]) != 0 {
+		t.Error("the audit event after the verdict carries it too; the verdict mutated the sink's shared spec")
+	}
+	if len(spec[spectypes.AIAnalyzerInfoKey]) != 0 {
+		t.Error("the verdict was written into the caller's spec map")
+	}
 }
 
 // waitSinkStopped blocks until the sink's drain goroutine has exited.

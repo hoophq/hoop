@@ -21,6 +21,7 @@
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.mcp-catalog :as mcp-catalog]
+   [webapp.resources.setup.events.process-form :refer [raw-credential-value]]
    [webapp.resources.setup.events.mcp-oauth]))
 
 ;; The literal JSON GET /mcp-catalog returns, snake_case keys and all, fed
@@ -120,6 +121,28 @@
 (defn- mode! [m]
   (dispatch! [:mcp-catalog/select-auth-mode 0 m]))
 
+(defn- transport! [t]
+  (dispatch! [:mcp-catalog/select-transport 0 t]))
+
+(defn- method! [m]
+  (dispatch! [:resource-setup->update-role-connection-method 0 m]))
+
+(defn- set-cred! [k v]
+  (dispatch! [:resource-setup->update-role-credentials 0 k v]))
+
+(defn- input-values
+  "Every :value the form binds to an input, so a field's CONTENTS can be
+  checked and not only its label. The hiccup walk above flattens to strings
+  and cannot tell one from the other."
+  []
+  (letfn [(walk [form]
+            (cond
+              (map? form) (concat (when-let [v (:value form)] [(str v)])
+                                  (mapcat walk (vals form)))
+              (sequential? form) (mapcat walk form)
+              :else []))]
+    (vec (walk (roles-step/mcpproxy-role-form 0)))))
+
 ;; A server that documents two credentials gets a real choice.
 (deftest a-dual-mode-server-offers-both-of-its-modes
   (reset-db!)
@@ -202,7 +225,7 @@
   (let [texts (rendered)]
     (is (not (shows? texts "Authorize with MCP")))
     (is (shows? texts "CONTEXT7_API_KEY value"))
-    (is (= "static" (mcp-catalog/cred-value
+    (is (= "static" (raw-credential-value
                      (get-in @rf-db/app-db
                              [:resource-setup :roles 0 :credentials "mcp_auth_mode"]))))))
 
@@ -226,10 +249,14 @@
 
 ;; A stdio server authenticates through its child environment (MCPENV_*), so
 ;; the whole block is meaningless there and must not appear.
+;;
+;; Through the real transport event, not a bare credential write: what the
+;; form renders and what that event clears have to agree, and a test that
+;; sets the credential by hand cannot tell the difference.
 (deftest stdio-transports-render-no-auth-block
   (reset-db!)
   (pick! "github")
-  (dispatch! [:resource-setup->update-role-credentials 0 "mcp_transport" "stdio"])
+  (transport! "stdio")
   (let [texts (rendered)]
     (is (not (shows? texts "MCP Authorization")))
     (is (not (shows? texts "Authentication method")))
@@ -288,3 +315,79 @@
     ;; re-introduce the shared credential the admin just opted out of.
     (is (not (shows? texts "Authorization value")))
     (is (not (shows? texts "Authorize with MCP")))))
+
+;; ---------------------------------------------------------------------------
+;; Wrapped credentials
+;; ---------------------------------------------------------------------------
+;;
+;; Touching the connection-method radio rewraps every credential as
+;; {:value :source} — in both directions, since manual-input rewraps too.
+;; The form read mcp_transport raw and compared it against a string, so after
+;; that click a stdio role rendered the REMOTE side of every branch: a URL
+;; field where the admin needs a command box, and an MCP Authorization block
+;; offering modes a subprocess cannot use.
+
+(deftest a-stdio-role-still-renders-its-command-after-the-method-toggle
+  (reset-db!)
+  (pick! "custom")
+  (transport! "stdio")
+  (set-cred! "command" "node server.js")
+  (method! "secrets-manager")
+  (let [texts (rendered)]
+    (is (shows? texts "Command"))
+    (is (not (shows? texts "MCP Server URL")))
+    (is (not (shows? texts "MCP Authorization"))))
+  (is (some #{"node server.js"} (input-values))
+       "the command the admin typed is no longer in the field they typed it into"))
+
+(deftest a-stdio-role-still-renders-its-command-after-toggling-back
+  (reset-db!)
+  (pick! "custom")
+  (transport! "client-stdio")
+  (set-cred! "command" "node server.js")
+  (method! "secrets-manager")
+  (method! "manual-input")
+  (is (shows? (rendered) "Command"))
+  (is (some #{"node server.js"} (input-values))))
+
+;; The remote side of the same bug: a wrapped remote_url rendered as blank in
+;; the URL field, so an admin re-saving an existing connection would clear it
+;; without ever seeing what it held.
+(deftest a-remote-role-still-renders-its-url-after-the-method-toggle
+  (reset-db!)
+  (pick! "linear")
+  (method! "secrets-manager")
+  (is (shows? (rendered) "MCP Server URL"))
+  (is (some #{"https://mcp.linear.app/mcp"} (input-values))))
+
+;; ---------------------------------------------------------------------------
+;; Changing the transport
+;; ---------------------------------------------------------------------------
+
+;; The blocker, from the admin's side. MCP_AUTH=passthrough is set while the
+;; transport is remote; switching to stdio hides the MCP Authorization block,
+;; so if the credential survived there would be no control left to fix a
+;; connection the agent refuses. The dropdown must therefore clear it, not
+;; merely stop showing it.
+(deftest switching-to-stdio-leaves-no-hidden-auth-mode-behind
+  (reset-db!)
+  (pick! "github")
+  (mode! "passthrough")
+  (transport! "stdio")
+  (is (not (shows? (rendered) "MCP Authorization")))
+  (is (nil? (get-in @rf-db/app-db
+                    [:resource-setup :roles 0 :credentials "mcp_auth"]))
+      "hidden but still stored is the whole bug: the agent rejects it and the admin cannot reach it"))
+
+(deftest switching-back-to-remote-restores-the-url-field
+  (reset-db!)
+  (pick! "custom")
+  (transport! "stdio")
+  (set-cred! "command" "node server.js")
+  (transport! "streamable-http")
+  (let [texts (rendered)]
+    (is (shows? texts "MCP Server URL"))
+    (is (shows? texts "MCP Authorization"))
+    (is (not (shows? texts "Command"))))
+  (is (not (some #{"node server.js"} (input-values)))
+      "the stale command is gone from state, not just off screen"))

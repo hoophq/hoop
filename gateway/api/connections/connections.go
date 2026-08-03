@@ -122,9 +122,13 @@ func Post(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
 	}
 
-	adoptMCPOAuthGrant(ctx.OrgID, resp.ID, req.SubType, req.MCPOAuthFlowID)
+	// resp carries the envs as saved, which is what the adoption must match
+	// the login against — not req.Secrets, which the caller controls and which
+	// PUT may have only partially overlaid.
+	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
+	out.MCPOAuthWarning = adoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
 
-	c.JSON(http.StatusCreated, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+	c.JSON(http.StatusCreated, out)
 }
 
 // Put Connection
@@ -244,9 +248,10 @@ func Put(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
 
-	adoptMCPOAuthGrant(ctx.OrgID, conn.ID, req.SubType, req.MCPOAuthFlowID)
+	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
+	out.MCPOAuthWarning = adoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
 
-	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+	c.JSON(http.StatusOK, out)
 }
 
 // Patch Connection

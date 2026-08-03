@@ -17,7 +17,7 @@
    [re-frame.core :as rf]
    [re-frame.db :as rf-db]
    [webapp.resources.setup.events.mcp-catalog :as mcp-catalog]
-   [webapp.resources.setup.events.process-form :as process-form]
+   [webapp.resources.setup.events.process-form :as process-form :refer [raw-credential-value]]
    ;; Registers :resource-setup->update-role-credentials and
    ;; :resource-setup->remove-role-credential, which the events under test
    ;; dispatch. Without it every assertion fails on an unregistered handler.
@@ -124,7 +124,7 @@
   (get-in @rf-db/app-db [:resource-setup :roles 0 :credentials]))
 
 (defn- cred [k]
-  (mcp-catalog/cred-value (get (creds) k)))
+  (raw-credential-value (get (creds) k)))
 
 (defn- dispatch! [event]
   (rf/dispatch-sync event)
@@ -148,6 +148,38 @@
     (->> (js->clj (process-form/process-role-secret role))
          (map (fn [[k v]] [(subs k (count "envvar:")) (js/atob v)]))
          (into {}))))
+
+(defn- emitted-command
+  "The connection command array the role would be saved with. A stdio server is
+  spawned from this, so an empty one is an MCP connection the agent cannot
+  start."
+  []
+  (:command (process-form/process-role
+             (get-in @rf-db/app-db [:resource-setup :roles 0])
+             "agent-1")))
+
+(defn- method! [m]
+  (dispatch! [:resource-setup->update-role-connection-method 0 m]))
+
+(defn- add-env! [k v]
+  (dispatch! [:resource-setup->update-role-env-current-key 0 k])
+  (dispatch! [:resource-setup->update-role-env-current-value 0 v])
+  (dispatch! [:resource-setup->add-role-env-row 0]))
+
+(defn- env-keys []
+  (mapv :key (get-in @rf-db/app-db [:resource-setup :roles 0 :environment-variables] [])))
+
+(defn- transport! [t]
+  (dispatch! [:mcp-catalog/select-transport 0 t]))
+
+(defn- stdio-role!
+  "A custom stdio server with a command and one secret for its child process."
+  []
+  (reset-db!)
+  (pick! "custom")
+  (transport! "stdio")
+  (set-cred! "command" "npx -y @modelcontextprotocol/server-filesystem /data")
+  (add-env! "FIGMA_TOKEN" "sk-1"))
 
 ;; ---------------------------------------------------------------------------
 ;; Seeding from the catalog
@@ -423,3 +455,144 @@
       (is (not (contains? envs k)) (str k " must not be emitted")))
     ;; The mode still reaches the agent, under the name it does read.
     (is (= "static" (get envs "MCP_AUTH")))))
+
+;; ---------------------------------------------------------------------------
+;; Wrapped credentials
+;; ---------------------------------------------------------------------------
+;;
+;; A credential is a raw string until the admin touches the connection-method
+;; radio, and update-role-credentials-source then rewraps EVERY credential as
+;; {:value :source} — in both directions, because switching back to
+;; manual-input rewraps too. Anything that compared a credential against a
+;; string kept working right up to that click and then quietly stopped.
+;;
+;; For mcp_transport that click decided whether the role was stdio at all, so
+;; one radio toggle turned a working stdio server into: an empty command array
+;; (nothing for the agent to spawn), the command and URL leaking as env vars,
+;; and the child's secrets sent as outbound HTTP headers instead of MCPENV_*.
+
+(deftest a-stdio-role-survives-the-connection-method-toggle
+  (stdio-role!)
+  (method! "secrets-manager")
+  (let [envs (emitted)]
+    (is (= ["npx" "-y" "@modelcontextprotocol/server-filesystem" "/data"]
+           (emitted-command))
+        "the wrapped mcp_transport stopped reading as stdio, so nothing spawns")
+    (is (not (contains? envs "COMMAND"))
+        "the command belongs in the command array, not in an env var")
+    (is (contains? envs "MCPENV_FIGMA_TOKEN")
+        "a stdio child reads its secrets from MCPENV_*, never from HTTP headers")
+    (is (not (contains? envs "HEADER_FIGMA_TOKEN")))))
+
+;; And back: manual-input rewraps just as secrets-manager does, so the toggle
+;; breaks the carve-out in whichever direction it is clicked.
+(deftest a-stdio-role-survives-the-connection-method-toggle-back
+  (stdio-role!)
+  (method! "secrets-manager")
+  (method! "manual-input")
+  (let [envs (emitted)]
+    (is (= ["npx" "-y" "@modelcontextprotocol/server-filesystem" "/data"]
+           (emitted-command)))
+    (is (not (contains? envs "COMMAND")))
+    (is (contains? envs "MCPENV_FIGMA_TOKEN"))))
+
+;; The stdio carve-out also drops the remote-only settings a stdio child has
+;; no use for. INSECURE is the one that outlives a transport change: the form
+;; writes it as a plain boolean on first render, before any transport is
+;; chosen, and the connection-method toggle leaves booleans alone — so it is
+;; still sitting there when the carve-out has to drop it.
+(deftest a-stdio-role-emits-no-remote-only-settings-after-the-toggle
+  (reset-db!)
+  (pick! "github")
+  (set-cred! "insecure" false)
+  (transport! "stdio")
+  (set-cred! "command" "node server.js")
+  (method! "secrets-manager")
+  (let [envs (emitted)]
+    (is (not (contains? envs "INSECURE"))
+        "a subprocess makes no TLS connection for this to relax")
+    (is (not (contains? envs "REMOTE_URL")))))
+
+;; ---------------------------------------------------------------------------
+;; Changing the transport
+;; ---------------------------------------------------------------------------
+
+;; The blocker: MCP_AUTH=passthrough chosen while the transport was remote
+;; survives into stdio, the agent rejects that pair outright
+;; (validateMCPProxyEnv), and the control that would fix it is hidden the
+;; moment stdio is selected. The admin gets a connection they cannot repair
+;; from the form that produced it.
+(deftest switching-to-stdio-drops-an-auth-mode-stdio-cannot-serve
+  (reset-db!)
+  (pick! "github")
+  (mode! "passthrough")
+  (is (= "passthrough" (cred "mcp_auth")))
+  (transport! "stdio")
+  (let [envs (emitted)]
+    (is (not (contains? envs "MCP_AUTH"))
+        "MCP_AUTH=passthrough on a stdio transport is refused by the agent")
+    (is (= "stdio" (get envs "MCP_TRANSPORT")))))
+
+(deftest switching-to-stdio-forgets-the-remote-servers-credential
+  (reset-db!)
+  (pick! "context7")
+  (set-cred! "HEADER_CONTEXT7_API_KEY" "ctx-secret")
+  (transport! "client-stdio")
+  (let [envs (emitted)]
+    (is (not (contains? envs "HEADER_CONTEXT7_API_KEY"))
+        "a header credential reaches no subprocess; it would only sit there being stored")
+    (is (not (contains? envs "REMOTE_URL")))))
+
+;; The other direction. A command left over from a stdio setup is emitted as
+;; COMMAND, an env var the agent does not read, sitting next to the REMOTE_URL
+;; that superseded it.
+(deftest switching-to-remote-forgets-the-stdio-command
+  (stdio-role!)
+  (transport! "streamable-http")
+  (set-cred! "remote_url" "https://mcp.internal/mcp")
+  (let [envs (emitted)]
+    (is (not (contains? envs "COMMAND")))
+    (is (empty? (emitted-command)))
+    (is (= "https://mcp.internal/mcp" (get envs "REMOTE_URL")))))
+
+;; The same list is emitted under a different prefix on each side: MCPENV_*
+;; into a child process's environment, HEADER_* onto outbound HTTP requests.
+;; Carried across the switch it becomes the other thing, which is not what the
+;; admin typed it for — an MCP server secret sent to an HTTP endpoint.
+(deftest switching-transport-does-not-reinterpret-the-env-rows
+  (stdio-role!)
+  (transport! "sse")
+  (is (empty? (env-keys)))
+  (is (not (contains? (emitted) "HEADER_FIGMA_TOKEN"))))
+
+;; Switching between the two stdio transports changes which machine runs the
+;; command, not what any credential means. Clearing here would throw away the
+;; command the admin just typed.
+(deftest switching-between-the-stdio-transports-keeps-the-command
+  (stdio-role!)
+  (transport! "client-stdio")
+  (is (= ["npx" "-y" "@modelcontextprotocol/server-filesystem" "/data"]
+         (emitted-command)))
+  (is (= ["FIGMA_TOKEN"] (env-keys))))
+
+;; The third transition, and the one neither of the above covers: the server
+;; picker sets a transport too. Replacing a custom stdio server with a hosted
+;; one leaves the command behind unless the picker coerces as well.
+(deftest picking-a-remote-catalog-server-forgets-the-stdio-command
+  (stdio-role!)
+  (pick! "linear")
+  (let [envs (emitted)]
+    (is (not (contains? envs "COMMAND")))
+    (is (empty? (emitted-command)))
+    (is (= "streamable-http" (get envs "MCP_TRANSPORT")))
+    (is (= "https://mcp.linear.app/mcp" (get envs "REMOTE_URL")))))
+
+;; Picking a second remote server is not a transport change, so the headers
+;; the admin added for the connection must stay. (Its auth CREDENTIAL still
+;; goes — that is select-server's own job, covered above.)
+(deftest picking-another-remote-server-keeps-the-headers
+  (reset-db!)
+  (pick! "github")
+  (add-env! "X-Trace-Id" "abc")
+  (pick! "linear")
+  (is (= ["X-Trace-Id"] (env-keys))))

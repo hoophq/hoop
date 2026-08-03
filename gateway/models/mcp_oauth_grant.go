@@ -147,6 +147,12 @@ func UpdateMCPOAuthGrantToken(db *gorm.DB, grant *MCPOAuthGrant) error {
 // DeleteMCPOAuthGrant removes a grant. Called when the authorization server
 // rejects the stored refresh token, so the next session reports a clean
 // "not authorized" instead of retrying a dead grant.
+//
+// Pass a plain handle, not the transaction that discovered the rejection.
+// That transaction unwinds — reporting the rejection is what fails it — and
+// would take this DELETE with it, leaving the dead grant in place to be
+// replayed at every session open (see services.ResolveMCPOAuthHeader, which
+// carries the rejection out as a sentinel and deletes afterwards).
 func DeleteMCPOAuthGrant(db *gorm.DB, id string) error {
 	return db.Exec(`DELETE FROM private.mcp_oauth_grants WHERE id = ?`, id).Error
 }

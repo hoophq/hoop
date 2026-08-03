@@ -9,6 +9,7 @@
    [webapp.resources.constants :as constants]
    [webapp.resources.setup.configuration-inputs :as configuration-inputs]
    [webapp.resources.setup.events.mcp-catalog :as mcp-catalog]
+   [webapp.resources.setup.events.process-form :refer [raw-credential-value]]
    [webapp.resources.setup.connection-method :as connection-method]))
 
 
@@ -466,13 +467,21 @@
         connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
         catalog @(rf/subscribe [:mcp-catalog/state])
         mcp-state @(rf/subscribe [:mcp-oauth/state role-index])
-        server (get credentials "mcp_server" "")
-        transport (get credentials "mcp_transport" "streamable-http")
+        server (raw-credential-value (get credentials "mcp_server"))
+        ;; Unwrapped, like every other credential read here. The
+        ;; :resource-setup/role-credentials subscription flattens the
+        ;; {:value :source} shape today, but what this branches on decides
+        ;; which inputs exist at all — a URL field where the admin needs a
+        ;; command box, an auth block a stdio child cannot use — so it reads
+        ;; through the same unwrap the payload builder does rather than
+        ;; trusting a subscription two namespaces away to keep flattening.
+        transport (let [t (raw-credential-value (get credentials "mcp_transport"))]
+                    (if (cs/blank? t) "streamable-http" t))
         ;; Both stdio transports configure a command instead of a URL. They
         ;; differ only in WHICH machine runs it: "stdio" is the agent host,
         ;; "client-stdio" is the laptop of whoever runs `hoop connect`.
         client-stdio? (= transport "client-stdio")
-        stdio? (or (= transport "stdio") client-stdio?)
+        stdio? (contains? constants/mcp-stdio-transports transport)
         status (:status mcp-state :idle)
         busy? (contains? #{:authorizing :pending} status)
         show-selector? (= connection-method "secrets-manager")
@@ -489,14 +498,14 @@
         ;; previous server's mode sitting in the credentials.
         auth-mode (mcp-catalog/coerce-auth-mode
                    selected-entry
-                   (mcp-catalog/cred-value (get credentials "mcp_auth_mode")))
+                   (raw-credential-value (get credentials "mcp_auth_mode")))
         ;; The credential key embeds the header name so config->json emits it
         ;; verbatim — upper-casing or hyphenating it would silently
         ;; authenticate as nobody (context7 wants CONTEXT7_API_KEY, not
         ;; CONTEXT7-API-KEY).
         static-token-key (mcp-catalog/static-token-key credentials)
         static-header (subs static-token-key (count "HEADER_"))
-        authorized? (not (cs/blank? (mcp-catalog/cred-value
+        authorized? (not (cs/blank? (raw-credential-value
                                      (get credentials "HEADER_AUTHORIZATION"))))]
     ;; Defaults, applied once: an absent MCP_TRANSPORT fails agent-side
     ;; validation, MCP_AUTH must match the mode the form is rendering, and the
@@ -507,7 +516,7 @@
     ;; stored — on first render, and after a coercion dropped a mode the newly
     ;; picked server does not accept. MCP_AUTH must agree with the widget the
     ;; admin is looking at.
-    (when-not (= auth-mode (mcp-catalog/cred-value (get credentials "mcp_auth_mode")))
+    (when-not (= auth-mode (raw-credential-value (get credentials "mcp_auth_mode")))
       (set-cred "mcp_auth_mode" auth-mode)
       (set-cred "mcp_auth" (mcp-catalog/mcp-auth-env auth-mode)))
     (when (nil? (get credentials "insecure"))
@@ -541,7 +550,14 @@
      [forms/select {:label "Transport"
                     :selected transport
                     :full-width? true
-                    :on-change #(set-cred "mcp_transport" %)
+                    ;; Not a bare set-cred: the transport decides what every
+                    ;; other credential here means, so changing it has to drop
+                    ;; the ones the previous transport owned. Left behind, an
+                    ;; MCP_AUTH=passthrough chosen while the transport was
+                    ;; remote survives into stdio, which the agent rejects —
+                    ;; and the control that would fix it is hidden the moment
+                    ;; stdio is selected.
+                    :on-change #(rf/dispatch [:mcp-catalog/select-transport role-index %])
                     :options [{:text "Streamable HTTP (remote)" :value "streamable-http"}
                               {:text "HTTP + SSE (legacy remote)" :value "sse"}
                               {:text "Stdio (local server run by the agent)" :value "stdio"}
@@ -554,7 +570,7 @@
        [:> Box {:class "space-y-4"}
         [forms/input {:label "Command"
                       :placeholder "e.g. npx -y @modelcontextprotocol/server-filesystem /data"
-                      :value (get credentials "command" "")
+                      :value (raw-credential-value (get credentials "command"))
                       :required true
                       :type "text"
                       :on-change (on-change "command")}]
@@ -565,7 +581,7 @@
 
        [forms/input {:label "MCP Server URL"
                      :placeholder "e.g. https://mcp.linear.app/mcp"
-                     :value (get credentials "remote_url" "")
+                     :value (raw-credential-value (get credentials "remote_url"))
                      :required true
                      :type "text"
                      :on-change (on-change "remote_url")
@@ -618,7 +634,7 @@
           [:> Box {:class "space-y-2"}
            [forms/input {:label (str static-header " value")
                          :placeholder "Paste the API key or token issued by the provider"
-                         :value (mcp-catalog/cred-value (get credentials static-token-key))
+                         :value (raw-credential-value (get credentials static-token-key))
                          :required true
                          :type "password"
                          :not-margin-bottom? true
@@ -709,17 +725,17 @@
         "Comma-separated tool name patterns, e.g. read_*, create_issue. Denied tools are removed from the server's tool list before the model sees them."]]
       [forms/input {:label "Allowed tools"
                     :placeholder "Leave empty to allow every tool"
-                    :value (get credentials "mcp_allowed_tools" "")
+                    :value (raw-credential-value (get credentials "mcp_allowed_tools"))
                     :type "text"
                     :on-change (on-change "mcp_allowed_tools")}]
       [forms/input {:label "Denied tools"
                     :placeholder "e.g. delete_*, admin_*"
-                    :value (get credentials "mcp_denied_tools" "")
+                    :value (raw-credential-value (get credentials "mcp_denied_tools"))
                     :type "text"
                     :on-change (on-change "mcp_denied_tools")}]
       [forms/input {:label "Tools requiring approval"
                     :placeholder "e.g. create_issue"
-                    :value (get credentials "mcp_approval_tools" "")
+                    :value (raw-credential-value (get credentials "mcp_approval_tools"))
                     :type "text"
                     :on-change (on-change "mcp_approval_tools")}]
       ;; Reviews are ADR-0004 phase 5. Until they ship the pipeline fails
@@ -733,22 +749,23 @@
        "Limits"]
       [forms/input {:label "Max tool calls per session"
                     :placeholder "Leave empty for no limit"
-                    :value (get credentials "mcp_max_calls" "")
+                    :value (raw-credential-value (get credentials "mcp_max_calls"))
                     :type "number"
                     :on-change (on-change "mcp_max_calls")}]
       [forms/input {:label "Max result size (KB)"
                     :placeholder "Leave empty for no limit"
-                    :value (get credentials "mcp_max_result_kb" "")
+                    :value (raw-credential-value (get credentials "mcp_max_result_kb"))
                     :type "number"
                     :on-change (on-change "mcp_max_result_kb")}]
       [forms/select {:label "When a tool changes mid-session"
-                     :selected (get credentials "mcp_on_rug_pull" "kill")
+                     :selected (let [m (raw-credential-value (get credentials "mcp_on_rug_pull"))]
+                                 (if (cs/blank? m) "kill" m))
                      :full-width? true
                      :on-change #(set-cred "mcp_on_rug_pull" %)
                      :options [{:text "Kill the session (recommended)" :value "kill"}
                                {:text "Record an alert and continue" :value "alert"}]}]
       [:> Flex {:align "center" :gap "3"}
-       [:> Switch {:checked (not= (get credentials "mcp_block_sampling") "false")
+       [:> Switch {:checked (not= (raw-credential-value (get credentials "mcp_block_sampling")) "false")
                    :size "3"
                    :onCheckedChange #(set-cred "mcp_block_sampling" (if % "true" "false"))}]
        [:> Box
@@ -757,7 +774,7 @@
         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
          "Prevent the server from driving your LLM through sampling/createMessage."]]]
       [:> Flex {:align "center" :gap "3"}
-       [:> Switch {:checked (not= (get credentials "mcp_block_elicitation") "false")
+       [:> Switch {:checked (not= (raw-credential-value (get credentials "mcp_block_elicitation")) "false")
                    :size "3"
                    :onCheckedChange #(set-cred "mcp_block_elicitation" (if % "true" "false"))}]
        [:> Box
@@ -932,7 +949,9 @@
         ;; Local SSH has no credentials, so the credential-source selector is
         ;; irrelevant and hidden.
         local-ssh? (and (= resource-subtype "ssh")
-                        (= (get (:credentials role) "connection-type") "local"))
+                        (= (raw-credential-value
+                            (get (:credentials role) "connection-type"))
+                           "local"))
         should-show-connection-method? (and (or has-credentials? has-env-vars?)
                                             (not local-ssh?))
         can-remove? (> (count roles) 1)]

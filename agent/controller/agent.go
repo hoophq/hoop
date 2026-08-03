@@ -529,12 +529,21 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	// owns) is closed by the connStore loop above, which calls Close on every
 	// libhoop.Proxy — dropping the queue here only releases the dispatch slot.
 	a.closeMCPProxyConnections(sessionID)
-	// Deleting an SSH queue entry while its drain worker may still be alive
-	// is safe only because session closure is terminal: closed=true was
+	// Deleting an SSH or MCP queue entry while its drain worker may still be
+	// alive is safe only because session closure is terminal: closed=true was
 	// stored above under the write lock, so both the surviving worker and
 	// any replacement queue/worker created by a late packet find closed=true
-	// in processSSHProtocol and no-op. Without that invariant, a late packet
-	// could resurrect a second live worker for the same connection.
+	// — in processSSHProtocol and in handleMCPProxyWrite — and no-op. Without
+	// that invariant, a late packet could resurrect a second live worker for
+	// the same connection, and on the MCP side it would rebuild the whole
+	// session: a gateway, its audit-sink goroutine, and an MCP server process
+	// on the user's machine, none of which anything would ever close again.
+	//
+	// The MCP side carries a second, narrower guard: mcpGatewayFor re-reads
+	// closed after its build and tears the fresh gateway down itself. The
+	// RLock above already makes that unreachable from the packet path, so it
+	// is there to keep mcpGatewayFor correct for any caller that does not
+	// hold the lock, rather than to cover a hole in this one.
 	a.sshWriteQueues.Range(func(key, _ any) bool {
 		if k, ok := key.(string); ok && strings.HasPrefix(k, sessionID+":") {
 			a.sshWriteQueues.Delete(key)

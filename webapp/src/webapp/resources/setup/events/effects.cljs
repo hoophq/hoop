@@ -123,6 +123,25 @@
                    :configuration-files []}]
      (update-in db [:resource-setup :roles] (fnil conj []) new-role))))
 
+;; The MCP Gateway edit screen renders the create form, which reads a role out
+;; of [:resource-setup :roles role-index]. These two seat a saved connection
+;; there and clear it again on the way out. Seating it wholesale rather than
+;; merging: leftovers from an earlier wizard would render as this
+;; connection's own configuration and be saved onto it.
+(rf/reg-event-db
+ :resource-setup->set-mcpproxy-edit-role
+ (fn [db [_ role-index role]]
+   (assoc-in db [:resource-setup :roles role-index] role)))
+
+(rf/reg-event-db
+ :resource-setup->clear-mcpproxy-edit-role
+ (fn [db [_ role-index]]
+   (update-in db [:resource-setup :roles]
+              (fn [roles]
+                (if (< role-index (count (or roles [])))
+                  (assoc (vec roles) role-index nil)
+                  roles)))))
+
 (rf/reg-event-db
  :resource-setup->remove-role
  (fn [db [_ role-index]]
@@ -350,6 +369,20 @@
                                 :value current-value-map})
                        (merge {:env-current-key "" :env-current-value {:value "" :source default-source}})))
        db))))
+
+;; Replaces the whole list, including the half-typed row the admin has not
+;; committed yet. process-payload folds that pending row into the payload
+;; (finalize-role-current-values), so a caller clearing the list to drop
+;; entries that no longer apply — an MCP role switching transport, where the
+;; same list is emitted as MCPENV_* or as HEADER_* depending on which side it
+;; lands on — would otherwise leave one of them behind under the new prefix.
+(rf/reg-event-db
+ :resource-setup->set-role-env-vars
+ (fn [db [_ role-index env-vars]]
+   (update-in db [:resource-setup :roles role-index]
+              merge {:environment-variables (vec env-vars)
+                     :env-current-key ""
+                     :env-current-value {:value "" :source "manual-input"}})))
 
 (rf/reg-event-db
  :resource-setup->update-role-env-var

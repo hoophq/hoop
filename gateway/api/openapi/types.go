@@ -461,7 +461,24 @@ type Connection struct {
 	// this connection and renews the access token at every session open,
 	// instead of relying on the frozen HEADER_AUTHORIZATION value alone, which
 	// stops working when the provider's token expires.
-	MCPOAuthFlowID string `json:"mcp_oauth_flow_id,omitempty" writeonly:"true" example:"7c8a1234-5678-9abc-def0-123456789abc"`
+	//
+	// Write-only is enforced by ToOpenApi, which never populates this field —
+	// not by a struct tag. swag reads `readonly` and has no `writeonly`
+	// counterpart (field_parser.go only consults readOnlyTag), so the tag that
+	// used to sit here was inert and the published spec advertised the field
+	// as readable. The omitempty keeps it out of every response body.
+	MCPOAuthFlowID string `json:"mcp_oauth_flow_id,omitempty" example:"7c8a1234-5678-9abc-def0-123456789abc"`
+	// MCPOAuthWarning reports that the connection was saved but the MCP OAuth
+	// login named by mcp_oauth_flow_id was not attached to it. Present only on
+	// the create/update response that produced it.
+	//
+	// The save succeeded and the connection still works on its frozen
+	// HEADER_AUTHORIZATION, so this is not an error status. What it is not is
+	// silent: without a grant the credential is never renewed, the connection
+	// stops working the moment the provider expires that token, and the admin
+	// needs to hear it at save time rather than from a failing session days
+	// later.
+	MCPOAuthWarning string `json:"mcp_oauth_warning,omitempty" readonly:"true" example:"the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"`
 }
 
 type ConnectionPatch struct {

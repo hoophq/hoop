@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	aianalyzer "github.com/hoophq/hoop/common/aianalyzer"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -152,10 +154,22 @@ func TestMCPAnalyzerBlocksHighRiskToolCall(t *testing.T) {
 		t.Errorf("error code = %d, want %d", dec.Reply.Error.Code, jsonrpc.CodePolicyDenied)
 	}
 
-	if denied := sink.ofType(audit.EventToolDenied); len(denied) != 1 {
-		t.Fatalf("emitted %d tool_denied events, want 1", len(denied))
-	} else if denied[0].Tool != "delete_everything" {
-		t.Errorf("audit names tool %q, want delete_everything", denied[0].Tool)
+	// The check must NOT audit the denial itself: mcpproxy's gateway audits
+	// every Deny centrally, from the rule and reason on this decision. See
+	// TestMCPAnalyzerEmitsExactlyOneDenialEvent for the whole-pipeline proof.
+	if denied := sink.ofType(audit.EventToolDenied); len(denied) != 0 {
+		t.Fatalf("the check emitted %d tool_denied events of its own; the gateway audits the deny, so each one is a duplicate", len(denied))
+	}
+	// The reason is both the audit record's reason and the JSON-RPC error the
+	// MCP client renders, so it has to name the tool and carry the model's
+	// explanation — the detail the removed local event used to hold.
+	for _, want := range []string{"delete_everything", "high", "Destructive delete", "Removes every record without a filter."} {
+		if !strings.Contains(dec.Reason, want) {
+			t.Errorf("deny reason %q omits %q; the reviewer and the caller both read this string", dec.Reason, want)
+		}
+	}
+	if dec.Reply.Error.Message != dec.Reason {
+		t.Errorf("client sees %q but the audit records %q", dec.Reply.Error.Message, dec.Reason)
 	}
 
 	if len(*shipped) != 1 {
@@ -219,6 +233,182 @@ func TestMCPAnalyzerFailsOpenWhenTheProviderBreaks(t *testing.T) {
 	}
 	if len(*shipped) != 0 {
 		t.Errorf("shipped %d verdicts for a call that was never classified", len(*shipped))
+	}
+}
+
+// hangingEngine is a provider that accepts the call and never answers on its
+// own: it returns only when the context it was handed expires. It records that
+// context's deadline, which is the thing under test.
+type hangingEngine struct {
+	mu       sync.Mutex
+	deadline time.Time
+	hadOne   bool
+}
+
+func (e *hangingEngine) AnalyzeRequest(ctx context.Context, _, _ string, _ []byte) (*aianalyzer.Decision, error) {
+	dl, ok := ctx.Deadline()
+	e.mu.Lock()
+	e.deadline, e.hadOne = dl, ok
+	e.mu.Unlock()
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (e *hangingEngine) observed() (time.Time, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.deadline, e.hadOne
+}
+
+// A provider that accepts the connection and then stops answering must cost
+// the tool call mcpAnalyzerTimeout, not the caller's budget.
+//
+// The context reaching Inspect on the tool-call path is the gateway's request
+// context, and its deadline is the held-call budget — thirty minutes, because
+// a call parked for human review is meant to wait that long. Inheriting it
+// means a hung provider stalls the call for the whole budget: no verdict, no
+// error, no result, indistinguishable from a slow tool. The fail-open path
+// exists for exactly this failure and never runs.
+//
+// The assertion is on the deadline the engine was handed rather than on
+// wall-clock elapsed time: the bound is 30 seconds, and a test that waits it
+// out to prove a point is 30 seconds every run. The deadline is the same fact,
+// observed directly — under the unfixed code it is the caller's, half an hour
+// out.
+func TestMCPAnalyzerBoundsAHangingProvider(t *testing.T) {
+	engine := &hangingEngine{}
+	sink := &recordingSink{}
+	a, shipped := newTestAnalyzer(engine, sink)
+
+	// The caller's context, as the gateway builds it for a held tool call.
+	ctx, cancel := context.WithTimeout(context.Background(), pb.MCPHeldCallBudget)
+	defer cancel()
+	callerDeadline, _ := ctx.Deadline()
+
+	done := make(chan inspect.Decision, 1)
+	go func() {
+		done <- a.Inspect(ctx, newStubSession("sid-analyzer"), toolCallMsg(t, "slow_tool", `{}`))
+	}()
+
+	// Give the engine a moment to record the context, then release it the way
+	// its own deadline would.
+	var (
+		deadline time.Time
+		ok       bool
+	)
+	for range 100 {
+		if deadline, ok = engine.observed(); ok {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !ok {
+		t.Fatal("the analyzer handed the provider a context with no deadline: a hung provider would stall the tool call forever")
+	}
+	if !deadline.Before(callerDeadline) {
+		t.Fatalf("the provider inherited the caller's deadline (%v); a hung provider stalls the tool call for the whole held-call budget",
+			time.Until(deadline).Round(time.Second))
+	}
+	if bound := time.Until(deadline); bound > mcpAnalyzerTimeout {
+		t.Fatalf("provider deadline is %v out, want at most mcpAnalyzerTimeout (%v)", bound.Round(time.Second), mcpAnalyzerTimeout)
+	}
+
+	// Cancelling the caller stands in for the analyzer's own deadline firing:
+	// either way the engine returns a context error, and what matters is what
+	// Inspect does with it.
+	cancel()
+	select {
+	case dec := <-done:
+		if dec.Verdict != inspect.Allow {
+			t.Fatalf("verdict = %v, want Allow: a provider that never answered must not deny the call", dec.Verdict)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Inspect never returned after the provider's context expired")
+	}
+
+	// The stall has to be auditable, exactly as an outright refusal is.
+	if errs := sink.ofType(audit.EventError); len(errs) != 1 {
+		t.Fatalf("emitted %d error events, want 1: a chronically hung provider must be visible", len(errs))
+	}
+	if len(*shipped) != 0 {
+		t.Errorf("shipped %d verdicts for a call that was never classified", len(*shipped))
+	}
+}
+
+// Exactly one mcp.tool_denied event per blocked call.
+//
+// mcpproxy audits every Deny centrally, at the point the pipeline's verdict is
+// applied (gateway/http.go, auditDeny), using the rule and reason the check
+// returned. A check that also emits its own denial event therefore writes the
+// record twice: the reviewer sees the same refusal twice in the session
+// timeline and the session metrics count one blocked call as two.
+//
+// The pipeline is assembled and run the way the gateway runs it, since the
+// duplicate only exists in the interaction between the check and its caller —
+// a unit test on the check alone cannot see it.
+func TestMCPAnalyzerEmitsExactlyOneDenialEvent(t *testing.T) {
+	sessionID := "sid-one-denial"
+	backend, _ := newTunnelPair(t, sessionID, nil)
+	agent := backend.agent
+	t.Cleanup(func() { agent.closeMCPProxyConnections(sessionID) })
+
+	fake := newFakeOpenAI(t, "HighRiskAISessionAnalyzer")
+	connParams := agent.connectionParams(sessionID)
+	connParams.AISessionAnalyzer = analyzerParams(fake.srv.URL, "block_execution")
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeMcpProxy)
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+
+	gw, err := agent.mcpGatewayFor(sessionID, connenv, connParams,
+		mcpProxyOpts(connenv, connParams, sessionID, "1"),
+		map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)})
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+
+	h := gw.Handler()
+	_, sid, _ := mcpPost(t, h, "", mcpInitialize)
+	if sid == "" {
+		t.Fatal("initialize did not open a session")
+	}
+	mcpPost(t, h, sid, mcpToolsList)
+	_, _, body := mcpPost(t, h, sid,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"whoami","arguments":{}}}`)
+	if !strings.Contains(body, "error") {
+		t.Fatalf("the high-risk call was not blocked: %s", body)
+	}
+
+	// Cleanup flushes the sink, so every event the session produced has been
+	// handed to the transport by the time it returns.
+	agent.closeMCPProxyConnections(sessionID)
+
+	var denials []audit.Event
+	for _, pkt := range backend.agent.client.(*loopTransport).packetsOfType(pbclient.MCPProxyConnectionWrite) {
+		if len(pkt.Spec[pb.SpecMCPEventKey]) == 0 {
+			continue
+		}
+		var ev audit.Event
+		if err := json.Unmarshal(pkt.Payload, &ev); err != nil {
+			continue // the verdict packet's payload is a bare newline
+		}
+		if ev.Type == audit.EventToolDenied {
+			denials = append(denials, ev)
+		}
+	}
+	if len(denials) != 1 {
+		t.Fatalf("one blocked call produced %d mcp.tool_denied events, want 1", len(denials))
+	}
+	if denials[0].Rule != nameMCPAnalyzer {
+		t.Errorf("denial rule = %q, want %q", denials[0].Rule, nameMCPAnalyzer)
+	}
+	// The surviving event is the gateway's, so the reason is the only place
+	// the human-readable detail can live. It must still say what was refused
+	// and why.
+	for _, want := range []string{"whoami", "high"} {
+		if !strings.Contains(denials[0].Reason, want) {
+			t.Errorf("denial reason %q omits %q", denials[0].Reason, want)
+		}
 	}
 }
 
@@ -393,7 +583,12 @@ func TestMCPVerdictEmitterShipsAGatewayReadablePacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	agent.mcpVerdictEmitter("sid-emit")(encoded)
+	sink := agent.mcpAuditSink("sid-emit", map[string][]byte{
+		pb.SpecGatewaySessionID: []byte("sid-emit"),
+	})
+	mcpVerdictEmitter(sink)(encoded)
+	sink.stop()
+	waitSinkStopped(t, sink)
 
 	sent := transport.packets()
 	if len(sent) != 1 {

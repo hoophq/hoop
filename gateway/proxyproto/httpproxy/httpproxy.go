@@ -108,6 +108,37 @@ func (sess *httpProxySession) clientWriteType() pb.PacketType {
 	return pbclient.HttpProxyConnectionWrite
 }
 
+// httpProxyResponseWait bounds how long a plain httpproxy relay waits for the
+// agent's first response packet. Generous because a non-streaming LLM
+// completion produces no headers until it is finished, but still a machine
+// timeout: nothing on this path parks on a human.
+const httpProxyResponseWait = 5 * time.Minute
+
+// mcpHeldCallGrace is the slack the gateway keeps on top of the agent's
+// held-call budget. Both ends arm their own clock from the same instant, but
+// the agent's starts fractionally later (the request still has to cross the
+// tunnel) and its rejection is the useful one: it answers the MCP client with
+// a JSON-RPC error, whereas the gateway timing out first yields a bare 504
+// and orphans a call the agent is still holding.
+const mcpHeldCallGrace = time.Minute
+
+// responseWaitTimeout is how long this session waits for the agent's first
+// response packet.
+//
+// A protocol-aware MCP session can park a tool call on a human reviewer, so
+// its wait must outlast the agent's held-call budget (pb.MCPHeldCallBudget,
+// armed as the mcpgateway RequestTimeout in agent/controller/mcpproxy.go)
+// rather than the machine timeout the byte relay uses. Deriving it from that
+// shared constant is what keeps the two ends from desyncing: raise the budget
+// and this window follows, instead of the gateway silently cutting reviews
+// short at five minutes.
+func (sess *httpProxySession) responseWaitTimeout() time.Duration {
+	if sess.clientWriteType() == pbclient.MCPProxyConnectionWrite {
+		return pb.MCPHeldCallBudget + mcpHeldCallGrace
+	}
+	return httpProxyResponseWait
+}
+
 func GetServerInstance() *HttpProxyServer {
 	instance, ok := instanceStore.Load(instanceKey)
 	if ok {
@@ -683,7 +714,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// notification below never reaches it. An upstream failure on the agent
 	// side unblocks this wait immediately: the agent sends TCPConnectionClose,
 	// which closes responseChan.
-	const responseWaitTimeout = 5 * time.Minute
+	responseWaitTimeout := sess.responseWaitTimeout()
 
 	// The wait can outlast the server's absolute WriteTimeout (armed when the
 	// request was read), which would fail every write below with an i/o
@@ -693,7 +724,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		log.Debugf("could not extend write deadline for response wait, sid=%s, conn=%s: %v", sess.sid, connectionID, err)
 	}
 
-	// Explicit timer instead of time.After so the 5-minute timer is released
+	// Explicit timer instead of time.After so the timer is released
 	// deterministically when another case wins instead of lingering in the
 	// runtime timer heap until GC. No drain after Stop: timer channels are
 	// unbuffered since Go 1.23.
@@ -1199,12 +1230,15 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			continue
 		}
 
-		// A protocol-aware MCP session multiplexes two kinds of payload on one
-		// packet type: response bytes bound for the MCP client, and structured
-		// protocol events describing what the gateway inspected. Injecting an
-		// event record into the response stream would corrupt the client's HTTP
-		// framing, so it stops here. The audit plugin has already recorded it
-		// on the way through (see plugins/audit: MCPProxyConnectionWrite).
+		// Defense in depth. The authoritative drop for MCP protocol events is
+		// in the transport's agent->client forward path
+		// (gateway/transport/agent.go: listenAgentMessages), immediately
+		// after the audit plugin records the event and before any proxy
+		// consumer sees the packet — one place, so every listener is covered
+		// rather than the ones someone remembered. This check stays because
+		// injecting an event record into the response stream corrupts the MCP
+		// client's HTTP framing, and a listener-local guard against that
+		// costs one map lookup.
 		if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
 			log.Debugf("recorded mcp protocol event, sid=%s, size=%d", sess.sid, len(pkt.Payload))
 			continue

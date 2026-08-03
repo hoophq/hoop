@@ -36,28 +36,24 @@ func TestSessionPacketTypesMCPOverride(t *testing.T) {
 	}
 }
 
-// The MCP path multiplexes response bytes and structured protocol events on
-// one packet type. Only the spec key separates them, and forwarding an event
-// into the response stream corrupts the client's HTTP framing — so the marker
-// must be a distinct, non-empty spec value.
-func TestMCPEventSpecKeyDistinguishesPayloads(t *testing.T) {
-	responsePkt := &pb.Packet{
-		Type: pbclient.MCPProxyConnectionWrite,
-		Spec: map[string][]byte{pb.SpecClientConnectionID: []byte("1")},
+// A protocol-aware MCP session can park a tool call on a human reviewer, so
+// the gateway must wait at least as long as the agent will hold that call.
+// A gateway that gives up first answers a bare 504 and orphans a call the
+// agent is still holding, which is what a hardcoded five minutes did the
+// moment reviews were enabled on an MCP connection.
+func TestResponseWaitCoversTheAgentHeldCallBudget(t *testing.T) {
+	mcp := &httpProxySession{
+		agentWritePacketType:  pbagent.MCPProxyConnectionWrite,
+		clientWritePacketType: pbclient.MCPProxyConnectionWrite,
 	}
-	if len(responsePkt.Spec[pb.SpecMCPEventKey]) != 0 {
-		t.Fatal("a response packet must not carry the MCP event marker")
+	if got := mcp.responseWaitTimeout(); got <= pb.MCPHeldCallBudget {
+		t.Fatalf("mcp response wait = %v, want more than the agent's held-call budget %v", got, pb.MCPHeldCallBudget)
 	}
 
-	eventPkt := &pb.Packet{
-		Type: pbclient.MCPProxyConnectionWrite,
-		Spec: map[string][]byte{
-			pb.SpecClientConnectionID: []byte("1"),
-			pb.SpecMCPEventKey:        []byte("1"),
-		},
-	}
-	if len(eventPkt.Spec[pb.SpecMCPEventKey]) == 0 {
-		t.Fatal("an event packet must carry the MCP event marker")
+	// The byte relay never parks on a human, so it keeps the machine timeout.
+	relay := &httpProxySession{}
+	if got := relay.responseWaitTimeout(); got != httpProxyResponseWait {
+		t.Fatalf("httpproxy response wait = %v, want %v", got, httpProxyResponseWait)
 	}
 }
 

@@ -12093,9 +12093,15 @@ const docTemplate = `{
                     ]
                 },
                 "mcp_oauth_flow_id": {
-                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype.\n\nThe login runs before the connection exists, so the token it obtained is\nkeyed by the flow rather than by connection. Passing the flow id here at\nsave time joins the two: the gateway stores the refresh token against\nthis connection and renews the access token at every session open,\ninstead of relying on the frozen HEADER_AUTHORIZATION value alone, which\nstops working when the provider's token expires.",
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype.\n\nThe login runs before the connection exists, so the token it obtained is\nkeyed by the flow rather than by connection. Passing the flow id here at\nsave time joins the two: the gateway stores the refresh token against\nthis connection and renews the access token at every session open,\ninstead of relying on the frozen HEADER_AUTHORIZATION value alone, which\nstops working when the provider's token expires.\n\nWrite-only is enforced by ToOpenApi, which never populates this field —\nnot by a struct tag. swag reads ` + "`" + `readonly` + "`" + ` and has no ` + "`" + `writeonly` + "`" + `\ncounterpart (field_parser.go only consults readOnlyTag), so the tag that\nused to sit here was inert and the published spec advertised the field\nas readable. The omitempty keeps it out of every response body.",
                     "type": "string",
                     "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                },
+                "mcp_oauth_warning": {
+                    "description": "MCPOAuthWarning reports that the connection was saved but the MCP OAuth\nlogin named by mcp_oauth_flow_id was not attached to it. Present only on\nthe create/update response that produced it.\n\nThe save succeeded and the connection still works on its frozen\nHEADER_AUTHORIZATION, so this is not an error status. What it is not is\nsilent: without a grant the credential is never renewed, the connection\nstops working the moment the provider expires that token, and the admin\nneeds to hear it at save time rather than from a failing session days\nlater.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"
                 },
                 "min_review_approvals": {
                     "description": "Minimum number of review approvals required to execute this connection",

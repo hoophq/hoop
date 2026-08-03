@@ -336,7 +336,12 @@ func (b *clientStdioBackend) Close() error {
 	close(b.done)
 	b.mu.Unlock()
 
-	// Waiters select on done as well, so this only releases them promptly.
+	// Safe to close outside b.mu only because the swap above happened under
+	// it: every reader of b.waiters holds b.mu across both the lookup and the
+	// send (see processMCPStdioReply), so a reader either got the channel
+	// before the swap — in which case its send completed before this line
+	// could run — or acquires b.mu afterwards and finds an empty map. Waiters
+	// select on done as well, so this only releases them promptly.
 	for _, ch := range waiters {
 		close(ch)
 	}
@@ -378,6 +383,14 @@ func (b *clientStdioBackend) newSpec() map[string][]byte {
 // request (if any) a given line answers. It runs on the agent's recv loop and
 // must not block: both handoffs here are non-blocking, dropping rather than
 // waiting when the destination buffer is full (see deliver).
+//
+// Locking rule for the ack: b.mu is held across BOTH the waiter lookup and the
+// send on the channel it returns, never just the lookup. Close empties
+// b.waiters under b.mu and closes those channels only afterwards, so this is
+// what keeps the send off an already-closed channel — the same defense deliver
+// documents, for the same reason. A panic here is not one dead session: this
+// runs on the agent's shared, unrecovered recv loop, so it takes down every
+// session on the agent.
 func (a *Agent) processMCPStdioReply(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	backendID := string(pkt.Spec[pb.SpecMCPStdioBackendKey])
@@ -412,9 +425,13 @@ func (a *Agent) processMCPStdioReply(pkt *pb.Packet) {
 		return
 	}
 
+	// The lock spans the send, not just the lookup. Holding it costs the recv
+	// loop nothing: ackC is a cap-1 buffered channel with a default arm, so
+	// the send below never waits — it either fits or is dropped. What it buys
+	// is that Close cannot close this channel between the lookup and the send.
 	backend.mu.Lock()
+	defer backend.mu.Unlock()
 	ch := backend.waiters[requestID]
-	backend.mu.Unlock()
 	if ch == nil {
 		// The Send already returned (its context expired, or the backend
 		// closed). Nothing to wake.

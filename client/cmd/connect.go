@@ -568,28 +568,21 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				}
 			}
 		case pbclient.MCPProxyConnectionWrite:
-			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-			if srv, ok := c.connStore.Get(string(sessionID)).(*proxy.HttpProxy); ok {
-				_, err := srv.PacketWriteClient(connectionID, pkt)
-				if err != nil {
-					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-					c.processGracefulExit(errMsg)
-				}
-			}
+			c.writeMCPProxyResponse(pkt)
 		case pbclient.MCPStdioRequest:
-			// The agent asks this machine to run the MCP server. Handled on
-			// its own goroutine: spawning a child and waiting on its first
-			// line must not stall the receive loop, which is also carrying
-			// the HTTP traffic of the request that triggered it.
+			// The agent asks this machine to run the MCP server. MCPStdio
+			// queues the packet per backend and returns at once: spawning a
+			// child and writing to its stdin must not stall the receive loop,
+			// which is also carrying the HTTP traffic of the request that
+			// triggered this one.
 			sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 			if stdio, ok := c.connStore.Get(mcpStdioStoreKey(sessionID)).(*proxy.MCPStdio); ok {
-				go stdio.PacketWriteClient(pkt)
+				stdio.PacketWriteClient(pkt)
 			}
 		case pbclient.MCPStdioClose:
 			sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 			if stdio, ok := c.connStore.Get(mcpStdioStoreKey(sessionID)).(*proxy.MCPStdio); ok {
-				go stdio.PacketCloseClient(pkt)
+				stdio.PacketCloseClient(pkt)
 			}
 		case pbclient.TCPConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
@@ -622,10 +615,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 			}
 		case pbclient.SessionClose:
 			loader.Stop()
-			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			if srv, ok := c.connStore.Get(string(sessionID)).(proxy.Closer); ok {
-				srv.Close()
-			}
+			c.closeSessionProxies(string(pkt.Spec[pb.SpecGatewaySessionID]))
 			exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
 			exitCode, err := strconv.Atoi(exitCodeStr)
 			if err != nil {
@@ -652,10 +642,71 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 	}
 }
 
+// writeMCPProxyResponse forwards one MCPProxyConnectionWrite to the local
+// HTTP listener the user's MCP client is talking to.
+//
+// Skipping SpecMCPEventKey packets is defense in depth against a gateway that
+// has not been upgraded. Such a packet is a structured audit record — a JSON
+// line naming a tool call and its verdict — meant for the session recorder,
+// not response bytes for the MCP client. The gateway transport drops it before
+// it reaches any client proxy; if an older one does not, writing it here
+// splices audit JSON into the middle of a keep-alive HTTP response stream and
+// the MCP client's SSE parser sees a corrupt frame.
+func (c *connect) writeMCPProxyResponse(pkt *pb.Packet) {
+	if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
+		return
+	}
+	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+	if srv, ok := c.connStore.Get(sessionID).(*proxy.HttpProxy); ok {
+		if _, err := srv.PacketWriteClient(connectionID, pkt); err != nil {
+			c.processGracefulExit(fmt.Errorf("failed writing to client, err=%v", err))
+		}
+	}
+}
+
 // mcpStdioStoreKey scopes the client-hosted MCP server owner in the session
 // store. The HTTP proxy already occupies the bare session id — both belong to
 // one mcpproxy session and must be reachable independently.
 func mcpStdioStoreKey(sessionID string) string { return sessionID + ":mcp-stdio" }
+
+// closeSessionProxies closes and forgets every proxy the session owns.
+//
+// An mcpproxy session owns two: the HTTP front door under the bare session id
+// and the client-stdio owner under mcpStdioStoreKey. Only the bare id used to
+// be closed here, so the MCP servers running on the user's machine — with the
+// user's own credentials, which is the whole point of client-stdio — outlived
+// the session that authorised them and stayed up until the CLI process itself
+// exited.
+func (c *connect) closeSessionProxies(sessionID string) {
+	for _, key := range []string{sessionID, mcpStdioStoreKey(sessionID)} {
+		if srv, ok := c.connStore.Pop(key).(proxy.Closer); ok {
+			srv.Close()
+		}
+	}
+}
+
+// closeAllProxies closes and forgets every proxy in the store, whatever
+// session it belongs to. Used on the error-exit path, which has no session id
+// to work from.
+//
+// It returns the objects it closed so the caller can pick an exit style from
+// their types. Closing used to happen inside that type switch, whose every
+// branch ends the process — so only the first entry the map handed back was
+// ever closed. An mcpproxy session stores two, and map order is random, so
+// half the time the client-stdio owner lost the race and its MCP server
+// children survived the CLI's own error exit, still holding the user's
+// credentials.
+func (c *connect) closeAllProxies() map[string]any {
+	objs := c.connStore.List()
+	for key, obj := range objs {
+		if v, ok := obj.(proxy.Closer); ok {
+			v.Close()
+			c.connStore.Del(key)
+		}
+	}
+	return objs
+}
 
 func (c *connect) processGracefulExit(err error) {
 	if err == nil {
@@ -672,17 +723,15 @@ func (c *connect) processGracefulExit(err error) {
 	if connectionName, ok := federation.ParseOAuthNotConnected(err.Error()); ok {
 		printFederationOAuthConsentAndExit(c.apiURL, c.token, c.tlsCA, c.jsonMode, connectionName, err)
 	}
-	for _, obj := range c.connStore.List() {
-		switch v := obj.(type) {
+	for _, obj := range c.closeAllProxies() {
+		switch obj.(type) {
 		case *proxy.Terminal:
-			v.Close()
 			if err == io.EOF {
 				os.Exit(0)
 			}
 			fmt.Printf("\n\n")
 			c.printErrorAndExit("%s", err.Error())
 		case *proxy.SSHServer:
-			v.Close()
 			if err == io.EOF {
 				os.Exit(0)
 			}
@@ -694,7 +743,6 @@ func (c *connect) processGracefulExit(err error) {
 			}
 			c.printErrorAndExit("%s", err.Error())
 		case proxy.Closer:
-			v.Close()
 			time.Sleep(time.Millisecond * 500)
 			if err == io.EOF {
 				os.Exit(0)

@@ -248,9 +248,11 @@ header it has always had.
 
 1. **Done.** `libhoop/agent/mcpadapter` + `libhoop.NewMCPProxy` (DEP-48 gated) —
    libhoop only, provable against a real stdio MCP server in isolation.
-2. **Done.** Hooks wiring: guardrails, masking, audit sink. The analyzer is
-   *not* wired: `checks.Assemble` never consults `inspect.Hooks.Analyze`, so
-   that seam needs a check in mcpproxy before hoop can feed it.
+2. **Done.** Hooks wiring: guardrails, masking, audit sink, and the AI
+   analyzer. The analyzer does not use `inspect.Hooks.Analyze` — that seam
+   does not exist, `checks.Assemble` never consults it — so it is wired as a
+   host-supplied `inspect.Check` appended just before the terminal audit tap
+   instead (`agent/controller/mcpproxy_aianalyzer.go`).
 3. **Done.** `common/proto` + `agent/controller` + `gateway`: packet pair
    `MCPProxyConnectionWrite`, `controller/mcpproxy.go` with the packetQueue
    intact, `sessionCleanup` closing the adapter, proxyproto packet-type
@@ -262,11 +264,14 @@ header it has always had.
 6. **Done (gateway half).** OAuth refresh persistence: the mcpproxy
    `auth/outbound/oauth` swap, `private.mcp_oauth_grants`, adoption on
    connection save, and row-locked renewal at session open (see OAuth above).
-   The agent still holds no `outbound.TokenSource` and still refuses
-   `MCP_AUTH=oauth|passthrough`, because the gateway resolves the credential
-   into `HEADER_AUTHORIZATION` before the session opens and the static path
-   carries it. What remains is the agent-side token pull, which is what makes
-   renewal mid-session rather than per session; per-user grants after that.
+   The agent still holds no `outbound.TokenSource` for a grant and refuses
+   `MCP_AUTH=oauth`, because the gateway resolves that credential into
+   `HEADER_AUTHORIZATION` before the session opens and the static path carries
+   it. (`passthrough` IS accepted — see the MCP_AUTH table above — and is
+   unrelated: it builds a per-request token source from the caller's own
+   header rather than from a stored grant.) What remains is the agent-side
+   token pull, which is what makes renewal mid-session rather than per
+   session; per-user grants after that.
 7. **Done.** Client-hosted stdio (`MCP_TRANSPORT=client-stdio`): the
    `MCPStdioRequest`/`MCPStdioReply`/`MCPStdioClose` packets,
    `agent/controller/mcpstdio.go`, `client/proxy/mcpstdio.go`, the

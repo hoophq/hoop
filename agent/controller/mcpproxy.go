@@ -22,11 +22,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/proto/spectypes"
 	"github.com/hoophq/mcpproxy/audit"
 	"github.com/hoophq/mcpproxy/auth/outbound"
 	mcpbackend "github.com/hoophq/mcpproxy/backend"
@@ -81,6 +81,24 @@ func (a *Agent) handleMCPProxyWrite(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 	log := log.With("sid", sessionID, "conn", clientConnectionID)
+
+	// Hold the session RLock for the duration of the handler, exactly as the
+	// SSH write path does. SessionClose takes the Lock side, so it drains
+	// in-flight handlers before tearing anything down, and a packet that
+	// arrives after cleanup began finds closed=true here.
+	//
+	// Skipping this check is not merely a wasted write for MCP: everything
+	// below is constructive. A late packet builds a gateway, starts a sink
+	// goroutine and — on the client-stdio transport — spawns a fresh MCP
+	// server on the user's machine, all of it registered under a session
+	// whose teardown has already run and will never run again.
+	state := a.sessionStateFor(sessionID)
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	if state.closed.Load() {
+		log.Debugf("session already closed, dropping late mcp proxy packet")
+		return
+	}
 
 	connParams := a.connectionParams(sessionID)
 	if connParams == nil {
@@ -218,8 +236,44 @@ func (a *Agent) mcpGatewayFor(
 	if holder.err != nil {
 		// Leave nothing memoised: a transient failure (e.g. the client's
 		// stdio child refusing to spawn) must not poison the session.
-		a.mcpGateways.Delete(sessionID)
+		//
+		// CompareAndDelete, not Delete: by the time a losing caller reads
+		// this error another caller may already have stored a REPLACEMENT
+		// holder under the same session id and be building a healthy gateway
+		// behind it. An unconditional Delete evicts that successor, so its
+		// gateway and sink stay alive with nothing pointing at them —
+		// session cleanup finds no holder and neither is ever closed.
+		a.mcpGateways.CompareAndDelete(sessionID, obj)
 		return nil, holder.err
+	}
+
+	// The build is not instantaneous — it dials nothing, but it constructs a
+	// sink goroutine and, on the client-stdio transport, a backend registry
+	// entry. A SessionClose that lands while once.Do is still running either
+	// finds no holder at all (LoadOrStore has not happened yet) or a
+	// half-built one whose gw and sink fields are still nil, so cleanup tears
+	// down nothing and the finished gateway is stranded: its sink goroutine
+	// runs until the agent exits, and any stdio child it spawns outlives the
+	// session on the user's machine.
+	//
+	// handleMCPProxyWrite holds the session RLock across this call, so on the
+	// packet path cleanup cannot interleave at all. This guard is what keeps
+	// the invariant from resting on that single caller: any caller reaching
+	// mcpGatewayFor without the lock still cannot strand a gateway. Reading
+	// closed AFTER the build is what makes it sound — cleanup stores closed
+	// before it looks for the holder, so either it sees the holder we stored
+	// (and owns the teardown) or we see closed here and own it ourselves.
+	if a.sessionStateFor(sessionID).closed.Load() {
+		// CompareAndDelete decides the owner: whoever removes the holder
+		// closes it. If cleanup already took it, this fails and cleanup is
+		// mid-teardown, so we must not close it a second time underneath it.
+		if a.mcpGateways.CompareAndDelete(sessionID, obj) {
+			holder.gw.Close()
+			// After the gateway, never before — closing it emits the
+			// session's last audit events (see closeMCPProxyConnections).
+			holder.sink.stop()
+		}
+		return nil, fmt.Errorf("session closed while the mcp gateway was being built")
 	}
 	return holder.gw, nil
 }
@@ -234,7 +288,11 @@ func (a *Agent) buildMCPGateway(
 	connParams *pb.AgentConnectionParams,
 	sessionID string,
 	hooks mcpadapter.Hooks,
-	sink audit.Sink,
+	// sink is the concrete session sink rather than an audit.Sink because the
+	// AI analyzer needs more than Emit from it: its verdicts ride the same
+	// queue (see mcpVerdictEmitter). Nil is allowed and means "record
+	// nothing"; every method on it tolerates a nil receiver.
+	sink *mcpEventSink,
 ) (*mcpgateway.Gateway, error) {
 	backendCfg := mcpconfig.Backend{
 		Transport: connenv.mcpTransport,
@@ -272,7 +330,7 @@ func (a *Agent) buildMCPGateway(
 	// call. A nil config (no rule, no provider, flag off) leaves the pipeline
 	// exactly as it was.
 	if cfg := connParams.AISessionAnalyzer; cfg != nil {
-		analyzer, err := newMCPAnalyzer(cfg, sessionID, sink, a.mcpVerdictEmitter(sessionID))
+		analyzer, err := newMCPAnalyzer(cfg, sessionID, sink, mcpVerdictEmitter(sink))
 		if err != nil {
 			// Fail open, as the HTTP path does: a misconfigured provider must
 			// not take the connection offline. It is logged, not silent.
@@ -338,7 +396,12 @@ func (a *Agent) buildMCPGateway(
 		},
 		// RequestTimeout bounds a held tool call, not just a backend round
 		// trip, so it must cover a human review rather than a network hop.
-		RequestTimeout: 30 * time.Minute,
+		// The number is shared with the gateway, whose httpproxy
+		// responseWaitTimeout derives from the same constant plus a grace
+		// margin: if this end held longer than the gateway waited, the
+		// gateway would abandon a call this agent is still holding and the
+		// reviewer's approval would land on nothing.
+		RequestTimeout: pb.MCPHeldCallBudget,
 	})
 }
 
@@ -692,16 +755,55 @@ type mcpEventSink struct {
 	dropped  atomic.Int64
 }
 
+// Emit implements audit.Sink.
+//
+// Nil-receiver safe, and that is load-bearing rather than defensive: a gateway
+// built without a sink hands this same nil pointer to mcpproxy as an
+// audit.Sink, which makes a non-nil interface holding a nil pointer. The
+// library has no way to tell that apart from a real sink and calls Emit on it.
 func (s *mcpEventSink) Emit(_ context.Context, ev audit.Event) {
+	if s == nil {
+		return
+	}
 	line, err := json.Marshal(ev)
 	if err != nil {
 		log.With("sid", s.sid).Warnf("failed encoding mcp audit event: %v", err)
 		return
 	}
+	s.enqueue(s.newEventPacket(append(line, '\n')))
+}
+
+// shipVerdict queues an encoded AI session analyzer verdict.
+//
+// It goes through the same queue as the audit events, and for the same reason.
+// The verdict is produced inside the inspection pipeline, on the goroutine
+// serving a tool call the user is waiting for, so sending it inline would take
+// the shared client send mutex there — behind whatever multi-megabyte response
+// chunk another session is writing. That is the precise hazard this sink was
+// built to keep off the hot path, and a verdict is no more urgent than the
+// audit record beside it.
+//
+// Queueing it here also gives it the sink's lifecycle for free: bounded
+// backlog, drop-rather-than-block when the stream is wedged, and a flush at
+// session cleanup that no longer races a goroutine nobody tracks.
+//
+// The verdict rides the spec, not the payload: the gateway's audit plugin
+// reads it from spectypes.AIAnalyzerInfoKey, and the body is the bare newline
+// the session recorder expects for an event line.
+func (s *mcpEventSink) shipVerdict(encoded []byte) {
+	pkt := s.newEventPacket([]byte("\n"))
+	pkt.Spec[spectypes.AIAnalyzerInfoKey] = encoded
+	s.enqueue(pkt)
+}
+
+// newEventPacket builds a packet carrying one event line on the session's
+// stream, copying the sink's spec so callers can stamp their own keys without
+// mutating state shared with every other event.
+func (s *mcpEventSink) newEventPacket(payload []byte) *pb.Packet {
 	pkt := &pb.Packet{
 		Type:    pbclient.MCPProxyConnectionWrite,
-		Spec:    map[string][]byte{},
-		Payload: append(line, '\n'),
+		Spec:    make(map[string][]byte, len(s.spec)+2),
+		Payload: payload,
 	}
 	for k, v := range s.spec {
 		pkt.Spec[k] = v
@@ -709,7 +811,10 @@ func (s *mcpEventSink) Emit(_ context.Context, ev audit.Event) {
 	// Tag the packet so the gateway records it as a protocol event rather than
 	// forwarding it to the MCP client as response bytes.
 	pkt.Spec[pb.SpecMCPEventKey] = []byte("1")
+	return pkt
+}
 
+func (s *mcpEventSink) enqueue(pkt *pb.Packet) {
 	select {
 	case s.queue <- pkt:
 	default:

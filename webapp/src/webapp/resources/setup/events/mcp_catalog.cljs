@@ -14,7 +14,9 @@
      :entries [{:name :description :url :transport :auth :header :notes}]}"
   (:require
    [clojure.string :as str]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.resources.constants :refer [mcp-stdio-transports]]
+   [webapp.resources.setup.events.process-form :refer [raw-credential-value]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Fetch + cache
@@ -203,22 +205,16 @@
     "passthrough" "passthrough"
     "static"))
 
-(defn cred-value
-  "Plain string held by a role credential. A credential is either the raw value
-  or the {:value :source} shape the secrets-manager method wraps it in, and a
-  header NAME read out of the wrapped shape would build a garbage env var key."
-  [v]
-  (cond
-    (map? v) (str (:value v ""))
-    (nil? v) ""
-    :else (str v)))
-
 (defn static-token-key
   "Credential key holding a pasted token for these credentials. The header name
   travels inside the key so config->json emits it verbatim; upper-casing or
-  hyphenating it would authenticate as nobody."
+  hyphenating it would authenticate as nobody.
+
+  Unwrapped before use: a header NAME read out of the {:value :source} shape
+  the secrets-manager method wraps credentials in would build a garbage env
+  var key."
   [credentials]
-  (let [h (cred-value (get credentials "mcp_static_header"))]
+  (let [h (raw-credential-value (get credentials "mcp_static_header"))]
     (str "HEADER_" (if (str/blank? h) default-static-header h))))
 
 ;; ---------------------------------------------------------------------------
@@ -237,6 +233,78 @@
   [credentials]
   (filter #(str/starts-with? (str/lower-case %) "header_") (keys credentials)))
 
+;; ---------------------------------------------------------------------------
+;; Changing the transport
+;; ---------------------------------------------------------------------------
+;;
+;; The transport decides what every other field on the form MEANS, so changing
+;; it has to coerce the credentials the previous transport owned. Nothing else
+;; does: the dropdown used to write mcp_transport and stop there, and the
+;; leftovers are all emitted.
+;;
+;; What that cost, concretely. An admin configures a remote server with
+;; MCP_AUTH=passthrough, then switches the transport to stdio. The agent
+;; rejects that pair outright (validateMCPProxyEnv: passthrough substitutes a
+;; caller's HTTP credential, and a subprocess has no inbound request to take
+;; one off), and the MCP Authorization block that would let them change it is
+;; hidden the moment stdio is selected. The connection cannot be saved into a
+;; working state from the form that produced it. The reverse direction is
+;; quieter but no better: a stale command rides out as an envvar:COMMAND that
+;; nothing reads, next to the REMOTE_URL that replaced it.
+;;
+;; The invariant these functions keep: after a transport change the
+;; credentials describe exactly ONE transport. A stdio role has a command and
+;; MCPENV_* and no remote_url, no auth mode and no HTTP headers; a remote role
+;; has a remote_url and an auth mode and no command.
+
+(defn- stdio-transport? [transport]
+  (contains? mcp-stdio-transports transport))
+
+(defn transport-coercion-fx
+  "Effects that make `credentials` describe `to` rather than `from`.
+
+  Empty when both transports sit on the same side of the stdio/remote split:
+  \"stdio\" to \"client-stdio\" changes which machine runs the command, not
+  what any credential means, and re-picking a catalog server must not discard
+  headers the admin typed for it.
+
+  The role's :environment-variables go in BOTH directions because that one
+  list is emitted under a different prefix on each side — MCPENV_* into a
+  child process's environment for stdio, HEADER_* onto outbound HTTP requests
+  for a remote server (process-role-secret). Carrying it across the switch
+  either puts a subprocess secret on the wire or an HTTP header in a process
+  environment, and neither is what the admin typed it for."
+  [role-index credentials from to]
+  (let [forget (fn [ks]
+                 (map (fn [k] [:dispatch [:resource-setup->remove-role-credential role-index k]]) ks))]
+    (cond
+      (= (stdio-transport? from) (stdio-transport? to))
+      []
+
+      (stdio-transport? to)
+      (into [;; The widget that collected the credential is about to
+             ;; disappear, so its state has to go with it rather than sit
+             ;; there being emitted.
+             [:dispatch [:mcp-oauth/clear role-index]]
+             [:dispatch [:resource-setup->set-role-env-vars role-index []]]]
+            (forget (into ["mcp_auth" "mcp_auth_mode" "mcp_static_header" "remote_url"]
+                          (auth-credential-keys credentials))))
+
+      :else
+      (into [[:dispatch [:resource-setup->set-role-env-vars role-index []]]]
+            (forget ["command"])))))
+
+(rf/reg-event-fx
+ :mcp-catalog/select-transport
+ (fn [{:keys [db]} [_ role-index transport]]
+   (let [creds (get-in db [:resource-setup :roles role-index :credentials] {})
+         from (raw-credential-value (get creds "mcp_transport"))]
+     ;; Coercion first: it drops the credentials the old transport owned, and
+     ;; the write below is what the form then renders from.
+     {:fx (conj (vec (transport-coercion-fx role-index creds from transport))
+                [:dispatch [:resource-setup->update-role-credentials
+                            role-index "mcp_transport" transport]])})))
+
 (rf/reg-event-fx
  :mcp-catalog/select-server
  (fn [{:keys [db]} [_ role-index server-name]]
@@ -250,7 +318,16 @@
          forget (into [[:dispatch [:mcp-oauth/clear role-index]]]
                       (map (fn [k] [:dispatch [:resource-setup->remove-role-credential role-index k]]))
                       (auth-credential-keys creds))
-         mode (coerce-auth-mode entry (cred-value (get creds "mcp_auth_mode")))]
+         mode (coerce-auth-mode entry (raw-credential-value (get creds "mcp_auth_mode")))
+         from-transport (raw-credential-value (get creds "mcp_transport"))
+         ;; The picker is the third way the transport changes, after the
+         ;; dropdown and a fresh role's default: every catalog entry carries
+         ;; its own. So a custom stdio server the admin typed a command for,
+         ;; then replaced with a hosted one, needs the same coercion the
+         ;; dropdown does — otherwise that command is still emitted, as a
+         ;; COMMAND env var, next to the REMOTE_URL that superseded it.
+         coerce (transport-coercion-fx role-index creds from-transport
+                                       (or (:transport entry) from-transport))]
      (if (nil? entry)
        ;; "custom": remember the choice and leave the endpoint fields as the
        ;; admin left them. Clearing those would discard a half-typed URL.
@@ -259,7 +336,7 @@
                    (set-cred "mcp_static_header" default-static-header)
                    (set-cred "mcp_auth_mode" mode)
                    (set-cred "mcp_auth" (mcp-auth-env mode))])}
-       {:fx (into forget
+       {:fx (into (into (vec coerce) forget)
                   [(set-cred "mcp_server" server-name)
                    (set-cred "remote_url" (:url entry))
                    (set-cred "mcp_transport" (:transport entry))

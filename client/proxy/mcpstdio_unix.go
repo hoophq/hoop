@@ -15,6 +15,14 @@ func setMCPChildProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: 0}
 }
 
-// killProcessGroup signals the group led by pid. Negating the pid is what
+// termProcessGroup asks the group led by pid to exit. Negating the pid is what
 // makes the signal reach every descendant.
-func killProcessGroup(pid int) { _ = syscall.Kill(-pid, syscall.SIGTERM) }
+//
+// SIGTERM is catchable, so this is a request, not a guarantee: a server with a
+// broken handler, or one wedged in an uninterruptible read, ignores it. That is
+// what killProcessGroup is for.
+func termProcessGroup(pid int) { _ = syscall.Kill(-pid, syscall.SIGTERM) }
+
+// killProcessGroup ends the group led by pid outright. SIGKILL cannot be caught
+// or blocked, so this is the escalation that bounds cleanup.
+func killProcessGroup(pid int) { _ = syscall.Kill(-pid, syscall.SIGKILL) }

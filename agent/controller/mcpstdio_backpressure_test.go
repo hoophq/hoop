@@ -243,3 +243,67 @@ func TestClientStdioDeliverRacesCloseWithoutPanicking(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// ackPacket is a packet as it arrives from the user's machine carrying a
+// request id: processMCPStdioReply routes it to the Send waiter registered
+// under that id rather than to Recv.
+func ackPacket(backend *clientStdioBackend, reqID string) *pb.Packet {
+	return &pb.Packet{
+		Type: pbagent.MCPStdioReply,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(backend.sessionID),
+			pb.SpecMCPStdioBackendKey: []byte(backend.backendID),
+			pb.SpecMCPStdioRequestKey: []byte(reqID),
+		},
+	}
+}
+
+// An ack arriving as the backend is torn down must not panic the agent.
+//
+// This is the same hazard deliver was hardened against, on the other branch of
+// processMCPStdioReply. Close empties b.waiters under b.mu and closes those
+// channels straight after; a reader that looks the channel up under the mutex,
+// releases it, and only then sends is sending on a channel Close may already
+// have closed. That panic does not cost one MCP session — it runs on the
+// agent's shared, unrecovered recv loop, so it takes down every session on the
+// agent, including the SSH and database ones that never touched MCP.
+//
+// The waiters are registered directly rather than through Send because Send
+// parks until its ack or the backend closes, and this test needs many live
+// waiters at the instant Close runs.
+func TestProcessMCPStdioReplyAckRacesCloseWithoutPanicking(t *testing.T) {
+	// Repeated because the window is a few instructions wide: one iteration
+	// would pass against the unsynchronized version most of the time.
+	for attempt := range 200 {
+		agent, backend := newUndrainedBackend(t, fmt.Sprintf("sid-ack-race-%d", attempt))
+
+		const waiters = 16
+		backend.mu.Lock()
+		for i := range waiters {
+			backend.waiters[strconv.Itoa(i)] = make(chan *pb.Packet, 1)
+		}
+		backend.mu.Unlock()
+
+		// Every ack goroutine is held at the gate so they all fire at once,
+		// rather than draining before Close is scheduled.
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range waiters {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				agent.processMCPStdioReply(ackPacket(backend, strconv.Itoa(i)))
+			}()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_ = backend.Close()
+		}()
+
+		close(start)
+		wg.Wait()
+	}
+}

@@ -48,6 +48,14 @@ type fakeMCPServer struct {
 	// forever. A client that reads the omission as "the token is gone" can
 	// never refresh this grant again.
 	keepRefreshToken bool
+	// revokeRefresh makes every refresh-token grant answer invalid_grant, the
+	// way a provider does once the user revokes the app or the refresh token
+	// is expired past recovery. Nothing the gateway holds can renew such a
+	// grant, so the row is dead the moment this is seen.
+	revokeRefresh bool
+	// spentCodes records redeemed authorization codes so the fake enforces
+	// RFC 6749 §4.1.2 single use, the way every real provider does.
+	spentCodes map[string]bool
 	// initialTTL is the lifetime of the token the login mints, and renewedTTL
 	// the lifetime of every token a refresh mints. They differ so a test can
 	// stage a grant that must be renewed on first use and then stays valid,
@@ -61,7 +69,12 @@ type fakeMCPServer struct {
 
 func newFakeMCPServer(t *testing.T, initialTTL, renewedTTL time.Duration) *fakeMCPServer {
 	t.Helper()
-	f := &fakeMCPServer{initialTTL: initialTTL, renewedTTL: renewedTTL, currentRefresh: "refresh-0"}
+	f := &fakeMCPServer{
+		initialTTL:     initialTTL,
+		renewedTTL:     renewedTTL,
+		currentRefresh: "refresh-0",
+		spentCodes:     map[string]bool{},
+	}
 	mux := http.NewServeMux()
 
 	// RFC 9728: the MCP endpoint's protected-resource metadata. Hoop looks for
@@ -130,9 +143,23 @@ func (f *fakeMCPServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			writeTokenError(w, http.StatusBadRequest, "invalid_request", "missing code_verifier")
 			return
 		}
+		// RFC 6749 §4.1.2 requires an authorization code to be single use.
+		// A real provider refuses the second redemption, which is what makes
+		// a replayed callback fail its exchange — and what used to flip a
+		// good flow to error.
+		if code := r.Form.Get("code"); f.spentCodes[code] {
+			writeTokenError(w, http.StatusBadRequest, "invalid_grant", "authorization code was already redeemed")
+			return
+		} else {
+			f.spentCodes[code] = true
+		}
 		ttl = f.initialTTL
 	case "refresh_token":
 		f.refreshCalls++
+		if f.revokeRefresh {
+			writeTokenError(w, http.StatusBadRequest, "invalid_grant", "the grant was revoked")
+			return
+		}
 		if r.Form.Get("refresh_token") != f.currentRefresh {
 			writeTokenError(w, http.StatusBadRequest, "invalid_grant", "refresh token was already used")
 			return
@@ -427,8 +454,12 @@ func TestMCPOAuthGrantConcurrentRefresh(t *testing.T) {
 	if _, err := services.ResolveMCPOAuthHeader(t.Context(), testGateway.OrgID, conn.ID); err != nil {
 		t.Fatalf("the grant was broken by concurrent refreshes: %v", err)
 	}
-	if _, refreshes := fake.counters(); refreshes > callers {
-		t.Errorf("provider saw %d refresh grants for %d callers", refreshes, callers)
+	// Exactly one, not "at most callers": the row lock is what collapses the
+	// burst, and the first refresh persists a token good for an hour, so
+	// every caller that blocks on the lock must find it and skip the
+	// provider entirely. Two refreshes means the lock did not serialize.
+	if _, refreshes := fake.counters(); refreshes != 1 {
+		t.Errorf("provider saw %d refresh grants for %d concurrent callers, want exactly 1", refreshes, callers)
 	}
 }
 
@@ -597,6 +628,186 @@ func TestMCPOAuthGrantSkippedForLegacySubtype(t *testing.T) {
 	}
 	if header != "" {
 		t.Errorf("resolving a grant-less connection produced %q, want no header", header)
+	}
+}
+
+// createMCPProxyConnection saves an mcpproxy connection pointing at
+// remoteURL and adopting flowID, and returns the decoded response. The caller
+// gets the response body rather than just the connection because the adoption
+// warning rides on it.
+func createMCPProxyConnection(t *testing.T, token, name, agentID, remoteURL, authHeader, flowID string) openapi.Connection {
+	t.Helper()
+	created := testServer.Post(t, "/connections", token, openapi.Connection{
+		Name:               name,
+		Type:               "application",
+		SubType:            services.MCPOAuthGrantSubType,
+		AgentId:            agentID,
+		AccessModeRunbooks: "enabled",
+		AccessModeExec:     "enabled",
+		AccessModeConnect:  "enabled",
+		AccessSchema:       "disabled",
+		Secrets: map[string]any{
+			"envvar:MCP_TRANSPORT":        b64("streamable-http"),
+			"envvar:MCP_AUTH":             b64("static"),
+			"envvar:REMOTE_URL":           b64(remoteURL),
+			"envvar:HEADER_AUTHORIZATION": b64(authHeader),
+		},
+		MCPOAuthFlowID: flowID,
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	var conn openapi.Connection
+	testutil.DecodeJSON(t, created, &conn)
+	t.Cleanup(func() {
+		del := testServer.Delete(t, "/connections/"+name, token)
+		del.Body.Close()
+	})
+	return conn
+}
+
+// A provider that answers invalid_grant has revoked the credential: nothing
+// the gateway holds can renew it, and the grant row is dead.
+//
+// The row must actually be gone afterwards. It used to be deleted inside the
+// transaction that then returned the error reporting the rejection, so GORM
+// rolled the DELETE back and the dead grant survived — every subsequent
+// session open replayed a refresh token the provider had already refused,
+// silently and forever. The second resolve below is the assertion that
+// matters: it must report a connection with no grant, not another rejection.
+func TestMCPOAuthGrantDeletedWhenProviderRejectsIt(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "mcp-grant-revoked-agent")
+	defer deleteAgent(t, token, "mcp-grant-revoked-agent")
+
+	// The login mints a token already inside the refresh margin, so the first
+	// session open must go to the provider — which by then has revoked it.
+	fake := newFakeMCPServer(t, 30*time.Second, time.Hour)
+	flowID, authHeader := completeMCPLogin(t, token, fake)
+	conn := createMCPProxyConnection(t, token, "smoke-mcp-grant-revoked", agentID, fake.url("/mcp"), authHeader, flowID)
+
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err != nil {
+		t.Fatalf("grant was not adopted: %v", err)
+	}
+
+	fake.mu.Lock()
+	fake.revokeRefresh = true
+	fake.mu.Unlock()
+
+	if _, err := services.ResolveMCPOAuthHeader(t.Context(), testGateway.OrgID, conn.ID); err == nil {
+		t.Fatal("resolve succeeded against a provider that rejected the credential")
+	}
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err == nil {
+		t.Fatal("the rejected grant survived; every session open will replay the dead refresh token")
+	}
+
+	_, refreshesAfterRejection := fake.counters()
+
+	// With the grant gone this is a connection with no grant, which resolves
+	// to the empty header and no error — the clean "not authorized" the
+	// deletion exists to produce.
+	header, err := services.ResolveMCPOAuthHeader(t.Context(), testGateway.OrgID, conn.ID)
+	if err != nil {
+		t.Fatalf("the session after a rejection still reports an error instead of no grant: %v", err)
+	}
+	if header != "" {
+		t.Errorf("resolve produced %q after the grant was dropped, want no header", header)
+	}
+	if _, refreshes := fake.counters(); refreshes != refreshesAfterRejection {
+		t.Errorf("the provider saw another refresh (%d -> %d); the dead credential is still being replayed",
+			refreshesAfterRejection, refreshes)
+	}
+}
+
+// An admin can authorize against one MCP server and then edit the URL field
+// before saving. The flow id in the payload still points at the server that
+// was authorized, so adopting it would durably attach that server's refresh
+// token to a connection that talks to a different one and auto-renew it
+// forever — credential exfiltration performed by editing a form field.
+//
+// The save still succeeds (the connection row is written and its frozen
+// header works), but no grant may exist and the response must say so.
+func TestMCPOAuthGrantRefusesCrossServerAdoption(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "mcp-grant-crossserver-agent")
+	defer deleteAgent(t, token, "mcp-grant-crossserver-agent")
+
+	authorized := newFakeMCPServer(t, time.Hour, time.Hour)
+	other := newFakeMCPServer(t, time.Hour, time.Hour)
+	flowID, authHeader := completeMCPLogin(t, token, authorized)
+
+	conn := createMCPProxyConnection(t, token, "smoke-mcp-grant-crossserver", agentID,
+		other.url("/mcp"), authHeader, flowID)
+
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err == nil {
+		t.Fatal("the connection adopted a grant for a server it does not talk to")
+	}
+	if conn.MCPOAuthWarning == "" {
+		t.Fatal("the create response reported no warning; the admin sees a 201 for a connection that will degrade")
+	}
+}
+
+// The matching adoption must still work, or the refusal above would be
+// indistinguishable from adoption being broken.
+func TestMCPOAuthGrantAdoptsMatchingEndpoint(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "mcp-grant-match-agent")
+	defer deleteAgent(t, token, "mcp-grant-match-agent")
+
+	fake := newFakeMCPServer(t, time.Hour, time.Hour)
+	flowID, authHeader := completeMCPLogin(t, token, fake)
+
+	// A trailing slash the admin's browser added must not read as a
+	// different server.
+	conn := createMCPProxyConnection(t, token, "smoke-mcp-grant-match", agentID,
+		fake.url("/mcp")+"/", authHeader, flowID)
+
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err != nil {
+		t.Fatalf("adoption was refused for the connection's own endpoint: %v", err)
+	}
+	if conn.MCPOAuthWarning != "" {
+		t.Errorf("a successful adoption reported a warning: %s", conn.MCPOAuthWarning)
+	}
+}
+
+// The callback is unauthenticated by design — the provider redirects the
+// browser there — so anyone holding the URL can replay it, and a back button
+// is enough. A replay used to run the failure path (the authorization code is
+// spent, so the exchange fails), flipping a completed flow to error and
+// destroying the credential the connection was about to adopt: an
+// unauthenticated request silently breaking a connection an admin just saved.
+func TestMCPOAuthCallbackReplayDoesNotDowngradeAFlow(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "mcp-callback-replay-agent")
+	defer deleteAgent(t, token, "mcp-callback-replay-agent")
+
+	fake := newFakeMCPServer(t, time.Hour, time.Hour)
+	// completeMCPLogin drives the callback once and then redeems the token,
+	// leaving the flow consumed and still adoptable.
+	flowID, authHeader := completeMCPLogin(t, token, fake)
+
+	replay := testServer.Get(t, "/mcp-oauth/callback?state="+flowID+"&code=auth-code-1", "")
+	defer replay.Body.Close()
+	if replay.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("callback replay: expected 307, got %d (body: %s)", replay.StatusCode, testutil.ReadBody(t, replay))
+	}
+	if loc := replay.Header.Get("Location"); strings.Contains(loc, "mcp_oauth=error") {
+		t.Fatalf("the replay downgraded a good flow to error: %s", loc)
+	}
+
+	flow, err := models.GetMCPOAuthFlow(models.DB, flowID)
+	if err != nil {
+		t.Fatalf("the replay destroyed the flow row: %v", err)
+	}
+	if flow.Status != models.MCPOAuthFlowStatusConsumed {
+		t.Fatalf("flow status = %q after a replay, want it left %q", flow.Status, models.MCPOAuthFlowStatusConsumed)
+	}
+
+	// The point of not downgrading: the connection saved afterwards still
+	// gets its grant.
+	conn := createMCPProxyConnection(t, token, "smoke-mcp-callback-replay", agentID,
+		fake.url("/mcp"), authHeader, flowID)
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err != nil {
+		t.Fatalf("the callback replay killed grant adoption for a connection saved after it: %v", err)
 	}
 }
 

@@ -7,12 +7,19 @@
 //
 // The protocol comes from github.com/hoophq/mcpproxy/auth/outbound/oauth, which
 // the gateway already depends on and which covers strictly more of the specs
-// than a second in-tree implementation did: transport-security checks on
-// discovered endpoints, S256 capability advertisement, structured RFC 6749 §5.2
-// token errors, provider extras preserved, and the refresh grant this package
-// needs. What stays here is the part that is Hoop's rather than the protocol's
-// — which issuer to fall back to, which redirect URI to register, and how a
-// hand-configured confidential client authenticates at the token endpoint.
+// than a second in-tree implementation did: transport security on the metadata
+// documents it fetches, S256 capability advertisement, structured RFC 6749
+// §5.2 token errors, provider extras preserved, and the refresh grant this
+// package needs. What stays here is the part that is Hoop's rather than the
+// protocol's — which issuer to fall back to, which redirect URI to register,
+// and how a hand-configured confidential client authenticates at the token
+// endpoint.
+//
+// Two protocol checks live here rather than in the library because it does not
+// make them: RFC 9728 §3.3 resource-identifier validation, and transport
+// security on the endpoints a metadata document advertises (the library checks
+// the URL it fetched the document from, not the URLs inside it — so an https
+// document can hand back an http token endpoint).
 //
 // It lives in services rather than beside the HTTP handlers because both the
 // handlers (api/connections) and the session-open grant refresh
@@ -42,7 +49,37 @@ import (
 const mcpDiscoveryTimeout = 15 * time.Second
 
 // mcpOAuthHTTPClient is the bounded client used for every upstream OAuth call.
-var mcpOAuthHTTPClient = &http.Client{Timeout: mcpDiscoveryTimeout}
+//
+// It refuses to follow redirects out of a POST. Every POST this package makes
+// is credentialed — the token endpoint carries the client secret (Basic or in
+// the body) and the refresh token, and registration carries the redirect URI
+// Hoop will honor — and Go re-sends the body verbatim on a 307/308. A
+// misconfigured or hostile authorization server could therefore bounce those
+// credentials to a host of its choosing, over a scheme of its choosing.
+// Refusing is the conservative choice over stripping: an authorization server
+// that redirects its own token endpoint is broken in a way an admin should see
+// as an error, not have papered over.
+//
+// Discovery GETs still follow redirects. They carry no credential, and
+// .well-known documents served behind a redirect are common enough that
+// refusing there would break working providers for no gain.
+var mcpOAuthHTTPClient = &http.Client{
+	Timeout: mcpDiscoveryTimeout,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// via[0] is the original request: a 301/302/303 rewrites the method
+		// to GET on the way here, so the current req.Method cannot tell us
+		// what was sent.
+		if len(via) > 0 && via[0].Method == http.MethodPost {
+			return fmt.Errorf("refusing to follow a redirect from %s to %s: the request carries client credentials",
+				via[0].URL.Redacted(), req.URL.Redacted())
+		}
+		// Same bound the stdlib applies when no policy is installed.
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	},
+}
 
 // MCPDiscovery is the resolved set of endpoints Hoop needs to drive an
 // authorization-code flow against one MCP server.
@@ -77,6 +114,10 @@ type MCPClientRegistration struct {
 //     origin is treated as the issuer. The library errors instead; Hoop keeps
 //     the fallback because servers that co-locate the resource and the
 //     authorization server are common and were supported before.
+//
+// Two checks the library does not make happen here: RFC 9728 §3.3 resource
+// identifier validation (checkResourceIdentifier) and transport security on
+// every endpoint the resulting flow will use (requireSecureEndpoint).
 func DiscoverMCPAuthServer(ctx context.Context, serverURL string) (*MCPDiscovery, error) {
 	resourceURL, err := url.Parse(serverURL)
 	if err != nil || !resourceURL.IsAbs() || resourceURL.Host == "" {
@@ -87,9 +128,13 @@ func DiscoverMCPAuthServer(ctx context.Context, serverURL string) (*MCPDiscovery
 	}
 
 	resource := strings.TrimSuffix(serverURL, "/")
+	origin := fmt.Sprintf("%s://%s", resourceURL.Scheme, resourceURL.Host)
 	var issuers, scopes []string
 
 	if prm, err := oauth.FetchResourceMetadata(ctx, serverURL, mcpOAuthHTTPClient); err == nil && prm != nil {
+		if err := checkResourceIdentifier(prm.Resource, resource, origin); err != nil {
+			return nil, err
+		}
 		for _, as := range prm.AuthorizationServers {
 			if as = strings.TrimSpace(as); as != "" {
 				issuers = append(issuers, as)
@@ -101,7 +146,7 @@ func DiscoverMCPAuthServer(ctx context.Context, serverURL string) (*MCPDiscovery
 		scopes = prm.ScopesSupported
 	}
 	if len(issuers) == 0 {
-		issuers = []string{fmt.Sprintf("%s://%s", resourceURL.Scheme, resourceURL.Host)}
+		issuers = []string{origin}
 	}
 
 	var asMeta *oauth.ASMetadata
@@ -126,6 +171,15 @@ func DiscoverMCPAuthServer(ctx context.Context, serverURL string) (*MCPDiscovery
 	if !asMeta.SupportsS256() {
 		return nil, fmt.Errorf("authorization server %s does not support PKCE S256, which the MCP authorization profile requires", issuer)
 	}
+	for _, endpoint := range []struct{ name, raw string }{
+		{"authorization_endpoint", asMeta.AuthorizationEndpoint},
+		{"token_endpoint", asMeta.TokenEndpoint},
+		{"registration_endpoint", asMeta.RegistrationEndpoint},
+	} {
+		if err := requireSecureEndpoint(endpoint.name, endpoint.raw); err != nil {
+			return nil, fmt.Errorf("authorization server %s: %w", issuer, err)
+		}
+	}
 	if len(scopes) == 0 {
 		scopes = asMeta.ScopesSupported
 	}
@@ -138,6 +192,70 @@ func DiscoverMCPAuthServer(ctx context.Context, serverURL string) (*MCPDiscovery
 		RegistrationEndpoint:  asMeta.RegistrationEndpoint,
 		ScopesSupported:       scopes,
 	}, nil
+}
+
+// checkResourceIdentifier enforces RFC 9728 §3.3 on a protected-resource
+// metadata document.
+//
+// §3.3: the returned "resource" MUST be identical to the resource identifier
+// the well-known path suffix was inserted into to build the retrieval URL, and
+// if it is not, the document MUST NOT be used. §6 defines "identical" as
+// code-point equality — no Unicode normalization, no case folding, no URL
+// canonicalization — so this is a plain string compare.
+//
+// Two identifiers are accepted because oauth.FetchResourceMetadata tries two
+// retrieval URLs and does not report which one answered: the path-suffixed
+// form derived from the full MCP endpoint (RFC 9728 §3.1, terminating slash
+// removed) and the root form derived from its origin. Either is a resource
+// identifier that legitimately produced the document; anything else is not.
+//
+// Without this a hostile MCP server can advertise a resource identifier that
+// belongs to someone else, and Hoop would send that value as the RFC 8707
+// resource indicator — minting a token audienced for a resource the caller
+// never meant to reach and handing it to the server that asked. That is the
+// impersonation attack §7.3 describes, and it is a confused deputy with the
+// gateway as the deputy.
+//
+// An empty resource is tolerated: RFC 9728 makes the field REQUIRED, but the
+// library already accepts a document that carries only authorization_servers,
+// and rejecting one here would break MCP servers that publish that shape
+// today. Nothing is adopted from it — the caller keeps the identifier it
+// derived itself, which is the value §3.3 would have demanded anyway.
+func checkResourceIdentifier(advertised, resourceIdentifier, origin string) error {
+	if advertised == "" || advertised == resourceIdentifier || advertised == origin {
+		return nil
+	}
+	return fmt.Errorf("the MCP server published protected-resource metadata for %q, which is not its own resource identifier (%q): "+
+		"a resource may only describe itself (RFC 9728 §3.3)", advertised, resourceIdentifier)
+}
+
+// requireSecureEndpoint rejects a discovered OAuth endpoint that would carry
+// credentials in the clear.
+//
+// The authorization request leaks nothing by itself, but the token and
+// registration endpoints receive the client secret, the authorization code and
+// the refresh token, and the authorization endpoint is where the browser is
+// sent to authenticate — a plaintext one is a phishing surface. A discovered
+// document is attacker-influenced input, so the scheme is checked here rather
+// than trusted because the server URL was https.
+//
+// http:// is allowed on loopback hosts (127.0.0.1, ::1, localhost) because
+// that is what running an MCP server on a laptop looks like, and loopback
+// traffic never leaves the machine. Same rule the mcpproxy library applies to
+// the documents themselves.
+func requireSecureEndpoint(name, rawURL string) error {
+	if rawURL == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return fmt.Errorf("the %s is not an absolute URL: %q", name, rawURL)
+	}
+	if u.Scheme == "https" || (u.Scheme == "http" && oauth.IsLoopback(u.Host)) {
+		return nil
+	}
+	return fmt.Errorf("the %s does not use https (%s); credentials sent there would travel in cleartext",
+		name, u.Redacted())
 }
 
 // RegisterMCPClient performs RFC 7591 dynamic client registration, registering
@@ -183,7 +301,14 @@ func RegisterMCPClient(ctx context.Context, registrationEndpoint, redirectURI st
 
 // BuildMCPAuthorizationURL constructs the authorization-code request URL with
 // an S256 PKCE challenge and the RFC 8707 resource indicator.
+//
+// The endpoint is re-checked rather than trusted from discovery: this is also
+// reached with a MCPDiscovery assembled from a stored flow row, which may
+// predate the transport-security check in DiscoverMCPAuthServer.
 func BuildMCPAuthorizationURL(d *MCPDiscovery, clientID, redirectURI, state, codeChallenge, scopes string) (string, error) {
+	if err := requireSecureEndpoint("authorization_endpoint", d.AuthorizationEndpoint); err != nil {
+		return "", err
+	}
 	return oauth.BuildAuthorizeURL(oauth.ClientConfig{
 		ClientID:     clientID,
 		AuthEndpoint: d.AuthorizationEndpoint,
@@ -210,7 +335,15 @@ func GenerateMCPPKCE() (verifier, challenge string, err error) {
 
 // ExchangeMCPCode redeems an authorization code at the token endpoint,
 // replaying the PKCE verifier and the resource indicator.
+//
+// The token endpoint arrives from a stored flow row, so it is re-checked for
+// transport security here: a row written before that check existed would
+// otherwise put the authorization code and the client secret on the wire in
+// cleartext.
 func ExchangeMCPCode(ctx context.Context, d *MCPDiscovery, clientID, clientSecret, tokenAuthMethod, code, redirectURI, codeVerifier string) (*outbound.Token, error) {
+	if err := requireSecureEndpoint("token_endpoint", d.TokenEndpoint); err != nil {
+		return nil, err
+	}
 	cfg := oauth.ClientConfig{
 		ClientID:      clientID,
 		ClientSecret:  clientSecret,
@@ -253,7 +386,15 @@ func refreshMCPToken(ctx context.Context, cfg oauth.ClientConfig, tokenAuthMetho
 
 // postRefreshGrant sends the refresh-token request, choosing where the client
 // credentials travel. It returns the token endpoint's answer verbatim.
+//
+// The endpoint is read off a grant row written at login time, so it is
+// re-checked for transport security: this call carries the refresh token and
+// the client secret, and a grant stored before the check existed would send
+// both in cleartext at every session open.
 func postRefreshGrant(ctx context.Context, cfg oauth.ClientConfig, tokenAuthMethod, refreshToken string) (*outbound.Token, error) {
+	if err := requireSecureEndpoint("token_endpoint", cfg.TokenEndpoint); err != nil {
+		return nil, err
+	}
 	if !usesSecretPost(tokenAuthMethod, cfg.ClientSecret) {
 		return oauth.Refresh(ctx, cfg, refreshToken)
 	}

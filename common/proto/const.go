@@ -71,6 +71,20 @@ const (
 	// map[string]string, sourced from the connection's MCPENV_* settings.
 	SpecMCPStdioEnvKey string = "mcp.stdio_env"
 
+	// MCPHeldCallBudget is how long one MCP tool call may stay in flight
+	// while a human decides on it. A call held for review is not a network
+	// round trip: it parks until a reviewer approves or rejects, so the
+	// budget is measured in human minutes.
+	//
+	// Both ends of the tunnel must agree on it or the shorter one silently
+	// wins. The agent arms it as the mcpgateway RequestTimeout
+	// (agent/controller/mcpproxy.go) and the gateway derives its
+	// response-wait window from it (gateway/proxyproto/httpproxy: the wait
+	// adds a grace margin on top). Changing one without the other makes the
+	// gateway abandon a call the agent is still holding, or the reverse —
+	// which is why the number lives here rather than at either end.
+	MCPHeldCallBudget time.Duration = 30 * time.Minute
+
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
