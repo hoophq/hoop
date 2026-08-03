@@ -8214,6 +8214,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/server-logs": {
+            "get": {
+                "description": "Tail of recent in-memory runtime logs from the gateway process and connected agents",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Logs"
+                ],
+                "summary": "List Server Logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max number of most recent entries (default 500, max 5000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ServerLogEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/server-logs/stream": {
+            "get": {
+                "description": "Streams gateway and agent runtime logs in real-time via SSE. Sends a backlog of recent entries on connect, then each new entry as it is captured.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Server Logs"
+                ],
+                "summary": "Stream Server Logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of buffered entries to replay on connect (default 500, max 5000, 0 disables)",
+                        "name": "backlog",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverconfig/auth": {
             "get": {
                 "description": "Get authentication configuration",
@@ -17119,6 +17190,55 @@ const docTemplate = `{
                     "description": "The error returned when verifying the license",
                     "type": "string",
                     "example": "unable to verify license"
+                }
+            }
+        },
+        "openapi.ServerLogEntry": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "description": "The agent unique identifier (agent entries only)",
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "agent_name": {
+                    "description": "The agent name (agent entries only)",
+                    "type": "string",
+                    "example": "default"
+                },
+                "fields": {
+                    "description": "Structured fields attached to the entry",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "level": {
+                    "description": "The zap log level: info, warn, error, ...",
+                    "type": "string",
+                    "example": "info"
+                },
+                "logger": {
+                    "description": "The trimmed caller path that emitted the entry",
+                    "type": "string",
+                    "example": "transport/agent.go:74"
+                },
+                "message": {
+                    "description": "The log message",
+                    "type": "string",
+                    "example": "agent connected"
+                },
+                "source": {
+                    "description": "Where the entry was captured",
+                    "type": "string",
+                    "enum": [
+                        "gateway",
+                        "agent"
+                    ],
+                    "example": "gateway"
+                },
+                "timestamp": {
+                    "description": "When the entry was logged",
+                    "type": "string",
+                    "example": "2024-07-25T15:56:35.317601Z"
                 }
             }
         },

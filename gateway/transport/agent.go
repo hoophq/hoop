@@ -17,6 +17,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/serverlogs"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -75,6 +76,11 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			return err
 		}
 		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
+			continue
+		}
+
+		if pkt.Type == pbclient.AgentLogs {
+			handleAgentLogsPacket(stream, pkt)
 			continue
 		}
 
@@ -218,6 +224,24 @@ func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packe
 	}
 
 	return
+}
+
+// handleAgentLogsPacket buffers runtime log entries shipped by an agent.
+// Identity comes from the authenticated stream, never from the payload.
+func handleAgentLogsPacket(stream *streamclient.AgentStream, pkt *pb.Packet) {
+	if len(pkt.Payload) > 1<<20 {
+		log.With("agent", stream.AgentName()).Warnf("agent logs payload too large, dropping")
+		return
+	}
+	var entries []log.TailEntry
+	if err := json.Unmarshal(pkt.Payload, &entries); err != nil {
+		log.With("agent", stream.AgentName()).Warnf("failed decoding agent logs packet, reason=%v", err)
+		return
+	}
+	if len(entries) > 500 {
+		entries = entries[len(entries)-500:]
+	}
+	serverlogs.AppendAgentLogs(stream.GetOrgID(), stream.AgentID(), stream.AgentName(), entries)
 }
 
 func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {

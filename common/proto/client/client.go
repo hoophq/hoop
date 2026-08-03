@@ -10,6 +10,7 @@ const (
 	SessionClose               = "ClientSessionClose"
 	InteractionClose           = "ClientInteractionClose"
 	SessionAnalyzerMetrics     = "ClientSessionAnalyzerMetrics"
+	AgentLogs                  = "ClientAgentLogs"
 
 	ProxyManagerConnectOK = "ClientProxyManagerConnectOK"
 
