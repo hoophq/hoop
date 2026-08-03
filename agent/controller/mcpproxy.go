@@ -265,6 +265,23 @@ func (a *Agent) buildMCPGateway(
 	// an approval-matched tool must never execute unreviewed (fail closed).
 	pipeline := checks.Assemble(policy, mcpHooks, sink, false)
 
+	// The AI analyzer is opt-in per connection and costs an LLM round trip per
+	// tool call, so it goes last — after every deterministic refusal has had
+	// its chance, mirroring the "cheapest refusal first" ordering Assemble
+	// documents. A call the deny-list already rejects must not spend a model
+	// call. A nil config (no rule, no provider, flag off) leaves the pipeline
+	// exactly as it was.
+	if cfg := connParams.AISessionAnalyzer; cfg != nil {
+		analyzer, err := newMCPAnalyzer(cfg, sessionID, sink, a.mcpVerdictEmitter(sessionID))
+		if err != nil {
+			// Fail open, as the HTTP path does: a misconfigured provider must
+			// not take the connection offline. It is logged, not silent.
+			log.With("sid", sessionID).Warnf("failed building mcp ai session analyzer, continuing without analysis: %v", err)
+		} else {
+			pipeline = insertBeforeAuditTap(pipeline, analyzer)
+		}
+	}
+
 	name := connParams.ConnectionName
 	if name == "" {
 		name = "mcp"

@@ -87,7 +87,7 @@ new path is proven.
 MCP client → hoop gateway (auth, RBAC, proxyproto) → gRPC packets
   → agent controller (packetQueue per sid:connID)
   → libhoop/agent/mcpadapter (byte stream ⇄ in-memory HTTP listener)
-  → mcpproxy gateway (pipeline: policy, budgets, rug-pull, S2C gate, hooks)
+  → mcpproxy gateway (pipeline: policy, budgets, rug-pull, S2C gate, hooks, ai analyzer)
   → backend: stdio child | streamable-http remote | legacy SSE remote
 ```
 
@@ -102,7 +102,7 @@ httpproxy proxyproto with a new packet type rather than a new framing layer.
 |---|---|---|
 | Guardrails | `inspect.Hooks.GuardInput` | `redactor.ValidateGuardRailRules` over `tools/call` arguments (input) and tool descriptions (output; a poisoned catalog kills the session) |
 | Data masking | `inspect.Hooks.Redact` | existing masking applied per `result.content[].text` leaf — the JSON-RPC envelope cannot be corrupted |
-| AI analyzer | `inspect.Hooks.Analyze` | injected by the controller as for httpproxy; receives `(tool, args)` instead of `(method, url, body)`; fail-open, blocks single requests only |
+| AI analyzer | host-supplied `inspect.Check` | **Done.** `agent/controller/mcpproxy_aianalyzer.go` runs the shared `common/aianalyzer` engine as a pipeline stage, appended last (just before the terminal audit tap) so a call the deny-list already refuses costs no LLM round trip. Classifies `(tool, args)`, not `(method, url, body)` — every MCP call is a POST to the same path. Fail-open on provider error, and it blocks the single call rather than the session. There is no `inspect.Hooks.Analyze` seam as sketched above; `Check` is the extension point mcpproxy actually offers. Verdicts ride the audit-event packet under `aianalyzer.info`, so existing session metrics apply unchanged. |
 | Session audit | `audit.Sink` | `mcp.*` events (tool_call, tool_denied, tools_changed, approval_*, redacted…) serialized as session events; hoop's session ID injected via the gateway's session-ID factory |
 | Reviews | `gateway.HeldStore` | a matched `tools/call` parks; the agent raises a review (new type `mcp-tool-call` in `models/reviews.go`); resolution flows back and the call proceeds or the client receives JSON-RPC `-32011` — the session survives either way |
 | Identity | `gateway.IdentityResolver` | returns the session's user from connection opts; mcpproxy's own inbound-auth stack is not used (hoop authenticated the caller already) |

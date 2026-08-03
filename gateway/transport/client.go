@@ -384,23 +384,41 @@ func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	return analyzerMetricsRulesJsonData, nil
 }
 
+// agentEnforcesAIAnalysis reports whether the agent classifies and enforces AI
+// risk analysis inline for a connection type.
+//
+// Only these types carry an analyzer through to the agent. Every other type
+// either has no inline analysis at all or is analyzed gateway-side on the exec
+// path, where the whole script is classified once before the session starts.
+//
+//   - httpproxy / kubernetes: one verdict per proxied HTTP request.
+//   - mcpproxy: one verdict per MCP tool call, produced by a stage of the MCP
+//     inspection pipeline (agent/controller/mcpproxy_aianalyzer.go). The unit
+//     analyzed is the tool name plus its arguments, not an HTTP request line —
+//     every MCP call is a POST to the same path.
+func agentEnforcesAIAnalysis(connType pb.ConnectionType) bool {
+	switch connType {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes, pb.ConnectionTypeMcpProxy:
+		return true
+	}
+	return false
+}
+
 // getAISessionAnalyzerParams resolves the per-connection AI session analyzer
-// configuration shipped to the agent so its HTTP proxy can classify and enforce
-// requests inline.
+// configuration shipped to the agent so it can classify and enforce requests
+// inline.
 //
 // It returns (nil, nil) — analysis disabled — when:
 //   - the experimental.http_session_analyzer flag is off for the org,
-//   - the connection is not an HTTP-family type (the agent only enforces
-//     analysis in the HTTP proxy path; DB/exec analysis runs gateway-side),
+//   - the connection is not one the agent analyzes inline (the HTTP-family
+//     types and mcpproxy; DB/exec analysis runs gateway-side),
 //   - the connection has no analyzer rule (the feature is opt-in), or
 //   - no AI provider is configured for the org (can't analyze without one).
 func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyzerParams, error) {
 	if !featureflag.IsEnabled(pctx.OrgID, "experimental.http_session_analyzer") {
 		return nil, nil
 	}
-	switch pctx.ProtoConnectionType() {
-	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
-	default:
+	if !agentEnforcesAIAnalysis(pctx.ProtoConnectionType()) {
 		return nil, nil
 	}
 
