@@ -7,10 +7,11 @@
 # gap BETWEEN releases so :latest does not accrue unpatched OS CVEs for weeks.
 #
 # The application binary is NOT rebuilt here. This job re-patches only the OS
-# layer under the exact binary of the latest published release (fetched from the
-# canonical release channel and checksum-verified, staged under the names
-# Dockerfile.minimal's glob expects), then republishes. Consequently the
-# ENFORCING gate is scoped to the OS layer (--pkg-types os) — the layer this
+# layer under the exact binary of the latest published release. It prefers
+# GitHub Release assets and their independently recorded SHA-256 digests.
+# Pre-DEP-91 releases fall back to releases.hoop.dev only when both that
+# release's checksum list and a reviewed compatibility pin match the archive.
+# The ENFORCING gate is scoped to the OS layer (--pkg-types os) — the layer this
 # rebuild actually changes — and runs against EVERY published platform. The
 # shipped Go binary's dependency/toolchain CVEs are fixed by a RELEASE (source
 # bumps + the govulncheck PR gate + the release-time Trivy scan), never by an OS
@@ -19,10 +20,10 @@
 #
 # Published tags:
 #   hoophq/hoopdev-minimal:latest                — moving, always the latest patches
-#   hoophq/hoopdev-minimal:<release>-<YYYYMMDD>  — patched snapshot, one per weekly run
-# The immutable release tag hoophq/hoopdev-minimal:<release> is left untouched so
-# existing digest pins keep resolving; track :latest (or a dated tag / a digest)
-# for patches.
+#   hoophq/hoopdev-minimal:<release>-<YYYYMMDD>  — weekly patched snapshot
+# The plain release tag hoophq/hoopdev-minimal:<release> is left untouched.
+# :latest moves on every successful run; a dated tag may move on a same-day
+# retry. Pin hoophq/hoopdev-minimal@sha256:... whenever immutable bytes matter.
 name: Minimal Agent Weekly Rebuild
 
 on:
@@ -41,54 +42,131 @@ jobs:
     name: Re-patch and publish hoophq/hoopdev-minimal
     environment: production
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          username: ${{ secrets.DOCKER_LOGIN }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          persist-credentials: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      # Fetch the exact binary of the latest published release, staged under the
-      # names Dockerfile.minimal's glob expects: hoop_<ver>_Linux_<uname -m>.tar.gz
-      # (x86_64 for amd64, aarch64 for arm64). The multi-arch build selects the
-      # matching tar per platform. Verify both tarballs against the release
-      # checksums before building — fail closed on mismatch or if neither is
-      # verified, so a tampered/corrupt download can never be republished.
+      # Prefer GitHub Release assets: their recorded SHA-256 digests are an
+      # independent trust anchor. Releases before DEP-91 have no Hoop assets
+      # there, so they may use the canonical releases.hoop.dev distribution
+      # only when its checksum also matches a reviewed compatibility pin in
+      # this checkout. Partial GitHub uploads, missing pins, invalid digests,
+      # failed downloads, or either mismatch fail closed before any build.
       - name: Resolve latest release and stage binaries
         id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          ver="$(curl -fsS https://releases.hoop.dev/release/latest.txt)"
-          if [ -z "$ver" ]; then
-            echo "::error::could not resolve the latest release version"; exit 1
+          ver="$(gh release list \
+            --repo "$GITHUB_REPOSITORY" \
+            --exclude-drafts \
+            --exclude-pre-releases \
+            --limit 1 \
+            --json tagName \
+            --jq '.[0].tagName')"
+          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::could not resolve a valid latest release version"; exit 1
           fi
           echo "version=${ver}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
           mkdir -p dist/binaries
-          for arch in x86_64 aarch64; do
-            curl -fsSL "https://releases.hoop.dev/release/${ver}/hoop_${ver}_Linux_${arch}.tar.gz" \
-              -o "dist/binaries/hoop_${ver}_Linux_${arch}.tar.gz"
+
+          assets=(
+            "hoop_${ver}_Linux_x86_64.tar.gz"
+            "hoop_${ver}_Linux_aarch64.tar.gz"
+          )
+          verified_checksums="dist/binaries/.verified-checksums"
+          : > "$verified_checksums"
+
+          asset_metadata="$(gh release view "$ver" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets)"
+          declare -A github_digests=()
+          github_asset_count=0
+          for asset in "${assets[@]}"; do
+            mapfile -t digests < <(
+              jq -r --arg name "$asset" \
+                '.assets[] | select(.name == $name) | .digest // ""' \
+                <<< "$asset_metadata"
+            )
+            if [ "${#digests[@]}" -gt 1 ]; then
+              echo "::error::duplicate GitHub Release asset ${asset}"; exit 1
+            fi
+            if [ "${#digests[@]}" -eq 1 ]; then
+              if ! [[ "${digests[0]}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "::error::missing or invalid GitHub digest for ${asset}"; exit 1
+              fi
+              github_digests["$asset"]="${digests[0]#sha256:}"
+              github_asset_count=$((github_asset_count + 1))
+            fi
           done
-          curl -fsSL "https://releases.hoop.dev/release/${ver}/checksums.txt" \
-            -o dist/binaries/checksums.txt
-          # checksums.txt paths are ./dist/binaries/...; verify from the repo root.
-          # --ignore-missing skips the other-platform entries but still fails if
-          # a staged tarball mismatches or none were verified.
-          sha256sum -c --ignore-missing dist/binaries/checksums.txt
-          # The Dockerfile globs *.tar.gz from dist/binaries/; keep only the tars.
-          rm -f dist/binaries/checksums.txt
-          ls -lh dist/binaries/
+
+          if [ "$github_asset_count" -eq 2 ]; then
+            for asset in "${assets[@]}"; do
+              gh release download "$ver" \
+                --repo "$GITHUB_REPOSITORY" \
+                --pattern "$asset" \
+                --dir dist/binaries
+              printf '%s  %s\n' "${github_digests[$asset]}" \
+                "dist/binaries/${asset}" >> "$verified_checksums"
+            done
+          elif [ "$github_asset_count" -eq 0 ]; then
+            echo "::warning::${ver} predates GitHub Hoop assets; using reviewed releases.hoop.dev compatibility pins"
+            base_url="https://releases.hoop.dev/release/${ver}"
+            checksums="dist/binaries/checksums.txt"
+            curl --fail --location --silent --show-error \
+              --proto '=https' --tlsv1.2 \
+              --retry 3 --retry-all-errors \
+              --output "$checksums" "${base_url}/checksums.txt"
+
+            for asset in "${assets[@]}"; do
+              curl --fail --location --silent --show-error \
+                --proto '=https' --tlsv1.2 \
+                --retry 3 --retry-all-errors \
+                --output "dist/binaries/${asset}" "${base_url}/${asset}"
+
+              mapfile -t release_digests < <(
+                awk -v expected="./dist/binaries/${asset}" \
+                  '$2 == expected { print $1 }' "$checksums"
+              )
+              mapfile -t reviewed_digests < <(
+                awk -v expected="$asset" \
+                  '$2 == expected { print $1 }' \
+                  scripts/ci/legacy-release-checksums.sha256
+              )
+              if [ "${#release_digests[@]}" -ne 1 ] || \
+                [ "${#reviewed_digests[@]}" -ne 1 ] || \
+                ! [[ "${release_digests[0]}" =~ ^[0-9a-f]{64}$ ]] || \
+                ! [[ "${reviewed_digests[0]}" =~ ^[0-9a-f]{64}$ ]] || \
+                [ "${release_digests[0]}" != "${reviewed_digests[0]}" ]; then
+                echo "::error::missing, duplicate, invalid, or unreviewed checksum for ${asset}"
+                exit 1
+              fi
+              printf '%s  %s\n' "${reviewed_digests[0]}" \
+                "dist/binaries/${asset}" >> "$verified_checksums"
+            done
+          else
+            echo "::error::partial GitHub Hoop asset set for ${ver}; refusing fallback"
+            exit 1
+          fi
+
+          test "$(wc -l < "$verified_checksums")" -eq 2
+          sha256sum -c "$verified_checksums"
+          rm -f "$verified_checksums" dist/binaries/checksums.txt
 
       # Build each published platform and load it for the OS-layer gate BEFORE
       # publishing anything: a rebuild that regresses on EITHER arch must not
       # reach :latest.
       - name: Build (amd64, load for gates)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: ./Dockerfile.minimal
           context: '.'
@@ -111,13 +189,13 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --pkg-types os --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --exit-code 1 --no-progress \
             hoophq/hoopdev-minimal:cand-amd64
 
       - name: Build (arm64, load for gate)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: ./Dockerfile.minimal
           context: '.'
@@ -132,7 +210,7 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --pkg-types os --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --exit-code 1 --no-progress \
             hoophq/hoopdev-minimal:cand-arm64
@@ -145,7 +223,7 @@ jobs:
         run: |
           if ! docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --pkg-types library --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --quiet --format json \
             hoophq/hoopdev-minimal:cand-amd64 > go-vuln.json; then
@@ -161,18 +239,36 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Both arches passed the OS gate: build both from the warm cache and push
-      # the moving :latest plus a dated snapshot. buildx publishes a multi-arch
-      # manifest list for each tag.
-      - name: Build and push (multiarch)
-        uses: docker/build-push-action@v4
+      # Registry credentials enter the job only after every candidate scan has
+      # finished, so neither Trivy nor an untrusted image can access a push token.
+      - name: Login to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          file: ./Dockerfile.minimal
-          context: '.'
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
-          push: true
-          tags: |
-            hoophq/hoopdev-minimal:latest
-            hoophq/hoopdev-minimal:${{ steps.rel.outputs.version }}-${{ steps.rel.outputs.date }}
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Both arches passed every gate. Push those exact loaded image objects
+      # under unique, per-run candidate tags, then compose :latest and the dated
+      # multiarch snapshot from those candidates. Never rebuild after scanning:
+      # a second apt transaction could produce different, ungated bytes.
+      - name: Push gated candidates and multiarch tags
+        env:
+          RELEASE_VERSION: ${{ steps.rel.outputs.version }}
+          SNAPSHOT_DATE: ${{ steps.rel.outputs.date }}
+        run: |
+          repo="hoophq/hoopdev-minimal"
+          candidate="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          amd64_ref="${repo}:weekly-${candidate}-amd64"
+          arm64_ref="${repo}:weekly-${candidate}-arm64"
+
+          docker tag "${repo}:cand-amd64" "$amd64_ref"
+          docker tag "${repo}:cand-arm64" "$arm64_ref"
+          docker push "$amd64_ref"
+          docker push "$arm64_ref"
+
+          for tag in latest "${RELEASE_VERSION}-${SNAPSHOT_DATE}"; do
+            docker manifest create "${repo}:${tag}" \
+              --amend "$amd64_ref" \
+              --amend "$arm64_ref"
+            docker manifest push "${repo}:${tag}"
+          done

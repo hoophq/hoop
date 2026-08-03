@@ -16,7 +16,7 @@
 # sessions and any connection that shells out to a client binary
 # (clickhouse-client, cloud CLIs, ...) need that binary added in a derived
 # image.
-FROM ubuntu:noble-20251013
+FROM ubuntu:noble-20251013@sha256:c35e29c9450151419d9448b0fd75374fec4fff364a27f176fb458d472dfc9e54
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
