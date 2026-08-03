@@ -672,6 +672,9 @@ Non-obvious notes only:
 - `analytics.js` — Segment (`identify()` only today), not a gateway API
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
+- `attributes.js` — `list(params)` is paginated (`page`, `page_size`); the
+  gateway caps `page_size` at 100, so reading them all means looping until a
+  short page comes back.
 - `connections.js` — both `getConnections()` (full list — only for resolving
   every `connection_ids → name`, e.g. list displays) and
   `getConnectionsPaginated({page,pageSize,search,connectionIds})` for
@@ -680,6 +683,8 @@ Non-obvious notes only:
   the service boundary.
 - `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
   existence/total probe.
+- `userGroups.js` — `list()` returns a bare string array, and `null` (not
+  `[]`) when the organization has no groups; callers must coalesce.
 
 ---
 

@@ -103,6 +103,9 @@ Gateway backend (port 8009)
 | `/guardrails` | React | Done |
 | `/guardrails/new` | React | Done |
 | `/guardrails/edit/:id` | React | Done |
+| `/features/access-control` | React | Done |
+| `/features/access-control/new` | React | Done |
+| `/features/access-control/edit` | React | Done — group name comes from `?group=<name>`, the legacy URL shape |
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
@@ -130,7 +133,6 @@ Gateway backend (port 8009)
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
-/features/access-control/*
 /features/access-request/*
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
@@ -151,9 +153,13 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/guardrails/*`. Its `events/guardrails.cljs`
-stays regardless — resource setup/configure and the activation journey still
-subscribe to it. Removal belongs to a Track A cleanup PR.
+the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`.
+`events/guardrails.cljs` stays regardless — resource setup/configure and the
+activation journey still subscribe to it. The `features/access_control/` tree
+has no consumer outside itself (its `events.cljs` also registers
+`:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
+so it can go whole, together with the `access-control-promotion` block in
+`features/promotion.cljs`. Removal belongs to a Track A cleanup PR.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
