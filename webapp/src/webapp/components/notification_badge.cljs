@@ -3,8 +3,9 @@
    ["@radix-ui/themes" :refer [Box IconButton]]))
 
 (defn notification-badge
-  "Icon button with a red badge when has-notification? is true."
-  [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded]}]
+  "Icon button with a dot badge when has-notification? is true.
+   badge-color is a background utility class and defaults to red."
+  [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded badge-color]}]
   [:> Box {:class "relative"}
    [:> IconButton
     (merge
@@ -22,5 +23,5 @@
        {:aria-expanded aria-expanded}))
     icon]
    (when has-notification?
-     [:> Box {:class (str "absolute -top-1 -right-1 w-2 h-2 "
-                          "rounded-full bg-red-500")}])])
+     [:> Box {:class (str "absolute -top-1 -right-1 w-2 h-2 rounded-full "
+                          (or badge-color "bg-red-500"))}])])

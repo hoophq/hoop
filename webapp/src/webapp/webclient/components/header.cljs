@@ -7,7 +7,8 @@
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
    [webapp.components.skip-link :as skip-link]
-   [webapp.parallel-mode.components.header-button :as parallel-mode-button]))
+   [webapp.parallel-mode.components.header-button :as parallel-mode-button]
+   [webapp.webclient.components.features-indicator :as features-indicator]))
 
 
 (defn main []
@@ -125,6 +126,9 @@
                :disabled? false
                :aria-label "Toggle metadata panel"
                :aria-expanded (= @active-panel :metadata)}]]]
+
+           ;; Features active on the selected resource role (hidden when none)
+           [features-indicator/main]
 
            ;; New Parallel Mode Button
            [parallel-mode-button/parallel-mode-button]
