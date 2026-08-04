@@ -88,14 +88,14 @@ export function RoleRow({ role, active, expanded }) {
   const iconSrc = getIcon({ subtype: role.subtype, type: role.type })
 
   return (
-    <Accordion.Item value={role.name}>
+    <Accordion.Item value={role.name} className={classes.accordionItem}>
       <Accordion.Control classNames={{ control: classes.rowControl }}>
-        <Group justify="space-between" wrap="nowrap" gap="sm">
-          <Group gap="sm" wrap="nowrap" miw={0}>
+        <Group justify="space-between" wrap="nowrap" gap="md">
+          <Group gap="md" wrap="nowrap" miw={0}>
             {/* The getter always resolves to a URL, falling back to a generic
                 icon when the subtype is missing from the metadata catalog. */}
             <Image src={iconSrc} w={20} h={20} alt="" />
-            <Stack gap={0} miw={0}>
+            <Stack gap={2} miw={0}>
               <Text fz="sm" fw={700} truncate>
                 {role.name}
               </Text>
@@ -107,7 +107,9 @@ export function RoleRow({ role, active, expanded }) {
           <RoleRowStatus state={state} active={active} />
         </Group>
       </Accordion.Control>
-      <Accordion.Panel>{expanded && <RowBody role={role} />}</Accordion.Panel>
+      <Accordion.Panel classNames={{ content: classes.accordionPanelContent }}>
+        {expanded && <RowBody role={role} />}
+      </Accordion.Panel>
     </Accordion.Item>
   )
 }

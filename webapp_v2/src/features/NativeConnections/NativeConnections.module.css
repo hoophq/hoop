@@ -1,6 +1,37 @@
-/* Rows are denser than Mantine's default accordion control so a 600px drawer
-   shows a useful number of them at once. */
+/* The list is a bordered, rounded card — the container the Figma draws around
+   the rows. Overflow clips the first/last row corners to the radius. */
+.accordionRoot {
+  border: 1px solid var(--mantine-color-gray-2);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+}
+
+/* Row metrics measured off the Figma accordion component: 76px rows, ~16px of
+   padding on every side, and the icon a full spacing step away from the text. */
 .rowControl {
-  padding-inline: var(--mantine-spacing-sm);
-  padding-block: var(--mantine-spacing-xs);
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-md);
+}
+
+/* The expanded item keeps the same background as a collapsed one — only the
+   separator marks it. Mantine's `filled` variant tinted the whole item,
+   including the panel, which put a grey wash behind all the credential
+   content. */
+.accordionItem {
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+}
+
+.accordionItem:last-of-type {
+  border-bottom: none;
+}
+
+.accordionPanelContent {
+  padding-inline: var(--mantine-spacing-md);
+  padding-bottom: var(--mantine-spacing-md);
+}
+
+/* Credential content scrolls inside the row instead of pushing every other
+   role off screen; the disconnect footer stays put below it. */
+.sessionScroll {
+  max-height: min(380px, 45vh);
 }

@@ -5,6 +5,7 @@ import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { RoleRow } from './RoleRow'
+import classes from './NativeConnections.module.css'
 
 const NATIVE_ACCESS_DOCS_URL = 'https://hoop.dev/docs/learn/connections'
 
@@ -83,12 +84,19 @@ export function RoleList({
   }
 
   return (
+    // `default` keeps every item on the same background — the expanded row is
+    // marked by its separator, not by a tint. `filled` washed the whole item,
+    // panel included, in grey.
+    //
+    // mx/mb reproduce the Figma inset: the list is a bordered card sitting 16px
+    // inside the drawer, aligned with the search field above it.
     <Accordion
-      variant="filled"
+      variant="default"
       value={expanded}
       onChange={onExpandedChange}
-      px="md"
-      pb="md"
+      mx="md"
+      mb="md"
+      className={classes.accordionRoot}
     >
       {roles.map((role) => (
         <RoleRow
