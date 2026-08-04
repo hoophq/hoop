@@ -162,7 +162,7 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ❌ Not yet — hard blocker; React CommandPalette dispatches into CLJS (roadmap Wave 4) |
 | org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
 | Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ❌ CLJS-only today — React has Segment `identify()` + Intercom only (roadmap Parity track) |
-| Clipboard copy/cut blocking | `events/clipboard.cljs` | 🔶 Partial — React hides copy buttons but has no document-level listeners (roadmap Parity track) |
+| Clipboard copy/cut blocking | `events/clipboard.cljs` (deleted) | ✅ Yes — `hooks/useClipboardGuard` + `utils/clipboardPolicy`, installed once in `App.jsx`. Scope is the **document-level** listener; three CLJS views still call `navigator.clipboard.writeText` ungated (`integrations/authentication/views/advanced_tab.cljs:13`, `features/workflows/views/header.cljs:22`, `features/ai_session_analyzer/views/rule_form.cljs:189`) — separate code path, never covered by either implementation, follow-up ticket |
 
 ---
 
@@ -215,7 +215,7 @@ blocks"); full props in `COMPONENTS.md`.
 ### In Progress / Known Gaps 🔄
 - No shared ConfirmDialog component yet (pages build ad-hoc confirmations)
 - Native-client-access flow still lives in CLJS and the React CommandPalette depends on it via the bridge
-- Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
+- Sentry, MS Clarity, Segment `track()` and the org-migration dialog exist only in CLJS
 
 ### Migration order
 
@@ -237,5 +237,6 @@ this section — when scheduling migration work.
 - **`isAdmin` is derived** from user data (`user.role === 'admin'`). Admin-only routes are guarded in Sidebar and ProtectedRoute.
 - **`window.hoopRemount()`** must be called on ClojureApp remount (not initial mount) to avoid re-fetching user data when React Router re-renders the component.
 - **Radix → Mantine gray mapping**: the gray scale is slate-tinted; `dimmed`/`text` are semantic tokens set in `cssVariablesResolver()` — see `CLAUDE.md` "Text color".
+- **Clipboard blocking lives in React only.** `useClipboardGuard()` is called from `App.jsx` and nowhere else — `Layout` misses `/onboarding/*` and `PageLayout` misses the CLJS catch-all. It listens in the **capture** phase and calls `stopImmediatePropagation`, because a canceled `copy` event still writes whatever a downstream handler put in `clipboardData` (CodeMirror does this). `navigator.clipboard.writeText` is invisible to it, so programmatic copies must go through `copyToClipboard` from `@/utils/clipboardPolicy`. Two consequences: the raw shadow-cljs origin (`:8280`) serves the CLJS-only `index.html` and therefore has **no** clipboard enforcement — test on the merged build; and on catch-all routes the React toast renders in a different sonner instance than the CLJS one, so the two can overlay until the CLJS Toaster goes away at bridge endgame.
 - **CSS Layers**: Mantine loads via `styles.layer.css` + `@layer mantine, app;` so CSS Modules always win the cascade — see `CLAUDE.md` "CSS Layers — do not disable".
 - **CLJS stylesheet toggle**: `ClojureApp.jsx` toggles the `<link data-cljs-css>` on mount/unmount so Tailwind/Radix rules never leak into React-only routes — see `CLAUDE.md` "CLJS stylesheet isolation".
