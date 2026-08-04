@@ -126,7 +126,7 @@ func Post(c *gin.Context) {
 	// the login against — not req.Secrets, which the caller controls and which
 	// PUT may have only partially overlaid.
 	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
-	out.MCPOAuthWarning = adoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
+	out.MCPOAuthWarning = AdoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
 
 	c.JSON(http.StatusCreated, out)
 }
@@ -249,7 +249,7 @@ func Put(c *gin.Context) {
 	}
 
 	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
-	out.MCPOAuthWarning = adoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
+	out.MCPOAuthWarning = AdoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
 
 	c.JSON(http.StatusOK, out)
 }
@@ -388,7 +388,14 @@ func Patch(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
+	// Same adoption POST and PUT perform. The subtype comes off the stored
+	// connection rather than the request: PATCH is partial, so a save that
+	// only re-authorizes sends no subtype at all.
+	if req.MCPOAuthFlowID != nil {
+		out.MCPOAuthWarning = AdoptMCPOAuthGrant(ctx.OrgID, resp, resp.SubType.String, *req.MCPOAuthFlowID)
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // DeleteConnection
@@ -549,6 +556,7 @@ func Get(c *gin.Context) {
 			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
 		}
 	}
+	apiConn.MCPOAuthGranted = hasMCPOAuthGrant(ctx.OrgID, conn)
 	c.JSON(http.StatusOK, apiConn)
 }
 

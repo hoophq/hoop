@@ -220,6 +220,15 @@ const initialState = {
   // true, the API masks every inline secret value (keys preserved, provider
   // references untouched), so credential renderers switch to write-only.
   hideRoleInfo: false,
+  // Flow id of an MCP OAuth login completed on this screen, pending save.
+  //
+  // The login and the save are separate requests, so the browser holds the
+  // flow between them. Handing it to the gateway at save time is what turns a
+  // one-off token into a renewable grant (services.AdoptMCPOAuthGrant); the
+  // header the login also produced is only the token as it stands now, and
+  // dies at the provider's TTL. Cleared on save and on load, because a stale
+  // id would re-adopt a login the admin did not perform on this save.
+  mcpOAuthFlowId: null,
   auxLoading: false,
 }
 
@@ -234,6 +243,7 @@ export const useConfigureRoleStore = create((set, get) => ({
       stagedSecrets: {},
       fieldSources: {},
       renames: {},
+      mcpOAuthFlowId: null,
     })
     try {
       const data = await connectionsService.getConnection(nameOrId)
@@ -254,6 +264,10 @@ export const useConfigureRoleStore = create((set, get) => ({
       set({ error: message, loading: false })
     }
   },
+
+  // Records the MCP OAuth login the user just completed, so save() can hand
+  // the gateway the flow that owns its refresh token.
+  setMcpOAuthFlowId: (flowId) => set({ mcpOAuthFlowId: flowId }),
 
   loadAuxiliaryData: async () => {
     set({ auxLoading: true })
@@ -501,6 +515,10 @@ export const useConfigureRoleStore = create((set, get) => ({
     const state = get()
     if (Object.entries(state.stagedSecrets).some(([k, ch]) => !isPlaceholderEntry(k, ch))) return true
     if (Object.keys(state.renames).length > 0) return true
+    // A completed OAuth login is a change even when the token it produced
+    // matches the stored one byte for byte: the flow id is what the gateway
+    // needs to start renewing it, and only a save hands that over.
+    if (state.mcpOAuthFlowId) return true
     return Object.keys(buildDraftsPatch(state.drafts, state.baseline)).length > 0
   },
 
@@ -559,7 +577,7 @@ export const useConfigureRoleStore = create((set, get) => ({
   },
 
   save: async () => {
-    const { connection, stagedSecrets, renames, drafts, baseline } = get()
+    const { connection, stagedSecrets, renames, drafts, baseline, mcpOAuthFlowId } = get()
     if (!connection) return
     // Reject placeholder rows that have a value but no name — saving
     // them as-is would persist sentinel keys like `envvar:NEW_KEY_1`.
@@ -590,6 +608,12 @@ export const useConfigureRoleStore = create((set, get) => ({
       if (Object.keys(stagedSecrets).length > 0 || Object.keys(renames).length > 0) {
         payload.secret = get().buildSecretsPatch()
       }
+      // An MCP Gateway connection re-authorized on this screen hands over the
+      // flow so the gateway adopts that login into a grant it can renew. The
+      // header staged alongside it is only today's token.
+      if (mcpOAuthFlowId) {
+        payload.mcp_oauth_flow_id = mcpOAuthFlowId
+      }
       const updated = await connectionsService.patchConnection(connection.name, payload)
       const newDrafts = draftsFromConnection(updated)
       // Re-seed per-field sources from the saved connection (same as
@@ -606,6 +630,7 @@ export const useConfigureRoleStore = create((set, get) => ({
         drafts: newDrafts,
         baseline: newDrafts,
         saving: false,
+        mcpOAuthFlowId: null,
       })
       return updated
     } catch (err) {

@@ -479,6 +479,20 @@ type Connection struct {
 	// needs to hear it at save time rather than from a failing session days
 	// later.
 	MCPOAuthWarning string `json:"mcp_oauth_warning,omitempty" readonly:"true" example:"the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"`
+	// MCPOAuthGranted reports that a durable MCP OAuth grant exists for this
+	// connection, so its credential is renewed from a refresh token at every
+	// session open rather than frozen at the value it was authorized with.
+	//
+	// The edit screen cannot infer this from the env vars. A brokered OAuth
+	// login and a pasted token both end up as one HEADER_AUTHORIZATION, and
+	// MCP_AUTH collapses "oauth" to "static" because that is all the agent
+	// needs to know (see services.MCPOAuthGrantSubType). Without this field
+	// the form has to guess which mode the admin chose, guesses "static", and
+	// an OAuth connection reopens offering to replace a token it should be
+	// offering to re-authorize.
+	//
+	// Presence only — no token, no expiry, nothing the grant holds.
+	MCPOAuthGranted bool `json:"mcp_oauth_granted,omitempty" readonly:"true" example:"true"`
 }
 
 type ConnectionPatch struct {
@@ -548,6 +562,17 @@ type ConnectionPatch struct {
 	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
 	// Attributes associated with this connection
 	Attributes *[]string `json:"attributes" example:"production,pii"`
+	// MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant
+	// for this connection. Write-only, and only meaningful for the "mcpproxy"
+	// subtype. See Connection.MCPOAuthFlowID for the full rationale.
+	//
+	// PATCH needs it for the same reason POST and PUT do, and more urgently:
+	// re-authorizing an EXISTING connection is the only way to replace a
+	// credential the provider has expired, and the edit screen speaks PATCH.
+	// Without this the browser could obtain a fresh token but never hand over
+	// the flow that owns its refresh token, so every re-authorization would
+	// freeze another token destined to expire exactly like the last one.
+	MCPOAuthFlowID *string `json:"mcp_oauth_flow_id,omitempty" example:"7c8a1234-5678-9abc-def0-123456789abc"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -2818,6 +2843,14 @@ type ResourceRoleRequest struct {
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Attributes associated with this connection
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant
+	// for this role. Write-only, and only meaningful for the "mcpproxy"
+	// subtype. See Connection.MCPOAuthFlowID for the full rationale; the
+	// wizard that creates a resource and its roles in one request runs the
+	// same login as the standalone connection form and must be able to hand
+	// over the same flow id, or every role it creates keeps a token nothing
+	// renews.
+	MCPOAuthFlowID string `json:"mcp_oauth_flow_id,omitempty" example:"7c8a1234-5678-9abc-def0-123456789abc"`
 }
 
 type ResourceRequest struct {
@@ -2833,6 +2866,17 @@ type ResourceRequest struct {
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The roles associated with this resource
 	Roles []ResourceRoleRequest `json:"roles" binding:"dive"`
+}
+
+// MCPOAuthRoleWarning names one role whose MCP OAuth login was not attached
+// to the connection created for it. See Connection.MCPOAuthWarning: the role
+// exists and works on its frozen credential, but nothing renews that
+// credential, so it stops working when the provider expires the token.
+type MCPOAuthRoleWarning struct {
+	// Name of the role (connection) the login failed to attach to
+	Name string `json:"name" example:"linear-mcp"`
+	// Warning is the reason the login was not attached
+	Warning string `json:"warning" example:"the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"`
 }
 
 type ResourceResponse struct {
@@ -2854,6 +2898,10 @@ type ResourceResponse struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// MCPOAuthWarnings reports the roles in this request whose mcp_oauth_flow_id
+	// was not adopted into a durable grant. Present only on the create
+	// response that produced them, and empty when every login attached.
+	MCPOAuthWarnings []MCPOAuthRoleWarning `json:"mcp_oauth_warnings,omitempty" readonly:"true"`
 }
 
 type ResourcHealthCheckResponse struct {

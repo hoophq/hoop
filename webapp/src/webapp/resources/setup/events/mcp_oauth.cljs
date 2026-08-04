@@ -217,3 +217,30 @@
    {:db (-> db
             (assoc-in (mcp-path db role-index) {:status :idle})
             (update-in [:resource-setup :roles role-index :credentials] dissoc "HEADER_AUTHORIZATION"))}))
+
+;; ---------------------------------------------------------------------------
+;; The save outcome
+;; ---------------------------------------------------------------------------
+
+(rf/reg-event-fx
+ :mcp-oauth/report-save-outcome
+ ;; Announce a connection save, downgrading the usual success toast when the
+ ;; gateway reports that the OAuth login did not attach.
+ ;;
+ ;; The save itself succeeded — the connection exists and still works on the
+ ;; frozen HEADER_AUTHORIZATION it was given — so this is not an error. What
+ ;; it must not be is a plain "updated!": without a grant nothing renews that
+ ;; credential, the connection stops working the moment the provider expires
+ ;; the token, and the admin then debugs a dead MCP session days later with
+ ;; nothing pointing back at this save. The gateway's refusal reason
+ ;; (adoptMCPOAuthGrant) is the description, because the case worth reading
+ ;; is the endpoint mismatch: the admin authorized one server and saved
+ ;; another.
+ (fn [_ [_ response success-text]]
+   (let [warning (:mcp_oauth_warning response)]
+     {:fx [[:dispatch (if (str/blank? warning)
+                        [:show-snackbar {:level :success
+                                         :text success-text}]
+                        [:show-snackbar {:level :warning
+                                         :text "Saved, but the MCP OAuth login was not attached"
+                                         :description warning}])]]})))

@@ -12097,6 +12097,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "7c8a1234-5678-9abc-def0-123456789abc"
                 },
+                "mcp_oauth_granted": {
+                    "description": "MCPOAuthGranted reports that a durable MCP OAuth grant exists for this\nconnection, so its credential is renewed from a refresh token at every\nsession open rather than frozen at the value it was authorized with.\n\nThe edit screen cannot infer this from the env vars. A brokered OAuth\nlogin and a pasted token both end up as one HEADER_AUTHORIZATION, and\nMCP_AUTH collapses \"oauth\" to \"static\" because that is all the agent\nneeds to know (see services.MCPOAuthGrantSubType). Without this field\nthe form has to guess which mode the admin chose, guesses \"static\", and\nan OAuth connection reopens offering to replace a token it should be\noffering to re-authorize.\n\nPresence only — no token, no expiry, nothing the grant holds.",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": true
+                },
                 "mcp_oauth_warning": {
                     "description": "MCPOAuthWarning reports that the connection was saved but the MCP OAuth\nlogin named by mcp_oauth_flow_id was not attached to it. Present only on\nthe create/update response that produced it.\n\nThe save succeeded and the connection still works on its frozen\nHEADER_AUTHORIZATION, so this is not an error status. What it is not is\nsilent: without a grant the credential is never renewed, the connection\nstops working the moment the provider expires that token, and the admin\nneeds to hear it at save time rather than from a failing session days\nlater.",
                     "type": "string",
@@ -12463,6 +12469,11 @@ const docTemplate = `{
                         "environment",
                         "tier"
                     ]
+                },
+                "mcp_oauth_flow_id": {
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype. See Connection.MCPOAuthFlowID for the full rationale.\n\nPATCH needs it for the same reason POST and PUT do, and more urgently:\nre-authorizing an EXISTING connection is the only way to replace a\ncredential the provider has expired, and the edit screen speaks PATCH.\nWithout this the browser could obtain a fresh token but never hand over\nthe flow that owns its refresh token, so every re-authorization would\nfreeze another token destined to expire exactly like the last one.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
@@ -14258,6 +14269,21 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.MCPOAuthRoleWarning": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name of the role (connection) the login failed to attach to",
+                    "type": "string",
+                    "example": "linear-mcp"
+                },
+                "warning": {
+                    "description": "Warning is the reason the login was not attached",
+                    "type": "string",
+                    "example": "the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"
+                }
+            }
+        },
         "openapi.MCPOAuthTokenResponse": {
             "type": "object",
             "properties": {
@@ -15519,6 +15545,14 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "mcp_oauth_warnings": {
+                    "description": "MCPOAuthWarnings reports the roles in this request whose mcp_oauth_flow_id\nwas not adopted into a durable grant. Present only on the create\nresponse that produced them, and empty when every login attached.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.MCPOAuthRoleWarning"
+                    },
+                    "readOnly": true
+                },
                 "name": {
                     "description": "The resource name",
                     "type": "string",
@@ -15582,6 +15616,11 @@ const docTemplate = `{
                     "example": [
                         "/bin/bash"
                     ]
+                },
+                "mcp_oauth_flow_id": {
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this role. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype. See Connection.MCPOAuthFlowID for the full rationale; the\nwizard that creates a resource and its roles in one request runs the\nsame login as the standalone connection form and must be able to hand\nover the same flow id, or every role it creates keeps a token nothing\nrenews.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
                 },
                 "name": {
                     "description": "Name of the connection. This attribute is immutable when updating it",

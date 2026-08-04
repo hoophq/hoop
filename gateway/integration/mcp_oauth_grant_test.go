@@ -811,6 +811,112 @@ func TestMCPOAuthCallbackReplayDoesNotDowngradeAFlow(t *testing.T) {
 	}
 }
 
+// The resource wizard creates a resource and its roles in one POST
+// /resources, and it runs the same OAuth login the standalone connection form
+// runs. Until the flow id was plumbed through ResourceRoleRequest the field
+// was simply dropped by the JSON binding: no adoption was attempted, no
+// warning could exist, and every mcpproxy role created through the wizard
+// kept a token nothing would ever renew.
+func TestMCPOAuthGrantAdoptedForAWizardCreatedRole(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "mcp-grant-wizard-agent")
+	defer deleteAgent(t, token, "mcp-grant-wizard-agent")
+
+	fake := newFakeMCPServer(t, time.Hour, time.Hour)
+	flowID, authHeader := completeMCPLogin(t, token, fake)
+
+	resource := createMCPProxyResource(t, token, "smoke-mcp-wizard", "smoke-mcp-wizard-role",
+		agentID, fake.url("/mcp"), authHeader, flowID)
+
+	conn, err := models.GetConnectionByNameOrID(
+		models.NewAdminContext(testGateway.OrgID), "smoke-mcp-wizard-role")
+	if err != nil || conn == nil {
+		t.Fatalf("the wizard's role was not created: %v", err)
+	}
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err != nil {
+		t.Fatalf("the wizard's role got no grant, so its credential dies at the provider's TTL: %v", err)
+	}
+	if len(resource.MCPOAuthWarnings) != 0 {
+		t.Errorf("a successful adoption reported warnings: %v", resource.MCPOAuthWarnings)
+	}
+}
+
+// The wizard's counterpart to TestMCPOAuthGrantRefusesCrossServerAdoption: the
+// same refusal must apply, and — because the wizard creates several roles at
+// once — must name the role it applies to. A bare "something went wrong" would
+// leave the admin guessing which of the connections they just created is the
+// degraded one.
+func TestMCPOAuthGrantRefusalNamesTheWizardRole(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "mcp-grant-wizard-x-agent")
+	defer deleteAgent(t, token, "mcp-grant-wizard-x-agent")
+
+	authorized := newFakeMCPServer(t, time.Hour, time.Hour)
+	other := newFakeMCPServer(t, time.Hour, time.Hour)
+	flowID, authHeader := completeMCPLogin(t, token, authorized)
+
+	const roleName = "smoke-mcp-wizard-x-role"
+	resource := createMCPProxyResource(t, token, "smoke-mcp-wizard-x", roleName,
+		agentID, other.url("/mcp"), authHeader, flowID)
+
+	conn, err := models.GetConnectionByNameOrID(
+		models.NewAdminContext(testGateway.OrgID), roleName)
+	if err != nil || conn == nil {
+		t.Fatalf("the wizard's role was not created: %v", err)
+	}
+	if _, err := models.GetMCPOAuthGrant(models.DB, testGateway.OrgID, conn.ID, ""); err == nil {
+		t.Fatal("the wizard's role adopted a grant for a server it does not talk to")
+	}
+	if len(resource.MCPOAuthWarnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one; the admin sees a 201 for a role that will degrade",
+			resource.MCPOAuthWarnings)
+	}
+	if got := resource.MCPOAuthWarnings[0].Name; got != roleName {
+		t.Errorf("warning names role %q, want %q", got, roleName)
+	}
+	if resource.MCPOAuthWarnings[0].Warning == "" {
+		t.Error("the warning carries no reason, so the admin cannot tell a mismatch from an expired flow")
+	}
+}
+
+// createMCPProxyResource drives the wizard's request: one resource carrying
+// one mcpproxy role that adopts flowID. Returns the decoded response, which is
+// where the per-role adoption warnings ride.
+func createMCPProxyResource(t *testing.T, token, resourceName, roleName, agentID, remoteURL, authHeader, flowID string) openapi.ResourceResponse {
+	t.Helper()
+	created := testServer.Post(t, "/resources", token, openapi.ResourceRequest{
+		Name:    resourceName,
+		Type:    "application",
+		SubType: services.MCPOAuthGrantSubType,
+		AgentID: agentID,
+		EnvVars: map[string]string{},
+		Roles: []openapi.ResourceRoleRequest{{
+			Name:    roleName,
+			Type:    "application",
+			SubType: services.MCPOAuthGrantSubType,
+			Secrets: map[string]any{
+				"envvar:MCP_TRANSPORT":        b64("streamable-http"),
+				"envvar:MCP_AUTH":             b64("static"),
+				"envvar:REMOTE_URL":           b64(remoteURL),
+				"envvar:HEADER_AUTHORIZATION": b64(authHeader),
+			},
+			MCPOAuthFlowID: flowID,
+		}},
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	var resource openapi.ResourceResponse
+	testutil.DecodeJSON(t, created, &resource)
+	t.Cleanup(func() {
+		// Connections must go before the resource.
+		del := testServer.Delete(t, "/connections/"+roleName, token)
+		del.Body.Close()
+		del = testServer.Delete(t, "/resources/"+resourceName, token)
+		del.Body.Close()
+	})
+	return resource
+}
+
 // b64 encodes a connection env var value the way the webapp does: the wire
 // contract is "envvar:NAME" -> base64 plaintext.
 func b64(v string) string { return base64.StdEncoding.EncodeToString([]byte(v)) }

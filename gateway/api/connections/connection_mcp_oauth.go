@@ -457,13 +457,18 @@ func withMCPOutcome(redirectURL, outcome, flowID, reason string) string {
 	return u.String()
 }
 
-// adoptMCPOAuthGrant promotes a completed OAuth login into a durable grant for
+// AdoptMCPOAuthGrant promotes a completed OAuth login into a durable grant for
 // a freshly saved connection, and reports why it could not when it did not.
 //
 // Called after create and update, and a no-op (empty warning) unless the
 // payload carried a flow id for the mcpproxy subtype. Only that subtype gets
 // renewal: the legacy mcp subtype runs the byte-relay path, which has no
 // notion of a grant.
+//
+// Exported because the resource wizard creates its roles through
+// POST /resources, in a different package, and a connection created there is
+// no less in need of a renewable credential than one created through
+// POST /connections.
 //
 // A failure does not fail the save. The connection row is already written and
 // its frozen HEADER_AUTHORIZATION works exactly as it did before grants
@@ -475,7 +480,7 @@ func withMCPOutcome(redirectURL, outcome, flowID, reason string) string {
 // it. The endpoint-mismatch refusal in services.AdoptMCPOAuthGrant is the case
 // that most needs saying out loud: it means the admin authorized one server
 // and saved another.
-func adoptMCPOAuthGrant(orgID string, conn *models.Connection, subType, flowID string) (warning string) {
+func AdoptMCPOAuthGrant(orgID string, conn *models.Connection, subType, flowID string) (warning string) {
 	if flowID == "" || subType != services.MCPOAuthGrantSubType {
 		return ""
 	}
@@ -487,4 +492,31 @@ func adoptMCPOAuthGrant(orgID string, conn *models.Connection, subType, flowID s
 	}
 	log.With("connection-id", conn.ID, "flow-id", flowID).Infof("mcp oauth: grant adopted")
 	return ""
+}
+
+// hasMCPOAuthGrant reports whether a durable grant backs this connection's
+// credential.
+//
+// The edit screen needs it to render the right auth control, and nothing in
+// the connection's env vars can tell it: a brokered OAuth login and a pasted
+// bearer token are both one HEADER_AUTHORIZATION, and MCP_AUTH collapses
+// "oauth" to "static" on purpose (the agent has no separate oauth mode — see
+// validateMCPProxyEnv). Guessing "static" is what makes an OAuth connection
+// reopen offering to replace a token instead of to re-authorize.
+//
+// Presence only. A lookup failure reads as "no grant": the caller renders a
+// re-authorize affordance either way, and the alternative is failing a
+// connection read over a credential detail.
+func hasMCPOAuthGrant(orgID string, conn *models.Connection) bool {
+	if conn == nil || conn.SubType.String != services.MCPOAuthGrantSubType {
+		return false
+	}
+	grant, err := models.GetMCPOAuthGrant(models.DB, orgID, conn.ID, "")
+	if err != nil {
+		if !errors.Is(err, models.ErrNotFound) {
+			log.With("connection-id", conn.ID).Warnf("mcp oauth: failed reading grant: %v", err)
+		}
+		return false
+	}
+	return grant != nil
 }

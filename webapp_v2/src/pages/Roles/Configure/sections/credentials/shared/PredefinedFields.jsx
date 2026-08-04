@@ -73,7 +73,12 @@ export default function PredefinedFields({
   return (
     <Stack gap="lg">
       {visibleFields.map((field) => {
-        const envKey = `envvar:${field.key.toUpperCase()}`
+        // `envKey` overrides the derived name for fields whose wire key is
+        // not the upper-cased label — an MCP credential header carries its
+        // own name inside the key (CONTEXT7_API_KEY, X-Goog-Api-Key) and
+        // reaches the provider byte for byte, so upper-casing it would
+        // authenticate as nobody.
+        const envKey = field.envKey || `envvar:${field.key.toUpperCase()}`
         const encodedValue = currentSecrets[envKey]
         // Key presence is the existence signal — the gateway preserves
         // the key set when it strips inline values, so a present key

@@ -788,7 +788,16 @@
 
      (when-not stdio?
        [:> Flex {:align "center" :gap "3"}
-        [:> Switch {:checked (get credentials "insecure" false)
+        ;; Coerced, not read raw. A saved connection round-trips INSECURE as
+        ;; the STRING "false", and every non-empty string is truthy — so a
+        ;; connection saved with SSL verification ON reopened with the switch
+        ;; showing it OFF, and one save made the display true. The two MCP
+        ;; block switches below already compare against "false"; this one did
+        ;; not. A fresh role still holds the boolean the default writes.
+        [:> Switch {:checked (let [v (get credentials "insecure" false)]
+                               (if (boolean? v)
+                                 v
+                                 (= "true" (raw-credential-value v))))
                     :size "3"
                     :onCheckedChange #(set-cred "insecure" %)}]
         [:> Box
