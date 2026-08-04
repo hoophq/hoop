@@ -7,6 +7,7 @@ import { useUserStore } from '@/stores/useUserStore';
 import { searchAll } from '@/services/search';
 import { useBridgeStore } from '@/stores/useBridgeStore';
 import { showSnackbar } from '@/utils/snackbar';
+import { copyToClipboard } from '@/utils/clipboardPolicy';
 import CommandPaletteRoot from './CommandPaletteRoot';
 import MainPage from './MainPage';
 import ResourceRolesPage from './ResourceRolesPage';
@@ -76,9 +77,14 @@ function ConnectedCommandPalette() {
 
       case ACTION_TYPES.HOOP_CLI: {
         const cmd = `hoop connect ${connection?.name}`;
-        navigator.clipboard.writeText(cmd).then(() => {
-          showSnackbar({ level: 'success', text: `Copied: ${cmd}` });
-        });
+        // writeText is invisible to the document-level clipboard guard, so the
+        // org control has to be checked here too — copyToClipboard does it and
+        // resolves false (already toasted) when copying is disabled.
+        copyToClipboard(cmd)
+          .then((copied) => {
+            if (copied) showSnackbar({ level: 'success', text: `Copied: ${cmd}` });
+          })
+          .catch(() => showSnackbar({ level: 'error', text: 'Failed to copy to clipboard.' }));
         break;
       }
 
