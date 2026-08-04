@@ -1,10 +1,25 @@
 # CLJS → React Migration Roadmap
 
-Status of record for finishing the `webapp/` (ClojureScript) → `webapp_v2/` (React)
+The plan for finishing the `webapp/` (ClojureScript) → `webapp_v2/` (React)
 migration. Produced from a full audit of both apps (routes, panels, dead code,
 navigation, global infra parity) on 2026-07-27. `CONTEXT_MIGRATION.md` explains the
 shell architecture; this file answers "what's left, in what order, and what can be
 deleted".
+
+## Tracked in Linear
+
+Live status lives in the **[CLJS → React Migration project](https://linear.app/hoophq/project/cljs-react-migration-webapp-v2-a3134fa1d0db)**. Every item below has a ticket, grouped into milestones that mirror the tracks and waves here, with dependencies wired so the board shows what is claimable right now.
+
+| Surface | Owns |
+|---|---|
+| The Linear project | What is claimable, who owns it, current status, and the **verified scope** of each item |
+| This file | *Why* the order is what it is — architectural reasoning, ordering constraints, the endgame plan |
+
+**Where a ticket's scope disagrees with a row below, the ticket wins.** The rows date from the 2026-07-27 audit; every near-term ticket was re-verified against the tree on 2026-07-31 and several rows turned out wrong — B3.7 is 727 LOC and not ~324 (the count omitted the whole `views/` subtree), B2.2 is *not* independent (no sidebar or palette entry — it is reachable only from Sessions surfaces), B2.1 owns ~150 of `events/audit.cljs`'s 786 LOC rather than all of it, and B1.3 has nine adoption sites rather than two.
+
+Those corrections live in the tickets deliberately. Copying them back here would give every fact two homes and start the drift over again — the problem EVL-115 removed from these docs in the first place.
+
+New work gets a ticket in the project **before** the branch. PR #1650 sat unticketed for two days and was invisible on the board the whole time.
 
 **Working model:** three parallel tracks (Cleanup, Migration, Parity) plus a Phase 0
 of quick wins and an Endgame (bundle removal). One Linear ticket = one worktree =
