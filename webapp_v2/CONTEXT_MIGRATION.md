@@ -67,6 +67,9 @@ Gateway backend (port 8009)
 | `/dashboard` | React | Done (admin-only; lazily loaded — it owns the recharts chunk) |
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
+| `/sessions` | React | Done |
+| `/sessions/filtered` | React | Done — Execution Summary (`?batch_id=` or `?id=`) |
+| `/sessions/:id` | ClojureApp (CLJS) | Intentional — stays on CLJS until Wave 6 (B6.2 flips the route) |
 | `/settings/infrastructure` | React | Done |
 | `/settings/license` | React | Done |
 | `/settings/api-keys` | React | Done |
@@ -122,7 +125,7 @@ Gateway backend (port 8009)
 ```
 /                             home (redirects to onboarding)
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
-/sessions, /sessions/filtered, /sessions/:id
+/sessions/:id                 session details (list + filtered are React)
 /workflows/:correlation-id
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
@@ -204,6 +207,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
+- Sessions list (`/sessions`) and Execution Summary (`/sessions/filtered`) — filter bar (user / resource role / type / access-request status / date range / Jira ticket) driven entirely by the URL query string, comma-separated ID lookup, offset pagination on the list and infinite scroll on the batch view. `/sessions/:id` still routes to CLJS until Wave 6
 - Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)
 - Toast/snackbar parity — `utils/snackbar.jsx` + `Toast.jsx` (same sonner library as CLJS)
 - Page loaders (`PageLoader`, `AuthPageLoader`, `useMinDelay`)

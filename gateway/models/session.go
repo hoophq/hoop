@@ -364,8 +364,8 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
-			s.machine_identity_id, s.identity_type, s.correlation_id,
-			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
+			s.machine_identity_id, s.identity_type, s.correlation_id, s.origin,
+			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.blob_stream_id, s.guardrails_info,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
 			c.resource_name,
 			CASE
@@ -375,6 +375,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 					'type', rv.type,
 					'access_duration_sec', rv.access_duration_sec,
 					'status', rv.status,
+					'time_window', rv.time_window,
+					'access_request_rule_name', rv.access_request_rule_name,
+					'min_approvals', rv.min_approvals,
+					'force_approval_groups', rv.force_approval_groups,
 					'rejection_reason', rv.rejection_reason,
 					'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 					'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),

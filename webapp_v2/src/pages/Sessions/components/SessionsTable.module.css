@@ -1,0 +1,17 @@
+.clickableRow {
+  cursor: pointer;
+}
+
+/*
+ * The row's primary link carries the accessible name and the keyboard path; it
+ * should read as plain text, not as a blue link, because the entire row is the
+ * click target.
+ */
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink:hover {
+  text-decoration: underline;
+}

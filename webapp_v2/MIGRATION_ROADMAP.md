@@ -221,7 +221,9 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
   `app.cljs:288` never runs. Flagged by Qodo on PR #1655; deliberately deferred
   here rather than patched with a `(seq …)` guard on a literal `[]`.
 - **Deferred:** `events/reviews_plugin.cljs` (46 LOC) — session details still
-  approves/rejects reviews through it; delete in Wave 6's cleanup commit.
+  approves/rejects reviews through it; delete in Wave 6's cleanup commit. Note
+  that Wave 6 is now the *third* wave, not the last but one — confirm A3 has
+  merged before B6.1 starts.
 
 **Traps found while landing A1 — read before starting A3:**
 
@@ -254,6 +256,11 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
 Sizes are relative PR effort (S < M < L < XL). Waves are ordered; tickets inside a
 wave can run in parallel. Shared CLJS infra migrates with its *first* consumer.
 
+> **Read the section order, not the wave numbers.** Wave 6 was pulled ahead of
+> Waves 3–5 (see the note under its heading); the sequence is now
+> **1 → 2 → 6 → 3 → 4 → 5 → 7 → Endgame**. The labels are frozen because `B3.1`,
+> `B6.1` and the rest are live Linear ticket IDs.
+
 ### Wave 1 — Visible value + tiny pages
 
 | Ticket | Scope | Size | Unblocks |
@@ -266,8 +273,33 @@ wave can run in parallel. Shared CLJS infra migrates with its *first* consumer.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B2.1 Sessions list | `/sessions` + `/sessions/filtered`: rich filter bar (user/connection/type/status/date), pagination, batch-id fetches. Port the list surface of `events/audit.cljs` (786 LOC) into `services/sessions` + a store designed to later host the SSE live tail (Wave 6). | L | Biggest de-risk for session details; filter/pagination components reused there |
+| ✅ B2.1 Sessions list | `/sessions` + `/sessions/filtered`: rich filter bar (user/connection/type/status/date), pagination, batch-id fetches. Ports the list surface of `events/audit.cljs` (~150 of its 786 LOC — the rest is Wave 6, so the file survives) into `services/sessions` + `pages/Sessions/store.js`, whose `patchSession` action is the seam the SSE live tail plugs into (Wave 6, immediately after this one). Shipped with T2.1 (EVL-161), which made `ai_analysis` and the four missing review fields actually reach `GET /sessions`. | L | Done — EVL-145. Filter/pagination/badge components are reused by session details |
 | B2.2 Workflows | `/workflows/:correlation-id` (`features/workflows`, 659 LOC) | M | Independent |
+
+### Wave 6 — XL monster 1: Session details
+
+> **Why Wave 6 runs third.** The "After Execution" work in the Major Features
+> Visibility project depends on the reworked session details (EVL-165), so this
+> wave is pulled ahead of Waves 3–5. Wave *labels* are unchanged — `B6.1`, `B3.1`
+> and friends are live Linear ticket IDs — so read the section order, not the
+> numbers, as the schedule. Two consequences:
+>
+> - **Only the *jira prompt gate* slice of B5.1 is a prerequisite.** It ships as
+>   its own PR ahead of this wave. `parallel_mode` (1,393 LOC) stays in Wave 5;
+>   nothing in session details touches it.
+> - **B6.1's credentials block goes through the bridge until B4.0 (EVL-123)
+>   lands** — `useBridgeStore.resumeNativeClientCredentials`, navigating to
+>   `/resources`. Dispatching the CLJS native-client-access flow in place is not
+>   an option: while a React-only route is rendered the CLJS tree is parked, so
+>   the modal would open invisible. Swap to the native React flow in B4.0.
+
+| Ticket | Scope | Size |
+|---|---|---|
+| B6.1 Session details core | `/sessions/:id` shell, data loading (services from B2.1), review approve/reject with the jira gate (the B5.1 jira-gate slice, pulled ahead of Wave 5), kill/re-run session. Verify then delete `events/reviews_plugin.cljs` in this PR's CLJS cleanup commit | XL pt.1 |
+| B6.2 Playback + live tail | asciinema-player terminal replay, canvas RDP playback (port `session_data_rdp.cljs` 739 LOC; vendor `rle.js` unchanged), SSE live tail via fetch ReadableStream (port the pattern verbatim from `events/audit.cljs:666`) into `pages/Sessions/store.js#patchSession` — keep the reader in a module-level variable, never in store state — shared AgGrid table wrapper (also serves the webclient). **Flips `/sessions/:id` to React**; until then it falls through the catch-all to the CLJS dedicated page | XL pt.2 |
+
+Split rationale: core ships user value and retires review flows first; playback is
+the fidelity-sensitive half and can bake behind the route incrementally.
 
 ### Wave 3 — Feature CRUD block (parallelizable)
 
@@ -302,7 +334,7 @@ decision must close before the Endgame.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B4.0 Native-client-access port | Port the native-client-access flow + draggable countdown card (~1,100 LOC) to React; switch CommandPalette from `clojureDispatch('native-client-access->start-flow')` to the native implementation | L | **Hard Endgame blocker** (React's own palette depends on the CLJS flow); needed by B4.2 and Wave 7 |
+| B4.0 Native-client-access port | Port the native-client-access flow + draggable countdown card (~1,100 LOC) to React; switch CommandPalette from `clojureDispatch('native-client-access->start-flow')` to the native implementation. Also removes `useBridgeStore.resumeNativeClientCredentials` | L | **Hard Endgame blocker** (React's own palette depends on the CLJS flow); needed by B4.2 and Wave 7 — and by B6.1's session-details credentials block, which ships a `useBridgeStore` + `/resources` fallback until this lands |
 | B4.1 Resources list + wizard core | `/resources` list (537 LOC) + multi-step wizard skeleton (state machine, step chrome); port `events/connections.cljs`; reuse the kept `agents/deployment` logic as a React service | XL pt.1 | Everything below |
 | B4.2 Resources new/configure/add-role | `/resources/new`, `/resources/configure/:id`, `/resources/:id/add-role`: federation OAuth, MCP OAuth popup + polling, terminal/native access tabs (needs B4.0). Reuse patterns from the already-React `/roles/:name/configure` — don't duplicate | XL pt.2 | Onboarding reuse |
 | B4.3 Resource catalog + onboarding | `/resource-catalog` (562 LOC, no API — seeds wizard state) + `/onboarding(+setup, setup/resource, setup/agent, resource-providers)` chrome (~700 LOC) on a no-sidebar layout, reusing the B4.1/B4.2 wizard | L | Kills the `/onboarding/*` ClojureApp route in `Router.jsx` |
@@ -312,19 +344,9 @@ decision must close before the Endgame.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B5.1 parallel_mode + jira gate | Port `parallel_mode/` (1,393 LOC — multi-connection exec engine) and the jira-templates prompt-gate flow (`jira_templates/` 168 + events 288) as standalone React features, no page attached yet | L | Runbooks runner, webclient, session-details review gate |
-| B5.2 Runbooks runner | `/runbooks` (1,565 LOC): dynamic param forms from templates; first consumer of B5.1 | L | Proves parallel_mode + jira gate before the webclient bets on them |
+| B5.1 parallel_mode + jira gate | **Two separable slices.** The **jira prompt-gate** flow (`jira_templates/` 168 + events 288) is a **Wave 6 prerequisite** and ships ahead of this wave as its own PR. `parallel_mode/` (1,393 LOC — multi-connection exec engine) stays here; only Runbooks and the webclient need it. Both land as standalone React features, no page attached yet | L | Runbooks runner, webclient (`parallel_mode`); B6.1 review gate (jira slice, pulled ahead) |
+| B5.2 Runbooks runner | `/runbooks` (1,565 LOC): dynamic param forms from templates; first consumer of `parallel_mode` | L | Proves `parallel_mode` before the webclient bets on it (the jira gate is already proven by B6.1) |
 | B5.3 Provisioning | `/provisioning` (4,741 LOC): plan/apply pipeline, CSV upload/parse, job tracking via `useJobPolling`. Split into 2 PRs (pipeline + plan view / apply + CSV + jobs) | XL | Independent lane, can run with a second owner |
-
-### Wave 6 — XL monster 1: Session details
-
-| Ticket | Scope | Size |
-|---|---|---|
-| B6.1 Session details core | `/sessions/:id` shell, data loading (services from B2.1), review approve/reject with the jira gate (B5.1), kill/re-run session. Verify then delete `events/reviews_plugin.cljs` in this PR's CLJS cleanup commit | XL pt.1 |
-| B6.2 Playback + live tail | asciinema-player terminal replay, canvas RDP playback (port `session_data_rdp.cljs` 739 LOC; vendor `rle.js` unchanged), SSE live tail via fetch ReadableStream (port the pattern verbatim from `events/audit.cljs:666`), shared AgGrid table wrapper (also serves the webclient) | XL pt.2 |
-
-Split rationale: core ships user value and retires review flows first; playback is
-the fidelity-sensitive half and can bake behind the route incrementally.
 
 ### Wave 7 — XL monster 2: Webclient (last page standing)
 
@@ -350,6 +372,9 @@ Global CLJS behaviors that must exist in React before the bundle can be removed.
 Decisions already made: **port Clarity** and **port Segment track()** (no metric
 dies silently).
 
+**When** names the wave *slot* in the sequence below, not a numeric ordering —
+Wave 6 runs third.
+
 | Item | When | Notes |
 |---|---|---|
 | Bridge snackbar fixes | ✅ Done | EVL-104 (PR #1638) unified everything on `showSnackbar` and deleted `useBridgeStore.showSnackbar` |
@@ -357,9 +382,9 @@ dies silently).
 | Sentry init in React | Wave 1 (own S ticket) | Today errors on React routes go unreported unless a CLJS route loaded the bundle. Replicate the CLJS condition from `events/tracking.cljs` (init when gateway `analytics_tracking` is NOT enabled) |
 | Segment `track()` | Wave 2 (own S ticket) | Add a `track()` util next to the existing `identify()` in `services/analytics.js`; wire the 8 CLJS `:segment->track` equivalents per page as each page migrates. The util must exist before Wave 3's CRUD pages land |
 | Clipboard copy/cut blocking | Wave 2 (own S ticket) | Gap **today** on React-only routes: CLJS installs document-level copy/cut listeners when `disable_clipboard_copy_cut` is on; React only hides copy buttons. Install/remove the listeners in the React shell keyed on the flag |
-| MS Clarity port | Wave 2–3 (own S ticket) | Port the script injection (`events/tracking.cljs`) + environment start/stop gating (`events/clarity.cljs`) |
-| org-migration dialog | Wave 3 (own S ticket) | Port `features/users/views/org_migration_dialog.cljs` into the React Layout so it fires on React routes too (source kept alive by PR A3 for this purpose) |
-| native-client-access | Wave 4 (B4.0) | Hard blocker; first ticket of Wave 4 |
+| MS Clarity port | Wave 2 (own S ticket) | Was "Wave 2–3"; pinned to Wave 2 because the Wave 3 slot is now fourth in the sequence and the drift would push this months later than intended. Port the script injection (`events/tracking.cljs`) + environment start/stop gating (`events/clarity.cljs`) |
+| org-migration dialog | Wave 3 (own S ticket) | Port `features/users/views/org_migration_dialog.cljs` into the React Layout so it fires on React routes too (source kept alive by PR A3 for this purpose). Only needs to precede the Endgame |
+| native-client-access | Wave 4 (B4.0) | Hard blocker; first ticket of Wave 4. B6.1 ships a bridge fallback for its credentials block until this lands |
 
 **Bridge teardown inventory** (deleted in the Endgame): `utils/clojureDispatch.js`,
 `stores/useBridgeStore.js`, `components/ClojureApp.jsx`, the CLJS branch in
@@ -407,22 +432,27 @@ traffic with catch-all hit-count telemetry at zero (add a cheap counter/log to
 Now ──► Phase 0 (0.1, 0.2) ─┐
 Now ──► Track A (A1→A2→A3) ─┤ parallel
 Now ──► Wave 1 + Sentry ────┘
-        Wave 2 + Segment track + clipboard + Clarity
+        Wave 2 + Segment track + clipboard + Clarity + B5.1 jira-gate slice
+        Wave 6 (session details, 2 PRs)   ← pulled ahead for EVL-165
         Wave 3 (parallel CRUD) + org-migration dialog + MI decision gate
         Wave 4 (B4.0 first, then wizard chain)
-        Wave 5 (runner lane ∥ provisioning lane)
-        Wave 6 (session details, 2 PRs)
+        Wave 5 (parallel_mode + runner lane ∥ provisioning lane)
         Wave 7 (webclient, 3 PRs)
         Endgame (E1→E2→E3)
 ```
 
 ## Top Risks
 
-1. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
-   4-way PR split and reusing the already-React `/roles/:name/configure` patterns.
-2. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
+1. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
    behavior-fragile; vendor `rle.js` unchanged, port the fetch-ReadableStream
-   pattern verbatim, add side-by-side manual comparison to the test plan.
+   pattern verbatim, add side-by-side manual comparison to the test plan. Promoted
+   to #1 by the reorder: this now lands third rather than second-to-last, so there
+   is far less schedule slack absorbing a fidelity miss — budget the comparison
+   pass explicitly instead of assuming it fits.
+2. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
+   4-way PR split and reusing the already-React `/roles/:name/configure` patterns.
+   Slightly de-risked by the reorder, which puts three more waves of established
+   patterns ahead of it.
 3. **bidi silent failures during cleanup** — a deleted route entry produces a dead
    link or a no-op navigation, never an error, and CI cannot catch it. A2/A3 must run
    the `url-for` / `:navigate` grep gate per deleted keyword (see Track A constraint

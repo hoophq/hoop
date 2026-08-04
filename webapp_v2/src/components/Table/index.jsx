@@ -5,8 +5,9 @@ import classes from './Table.module.css'
  * Surface-style table — matches Radix Table.Root variant="surface" used in the legacy webapp.
  * Re-exports all sub-components so call sites never import from Mantine directly.
  *
- * Light chrome by design: gray-1 outer/row borders, gray-0 header, and
- * gray-0 striped rows (on by default — pass striped={false} to opt out).
+ * Light chrome by design: gray-2 outer/row borders and a gray-0 header.
+ * Striping is opt-in — the wrapper only sets `stripedColor`, so pass `striped`
+ * to turn it on.
  *
  * Usage:
  *   import Table from '@/components/Table'
