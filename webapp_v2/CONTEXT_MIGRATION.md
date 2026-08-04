@@ -162,7 +162,7 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ❌ Not yet — hard blocker; React CommandPalette dispatches into CLJS (roadmap Wave 4) |
 | org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
 | Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ❌ CLJS-only today — React has Segment `identify()` + Intercom only (roadmap Parity track) |
-| Clipboard copy/cut blocking | `events/clipboard.cljs` (deleted) | ✅ Yes — `hooks/useClipboardGuard` + `utils/clipboardPolicy`, installed once in `App.jsx`. Scope is the **document-level** listener; three CLJS views still call `navigator.clipboard.writeText` ungated (`integrations/authentication/views/advanced_tab.cljs:13`, `features/workflows/views/header.cljs:22`, `features/ai_session_analyzer/views/rule_form.cljs:189`) — separate code path, never covered by either implementation, follow-up ticket |
+| Clipboard copy/cut blocking | `events/clipboard.cljs` (deleted) | ✅ Yes — `hooks/useClipboardGuard` + `utils/clipboardPolicy`, installed once in `App.jsx`. Scope is the **document-level** listener; three CLJS views still call `navigator.clipboard.writeText` ungated (`integrations/authentication/views/advanced_tab.cljs:13`, `features/workflows/views/header.cljs:22`, `features/ai_session_analyzer/views/rule_form.cljs:189`) — separate code path, never covered by either implementation, follow-up EVL-177 |
 
 ---
 
