@@ -512,7 +512,7 @@ import TagsInput from '@/components/TagsInput'
 ---
 
 ### `AsyncValueFilter`
-Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (a `ScrollArea` + `onScrollPositionChange` with a 50px threshold — *not* `useIntersection`). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. Unlike `ValueFilter`, this one traffics in **option objects, not strings**: `selected` is `{ value, label } | null` and `onSelect` receives the full option. Note that `usePaginatedConnections` sets `value` to the connection **id** — if your API filters by name, remap before passing the options in (see `pages/Sessions/sections/SessionsFilterBar.jsx`).
 ```jsx
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
@@ -536,7 +536,7 @@ const roles = usePaginatedConnections({ pageSize: 50 })
   onOpen={roles.ensureLoaded}
 />
 ```
-Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+Props: `icon`, `label`, `placeholder`, `selected` (`{value,label}` | null), `onSelect(option)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
 
 ---
 
@@ -646,7 +646,7 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 ### `useMinDelay(value, ms = 500)`
 Returns `true` for at least `ms` milliseconds even if `value` goes `false` sooner. Prevents loading flash.
 ```jsx
-import useMinDelay from '@/hooks/useMinDelay'
+import { useMinDelay } from '@/hooks/useMinDelay'
 
 const showLoader = useMinDelay(loading, 500)
 if (showLoader) return <PageLoader />
@@ -707,13 +707,38 @@ Non-obvious notes only:
   infinite-scroll dropdowns.
 - `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
   the service boundary.
-- `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
-  existence/total probe.
+- `sessions.js` — `list`, `get`, `getFilteredByIds`, `getByBatchId`,
+  `streamResult`, `downloadFile`, `downloadInput`, plus a `MAX_LIMIT` export (the
+  gateway silently clamps `limit` at 100). **`list` alone returns the raw axios
+  response; every other method unwraps to `.data`.** That is deliberate:
+  `useConfigStatusStore` uses `list({ limit: 1 })` as a cheap existence/total
+  probe and reads `data.total` off the response — unwrapping it would not throw,
+  it would silently pin the sidebar checklist to false. The comment in the file
+  says so; don't "tidy" it.
 - `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
   is **exclusive** (the gateway compares against midnight *starting* that day, so
   send tomorrow to include today). Never send `group_by`.
 - `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
   is unbounded; fetch it once and filter client-side.
+
+---
+
+## Utils (`src/utils/`)
+
+### `datetime.js`
+```js
+import { formatFullDate, toStartOfDayISO, toEndOfDayISO } from '@/utils/datetime'
+
+formatFullDate(session.start_date)  // "03/08/2026 14:55:18" (local time), "—" if null
+toStartOfDayISO(date)               // RFC3339 at 00:00:00.000 local
+toEndOfDayISO(date)                 // RFC3339 at 23:59:59.999 local
+```
+`formatFullDate` is the canonical port of CLJS `formatters/time-parsed->full-date`.
+Prefer it over hand-rolling another `formatTimestamp` — `pages/Settings/AuditLogs`
+still has its own copy and should adopt this one when it's next touched.
+The `to*DayISO` helpers exist because building range bounds by string
+concatenation (`new Date("2026-08-03 00:00:00.000Z")`, as CLJS did) throws a
+`RangeError` in Safari.
 
 ---
 
