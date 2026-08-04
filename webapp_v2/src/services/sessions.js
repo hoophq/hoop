@@ -43,9 +43,30 @@ export const sessionsService = {
       .get('/sessions', { params: { batch_id: batchId, limit, offset } })
       .then((r) => r.data),
 
-  // --- Wave 6 (session details) consumers — no UI in this PR ----------------
-  // Mapped now, while events/audit.cljs is open, so EVL-131/EVL-132 inherit the
-  // URLs instead of re-deriving them.
+  // Port of :audit->kill-session (events/audit.cljs:603).
+  kill: (id) =>
+    api.post(`/sessions/${encodeURIComponent(id)}/kill`).then((r) => r.data),
+
+  // Port of :audit->execute-session (events/audit.cljs:340). A 202 with
+  // output_status "running" means the gateway gave up waiting after 50s and the
+  // caller must poll.
+  exec: (id) =>
+    api.post(`/sessions/${encodeURIComponent(id)}/exec`).then((r) => r.data),
+
+  // Re-run: v1 creates a NEW session rather than re-executing the old one
+  // (events/audit.cljs:438-442 builds { script, labels.re-run-from, connection }).
+  create: (payload) => api.post('/sessions', payload).then((r) => r.data),
+
+  // :audit->get-session-logs-data (events/audit.cljs:624) — feeds the Logs tab
+  // of the asciinema view.
+  getLogs: (id) =>
+    api
+      .get(`/sessions/${encodeURIComponent(id)}`, {
+        params: { expand: 'event_stream,session_input', event_stream: 'base64' },
+      })
+      .then((r) => r.data),
+
+  // --- Wave 6 (session details) consumers -----------------------------------
 
   // :audit->get-session-stream-result (events/audit.cljs:308)
   streamResult: (id) =>

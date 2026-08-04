@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Anchor, Box, Grid, Group, Paper, Stack, Text } from "@mantine/core";
 import { Clock } from "lucide-react";
 import { formatFullDate } from "@/utils/datetime";
@@ -7,6 +7,7 @@ import LiveBadge from "./LiveBadge";
 import ReviewStatusBadge from "./ReviewStatusBadge";
 import WorkflowChip from "./WorkflowChip";
 import { displayNameFor, isLiveSession } from "../utils";
+import { useSessionsStore } from "../store";
 import classes from "./SessionsList.module.css";
 
 /**
@@ -20,14 +21,23 @@ import classes from "./SessionsList.module.css";
  * any visible chrome — it renders as plain text (see `.rowLink`).
  */
 function SessionRow({ session }) {
-  const navigate = useNavigate();
+  const openDetail = useSessionsStore((s) => s.openDetail);
   const href = `/sessions/${encodeURIComponent(session.id)}`;
   const name = displayNameFor(session);
+
+  // v1 opens a modal on row click (session_item.cljs:81-83). The anchor still
+  // points at the dedicated page, so the row keeps its keyboard path and
+  // open-in-new-tab; a plain click is intercepted and opens the modal instead.
+  const openInModal = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openDetail(session);
+  };
 
   return (
     // Padding lives on the wrapper, not on Grid: Mantine's Grid applies negative
     // inner margins for the gutter, which would eat into its own padding.
-    <Box p="md" className={classes.row} onClick={() => navigate(href)}>
+    <Box p="md" className={classes.row} onClick={() => openDetail(session)}>
       <Grid columns={4} gutter="md" align="center">
         <Grid.Col span={1}>
           <Group gap="sm" wrap="nowrap">
@@ -38,7 +48,7 @@ function SessionRow({ session }) {
               className={classes.rowLink}
               fz="xs"
               lineClamp={1}
-              onClick={(event) => event.stopPropagation()}
+              onClick={openInModal}
             >
               {name}
             </Anchor>

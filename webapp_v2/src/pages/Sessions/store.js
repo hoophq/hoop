@@ -33,6 +33,22 @@ const EMPTY_LOOKUP = {
   key: null,
 }
 
+/**
+ * `size-threshold` in webapp events/audit.cljs:222. Above this the gateway is
+ * asked NOT to expand the payload, and exec sessions fall back to the separate
+ * /result/stream endpoint. Note the download menu uses a *different* 2 MB
+ * threshold for a different decision — don't unify them.
+ */
+const SIZE_THRESHOLD = 4 * 1024 * 1024
+
+const EMPTY_DETAIL = {
+  session: null, // the partial row while phase 1 is in flight, then the full session
+  status: 'idle', // idle | loading | ready | error
+  error: null,
+  hasLargePayload: false,
+  hasLargeInput: false,
+}
+
 const EMPTY_BATCH = {
   items: [],
   total: 0,
@@ -79,6 +95,95 @@ export const useSessionsStore = create((set, get) => ({
   list: { ...EMPTY_LIST },
   lookup: { ...EMPTY_LOOKUP },
   batch: { ...EMPTY_BATCH },
+  detail: { ...EMPTY_DETAIL },
+
+  // --- session details modal -------------------------------------------------
+
+  /**
+   * Two-phase fetch, ported verbatim from :audit->get-session-by-id +
+   * :audit->check-session-size (events/audit.cljs:206-273).
+   *
+   * Phase 1 is a probe: it fetches the session only to read `event_size` and
+   * `script_size`. Phase 2 then re-fetches with an `expand` built from those
+   * sizes. It is two round-trips for one modal — wasteful, but it is what v1
+   * does, and the sizes are not on the list payload.
+   */
+  openDetail: async (row) => {
+    set({ detail: { ...EMPTY_DETAIL, session: row, status: 'loading' } })
+    const id = row?.id
+    if (!id) return
+
+    const isExec = row?.verb === 'exec'
+    try {
+      // Phase 1 — probe. v1 asks for base64 here only for exec.
+      const probe = await sessionsService.get(id, isExec ? { event_stream: 'base64' } : undefined)
+      if (get().detail.session?.id !== id) return // a newer session was opened
+
+      const hasLargePayload = Boolean(probe.event_size && probe.event_size > SIZE_THRESHOLD)
+      const hasLargeInput = Boolean(probe.script_size && probe.script_size > SIZE_THRESHOLD)
+
+      // Both oversized: v1 skips the second request entirely.
+      if (hasLargePayload && hasLargeInput) {
+        set({
+          detail: {
+            session: probe,
+            status: 'ready',
+            error: null,
+            hasLargePayload,
+            hasLargeInput,
+          },
+        })
+        return
+      }
+
+      // Phase 2 — the real fetch. `expand` drops whichever half is oversized.
+      const expand = [
+        !hasLargePayload && 'event_stream',
+        !hasLargeInput && 'session_input',
+      ].filter(Boolean)
+
+      const params = {}
+      if (expand.length) params.expand = expand.join(',')
+      if (!hasLargePayload) {
+        const liveConnect = probe.verb === 'connect' && probe.status === 'open'
+        // Live connect keeps the raw wire frames so the client-side decoder can
+        // render historical and streamed events the same way.
+        if (isExec) params.event_stream = 'base64'
+        else if (!liveConnect && probe.connection_subtype === 'postgres') {
+          params.event_stream = 'raw-queries'
+        }
+      }
+
+      const full = await sessionsService.get(id, params)
+      if (get().detail.session?.id !== id) return
+      set({
+        detail: {
+          session: full,
+          status: 'ready',
+          error: null,
+          hasLargePayload,
+          hasLargeInput,
+        },
+      })
+    } catch (error) {
+      if (get().detail.session?.id !== id) return
+      set({
+        detail: {
+          ...get().detail,
+          status: 'error',
+          error: error?.message ?? 'Failed to load the session.',
+        },
+      })
+    }
+  },
+
+  closeDetail: () => set({ detail: { ...EMPTY_DETAIL } }),
+
+  /** Re-read the open session after a review, kill or re-run. */
+  refreshDetail: async () => {
+    const current = get().detail.session
+    if (current?.id) await get().openDetail(current)
+  },
 
   // --- main list (/sessions) ------------------------------------------------
 

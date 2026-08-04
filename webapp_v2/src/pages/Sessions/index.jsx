@@ -5,6 +5,7 @@ import SessionsResults from './sections/SessionsResults'
 import SessionsCount from './sections/SessionsCount'
 import { useSessionsStore } from './store'
 import { useSessionFilters } from './useSessionFilters'
+import SessionDetailsModal from './Detail'
 
 /**
  * Deliberately subscribes to NO data. `fetchList` is a stable zustand action, so
@@ -37,6 +38,8 @@ export default function Sessions() {
       <SessionsFilterBar filters={filters} setFilters={setFilters} />
 
       <SessionsResults filters={filters} queryKey={queryKey} />
+
+      <SessionDetailsModal />
     </Stack>
   )
 }

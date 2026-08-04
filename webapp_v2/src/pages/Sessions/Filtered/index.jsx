@@ -11,6 +11,7 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import SessionsList from '../components/SessionsList'
 import { useSessionsStore } from '../store'
 import { SESSIONS_DOCS_URL } from '../constants'
+import SessionDetailsModal from '../Detail'
 
 const matches = (session, term) =>
   [session.connection, session.type, session.id, session.user_name]
@@ -138,6 +139,8 @@ export default function SessionsFiltered() {
           )}
         </>
       )}
+
+      <SessionDetailsModal />
     </Stack>
   )
 }
