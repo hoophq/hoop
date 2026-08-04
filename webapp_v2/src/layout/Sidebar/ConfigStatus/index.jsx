@@ -8,6 +8,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStatusStore } from '@/stores/useConfigStatusStore'
 import { useBridgeStore } from '@/stores/useBridgeStore'
+import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
 import { computeProgress, STEP_DEFS } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
@@ -113,10 +114,11 @@ export function ConfigStatus() {
         navigate(`/client?role=${encodeURIComponent(execConnectionName)}`)
         useBridgeStore.getState().syncPrimaryConnectionFromUrl()
       } else if (firstConnectionName) {
-        // No connection supports the web terminal — offer the native client
-        // flow instead (modal lives in the CLJS bundle, hence the bridge).
-        navigate('/resources')
-        useBridgeStore.getState().openNativeClientAccessWhenReady(firstConnectionName)
+        // No connection supports the web terminal — offer native access
+        // instead. The drawer is mounted by Layout on every route, so the
+        // detour through /resources (which only existed to give the CLJS modal
+        // a host to render in) is gone.
+        useNativeConnectionsStore.getState().openConnection(firstConnectionName)
       } else {
         navigate('/resource-catalog')
       }

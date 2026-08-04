@@ -1,5 +1,6 @@
 import { Box, Group } from '@mantine/core'
 import { HeaderSearch } from './HeaderSearch'
+import { NativeConnectionsButton } from './NativeConnectionsButton'
 import { UserMenu } from './UserMenu'
 
 /**
@@ -21,6 +22,7 @@ function AppHeader({ burger }) {
       </Box>
 
       <Group gap="sm" wrap="nowrap">
+        <NativeConnectionsButton />
         <UserMenu />
       </Group>
     </Group>

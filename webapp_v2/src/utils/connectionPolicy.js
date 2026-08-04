@@ -67,12 +67,14 @@ export function canTestConnection({ type, subtype } = {}) {
   return TESTABLE_TYPES.has(type)
 }
 
-// Which connections can launch the native-client flow via the command
-// palette. Direct, HTTP-proxy, custom-native, and Kubernetes paths each
-// have their own list — see CommandPalette/ConnectionActionsPage.
+// Which connections can launch the native-client flow. Mirrors
+// can-access-native-client? in webapp/src/webapp/resources/helpers.cljs, which
+// in turn reproduces the gateway's validConnectionTypes allowlist
+// (gateway/api/connections/connection_credentials.go).
 const NATIVE_CLIENT_DIRECT_SUBTYPES = new Set([
   'postgres',
   'ssh',
+  'ssh-local',
   'github',
   'git',
 ])
@@ -81,6 +83,7 @@ const NATIVE_CLIENT_HTTP_PROXY_SUBTYPES = new Set([
   'kibana',
   'grafana',
   'claude-code',
+  'mcp',
 ])
 const NATIVE_CLIENT_CUSTOM_SUBTYPES = new Set(['rdp', 'aws-ssm'])
 const NATIVE_CLIENT_KUBERNETES_SUBTYPES = new Set([
@@ -88,13 +91,34 @@ const NATIVE_CLIENT_KUBERNETES_SUBTYPES = new Set([
   'kubernetes',
   'kubernetes-eks',
 ])
-export function canAccessNativeClient(connection) {
-  if (!connection || connection.access_mode_connect !== 'enabled') return false
+
+/**
+ * Whether the connection's protocol can be served natively at all, ignoring
+ * whether the org currently allows it.
+ *
+ * Split out from canAccessNativeClient so the Native Connections drawer can
+ * keep listing a role whose access_mode_connect was switched off while the user
+ * still holds a live credential — otherwise the only way to disconnect it
+ * would disappear.
+ *
+ * `postgresProxyEnabled` comes from /serverinfo. Without a Postgres proxy
+ * listen address the gateway cannot serve a native postgres session. Defaults
+ * to false so a failed /serverinfo hides those roles rather than offering an
+ * action the gateway would reject.
+ */
+export function isNativeCapableSubtype(connection, { postgresProxyEnabled = false } = {}) {
+  if (!connection) return false
   const { subtype, type } = connection
-  return (
+  const isNativeSubtype =
     NATIVE_CLIENT_DIRECT_SUBTYPES.has(subtype) ||
     NATIVE_CLIENT_HTTP_PROXY_SUBTYPES.has(subtype) ||
     NATIVE_CLIENT_KUBERNETES_SUBTYPES.has(subtype) ||
     (type === 'custom' && NATIVE_CLIENT_CUSTOM_SUBTYPES.has(subtype))
-  )
+  if (!isNativeSubtype) return false
+  return subtype !== 'postgres' || postgresProxyEnabled
+}
+
+export function canAccessNativeClient(connection, options = {}) {
+  if (!connection || connection.access_mode_connect !== 'enabled') return false
+  return isNativeCapableSubtype(connection, options)
 }

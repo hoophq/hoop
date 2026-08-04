@@ -1,0 +1,46 @@
+import { Group, Stack, Text } from '@mantine/core'
+import { CircleX, Search } from 'lucide-react'
+import Button from '@/components/Button'
+import TextInput from '@/components/TextInput'
+
+export function SearchBar({ query, onQueryChange, onClearQuery, total, shown, truncated }) {
+  const searching = query.trim().length > 0
+
+  let countLabel
+  if (searching) {
+    countLabel = `Showing ${shown} of ${total} results.`
+  } else if (truncated) {
+    countLabel = `Showing ${shown} of ${total} Resource Roles — refine your search`
+  } else {
+    countLabel = `Showing ${total} Resource Role${total === 1 ? '' : 's'}`
+  }
+
+  return (
+    <Stack gap="xs" px="md" pb="sm">
+      <TextInput
+        data-autofocus
+        value={query}
+        onChange={(e) => onQueryChange(e.currentTarget.value)}
+        placeholder="Look for type, attributes, tag or names"
+        leftSection={<Search size={16} aria-hidden="true" />}
+        aria-label="Search native connections"
+      />
+      <Group gap="sm">
+        <Text fz="xs" c="dimmed" role="status" aria-live="polite">
+          {countLabel}
+        </Text>
+        {searching && (
+          <Button
+            variant="light"
+            size="compact-xs"
+            radius="xl"
+            leftSection={<CircleX size={14} aria-hidden="true" />}
+            onClick={onClearQuery}
+          >
+            Dismiss search
+          </Button>
+        )}
+      </Group>
+    </Stack>
+  )
+}

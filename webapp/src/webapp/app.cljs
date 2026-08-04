@@ -243,8 +243,13 @@
         (fn [panels]
           (rf/dispatch [:routes->get-route])
           (rf/dispatch [:clarity->verify-environment (:data @user)])
-          (rf/dispatch [:native-client-access->cleanup-all-expired])
-          (rf/dispatch [:native-client-access->check-active-sessions])
+          ;; Native access is owned by the React drawer under the shell. These
+          ;; restore the legacy sessions from localStorage and pop a draggable
+          ;; card for each, which would double up on the drawer — and they run
+          ;; on every layout re-render, not once per boot.
+          (when-not react-shell?
+            (rf/dispatch [:native-client-access->cleanup-all-expired])
+            (rf/dispatch [:native-client-access->check-active-sessions]))
 
           (cond
             (:loading @user)
@@ -273,7 +278,8 @@
                [dialog/dialog]
                [dialog/new-dialog]
                [snackbar/snackbar]
-               [draggable-card/main]
+               ;; No draggable-card here: under the shell, native access lives
+               ;; in the React Native Connections drawer.
                [command-palette/command-palette]
                [command-palette/keyboard-listener]
                [org-migration-dialog/main]

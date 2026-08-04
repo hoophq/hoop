@@ -4,6 +4,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar';
 import AppHeader from './Header';
 import { SkipLink } from './SkipLink';
+import NativeConnectionsDrawer from '@/features/NativeConnections';
 
 const HEADER_HEIGHT = 56;
 const SIDEBAR_WIDTH = 310;
@@ -83,6 +84,10 @@ function Layout({ children }) {
       >
         <Sidebar />
       </Drawer>
+
+      {/* Mounted here, outside AppShell, so it is available on React routes and
+          on the ClojureApp catch-all alike. */}
+      <NativeConnectionsDrawer />
     </>
   );
 }

@@ -42,6 +42,12 @@
    [webapp.features.ai-session-analyzer.views.ai-analyzer-card :refer [ai-analyzer-card]]
    [webapp.features.ai-session-analyzer.views.ai-block-card :refer [ai-block-card]]))
 
+(defn- react-shell?
+  "True when the React shell hosts this page. Under the shell, AppShell.Main
+   already provides the #main-content landmark."
+  []
+  (boolean (.getItem js/localStorage "react-shell")))
+
 (defn discover-connection-type [connection]
   (cond
     (not (cs/blank? (:subtype connection))) (:subtype connection)
@@ -335,13 +341,17 @@
 
           :else
           [:<>
-           [:> Box {:as "main"
-                    :id "main-content"
-                    :tabIndex "-1"
-                    :class (str "h-full bg-gray-2 overflow-hidden "
-                                (when @dark-mode?
-                                  "dark"))
-                    :aria-label "Terminal"}
+           ;; Under the React shell this would be a second <main> nested inside
+           ;; AppShell.Main, with a duplicate id — invalid, and it makes the
+           ;; sidebar's "Skip to main content" resolve to the outer element.
+           ;; Standalone CLJS keeps the landmark, since nothing else provides one.
+           [:> Box (cond-> {:as (if (react-shell?) "section" "main")
+                            :tabIndex "-1"
+                            :class (str "h-full bg-gray-2 overflow-hidden "
+                                        (when @dark-mode?
+                                          "dark"))
+                            :aria-label "Terminal"}
+                     (not (react-shell?)) (assoc :id "main-content"))
             [connection-dialog/connection-dialog]
             [parallel-mode-modal/parallel-mode-modal]
             [execution-summary/execution-summary-modal]

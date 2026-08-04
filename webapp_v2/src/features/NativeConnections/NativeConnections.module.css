@@ -1,0 +1,6 @@
+/* Rows are denser than Mantine's default accordion control so a 600px drawer
+   shows a useful number of them at once. */
+.rowControl {
+  padding-inline: var(--mantine-spacing-sm);
+  padding-block: var(--mantine-spacing-xs);
+}

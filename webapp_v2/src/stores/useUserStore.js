@@ -34,6 +34,9 @@ export const useUserStore = create((set, get) => ({
   serverInfoLoaded: false,
   apiUrl: null,
   hasRedactCredentials: false,
+  // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
+  // listen address the gateway cannot serve a native postgres session.
+  postgresProxyEnabled: false,
   loading: false,
 
   setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
@@ -58,7 +61,8 @@ export const useUserStore = create((set, get) => ({
       apiUrl,
       licenseFeatures,
       serverInfoLoaded: true,
-      hasRedactCredentials: !!serverInfo?.has_redact_credentials
+      hasRedactCredentials: !!serverInfo?.has_redact_credentials,
+      postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
@@ -88,6 +92,7 @@ export const useUserStore = create((set, get) => ({
       redactProvider: null, 
       apiUrl: null,
       hasRedactCredentials: false,
+      postgresProxyEnabled: false,
     })
   },
 

@@ -1,0 +1,81 @@
+import { useState } from 'react'
+import { Group, Stack, Text } from '@mantine/core'
+import Button from '@/components/Button'
+import Tabs from '@/components/Tabs'
+import { pickCredentialRenderer } from './credentials'
+import { SessionTimer } from './components/SessionTimer'
+import { normalizeSubtype, openRdpWebClient } from './helpers'
+
+/**
+ * The established-connection view: credentials for the connection's subtype,
+ * a live countdown when the credential is bounded, and the teardown actions.
+ */
+export function SessionPanel({ credentials, onDisconnect }) {
+  const rule = pickCredentialRenderer(credentials.connection_subtype)
+  const [tab, setTab] = useState(rule.tabs?.[0]?.value ?? 'credentials')
+
+  const subtype = normalizeSubtype(credentials.connection_subtype)
+  const rendererProps = {
+    credentials: credentials.connection_credentials ?? {},
+    connectionName: credentials.connection_name,
+  }
+
+  return (
+    <Stack gap="md">
+      {credentials.expire_at ? (
+        <Group gap="xs">
+          <Text fz="sm" c="dimmed">
+            Connection established, time left:
+          </Text>
+          <SessionTimer expireAt={credentials.expire_at} />
+        </Group>
+      ) : (
+        <Text fz="sm" c="dimmed">
+          Connection established
+        </Text>
+      )}
+
+      {rule.tabs ? (
+        rule.tabs.length === 1 ? (
+          // A single tab is just a label — render the body directly.
+          rule.tabs[0].render(rendererProps)
+        ) : (
+          <Tabs value={tab} onChange={setTab}>
+            <Tabs.List aria-label="Connection methods">
+              {rule.tabs.map((t) => (
+                <Tabs.Tab key={t.value} value={t.value}>
+                  {t.label}
+                </Tabs.Tab>
+              ))}
+            </Tabs.List>
+            {rule.tabs.map((t) => (
+              <Tabs.Panel key={t.value} value={t.value} pt="md">
+                {t.render(rendererProps)}
+              </Tabs.Panel>
+            ))}
+          </Tabs>
+        )
+      ) : (
+        rule.render(rendererProps)
+      )}
+
+      {/* Revoke (invalidate the token outright) exists on the store but is
+          deliberately not surfaced here — it was never rendered in the CLJS UI
+          either, and adding a new destructive action alongside the redesign is
+          a separate product decision. */}
+      <Group justify="flex-end" gap="xs" mt="xs">
+        {subtype === 'rdp' && (
+          <Button
+            size="xs"
+            onClick={() => openRdpWebClient(credentials.connection_credentials?.username)}
+          >
+            Open web client
+          </Button>
+        )}
+        <Button color="red" size="xs" onClick={onDisconnect}>
+          Disconnect
+        </Button>
+      </Group>
+    </Stack>
+  )
+}
