@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { sessionsService } from '@/services/sessions'
+import { reportsService } from '@/services/reports'
 import { PAGE_SIZE } from './constants'
 
 /**
@@ -51,6 +52,10 @@ const EMPTY_DETAIL = {
   error: null,
   hasLargePayload: false,
   hasLargeInput: false,
+  // Redaction report, fetched alongside the session exactly as v1 does
+  // (:audit->check-session-size dispatches :reports->get-report-by-session-id).
+  // Never blocks the modal: data masking falls back to session.metrics.
+  report: { status: 'idle', data: null },
 }
 
 const EMPTY_BATCH = {
@@ -86,6 +91,21 @@ const appendUnique = (prev, next) => {
  */
 const deriveHasMore = (items, total, addedCount) =>
   items.length < total && addedCount > 0
+
+
+/** Non-blocking: the data-masking block degrades to session.metrics without it. */
+const loadReport = (session, set, get) => {
+  reportsService
+    .getSessionReportById(session.id, session.start_date)
+    .then((data) => {
+      if (get().detail.session?.id !== session.id) return
+      set({ detail: { ...get().detail, report: { status: 'ready', data } } })
+    })
+    .catch(() => {
+      if (get().detail.session?.id !== session.id) return
+      set({ detail: { ...get().detail, report: { status: 'error', data: null } } })
+    })
+}
 
 const patchIn = (slice, id, patch) => {
   const index = slice.items.findIndex((s) => s.id === id)
@@ -135,8 +155,10 @@ export const useSessionsStore = create((set, get) => ({
             error: null,
             hasLargePayload,
             hasLargeInput,
+            report: { status: 'loading', data: null },
           },
         })
+        loadReport(probe, set, get)
         return
       }
 
@@ -167,8 +189,10 @@ export const useSessionsStore = create((set, get) => ({
           error: null,
           hasLargePayload,
           hasLargeInput,
+          report: { status: 'loading', data: null },
         },
       })
+      loadReport(full, set, get)
     } catch (error) {
       if (get().detail.session?.id !== id) return
       set({

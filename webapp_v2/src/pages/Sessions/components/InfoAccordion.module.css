@@ -1,0 +1,16 @@
+/*
+ * v1 gives the AI Session Analyzer and Guardrails cards the *same* root class —
+ * `w-full p-3 bg-[--gray-1] rounded-md border border-[--gray-3]`
+ * (session_analysis.cljs:19, guardrails_info.cljs:56) — and renders them
+ * stacked and adjacent (session_details.cljs:349-351), so they must look
+ * identical.
+ *
+ * Radix `--gray-1` is body-white and `--gray-3` a hairline. Mantine's
+ * `contained` Accordion variant hardcodes the item border to
+ * `--mantine-color-gray-3` (a mid slate), and that value is not reachable from
+ * `--mantine-color-default-border` — so it has to be overridden here.
+ */
+.item {
+  background-color: var(--mantine-color-body);
+  border-color: var(--mantine-color-gray-1);
+}

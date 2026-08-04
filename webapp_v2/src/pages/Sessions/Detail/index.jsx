@@ -3,6 +3,10 @@ import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { useSessionsStore } from '../store'
 import SessionInfo from './sections/SessionInfo'
+import SessionAnalysis from './sections/SessionAnalysis'
+import GuardrailsInfo from './sections/GuardrailsInfo'
+import DataMaskingAnalytics from './sections/DataMaskingAnalytics'
+import RejectionReason from './sections/RejectionReason'
 import ReviewActions from './sections/ReviewActions'
 import SessionHeaderActions from './sections/SessionHeaderActions'
 
@@ -15,8 +19,9 @@ import SessionHeaderActions from './sections/SessionHeaderActions'
  * the /sessions/:id dedicated page — `is-dedicated-page?` only toggles a bottom
  * padding and the close button — so this component is the whole surface.
  *
- * Being built incrementally; the remaining blocks (script, output, playback,
- * credentials, re-run) land in follow-up commits on this branch.
+ * Block order follows session_details.cljs:290-355 exactly.
+ * Still to come on this branch: runbook parameters, metadata rows, the script
+ * area, the output/results stack, playback and the credentials block.
  */
 export default function SessionDetailsModal() {
   const detail = useSessionsStore((s) => s.detail)
@@ -46,6 +51,10 @@ export default function SessionDetailsModal() {
       {session && (
         <Stack gap="xl">
           <SessionInfo session={session} />
+          <SessionAnalysis aiAnalysis={session.ai_analysis} />
+          <GuardrailsInfo guardrailsInfo={session.guardrails_info} />
+          <DataMaskingAnalytics session={session} report={detail.report} />
+          <RejectionReason session={session} />
           <ReviewActions session={session} />
         </Stack>
       )}

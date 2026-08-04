@@ -22,6 +22,19 @@ export const reportsService = {
    * → { items: [{ resource, info_type, redact_total, transformed_bytes }],
    *     total_redact_count, total_transformed_bytes }
    */
+  /**
+   * The redaction report for ONE session, as the details modal needs it.
+   * Port of :reports->get-report-by-session-id (webapp events/reports.cljs:9-19):
+   * `GET /reports/sessions?id={id}&start_date={YYYY-MM-DD}`, where the date is
+   * the session's own `start_date` truncated at the `T`.
+   */
+  getSessionReportById: (sessionId, sessionStartDate) => {
+    const params = new URLSearchParams({ id: sessionId })
+    const day = String(sessionStartDate ?? '').split('T')[0]
+    if (day) params.set('start_date', day)
+    return api.get(`/reports/sessions?${params.toString()}`).then((res) => res.data)
+  },
+
   getSessionReport: ({ startDate, endDate } = {}) => {
     const params = new URLSearchParams()
     if (startDate) params.set('start_date', startDate)
