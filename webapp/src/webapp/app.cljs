@@ -59,7 +59,6 @@
    [webapp.connections.native-client-access.events]
    [webapp.events.editor-plugin]
    [webapp.events.gateway-info]
-   [webapp.events.clipboard]
    [webapp.events.guardrails]
    [webapp.events.indexer-plugin]
    [webapp.events.jira-integration]
