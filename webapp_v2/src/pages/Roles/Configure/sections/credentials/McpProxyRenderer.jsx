@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { Check, ShieldCheck } from 'lucide-react'
+import Accordion from '@/components/Accordion'
 import Button from '@/components/Button'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
@@ -92,6 +93,57 @@ function readPopupOutcome(popup) {
     reason: params.get('reason'),
   }
 }
+
+// Tool policy and limits are optional, and on most connections they are
+// empty — which made the two longest blocks of this form the two with nothing
+// in them, pushing the fields that do need attention below the fold. Both
+// collapse, and the trigger carries a summary so a closed section never hides
+// what it holds.
+function AccordionSection({ value, title, summary, children }) {
+  return (
+    <Accordion.Item value={value}>
+      <Accordion.Control>
+        <Title order={5} fw={500}>
+          {title}
+        </Title>
+        <Text size="sm" c="dimmed">
+          {summary}
+        </Text>
+      </Accordion.Control>
+      <Accordion.Panel>
+        <Stack gap="md" pt="xs">
+          {children}
+        </Stack>
+      </Accordion.Panel>
+    </Accordion.Item>
+  )
+}
+
+function patternCount(value) {
+  return value.split(',').filter((p) => p.trim()).length
+}
+
+function toolPolicySummary(allowed, denied, approval) {
+  const parts = []
+  if (patternCount(allowed)) parts.push(`${patternCount(allowed)} allowed`)
+  if (patternCount(denied)) parts.push(`${patternCount(denied)} denied`)
+  if (patternCount(approval)) parts.push(`${patternCount(approval)} need approval`)
+  return parts.length ? parts.join(' · ') : 'Every tool allowed'
+}
+
+// A lowered protocol gate is the one thing here worth reading without opening
+// the section, so it is named; the secure default is not.
+function limitsSummary({ maxCalls, maxResultKb, rugPull, blockSampling, blockElicitation }) {
+  const parts = [
+    maxCalls.trim() ? `${maxCalls.trim()} calls/session` : 'Unlimited calls',
+    maxResultKb.trim() ? `${maxResultKb.trim()} KB results` : 'Unlimited result size',
+    rugPull === 'alert' ? 'Alert on tool change' : 'Kill on tool change',
+  ]
+  if (!blockSampling) parts.push('sampling allowed')
+  if (!blockElicitation) parts.push('elicitation allowed')
+  return parts.join(' · ')
+}
+
 
 export default function McpProxyRenderer({
   connection,
@@ -401,6 +453,35 @@ export default function McpProxyRenderer({
 
   const serverLabel = entry?.name || 'Custom / self-hosted'
 
+  const allowedTools = readSetting(ENV.allowedTools)
+  const deniedTools = readSetting(ENV.deniedTools)
+  const approvalTools = readSetting(ENV.approvalTools)
+  const maxCalls = readSetting(ENV.maxCalls)
+  const maxResultKb = readSetting(ENV.maxResultKb)
+  const rugPull = readSetting(ENV.onRugPull).trim() || 'kill'
+  const blockSampling = readBool(ENV.blockSampling, true)
+  const blockElicitation = readBool(ENV.blockElicitation, true)
+
+  // Which sections start open, decided once from the SAVED connection: a
+  // section the admin is already using should not need a click to be seen,
+  // and one they collapse must stay collapsed while they keep typing.
+  // `defaultValue` is read on the Accordion's first render only, so this is
+  // frozen at mount rather than recomputed as the fields change under it.
+  const [openSections] = useState(() => {
+    const open = []
+    if (patternCount(allowedTools) + patternCount(deniedTools) + patternCount(approvalTools))
+      open.push('tool-policy')
+    if (
+      maxCalls.trim() ||
+      maxResultKb.trim() ||
+      rugPull !== 'kill' ||
+      !blockSampling ||
+      !blockElicitation
+    )
+      open.push('limits')
+    return open
+  })
+
   return (
     <Stack gap="xl">
       <Stack gap="md">
@@ -631,62 +712,70 @@ export default function McpProxyRenderer({
 
       {/* Tool policy — the reason this connection type exists: control that
           names a tool. Empty means no restriction; deny wins over allow. */}
-      <Paper withBorder radius="md" p="md">
-        <Stack gap="md">
-          <Stack gap={4}>
-            <Title order={5}>Tool policy</Title>
-            <Text size="sm" c="dimmed">
-              Comma-separated tool name patterns, e.g. read_*, create_issue.
-              Denied tools are removed from the server&apos;s tool list before the
-              model sees them.
-            </Text>
-          </Stack>
+      <Accordion multiple defaultValue={openSections}>
+        <AccordionSection
+          value="tool-policy"
+          title="Tool policy"
+          summary={toolPolicySummary(allowedTools, deniedTools, approvalTools)}
+        >
+          <Text size="sm" c="dimmed">
+            Comma-separated tool name patterns, e.g. read_*, create_issue.
+            Denied tools are removed from the server&apos;s tool list before the
+            model sees them.
+          </Text>
           <TextInput
             label="Allowed tools"
             placeholder="Leave empty to allow every tool"
-            value={readSetting(ENV.allowedTools)}
+            value={allowedTools}
             onChange={(e) => setSetting(ENV.allowedTools, e.currentTarget.value)}
           />
           <TextInput
             label="Denied tools"
             placeholder="e.g. delete_*, admin_*"
-            value={readSetting(ENV.deniedTools)}
+            value={deniedTools}
             onChange={(e) => setSetting(ENV.deniedTools, e.currentTarget.value)}
           />
           <TextInput
             label="Tools requiring approval"
             placeholder="e.g. create_issue"
-            value={readSetting(ENV.approvalTools)}
+            value={approvalTools}
             onChange={(e) => setSetting(ENV.approvalTools, e.currentTarget.value)}
           />
           <Text size="sm" c="yellow.8">
             Approval routing is not available yet — matched tools are denied
             until it ships.
           </Text>
-        </Stack>
-      </Paper>
+        </AccordionSection>
 
-      <Paper withBorder radius="md" p="md">
-        <Stack gap="md">
-          <Title order={5}>Limits</Title>
+        <AccordionSection
+          value="limits"
+          title="Limits"
+          summary={limitsSummary({
+            maxCalls,
+            maxResultKb,
+            rugPull,
+            blockSampling,
+            blockElicitation,
+          })}
+        >
           <NumberInput
             label="Max tool calls per session"
             placeholder="Leave empty for no limit"
             min={0}
-            value={readSetting(ENV.maxCalls)}
+            value={maxCalls}
             onChange={(v) => setSetting(ENV.maxCalls, v === '' || v == null ? '' : String(v))}
           />
           <NumberInput
             label="Max result size (KB)"
             placeholder="Leave empty for no limit"
             min={0}
-            value={readSetting(ENV.maxResultKb)}
+            value={maxResultKb}
             onChange={(v) => setSetting(ENV.maxResultKb, v === '' || v == null ? '' : String(v))}
           />
           <Select
             label="When a tool changes mid-session"
             data={RUG_PULL_MODES.map((m) => ({ value: m.value, label: m.label }))}
-            value={readSetting(ENV.onRugPull).trim() || 'kill'}
+            value={rugPull}
             onChange={(v) => v && setSetting(ENV.onRugPull, v)}
             allowDeselect={false}
           />
@@ -695,17 +784,17 @@ export default function McpProxyRenderer({
           <ToggleSection
             title="Block sampling requests"
             description="Prevent the server from driving your LLM through sampling/createMessage."
-            checked={readBool(ENV.blockSampling, true)}
+            checked={blockSampling}
             onChange={(on) => setSetting(ENV.blockSampling, on ? 'true' : 'false')}
           />
           <ToggleSection
             title="Block elicitation requests"
             description="Prevent the server from prompting your users with its own dialogs."
-            checked={readBool(ENV.blockElicitation, true)}
+            checked={blockElicitation}
             onChange={(on) => setSetting(ENV.blockElicitation, on ? 'true' : 'false')}
           />
-        </Stack>
-      </Paper>
+        </AccordionSection>
+      </Accordion>
 
       {/* A stdio server's secrets reach its child process through the MCPENV_
           carve-out; a remote server's travel as outbound HTTP headers. Same

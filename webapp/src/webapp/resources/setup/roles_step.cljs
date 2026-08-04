@@ -1,7 +1,8 @@
 (ns webapp.resources.setup.roles-step
   (:require
+   ["@radix-ui/react-accordion" :as Accordion]
    ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link RadioGroup Separator Text Switch]]
-   ["lucide-react" :refer [ArrowUpRight Check Plus ShieldCheck Trash2]]
+   ["lucide-react" :refer [ArrowUpRight Check ChevronDown Plus ShieldCheck Trash2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
@@ -447,6 +448,62 @@
        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
         "Skip SSL certificate verification for HTTPS connections."]]]]))
 
+;; Tool policy and limits are optional, and on most connections they are
+;; empty — which made the two longest blocks of this form the two with
+;; nothing in them, pushing the fields that do need filling below the fold.
+;; Collapsed by default, with the trigger carrying a summary so a closed
+;; section never hides what it holds.
+(defn- collapsible-section
+  [{:keys [value title summary default-open? content]}]
+  [:> (.-Root Accordion)
+   (cond-> {:type "single"
+            :collapsible true
+            :class "w-full rounded-md border border-[--gray-5]"}
+     default-open? (assoc :defaultValue value))
+   [:> (.-Item Accordion) {:value value :className "border-none"}
+    [:> (.-Header Accordion)
+     [:> (.-Trigger Accordion)
+      {:className (str "group flex w-full items-center justify-between gap-3 p-4 text-left "
+                       "focus:outline-none focus-visible:ring focus-visible:ring-gray-500")}
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        title]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        summary]]
+      [:> ChevronDown {:size 16
+                       :className (str "text-[--gray-10] shrink-0 transition-transform "
+                                       "group-data-[state=open]:rotate-180")}]]]
+    [:> (.-Content Accordion) {:className "px-4 pb-4"}
+     content]]])
+
+(defn- pattern-count [s]
+  (count (remove cs/blank? (cs/split (or s "") #","))))
+
+(defn- tool-policy-summary [allowed denied approval]
+  (let [parts (cond-> []
+                (pos? (pattern-count allowed)) (conj (str (pattern-count allowed) " allowed"))
+                (pos? (pattern-count denied)) (conj (str (pattern-count denied) " denied"))
+                (pos? (pattern-count approval)) (conj (str (pattern-count approval) " need approval")))]
+    (if (seq parts)
+      (cs/join " · " parts)
+      "Every tool allowed")))
+
+;; A lowered protocol gate is the one thing here worth reading without
+;; opening the section, so it is named; the secure default is not.
+(defn- limits-summary [max-calls max-kb rug-pull sampling elicitation]
+  (cs/join " · "
+           (cond-> [(if (cs/blank? max-calls)
+                      "Unlimited calls"
+                      (str max-calls " calls/session"))
+                    (if (cs/blank? max-kb)
+                      "Unlimited result size"
+                      (str max-kb " KB results"))
+                    (if (= rug-pull "alert")
+                      "Alert on tool change"
+                      "Kill on tool change")]
+             (= sampling "false") (conj "sampling allowed")
+             (= elicitation "false") (conj "elicitation allowed"))))
+
 
 ;; MCP Gateway (mcpproxy) role form — the protocol-aware MCP type (ADR-0004).
 ;;
@@ -717,71 +774,93 @@
      ;; ---- Tool policy -----------------------------------------------------
      ;; The reason this connection type exists: control that names a tool.
      ;; Empty means "no restriction"; deny wins over allow.
-     [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
-      [:> Box
-       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-        "Tool policy"]
-       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-        "Comma-separated tool name patterns, e.g. read_*, create_issue. Denied tools are removed from the server's tool list before the model sees them."]]
-      [forms/input {:label "Allowed tools"
-                    :placeholder "Leave empty to allow every tool"
-                    :value (raw-credential-value (get credentials "mcp_allowed_tools"))
-                    :type "text"
-                    :on-change (on-change "mcp_allowed_tools")}]
-      [forms/input {:label "Denied tools"
-                    :placeholder "e.g. delete_*, admin_*"
-                    :value (raw-credential-value (get credentials "mcp_denied_tools"))
-                    :type "text"
-                    :on-change (on-change "mcp_denied_tools")}]
-      [forms/input {:label "Tools requiring approval"
-                    :placeholder "e.g. create_issue"
-                    :value (raw-credential-value (get credentials "mcp_approval_tools"))
-                    :type "text"
-                    :on-change (on-change "mcp_approval_tools")}]
-      ;; Reviews are ADR-0004 phase 5. Until they ship the pipeline fails
-      ;; closed, so saying so here avoids a surprising denial in production.
-      [:> Text {:as "p" :size "2" :class "text-[--amber-11]"}
-       "Approval routing is not available yet — matched tools are denied until it ships."]]
+     (let [allowed (raw-credential-value (get credentials "mcp_allowed_tools"))
+           denied (raw-credential-value (get credentials "mcp_denied_tools"))
+           approval (raw-credential-value (get credentials "mcp_approval_tools"))]
+       [collapsible-section
+        {:value "tool-policy"
+         :title "Tool policy"
+         :summary (tool-policy-summary allowed denied approval)
+         :default-open? (pos? (+ (pattern-count allowed)
+                                 (pattern-count denied)
+                                 (pattern-count approval)))
+         :content
+         [:> Box {:class "space-y-4"}
+          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+           "Comma-separated tool name patterns, e.g. read_*, create_issue. Denied tools are removed from the server's tool list before the model sees them."]
+          [forms/input {:label "Allowed tools"
+                        :placeholder "Leave empty to allow every tool"
+                        :value allowed
+                        :type "text"
+                        :on-change (on-change "mcp_allowed_tools")}]
+          [forms/input {:label "Denied tools"
+                        :placeholder "e.g. delete_*, admin_*"
+                        :value denied
+                        :type "text"
+                        :on-change (on-change "mcp_denied_tools")}]
+          [forms/input {:label "Tools requiring approval"
+                        :placeholder "e.g. create_issue"
+                        :value approval
+                        :type "text"
+                        :not-margin-bottom? true
+                        :on-change (on-change "mcp_approval_tools")}]
+          ;; Reviews are ADR-0004 phase 5. Until they ship the pipeline fails
+          ;; closed, so saying so here avoids a surprising denial in production.
+          [:> Text {:as "p" :size "2" :class "text-[--amber-11]"}
+           "Approval routing is not available yet — matched tools are denied until it ships."]]}])
 
      ;; ---- Budgets and protocol gates --------------------------------------
-     [:> Box {:class "space-y-4 rounded-md border border-[--gray-5] p-4"}
-      [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-       "Limits"]
-      [forms/input {:label "Max tool calls per session"
-                    :placeholder "Leave empty for no limit"
-                    :value (raw-credential-value (get credentials "mcp_max_calls"))
-                    :type "number"
-                    :on-change (on-change "mcp_max_calls")}]
-      [forms/input {:label "Max result size (KB)"
-                    :placeholder "Leave empty for no limit"
-                    :value (raw-credential-value (get credentials "mcp_max_result_kb"))
-                    :type "number"
-                    :on-change (on-change "mcp_max_result_kb")}]
-      [forms/select {:label "When a tool changes mid-session"
-                     :selected (let [m (raw-credential-value (get credentials "mcp_on_rug_pull"))]
-                                 (if (cs/blank? m) "kill" m))
-                     :full-width? true
-                     :on-change #(set-cred "mcp_on_rug_pull" %)
-                     :options [{:text "Kill the session (recommended)" :value "kill"}
-                               {:text "Record an alert and continue" :value "alert"}]}]
-      [:> Flex {:align "center" :gap "3"}
-       [:> Switch {:checked (not= (raw-credential-value (get credentials "mcp_block_sampling")) "false")
-                   :size "3"
-                   :onCheckedChange #(set-cred "mcp_block_sampling" (if % "true" "false"))}]
-       [:> Box
-        [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-         "Block sampling requests"]
-        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-         "Prevent the server from driving your LLM through sampling/createMessage."]]]
-      [:> Flex {:align "center" :gap "3"}
-       [:> Switch {:checked (not= (raw-credential-value (get credentials "mcp_block_elicitation")) "false")
-                   :size "3"
-                   :onCheckedChange #(set-cred "mcp_block_elicitation" (if % "true" "false"))}]
-       [:> Box
-        [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-         "Block elicitation requests"]
-        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-         "Prevent the server from prompting your users with its own dialogs."]]]]
+     (let [max-calls (raw-credential-value (get credentials "mcp_max_calls"))
+           max-kb (raw-credential-value (get credentials "mcp_max_result_kb"))
+           rug-pull (let [m (raw-credential-value (get credentials "mcp_on_rug_pull"))]
+                      (if (cs/blank? m) "kill" m))
+           sampling (raw-credential-value (get credentials "mcp_block_sampling"))
+           elicitation (raw-credential-value (get credentials "mcp_block_elicitation"))]
+       [collapsible-section
+        {:value "limits"
+         :title "Limits"
+         :summary (limits-summary max-calls max-kb rug-pull sampling elicitation)
+         :default-open? (not (and (cs/blank? max-calls)
+                                  (cs/blank? max-kb)
+                                  (= rug-pull "kill")
+                                  (not= sampling "false")
+                                  (not= elicitation "false")))
+         :content
+         [:> Box {:class "space-y-4"}
+          [forms/input {:label "Max tool calls per session"
+                        :placeholder "Leave empty for no limit"
+                        :value max-calls
+                        :type "number"
+                        :on-change (on-change "mcp_max_calls")}]
+          [forms/input {:label "Max result size (KB)"
+                        :placeholder "Leave empty for no limit"
+                        :value max-kb
+                        :type "number"
+                        :on-change (on-change "mcp_max_result_kb")}]
+          [forms/select {:label "When a tool changes mid-session"
+                         :selected rug-pull
+                         :full-width? true
+                         :on-change #(set-cred "mcp_on_rug_pull" %)
+                         :options [{:text "Kill the session (recommended)" :value "kill"}
+                                   {:text "Record an alert and continue" :value "alert"}]}]
+          [:> Flex {:align "center" :gap "3"}
+           [:> Switch {:checked (not= sampling "false")
+                       :size "3"
+                       :onCheckedChange #(set-cred "mcp_block_sampling" (if % "true" "false"))}]
+           [:> Box
+            [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+             "Block sampling requests"]
+            [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+             "Prevent the server from driving your LLM through sampling/createMessage."]]]
+          [:> Flex {:align "center" :gap "3"}
+           [:> Switch {:checked (not= elicitation "false")
+                       :size "3"
+                       :onCheckedChange #(set-cred "mcp_block_elicitation" (if % "true" "false"))}]
+           [:> Box
+            [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+             "Block elicitation requests"]
+            [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+             "Prevent the server from prompting your users with its own dialogs."]]]]}])
 
      ;; Headers for a static-credential server (and MCPENV_* for stdio).
      [configuration-inputs/http-headers-section role-index]
