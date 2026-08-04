@@ -66,8 +66,46 @@ export function toEndOfDayISO(value) {
 }
 
 /**
- * Inverse of the two above: an ISO timestamp back to the local `YYYY-MM-DD` that
- * Mantine v8 date inputs expect as their value.
+ * Port of `formatters/local-time->utc-time` (formatters.cljs:145).
+ * `"09:00"` local → `"12:00"` when the browser is at UTC-3.
+ *
+ * Review time windows are stored in UTC, so an `<input type="time">` value has
+ * to be converted before it goes to the API. Anchored on today's date, which is
+ * what v1 does — the offset can differ across a DST boundary.
+ */
+export function localTimeToUtc(value) {
+  if (!value) return undefined
+  const [hours, minutes] = String(value).split(':').map(Number)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return undefined
+  const now = new Date()
+  const local = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes)
+  return `${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}`
+}
+
+/**
+ * Port of `formatters/utc-time->display-time` (formatters.cljs:170).
+ * `"22:00"` UTC → `"7:00 PM"` when the browser is at UTC-3.
+ *
+ * v1 delegates the last step to date-fns `format`, which renders in local time —
+ * so despite the name this converts UTC to the viewer's timezone.
+ */
+export function utcTimeToDisplay(value) {
+  if (!value) return undefined
+  const [hours, minutes] = String(value).split(':').map(Number)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return undefined
+  const now = new Date()
+  const date = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes)
+  )
+  const h24 = date.getHours()
+  const suffix = h24 >= 12 ? 'PM' : 'AM'
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  return `${h12}:${pad2(date.getMinutes())} ${suffix}`
+}
+
+/**
+ * Inverse of the range helpers above: an ISO timestamp back to the local
+ * `YYYY-MM-DD` that Mantine v8 date inputs expect as their value.
  */
 export function toDateInputValue(value) {
   if (!value) return null

@@ -3,6 +3,7 @@ import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { useSessionsStore } from '../store'
 import SessionInfo from './sections/SessionInfo'
+import ReviewActions from './sections/ReviewActions'
 
 /**
  * Port of the v1 session-details modal (`audit/views/session_details.cljs`,
@@ -32,6 +33,7 @@ export default function SessionDetailsModal() {
       {session && (
         <Stack gap="xl">
           <SessionInfo session={session} />
+          <ReviewActions session={session} />
         </Stack>
       )}
     </Modal>

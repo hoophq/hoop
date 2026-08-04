@@ -23,6 +23,10 @@ const EMPTY_LIST = {
   error: null,
   loadingMore: false,
   queryKey: null,
+  // Kept so `refreshList` can re-run the current query without the caller
+  // having to thread the filters back in. v1 got this for free: its refetch
+  // event re-read window.location.search.
+  filters: {},
 }
 
 const EMPTY_LOOKUP = {
@@ -198,6 +202,7 @@ export const useSessionsStore = create((set, get) => ({
         status: isRevalidate ? 'ready' : 'loading',
         error: null,
         queryKey,
+        filters,
       },
     })
     try {
@@ -219,6 +224,7 @@ export const useSessionsStore = create((set, get) => ({
           error: null,
           loadingMore: false,
           queryKey,
+          filters,
         },
       })
     } catch (error) {
@@ -268,6 +274,17 @@ export const useSessionsStore = create((set, get) => ({
         },
       })
     }
+  },
+
+  /**
+   * Re-run the current query, keeping filters and collapsing back to page 1.
+   * Used after a review/kill/re-run changes a session's status — v1's refetch
+   * event re-read the URL, which had the same effect.
+   */
+  refreshList: async () => {
+    const { filters, queryKey } = get().list
+    if (queryKey == null) return
+    await get().fetchList(filters ?? {}, queryKey)
   },
 
   // --- ID lookup (search box on /sessions, and /sessions/filtered?id=) -------
