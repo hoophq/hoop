@@ -1,9 +1,10 @@
-import { Stack } from '@mantine/core'
+import { Group, Stack, Title } from '@mantine/core'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { useSessionsStore } from '../store'
 import SessionInfo from './sections/SessionInfo'
 import ReviewActions from './sections/ReviewActions'
+import SessionHeaderActions from './sections/SessionHeaderActions'
 
 /**
  * Port of the v1 session-details modal (`audit/views/session_details.cljs`,
@@ -14,8 +15,8 @@ import ReviewActions from './sections/ReviewActions'
  * the /sessions/:id dedicated page — `is-dedicated-page?` only toggles a bottom
  * padding and the close button — so this component is the whole surface.
  *
- * Being built incrementally; the remaining blocks (review actions, script,
- * output, playback, credentials) land in follow-up commits on this branch.
+ * Being built incrementally; the remaining blocks (script, output, playback,
+ * credentials, re-run) land in follow-up commits on this branch.
  */
 export default function SessionDetailsModal() {
   const detail = useSessionsStore((s) => s.detail)
@@ -25,7 +26,19 @@ export default function SessionDetailsModal() {
   const session = detail.status === 'ready' ? detail.session : null
 
   return (
-    <Modal opened={opened} onClose={closeDetail} title="Session Details" size={916}>
+    <Modal
+      opened={opened}
+      onClose={closeDetail}
+      size={916}
+      title={
+        <Group justify="space-between" align="center" wrap="nowrap" w="100%">
+          <Title order={2} size="h4">
+            Session Details
+          </Title>
+          <SessionHeaderActions session={session} />
+        </Group>
+      }
+    >
       {detail.status === 'loading' && <PageLoader h={240} />}
       {detail.status === 'error' && (
         <PageLoader h={240} error={detail.error ?? 'Failed to load the session.'} />
