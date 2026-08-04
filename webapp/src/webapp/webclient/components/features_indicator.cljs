@@ -17,14 +17,15 @@
   "Which hover surface to show. Two are implemented:
 
      :card    a light popover, one row per feature with an icon and an Active
-              badge — what we ship
+              badge
      :tooltip the Figma design: a plain dark tooltip, one `{Feature}: Active`
               line per feature, no icons
 
-   We ship `:tooltip`, matching the Figma. `:card` is kept because it reads well
-   beside the tiles the modal uses and may come back if design revisits this.
-   Delete the unused branch once that settles — this is not meant to live here
-   forever."
+   We ship `:card`. It diverges from the Figma, which specifies the tooltip, but
+   reads better beside the tiles the modal already uses — both were built and
+   compared on screen before choosing. The tooltip stays so design can switch
+   back with one keyword. Delete the unused branch once that settles; it is not
+   meant to live here forever."
   :card)
 
 (defn- feature-tile [{:keys [icon tile-class]}]
