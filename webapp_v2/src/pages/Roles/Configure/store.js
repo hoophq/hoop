@@ -266,12 +266,13 @@ export const useConfigureRoleStore = create((set, get) => ({
         userGroupsService.list(),
         infrastructure.getHideRoleInfo(),
       ])
-      // /guardrails and /integrations/jira/issuetemplates return bare arrays
-      // (the service unwraps res.data for us). /attributes returns a
-      // paginated envelope { data: [...], pages: {...} } and the
-      // existing attributesService leaves the axios response untouched,
-      // so the array sits at value.data.data. /connection-tags returns
-      // { items: [{ id, key, value, ... }] }.
+      // /guardrails returns a bare array and guardrailsService leaves the
+      // axios response untouched, so it sits at value.data.
+      // /integrations/jira/issuetemplates also returns a bare array, but that
+      // service unwraps res.data for us. /attributes returns a paginated
+      // envelope { data: [...], pages: {...} } and attributesService leaves
+      // the axios response untouched, so the array sits at value.data.data.
+      // /connection-tags returns { items: [{ id, key, value, ... }] }.
       const attributesList =
         attributesRes.status === 'fulfilled'
           ? attributesRes.value?.data?.data || []
@@ -288,7 +289,7 @@ export const useConfigureRoleStore = create((set, get) => ({
           : false
       set({
         guardrailsList:
-          guardrails.status === 'fulfilled' ? guardrails.value || [] : [],
+          guardrails.status === 'fulfilled' ? guardrails.value?.data || [] : [],
         jiraTemplatesList:
           jiraTemplates.status === 'fulfilled' ? jiraTemplates.value || [] : [],
         attributesList,

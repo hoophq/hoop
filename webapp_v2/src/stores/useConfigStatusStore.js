@@ -85,8 +85,8 @@ const PROBES = [
     }
   },
   async () => {
-    const rules = await guardrailsService.list()
-    return { checks: { guardrailsExplored: (rules ?? []).filter(isUserCreated).length >= 1 } }
+    const { data } = await guardrailsService.list()
+    return { checks: { guardrailsExplored: (data ?? []).filter(isUserCreated).length >= 1 } }
   },
   async () => {
     const { data } = await dataMaskingService.list()

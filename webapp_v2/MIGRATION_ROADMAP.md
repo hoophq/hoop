@@ -205,8 +205,8 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
   dialog is mounted globally in the CLJS layout and is a Parity-track port source;
   the events/subs serve it and `features/promotion`).
 - `features/attributes/{main.cljs,views/form.cljs}` — **keep** `events.cljs` +
-  `subs.cljs` (used by live guardrails, resource setup/configure, machine
-  identities, access control until those migrate).
+  `subs.cljs` (used by resource setup/configure, machine identities, access
+  control until those migrate).
 - **The sidebar scaffolding A1 left empty** — `organization-routes` and
   `settings-management` in `shared_ui/sidebar/constants.cljs`, plus all five
   consumers: `navigation.cljs:98` (the `organization-routes` loop) and `:158-197`
@@ -275,8 +275,8 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 
 | Ticket | Scope | Size | Notes |
 |---|---|---|---|
-| B3.1 Guardrails | `/guardrails(+new,edit)` incl. the `rules_table.cljs` port (257 LOC, fiddly) **+ port `activation_journey` template seeding** (2,482 LOC shared) | M+ | Do first in the wave — unblocks B3.2. Old URL stays even though React `/rulepacks` is the conceptual successor |
-| B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Needs B3.1's template seeding |
+| ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS files left in place, shadowed by React | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
+| B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Template seeding to copy from `pages/Guardrails/templates.js` (B3.1) |
 | B3.3 Access Control | `/features/access-control(+new,edit)`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`) | M | Independent |
 | B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
 | B3.5 Runbooks Setup | `/features/runbooks/setup` + rules new/edit (git repo config + path rules) | M | Independent of the runbooks *runner* (Wave 5) |

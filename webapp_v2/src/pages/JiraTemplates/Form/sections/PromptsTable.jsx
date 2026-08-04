@@ -3,13 +3,13 @@ import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import TagsInput from '@/components/TagsInput'
 import Table from '@/components/Table'
+import RuleTableControls from '@/components/RuleTableControls'
+import { makeRowOps } from '@/utils/rowOps'
 import {
   FIELD_TYPE_OPTIONS,
   REQUIRED_OPTIONS,
   createEmptyPromptRow,
-  makeRowOps,
 } from '../../helpers'
-import RuleTableControls from '../components/RuleTableControls'
 
 export default function PromptsTable({
   rows,

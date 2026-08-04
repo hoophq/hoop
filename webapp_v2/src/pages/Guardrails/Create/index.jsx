@@ -3,31 +3,34 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
+import Badge from '@/components/Badge'
 import Button from '@/components/Button'
-import TextInput from '@/components/TextInput'
-import Textarea from '@/components/Textarea'
-import MultiSelect from '@/components/MultiSelect'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
-import Modal from '@/components/Modal'
-import PageLoader from '@/components/PageLoader'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
+import Modal from '@/components/Modal'
+import MultiSelect from '@/components/MultiSelect'
+import PageLoader from '@/components/PageLoader'
+import TextInput from '@/components/TextInput'
 import { PAGE_PADDING } from '@/layout/PageLayout'
-import { showSnackbar } from '@/utils/snackbar'
 import { useUserStore } from '@/stores/useUserStore'
-import { useDataMaskingStore } from '../store'
-import { apiRuleToFormRows, createEmptyRow, formToPayload, scoreToPercent } from '../helpers'
-import { clampRuleToFreePlan, findMaskingTemplate } from '../templates'
+import { showSnackbar } from '@/utils/snackbar'
+import { useGuardrailsStore } from '../store'
+import { apiRulesToRows, formToPayload, orphanMessageError } from '../helpers'
+import { findGuardrailTemplate } from '../templates'
 import RulesTable from './components/RulesTable'
 import classes from './Create.module.css'
 
-function SectionRow({ title, description, children }) {
+function SectionRow({ title, badge, description, children }) {
   return (
     <Grid columns={7} gutter="xl">
       <Grid.Col span={2}>
         <Stack gap="xs">
-          <Title order={4} fw={500}>
-            {title}
-          </Title>
+          <Group gap="xs" align="center">
+            <Title order={4} fw={500}>
+              {title}
+            </Title>
+            {badge}
+          </Group>
           <Text size="sm" c="dimmed">
             {description}
           </Text>
@@ -38,37 +41,31 @@ function SectionRow({ title, description, children }) {
   )
 }
 
-// Remounted via `key` when the loaded rule changes, so state derives from `rule`
-// with lazy useState initializers instead of a prefill effect.
-function DataMaskingFormFields({ rule, id, isEdit }) {
+// Remounted via `key` when the loaded guardrail changes, so state derives from
+// `guardrail` with lazy useState initializers instead of a prefill effect.
+function GuardrailFormFields({ guardrail, id, isEdit }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
-  const attributes = useDataMaskingStore((s) => s.attributes)
-  const submitting = useDataMaskingStore((s) => s.submitting)
-  const createRule = useDataMaskingStore((s) => s.createRule)
-  const updateRule = useDataMaskingStore((s) => s.updateRule)
-  const deleteRule = useDataMaskingStore((s) => s.deleteRule)
+  const attributes = useGuardrailsStore((s) => s.attributes)
+  const submitting = useGuardrailsStore((s) => s.submitting)
+  const createGuardrail = useGuardrailsStore((s) => s.createGuardrail)
+  const updateGuardrail = useGuardrailsStore((s) => s.updateGuardrail)
+  const deleteGuardrail = useGuardrailsStore((s) => s.deleteGuardrail)
 
   const [form, setForm] = useState(() => ({
-    name: rule?.name ?? '',
-    description: rule?.description ?? '',
-    // New blank rules start at 85%. Template/edited rules keep their own
-    // value — a stored NULL stays empty so saving doesn't silently add a
-    // threshold to a rule that masks every detection today. The `!isEdit`
-    // guard keeps the default out of edit flows even if a null rule ever
-    // slips past the page-level error gate.
-    scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
-    connectionIds: rule?.connection_ids ?? [],
-    attributes: rule?.attributes ?? [],
+    name: guardrail?.name ?? '',
+    description: guardrail?.description ?? '',
+    connectionIds: guardrail?.connection_ids ?? [],
+    attributes: guardrail?.attributes ?? [],
   }))
-  const [rules, setRules] = useState(() =>
-    rule ? apiRuleToFormRows(rule) : [createEmptyRow()],
-  )
-  const [selectMode, setSelectMode] = useState(false)
+  const [inputRules, setInputRules] = useState(() => apiRulesToRows(guardrail?.input))
+  const [outputRules, setOutputRules] = useState(() => apiRulesToRows(guardrail?.output))
+  const [inputSelectMode, setInputSelectMode] = useState(false)
+  const [outputSelectMode, setOutputSelectMode] = useState(false)
 
   const setField = (patch) => setForm((f) => ({ ...f, ...patch }))
 
@@ -76,36 +73,53 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
   const handleSave = async () => {
     if (!canSubmit) return
-    const payload = formToPayload({ ...form, name: form.name.trim(), rules })
+
+    // Rows carrying only a message are dropped by formToPayload, which would
+    // silently discard what the admin typed — block the save instead.
+    const orphanError = orphanMessageError(inputRules, outputRules)
+    if (orphanError) {
+      showSnackbar({ level: 'error', text: orphanError })
+      return
+    }
+
+    const payload = formToPayload({
+      id: isEdit ? id : '',
+      name: form.name.trim(),
+      description: form.description,
+      connectionIds: form.connectionIds,
+      attributes: form.attributes,
+      inputRules,
+      outputRules,
+    })
     const { ok, error } = isEdit
-      ? await updateRule(id, payload)
-      : await createRule(payload)
+      ? await updateGuardrail(id, payload)
+      : await createGuardrail(payload)
     if (ok) {
       showSnackbar({
         level: 'success',
-        text: isEdit ? 'Rule updated.' : 'Rule created.',
+        text: isEdit ? 'Guardrail updated.' : 'Guardrail created.',
       })
-      navigate('/features/data-masking')
+      navigate('/guardrails')
     } else {
       showSnackbar({
         level: 'error',
         text:
           error?.response?.data?.message ||
-          (isEdit ? 'Failed to update rule.' : 'Failed to create rule.'),
+          (isEdit ? 'Failed to update guardrail.' : 'Failed to create guardrail.'),
       })
     }
   }
 
   const handleDelete = async () => {
-    const { ok, error } = await deleteRule(id)
+    const { ok, error } = await deleteGuardrail(id)
     deleteModal.close()
     if (ok) {
-      showSnackbar({ level: 'success', text: 'Rule deleted.' })
-      navigate('/features/data-masking')
+      showSnackbar({ level: 'success', text: 'Guardrail deleted.' })
+      navigate('/guardrails')
     } else {
       showSnackbar({
         level: 'error',
-        text: error?.response?.data?.message || 'Failed to delete rule.',
+        text: error?.response?.data?.message || 'Failed to delete guardrail.',
       })
     }
   }
@@ -122,7 +136,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           variant="transparent"
           color="gray"
           leftSection={<ArrowLeft size={16} />}
-          onClick={() => navigate('/features/data-masking')}
+          onClick={() => navigate('/guardrails')}
           px={0}
           w="fit-content"
           mb="xl"
@@ -151,7 +165,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
             used. Kept local — theme-wide heading tracking is a call that
             hasn't been made. */}
         <Title order={2} lts="-0.00625em">
-          {isEdit ? 'Edit Live Data Masking rule' : 'Create new Live Data Masking rule'}
+          {isEdit ? 'Configure Guardrail' : 'Create a new Guardrail'}
         </Title>
         <Group gap="sm">
           {isEdit && (
@@ -178,44 +192,30 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
       <Stack gap="xxlAlt" className={classes.form}>
         <SectionRow
-          title="Set rule information"
-          description="Used to identify the rule in your resource roles."
+          title="Set Guardrail information"
+          description="Used to identify your Guardrail in your resource roles."
         >
           <Stack gap="md">
             <TextInput
               label="Name"
-              placeholder="e.g. Sensitive Data"
+              placeholder="Sensitive Data"
               value={form.name}
               onChange={(e) => setField({ name: e.currentTarget.value })}
               required
               autoFocus
             />
-            <Textarea
+            <TextInput
               label="Description (Optional)"
               placeholder="Describe how this is used in your resource roles"
               value={form.description}
               onChange={(e) => setField({ description: e.currentTarget.value })}
-              minRows={3}
-            />
-            <TextInput
-              label="Analyzer confidence threshold (Optional)"
-              type="number"
-              min={1}
-              max={100}
-              placeholder="85"
-              value={form.scoreThreshold}
-              onChange={(e) => {
-                const value = e.currentTarget.value
-                setField({ scoreThreshold: value === '' ? '' : Number(value) })
-              }}
-              description="Minimum confidence level (1-100) a detection needs to be masked. Defaults to 85% for new rules. Leave empty to mask every detection regardless of confidence. Custom entity types with a score below this value are never masked."
             />
           </Stack>
         </SectionRow>
 
         <SectionRow
-          title="Resource Role configuration"
-          description="Select which resource roles to apply this configuration."
+          title="Associate Resource Roles"
+          description="Select the resource roles where this guardrail should be applied."
         >
           <ConnectionsMultiSelect
             value={form.connectionIds}
@@ -238,29 +238,41 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           />
         </SectionRow>
 
-        <Stack gap="md">
-          <Title order={4} fw={500}>
-            Output rules
-          </Title>
-          <RulesTable
-            rules={rules}
-            setRules={setRules}
-            selectMode={selectMode}
-            setSelectMode={setSelectMode}
-            freeLicense={isFreeLicense}
-          />
-        </Stack>
+        <SectionRow
+          title="Configure rules"
+          badge={
+            <Badge variant="active" size="xs">
+              Beta
+            </Badge>
+          }
+          description="Setup rules with Presets or Custom regular expression scripts."
+        >
+          <Stack gap="lgAlt">
+            <RulesTable
+              title="Input rules"
+              rules={inputRules}
+              setRules={setInputRules}
+              selectMode={inputSelectMode}
+              setSelectMode={setInputSelectMode}
+              freeLicense={isFreeLicense}
+            />
+            <RulesTable
+              title="Output rules"
+              rules={outputRules}
+              setRules={setOutputRules}
+              selectMode={outputSelectMode}
+              setSelectMode={setOutputSelectMode}
+              freeLicense={isFreeLicense}
+            />
+          </Stack>
+        </SectionRow>
       </Stack>
 
-      <Modal
-        opened={deleteOpened}
-        onClose={deleteModal.close}
-        title="Delete Live Data Masking rule?"
-      >
+      <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete Guardrail?">
         <Stack gap="lg">
           <Text size="sm">
-            This action will permanently delete this Live Data Masking rule and cannot
-            be undone. Are you sure you want to proceed?
+            This action will permanently delete this Guardrail and cannot be undone. Are
+            you sure you want to proceed?
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" color="gray" onClick={deleteModal.close}>
@@ -276,32 +288,29 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   )
 }
 
-export default function DataMaskingForm() {
+export default function GuardrailForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
-  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
-  // Activation-journey deep link: /features/data-masking/new?template=<id>
-  // pre-applies a recommended template. An unknown or stale template id
-  // falls back to the regular blank form. The URL is the source of truth,
-  // so a browser refresh re-seeds the same template. On the free plan the
-  // template is clamped to one entity type — the plan's per-rule limit.
+  // Activation-journey deep link: /guardrails/new?template=<name>&connections=<ids>
+  // pre-applies a recommended guardrail. An unknown or stale template name
+  // falls back to the regular blank form. The URL is the source of truth, so a
+  // browser refresh re-seeds the same template. No free-plan clamp is needed:
+  // every template stays within the one-rule-per-table OSS limit.
   const [searchParams] = useSearchParams()
-  const template = isEdit ? null : findMaskingTemplate(searchParams.get('template'))
+  const template = isEdit ? null : findGuardrailTemplate(searchParams.get('template'))
   const templateConnectionIds = (searchParams.get('connections') ?? '')
     .split(',')
     .filter(Boolean)
-  const seededRule = template
-    ? { ...template.rule, connection_ids: templateConnectionIds }
+  const seededGuardrail = template
+    ? { ...template, connection_ids: templateConnectionIds }
     : null
-  const templateRule =
-    seededRule && isFreeLicense ? clampRuleToFreePlan(seededRule) : seededRule
 
-  const active = useDataMaskingStore((s) => s.active)
-  const activeStatus = useDataMaskingStore((s) => s.activeStatus)
-  const fetchActive = useDataMaskingStore((s) => s.fetchActive)
-  const clearActive = useDataMaskingStore((s) => s.clearActive)
-  const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
+  const active = useGuardrailsStore((s) => s.active)
+  const activeStatus = useGuardrailsStore((s) => s.activeStatus)
+  const fetchActive = useGuardrailsStore((s) => s.fetchActive)
+  const clearActive = useGuardrailsStore((s) => s.clearActive)
+  const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
 
   // ConnectionsMultiSelect loads/paginates its own options, so no connections fetch here.
   useEffect(() => {
@@ -315,16 +324,16 @@ export default function DataMaskingForm() {
   }
 
   // A failed fetch leaves `active` null; rendering the form would present a
-  // blank "edit" whose save overwrites the real rule with defaults (85%
-  // threshold, empty rows). Block it like the loading state.
+  // blank "edit" whose save overwrites the real guardrail with empty rules.
+  // Block it like the loading state.
   if (isEdit && activeStatus === 'error') {
-    return <Text c="red">Failed to load data masking rule.</Text>
+    return <Text c="red">Failed to load guardrail.</Text>
   }
 
   return (
-    <DataMaskingFormFields
-      key={isEdit ? (active?.id ?? id) : template ? `template-${template.id}` : 'new'}
-      rule={isEdit ? active : templateRule}
+    <GuardrailFormFields
+      key={isEdit ? (active?.id ?? id) : template ? `template-${template.name}` : 'new'}
+      guardrail={isEdit ? active : seededGuardrail}
       id={id}
       isEdit={isEdit}
     />
