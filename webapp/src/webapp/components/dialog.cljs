@@ -6,8 +6,12 @@
 
 (defmulti markup identity)
 (defmethod markup :open [_ state]
-  [:div.fixed.z-30.inset-0.overflow-y-auto
-   {"aria-modal" true}
+  ;; z-[201] matches components/modal.cljs and the Radix overlay: it has to clear
+  ;; the React shell's global header, which Mantine's AppShell paints at z-index
+  ;; 200. At the old z-30 this dialog rendered underneath the header strip.
+  [:div.fixed.inset-0.overflow-y-auto
+   {"aria-modal" true
+    :class "z-[201]"}
    [:div.fixed.w-full.h-full.inset-0.bg-gray-100.bg-opacity-90.transition
     {"aria-hidden" "true"
      :on-click #(rf/dispatch [:close-dialog])}]

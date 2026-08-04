@@ -8,6 +8,11 @@ module.exports = {
     './resource/public/js/cljs-runtime/*.js',
     './node_modules/react-tailwindcss-datepicker/dist/index.esm.js'
   ],
+  // Preflight is emitted by hand into the `legacy-reset` cascade layer — see the
+  // comment on the @import in src/css/tailwind.css. Do not re-enable it here
+  // without moving that import back, or the element resets will be emitted
+  // twice, unlayered, and clobber Mantine on every CLJS route.
+  corePlugins: { preflight: false },
   darkMode: ['class'],
   screens: {
     sm: '640px',
@@ -151,7 +156,16 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))'
         }
       },
+      // `h-screen` / `min-h-screen` subtract the React shell's global header.
+      //
+      // Mantine's AppShell.Main keeps `min-height: 100dvh` and merely adds
+      // `padding-top: var(--app-shell-header-offset)`, so anything sized to a
+      // raw 100vh inside it overflows the viewport by exactly the header height.
+      // The variable only exists while the AppShell is mounted, so this
+      // self-neutralises to plain 100vh on routes rendered outside the React
+      // Layout (/onboarding/*, auth) and in standalone CLJS.
       height: {
+        screen: 'calc(100vh - var(--app-shell-header-offset, 0rem))',
         'sessions-list': 'calc(100vh - 160px)',
         'audit-sessions-list': 'calc(100vh - 245px)',
         'connections-list': 'calc(100vh - 160px)',
@@ -164,7 +178,10 @@ module.exports = {
         'screen-90vh': '90vh',
         'logs-container': 'calc(100% - 38px)',
         'connection-selector': 'calc(100vh - 56px)',
-        'terminal-content': 'calc(100vh - 62px)'
+        'terminal-content': 'calc(100vh - var(--app-shell-header-offset, 0rem) - 62px)'
+      },
+      minHeight: {
+        screen: 'calc(100vh - var(--app-shell-header-offset, 0rem))'
       },
       width: {
         'side-menu': '308px',
@@ -228,6 +245,11 @@ module.exports = {
         magenta: '#ff29ff'
       },
       spacing: {
+        // `top-app-header` offsets sticky page headers by the React shell's
+        // global header. The document is the scrollport, so a plain
+        // `sticky top-0` resolves against the viewport and slides underneath
+        // the fixed header. Resolves to 0 when the shell is not mounted.
+        'app-header': 'var(--app-shell-header-offset, 0rem)',
         'radix-1': 'var(--space-1)',
         'radix-2': 'var(--space-2)',
         'radix-3': 'var(--space-3)',

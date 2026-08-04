@@ -94,7 +94,7 @@
         show-stepper? (and onboarding? (not= current-step :success))]
     (if onboarding?
       ;; Onboarding layout: with stepper on left
-      [:> Box {:class "bg-gray-1 flex flex-col" :style {:height "calc(100vh - 72px)"}}
+      [:> Box {:class "bg-gray-1 flex flex-col" :style {:height "calc(100vh - var(--app-shell-header-offset, 0rem) - 72px)"}}
        ;; Main content area with stepper on left and children on right
        [:> Flex {:class "flex-1 min-h-0 overflow-hidden"}
         ;; Stepper on the left (only if not success step)

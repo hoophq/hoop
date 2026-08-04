@@ -216,6 +216,12 @@
 (defn loading-transition []
   [loaders/page-loading-screen {}])
 
+;; Clears the React shell's global header so toasts never cover the Native
+;; Connections button or the user menu. Resolves to sonner's default 24px gap
+;; when the shell is not mounted (standalone CLJS, auth layout).
+(def toaster-offset
+  #js {:top "calc(var(--app-shell-header-offset, 0rem) + 1.5rem)"})
+
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])
         react-shell? (boolean (.getItem js/localStorage "react-shell"))]
@@ -261,7 +267,7 @@
               ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
               [:section
                {:class "antialiased h-screen"}
-               [:> Toaster {:position "top-right"}]
+               [:> Toaster {:position "top-right" :offset toaster-offset}]
                [modals/modal]
                [modals/modal-radix]
                [dialog/dialog]
@@ -275,7 +281,7 @@
               ;; Normal mode: full layout with sidebar and cmdk
               [:section
                {:class "antialiased h-screen"}
-               [:> Toaster {:position "top-right"}]
+               [:> Toaster {:position "top-right" :offset toaster-offset}]
                [modals/modal]
                [modals/modal-radix]
                [dialog/dialog]
@@ -293,7 +299,7 @@
 
 (defmethod layout :auth [_ panels]
   [:<>
-   [:> Toaster {:position "top-right"}]
+   [:> Toaster {:position "top-right" :offset toaster-offset}]
    (snackbar/snackbar)
    [modals/modal]
    [modals/modal-radix]

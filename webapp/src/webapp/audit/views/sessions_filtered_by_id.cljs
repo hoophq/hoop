@@ -72,7 +72,7 @@
 
          (when (and is-ready? has-sessions?)
            [:div {:class "relative h-full pb-6 px-6 overflow-auto"}
-            [:> Flex {:justify "between" :align "center" :gap "4" :class "pt-6 pb-8 sticky top-0 bg-white z-10"}
+            [:> Flex {:justify "between" :align "center" :gap "4" :class "pt-6 pb-8 sticky top-app-header bg-white z-10"}
              [:> Flex {:align "center" :gap "5"}
               [:> Heading {:size "5" :weight "bold" :class "text-gray-12"}
                "Execution Summary"]

@@ -34,7 +34,7 @@
           [:<>
            [:> Flex {:p "5" :gap "2"}
             [button/HeaderBack]]
-           [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
+           [:> Box {:class (str "sticky top-app-header z-50 bg-gray-1 px-7 py-7 "
                                 (when (>= @scroll-pos 30)
                                   "border-b border-[--gray-a6]"))}
             [:> Flex {:justify "between"
@@ -155,7 +155,7 @@
           [:<>
            [:> Flex {:p "5" :gap "2"}
             [button/HeaderBack]]
-           [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
+           [:> Box {:class (str "sticky top-app-header z-50 bg-gray-1 px-7 py-7 "
                                 (when (>= @scroll-pos 30)
                                   "border-b border-[--gray-a6]"))}
             [:> Flex {:justify "between"
