@@ -80,13 +80,18 @@ export default function PredefinedFields({
         // authenticate as nobody.
         const envKey = field.envKey || `envvar:${field.key.toUpperCase()}`
         const encodedValue = currentSecrets[envKey]
+        const staged = stagedSecrets[envKey]
         // Key presence is the existence signal — the gateway preserves
         // the key set when it strips inline values, so a present key
-        // means the credential exists on the server.
-        const isExisting = !forceNewState && envKey in currentSecrets
-        const isReference = !forceNewState && isSecretReference(encodedValue)
+        // means the credential exists on the server. A staged delete
+        // unsets it: the row would otherwise keep offering "Replace" for a
+        // secret this save is about to remove, and report a value as stored
+        // when none will be.
+        const stagedDelete = staged?.action === 'delete'
+        const isExisting = !forceNewState && !stagedDelete && envKey in currentSecrets
+        const isReference =
+          !forceNewState && !stagedDelete && isSecretReference(encodedValue)
         const referenceText = isReference ? decodeSecretValue(encodedValue) : ''
-        const staged = stagedSecrets[envKey]
         // Priority: explicit pick → detection from prefix → mode default.
         const encodedForDetection = staged ? staged.value : encodedValue || ''
         const detectedSource =

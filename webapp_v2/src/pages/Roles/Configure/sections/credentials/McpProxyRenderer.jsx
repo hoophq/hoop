@@ -11,7 +11,10 @@ import HttpHeaders from '@/pages/Roles/Configure/sections/credentials/shared/Htt
 import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 import ToggleSection from '@/pages/Roles/Configure/components/ToggleSection'
-import { encodeSecretValue } from '@/pages/Roles/Configure/utils/secretsCodec'
+import {
+  PLACEHOLDER_KEY_RE,
+  encodeSecretValue,
+} from '@/pages/Roles/Configure/utils/secretsCodec'
 import {
   AUTHORIZATION_KEY,
   DEFAULT_STATIC_HEADER,
@@ -165,9 +168,14 @@ export default function McpProxyRenderer({
   )
 
   // A staged HEADER_* write means the user is mid-edit on the credential; use
-  // its key so the field they are typing into does not jump.
+  // its key so the field they are typing into does not jump. Placeholder rows
+  // are not credentials: the headers editor keeps one blank row staged at all
+  // times, and adopting it renamed the token field "NEW_HEADER_1 value".
   const stagedCredentialKey = Object.keys(stagedSecrets).find(
-    (k) => k.startsWith(HEADER_PREFIX) && stagedSecrets[k].action !== 'delete',
+    (k) =>
+      k.startsWith(HEADER_PREFIX) &&
+      !PLACEHOLDER_KEY_RE.test(k) &&
+      stagedSecrets[k].action !== 'delete',
   )
   const persistedCredentialKey = credentialHeaderKey(secret)
   const catalogHeaderKey = entry ? headerKeyFor(staticHeaderFor(entry)) : null
@@ -179,7 +187,7 @@ export default function McpProxyRenderer({
   const credentialHeaderName = headerNameOf(credentialKey)
 
   const granted = Boolean(connection.mcp_oauth_granted)
-  const storedAuthMode = deriveAuthMode({ secret, granted })
+  const storedAuthMode = deriveAuthMode({ secret, granted, entry })
   const [authModeOverride, setAuthModeOverride] = useState(null)
   const authOptions = authModesFor(entry)
   const authMode =
@@ -513,7 +521,16 @@ export default function McpProxyRenderer({
                 is NOT always Authorization (context7 wants CONTEXT7_API_KEY,
                 google-maps wants X-Goog-Api-Key). The name is read off the
                 connection's own key so an existing token stays editable in
-                place instead of being retyped under a second header. */}
+                place instead of being retyped under a second header.
+
+                Required only when the admin picked this mode during THIS
+                session, i.e. is deliberately configuring a credential. The
+                create form marks it required unconditionally, which is right
+                there — nothing exists yet. Here the connection already exists
+                and works, so an unconditional `required` on a field the admin
+                never touched fails form validation on mount and blocks Save
+                for every unrelated edit: changing a tool policy would demand
+                re-pasting a secret the screen deliberately never shows. */}
             {authMode === 'static' && (
               <Stack gap="xs">
                 <PredefinedFields
@@ -523,7 +540,7 @@ export default function McpProxyRenderer({
                       key: credentialHeaderName,
                       envKey: credentialKey,
                       label: `${credentialHeaderName} value`,
-                      required: true,
+                      required: authModeOverride === 'static',
                       type: 'password',
                       placeholder: 'Paste the API key or token issued by the provider',
                     },

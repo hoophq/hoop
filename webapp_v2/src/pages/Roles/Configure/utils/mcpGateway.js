@@ -15,6 +15,8 @@
 // `envvar:NAME` rather than the lower-case credential names the CLJS create
 // form uses internally.
 
+import { PLACEHOLDER_KEY_RE } from '@/pages/Roles/Configure/utils/secretsCodec'
+
 export const TRANSPORTS = [
   { value: 'streamable-http', label: 'Streamable HTTP (remote)' },
   { value: 'sse', label: 'HTTP + SSE (legacy remote)' },
@@ -87,16 +89,24 @@ export function headerNameOf(key) {
 }
 
 /**
- * Every `envvar:HEADER_*` key on this connection.
+ * Every real `envvar:HEADER_*` key on this connection.
  *
  * Case is preserved exactly. The header name travels inside the key and
  * reaches the provider byte for byte (agent/controller/mcpproxy.go's
  * mcpBackendHeaders strips only the prefix), so context7's CONTEXT7_API_KEY
  * and google-maps' X-Goog-Api-Key must survive untouched — normalising either
  * one is an unauthenticated request, not a warning.
+ *
+ * Placeholder rows are excluded. The headers editor keeps one blank row
+ * visible at all times and stages it as `HEADER_NEW_HEADER_1`, which is UI
+ * scaffolding, not a header: buildSecretsPatch drops it before save. Counting
+ * it made an empty headers list masquerade as the connection's credential,
+ * relabelling the token field "NEW_HEADER_1 value".
  */
 export function headerKeys(secret) {
-  return Object.keys(secret || {}).filter((k) => k.startsWith(HEADER_PREFIX))
+  return Object.keys(secret || {}).filter(
+    (k) => k.startsWith(HEADER_PREFIX) && !PLACEHOLDER_KEY_RE.test(k),
+  )
 }
 
 /**
@@ -135,24 +145,37 @@ export function credentialHeaderKey(secret) {
  * MCP_AUTH=static and is indistinguishable from a pasted token — by design,
  * agent-side.
  *
- * `granted` closes that gap. It is the gateway reporting that a durable OAuth
- * grant backs this connection (Connection.mcp_oauth_granted), which only an
- * adopted login produces. Without it the form guesses "static" and offers to
- * replace a token when it should be offering to re-authorize.
+ * `granted` closes part of that gap: the gateway reporting a durable grant
+ * (Connection.mcp_oauth_granted) is proof a login was adopted. But a
+ * connection authorized before grants existed, or one whose login never
+ * attached, has a frozen token and no grant — so absence proves nothing.
+ *
+ * `entry` closes the rest. A catalog server that documents OAuth as its only
+ * mode cannot have been configured any other way, whatever MCP_AUTH says.
+ * Reading "static" there produced the contradiction this argument exists to
+ * prevent: the selector printing "OAuth login" above a required API-key box
+ * for a provider that issues no API keys, blocking save on a credential the
+ * admin cannot obtain.
  *
  * stdio backends authenticate through their child environment; MCP_AUTH is
  * meaningless there and the form renders no auth block at all.
  */
-export function deriveAuthMode({ secret, granted }) {
+export function deriveAuthMode({ secret, granted, entry }) {
+  const supported = new Set(authModesFor(entry).map((m) => m.value))
+  const pick = (...candidates) => {
+    const match = candidates.find((c) => c && supported.has(c))
+    // Fall back to what the server documents, never to a mode it rejects.
+    return match || authModesFor(entry)[0]?.value || 'static'
+  }
   const stored = decodePlain(secret?.[ENV.auth]).trim()
-  if (stored === 'passthrough') return 'passthrough'
-  if (granted) return 'oauth'
-  if (stored === 'none') return 'none'
+  if (stored === 'passthrough') return pick('passthrough')
+  if (granted) return pick('oauth')
+  if (stored === 'none') return pick('none')
   // An older connection saved before MCP_AUTH was written at all still has a
   // credential header; treat the header as the answer rather than defaulting
   // a configured connection to "no authentication".
-  if (!stored) return credentialHeaderKey(secret) ? 'static' : 'none'
-  return 'static'
+  if (!stored) return pick(credentialHeaderKey(secret) ? 'static' : 'none')
+  return pick('static')
 }
 
 /**
