@@ -74,11 +74,10 @@
     :icon [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
                  :alt ""
                  :class "w-4 h-4"}]
-    ;; Light blue rather than the solid fill the other tiles use: this is the
-    ;; only icon that is a brand logo with its own colours, and a saturated
-    ;; background would swallow it. icon-jira.svg carries its own fills — the
-    ;; current-color variant exists but cannot be tinted through an <img>.
-    :tile-class "bg-[--blue-3] border border-[--blue-6]"
+    ;; White rather than the solid fill the other tiles use: this is the only
+    ;; icon that is a brand logo with its own colours (icon-jira.svg carries its
+    ;; own fills), so a coloured tile fights with it.
+    :tile-class "bg-white border border-[--gray-4]"
     :active? (fn [connection] (feature-on? connection :jira_templates))}
 
    {:id :live-data-masking
