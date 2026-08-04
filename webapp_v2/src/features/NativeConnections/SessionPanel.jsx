@@ -14,6 +14,10 @@ export function SessionPanel({ credentials, onDisconnect }) {
   const rule = pickCredentialRenderer(credentials.connection_subtype)
   const [tab, setTab] = useState(rule.tabs?.[0]?.value ?? 'credentials')
 
+  // Capitalised aliases so JSX treats them as components rather than DOM tags.
+  const SoleRenderer = rule.tabs?.length === 1 ? rule.tabs[0].render : null
+  const BareRenderer = rule.tabs ? null : rule.render
+
   const subtype = normalizeSubtype(credentials.connection_subtype)
   const rendererProps = {
     credentials: credentials.connection_credentials ?? {},
@@ -35,10 +39,12 @@ export function SessionPanel({ credentials, onDisconnect }) {
         </Text>
       )}
 
+      {/* Renderers are mounted as elements, not invoked as functions, so a
+          renderer that later needs a hook does not break the rules of hooks. */}
       {rule.tabs ? (
         rule.tabs.length === 1 ? (
           // A single tab is just a label — render the body directly.
-          rule.tabs[0].render(rendererProps)
+          <SoleRenderer {...rendererProps} />
         ) : (
           <Tabs value={tab} onChange={setTab}>
             <Tabs.List aria-label="Connection methods">
@@ -48,15 +54,18 @@ export function SessionPanel({ credentials, onDisconnect }) {
                 </Tabs.Tab>
               ))}
             </Tabs.List>
-            {rule.tabs.map((t) => (
-              <Tabs.Panel key={t.value} value={t.value} pt="md">
-                {t.render(rendererProps)}
-              </Tabs.Panel>
-            ))}
+            {rule.tabs.map((t) => {
+              const TabRenderer = t.render
+              return (
+                <Tabs.Panel key={t.value} value={t.value} pt="md">
+                  <TabRenderer {...rendererProps} />
+                </Tabs.Panel>
+              )
+            })}
           </Tabs>
         )
       ) : (
-        rule.render(rendererProps)
+        <BareRenderer {...rendererProps} />
       )}
 
       {/* Revoke (invalidate the token outright) exists on the store but is

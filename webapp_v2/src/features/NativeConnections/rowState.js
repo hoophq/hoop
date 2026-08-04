@@ -29,7 +29,7 @@ export function deriveRowState(role, active, flowStatus) {
 
   // An admin can disable connect while a credential is still live. The row has
   // to survive that, otherwise the only way to disconnect disappears.
-  if (hasSession && role.accessModeConnect === 'disabled') return ROW_STATE.ACCESS_REVOKED
+  if (hasSession && role.accessModeConnect !== 'enabled') return ROW_STATE.ACCESS_REVOKED
 
   if (hasSession) {
     return active.expire_at ? ROW_STATE.ACTIVE_BOUNDED : ROW_STATE.ACTIVE_PERSISTENT

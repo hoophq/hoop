@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Group, Image, Stack, Text } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import Accordion from '@/components/Accordion'
@@ -8,7 +8,7 @@ import { RoleRowStatus } from './RoleRowStatus'
 import { SessionPanel } from './SessionPanel'
 import { RequestAccessPanel } from './RequestAccessPanel'
 import { DisconnectConfirmModal } from './DisconnectConfirmModal'
-import { PendingReviewPanel, RequestingPanel, UnavailablePanel } from './FlowPanels'
+import { IdlePanel, PendingReviewPanel, RequestingPanel, UnavailablePanel } from './FlowPanels'
 import { deriveRowState } from './rowState'
 import classes from './NativeConnections.module.css'
 
@@ -19,6 +19,7 @@ function RowBody({ role }) {
   const review = useNativeAccessStore((s) => s.reviewByName[role.name])
   const error = useNativeAccessStore((s) => s.errorByName[role.name])
   const disconnect = useNativeAccessStore((s) => s.disconnect)
+  const startFlow = useNativeAccessStore((s) => s.startFlow)
 
   const [confirmOpened, { open: openConfirm, close: closeConfirm }] = useDisclosure(false)
   const [disconnecting, setDisconnecting] = useState(false)
@@ -39,8 +40,12 @@ function RowBody({ role }) {
     body = <RequestAccessPanel connectionName={role.name} connection={connection} />
   } else if (status === FLOW_STATUS.READY && credentials) {
     body = <SessionPanel credentials={credentials} onDisconnect={openConfirm} />
-  } else {
+  } else if (status === FLOW_STATUS.CHECKING || status === FLOW_STATUS.REQUESTING) {
     body = <RequestingPanel connectionName={role.name} />
+  } else {
+    // No status: either the flow has not started yet, or it was torn down by a
+    // disconnect / expiry while the row stayed open.
+    body = <IdlePanel onConnect={() => startFlow(role.name)} />
   }
 
   return (
@@ -63,11 +68,22 @@ export function RoleRow({ role, active, expanded }) {
   const startFlow = useNativeAccessStore((s) => s.startFlow)
   const state = deriveRowState(role, active, flowStatus)
 
-  // Expanding a row is what starts the flow. Guarded on flowStatus so
-  // collapsing and re-expanding does not re-issue a credential.
+  // Expanding a row starts the flow — exactly once per expansion.
+  //
+  // The guard is a ref rather than `!flowStatus`: disconnecting (and expiring)
+  // deletes the status entry, so a status-derived guard would see "no flow yet"
+  // on a still-expanded row and immediately issue a fresh credential, undoing
+  // the disconnect the user just confirmed.
+  const startedRef = useRef(false)
   useEffect(() => {
-    if (expanded && !flowStatus) startFlow(role.name)
-  }, [expanded, flowStatus, role.name, startFlow])
+    if (!expanded) {
+      startedRef.current = false
+      return
+    }
+    if (startedRef.current) return
+    startedRef.current = true
+    startFlow(role.name)
+  }, [expanded, role.name, startFlow])
 
   const iconSrc = getIcon({ subtype: role.subtype, type: role.type })
 

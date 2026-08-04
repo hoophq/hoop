@@ -69,7 +69,7 @@ export default function NativeConnectionsDrawer() {
     loadActive()
   }, [opened, load, loadActive])
 
-  const { visible, total, shown, truncated } = useMemo(() => {
+  const { visible, total, matched, shown, truncated } = useMemo(() => {
     // A role whose native access was switched off is kept only while it still
     // has a live credential, so the user can still disconnect it.
     const listable = roles.filter(
@@ -79,7 +79,11 @@ export default function NativeConnectionsDrawer() {
     const capped = filtered.slice(0, MAX_RENDERED_ROWS)
     return {
       visible: capped,
+      // `total` is every listable role; `matched` is how many the query hit.
+      // The count line needs both — with a search applied it has to report
+      // against the matches, not against the whole list.
       total: listable.length,
+      matched: filtered.length,
       shown: capped.length,
       truncated: filtered.length > capped.length,
     }
@@ -109,6 +113,7 @@ export default function NativeConnectionsDrawer() {
           onQueryChange={setQuery}
           onClearQuery={clearQuery}
           total={total}
+          matched={matched}
           shown={shown}
           truncated={truncated}
         />

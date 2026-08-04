@@ -13,6 +13,26 @@ export function UnavailablePanel({ message }) {
   )
 }
 
+/**
+ * Reached after a disconnect or an expiry while the row is still open.
+ *
+ * Reconnecting is explicit rather than automatic: the row stays expanded, so
+ * anything that fired the flow off a "no status yet" condition would silently
+ * undo the disconnect the user just confirmed.
+ */
+export function IdlePanel({ onConnect }) {
+  return (
+    <Stack gap="sm" align="flex-start">
+      <Text fz="sm" c="dimmed">
+        No active session for this role.
+      </Text>
+      <Button size="xs" onClick={onConnect}>
+        Connect
+      </Button>
+    </Stack>
+  )
+}
+
 /** Credential request in flight. */
 export function RequestingPanel({ connectionName }) {
   return (

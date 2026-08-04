@@ -101,12 +101,16 @@ export const useNativeAccessStore = create((set, get) => ({
         const { activeByName } = get()
         const expired = Object.values(activeByName).filter((item) => !isSessionValid(item))
         if (!expired.length) return
-        expired.forEach((item) => {
-          get().clearSession(item.connection_name)
-          showSnackbar({
-            level: 'info',
-            text: 'Native client access session has expired.',
-          })
+        expired.forEach((item) => get().clearSession(item.connection_name))
+        // One toast per sweep, not per session: after the machine wakes from
+        // sleep the interval catches up and several sessions can lapse in the
+        // same tick.
+        showSnackbar({
+          level: 'info',
+          text:
+            expired.length === 1
+              ? 'Native client access session has expired.'
+              : `${expired.length} native client access sessions have expired.`,
         })
       })
     } else if (!hasBounded && unsubscribeTick) {

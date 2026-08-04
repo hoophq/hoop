@@ -3,12 +3,16 @@ import { CircleX, Search } from 'lucide-react'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
 
-export function SearchBar({ query, onQueryChange, onClearQuery, total, shown, truncated }) {
+export function SearchBar({ query, onQueryChange, onClearQuery, total, matched, shown, truncated }) {
   const searching = query.trim().length > 0
 
   let countLabel
-  if (searching) {
-    countLabel = `Showing ${shown} of ${total} results.`
+  if (searching && truncated) {
+    // Both the render cap and the query are biting — report against the
+    // matches, otherwise the number reads as a share of the whole list.
+    countLabel = `Showing ${shown} of ${matched} results — refine your search`
+  } else if (searching) {
+    countLabel = `Showing ${matched} of ${total} results.`
   } else if (truncated) {
     countLabel = `Showing ${shown} of ${total} Resource Roles — refine your search`
   } else {
