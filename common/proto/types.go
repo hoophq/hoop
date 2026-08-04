@@ -316,9 +316,21 @@ func IsInList(item string, items []string) bool {
 func ToConnectionType(connectionType, subtype string) ConnectionType {
 	switch connectionType {
 	case "httpproxy":
+		// Protocol-aware MCP (ADR-0004). The webUI files every MCP connection
+		// under the httpproxy parent (that is where the legacy "mcp" subtype
+		// lives), so the subtype must be inspected before defaulting to the
+		// byte relay — otherwise an mcpproxy connection silently resolves to
+		// ConnectionTypeHttpProxy and never reaches the agent's MCP adapter.
+		if subtype == "mcpproxy" {
+			return ConnectionType(ConnectionTypeMcpProxy)
+		}
 		return ConnectionType(ConnectionTypeHttpProxy)
 	case "application":
 		switch subtype {
+		// Protocol-aware MCP (ADR-0004), reachable under either parent type
+		// so the UI can file it beside the existing "mcp" subtype.
+		case "mcpproxy":
+			return ConnectionType(ConnectionTypeMcpProxy)
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
 		case "ssh", "ssh-local", "git", "github":
@@ -337,6 +349,10 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		}
 	case "custom":
 		switch subtype {
+		// Protocol-aware MCP (ADR-0004). Distinct from the "mcp" subtype,
+		// which stays an httpproxy alias until the new path proves out.
+		case "mcpproxy":
+			return ConnectionType(ConnectionTypeMcpProxy)
 		case "dynamodb":
 			return ConnectionType(ConnectionTypeDynamoDB)
 		case "cloudwatch":

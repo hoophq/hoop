@@ -376,6 +376,10 @@
      "ssh" [ssh-credentials-fields connection_credentials]
      "claude-code" [custom-views/claude-code-credentials-fields native-client-access-data]
      "mcp" [mcp-credentials-fields connection_credentials]
+     ;; The protocol-aware MCP type (ADR-0004). Without this case it fell
+     ;; through to the postgres default, showing empty host/username/password
+     ;; fields that mean nothing to an MCP client.
+     "mcpproxy" [custom-views/mcp-proxy-credentials-fields native-client-access-data]
      "httpproxy" [http-proxy-credentials-fields connection_credentials]
      "kubernetes" [http-proxy-credentials-fields connection_credentials]
      "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
@@ -578,6 +582,7 @@
         "kubernetes" "Kubernetes"
         "httpproxy" "HTTP Proxy"
         "mcp" "MCP"
+        "mcpproxy" "MCP Gateway"
         (formatters/title-case
          (:connection_subtype native-client-access-data)))]]
     (when-let [expire-at (:expire_at native-client-access-data)]
