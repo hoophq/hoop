@@ -295,6 +295,7 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 
 func (a *Agent) Run() error {
 	a.client.StartKeepAlive()
+	go a.runLogShipper()
 
 	for {
 		pkt, err := a.client.Recv()

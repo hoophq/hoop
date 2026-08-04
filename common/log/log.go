@@ -121,7 +121,10 @@ func NewDefaultLogger(additionalWriterLogger io.Writer) *zap.Logger {
 		encoder = zapcore.NewJSONEncoder(encoderConfig)
 	}
 
-	core := zapcore.NewCore(encoder, stdoutSink, logLevel)
+	core := zapcore.NewTee(
+		zapcore.NewCore(encoder, stdoutSink, logLevel),
+		newTailCore(logLevel),
+	)
 	if additionalWriterLogger != nil {
 		core = zapcore.NewTee(
 			core,

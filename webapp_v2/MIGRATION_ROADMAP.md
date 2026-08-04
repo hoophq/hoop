@@ -243,7 +243,7 @@ wave can run in parallel. Shared CLJS infra migrates with its *first* consumer.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B1.1 Dashboard | `/dashboard` (admin-only): 3 charts + summary (`dashboard/` ~600 LOC, `events/reports.cljs`). Use `@mantine/charts` (recharts-based) — don't hand-roll recharts. | M | Priority #1 page; establishes chart patterns |
+| ✅ B1.1 Dashboard | **Done — EVL-119.** `/dashboard` migrated, CLJS `dashboard/` + `components/charts.cljs` + the dashboard half of `events/reports.cljs` deleted. Chart pattern established: `@mantine/charts` 8.3.18 + recharts 2.15.4, `components/{BarChart,DonutChart,SegmentedControl}`, `CHART_SERIES_COLORS` in `theme.js`. The route is lazily loaded so recharts stays out of the main chunk. | M | Priority #1 page; establishes chart patterns |
 | B1.2 Small-pages sweep | `/upgrade-plan` (60 LOC), `/idplogin`, `/logout`, `/slack/user/new/:id`, `/slack/organization/new`, `/` + `""` → redirect to `/onboarding` | S | Removes 6 routes from the catch-all cheaply; exercises the auth-redirect pattern in React |
 | B1.3 Shared ConfirmDialog | Build a shared ConfirmDialog component (Mantine Modal wrapper) + adopt in 1–2 existing pages | S | Every CRUD wave needs it; ends ad-hoc delete confirmations |
 

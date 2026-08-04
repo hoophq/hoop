@@ -27,7 +27,6 @@
    [webapp.connections.views.setup.events.db-events]
    [webapp.connections.views.setup.events.effects]
    [webapp.connections.views.setup.events.subs]
-   [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
    [webapp.provisioning.main :as provisioning]
    [webapp.resources.setup.main :as resource-setup]
@@ -448,13 +447,6 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [add-role/main resource-id]]]))
-
-(defmethod routes/panels :dashboard-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "Dashboard" {:class "mb-6"}]
-                               [dashboard/main]]]]])
 
 (defmethod routes/panels :guardrails-panel []
   [layout :application-hoop
