@@ -12026,6 +12026,15 @@ const docTemplate = `{
                     "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
                     "type": "string"
                 },
+                "effective_features": {
+                    "description": "EffectiveFeatures reports which features will actually act on this connection,\nresolving attribute-based associations as well as direct ones.\n\nNull means \"unknown\", never \"nothing is active\" — the two must not be confused by\na caller deciding whether to warn a user. It is null on the list endpoint, which\ndoes not resolve it, and on the detail endpoint when resolution failed (the\ngateway logs the failure).\n\nDeliberately not omitempty: an absent key and an explicit null are different\ncontracts, and the one documented here is null.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ConnectionEffectiveFeatures"
+                        }
+                    ],
+                    "readOnly": true
+                },
                 "force_approve_groups": {
                     "description": "Groups that can force approve reviews for this connection",
                     "type": "array",
@@ -12195,6 +12204,26 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionAccessRequestFeatures": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command is true when an access request rule of type \"command\" resolves.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "jit": {
+                    "description": "Jit is true when an access request rule of type \"jit\" resolves. The duration it\nenforces, when any, is reported by the connection's jit_access_duration_sec.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "legacy_reviewers": {
+                    "description": "LegacyReviewers is true when the pre-rules review plugin has reviewer groups\nconfigured. It still applies on top of both access types.",
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
         "openapi.ConnectionColumn": {
             "type": "object",
             "properties": {
@@ -12285,6 +12314,44 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "openapi.ConnectionEffectiveFeatures": {
+            "type": "object",
+            "properties": {
+                "access_request": {
+                    "description": "AccessRequest reports approval coverage, split by access type.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ConnectionAccessRequestFeatures"
+                        }
+                    ]
+                },
+                "ai_session_analyzer": {
+                    "description": "AISessionAnalyzer is true when an analyzer rule resolves for this connection.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "data_masking": {
+                    "description": "DataMasking is true when any data masking rule resolves for this connection AND\nthe gateway has an active masking provider. Note that redact_enabled on the\nconnection is a legacy display field that no runtime code reads.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "guardrails": {
+                    "description": "Guardrails is true when any guardrail rule resolves for this connection.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "jira_templates": {
+                    "description": "JiraTemplates is true when the connection has a Jira issue template. Projection\nof jira_issue_template_id — no attribute-based path exists for it.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "mandatory_metadata": {
+                    "description": "MandatoryMetadata is true when the connection requires metadata fields before a\nsession starts. Projection of mandatory_metadata_fields — no attribute-based path\nexists for it.",
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },
