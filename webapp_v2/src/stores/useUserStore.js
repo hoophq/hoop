@@ -102,6 +102,10 @@ export const useUserStore = create((set, get) => ({
       api_base: 'https://api-iam.intercom.io',
       app_id: INTERCOM_APP_ID,
       hide_default_launcher: true,
+      // The "Contact support" item in the header user menu carries this id.
+      // Without the selector the item is inert on React-only routes, where the
+      // CLJS boot (webapp/src/webapp/events.cljs) never runs to register it.
+      custom_launcher_selector: '#intercom-support-trigger',
     }
 
     if (window.location.hostname !== 'localhost' && user) {

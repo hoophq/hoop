@@ -1,0 +1,45 @@
+/* The search control is a <button>, so it needs the text alignment an input
+   would get for free. */
+.searchInput {
+  text-align: start;
+}
+
+.userButton {
+  display: flex;
+  align-items: center;
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-text);
+}
+
+/* Neutral Alpha tint — the same literal Sidebar.module.css uses for hover and
+   active states. It has no Mantine variable. */
+.userButton:hover {
+  background-color: rgba(0, 0, 51, 0.06);
+}
+
+.userButton:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-5);
+  outline-offset: 1px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-gray-2);
+  color: var(--mantine-color-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.menuFooter {
+  color: var(--mantine-color-placeholder);
+  padding: 2px var(--mantine-spacing-md) var(--mantine-spacing-sm);
+}

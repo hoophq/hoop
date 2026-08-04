@@ -1,17 +1,21 @@
-import { AppShell, Group, Burger, Drawer } from '@mantine/core';
+import { AppShell, Burger, Drawer } from '@mantine/core';
 import { useEffect } from 'react';
-import { useMediaQuery } from '@mantine/hooks';
 import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar';
+import AppHeader from './Header';
+import { SkipLink } from './SkipLink';
 
+const HEADER_HEIGHT = 56;
 const SIDEBAR_WIDTH = 310;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
 const SIDEBAR_BG = 'var(--mantine-color-gray-0)';
 const SIDEBAR_BORDER = 'var(--mantine-color-gray-2)';
+// Sampled from the Figma render: the header sits on the body colour (#fcfcfd),
+// a shade lighter than the sidebar (gray-0 #f0f0f3), with a 1px gray-2 rule.
+const HEADER_BG = 'var(--mantine-color-body)';
 
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
-  const isDesktop = useMediaQuery('(min-width: 769px)');
 
   // Close mobile drawer when resizing to desktop
   useEffect(() => {
@@ -23,8 +27,15 @@ function Layout({ children }) {
 
   return (
     <>
+      {/* First node in the fragment, so it is the first tab stop. */}
+      <SkipLink />
+
+      {/* layout="alt" gives the Figma geometry: the sidebar spans the full
+          viewport height and the header starts to the right of it, rather than
+          the header spanning the full width above both. */}
       <AppShell
-        header={{ height: 56, collapsed: !!isDesktop }}
+        layout="alt"
+        header={{ height: HEADER_HEIGHT }}
         navbar={{
           width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH,
           breakpoint: 'sm',
@@ -32,19 +43,21 @@ function Layout({ children }) {
         }}
         styles={{
           navbar: { backgroundColor: SIDEBAR_BG, borderRight: `1px solid ${SIDEBAR_BORDER}`, overflow: 'hidden' },
-          header: { backgroundColor: SIDEBAR_BG, borderBottom: `1px solid ${SIDEBAR_BORDER}` },
+          header: { backgroundColor: HEADER_BG, borderBottom: `1px solid ${SIDEBAR_BORDER}` },
         }}
       >
-        {/* Mobile-only sticky top bar (lg:hidden equivalent) */}
         <AppShell.Header>
-          <Group h="100%" px="md">
-            <Burger
-              opened={sidebarOpen}
-              onClick={toggleSidebar}
-              size="sm"
-              aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}
-            />
-          </Group>
+          <AppHeader
+            burger={
+              <Burger
+                hiddenFrom="sm"
+                opened={sidebarOpen}
+                onClick={toggleSidebar}
+                size="sm"
+                aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}
+              />
+            }
+          />
         </AppShell.Header>
 
         {/* Desktop sidebar — always visible above breakpoint */}
@@ -68,7 +81,7 @@ function Layout({ children }) {
         styles={{ content: { backgroundColor: SIDEBAR_BG }, body: { padding: 0, height: '100%' } }}
         transitionProps={{ duration: 250, timingFunction: 'ease' }}
       >
-        <Sidebar mobile />
+        <Sidebar />
       </Drawer>
     </>
   );

@@ -2,10 +2,7 @@ import { Stack, Box, Text, ScrollArea } from '@mantine/core'
 import { ChevronsLeft } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
-import { useAuthStore } from '@/stores/useAuthStore'
-import { useNavigate } from 'react-router-dom'
 import { NavItem } from './NavItem'
-import { ProfileDisclosure } from './ProfileDisclosure'
 import { ConfigStatus } from './ConfigStatus'
 import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
 import classes from './Sidebar.module.css'
@@ -18,18 +15,11 @@ function SectionLabel({ label, id }) {
   )
 }
 
-export function SidebarExpanded({ skipLink, navKey }) {
-  const navigate = useNavigate()
+export function SidebarExpanded({ navKey }) {
   const { toggleSidebarCollapsed } = useUIStore()
-  const { user, isAdmin, isSelfHosted, gatewayVersion } = useUserStore()
-  const { logout } = useAuthStore()
+  const { isAdmin, isSelfHosted } = useUserStore()
 
   const navItemProps = { isAdmin, isSelfHosted }
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
 
   return (
     <Stack
@@ -39,8 +29,6 @@ export function SidebarExpanded({ skipLink, navKey }) {
       h="100%"
       style={{ boxSizing: 'border-box', overflow: 'hidden' }}
     >
-      {skipLink}
-
       <Box mb="xl" mt="xl" className={classes.logoExpanded}>
         <img
           src="/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png"
@@ -101,9 +89,6 @@ export function SidebarExpanded({ skipLink, navKey }) {
               </Stack>
             </Box>
           )}
-          <Box pt="lg" pb="sm">
-            <ProfileDisclosure user={user} onLogout={handleLogout} gatewayVersion={gatewayVersion} />
-          </Box>
         </Box>
       </ScrollArea>
 

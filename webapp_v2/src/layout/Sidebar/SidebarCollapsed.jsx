@@ -1,15 +1,15 @@
-import { Stack, Box, Text, Tooltip, ScrollArea, Group } from '@mantine/core'
+import { Stack, Box, Text, Tooltip, ScrollArea } from '@mantine/core'
 import { ChevronsRight } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { IconBtn } from './IconBtn'
-import { getUserInitials, shouldHide } from './helpers'
+import { shouldHide } from './helpers'
 import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
 import classes from './Sidebar.module.css'
 
-export function SidebarCollapsed({ skipLink }) {
+export function SidebarCollapsed() {
   const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
-  const { user, isAdmin, isSelfHosted } = useUserStore()
+  const { isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
@@ -21,8 +21,6 @@ export function SidebarCollapsed({ skipLink }) {
       align="center"
       className={classes.collapsedNav}
     >
-      {skipLink}
-
       <Box mb="xl" mt="xl" className={classes.logoCollapsed}>
         <img
           src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
@@ -85,29 +83,6 @@ export function SidebarCollapsed({ skipLink }) {
           </Box>
         )}
 
-        <Group justify="center" mt="xl" pb="sm">
-          <Tooltip label={user?.name || user?.email || 'Profile'} position="right" withArrow>
-            <Box
-              role="button"
-              tabIndex={0}
-              aria-label="Open user menu"
-              className={`${classes.avatar} ${classes.avatarClickable}`}
-              onClick={() => {
-                setPendingOpenSection('__profile__')
-                toggleSidebarCollapsed()
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setPendingOpenSection('__profile__')
-                  toggleSidebarCollapsed()
-                }
-              }}
-            >
-              {getUserInitials(user)}
-            </Box>
-          </Tooltip>
-        </Group>
       </ScrollArea>
 
       <div className={classes.collapsedFooter}>
