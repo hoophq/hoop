@@ -1,0 +1,27 @@
+/* Port of Tailwind's `animate-pulse`, which v1 applied to the Live badge. */
+@keyframes hoopLivePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.badge {
+  animation: hoopLivePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge {
+    animation: none;
+  }
+}
+
+.dot {
+  width: var(--mantine-spacing-sm);
+  height: var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-xl);
+  background-color: var(--mantine-color-green-9);
+}

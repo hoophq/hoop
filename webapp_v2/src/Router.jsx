@@ -16,6 +16,8 @@ import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import ConfigureRolePage from '@/pages/Roles/Configure'
+import Sessions from '@/pages/Sessions'
+import SessionsFiltered from '@/pages/Sessions/Filtered'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -126,6 +128,34 @@ function Router() {
             <Layout>
               <PageLayout>
                 <ConfigureRolePage />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Sessions — migrated from ClojureScript.
+          `/sessions/:id` deliberately has NO route: it falls through to the
+          catch-all and renders the CLJS dedicated page until EVL-132. */}
+      <Route
+        path="/sessions"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <Sessions />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/sessions/filtered"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SessionsFiltered />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
