@@ -1,10 +1,25 @@
 # CLJS → React Migration Roadmap
 
-Status of record for finishing the `webapp/` (ClojureScript) → `webapp_v2/` (React)
+The plan for finishing the `webapp/` (ClojureScript) → `webapp_v2/` (React)
 migration. Produced from a full audit of both apps (routes, panels, dead code,
 navigation, global infra parity) on 2026-07-27. `CONTEXT_MIGRATION.md` explains the
 shell architecture; this file answers "what's left, in what order, and what can be
 deleted".
+
+## Tracked in Linear
+
+Live status lives in the **[CLJS → React Migration project](https://linear.app/hoophq/project/cljs-react-migration-webapp-v2-a3134fa1d0db)**. Every item below has a ticket, grouped into milestones that mirror the tracks and waves here, with dependencies wired so the board shows what is claimable right now.
+
+| Surface | Owns |
+|---|---|
+| The Linear project | What is claimable, who owns it, current status, and the **verified scope** of each item |
+| This file | *Why* the order is what it is — architectural reasoning, ordering constraints, the endgame plan |
+
+**Where a ticket's scope disagrees with a row below, the ticket wins.** The rows date from the 2026-07-27 audit; every near-term ticket was re-verified against the tree on 2026-07-31 and several rows turned out wrong — B3.7 is 727 LOC and not ~324 (the count omitted the whole `views/` subtree), B2.2 is *not* independent (no sidebar or palette entry — it is reachable only from Sessions surfaces), B2.1 owns ~150 of `events/audit.cljs`'s 786 LOC rather than all of it, and B1.3 has nine adoption sites rather than two.
+
+Those corrections live in the tickets deliberately. Copying them back here would give every fact two homes and start the drift over again — the problem EVL-115 removed from these docs in the first place.
+
+New work gets a ticket in the project **before** the branch. PR #1650 sat unticketed for two days and was invisible on the board the whole time.
 
 **Working model:** three parallel tracks (Cleanup, Migration, Parity) plus a Phase 0
 of quick wins and an Endgame (bundle removal). One Linear ticket = one worktree =
@@ -243,7 +258,7 @@ wave can run in parallel. Shared CLJS infra migrates with its *first* consumer.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B1.1 Dashboard | `/dashboard` (admin-only): 3 charts + summary (`dashboard/` ~600 LOC, `events/reports.cljs`). Use `@mantine/charts` (recharts-based) — don't hand-roll recharts. | M | Priority #1 page; establishes chart patterns |
+| ✅ B1.1 Dashboard | **Done — EVL-119.** `/dashboard` migrated, CLJS `dashboard/` + `components/charts.cljs` + the dashboard half of `events/reports.cljs` deleted. Chart pattern established: `@mantine/charts` 8.3.18 + recharts 2.15.4, `components/{BarChart,DonutChart,SegmentedControl}`, `CHART_SERIES_COLORS` in `theme.js`. The route is lazily loaded so recharts stays out of the main chunk. | M | Priority #1 page; establishes chart patterns |
 | B1.2 Small-pages sweep | `/upgrade-plan` (60 LOC), `/idplogin`, `/logout`, `/slack/user/new/:id`, `/slack/organization/new`, `/` + `""` → redirect to `/onboarding` | S | Removes 6 routes from the catch-all cheaply; exercises the auth-redirect pattern in React |
 | B1.3 Shared ConfirmDialog | Build a shared ConfirmDialog component (Mantine Modal wrapper) + adopt in 1–2 existing pages | S | Every CRUD wave needs it; ends ad-hoc delete confirmations |
 
@@ -262,7 +277,7 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 |---|---|---|---|
 | ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS files left in place, shadowed by React | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
 | B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Template seeding to copy from `pages/Guardrails/templates.js` (B3.1) |
-| ~~B3.3 Access Control~~ | ✅ **Done** — `/features/access-control(+new,edit)` in `pages/Features/AccessControl/`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`); the edit route keeps the legacy `?group=<name>` shape. CLJS files left in place, shadowed by React | M | No OSS count limit on this feature — license gating only |
+| ~~B3.3 Access Control~~ | ✅ **Done — EVL-149.** `/features/access-control(+new,edit)` in `pages/Features/AccessControl/`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`); the edit route keeps the legacy `?group=<name>` shape. CLJS files left in place, shadowed by React | M | No OSS count limit on this feature — license gating only |
 | B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
 | B3.5 Runbooks Setup | `/features/runbooks/setup` + rules new/edit (git repo config + path rules) | M | Independent of the runbooks *runner* (Wave 5) |
 | B3.6 Machine Identities | **Decision gate — see below** | S or M | |

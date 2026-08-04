@@ -12,6 +12,7 @@
    [webapp.connections.views.test-connection-modal :as test-connection-modal]
    [webapp.resources.configure-role.credentials-tab :as credentials-tab]
    [webapp.resources.configure-role.details-tab :as details-tab]
+   [webapp.resources.configure-role.mcpproxy-edit :as mcpproxy-edit]
    [webapp.resources.configure-role.native-access-tab :as native-access-tab]
    [webapp.resources.configure-role.terminal-access-tab :as terminal-access-tab]
    [webapp.resources.federation.events]
@@ -186,6 +187,15 @@
                            (:data @guardrails-list)
                            (:data @jira-templates-list))]
             (rf/dispatch [:connection-setup/initialize-state processed])
+            ;; The MCP Gateway credentials tab renders the CREATE form, which
+            ;; reads a role out of [:resource-setup :roles N] rather than
+            ;; [:connection-setup]. Seat this connection there so both flows
+            ;; keep sharing one form and one payload builder; process-payload
+            ;; reads the same role back on save.
+            (when (= (:subtype conn-data) "mcpproxy")
+              (rf/dispatch [:resource-setup->set-mcpproxy-edit-role
+                            mcpproxy-edit/edit-role-index
+                            (helpers/mcpproxy-edit-role conn-data)]))
             (when is-bigquery?
               (rf/dispatch [:federation/load connection-name]))
             (reset! initialized? true)))
@@ -250,6 +260,11 @@
 
     (finally
       (rf/dispatch [:connection-setup/initialize-state nil])
+      ;; The role the MCP Gateway tab was editing is edit-screen scratch
+      ;; state. Left behind, the next create wizard opens on this
+      ;; connection's credentials.
+      (rf/dispatch [:resource-setup->clear-mcpproxy-edit-role
+                    mcpproxy-edit/edit-role-index])
       (rf/dispatch [:resources/clear-attributes])
       (rf/dispatch [:connections->clear-connection-details])
       (rf/dispatch [:federation/clear]))))

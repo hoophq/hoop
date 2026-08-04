@@ -4975,6 +4975,35 @@ const docTemplate = `{
                 }
             }
         },
+        "/mcp-catalog": {
+            "get": {
+                "description": "List the built-in catalog of publicly hosted remote MCP servers. Used by the connection create page to pre-fill an ` + "`" + `mcpproxy` + "`" + ` connection's endpoint, transport and auth mode from a picker.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List MCP Server Catalog",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.MCPCatalogEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/mcp-oauth/authorize": {
             "post": {
                 "description": "Discovers the MCP server's authorization server (RFC 9728 / RFC 8414), optionally performs Dynamic Client Registration (RFC 7591) when no client credentials are supplied, and returns the authorization URL for the admin's browser to complete an Authorization Code + PKCE login. The browser is redirected there; the upstream provider redirects back to the gateway callback, which exchanges the code for a token. Used by the connection create page.",
@@ -8203,6 +8232,77 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/server-logs": {
+            "get": {
+                "description": "Tail of recent in-memory runtime logs from the gateway process and connected agents",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Logs"
+                ],
+                "summary": "List Server Logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max number of most recent entries; defaults to and is capped at the in-memory buffer capacity",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ServerLogEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/server-logs/stream": {
+            "get": {
+                "description": "Streams gateway and agent runtime logs in real-time via SSE. Sends a backlog of recent entries on connect, then each new entry as it is captured.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Server Logs"
+                ],
+                "summary": "Stream Server Logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of buffered entries to replay on connect; defaults to and is capped at the in-memory buffer capacity (300), 0 disables",
+                        "name": "backlog",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "500": {
@@ -11992,6 +12092,23 @@ const docTemplate = `{
                         "tier"
                     ]
                 },
+                "mcp_oauth_flow_id": {
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype.\n\nThe login runs before the connection exists, so the token it obtained is\nkeyed by the flow rather than by connection. Passing the flow id here at\nsave time joins the two: the gateway stores the refresh token against\nthis connection and renews the access token at every session open,\ninstead of relying on the frozen HEADER_AUTHORIZATION value alone, which\nstops working when the provider's token expires.\n\nWrite-only is enforced by ToOpenApi, which never populates this field —\nnot by a struct tag. swag reads ` + "`" + `readonly` + "`" + ` and has no ` + "`" + `writeonly` + "`" + `\ncounterpart (field_parser.go only consults readOnlyTag), so the tag that\nused to sit here was inert and the published spec advertised the field\nas readable. The omitempty keeps it out of every response body.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                },
+                "mcp_oauth_granted": {
+                    "description": "MCPOAuthGranted reports that a durable MCP OAuth grant exists for this\nconnection, so its credential is renewed from a refresh token at every\nsession open rather than frozen at the value it was authorized with.\n\nThe edit screen cannot infer this from the env vars. A brokered OAuth\nlogin and a pasted token both end up as one HEADER_AUTHORIZATION, and\nMCP_AUTH collapses \"oauth\" to \"static\" because that is all the agent\nneeds to know (see services.MCPOAuthGrantSubType). Without this field\nthe form has to guess which mode the admin chose, guesses \"static\", and\nan OAuth connection reopens offering to replace a token it should be\noffering to re-authorize.\n\nPresence only — no token, no expiry, nothing the grant holds.",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": true
+                },
+                "mcp_oauth_warning": {
+                    "description": "MCPOAuthWarning reports that the connection was saved but the MCP OAuth\nlogin named by mcp_oauth_flow_id was not attached to it. Present only on\nthe create/update response that produced it.\n\nThe save succeeded and the connection still works on its frozen\nHEADER_AUTHORIZATION, so this is not an error status. What it is not is\nsilent: without a grant the credential is never renewed, the connection\nstops working the moment the provider expires that token, and the admin\nneeds to hear it at save time rather than from a failing session days\nlater.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"
+                },
                 "min_review_approvals": {
                     "description": "Minimum number of review approvals required to execute this connection",
                     "type": "integer",
@@ -12352,6 +12469,11 @@ const docTemplate = `{
                         "environment",
                         "tier"
                     ]
+                },
+                "mcp_oauth_flow_id": {
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype. See Connection.MCPOAuthFlowID for the full rationale.\n\nPATCH needs it for the same reason POST and PUT do, and more urgently:\nre-authorizing an EXISTING connection is the only way to replace a\ncredential the provider has expired, and the edit screen speaks PATCH.\nWithout this the browser could obtain a fresh token but never hand over\nthe flow that owns its refresh token, so every re-authorization would\nfreeze another token destined to expire exactly like the last one.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
@@ -14056,6 +14178,56 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.MCPCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "auth": {
+                    "description": "Auth is the mode the provider documents as its default: \"none\",\n\"static\" or \"oauth\". It seeds the connection form's selection.",
+                    "type": "string",
+                    "example": "oauth"
+                },
+                "auth_modes": {
+                    "description": "AuthModes lists every mode this server actually accepts, always\nincluding Auth. Most servers accept exactly one; a few (github,\nlinear, stripe) take either an OAuth login or a long-lived token, and\nonly the admin knows which credential they hold. The form offers a\nchoice when this has more than one entry, and offering a mode absent\nhere would strand the admin on a flow the provider cannot complete.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "oauth",
+                        "static"
+                    ]
+                },
+                "description": {
+                    "description": "Description is a one-line summary of what the server exposes.",
+                    "type": "string",
+                    "example": "Linear issue tracking (official)"
+                },
+                "header": {
+                    "description": "Header names the static credential header and its value template, in\n\"Name: value\" form. Empty when no mode in AuthModes is \"static\".",
+                    "type": "string",
+                    "example": "Authorization: Bearer ${TOKEN}"
+                },
+                "name": {
+                    "description": "Name is the catalog key, unique and stable (e.g. \"linear\").",
+                    "type": "string",
+                    "example": "linear"
+                },
+                "notes": {
+                    "description": "Notes carries provider caveats worth reading before enabling.",
+                    "type": "string"
+                },
+                "transport": {
+                    "description": "Transport is the backend protocol: \"streamable-http\" or \"sse\". It is\nthe value for MCP_TRANSPORT.",
+                    "type": "string",
+                    "example": "streamable-http"
+                },
+                "url": {
+                    "description": "URL is the MCP endpoint, the value for the connection's REMOTE_URL.",
+                    "type": "string",
+                    "example": "https://mcp.linear.app/mcp"
+                }
+            }
+        },
         "openapi.MCPOAuthAuthorizeRequest": {
             "type": "object",
             "required": [
@@ -14094,6 +14266,21 @@ const docTemplate = `{
                     "description": "FlowID identifies this login flow; used to redeem the token afterwards.",
                     "type": "string",
                     "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                }
+            }
+        },
+        "openapi.MCPOAuthRoleWarning": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name of the role (connection) the login failed to attach to",
+                    "type": "string",
+                    "example": "linear-mcp"
+                },
+                "warning": {
+                    "description": "Warning is the reason the login was not attached",
+                    "type": "string",
+                    "example": "the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"
                 }
             }
         },
@@ -15358,6 +15545,14 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
+                "mcp_oauth_warnings": {
+                    "description": "MCPOAuthWarnings reports the roles in this request whose mcp_oauth_flow_id\nwas not adopted into a durable grant. Present only on the create\nresponse that produced them, and empty when every login attached.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.MCPOAuthRoleWarning"
+                    },
+                    "readOnly": true
+                },
                 "name": {
                     "description": "The resource name",
                     "type": "string",
@@ -15421,6 +15616,11 @@ const docTemplate = `{
                     "example": [
                         "/bin/bash"
                     ]
+                },
+                "mcp_oauth_flow_id": {
+                    "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this role. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype. See Connection.MCPOAuthFlowID for the full rationale; the\nwizard that creates a resource and its roles in one request runs the\nsame login as the standalone connection form and must be able to hand\nover the same flow id, or every role it creates keeps a token nothing\nrenews.",
+                    "type": "string",
+                    "example": "7c8a1234-5678-9abc-def0-123456789abc"
                 },
                 "name": {
                     "description": "Name of the connection. This attribute is immutable when updating it",
@@ -17119,6 +17319,55 @@ const docTemplate = `{
                     "description": "The error returned when verifying the license",
                     "type": "string",
                     "example": "unable to verify license"
+                }
+            }
+        },
+        "openapi.ServerLogEntry": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "description": "The agent unique identifier (agent entries only)",
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "agent_name": {
+                    "description": "The agent name (agent entries only)",
+                    "type": "string",
+                    "example": "default"
+                },
+                "fields": {
+                    "description": "Structured fields attached to the entry",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "level": {
+                    "description": "The zap log level: info, warn, error, ...",
+                    "type": "string",
+                    "example": "info"
+                },
+                "logger": {
+                    "description": "The trimmed caller path that emitted the entry",
+                    "type": "string",
+                    "example": "transport/agent.go:74"
+                },
+                "message": {
+                    "description": "The log message",
+                    "type": "string",
+                    "example": "agent connected"
+                },
+                "source": {
+                    "description": "Where the entry was captured",
+                    "type": "string",
+                    "enum": [
+                        "gateway",
+                        "agent"
+                    ],
+                    "example": "gateway"
+                },
+                "timestamp": {
+                    "description": "When the entry was logged",
+                    "type": "string",
+                    "example": "2024-07-25T15:56:35.317601Z"
                 }
             }
         },

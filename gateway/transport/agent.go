@@ -17,6 +17,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/serverlogs"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -78,6 +79,11 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			continue
 		}
 
+		if pkt.Type == pbclient.AgentLogs {
+			handleAgentLogsPacket(stream, pkt)
+			continue
+		}
+
 		pctx.SID = string(pkt.Spec[pb.SpecGatewaySessionID])
 		if pctx.SID == "" {
 			log.Warnf("missing session id spec, skipping packet %v", pkt.Type)
@@ -118,6 +124,25 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		if _, err := proxyStream.PluginExecOnReceive(*pctx, pkt); err != nil {
 			log.With("sid", pctx.SID).Warnf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
+		}
+
+		// An MCPProxyConnectionWrite packet carrying SpecMCPEventKey is a
+		// structured audit record — one JSON verdict or tool-call line — not
+		// response bytes for the MCP client. The plugin phase above has just
+		// recorded it, which is the whole reason it crossed the wire, and
+		// nothing downstream may see it: the spec is copied from the
+		// originating request, so the packet even carries a live
+		// SpecClientConnectionID and would route straight into a client's
+		// keep-alive response body, wrecking its HTTP framing mid-stream.
+		//
+		// The drop belongs here rather than in each listener because this is
+		// the single fan-out point: every proxy consumer — the CLI's gRPC
+		// stream and the gateway's internal httpproxy listener — reads what
+		// proxyStream.Send writes below. A per-listener filter only protects
+		// the listeners someone remembered to patch, which is exactly how
+		// `hoop connect` ended up writing audit JSON into an MCP client.
+		if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
+			continue
 		}
 
 		switch pb.PacketType(pkt.Type) {
@@ -218,6 +243,24 @@ func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packe
 	}
 
 	return
+}
+
+// handleAgentLogsPacket buffers runtime log entries shipped by an agent.
+// Identity comes from the authenticated stream, never from the payload.
+func handleAgentLogsPacket(stream *streamclient.AgentStream, pkt *pb.Packet) {
+	if len(pkt.Payload) > 1<<20 {
+		log.With("agent", stream.AgentName()).Warnf("agent logs payload too large, dropping")
+		return
+	}
+	var entries []log.TailEntry
+	if err := json.Unmarshal(pkt.Payload, &entries); err != nil {
+		log.With("agent", stream.AgentName()).Warnf("failed decoding agent logs packet, reason=%v", err)
+		return
+	}
+	if len(entries) > 500 {
+		entries = entries[len(entries)-500:]
+	}
+	serverlogs.AppendAgentLogs(stream.GetOrgID(), stream.AgentID(), stream.AgentName(), entries)
 }
 
 func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {

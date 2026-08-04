@@ -8,6 +8,7 @@
    [webapp.connections.views.setup.server :as server]
    [webapp.resources.configure-role.claude-code-edit :as claude-code-edit]
    [webapp.resources.configure-role.mcp-edit :as mcp-edit]
+   [webapp.resources.configure-role.mcpproxy-edit :as mcpproxy-edit]
    [webapp.resources.federation.views.setup :as federation-setup]))
 
 (defn bigquery-credentials [connection]
@@ -41,6 +42,12 @@
                      (cond
                        (= subtype "claude-code") [claude-code-edit/claude-code-edit-form]
                        (= subtype "mcp") [mcp-edit/mcp-edit-form]
+                       ;; The MCP Gateway subtype cannot use the generic form:
+                       ;; that one re-emits every env var as an HTTP header,
+                       ;; which renames MCP_TRANSPORT out of existence, and it
+                       ;; renders no OAuth widget, so an expiring token could
+                       ;; never be renewed from this screen.
+                       (= subtype "mcpproxy") [mcpproxy-edit/mcpproxy-edit-form]
                        :else [network/http-credentials-form]))
 
        "application" (if (or (= (:subtype connection) "ssh")

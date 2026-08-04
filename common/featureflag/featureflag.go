@@ -77,7 +77,7 @@ var catalog = map[string]Flag{
 	},
 	"experimental.http_session_analyzer": {
 		Name:        "experimental.http_session_analyzer",
-		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code). Each request is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
+		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code) and on individual MCP tool calls (mcpproxy). Each request or tool call is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
 		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
@@ -116,6 +116,13 @@ var catalog = map[string]Flag{
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway, ComponentAgent},
+	},
+	"experimental.mcp_gateway": {
+		Name:        "experimental.mcp_gateway",
+		Description: "Offer the MCP Gateway (mcpproxy) resource type in the webapp catalog, so admins can create protocol-aware MCP connections: tool-level allow/deny, per-tool approval, rug-pull detection and structured tool-call audit, over remote (streamable-http/sse) or stdio backends run either on the agent or on each user's own machine. When off, the card is hidden and no new MCP Gateway connection can be created; connections that already exist keep working end to end, and their role form, edit view and Connect modal stay reachable.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
 	},
 }
 
