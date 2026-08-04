@@ -43,6 +43,8 @@ func init() {
 			"Statically pre-registered OAuth client ID, for IdPs without Dynamic Client Registration (RFC 7591) support")
 		c.Flags().StringVar(&mcpAuthClientSecretFlag, "client-secret", "",
 			"Optional secret paired with --client-id; omit for a public client with PKCE (recommended)")
+		c.Flags().StringVar(&mcpAuthScopesSupportedFlag, "scopes-supported", "",
+			"Space-separated OAuth scopes advertised to MCP clients; required for IdPs without RFC 8707 resource indicators (default: the identity provider's own scopes)")
 	}
 }
 

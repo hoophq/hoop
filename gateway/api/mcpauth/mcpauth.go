@@ -88,6 +88,7 @@ func MetadataHandler(c *gin.Context) {
 		Resource:               cfg.ResourceURI,
 		AuthorizationServers:   []string{authorizationServer},
 		BearerMethodsSupported: []string{"header"},
+		ScopesSupported:        cfg.ScopesSupported,
 		ResourceName:           "Hoop MCP",
 		ResourceDocumentation:  "https://hoop.dev/docs",
 	})

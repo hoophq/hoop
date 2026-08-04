@@ -2486,6 +2486,15 @@ type ServerMcpAuthConfig struct {
 	// public client with PKCE (recommended): the registration shim discloses
 	// this value to any registering MCP client.
 	ClientSecret string `json:"client_secret" example:""`
+	// OAuth scopes advertised to MCP clients in the protected-resource and
+	// authorization-server metadata documents. Empty omits the field from the
+	// former and passes the IdP's own list through in the latter.
+	//
+	// Required for IdPs without RFC 8707 resource-indicator support, which
+	// express the resource through its scopes (Entra ID): clients must be told
+	// to request a scope belonging to the resource, or the authorization
+	// request is rejected for mismatching the resource parameter.
+	ScopesSupported []string `json:"scopes_supported" example:"https://use.hoop.dev/api/mcp/access_as_user"`
 }
 
 type GenerateApiKeyResponse struct {

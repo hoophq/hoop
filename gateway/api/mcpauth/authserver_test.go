@@ -65,6 +65,24 @@ func TestBuildAuthServerMetadata(t *testing.T) {
 		assert.Equal(t, []string{"authorization_code"}, got.GrantTypesSupported)
 		assert.Equal(t, []string{"plain", "S256"}, got.CodeChallengeMethodsSupported)
 	})
+
+	t.Run("idp scopes are advertised when none are configured", func(t *testing.T) {
+		got := buildAuthServerMetadata(effectiveConfig{ClientID: "x"}, idpMeta, "https://gw", "https://gw/reg")
+		assert.Equal(t, []string{"openid", "profile"}, got.ScopesSupported)
+	})
+
+	// IdPs without RFC 8707 support advertise only generic OIDC scopes, none of
+	// which belong to the MCP resource. Passing them through sends clients into
+	// an authorization request the IdP rejects, so a configured list wins.
+	t.Run("configured scopes replace the idp list", func(t *testing.T) {
+		got := buildAuthServerMetadata(
+			effectiveConfig{
+				ClientID:        "x",
+				ScopesSupported: []string{"https://gw.example.com/api/mcp/access_as_user", "offline_access"},
+			},
+			idpMeta, "https://gw", "https://gw/reg")
+		assert.Equal(t, []string{"https://gw.example.com/api/mcp/access_as_user", "offline_access"}, got.ScopesSupported)
+	})
 }
 
 func TestBuildRegistrationResponse(t *testing.T) {

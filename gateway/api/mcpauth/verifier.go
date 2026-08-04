@@ -19,15 +19,16 @@ import (
 )
 
 type effectiveConfig struct {
-	Enabled      bool
-	ResourceURI  string
-	GroupsClaim  string
-	ClientID     string
-	ClientSecret string
-	IssuerURL    string
-	OrgID        string
-	GrpcURL      string
-	Provider     idptypes.ProviderType
+	Enabled         bool
+	ResourceURI     string
+	GroupsClaim     string
+	ClientID        string
+	ClientSecret    string
+	ScopesSupported []string
+	IssuerURL       string
+	OrgID           string
+	GrpcURL         string
+	Provider        idptypes.ProviderType
 }
 
 func loadConfig() (effectiveConfig, bool) {
@@ -63,6 +64,7 @@ func loadConfig() (effectiveConfig, bool) {
 		cfg.GroupsClaim = mcp.GroupsClaim
 		cfg.ClientID = mcp.ClientID
 		cfg.ClientSecret = mcp.ClientSecret
+		cfg.ScopesSupported = mcp.ScopesSupported
 	}
 	if cfg.ResourceURI == "" {
 		cfg.ResourceURI = appconfig.Get().ApiURL() + McpResourcePath()

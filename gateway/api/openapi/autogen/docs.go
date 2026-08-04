@@ -17148,6 +17148,16 @@ const docTemplate = `{
                     "description": "Canonical resource URI used for RFC 8707 audience binding. Defaults to\n\"\u003cAPI_URL\u003e/api/mcp\" when empty. Compared against the ` + "`" + `aud` + "`" + ` claim of\ninbound JWTs in canonical URI form (host case, default port, and\ntrailing slashes are ignored).",
                     "type": "string",
                     "example": "https://use.hoop.dev/api/mcp"
+                },
+                "scopes_supported": {
+                    "description": "OAuth scopes advertised to MCP clients in the protected-resource and\nauthorization-server metadata documents. Empty omits the field from the\nformer and passes the IdP's own list through in the latter.\n\nRequired for IdPs without RFC 8707 resource-indicator support, which\nexpress the resource through its scopes (Entra ID): clients must be told\nto request a scope belonging to the resource, or the authorization\nrequest is rejected for mismatching the resource parameter.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "https://use.hoop.dev/api/mcp/access_as_user"
+                    ]
                 }
             }
         },

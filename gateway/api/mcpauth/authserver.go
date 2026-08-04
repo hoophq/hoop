@@ -131,10 +131,19 @@ func AuthorizationServerMetadataHandler(c *gin.Context) {
 // gateway's own issuer identity, the IdP's endpoints, and the local
 // registration shim. S256 is force-advertised since the MCP authorization
 // profile requires it and supporting IdPs do not always list it.
+//
+// A configured scopes_supported replaces the IdP's own list: IdPs without RFC
+// 8707 support advertise only their generic OIDC scopes, none of which belong
+// to the MCP resource, so passing them through leads clients into an
+// authorization request the IdP rejects.
 func buildAuthServerMetadata(cfg effectiveConfig, idpMeta *idpAuthServerMetadata, issuer, registrationEndpoint string) AuthorizationServerMetadata {
 	authMethods := []string{"none"}
 	if cfg.ClientSecret != "" {
 		authMethods = []string{"client_secret_basic", "client_secret_post"}
+	}
+	scopesSupported := idpMeta.ScopesSupported
+	if len(cfg.ScopesSupported) > 0 {
+		scopesSupported = cfg.ScopesSupported
 	}
 	return AuthorizationServerMetadata{
 		Issuer:                            issuer,
@@ -142,7 +151,7 @@ func buildAuthServerMetadata(cfg effectiveConfig, idpMeta *idpAuthServerMetadata
 		TokenEndpoint:                     idpMeta.TokenEndpoint,
 		JwksURI:                           idpMeta.JwksURI,
 		RegistrationEndpoint:              registrationEndpoint,
-		ScopesSupported:                   idpMeta.ScopesSupported,
+		ScopesSupported:                   scopesSupported,
 		ResponseTypesSupported:            defaultIfEmpty(idpMeta.ResponseTypesSupported, []string{"code"}),
 		GrantTypesSupported:               defaultIfEmpty(idpMeta.GrantTypesSupported, []string{"authorization_code", "refresh_token"}),
 		TokenEndpointAuthMethodsSupported: authMethods,

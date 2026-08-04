@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
@@ -11,10 +12,11 @@ import (
 const mcpAuthEndpoint = "/api/serverconfig/mcp-auth"
 
 var (
-	mcpAuthResourceURIFlag  string
-	mcpAuthGroupsClaimFlag  string
-	mcpAuthClientIDFlag     string
-	mcpAuthClientSecretFlag string
+	mcpAuthResourceURIFlag     string
+	mcpAuthGroupsClaimFlag     string
+	mcpAuthClientIDFlag        string
+	mcpAuthClientSecretFlag    string
+	mcpAuthScopesSupportedFlag string
 )
 
 var mcpCmd = &cobra.Command{
@@ -74,11 +76,15 @@ Use --groups-claim to change the JWT claim from which user groups are extracted.
 Use --client-id/--client-secret to set a statically pre-registered OAuth client
 for IdPs without RFC 7591 Dynamic Client Registration support (JumpCloud, Okta,
 Entra ID). Prefer a public client (no secret) with PKCE: the registration shim
-discloses the secret to any registering MCP client.`,
+discloses the secret to any registering MCP client.
+Use --scopes-supported to advertise the OAuth scopes MCP clients should request.
+Required for IdPs without RFC 8707 resource-indicator support (Entra ID), which
+reject an authorization request whose scopes do not belong to the resource.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if !cmd.Flags().Changed("resource-uri") && !cmd.Flags().Changed("groups-claim") &&
-			!cmd.Flags().Changed("client-id") && !cmd.Flags().Changed("client-secret") {
-			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri, --groups-claim, --client-id and/or --client-secret")
+			!cmd.Flags().Changed("client-id") && !cmd.Flags().Changed("client-secret") &&
+			!cmd.Flags().Changed("scopes-supported") {
+			styles.PrintErrorAndExit("nothing to configure: provide --resource-uri, --groups-claim, --client-id, --client-secret and/or --scopes-supported")
 		}
 		current := mcpAuthGetOrEmpty()
 		mcpAuthApplyFlags(cmd, current)
@@ -106,6 +112,11 @@ func mcpAuthApplyFlags(cmd *cobra.Command, current map[string]any) {
 	if cmd.Flags().Changed("client-secret") {
 		current["client_secret"] = mcpAuthClientSecretFlag
 	}
+	// Scopes are accepted space-separated to mirror the OAuth `scope` request
+	// parameter; strings.Fields on an explicitly empty value clears the list.
+	if cmd.Flags().Changed("scopes-supported") {
+		current["scopes_supported"] = strings.Fields(mcpAuthScopesSupportedFlag)
+	}
 }
 
 func mcpAuthGetOrEmpty() map[string]any {
@@ -128,11 +139,12 @@ func mcpAuthGetOrEmpty() map[string]any {
 func mcpAuthPutOrDie(payload map[string]any) {
 	conf := clientconfig.GetClientConfigOrDie()
 	body := map[string]any{
-		"enabled":       mcpAuthBool(payload["enabled"]),
-		"resource_uri":  mcpAuthString(payload["resource_uri"]),
-		"groups_claim":  mcpAuthString(payload["groups_claim"]),
-		"client_id":     mcpAuthString(payload["client_id"]),
-		"client_secret": mcpAuthString(payload["client_secret"]),
+		"enabled":          mcpAuthBool(payload["enabled"]),
+		"resource_uri":     mcpAuthString(payload["resource_uri"]),
+		"groups_claim":     mcpAuthString(payload["groups_claim"]),
+		"client_id":        mcpAuthString(payload["client_id"]),
+		"client_secret":    mcpAuthString(payload["client_secret"]),
+		"scopes_supported": mcpAuthStringSlice(payload["scopes_supported"]),
 	}
 	if _, err := httpBodyRequest(&apiResource{
 		suffixEndpoint: mcpAuthEndpoint,
@@ -162,16 +174,21 @@ func mcpAuthPrintStatus(cfg map[string]any) {
 	} else {
 		staticClient += " (public, PKCE)"
 	}
+	scopes := strings.Join(mcpAuthStringSlice(cfg["scopes_supported"]), " ")
+	if scopes == "" {
+		scopes = "(none: advertises the identity provider's own scopes)"
+	}
 	state := "disabled"
 	if enabled {
 		state = "enabled"
 	}
 	fmt.Printf(`MCP OAuth Status:
-  State:         %s
-  Resource URI:  %s
-  Groups Claim:  %s
-  Static Client: %s
-`, state, resourceURI, groupsClaim, staticClient)
+  State:            %s
+  Resource URI:     %s
+  Groups Claim:     %s
+  Static Client:    %s
+  Scopes Supported: %s
+`, state, resourceURI, groupsClaim, staticClient, scopes)
 }
 
 func mcpAuthBool(v any) bool {
@@ -182,4 +199,22 @@ func mcpAuthBool(v any) bool {
 func mcpAuthString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// mcpAuthStringSlice normalises a JSON-decoded list. The GET response yields
+// []any, while mcpAuthApplyFlags stores []string, so both shapes reach here.
+func mcpAuthStringSlice(v any) []string {
+	switch list := v.(type) {
+	case []string:
+		return list
+	case []any:
+		out := make([]string, 0, len(list))
+		for _, raw := range list {
+			if s, _ := raw.(string); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }

@@ -65,6 +65,17 @@ type ServerMcpAuthConfig struct {
 	// the static client is a public client (PKCE only), which is recommended
 	// since the DCR shim discloses this value to registering MCP clients.
 	ClientSecret string `json:"client_secret"`
+	// ScopesSupported overrides the OAuth scopes advertised to MCP clients in
+	// both metadata documents. Empty means the RFC 9728 document omits the
+	// field and the RFC 8414 mirror passes the IdP's own list through.
+	//
+	// Required for IdPs that do not implement RFC 8707 resource indicators
+	// and instead express the resource through its scopes (Entra ID): the
+	// client must request a scope belonging to the resource, otherwise the
+	// authorization request is rejected for mismatching the resource
+	// parameter. Set it to the resource-qualified scope, e.g.
+	// "https://gateway.example.com/api/mcp/access_as_user".
+	ScopesSupported []string `json:"scopes_supported"`
 }
 
 func GetServerAuthConfig() (*ServerAuthConfig, error) {
