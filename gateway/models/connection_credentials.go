@@ -98,6 +98,58 @@ func GetActiveCredentialByUserAndConnection(orgID, userSubject, connectionName s
 	return &resp, err
 }
 
+// ActiveConnectionCredential is a secret-less projection of a credential row
+// joined with its connection. The secret columns (secret_key, secret_key_hash,
+// encrypted_secret_key) are deliberately absent from the struct so they cannot
+// be selected or serialised by accident.
+type ActiveConnectionCredential struct {
+	ID                string    `gorm:"column:id"`
+	ConnectionID      string    `gorm:"column:connection_id"`
+	ConnectionName    string    `gorm:"column:connection_name"`
+	ConnectionType    string    `gorm:"column:connection_type"`
+	ConnectionSubType string    `gorm:"column:connection_subtype"`
+	SessionID         string    `gorm:"column:session_id"`
+	CreatedAt         time.Time `gorm:"column:created_at"`
+	ExpireAt          time.Time `gorm:"column:expire_at"`
+}
+
+// ListActiveCredentialsByUser returns every non-revoked, unexpired credential
+// owned by the given user, joined with its connection so callers get the
+// connection's public type/subtype — the credential row stores the collapsed
+// proto type instead (e.g. "httpproxy" for a grafana connection).
+//
+// The inner join drops credentials whose connection was deleted; those are
+// unusable anyway. The expire_at predicate keeps persistent credentials, whose
+// expiration is the far-future sentinel.
+//
+// Note this does not apply the access-control-group join that
+// ListConnectionsPaginated does: a credential the user minted themselves stays
+// listed even if their group access is later revoked. That mirrors the proxy,
+// where revocation is an explicit action on the credential.
+func ListActiveCredentialsByUser(db *gorm.DB, orgID, userSubject string) ([]ActiveConnectionCredential, error) {
+	var rows []ActiveConnectionCredential
+	err := db.Raw(`
+		SELECT
+			cc.id                       AS id,
+			c.id                        AS connection_id,
+			cc.connection_name          AS connection_name,
+			c.type                      AS connection_type,
+			COALESCE(c.subtype, '')     AS connection_subtype,
+			COALESCE(cc.session_id, '') AS session_id,
+			cc.created_at               AS created_at,
+			cc.expire_at                AS expire_at
+		FROM private.connection_credentials cc
+		INNER JOIN private.connections c
+			ON c.org_id = cc.org_id AND c.name = cc.connection_name
+		WHERE cc.org_id = ?
+			AND cc.user_subject = ?
+			AND cc.revoked_at IS NULL
+			AND cc.expire_at > NOW()
+		ORDER BY cc.created_at DESC
+	`, orgID, userSubject).Scan(&rows).Error
+	return rows, err
+}
+
 // UpdateConnectionCredentialsSecretKey updates the secret key hash of an existing credential.
 // When the plaintext is available callers should use UpdateConnectionCredentialsSecret to
 // keep the hash and the encrypted copy in sync.

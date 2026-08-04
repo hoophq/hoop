@@ -684,6 +684,46 @@ func GetConnectionCredentials(c *gin.Context) {
 	c.JSON(200, resp)
 }
 
+// ListActiveConnectionCredentials
+//
+//	@Summary		List Active Connection Credentials
+//	@Description	Returns every active (non-revoked, non-expired) credential owned by the authenticated user, across all connections. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens). Use GET /connections/{nameOrID}/credentials to obtain the secret for a single connection.
+//	@Tags			Connections
+//	@Produce		json
+//	@Success		200	{object}	openapi.ConnectionCredentialsList
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/connection-credentials [get]
+func ListActiveConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	rows, err := models.ListActiveCredentialsByUser(models.DB, ctx.OrgID, ctx.UserID)
+	if err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed listing connection credentials: %v", err)})
+		return
+	}
+
+	// Initialised so an empty result serialises as {"items":[]} instead of null.
+	result := openapi.ConnectionCredentialsList{Items: []openapi.ConnectionCredentialsListItem{}}
+	for _, row := range rows {
+		var expireAt *time.Time
+		if !isPersistentExpireAt(row.ExpireAt) {
+			t := row.ExpireAt
+			expireAt = &t
+		}
+		result.Items = append(result.Items, openapi.ConnectionCredentialsListItem{
+			ID:                row.ID,
+			ConnectionID:      row.ConnectionID,
+			ConnectionName:    row.ConnectionName,
+			ConnectionType:    row.ConnectionType,
+			ConnectionSubType: row.ConnectionSubType,
+			SessionID:         row.SessionID,
+			ExpireAt:          expireAt,
+			CreatedAt:         row.CreatedAt,
+		})
+	}
+	c.JSON(200, result)
+}
+
 type handlerError struct {
 	status  int
 	message string

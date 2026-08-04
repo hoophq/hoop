@@ -2528,6 +2528,38 @@ type ConnectionCredentialsResponse struct {
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 }
 
+// ConnectionCredentialsListItem is a secret-less summary of one active credential
+// owned by the caller. It deliberately omits the connection_credentials payload
+// returned by GET /connections/{nameOrID}/credentials (hostnames, usernames,
+// passwords, proxy tokens, connection strings): this list exists to render
+// active-session state in the UI, never to connect with. Fetch the per-connection
+// endpoint when the user actually needs the secret.
+type ConnectionCredentialsListItem struct {
+	// The unique identifier of the credential
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique ID of the connection this credential belongs to
+	ConnectionID string `json:"connection_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// The name of the connection
+	ConnectionName string `json:"connection_name" example:"pgdemo"`
+	// Connection type
+	ConnectionType string `json:"connection_type" example:"database"`
+	// The connection subtype
+	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
+	// The audit session currently linked to this credential. Empty when the user
+	// closed the session but kept the credential.
+	SessionID string `json:"session_id" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	// When the credential expires. Null when the credential is persistent
+	// (issued without access_duration_seconds).
+	ExpireAt *time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the credential was issued
+	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
+}
+
+// ConnectionCredentialsList is the envelope for the caller's active credentials.
+type ConnectionCredentialsList struct {
+	Items []ConnectionCredentialsListItem `json:"items"`
+}
+
 type RDPConnectionInfo struct {
 	// The hostname to access the rdp server pinstance
 	Hostname string `json:"hostname" example:"example.com/198.22.2.2"`
