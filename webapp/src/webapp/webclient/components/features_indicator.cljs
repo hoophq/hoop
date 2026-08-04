@@ -25,7 +25,7 @@
    the tiles the modal already uses, and kept the tooltip primed so switching
    back is one keyword if anyone objects. Delete the unused branch once that
    settles — this is not meant to live here forever."
-  :card)
+  :tooltip)
 
 (defn- feature-tile [{:keys [icon tile-class]}]
   [:> Box {:class (str "flex items-center justify-center shrink-0 rounded-1 w-6 h-6 "
