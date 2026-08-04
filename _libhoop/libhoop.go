@@ -61,11 +61,24 @@ func NewHttpProxy(ctx context.Context, clientW io.Writer, analyzer aianalyzer.An
 // NewMCPProxy is the OSS stub. The returned proxy reports the missing-library
 // error on Run, matching every other protocol in this build.
 func NewMCPProxy(ctx context.Context, clientW io.Writer, handler http.Handler, onClose func(), opts map[string]string) (Proxy, error) {
+	if err := CheckGuardRailEnforcement(opts["guard_rail_rules"], "mcpproxy"); err != nil {
+		return nil, err
+	}
 	return &noopProxy{connectionType: "mcpproxy"}, nil
 }
 
 // NewMCPHooks returns zero hooks: an OSS build has no redaction engine, so the
-// MCP gateway runs without guardrail or masking stages.
+// MCP gateway has nowhere to evaluate guardrails or masking.
+//
+// Which is exactly why a connection carrying guardrail rules must be refused
+// here rather than served with the hooks left nil (DEP-48, ADR-0004). Zero
+// hooks are the honest answer only for a connection that configured none;
+// returning them for a guarded one hands the gateway a pipeline whose
+// GuardInput and Redact stages are absent, and every tool call, tool
+// description and result then flows unexamined with nothing logged.
 func NewMCPHooks(opts map[string]string) (mcpadapter.Hooks, error) {
+	if err := CheckGuardRailEnforcement(opts["guard_rail_rules"], "mcpproxy"); err != nil {
+		return mcpadapter.Hooks{}, err
+	}
 	return mcpadapter.Hooks{}, nil
 }

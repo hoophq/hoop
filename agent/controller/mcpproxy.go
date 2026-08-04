@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -270,8 +271,11 @@ func (a *Agent) mcpGatewayFor(
 		if a.mcpGateways.CompareAndDelete(sessionID, obj) {
 			holder.gw.Close()
 			// After the gateway, never before — closing it emits the
-			// session's last audit events (see closeMCPProxyConnections).
+			// session's last audit events (see closeMCPProxyConnections),
+			// and waitStopped is what puts them on the stream before this
+			// abandoned build returns.
 			holder.sink.stop()
+			holder.sink.waitStopped()
 		}
 		return nil, fmt.Errorf("session closed while the mcp gateway was being built")
 	}
@@ -503,8 +507,14 @@ func (a *Agent) closeMCPProxyConnections(sessionID string) {
 			}
 			// After the gateway, never before: closing it emits the session's
 			// last audit events, and stopping the sink first would drop them.
-			// stop flushes what is queued and ends the drain goroutine.
 			holder.sink.stop()
+			// stop only signals; the flush it asks for runs on the drain
+			// goroutine. Returning here without waiting would end the session
+			// while those final events are still queued, so whether the
+			// refusal that closed the session is in its timeline would come
+			// down to which goroutine ran next. Bounded, so a wedged stream
+			// delays teardown rather than blocking it forever.
+			holder.sink.waitStopped()
 		}
 	}
 	a.closeClientStdioBackends(sessionID)
@@ -873,9 +883,43 @@ func (s *mcpEventSink) send(pkt *pb.Packet) error {
 
 // stop ends the drain goroutine after a best-effort flush. Safe on a nil sink
 // (a gateway built without one) and safe to call twice.
+//
+// It only signals. The flush runs on the drain goroutine, so a caller that
+// needs the session's last events to be on the stream must follow this with
+// waitStopped. The two are separate because a Send already parked on a wedged
+// stream cannot be interrupted: TestMCPAuditSinkStopReturnsOnAStalledStream
+// stops the sink while a Send is parked and only then releases it, which a
+// stop that waited inline would deadlock.
 func (s *mcpEventSink) stop() {
 	if s == nil {
 		return
 	}
 	s.stopOnce.Do(func() { close(s.quit) })
+}
+
+// mcpAuditFlushBudget bounds how long session teardown waits for the drain
+// goroutine to finish flushing.
+//
+// A wait is needed at all because stop only signals: without it, teardown
+// returns while the session's last events — the tool call that was refused,
+// the result that was truncated — are still sitting in the queue, and whether
+// they reach the stream depends on which goroutine the scheduler runs next.
+//
+// It is bounded because the drain goroutine can be parked inside a Send on a
+// stream that is never going to complete, and a session that will not close is
+// worse than an audit record that does not land.
+const mcpAuditFlushBudget = 5 * time.Second
+
+// waitStopped blocks until the drain goroutine has flushed and exited, or the
+// budget expires. Callers must have called stop first, or this waits out the
+// full budget for a goroutine that was never asked to leave.
+func (s *mcpEventSink) waitStopped() {
+	if s == nil {
+		return
+	}
+	select {
+	case <-s.done:
+	case <-time.After(mcpAuditFlushBudget):
+		log.With("sid", s.sid).Warnf("mcp audit sink still draining after %v, abandoning its pending events", mcpAuditFlushBudget)
+	}
 }

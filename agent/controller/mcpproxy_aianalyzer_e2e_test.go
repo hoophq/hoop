@@ -157,6 +157,12 @@ func TestMCPAnalyzerBlocksToolCallEndToEnd(t *testing.T) {
 	}
 
 	// The verdict has to reach the gateway, or the session metrics stay empty.
+	//
+	// Close first: verdicts ride the audit sink's queue and are written by its
+	// drain goroutine, so reading the transport straight after the tool call
+	// races that goroutine. closeMCPProxyConnections flushes it and waits.
+	agent.closeMCPProxyConnections(sessionID)
+
 	var verdicts [][]byte
 	for _, pkt := range transport.packetsOfType(pbclient.MCPProxyConnectionWrite) {
 		if raw := pkt.Spec[spectypes.AIAnalyzerInfoKey]; len(raw) > 0 {
@@ -214,7 +220,10 @@ func TestMCPAnalyzerRespectsTheConfiguredRiskAction(t *testing.T) {
 		t.Fatalf("an allowed tool call did not reach the server: %s", body)
 	}
 	// Allowed, but still recorded: the metrics count analyzed calls, not just
-	// blocked ones.
+	// blocked ones. Close first so the sink's queue has been drained (see
+	// TestMCPAnalyzerBlocksToolCallEndToEnd).
+	agent.closeMCPProxyConnections(sessionID)
+
 	var verdicts int
 	for _, pkt := range transport.packetsOfType(pbclient.MCPProxyConnectionWrite) {
 		if len(pkt.Spec[spectypes.AIAnalyzerInfoKey]) > 0 {
@@ -259,6 +268,9 @@ func TestMCPWithoutAnalyzerRuleIsUnchanged(t *testing.T) {
 	if !strings.Contains(body, "ran on pid") {
 		t.Fatalf("tool call failed on a connection with no analyzer: %s", body)
 	}
+	// Close first, so this asserts no verdict was ever produced rather than
+	// merely that none had been drained yet.
+	agent.closeMCPProxyConnections(sessionID)
 	for _, pkt := range transport.packetsOfType(pbclient.MCPProxyConnectionWrite) {
 		if len(pkt.Spec[spectypes.AIAnalyzerInfoKey]) > 0 {
 			t.Fatal("a connection with no analyzer rule shipped a verdict")
