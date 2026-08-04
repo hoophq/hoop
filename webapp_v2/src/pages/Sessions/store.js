@@ -173,7 +173,10 @@ export const useSessionsStore = create((set, get) => ({
     // Idempotent for the same input: covers StrictMode's double-effect, remounts,
     // and Enter racing the debounce (v1 fired both, costing 2N requests).
     if (current.key === key && current.status !== 'idle') return
-    set({ lookup: { ...EMPTY_LOOKUP, status: 'loading', key } })
+    // Keep the previous rows on screen while the new ones load. Clearing them
+    // here empties the list, which flips the page back to its loading state and
+    // makes the whole content area flash on every search.
+    set({ lookup: { ...current, status: 'loading', error: null, key } })
     try {
       const { sessions, failedIds } = await sessionsService.getFilteredByIds(ids)
       if (get().lookup.key !== key) return
@@ -196,7 +199,16 @@ export const useSessionsStore = create((set, get) => ({
   // --- batch (/sessions/filtered?batch_id=) ---------------------------------
 
   fetchBatch: async (batchId) => {
-    set({ batch: { ...EMPTY_BATCH, status: 'loading', batchId } })
+    // Same reason as `lookupByIds`: keep the current rows mounted while loading.
+    const previous = get().batch
+    set({
+      batch: {
+        ...(previous.batchId === batchId ? previous : EMPTY_BATCH),
+        status: 'loading',
+        error: null,
+        batchId,
+      },
+    })
     try {
       const data = await sessionsService.getByBatchId(batchId, {
         limit: PAGE_SIZE,

@@ -71,6 +71,9 @@ export default function AsyncValueFilter({
         <Button
           variant={hasSelected ? 'light' : 'default'}
           color="gray"
+          // See the note in ValueFilter: `default` ignores `color`, so without
+          // this the label renders near-black and outweighs the page.
+          c="dimmed"
           onClick={handleTrigger}
           leftSection={<Icon size={16} />}
           rightSection={

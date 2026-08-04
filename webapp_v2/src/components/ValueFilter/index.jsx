@@ -40,6 +40,11 @@ export default function ValueFilter({
         <Button
           variant={hasSelected ? 'light' : 'default'}
           color="gray"
+          // Mantine's `default` variant ignores `color` and paints the label with
+          // --mantine-color-text (near-black), which reads much heavier than the
+          // legacy Radix `color="gray"` trigger. Selection is signalled by the
+          // variant swap, not by text colour, so keep the label dimmed in both.
+          c="dimmed"
           onClick={() => setOpen((value) => !value)}
           leftSection={<Icon size={16} />}
           rightSection={

@@ -8,7 +8,7 @@ import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import EmptyState from '@/layout/EmptyState'
 import { useMinDelay } from '@/hooks/useMinDelay'
-import SessionsTable from '../components/SessionsTable'
+import SessionsList from '../components/SessionsList'
 import { useSessionsStore } from '../store'
 import { SESSIONS_DOCS_URL } from '../constants'
 
@@ -121,7 +121,7 @@ export default function SessionsFiltered() {
       {!showLoader && slice.status !== 'error' && sessions.length > 0 && (
         <>
           {visible.length > 0 ? (
-            <SessionsTable sessions={visible} />
+            <SessionsList sessions={visible} />
           ) : (
             <Text ta="center" c="dimmed" py="lg">
               No sessions found matching your search

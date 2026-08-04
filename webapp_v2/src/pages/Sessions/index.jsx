@@ -5,7 +5,7 @@ import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { showSnackbar } from '@/utils/snackbar'
-import SessionsTable from './components/SessionsTable'
+import SessionsList from './components/SessionsList'
 import SessionsFilterBar from './sections/SessionsFilterBar'
 import { useSessionsStore } from './store'
 import { useSessionFilters } from './useSessionFilters'
@@ -43,8 +43,12 @@ export default function Sessions() {
   const status = idSearchActive ? lookup.status : list.status
   const error = idSearchActive ? lookup.error : list.error
 
-  // 'idle' counts as loading: the fetch effect has not run yet on the very first
-  // render, and treating it as "no results" would flash the empty state.
+  // The loader only ever covers the FIRST load, when there is nothing to show.
+  // Once rows exist they stay mounted through every refetch — v1 did the same
+  // (main.cljs:57-64 only renders its spinner when the list is empty), and
+  // swapping the content area in and out on each request is what makes the page
+  // flash. 'idle' counts as loading because the fetch effect has not run yet on
+  // the very first render; treating it as "no results" would flash the empty state.
   const isFirstLoad = (status === 'loading' || status === 'idle') && sessions.length === 0
   const showLoader = useMinDelay(isFirstLoad, 500)
 
@@ -85,7 +89,7 @@ export default function Sessions() {
 
       {!showLoader && status !== 'error' && sessions.length > 0 && (
         <>
-          <SessionsTable sessions={sessions} />
+          <SessionsList sessions={sessions} />
           {!idSearchActive && list.hasMore && (
             <Group justify="center">
               <Button

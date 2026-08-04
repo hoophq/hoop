@@ -1,0 +1,32 @@
+/*
+ * Port of the v1 row chrome (session_item.cljs:74-83 — `border-b cursor-pointer
+ * hover:bg-gray-50 p-regular text-sm`, inside main.cljs's `rounded-lg border`
+ * container). These are :hover / :last-child selectors, which Mantine style
+ * props cannot express.
+ */
+.row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background-color: var(--mantine-color-gray-0);
+}
+
+/*
+ * The row's primary link carries the accessible name and the keyboard path, but
+ * the whole row is the click target — so it must read as plain text, not as a
+ * blue link.
+ */
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink:hover {
+  text-decoration: underline;
+}
