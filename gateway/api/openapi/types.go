@@ -446,10 +446,16 @@ type Connection struct {
 	// association through the attributes field.
 	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
 	// EffectiveFeatures reports which features will actually act on this connection,
-	// resolving attribute-based associations as well as direct ones. Only populated on
-	// the detail endpoint. Null means resolution failed — treat it as unknown, never
-	// as "nothing is active".
-	EffectiveFeatures *ConnectionEffectiveFeatures `json:"effective_features,omitempty" readonly:"true"`
+	// resolving attribute-based associations as well as direct ones.
+	//
+	// Null means "unknown", never "nothing is active" — the two must not be confused by
+	// a caller deciding whether to warn a user. It is null on the list endpoint, which
+	// does not resolve it, and on the detail endpoint when resolution failed (the
+	// gateway logs the failure).
+	//
+	// Deliberately not omitempty: an absent key and an explicit null are different
+	// contracts, and the one documented here is null.
+	EffectiveFeatures *ConnectionEffectiveFeatures `json:"effective_features" readonly:"true"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References

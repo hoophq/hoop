@@ -544,12 +544,17 @@ func Get(c *gin.Context) {
 	// Derived enrichment: a failure here must not take the whole connection down, but it
 	// must also not be reported as "nothing is active" — that is indistinguishable from a
 	// genuinely unprotected connection. Leaving effective_features null says "unknown".
+	//
+	// jit_access_duration_sec is set independently of that. It predates this object and
+	// the native client reads it to decide whether to expect a review, so a failure in an
+	// unrelated resolver must not take it down with them. It stays nil only when the JIT
+	// lookup itself failed or found nothing.
 	features, jitDuration, err := resolveEffectiveFeatures(ctx.OrgID, conn)
+	apiConn.JitAccessDurationSec = jitDuration
 	if err != nil {
 		log.With("connection", conn.Name).Errorf("failed resolving effective features, err=%v", err)
 	} else {
 		apiConn.EffectiveFeatures = features
-		apiConn.JitAccessDurationSec = jitDuration
 	}
 
 	c.JSON(http.StatusOK, apiConn)
@@ -625,13 +630,19 @@ func resolveEffectiveFeatures(orgID string, conn *models.Connection) (*openapi.C
 		return nil
 	})
 
-	if err := group.Wait(); err != nil {
-		return nil, nil, err
-	}
+	waitErr := group.Wait()
 
+	// Computed before the error check on purpose: the group is not cancellable, so every
+	// resolver runs to completion and jitRule is populated whenever its own lookup
+	// succeeded. Returning it alongside the error keeps one resolver's failure from
+	// suppressing another's result.
 	var jitDuration *int
 	if jitRule != nil {
 		jitDuration = jitRule.AccessMaxDuration
+	}
+
+	if waitErr != nil {
+		return nil, jitDuration, waitErr
 	}
 
 	return &openapi.ConnectionEffectiveFeatures{

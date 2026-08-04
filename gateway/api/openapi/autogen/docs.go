@@ -11927,7 +11927,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "effective_features": {
-                    "description": "EffectiveFeatures reports which features will actually act on this connection,\nresolving attribute-based associations as well as direct ones. Only populated on\nthe detail endpoint. Null means resolution failed — treat it as unknown, never\nas \"nothing is active\".",
+                    "description": "EffectiveFeatures reports which features will actually act on this connection,\nresolving attribute-based associations as well as direct ones.\n\nNull means \"unknown\", never \"nothing is active\" — the two must not be confused by\na caller deciding whether to warn a user. It is null on the list endpoint, which\ndoes not resolve it, and on the detail endpoint when resolution failed (the\ngateway logs the failure).\n\nDeliberately not omitempty: an absent key and an explicit null are different\ncontracts, and the one documented here is null.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/openapi.ConnectionEffectiveFeatures"

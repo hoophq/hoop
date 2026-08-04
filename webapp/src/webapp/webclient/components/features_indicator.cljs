@@ -21,10 +21,10 @@
      :tooltip the Figma design: a plain dark tooltip, one `{Feature}: Active`
               line per feature, no icons
 
-   The Figma specifies `:tooltip`. We ship `:card` because it reads better with
-   the tiles the modal already uses, and kept the tooltip primed so switching
-   back is one keyword if anyone objects. Delete the unused branch once that
-   settles — this is not meant to live here forever."
+   We ship `:tooltip`, matching the Figma. `:card` is kept because it reads well
+   beside the tiles the modal uses and may come back if design revisits this.
+   Delete the unused branch once that settles — this is not meant to live here
+   forever."
   :tooltip)
 
 (defn- feature-tile [{:keys [icon tile-class]}]

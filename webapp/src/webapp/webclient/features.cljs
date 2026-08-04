@@ -11,11 +11,14 @@
    `redact_enabled` only ever reflect direct associations, so reading them makes
    the indicator silent for a profile-governed connection.
 
-   When `:effective_features` is absent the gateway could not resolve it (it logs
-   the failure and sends null rather than a set of falses). Everything then reads
-   as inactive and the indicator hides itself — the same as having no feature
-   configured. That is a deliberate choice not to invent a third UI state for a
-   case the server already reports.
+   A null `:effective_features` means \"unknown\", not \"nothing is active\" — the
+   gateway sends null rather than a set of falses precisely so the two are
+   distinguishable, and logs the failure. It is also null on the connections
+   list endpoint, which does not resolve it; only the detail endpoint does.
+
+   We still read null as inactive and hide the indicator, the same as having no
+   feature configured. That is a deliberate choice not to invent a third UI state
+   for a case the server already reports on its side.
 
    Categories follow `Feature Specs | Major Features Visibility`:
    `:blocks-execution` features intercept the query and require an action before
