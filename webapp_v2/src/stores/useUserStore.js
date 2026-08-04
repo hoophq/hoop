@@ -24,6 +24,8 @@ export const useUserStore = create((set, get) => ({
   analyticsTracking: false,
   analyticsMode: 'anonymous',
   disableClipboard: false,
+  // gateway `disable_sessions_download` — hides every session download affordance
+  disableSessionsDownload: false,
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
@@ -43,6 +45,7 @@ export const useUserStore = create((set, get) => ({
     const analyticsTracking = serverInfo?.analytics_tracking === 'enabled'
     const analyticsMode = serverInfo?.analytics_mode || 'anonymous'
     const disableClipboard = !!serverInfo?.disable_clipboard_copy_cut
+    const disableSessionsDownload = !!serverInfo?.disable_sessions_download
     const featureFlags = serverInfo?.feature_flags || {}
     const redactProvider = serverInfo?.redact_provider || null
     const apiUrl = serverInfo?.api_url || null
@@ -53,6 +56,7 @@ export const useUserStore = create((set, get) => ({
       analyticsTracking, 
       analyticsMode, 
       disableClipboard, 
+      disableSessionsDownload,
       featureFlags, 
       redactProvider, 
       apiUrl,

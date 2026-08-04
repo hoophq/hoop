@@ -3,6 +3,9 @@ import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { useSessionsStore } from '../store'
 import SessionInfo from './sections/SessionInfo'
+import RunbookParameters from './sections/RunbookParameters'
+import SessionMetadata from './sections/SessionMetadata'
+import SessionScript from './sections/SessionScript'
 import SessionAnalysis from './sections/SessionAnalysis'
 import GuardrailsInfo from './sections/GuardrailsInfo'
 import DataMaskingAnalytics from './sections/DataMaskingAnalytics'
@@ -51,6 +54,9 @@ export default function SessionDetailsModal() {
       {session && (
         <Stack gap="xl">
           <SessionInfo session={session} />
+          <RunbookParameters session={session} />
+          <SessionMetadata session={session} />
+          <SessionScript session={session} hasLargeInput={detail.hasLargeInput} />
           <SessionAnalysis aiAnalysis={session.ai_analysis} />
           <GuardrailsInfo guardrailsInfo={session.guardrails_info} />
           <DataMaskingAnalytics session={session} report={detail.report} />
