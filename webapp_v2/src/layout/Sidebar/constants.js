@@ -104,6 +104,7 @@ export const ORGANIZATION_ITEMS = [
       { label: 'Experimental', path: '/settings/experimental', adminOnly: true },
       { label: 'License', path: '/settings/license', adminOnly: true },
       { label: 'Internal Audit Logs', path: '/settings/audit-logs', adminOnly: true },
+      { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
       { label: 'Users', path: '/organization/users', adminOnly: true }
     ]
   }

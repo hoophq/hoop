@@ -56,6 +56,7 @@ import (
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
+	serverlogsapi "github.com/hoophq/hoop/gateway/api/serverlogs"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
@@ -417,6 +418,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventReactivateApiKey),
 		apikeys.Reactivate)
+
+	r.GET("/server-logs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		serverlogsapi.List)
+	r.GET("/server-logs/stream",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		serverlogsapi.Stream)
 
 	r.GET("/ai-agents",
 		apiroutes.AdminOnlyAccessRole,

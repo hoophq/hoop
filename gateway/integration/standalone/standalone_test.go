@@ -3,7 +3,10 @@
 package standalone
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/agent/controller"
 	"github.com/hoophq/hoop/common/clientconfig"
 	commongrpc "github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
@@ -153,4 +157,139 @@ func waitAgentConnected(t *testing.T, token, name string, timeout time.Duration)
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+// TestServerLogsAgentShipping proves the agent→gateway server-logs path end
+// to end with a live transport: the production agent controller connects
+// over gRPC, its log shipper picks up new local log entries and ships them
+// as ClientAgentLogs packets, the transport intercept stores them, and both
+// the /server-logs snapshot and the /server-logs/stream SSE endpoint expose
+// them. Runs after TestStandaloneLifecycle in this file by design (shares
+// the registered first user).
+func TestServerLogsAgentShipping(t *testing.T) {
+	token := adminToken(t)
+
+	dsn, err := services.StandaloneAgentDSN("grpc://" + gw.GRPCAddr)
+	if err != nil {
+		t.Fatalf("provisioning standalone agent: %v", err)
+	}
+	client, err := commongrpc.Connect(commongrpc.ClientConfig{
+		ServerAddress: gw.GRPCAddr,
+		Token:         dsn,
+		UserAgent:     "hoop-serverlogs-itest",
+		Insecure:      true,
+	}, commongrpc.WithOption("origin", pb.ConnectionOriginAgent))
+	if err != nil {
+		t.Fatalf("agent dial: %v", err)
+	}
+	ctrl := controller.New(client, &config.Config{
+		Name:      services.StandaloneAgentName,
+		Type:      clientconfig.ModeDsn,
+		AgentMode: pb.AgentModeStandardType,
+		Token:     dsn,
+		URL:       gw.GRPCAddr,
+	}, nil)
+	go func() { _ = ctrl.Run() }()
+	t.Cleanup(func() { ctrl.Close(nil) })
+	waitAgentConnected(t, token, services.StandaloneAgentName, 30*time.Second)
+
+	// Open the SSE stream BEFORE emitting the marker with backlog disabled:
+	// any marker frame received later is necessarily live-follow, not replay.
+	stream := gw.HTTP.Get(t, "/server-logs/stream?backlog=0", token)
+	t.Cleanup(func() { stream.Body.Close() })
+	testutil.RequireStatus(t, stream, http.StatusOK)
+	if ct := stream.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("stream: expected text/event-stream content type, got %q", ct)
+	}
+
+	// The marker is logged after the shipper's start cursor, so the next 2s
+	// tick ships it over the live gRPC stream.
+	marker := fmt.Sprintf("serverlogs-e2e-marker-%d", time.Now().UnixNano())
+	log.Infof("standalone server-logs shipping check %s", marker)
+
+	// Snapshot endpoint: the marker must surface with source=agent and the
+	// authenticated agent identity attached by the transport intercept.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if entry := findAgentLogEntry(t, token, marker); entry != nil {
+			if name, _ := (*entry)["agent_name"].(string); name != services.StandaloneAgentName {
+				t.Fatalf("agent log entry: expected agent_name=%q, got %v", services.StandaloneAgentName, (*entry)["agent_name"])
+			}
+			if id, _ := (*entry)["agent_id"].(string); id == "" {
+				t.Fatalf("agent log entry: missing agent_id: %v", *entry)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("marker log entry with source=agent did not reach /server-logs within 15s")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Stream endpoint: the marker must also arrive as a live SSE frame.
+	frames := make(chan map[string]any, 16)
+	go func() {
+		defer close(frames)
+		scanner := bufio.NewScanner(stream.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var entry map[string]any
+			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &entry) == nil {
+				frames <- entry
+			}
+		}
+	}()
+	streamDeadline := time.After(15 * time.Second)
+	for {
+		select {
+		case entry, ok := <-frames:
+			if !ok {
+				t.Fatal("SSE stream closed before the marker frame arrived")
+			}
+			if msg, _ := entry["message"].(string); strings.Contains(msg, marker) {
+				return
+			}
+		case <-streamDeadline:
+			t.Fatal("marker frame did not arrive on /server-logs/stream within 15s")
+		}
+	}
+}
+
+// findAgentLogEntry fetches the server-logs snapshot and returns the first
+// source=agent entry whose message contains marker, or nil.
+func findAgentLogEntry(t *testing.T, token, marker string) *map[string]any {
+	t.Helper()
+	resp := gw.HTTP.Get(t, "/server-logs?limit=5000", token)
+	defer resp.Body.Close()
+	testutil.RequireStatus(t, resp, http.StatusOK)
+	var entries []map[string]any
+	testutil.DecodeJSON(t, resp, &entries)
+	for _, entry := range entries {
+		msg, _ := entry["message"].(string)
+		if entry["source"] == "agent" && strings.Contains(msg, marker) {
+			return &entry
+		}
+	}
+	return nil
+}
+
+// adminToken returns a JWT for the default admin user whether or not a prior
+// test in this package already registered it.
+func adminToken(t *testing.T) string {
+	t.Helper()
+	resp := gw.HTTP.Post(t, "/localauth/register", "", openapi.LocalUserRequest{
+		Email:    testutil.FirstUserEmail,
+		Password: testutil.FirstUserPassword,
+		Name:     testutil.FirstUserName,
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusCreated {
+		if token := resp.Header.Get("Token"); token != "" {
+			return token
+		}
+	}
+	return testutil.Login(t, gw.HTTP, testutil.FirstUserEmail, testutil.FirstUserPassword)
 }

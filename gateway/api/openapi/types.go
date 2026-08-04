@@ -1390,6 +1390,27 @@ type ServerInfo struct {
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
 
+// ServerLogEntry is one runtime log record from the gateway process or a
+// connected agent, served from the in-memory tail buffers.
+type ServerLogEntry struct {
+	// When the entry was logged
+	Timestamp time.Time `json:"timestamp" example:"2024-07-25T15:56:35.317601Z"`
+	// The zap log level: info, warn, error, ...
+	Level string `json:"level" example:"info"`
+	// The log message
+	Message string `json:"message" example:"agent connected"`
+	// The trimmed caller path that emitted the entry
+	Logger string `json:"logger,omitempty" example:"transport/agent.go:74"`
+	// Structured fields attached to the entry
+	Fields map[string]any `json:"fields,omitempty"`
+	// Where the entry was captured
+	Source string `json:"source" enums:"gateway,agent" example:"gateway"`
+	// The agent unique identifier (agent entries only)
+	AgentID string `json:"agent_id,omitempty" format:"uuid"`
+	// The agent name (agent entries only)
+	AgentName string `json:"agent_name,omitempty" example:"default"`
+}
+
 // FeatureFlagItem represents a single feature flag from the catalog with its per-org state.
 type FeatureFlagItem struct {
 	// The feature flag name

@@ -26,6 +26,7 @@ import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
+import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
@@ -268,6 +269,20 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsAuditLogs />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Server Logs */}
+      <Route
+        path="/settings/server-logs"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsServerLogs />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
