@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import PageLoader from '@/components/PageLoader'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
 import ClojureApp from '@/components/ClojureApp'
@@ -41,6 +43,11 @@ import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 
+// The only lazily-loaded page. Every other route is imported eagerly, but the
+// Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
+// only — no reason to put that in the bundle every user downloads.
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+
 /**
  * Routing strategy:
  *
@@ -71,6 +78,20 @@ function Router() {
       <Route path="/signup/callback" element={<SignupCallback />} />
 
       {/* React pages — fully migrated */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <Suspense fallback={<PageLoader h={400} />}>
+                  <Dashboard />
+                </Suspense>
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/agents"
         element={
