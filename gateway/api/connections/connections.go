@@ -127,7 +127,13 @@ func Post(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusCreated, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+	// resp carries the envs as saved, which is what the adoption must match
+	// the login against — not req.Secrets, which the caller controls and which
+	// PUT may have only partially overlaid.
+	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
+	out.MCPOAuthWarning = AdoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
+
+	c.JSON(http.StatusCreated, out)
 }
 
 // Put Connection
@@ -247,7 +253,10 @@ func Put(c *gin.Context) {
 		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
+	out.MCPOAuthWarning = AdoptMCPOAuthGrant(ctx.OrgID, resp, req.SubType, req.MCPOAuthFlowID)
+
+	c.JSON(http.StatusOK, out)
 }
 
 // Patch Connection
@@ -384,7 +393,14 @@ func Patch(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, ToOpenApi(resp, ctx.OrgHideRoleInfo))
+	out := ToOpenApi(resp, ctx.OrgHideRoleInfo)
+	// Same adoption POST and PUT perform. The subtype comes off the stored
+	// connection rather than the request: PATCH is partial, so a save that
+	// only re-authorizes sends no subtype at all.
+	if req.MCPOAuthFlowID != nil {
+		out.MCPOAuthWarning = AdoptMCPOAuthGrant(ctx.OrgID, resp, resp.SubType.String, *req.MCPOAuthFlowID)
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // DeleteConnection
@@ -556,6 +572,8 @@ func Get(c *gin.Context) {
 	} else {
 		apiConn.EffectiveFeatures = features
 	}
+
+	apiConn.MCPOAuthGranted = hasMCPOAuthGrant(ctx.OrgID, conn)
 
 	c.JSON(http.StatusOK, apiConn)
 }

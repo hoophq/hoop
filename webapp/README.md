@@ -190,29 +190,33 @@ The `resources/public/js/compiled` directory is created, containing the compiled
 
 ## Decap
 
-The display of connection quick start resources is automated via Decap CMS. In order to test new configurations, make sure to:
+The display of connection quick start resources is automated via Decap CMS. The
+canonical metadata lives in the `hoophq/documentation` repo; `npm run dev` and
+`npm run release:hoop-ui` both download it from `main` into
+`resources/public/data/connections-metadata.json` before compiling.
 
-1. Run the development server
+To test a connection that is not merged into `hoophq/documentation@main` yet:
 
-```bash
-npm run dev
-```
-
-2. Copy the contents of `./documentation/store/connections.json` to `./hoop/webapp/resources/public/data/connections-metadata.json`
+1. Clone the documentation repo next to this one and copy its store over the
+   downloaded file.
 
 ```sh
 # hoop repository folder
 cd ./hoop/webapp
-
-# clone the documentation repo
 git clone https://github.com/hoophq/documentation.git
-```
-
-3. Add a new connection quick start and copy the file below
-
-```sh
 cp ./documentation/store/connections.json ./resources/public/data/connections-metadata.json
 ```
 
-4. Visit the Webapp and click on Add Connection to see the list of available resources to create
+2. Run the dev server with the download disabled, so it keeps your copy instead
+   of replacing it with the published one.
+
+```bash
+SKIP_CONNECTION_METADATA_DOWNLOAD=1 npm run dev
+```
+
+3. Visit the Webapp and click on Add Connection to see the list of available
+   resources to create.
+
+Drop the variable once the entry is merged upstream — the published metadata is
+what CI and release builds use.
 

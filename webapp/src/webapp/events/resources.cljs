@@ -1,5 +1,6 @@
 (ns webapp.events.resources
   (:require
+   [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.resources.federation.events]))
 
@@ -15,6 +16,19 @@
                              :on-failure (fn [error]
                                            (rf/dispatch [:resources->create-failure error]))}]]]}))
 
+;; A role can be created and still not have its MCP OAuth login attached: the
+;; connection works on the frozen HEADER_AUTHORIZATION it was given, but
+;; nothing renews it, so it dies at the provider's token TTL. The gateway
+;; reports those roles by name; saying nothing here is how that becomes a
+;; mystery outage weeks after the wizard said "created successfully".
+(defn- oauth-warning-fx [resource]
+  (when-let [warned (seq (:mcp_oauth_warnings resource))]
+    [[:dispatch [:show-snackbar
+                 {:level :warning
+                  :text (str "MCP OAuth login not attached to "
+                             (str/join ", " (map :name warned)))
+                  :description (:warning (first warned))}]]]))
+
 (rf/reg-event-fx
  :resources->create-success
  (fn [{:keys [db]} [_ resource]]
@@ -24,18 +38,20 @@
        {:db (-> db
                 (assoc-in [:resources :creating?] false)
                 (assoc-in [:resources :last-created] resource))
-        :fx [[:dispatch [:show-snackbar {:level :success
-                                         :text "Resource created successfully!"}]]
-             [:dispatch [:resource-setup->next-step :success]]]}
+        :fx (concat [[:dispatch [:show-snackbar {:level :success
+                                                 :text "Resource created successfully!"}]]]
+                    (oauth-warning-fx resource)
+                    [[:dispatch [:resource-setup->next-step :success]]])}
        ;; The resource + connections already exist here. Save each federation
        ;; config and finish only on full success; any failure rolls the whole
        ;; resource back so a retry starts clean.
        {:db (-> db
                 (assoc-in [:resources :last-created] resource)
                 (assoc-in [:resources :pending-federation-saves] (count federation-roles)))
-        :fx (mapv (fn [role]
-                    [:dispatch [:federation/save-for-new-role (:name role)]])
-                  federation-roles)}))))
+        :fx (concat (oauth-warning-fx resource)
+                    (mapv (fn [role]
+                            [:dispatch [:federation/save-for-new-role (:name role)]])
+                          federation-roles))}))))
 
 (rf/reg-event-fx
  :resources->create-failure

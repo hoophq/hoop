@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { connectionsService } from '@/services/connections'
+import { useConnectionIconGetter } from '@/utils/connectionIcons'
 
 const SEARCH_DEBOUNCE_MS = 300
 const MIN_SEARCH_LENGTH = 2
@@ -82,9 +83,14 @@ export function usePaginatedConnections({ pageSize = 50 } = {}) {
     setLoading(false)
   }, [])
 
+  // `iconUrl` is the connection-type icon for option renderers that show it
+  // (AsyncValueFilter). It resolves to the fallback icon until the metadata
+  // catalog loads; the getter identity changes then, so options recompute.
+  const getIconUrl = useConnectionIconGetter()
+
   const options = useMemo(
-    () => items.map((c) => ({ value: c.id, label: c.name })),
-    [items],
+    () => items.map((c) => ({ value: c.id, label: c.name, iconUrl: getIconUrl(c) })),
+    [items, getIconUrl],
   )
 
   return {

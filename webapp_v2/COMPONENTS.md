@@ -61,19 +61,28 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 ```
 
 ### `EmptyState` (`src/layout/EmptyState/`)
-Empty list / zero-data state with icon, title, description, and optional CTA.
+Empty list / zero-data state: illustration, title, description, and optional CTA.
 ```jsx
 import EmptyState from '@/layout/EmptyState'
-import { Zap } from 'lucide-react'
 
 <EmptyState
-  icon={Zap}
   title="No agents yet"
   description="Set up your first agent to connect resources."
   action={{ label: 'Setup new Agent', onClick: () => navigate('/agents/new') }}
 />
+
+// Empty result inside a page that already renders its own header and filters
+<EmptyState
+  compact
+  title="No Guardrails match your filters"
+  description="Try clearing the filter above."
+/>
 ```
 `action` is optional — omit when the user has no permission to create.
+`compact` tightens the vertical space (drops the 50vh floor, smaller padding
+and gap; the illustration is unchanged) for an empty result rendered below a
+page header, callout or filter bar rather than as the whole screen.
+Optional `docsUrl` + `docsLabel` append a documentation line.
 
 ### `CodeSnippet`
 Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
@@ -512,16 +521,16 @@ import TagsInput from '@/components/TagsInput'
 ---
 
 ### `AsyncValueFilter`
-Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the full option object. An option may carry an optional `iconUrl`, rendered as a 16px image before its label — that is how the Resource Role filter shows connection-type icons.
 ```jsx
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
-import { Shapes } from 'lucide-react'
+import { Rotate3d } from 'lucide-react'
 
 const roles = usePaginatedConnections({ pageSize: 50 })
 
 <AsyncValueFilter
-  icon={Shapes}
+  icon={Rotate3d}
   label="Resource Role"
   placeholder="Search resource roles"
   selected={selectedRole}
@@ -536,7 +545,7 @@ const roles = usePaginatedConnections({ pageSize: 50 })
   onOpen={roles.ensureLoaded}
 />
 ```
-Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+Props: `icon`, `label`, `placeholder`, `selected` (option | null), `onSelect(option)`, `onClear()`, `options` (`[{value,label,iconUrl?}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
 
 ---
 
@@ -561,7 +570,7 @@ Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `pl
 ---
 
 ### `FeaturePromotion`
-Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, and future Access Control / Guardrails / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
+Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, Guardrails, and future Access Control / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
 ```jsx
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { FolderLock } from 'lucide-react'
@@ -579,6 +588,25 @@ import { FolderLock } from 'lucide-react'
 />
 ```
 Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+
+---
+
+### `RuleTableControls`
+Toolbar under an editable rule table: New / Select / Select all / Delete. Port of the CLJS `rule_buttons`, shared by Jira Templates and Guardrails. Pair it with `makeRowOps` (see Utils below) — `ops.allSelected`, `ops.toggleAll`, `ops.deleteSelected` and `ops.addRow` map 1:1 onto its props. On the free plan pass `disableNew` so a second rule can't be added; selection and deletion stay available (the button is disabled, never hidden).
+```jsx
+import RuleTableControls from '@/components/RuleTableControls'
+
+<RuleTableControls
+  onAdd={() => ops.addRow()}
+  selectMode={selectMode}
+  onToggleSelectMode={() => setSelectMode((v) => !v)}
+  allSelected={ops.allSelected}
+  onToggleAll={ops.toggleAll}
+  onDelete={ops.deleteSelected}
+  disableNew={freeLicense && rows.length >= 1}
+/>
+```
+Props: `onAdd()`, `selectMode`, `onToggleSelectMode()`, `allSelected`, `onToggleAll()`, `onDelete()`, `disableNew`.
 
 ---
 
@@ -659,7 +687,7 @@ const roles = usePaginatedConnections({ pageSize: 50 })
 // roles.options, roles.loading, roles.hasMore, roles.searchValue
 // roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
 ```
-Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+Returns `{ options ([{value,label,iconUrl}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
 
 ---
 
@@ -714,6 +742,25 @@ Non-obvious notes only:
   send tomorrow to include today). Never send `group_by`.
 - `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
   is unbounded; fetch it once and filter client-side.
+
+---
+
+## Utils (`src/utils/`)
+
+Pure helpers with no React or Mantine dependency. `snackbar.jsx` is documented under Notifications below.
+
+### `makeRowOps({ rows, setRows, factory, filterFn })`
+Row operations for editable rule tables (Jira Templates, Guardrails). Rows are plain objects with a stable `id` and a `selected` flag; the table owns the array through a `setRows` state setter. Deleting the last row reseeds a blank one via `factory`, so a table is never left with nothing to type into. Pass `filterFn` only when several tables render disjoint subsets of one shared rows array — select/delete then touch only the rows that table actually shows. Pairs with `RuleTableControls`.
+```jsx
+import { makeRowOps } from '@/utils/rowOps'
+
+const ops = makeRowOps({ rows, setRows, factory: createEmptyRow })
+// ops.visible, ops.allSelected
+// ops.patchRow(id, patch), ops.toggleSelect(id), ops.toggleAll()
+// ops.deleteSelected(), ops.addRow(transform?)
+<Table.Tr key={row.id}>…</Table.Tr>
+```
+Returns `{ visible, allSelected, patchRow, toggleSelect, toggleAll, deleteSelected, addRow }`. `addRow(transform)` applies `transform` to the fresh row before appending (used to pre-fill a type/value).
 
 ---
 

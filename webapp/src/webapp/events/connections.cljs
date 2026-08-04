@@ -3,6 +3,8 @@
    [clojure.edn :refer [read-string]]
    [re-frame.core :as rf]
    [webapp.connections.constants :as constants]
+   ;; Registers :mcp-oauth/report-save-outcome, dispatched on every save.
+   [webapp.resources.setup.events.mcp-oauth]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 ;; Cache configuration
@@ -204,14 +206,15 @@
                        {:method "POST"
                         :uri "/connections"
                         :body body
-                        :on-success (fn [connection]
+                        :on-success (fn [response]
                                       (rf/dispatch [:close-modal])
                                       ;; plugins might be updated in the connection
                                       ;; creation action, so we get them again here
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
-                                      (rf/dispatch [:show-snackbar {:level :success
-                                                                    :text "Connection created!"}])
+                                      (rf/dispatch [:mcp-oauth/report-save-outcome
+                                                    response
+                                                    "Connection created!"])
 
                                       (rf/dispatch [:navigate :resources]))}]]]})))
 
@@ -225,11 +228,11 @@
                        {:method "PUT"
                         :uri (str "/connections/" (:name connection))
                         :body body
-                        :on-success (fn []
+                        :on-success (fn [response]
                                       (rf/dispatch [:modal->close])
-                                      (rf/dispatch [:show-snackbar
-                                                    {:level :success
-                                                     :text (str "Connection " (:name connection) " updated!")}])
+                                      (rf/dispatch [:mcp-oauth/report-save-outcome
+                                                    response
+                                                    (str "Connection " (:name connection) " updated!")])
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       (rf/dispatch [:navigate :resources]))}]]]})))

@@ -126,6 +126,25 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
 
+		// An MCPProxyConnectionWrite packet carrying SpecMCPEventKey is a
+		// structured audit record — one JSON verdict or tool-call line — not
+		// response bytes for the MCP client. The plugin phase above has just
+		// recorded it, which is the whole reason it crossed the wire, and
+		// nothing downstream may see it: the spec is copied from the
+		// originating request, so the packet even carries a live
+		// SpecClientConnectionID and would route straight into a client's
+		// keep-alive response body, wrecking its HTTP framing mid-stream.
+		//
+		// The drop belongs here rather than in each listener because this is
+		// the single fan-out point: every proxy consumer — the CLI's gRPC
+		// stream and the gateway's internal httpproxy listener — reads what
+		// proxyStream.Send writes below. A per-listener filter only protects
+		// the listeners someone remembered to patch, which is exactly how
+		// `hoop connect` ended up writing audit JSON into an MCP client.
+		if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
+			continue
+		}
+
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.SessionClose:
 			updateGuardRailsInfoFromPacket(pctx, pkt)

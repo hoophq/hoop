@@ -15,6 +15,18 @@ import {
   createEmptyRow,
 } from '../../helpers'
 
+// Row controls run one step below the app-wide md default (32px/14px instead
+// of 40px/16px), which is the density the legacy table was designed at.
+const ROW_CONTROL_SIZE = 'sm'
+
+// Select columns are sized to their longest option plus the input's padding
+// and chevron. They cannot size themselves: Mantine's Select is an <input>,
+// whose intrinsic width is fixed, so a longer value scrolls out of view
+// instead of widening the cell. Type holds "Presets"/"Fields"/"Custom"; Rule
+// holds the preset names, the longest being "Cryptocurrency Identifiers".
+const TYPE_COLUMN_WIDTH = 180
+const RULE_COLUMN_WIDTH = 280
+
 function RuleCell({ row, freeLicense, onChange }) {
   if (!row.type) return null
 
@@ -28,6 +40,7 @@ function RuleCell({ row, freeLicense, onChange }) {
     return (
       <Select
         placeholder="Select preset"
+        size={ROW_CONTROL_SIZE}
         data={options}
         value={row.rule || null}
         onChange={(v) => onChange({ rule: v || '' })}
@@ -42,6 +55,7 @@ function RuleCell({ row, freeLicense, onChange }) {
   return (
     <TextInput
       placeholder="Rule Name"
+      size={ROW_CONTROL_SIZE}
       value={row.rule}
       onChange={(e) => onChange({ rule: e.currentTarget.value })}
       onBlur={(e) => {
@@ -72,6 +86,7 @@ function DetailsCell({ row, freeLicense, onChange }) {
     return (
       <MultiSelect
         placeholder="Select rules..."
+        size={ROW_CONTROL_SIZE}
         data={FIELD_OPTIONS}
         value={Array.isArray(row.details) ? row.details : []}
         onChange={(values) =>
@@ -85,6 +100,7 @@ function DetailsCell({ row, freeLicense, onChange }) {
   return (
     <TextInput
       placeholder="\b[A-Z]{2}[0-9]{3}\b"
+      size={ROW_CONTROL_SIZE}
       value={row.details}
       onChange={(e) => onChange({ details: e.currentTarget.value })}
     />
@@ -133,8 +149,8 @@ export default function RulesTable({
         <Table.Thead>
           <Table.Tr>
             {selectMode && <Table.Th w={40} />}
-            <Table.Th w={180}>Type</Table.Th>
-            <Table.Th w={220}>Rule</Table.Th>
+            <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
+            <Table.Th w={RULE_COLUMN_WIDTH}>Rule</Table.Th>
             <Table.Th>Details</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -153,6 +169,7 @@ export default function RulesTable({
               <Table.Td>
                 <Select
                   placeholder="Select type"
+                  size={ROW_CONTROL_SIZE}
                   data={RULE_TYPES}
                   value={row.type || null}
                   onChange={(v) => changeType(idx, v || '')}
