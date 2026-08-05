@@ -296,7 +296,7 @@ export const useConfigureRoleStore = create((set, get) => ({
           ? connectionTags.value?.items || []
           : []
       const userGroupsList =
-        userGroups.status === 'fulfilled' ? userGroups.value || [] : []
+        userGroups.status === 'fulfilled' ? userGroups.value?.data || [] : []
       const hideRoleInfo =
         hideRole.status === 'fulfilled'
           ? hideRole.value?.data?.hide_role_info ?? false

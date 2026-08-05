@@ -36,6 +36,8 @@ import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import AccessControl from '@/pages/Features/AccessControl'
+import AccessControlForm from '@/pages/Features/AccessControl/Create'
 import Guardrails from '@/pages/Guardrails'
 import GuardrailForm from '@/pages/Guardrails/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
@@ -426,6 +428,47 @@ function Router() {
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Access Control. The edit route carries the group name as a query
+          parameter (`?group=<name>`) to match the legacy CLJS route: a path
+          segment would leave the old URL shape unclaimed by React Router and
+          it would fall through to the ClojureScript catch-all. */}
+      <Route
+        path="/features/access-control"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControl />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-control/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-control/edit"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControlForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

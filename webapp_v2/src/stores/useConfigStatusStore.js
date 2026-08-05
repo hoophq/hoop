@@ -73,8 +73,8 @@ const PROBES = [
     return { checks: { sessionRan: (data?.total ?? 0) >= 1 } }
   },
   async () => {
-    const groups = await userGroupsService.list()
-    return { checks: { groupsCreated: (groups ?? []).some((g) => g !== DEFAULT_GROUP) } }
+    const { data } = await userGroupsService.list()
+    return { checks: { groupsCreated: (data ?? []).some((g) => g !== DEFAULT_GROUP) } }
   },
   async () => {
     const { data } = await usersService.list()
