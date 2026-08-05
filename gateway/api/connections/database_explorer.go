@@ -213,7 +213,11 @@ func ListTables(c *gin.Context) {
 		}
 	}
 
-	script := getTablesQuery(currentConnectionType, dbName)
+	script, scriptErr := getTablesQuery(currentConnectionType, dbName)
+	if scriptErr != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": scriptErr.Error()})
+		return
+	}
 	if script == "" {
 		// Check for DynamoDB
 		if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
@@ -381,12 +385,10 @@ func GetTableColumns(c *gin.Context) {
 		}
 	}
 
-	script := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
-	if script == "" {
-		// Check for DynamoDB
-		if currentConnectionType == pb.ConnectionTypeDynamoDB {
-			script = fmt.Sprintf(`aws dynamodb describe-table --table-name %s --output json`, tableName)
-		}
+	script, scriptErr := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
+	if scriptErr != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": scriptErr.Error()})
+		return
 	}
 
 	if script == "" {
