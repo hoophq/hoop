@@ -1,7 +1,26 @@
 /* The search control is a <button>, so it needs the text alignment an input
-   would get for free. */
+   would get for free. It is also chrome-less by design — the field should read
+   as part of the header surface, not as a box sitting on it. */
 .searchInput {
   text-align: start;
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.searchInput:hover {
+  background-color: var(--mantine-color-gray-0);
+}
+
+/* Gray pill, matching the Figma (gray-1). Mantine's `default` variant would
+   paint it white with a border. */
+.nativeButton {
+  background-color: var(--mantine-color-gray-1);
+  color: var(--mantine-color-text);
+  border: none;
+}
+
+.nativeButton:hover {
+  background-color: var(--mantine-color-gray-2);
 }
 
 .userButton {
@@ -27,8 +46,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: var(--mantine-color-body);
-  border: 1px solid var(--mantine-color-gray-2);
+  background-color: var(--mantine-color-gray-1);
   color: var(--mantine-color-text);
   display: flex;
   align-items: center;

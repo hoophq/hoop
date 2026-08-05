@@ -5,6 +5,7 @@ import Button from '@/components/Button'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
 import { DRAWER_ID } from '@/features/NativeConnections/constants'
+import classes from './Header.module.css'
 
 /**
  * Opens the Native Connections drawer, and carries the active-session count.
@@ -39,6 +40,7 @@ export function NativeConnectionsButton() {
         visibleFrom="sm"
         variant="default"
         size="sm"
+        className={classes.nativeButton}
         leftSection={<PanelRightOpen size={16} aria-hidden="true" />}
         rightSection={
           activeCount > 0 ? (
@@ -52,7 +54,7 @@ export function NativeConnectionsButton() {
       </Button>
 
       {/* The label plus a Burger would not fit next to a 360px viewport. */}
-      <ActionIcon {...shared} hiddenFrom="sm" variant="default" size="lg">
+      <ActionIcon {...shared} hiddenFrom="sm" variant="default" size="lg" className={classes.nativeButton}>
         <PanelRightOpen size={16} aria-hidden="true" />
       </ActionIcon>
     </>

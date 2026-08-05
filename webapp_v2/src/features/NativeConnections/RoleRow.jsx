@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Group, Image, Stack, Text } from '@mantine/core'
+import { Box, Group, Image, Stack, Text } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import Accordion from '@/components/Accordion'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
@@ -8,7 +8,7 @@ import { RoleRowStatus } from './RoleRowStatus'
 import { SessionPanel } from './SessionPanel'
 import { RequestAccessPanel } from './RequestAccessPanel'
 import { DisconnectConfirmModal } from './DisconnectConfirmModal'
-import { IdlePanel, PendingReviewPanel, RequestingPanel, UnavailablePanel } from './FlowPanels'
+import { PendingReviewPanel, RequestingPanel, UnavailablePanel } from './FlowPanels'
 import { deriveRowState } from './rowState'
 import classes from './NativeConnections.module.css'
 
@@ -19,7 +19,6 @@ function RowBody({ role }) {
   const review = useNativeAccessStore((s) => s.reviewByName[role.name])
   const error = useNativeAccessStore((s) => s.errorByName[role.name])
   const disconnect = useNativeAccessStore((s) => s.disconnect)
-  const startFlow = useNativeAccessStore((s) => s.startFlow)
 
   const [confirmOpened, { open: openConfirm, close: closeConfirm }] = useDisclosure(false)
   const [disconnecting, setDisconnecting] = useState(false)
@@ -40,12 +39,10 @@ function RowBody({ role }) {
     body = <RequestAccessPanel connectionName={role.name} connection={connection} />
   } else if (status === FLOW_STATUS.READY && credentials) {
     body = <SessionPanel credentials={credentials} onDisconnect={openConfirm} />
-  } else if (status === FLOW_STATUS.CHECKING || status === FLOW_STATUS.REQUESTING) {
-    body = <RequestingPanel connectionName={role.name} />
   } else {
-    // No status: either the flow has not started yet, or it was torn down by a
-    // disconnect / expiry while the row stayed open.
-    body = <IdlePanel onConnect={() => startFlow(role.name)} />
+    // Opening the row is what starts the flow, and tearing a session down also
+    // collapses the row (clearSession), so an open row always has one running.
+    body = <RequestingPanel connectionName={role.name} />
   }
 
   return (
@@ -94,7 +91,9 @@ export function RoleRow({ role, active, expanded }) {
           <Group gap="md" wrap="nowrap" miw={0}>
             {/* The getter always resolves to a URL, falling back to a generic
                 icon when the subtype is missing from the metadata catalog. */}
-            <Image src={iconSrc} w={20} h={20} alt="" />
+            <Box className={classes.rowAvatar}>
+              <Image src={iconSrc} w={20} h={20} alt="" />
+            </Box>
             <Stack gap={2} miw={0}>
               <Text fz="sm" fw={700} truncate>
                 {role.name}

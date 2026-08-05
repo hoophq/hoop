@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { Divider, Group, ScrollArea, Stack, Text } from '@mantine/core'
+import { Divider, Group, ScrollArea, Stack } from '@mantine/core'
 import Button from '@/components/Button'
 import Tabs from '@/components/Tabs'
 import { pickCredentialRenderer } from './credentials'
-import { SessionTimer } from './components/SessionTimer'
 import { normalizeSubtype, openRdpWebClient } from './helpers'
 import classes from './NativeConnections.module.css'
 
@@ -26,20 +25,9 @@ export function SessionPanel({ credentials, onDisconnect }) {
   }
 
   return (
-    <Stack gap="md">
-      {credentials.expire_at ? (
-        <Group gap="xs">
-          <Text fz="sm" c="dimmed">
-            Connection established, time left:
-          </Text>
-          <SessionTimer expireAt={credentials.expire_at} />
-        </Group>
-      ) : (
-        <Text fz="sm" c="dimmed">
-          Connection established
-        </Text>
-      )}
-
+    // No "Connection established" line: the row itself already carries the
+    // status, as the countdown pill or the connected indicator.
+    <Stack gap="lg">
       {/* Bounded and scrollable: credential blocks (claude-code especially) are
           long enough to push every other role out of the drawer otherwise. The
           footer sits outside, so Disconnect is always reachable. */}
@@ -80,16 +68,17 @@ export function SessionPanel({ credentials, onDisconnect }) {
           deliberately not surfaced here — it was never rendered in the CLJS UI
           either, and adding a new destructive action alongside the redesign is
           a separate product decision. */}
-      <Group justify="flex-end" gap="xs">
+      <Group justify="flex-end" gap="sm">
         {subtype === 'rdp' && (
           <Button
-            size="xs"
+            size="sm"
+            variant="default"
             onClick={() => openRdpWebClient(credentials.connection_credentials?.username)}
           >
             Open web client
           </Button>
         )}
-        <Button color="red" size="xs" onClick={onDisconnect}>
+        <Button color="red" size="sm" onClick={onDisconnect}>
           Disconnect
         </Button>
       </Group>

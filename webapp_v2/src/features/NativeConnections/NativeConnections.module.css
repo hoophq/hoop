@@ -1,3 +1,9 @@
+/* Light-blue badge on the drawer title — indigo-0 fill, indigo-4 glyph. */
+.drawerIcon {
+  background-color: var(--mantine-color-indigo-0);
+  color: var(--mantine-color-indigo-4);
+}
+
 /* The list is a bordered, rounded card — the container the Figma draws around
    the rows. Overflow clips the first/last row corners to the radius. */
 .accordionRoot {
@@ -6,23 +12,41 @@
   overflow: hidden;
 }
 
-/* Row metrics measured off the Figma accordion component: 76px rows, ~16px of
-   padding on every side, and the icon a full spacing step away from the text. */
+/* Row metrics measured off the Figma accordion component: 76px rows and 16px
+   of padding on every side. */
 .rowControl {
   padding-inline: var(--mantine-spacing-md);
   padding-block: var(--mantine-spacing-md);
 }
 
-/* The expanded item keeps the same background as a collapsed one — only the
-   separator marks it. Mantine's `filled` variant tinted the whole item,
-   including the panel, which put a grey wash behind all the credential
-   content. */
+/* Only the CONTROL of the open row is tinted, never the panel. Mantine's
+   `filled` variant would wash the whole item, credential content included. */
+.rowControl[data-active] {
+  background-color: var(--mantine-color-gray-0);
+}
+
 .accordionItem {
   border-bottom: 1px solid var(--mantine-color-gray-2);
 }
 
 .accordionItem:last-of-type {
   border-bottom: none;
+}
+
+/* 40px rounded square holding the connection icon. The tint is an alpha
+   overlay, not a flat colour, so it keeps the same contrast against a white
+   collapsed row and a gray-0 expanded one — which is exactly what the Figma
+   does (a constant delta from whatever sits behind it). Same Neutral Alpha
+   literal Sidebar.module.css uses; Mantine exposes no alpha-tint variable. */
+.rowAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--mantine-radius-md);
+  background-color: rgba(0, 0, 51, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .accordionPanelContent {

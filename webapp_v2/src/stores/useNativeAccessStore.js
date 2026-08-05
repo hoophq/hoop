@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { connectionCredentialsService } from '@/services/connectionCredentials'
 import { connectionsService } from '@/services/connections'
+import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { subscribeTick } from '@/utils/tick'
 import {
@@ -334,8 +335,16 @@ export const useNativeAccessStore = create((set, get) => ({
     }
   },
 
-  /** Local-only cleanup. Does not call the API. */
+  /**
+   * Local-only cleanup. Does not call the API.
+   *
+   * Collapses the row as well. Expanding is what starts the flow, so a torn-down
+   * row that stayed open would either sit in a dead state or silently reconnect;
+   * closing it makes "open the accordion to connect" true in both directions.
+   */
   clearSession: (connectionName) => {
+    const { expanded, setExpanded } = useNativeConnectionsStore.getState()
+    if (expanded === connectionName) setExpanded(null)
     set((s) => ({
       activeByName: removeFrom(s.activeByName, connectionName),
       credentialsByName: removeFrom(s.credentialsByName, connectionName),
