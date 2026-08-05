@@ -6526,6 +6526,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/reports/compliance": {
+            "get": {
+                "description": "Computes the compliance report with an overall score, category summaries, actionable items and per-framework control evaluations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get Compliance Report",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ComplianceReport"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/sessions": {
             "get": {
                 "description": "The report payload groups sessions by info types and by a custom field (` + "`" + `group_by` + "`" + `) provided by the client.\nThe items returns data containing the sum of redact fields performed by a given info type aggregated by the ` + "`" + `group_by` + "`" + ` attribute.",
@@ -11905,6 +11931,346 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "openapi.ComplianceAction": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "description": "Label is the display text of the remediation action",
+                    "type": "string",
+                    "example": "Configure SSO"
+                },
+                "target": {
+                    "description": "Target is the route or documentation path; empty when type is none or external",
+                    "type": "string",
+                    "example": "/organization/users"
+                },
+                "type": {
+                    "description": "Type of remediation target: app (in-app route), docs (documentation page), external (verify in IdP/infra), none",
+                    "type": "string",
+                    "enum": [
+                        "app",
+                        "docs",
+                        "external",
+                        "none"
+                    ],
+                    "example": "app"
+                }
+            }
+        },
+        "openapi.ComplianceCategorySummary": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "description": "Compliant is the number of compliant checks in this category",
+                    "type": "integer"
+                },
+                "id": {
+                    "description": "ID is the category identifier",
+                    "type": "string",
+                    "example": "identity"
+                },
+                "title": {
+                    "description": "Title is the category display name",
+                    "type": "string",
+                    "example": "Identity"
+                },
+                "total": {
+                    "description": "Total is the number of applicable checks (excludes not_applicable and unable_to_verify)",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceCheckResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is the suggested remediation",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceAction"
+                        }
+                    ]
+                },
+                "category": {
+                    "description": "Category groups checks by security domain",
+                    "type": "string",
+                    "enum": [
+                        "identity",
+                        "access_control",
+                        "data_protection",
+                        "audit_trail",
+                        "monitoring_response",
+                        "infrastructure"
+                    ]
+                },
+                "evidence": {
+                    "description": "Evidence is the data supporting the evaluated status",
+                    "type": "string",
+                    "example": "Authentication method: OIDC"
+                },
+                "id": {
+                    "description": "ID is the stable evaluator id of the check",
+                    "type": "string",
+                    "example": "sso_enabled"
+                },
+                "message": {
+                    "description": "Message describes the evaluated result",
+                    "type": "string",
+                    "example": "SSO is enabled via OIDC provider"
+                },
+                "status": {
+                    "description": "Status is the evaluated compliance status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceStatusType"
+                        }
+                    ]
+                },
+                "title": {
+                    "description": "Title is the human readable name of the check",
+                    "type": "string",
+                    "example": "Single Sign-On Enabled"
+                }
+            }
+        },
+        "openapi.ComplianceControl": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is the suggested remediation",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceAction"
+                        }
+                    ]
+                },
+                "category": {
+                    "description": "Category groups the control by security domain",
+                    "type": "string"
+                },
+                "check_id": {
+                    "description": "CheckID references the check that evaluates this control",
+                    "type": "string",
+                    "example": "sso_enabled"
+                },
+                "description": {
+                    "description": "Description explains how the product satisfies the control",
+                    "type": "string"
+                },
+                "evidence": {
+                    "description": "Evidence is the data supporting the evaluated status",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the framework control identifier",
+                    "type": "string",
+                    "example": "CC6.1"
+                },
+                "message": {
+                    "description": "Message describes the evaluated result",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is the evaluated compliance status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceStatusType"
+                        }
+                    ]
+                },
+                "title": {
+                    "description": "Title is the control name",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.ComplianceControlGroup": {
+            "type": "object",
+            "properties": {
+                "controls": {
+                    "description": "Controls are the evaluated controls of this group",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceControl"
+                    }
+                },
+                "id": {
+                    "description": "ID is the control group identifier",
+                    "type": "string",
+                    "example": "CC6"
+                },
+                "title": {
+                    "description": "Title is the control group name",
+                    "type": "string",
+                    "example": "Logical and Physical Access Controls"
+                }
+            }
+        },
+        "openapi.ComplianceFramework": {
+            "type": "object",
+            "properties": {
+                "breakdown": {
+                    "description": "Breakdown counts controls by status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceStatusBreakdown"
+                        }
+                    ]
+                },
+                "compliant": {
+                    "description": "Compliant is the number of compliant controls",
+                    "type": "integer"
+                },
+                "groups": {
+                    "description": "Groups are the framework control groups",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceControlGroup"
+                    }
+                },
+                "id": {
+                    "description": "ID is the framework identifier",
+                    "type": "string",
+                    "enum": [
+                        "soc2",
+                        "gdpr",
+                        "pci_dss",
+                        "hipaa",
+                        "best_practices"
+                    ]
+                },
+                "level": {
+                    "description": "Level classifies the score: low (0-39), moderate (40-69), strong (70-100)",
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "moderate",
+                        "strong"
+                    ]
+                },
+                "name": {
+                    "description": "Name is the framework display name",
+                    "type": "string",
+                    "example": "SOC 2 Type II"
+                },
+                "score_percent": {
+                    "description": "ScorePercent is the weighted compliance score in the 0-100 range",
+                    "type": "integer",
+                    "example": 85
+                },
+                "total_applicable": {
+                    "description": "TotalApplicable is the number of controls excluding not_applicable and unable_to_verify",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceOverall": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "description": "Compliant is the number of compliant control rows across all frameworks",
+                    "type": "integer"
+                },
+                "level": {
+                    "description": "Level classifies the score: low (0-499), moderate (500-749), strong (750-1000)",
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "moderate",
+                        "strong"
+                    ]
+                },
+                "score": {
+                    "description": "Score is the weighted compliance score in the 0-1000 range",
+                    "type": "integer",
+                    "example": 812
+                },
+                "total_applicable": {
+                    "description": "TotalApplicable is the number of control rows excluding not_applicable and unable_to_verify",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceReport": {
+            "type": "object",
+            "properties": {
+                "action_required": {
+                    "description": "ActionRequired lists actionable checks with warning or non_compliant status",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceCheckResult"
+                    }
+                },
+                "categories": {
+                    "description": "Categories summarize the checks by security domain",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceCategorySummary"
+                    }
+                },
+                "frameworks": {
+                    "description": "Frameworks are the per-framework control evaluations",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceFramework"
+                    }
+                },
+                "generated_at": {
+                    "description": "GeneratedAt is the UTC timestamp when the report was computed",
+                    "type": "string"
+                },
+                "overall": {
+                    "description": "Overall is the aggregated compliance score",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceOverall"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.ComplianceStatusBreakdown": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "type": "integer"
+                },
+                "idp_dependent": {
+                    "type": "integer"
+                },
+                "non_compliant": {
+                    "type": "integer"
+                },
+                "not_applicable": {
+                    "type": "integer"
+                },
+                "unable_to_verify": {
+                    "type": "integer"
+                },
+                "warning": {
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceStatusType": {
+            "type": "string",
+            "enum": [
+                "compliant",
+                "warning",
+                "non_compliant",
+                "not_applicable",
+                "unable_to_verify",
+                "idp_dependent"
+            ],
+            "x-enum-varnames": [
+                "ComplianceStatusCompliant",
+                "ComplianceStatusWarning",
+                "ComplianceStatusNonCompliant",
+                "ComplianceStatusNotApplicable",
+                "ComplianceStatusUnableToVerify",
+                "ComplianceStatusIdpDependent"
+            ]
         },
         "openapi.Connection": {
             "type": "object",
