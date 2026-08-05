@@ -33,7 +33,7 @@
         ;; rule, which on the Radix scale the legacy app uses is gray-4 and
         ;; gray-9. The old bg-gray-1/border-gray-3 pairing was near-white on
         ;; near-white and read as no bar at all under the new global header.
-        [:> Box {:class "h-10 border-b-2 border-gray-9 bg-gray-4"}
+        [:> Box {:class "h-10 shrink-0 border-b-2 border-gray-9 bg-gray-4"}
          [:> Flex {:align "center"
                    :justify "between"
                    :class "h-full px-4"}

@@ -17,15 +17,17 @@
     content]])
 
 (defn with-panel [show-panel? content panel]
-  ;; Subtracts the terminal toolbar from the space this splitter gets. The
-  ;; literal used to be 4rem — the toolbar's old height — which left the editor
-  ;; pane 22px taller than its container once the toolbar shrank, pushing the
-  ;; log-area footer off screen. Token lives in tailwind.config.js.
-  [:> Flex {:class "h-[calc(100%-theme(spacing.terminal-header))]"}
+  ;; Fills whatever the terminal toolbar leaves. This used to subtract a
+  ;; hardcoded 4rem — the toolbar's old height — which left the editor pane
+  ;; taller than its container once the toolbar shrank and pushed the log-area
+  ;; footer off screen. flex-1 removes the constant entirely.
+  [:> Flex {:class "flex-1 min-h-0"}
    [:> Allotment {:key (str "allotment-" show-panel?)
                   :defaultSizes [750 250]
                   :horizontal true}
-    [:> Box {:class "flex-grow transition-all duration-300"}
+     ;; h-full so the content inside can size against the Allotment pane,
+     ;; which is the nearest ancestor with a definite height.
+     [:> Box {:class "flex-grow h-full transition-all duration-300"}
      content]
     (when show-panel?
       [side-panel panel])]])

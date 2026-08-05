@@ -347,7 +347,10 @@
            ;; Standalone CLJS keeps the landmark, since nothing else provides one.
            [:> Box (cond-> {:as (if (react-shell?) "section" "main")
                             :tabIndex "-1"
-                            :class (str "h-full bg-gray-2 overflow-hidden "
+                            ;; Flex column: the toolbar keeps its natural height
+                            ;; and the splitter takes whatever is left. No
+                            ;; constant to subtract, so the two cannot drift.
+                            :class (str "h-full bg-gray-2 overflow-hidden flex flex-col "
                                         (when @dark-mode?
                                           "dark"))
                             :aria-label "Terminal"}
@@ -362,7 +365,7 @@
 
             [with-panel
              (boolean @active-panel)
-             [:> Box {:class "flex h-terminal-content overflow-hidden"}
+             [:> Box {:class "flex h-full overflow-hidden"}
               [:> Allotment {:key (str "compact-allotment-" @db-schema-collapsed?)
                              :separator false}
 

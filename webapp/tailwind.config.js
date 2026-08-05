@@ -2,10 +2,6 @@
 const plugin = require('tailwindcss/plugin');
 const { fontFamily } = require('tailwindcss/defaultTheme');
 
-// Height of the web terminal's own toolbar (40px bar + 1px rule). Both the
-// editor viewport and the side-panel splitter subtract it, and they drifted
-// apart once before — keep it here, not inline.
-const TERMINAL_HEADER_HEIGHT = '42px';
 
 module.exports = {
   content: [
@@ -183,7 +179,6 @@ module.exports = {
         'screen-90vh': '90vh',
         'logs-container': 'calc(100% - 38px)',
         'connection-selector': 'calc(100vh - 56px)',
-        'terminal-content': `calc(100vh - var(--app-shell-header-offset, 0rem) - ${TERMINAL_HEADER_HEIGHT})`
       },
       minHeight: {
         screen: 'calc(100vh - var(--app-shell-header-offset, 0rem))'
@@ -255,7 +250,6 @@ module.exports = {
         // `sticky top-0` resolves against the viewport and slides underneath
         // the fixed header. Resolves to 0 when the shell is not mounted.
         'app-header': 'var(--app-shell-header-offset, 0rem)',
-        'terminal-header': TERMINAL_HEADER_HEIGHT,
         'radix-1': 'var(--space-1)',
         'radix-2': 'var(--space-2)',
         'radix-3': 'var(--space-3)',
