@@ -95,6 +95,10 @@ export function usePaginatedConnections({ pageSize = 50 } = {}) {
 
   return {
     options,
+    // The raw rows behind `options`, for call sites that need more of the
+    // connection than its id and name — filtering the picker by access mode or
+    // subtype, for instance. Only the pages loaded so far are in here.
+    items,
     loading,
     hasMore,
     searchValue,

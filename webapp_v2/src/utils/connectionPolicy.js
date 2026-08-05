@@ -67,6 +67,18 @@ export function canTestConnection({ type, subtype } = {}) {
   return TESTABLE_TYPES.has(type)
 }
 
+// Every subtype the gateway proxies over HTTP. Mirrors the CLJS
+// http-proxy-subtypes set at
+// webapp/src/webapp/resources/constants.cljs:24.
+const HTTP_PROXY_SUBTYPES = new Set([
+  'httpproxy',
+  'kibana',
+  'grafana',
+  'claude-code',
+  'mcp',
+  'mcpproxy',
+])
+
 // Which connections can launch the native-client flow via the command
 // palette. Direct, HTTP-proxy, custom-native, and Kubernetes paths each
 // have their own list — see CommandPalette/ConnectionActionsPage.
@@ -76,6 +88,9 @@ const NATIVE_CLIENT_DIRECT_SUBTYPES = new Set([
   'github',
   'git',
 ])
+// Deliberately narrower than HTTP_PROXY_SUBTYPES above: the command palette
+// has never offered the native-client flow for "mcp"/"mcpproxy". Unifying the
+// two would change what that menu shows, which is a separate decision.
 const NATIVE_CLIENT_HTTP_PROXY_SUBTYPES = new Set([
   'httpproxy',
   'kibana',
@@ -97,4 +112,38 @@ export function canAccessNativeClient(connection) {
     NATIVE_CLIENT_KUBERNETES_SUBTYPES.has(subtype) ||
     (type === 'custom' && NATIVE_CLIENT_CUSTOM_SUBTYPES.has(subtype))
   )
+}
+
+// Subtypes that speak a wire protocol the browser terminal can't drive; they
+// are reachable through a native client or the CLI instead. Mirrors the
+// exclusion list in the CLJS can-open-web-terminal? predicate
+// (webapp/src/webapp/resources/helpers.cljs).
+const NON_TERMINAL_SUBTYPES = new Set([
+  'tcp',
+  'ssh',
+  'ssh-local',
+  'rdp',
+  'github',
+  'git',
+])
+
+// Whether the connection can be driven from the browser terminal, which is
+// what an access request of type "command" runs against.
+export function canOpenWebTerminal(connection) {
+  if (!connection) return false
+  const { subtype } = connection
+  if (NON_TERMINAL_SUBTYPES.has(subtype) || HTTP_PROXY_SUBTYPES.has(subtype)) {
+    return false
+  }
+  return (
+    connection.access_mode_runbooks === 'enabled' ||
+    connection.access_mode_exec === 'enabled'
+  )
+}
+
+// Whether the connection can be reached with `hoop connect`. Everything the
+// CLI can open qualifies except custom RDP, which needs the native client.
+export function canHoopCli(connection) {
+  if (!connection || connection.access_mode_connect !== 'enabled') return false
+  return !(connection.type === 'custom' && connection.subtype === 'rdp')
 }
