@@ -56,7 +56,7 @@ function LogsStatusMessage({ status }) {
     )
   }
 
-  if (status === 'error') {
+  if (status === 'error' || status === 'failure') {
     return <Text fz="sm">There was an error to get the logs for this task</Text>
   }
 
@@ -134,10 +134,12 @@ function VirtualizedLines({ lines }) {
 
 /**
  * @param {object} props
- * @param {string} [props.status] `'ready'` renders the logs, `'loading'` the
- *   spinner row, `'error'` the failure copy; anything else (`'idle'`,
- *   `undefined`) falls back to "No logs to show". These are the store's status
- *   values — v1's `:success`/`:loading`/`:failure` keywords in this app's
+ * @param {string} [props.status] `'success'` renders the logs, `'loading'` the
+ *   spinner row, `'error'`/`'failure'` the failure copy; anything else
+ *   (`'idle'`, `undefined`) falls back to "No logs to show". This is v1's
+ *   vocabulary (logs_container.cljs:15,21) — `:success`/`:loading`/`:failure`,
+ *   which is also what the results pipeline computes. Do NOT swap it for the
+ *   store's `ready`: the two meet here and a mismatch silently blanks
  *   vocabulary.
  * @param {string} [props.logs] The raw log payload.
  * @param {string} [props.className] Extra class for the outer surface — v1's
@@ -155,7 +157,7 @@ export default function LogsContainer({ status, logs, className }) {
       ff="monospace"
       fz="sm"
     >
-      {status === 'ready' ? (
+      {status === 'success' ? (
         <VirtualizedLines lines={lines} />
       ) : (
         <LogsStatusMessage status={status} />

@@ -150,7 +150,8 @@ export default function ResultsDownloadMenu({
   }
 
   return (
-    <ActionMenu>
+    // v1 labels this trigger "Output options" (results_download_menu.cljs:114).
+    <ActionMenu ariaLabel="Output options">
       {showView && (
         <ActionMenu.Item onClick={onViewSessionDetails}>
           <Group gap="xs" wrap="nowrap">

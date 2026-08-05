@@ -10,12 +10,15 @@ import classes from './ActionMenu.module.css'
  *     <ActionMenu.Item onClick={handleEdit}>Edit</ActionMenu.Item>
  *     <ActionMenu.Item danger onClick={handleDelete}>Delete</ActionMenu.Item>
  *   </ActionMenu>
+ *
+ * Pass `ariaLabel` whenever several of these sit on one screen — a list of
+ * identical "Actions" buttons is unusable with a screen reader.
  */
-function ActionMenu({ children, disabled = false }) {
+function ActionMenu({ children, disabled = false, ariaLabel = 'Actions' }) {
   return (
     <Menu shadow="md" width={180} position="bottom-end" withinPortal>
       <Menu.Target>
-        <ActionIcon variant="subtle" color="gray" disabled={disabled} aria-label="Actions">
+        <ActionIcon variant="subtle" color="gray" disabled={disabled} aria-label={ariaLabel}>
           <MoreHorizontal size={16} />
         </ActionIcon>
       </Menu.Target>

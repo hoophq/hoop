@@ -95,9 +95,17 @@ export default function ResultsContainer({
               body={body}
               height="100%"
               theme="alpine"
+              // results_container.cljs:34 passes its args positionally —
+              // `results-heads results-body false true` — so dark-mode is TRUE.
+              // The session results grid is dark blue in v1; defaulting to light
+              // here was a visible regression.
+              darkMode
               // v1 only paginates past 100 rows.
               pagination={(body?.length ?? 0) > 100}
-              autoSizeColumns
+              // v1 passes :auto-size-columns? true, but its implementation gates
+              // on `params.columnApi`, which ag-grid 33 removed — so v1 never
+              // actually auto-sizes. Matching observed behaviour, not intent.
+              autoSizeColumns={false}
             />
           </Suspense>
         )}

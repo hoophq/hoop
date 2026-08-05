@@ -175,7 +175,7 @@ function AgGridTable({
   theme = 'alpine',
   pagination = false,
   pageSize = 20,
-  autoSizeColumns = true,
+  autoSizeColumns = false,
 }) {
   const grid = useMemo(() => buildGrid(heads, body), [heads, body])
   const gridTheme = useMemo(() => resolveTheme(theme, darkMode), [theme, darkMode])
