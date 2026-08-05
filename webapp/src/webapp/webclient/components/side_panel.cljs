@@ -4,7 +4,7 @@
    ["allotment" :refer [Allotment]]))
 
 (defn side-panel [{:keys [title content aria-label]}]
-  [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"
+  [:> Box {:class "h-full w-full bg-gray-2 border-l border-gray-3 overflow-y-auto"
            :role "complementary"
            :aria-label (or aria-label title "Side panel")}
    (when title

@@ -446,7 +446,7 @@
                    @parallel-mode-active?
                    @dark-mode?]
 
-                  [:div {:class "bg-gray-1"}
+                  [:div {:class "bg-gray-2"}
                    ;; Screen reader announcements for execution status
                    [:div {:class "sr-only"
                           :role "status"

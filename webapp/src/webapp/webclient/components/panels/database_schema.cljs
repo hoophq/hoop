@@ -22,10 +22,10 @@
                 "Database Schema")]
 
     [:> Box {:as "aside"
-             ;; Same surface as the log area below the editor (bg-gray-1), so the
-             ;; two chrome panels around the editor read as one material and the
-             ;; grey canvas is just the editor.
-             :class (str "h-full transition-all duration-300 border-r border-gray-3 bg-gray-1 "
+             ;; gray-2, the shared surface of every chrome panel around the
+             ;; editor (log area, metadata panel, output footer). They read as
+             ;; one material, and the grey canvas is just the editor.
+             :class (str "h-full transition-all duration-300 border-r border-gray-3 bg-gray-2 "
                          (if collapsed? "w-16" "w-full"))
              :aria-label "Database schema"}
 
