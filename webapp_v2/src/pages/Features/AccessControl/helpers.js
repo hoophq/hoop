@@ -74,10 +74,17 @@ export function mergeGroupIntoConnections({
   const existing = pluginConnections ?? []
 
   const updated = existing.map((connection) => {
+    const isSelected = selected.has(connection.id)
+    // A null config is only materialised into an array when the group is
+    // actually being attached. Coalescing it to [] unconditionally would make
+    // isMeaningfulRow drop the row, and since the PUT replaces the whole
+    // array, a row this page never wrote would silently vanish.
+    if (connection.config == null && !isSelected) return connection
+
     const withoutGroup = (connection.config ?? []).filter((g) => g !== groupName)
     return {
       ...connection,
-      config: selected.has(connection.id) ? [...withoutGroup, groupName] : withoutGroup,
+      config: isSelected ? [...withoutGroup, groupName] : withoutGroup,
     }
   })
 
@@ -93,10 +100,13 @@ export function mergeGroupIntoConnections({
 // deleted, so its permissions do not linger on the plugin.
 export function removeGroupFromConnections({ pluginConnections, groupName }) {
   return (pluginConnections ?? [])
-    .map((connection) => ({
-      ...connection,
-      config: (connection.config ?? []).filter((g) => g !== groupName),
-    }))
+    .map((connection) =>
+      // Same reasoning as mergeGroupIntoConnections: a null config carries no
+      // group, so there is nothing to detach — leave the row exactly as it is.
+      connection.config == null
+        ? connection
+        : { ...connection, config: connection.config.filter((g) => g !== groupName) }
+    )
     .filter(isMeaningfulRow)
 }
 
