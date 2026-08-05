@@ -4,15 +4,17 @@
 
 (defn notification-badge
   "Icon button with a red badge when has-notification? is true."
-  [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded]}]
+  [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded
+           size variant]
+    :or {size "2" variant "soft"}}]
   [:> Box {:class "relative"}
    [:> IconButton
     (merge
      {:class (str (when active? "bg-gray-8 text-gray-12 ")
                   (when disabled? "cursor-not-allowed "))
-      :size "2"
+      :size size
       :color "gray"
-      :variant "soft"
+      :variant variant
       :highContrast true
       :disabled disabled?
       :on-click on-click}

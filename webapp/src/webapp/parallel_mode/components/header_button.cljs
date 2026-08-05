@@ -4,7 +4,10 @@
    ["lucide-react" :refer [FastForward X]]
    [re-frame.core :as rf]))
 
-(defn parallel-mode-button []
+(defn parallel-mode-button
+  "Size and variant are props so the web terminal can match its 24px toolbar
+   without changing the runbooks runner, whose header is still 64px."
+  [& [{:keys [size variant] :or {size "2" variant "soft"}}]]
   (let [selected-count (rf/subscribe [:parallel-mode/selected-count])
         is-active? (rf/subscribe [:parallel-mode/is-active?])
         modal-open? (rf/subscribe [:parallel-mode/modal-open?])]
@@ -12,8 +15,8 @@
       [:> Tooltip {:content "Parallel Mode"}
        [:> Flex {:align "center" :gap "1"}
         [:> Button
-         {:size "2"
-          :variant "soft"
+         {:size size
+          :variant variant
           :highContrast (when-not @is-active? true)
           :color (if @is-active? "green" "gray")
           :class (str "min-w-[140px] "

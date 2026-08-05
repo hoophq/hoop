@@ -125,7 +125,9 @@
            [:> Tooltip {:content "Metadata"}
             [:div
              [notification-badge
-              {:icon [:> PackagePlus {:size 16}]
+              {:size "1"
+               :variant "ghost"
+               :icon [:> PackagePlus {:size 16}]
                :on-click #(rf/dispatch [:webclient/set-active-panel :metadata])
                :active? (= @active-panel :metadata)
                :has-notification? has-metadata?
@@ -134,7 +136,7 @@
                :aria-expanded (= @active-panel :metadata)}]]]
 
            ;; New Parallel Mode Button
-           [parallel-mode-button/parallel-mode-button]
+           [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost"}]
 
            [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button
