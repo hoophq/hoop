@@ -12,8 +12,13 @@ const SIDEBAR_COLLAPSED_WIDTH = 72;
 const SIDEBAR_BG = 'var(--mantine-color-gray-0)';
 const SIDEBAR_BORDER = 'var(--mantine-color-gray-2)';
 // Sampled from the Figma render: the header sits on the body colour (#fcfcfd),
-// a shade lighter than the sidebar (gray-0 #f0f0f3), with a 1px gray-2 rule.
+// a shade lighter than the sidebar (gray-0 #f0f0f3).
 const HEADER_BG = 'var(--mantine-color-body)';
+// The rule matches the web terminal's toolbar, which butts straight up against
+// it. A darker rule made a visible seam between two greys; at the same tone the
+// boundary is the tonal step alone — which is what the Figma terminal frame
+// shows (header #fcfcfd meeting the toolbar #e5e5e5, no rule between them).
+const HEADER_BORDER = 'var(--mantine-color-gray-1)';
 
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
@@ -44,7 +49,7 @@ function Layout({ children }) {
         }}
         styles={{
           navbar: { backgroundColor: SIDEBAR_BG, borderRight: `1px solid ${SIDEBAR_BORDER}`, overflow: 'hidden' },
-          header: { backgroundColor: HEADER_BG, borderBottom: `1px solid ${SIDEBAR_BORDER}` },
+          header: { backgroundColor: HEADER_BG, borderBottom: `1px solid ${HEADER_BORDER}` },
         }}
       >
         <AppShell.Header>
