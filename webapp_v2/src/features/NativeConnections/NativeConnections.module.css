@@ -25,6 +25,19 @@
   background-color: var(--mantine-color-gray-0);
 }
 
+/* The chevron is its own Accordion.Control slot, sitting flush against the end
+   of the label — which put it right up against the status indicator. The Figma
+   leaves ~20px between the two. */
+.rowChevron {
+  margin-inline-start: var(--mantine-spacing-lg);
+}
+
+/* Connected indicator: 24px circle, green-1 on green-6. */
+.activeIndicator {
+  background-color: var(--mantine-color-green-1);
+  color: var(--mantine-color-green-6);
+}
+
 .accordionItem {
   border-bottom: 1px solid var(--mantine-color-gray-2);
 }

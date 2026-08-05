@@ -86,7 +86,9 @@ export function RoleRow({ role, active, expanded }) {
 
   return (
     <Accordion.Item value={role.name} className={classes.accordionItem}>
-      <Accordion.Control classNames={{ control: classes.rowControl }}>
+      <Accordion.Control
+        classNames={{ control: classes.rowControl, chevron: classes.rowChevron }}
+      >
         <Group justify="space-between" wrap="nowrap" gap="md">
           <Group gap="md" wrap="nowrap" miw={0}>
             {/* The getter always resolves to a URL, falling back to a generic

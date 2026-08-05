@@ -3,6 +3,7 @@ import { Clock, Radio, WifiOff } from 'lucide-react'
 import Badge from '@/components/Badge'
 import { SessionTimer } from './components/SessionTimer'
 import { ROW_STATE } from './rowState'
+import classes from './NativeConnections.module.css'
 
 /**
  * The right-hand slot of a collapsed row.
@@ -25,7 +26,7 @@ export function RoleRowStatus({ state, active }) {
 
     case ROW_STATE.ACTIVE_PERSISTENT:
       return (
-        <ThemeIcon variant="light" color="green" size="sm" radius="xl">
+        <ThemeIcon size={24} radius="xl" className={classes.activeIndicator}>
           <Radio size={12} aria-hidden="true" />
           <VisuallyHidden>Connected</VisuallyHidden>
         </ThemeIcon>
