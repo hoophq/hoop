@@ -77,10 +77,6 @@ export default function GroupListItem({
         </Text>
 
         <Group align="center" gap="lg" wrap="nowrap">
-          <Button variant="default" onClick={() => onConfigure(group.name)}>
-            Configure
-          </Button>
-
           {hasConnections && (
             <Button
               variant="subtle"
@@ -94,6 +90,10 @@ export default function GroupListItem({
               Resource Roles
             </Button>
           )}
+
+          <Button variant="default" onClick={() => onConfigure(group.name)}>
+            Configure
+          </Button>
         </Group>
       </Flex>
 
