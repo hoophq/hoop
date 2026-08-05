@@ -1,4 +1,4 @@
-import { Group, Text, UnstyledButton } from '@mantine/core'
+import { Group, Stack, Text, UnstyledButton } from '@mantine/core'
 import { ChevronDown, LogOut, MessageCircleQuestion } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import ActionMenu from '@/components/ActionMenu'
@@ -40,19 +40,24 @@ export function UserMenu() {
 
   return (
     <ActionMenu target={target} width={240}>
-      <ActionMenu.Label>
-        <Text fz="sm" fw={600} truncate>
-          {getUserDisplayName(user)}
-        </Text>
-        {user?.email && (
-          <Text fz="xs" c="dimmed" truncate>
-            {user.email}
+      {/* Name + email and the gateway version are additions on top of the
+          Figma, which shows only the two actions. */}
+      <ActionMenu.Label className={classes.menuLabel}>
+        <Stack gap={2}>
+          <Text fz="sm" fw={600} truncate>
+            {getUserDisplayName(user)}
           </Text>
-        )}
+          {user?.email && (
+            <Text fz="xs" c="dimmed" truncate>
+              {user.email}
+            </Text>
+          )}
+        </Stack>
       </ActionMenu.Label>
 
       <ActionMenu.Item
         id="intercom-support-trigger"
+        className={classes.menuItem}
         leftSection={<MessageCircleQuestion size={16} aria-hidden="true" />}
         onClick={handleSupport}
       >
@@ -61,6 +66,7 @@ export function UserMenu() {
 
       <ActionMenu.Item
         danger
+        className={classes.menuItem}
         leftSection={<LogOut size={16} aria-hidden="true" />}
         onClick={handleLogout}
       >

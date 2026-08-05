@@ -57,7 +57,19 @@
   letter-spacing: 0.5px;
 }
 
+/* The dropdown is roomier than Mantine's defaults: it carries the identity
+   block on top of the two actions, so it needs breathing room to not read as a
+   dense list. */
+.menuLabel {
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+}
+
+.menuItem {
+  padding-block: var(--mantine-spacing-sm);
+  padding-inline: var(--mantine-spacing-md);
+}
+
 .menuFooter {
   color: var(--mantine-color-placeholder);
-  padding: 2px var(--mantine-spacing-md) var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md) var(--mantine-spacing-sm);
 }
