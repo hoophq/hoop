@@ -22,7 +22,10 @@
                 "Database Schema")]
 
     [:> Box {:as "aside"
-             :class (str "h-full transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
+             ;; Same surface as the editor it sits beside (gray-4, #e8e8ec on the
+             ;; Radix scale). It was on gray-1, a near-white slab against the
+             ;; grey editor.
+             :class (str "h-full transition-all duration-300 border-r-2 border-gray-6 bg-gray-4 "
                          (if collapsed? "w-16" "w-full"))
              :aria-label "Database schema"}
 

@@ -134,6 +134,34 @@
     (reset! is-typing is-typing?)
     (aset js/window "is_typing" is-typing?)))
 
+;; Surface colours for the editor, sampled off the Figma terminal frame: the
+;; body sits on gray-4 (#e8e8ec) with the active line on gray-5 (#e0e1e6).
+;; materialLight ships a near-white #FAFAFA surface, which reads as "no editor"
+;; next to the gray toolbar above it. Only the surfaces are overridden — the
+;; theme keeps its own syntax colours.
+(def ^:private editor-surface-light "#e8e8ec")
+(def ^:private editor-active-line-light "#e0e1e6")
+(def ^:private editor-surface-dark "#2e3235")
+
+(defn- build-surface-theme [dark-mode?]
+  (let [surface (if dark-mode? editor-surface-dark editor-surface-light)
+        active (if dark-mode? "#3a3f43" editor-active-line-light)]
+    (.theme cm-view/EditorView
+            #js {"&" #js {:backgroundColor surface}
+                 ".cm-gutters" #js {:backgroundColor surface :border "none"}
+                 ".cm-activeLine" #js {:backgroundColor active}
+                 ".cm-activeLineGutter" #js {:backgroundColor active}}
+            #js {:dark dark-mode?})))
+
+;; Built once per mode. The editor's should-component-update hashes the
+;; extension vector, so a theme rebuilt on every render would defeat it and
+;; re-mount CodeMirror on each keystroke.
+(def ^:private surface-theme-light (build-surface-theme false))
+(def ^:private surface-theme-dark (build-surface-theme true))
+
+(defn editor-surface-theme [dark-mode?]
+  (if dark-mode? surface-theme-dark surface-theme-light))
+
 (defn create-codemirror-extensions [parser
                                     keymap
                                     is-template-ready?
@@ -421,7 +449,8 @@
                       :theme (if @dark-mode?
                                materialDark
                                materialLight)
-                      :extensions codemirror-exts
+                      :extensions (conj (vec codemirror-exts)
+                                        (editor-surface-theme @dark-mode?))
                       :on-change optimized-change-handler}]]
                    (when @role-has-rule?
                      (cond
