@@ -24,9 +24,13 @@ export function SidebarCollapsed({ skipLink }) {
       {skipLink}
 
       <Box mb="xl" mt="xl" className={classes.logoCollapsed}>
+        {/* The symbol SVG carries a viewBox but no width/height, so both axes
+            are given here — with only a height it has no layout width to fall
+            back on if the asset fails to load. viewBox is square. */}
         <img
           src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
           alt="Hoop"
+          width={24}
           height={24}
           style={{ display: 'block' }}
         />
@@ -36,7 +40,7 @@ export function SidebarCollapsed({ skipLink }) {
         scrollbars="y"
         type="hover"
         scrollbarSize={10}
-        classNames={{ root: classes.collapsedScrollArea }}
+        classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
           {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
@@ -85,7 +89,9 @@ export function SidebarCollapsed({ skipLink }) {
           </Box>
         )}
 
-        <Group justify="center" mt="xl" pb="sm">
+        {/* margin-top:auto — drops to the bottom when the nav list is short
+            (non-admin), scrolls along with it when it is not (admin). */}
+        <Group justify="center" pt="lg" pb="sm" className={classes.profileFooter}>
           <Tooltip label={user?.name || user?.email || 'Profile'} position="right" withArrow>
             <Box
               role="button"

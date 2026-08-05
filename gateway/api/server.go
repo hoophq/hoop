@@ -590,6 +590,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/mcp-oauth/callback",
 		apiconnections.MCPOAuthCallback)
 
+	// Built-in catalog of publicly hosted remote MCP servers (ADR-0004). The
+	// connection create page renders it as a server picker that pre-fills an
+	// "mcpproxy" connection's REMOTE_URL / MCP_TRANSPORT / MCP_AUTH. Static
+	// build-time data with no tenant content, so read-only role is enough.
+	r.GET("/mcp-catalog",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.ListMCPCatalog)
+
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,

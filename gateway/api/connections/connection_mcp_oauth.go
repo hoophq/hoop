@@ -1,27 +1,38 @@
 // HTTP handlers for the MCP connection OAuth login flow.
 //
-// When an admin creates an "mcp" httpproxy connection whose endpoint is
-// protected by OAuth (e.g. https://mcp.figma.com/mcp), the connection setup
-// page drives a browser OAuth login through these three endpoints and receives
-// the obtained access token to freeze into the connection's
-// HEADER_AUTHORIZATION configuration:
+// When an admin configures an MCP connection whose endpoint is protected by
+// OAuth (e.g. https://mcp.figma.com/mcp), the connection setup page drives a
+// browser OAuth login through these three endpoints:
 //
 //	POST /mcp-oauth/authorize      (admin)        -> { authorization_url, flow_id }
 //	GET  /mcp-oauth/callback       (no auth)      -> redirects back to the app
 //	GET  /mcp-oauth/token/{flowID} (admin)        -> { authorization_header, ... } (once)
 //
-// The flow is per-connection-being-created (no connection row exists yet): the
-// admin authorizes once and the resulting token is shared by all users of the
-// connection. State is held in the short-lived private.mcp_oauth_flows table
-// (see models/mcp_oauth_flow.go). The callback is unauthenticated because the
-// upstream provider redirects the browser to it directly; it is secured by the
-// single-use, TTL-bounded state row created at authorize time. The OAuth
-// engine helpers (discovery, DCR, PKCE, exchange) live in
-// connection_mcp_oauth_client.go.
+// The login runs before the connection exists (the admin authorizes while
+// filling the create form), so state is held in the short-lived
+// private.mcp_oauth_flows table keyed by the OAuth state parameter rather than
+// by connection. The callback is unauthenticated because the upstream provider
+// redirects the browser to it directly; it is secured by the single-use,
+// TTL-bounded state row created at authorize time, and only a pending flow may
+// change state there — a replay of a settled one is answered with the outcome
+// it already has rather than allowed to downgrade it.
+//
+// What happens to the token afterwards depends on the subtype. Both freeze it
+// into HEADER_AUTHORIZATION, which is what the agent reads. The mcpproxy
+// subtype additionally adopts the flow into a durable grant when the
+// connection is saved (services.AdoptMCPOAuthGrant), so the credential is
+// renewed from its refresh token at every session open instead of dying at the
+// provider's TTL — but only when the flow authorized the server that
+// connection actually points at. The legacy mcp subtype keeps the frozen
+// header alone.
+//
+// The OAuth protocol itself lives in services/mcp_oauth_client.go, over
+// mcpproxy's auth/outbound/oauth.
 package apiconnections
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,6 +45,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -42,6 +54,13 @@ import (
 // a human to complete a login screen, short enough to limit replay of a leaked
 // state value.
 const mcpOAuthFlowTTL = 10 * time.Minute
+
+// mcpOAuthFlowRetention bounds how long a flow row survives regardless of what
+// happened to it. A completed flow stays adoptable well past the login TTL
+// because the admin still has a create form to finish, but not indefinitely:
+// past this age the encrypted refresh token it holds is garbage nobody will
+// claim.
+const mcpOAuthFlowRetention = 24 * time.Hour
 
 // mcpOAuthCallbackPath is the gateway-relative path the upstream authorization
 // server redirects to. It is registered as the redirect URI during dynamic
@@ -84,13 +103,24 @@ func StartMCPOAuth(c *gin.Context) {
 		return
 	}
 
+	// Sweep abandoned logins here rather than on a schedule. A flow nobody
+	// polls is never consumed, and a completed one that no connection adopted
+	// still holds an encrypted refresh token. The window is generous: a flow
+	// stays adoptable long enough for an admin to finish the create form they
+	// authorized from.
+	if n, err := models.PurgeStaleMCPOAuthFlows(models.DB, mcpOAuthFlowRetention); err != nil {
+		log.Warnf("mcp oauth: failed purging stale flows: %v", err)
+	} else if n > 0 {
+		log.Infof("mcp oauth: purged %d stale oauth flows", n)
+	}
+
 	redirectBack, err := parseFederationRedirect(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	discovery, err := discoverMCPAuthServer(c.Request.Context(), req.ServerURL)
+	discovery, err := services.DiscoverMCPAuthServer(c.Request.Context(), req.ServerURL)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -106,7 +136,8 @@ func StartMCPOAuth(c *gin.Context) {
 		tokenAuthMethod = "none"
 	default:
 		// No client credentials supplied: register dynamically.
-		reg, err := registerMCPClient(c.Request.Context(), discovery.RegistrationEndpoint, mcpOAuthRedirectURI())
+		reg, err := services.RegisterMCPClient(c.Request.Context(), discovery.RegistrationEndpoint,
+			mcpOAuthRedirectURI(), discovery.ScopesSupported)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
@@ -116,7 +147,7 @@ func StartMCPOAuth(c *gin.Context) {
 		tokenAuthMethod = reg.TokenAuthMethod
 	}
 
-	verifier, challenge, err := generatePKCE()
+	verifier, challenge, err := services.GenerateMCPPKCE()
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating PKCE challenge: %v", err)
 		return
@@ -163,7 +194,7 @@ func StartMCPOAuth(c *gin.Context) {
 		return
 	}
 
-	authURL, err := buildMCPAuthorizationURL(discovery, clientID, mcpOAuthRedirectURI(), flow.ID, challenge, scopes)
+	authURL, err := services.BuildMCPAuthorizationURL(discovery, clientID, mcpOAuthRedirectURI(), flow.ID, challenge, scopes)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building authorization url: %v", err)
 		return
@@ -207,9 +238,29 @@ func MCPOAuthCallback(c *gin.Context) {
 		redirectBack = appconfig.Get().FullApiURL() + "/"
 	}
 
-	// On any terminal failure path we delete the flow so a leaked state cannot
-	// be replayed; on success the flow survives until the token endpoint
-	// consumes it.
+	// This endpoint is unauthenticated by design — the provider redirects the
+	// browser here — so anyone holding the callback URL can replay it, and a
+	// browser back button is enough. Only a pending flow may still change
+	// state. Replaying one that already succeeded used to run the failure
+	// path below (the code is spent, so the exchange fails), flipping a good
+	// flow to error and destroying the credential a freshly created
+	// connection was about to adopt — an unauthenticated request silently
+	// breaking a connection an admin just saved. Answer the replay with the
+	// outcome the flow already has and touch nothing.
+	switch flow.Status {
+	case models.MCPOAuthFlowStatusCompleted, models.MCPOAuthFlowStatusConsumed:
+		log.With("flow-id", flow.ID).Infof("mcp oauth: ignoring callback replay for a %s flow", flow.Status)
+		c.Redirect(http.StatusTemporaryRedirect, withMCPOutcome(redirectBack, "success", flow.ID, ""))
+		return
+	case models.MCPOAuthFlowStatusError:
+		c.Redirect(http.StatusTemporaryRedirect, withMCPOutcome(redirectBack, "error", flow.ID, flow.ErrorReason))
+		return
+	}
+
+	// A terminal failure marks the flow rather than deleting it: the create
+	// page polls the token endpoint next and needs the reason to render. The
+	// row is consumed there, and any flow nobody ever polls is swept by
+	// PurgeStaleMCPOAuthFlows on the next authorize.
 	failFlow := func(reason string) {
 		flow.Status = models.MCPOAuthFlowStatusError
 		flow.ErrorReason = reason
@@ -251,8 +302,9 @@ func MCPOAuthCallback(c *gin.Context) {
 		}
 	}
 
-	token, err := exchangeMCPCode(c.Request.Context(), flow.TokenEndpoint, flow.ClientID, clientSecret,
-		flow.TokenAuthMethod, code, mcpOAuthRedirectURI(), codeVerifier, flow.Resource)
+	token, err := services.ExchangeMCPCode(c.Request.Context(),
+		&services.MCPDiscovery{TokenEndpoint: flow.TokenEndpoint, Resource: flow.Resource},
+		flow.ClientID, clientSecret, flow.TokenAuthMethod, code, mcpOAuthRedirectURI(), codeVerifier)
 	if err != nil {
 		log.Warnf("mcp oauth: code exchange failed for flow %s: %v", flow.ID, err)
 		failFlow("exchange_failed")
@@ -280,8 +332,8 @@ func MCPOAuthCallback(c *gin.Context) {
 	flow.AccessTokenEncrypted = accessCipher
 	flow.RefreshTokenEncrypted = refreshCipher
 	flow.TokenType = token.TokenType
-	if token.ExpiresIn > 0 {
-		expiresAt := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+	if !token.Expiry.IsZero() {
+		expiresAt := token.Expiry.UTC()
 		flow.TokenExpiresAt = &expiresAt
 	}
 	if err := models.UpdateMCPOAuthFlowResult(models.DB, flow); err != nil {
@@ -327,6 +379,12 @@ func GetMCPOAuthToken(c *gin.Context) {
 	switch flow.Status {
 	case models.MCPOAuthFlowStatusCompleted:
 		// proceed
+	case models.MCPOAuthFlowStatusConsumed:
+		// The token already left the gateway and the access token was
+		// scrubbed, so there is nothing left to return. Re-reading is a
+		// double submit, not a new login.
+		c.JSON(http.StatusConflict, gin.H{"message": "oauth token has already been redeemed"})
+		return
 	case models.MCPOAuthFlowStatusError:
 		reason := flow.ErrorReason
 		_ = models.DeleteMCPOAuthFlow(models.DB, flow.ID)
@@ -361,10 +419,13 @@ func GetMCPOAuthToken(c *gin.Context) {
 		}
 	}
 
-	// The flow is single use: delete it now that the token is leaving the
-	// gateway. This bounds how long the obtained token sits at rest.
-	if derr := models.DeleteMCPOAuthFlow(models.DB, flow.ID); derr != nil {
-		log.Warnf("mcp oauth: failed deleting consumed flow %s: %v", flow.ID, derr)
+	// The token is single use to the browser: mark the flow consumed and
+	// scrub the access token now that it has left the gateway. The row itself
+	// survives so the connection this login authorized can adopt its refresh
+	// token when it is saved — the connection does not exist yet, so this is
+	// the only place the two halves can be joined later.
+	if derr := models.ConsumeMCPOAuthFlow(models.DB, flow.ID); derr != nil {
+		log.Warnf("mcp oauth: failed consuming flow %s: %v", flow.ID, derr)
 	}
 
 	c.JSON(http.StatusOK, openapi.MCPOAuthTokenResponse{
@@ -394,4 +455,68 @@ func withMCPOutcome(redirectURL, outcome, flowID, reason string) string {
 	}
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+// AdoptMCPOAuthGrant promotes a completed OAuth login into a durable grant for
+// a freshly saved connection, and reports why it could not when it did not.
+//
+// Called after create and update, and a no-op (empty warning) unless the
+// payload carried a flow id for the mcpproxy subtype. Only that subtype gets
+// renewal: the legacy mcp subtype runs the byte-relay path, which has no
+// notion of a grant.
+//
+// Exported because the resource wizard creates its roles through
+// POST /resources, in a different package, and a connection created there is
+// no less in need of a renewable credential than one created through
+// POST /connections.
+//
+// A failure does not fail the save. The connection row is already written and
+// its frozen HEADER_AUTHORIZATION works exactly as it did before grants
+// existed, so refusing here would turn a degraded credential lifecycle into a
+// broken create flow. It is not silent either: the reason goes back on the
+// response, because the alternative is a 201 for a connection that quietly
+// stops working at the provider's token TTL — the admin finds out from a
+// failing session days later, with nothing pointing at the save that caused
+// it. The endpoint-mismatch refusal in services.AdoptMCPOAuthGrant is the case
+// that most needs saying out loud: it means the admin authorized one server
+// and saved another.
+func AdoptMCPOAuthGrant(orgID string, conn *models.Connection, subType, flowID string) (warning string) {
+	if flowID == "" || subType != services.MCPOAuthGrantSubType {
+		return ""
+	}
+	if err := services.AdoptMCPOAuthGrant(orgID, conn.ID, flowID, conn.Envs); err != nil {
+		log.With("connection-id", conn.ID, "flow-id", flowID).
+			Warnf("mcp oauth: failed adopting grant, the connection keeps its frozen token: %v", err)
+		return fmt.Sprintf("the OAuth login was not attached to this connection, so its credential will not be renewed "+
+			"and the connection stops working when the provider expires the current token: %v", err)
+	}
+	log.With("connection-id", conn.ID, "flow-id", flowID).Infof("mcp oauth: grant adopted")
+	return ""
+}
+
+// hasMCPOAuthGrant reports whether a durable grant backs this connection's
+// credential.
+//
+// The edit screen needs it to render the right auth control, and nothing in
+// the connection's env vars can tell it: a brokered OAuth login and a pasted
+// bearer token are both one HEADER_AUTHORIZATION, and MCP_AUTH collapses
+// "oauth" to "static" on purpose (the agent has no separate oauth mode — see
+// validateMCPProxyEnv). Guessing "static" is what makes an OAuth connection
+// reopen offering to replace a token instead of to re-authorize.
+//
+// Presence only. A lookup failure reads as "no grant": the caller renders a
+// re-authorize affordance either way, and the alternative is failing a
+// connection read over a credential detail.
+func hasMCPOAuthGrant(orgID string, conn *models.Connection) bool {
+	if conn == nil || conn.SubType.String != services.MCPOAuthGrantSubType {
+		return false
+	}
+	grant, err := models.GetMCPOAuthGrant(models.DB, orgID, conn.ID, "")
+	if err != nil {
+		if !errors.Is(err, models.ErrNotFound) {
+			log.With("connection-id", conn.ID).Warnf("mcp oauth: failed reading grant: %v", err)
+		}
+		return false
+	}
+	return grant != nil
 }

@@ -34,7 +34,7 @@ export function ProfileDisclosure({ user, onLogout, gatewayVersion }) {
         id="intercom-support-trigger"
         label="Contact support"
         aria-label="Contact support"
-        leftSection={<MessageCircleQuestion size={24} aria-hidden="true" />}
+        leftSection={<MessageCircleQuestion size={18} aria-hidden="true" />}
         onClick={() => {
           if (!analyticsTracking) {
             window.open('https://github.com/hoophq/hoop/discussions', '_blank');
@@ -46,7 +46,7 @@ export function ProfileDisclosure({ user, onLogout, gatewayVersion }) {
         danger
         label="Log out"
         aria-label="Log out"
-        leftSection={<LogOut size={24} aria-hidden="true" />}
+        leftSection={<LogOut size={18} aria-hidden="true" />}
         onClick={onLogout}
       />
       {gatewayVersion && (

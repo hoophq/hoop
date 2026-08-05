@@ -7,7 +7,8 @@
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
    [webapp.components.skip-link :as skip-link]
-   [webapp.parallel-mode.components.header-button :as parallel-mode-button]))
+   [webapp.parallel-mode.components.header-button :as parallel-mode-button]
+   [webapp.webclient.components.features-indicator :as features-indicator]))
 
 
 (defn main []
@@ -65,6 +66,11 @@
               @parallel-mode-active? "Resource Roles"
               :else "Resource Role")
             [:> ChevronDown {:size 12 :aria-hidden "true"}]]
+
+           ;; Sits beside the resource role rather than with the toolbar icons
+           ;; on the right: it describes that role, not the editor. Hidden when
+           ;; the role has no feature active.
+           [features-indicator/main]
 
            ;; Skip link: Resource Role → Editor
            [skip-link/main

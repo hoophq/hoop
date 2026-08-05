@@ -3,7 +3,6 @@ package apiconnections
 import (
 	"database/sql"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -26,13 +25,13 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"gorm.io/gorm"
 )
 
 var validConnectionTypes = []string{
 	"postgres", "ssh", "ssh-local", "rdp", "aws-ssm",
-	"httpproxy", "kubernetes", "claude-code", "mcp",
+	"httpproxy", "kubernetes", "claude-code", "mcp", "mcpproxy",
 }
 
 // noExpirySentinel is the expire_at value stored for credentials that should
@@ -114,7 +113,12 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 
 	// Check if connection requires review/JIT approval
-	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
+	requiresReview, accessRule, err := checkConnectionRequiresReview(ctx, conn)
+	if err != nil {
+		log.Errorf("failed checking review requirement for connection %s, err=%v", conn.Name, err)
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed checking review requirements"})
+		return
+	}
 
 	// Determine the audit status of the credential-issuance session.
 	// Persistent credentials (no review, no access_duration_seconds) mint a
@@ -743,7 +747,7 @@ func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialI
 // terminateActiveCredentialSessions tears down any in-flight proxy sessions for
 // the given credential. Shared by Revoke (with DB invalidation) and Close
 // (without DB invalidation).
-func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn *models.Connection) {
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _conn *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
@@ -752,7 +756,7 @@ func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn 
 		sshproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeRDP:
 		broker.RevokeByCredentialID(cred.ID)
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine, proto.ConnectionTypeMcp, proto.ConnectionTypeMcpProxy:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
 		// SSM has no persistent session store; proxies reject new connections
@@ -887,21 +891,28 @@ func buildConnectionCredentialsResponse(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
+	case proto.ConnectionTypeMcpProxy:
+		// Protocol-aware MCP (ADR-0004) shares the httpproxy listener and its
+		// proxy-token auth, but not its URL shape: the agent's MCP gateway
+		// serves a single "/mcp" endpoint, and MCP clients authenticate with
+		// an Authorization header rather than the browser path/cookie
+		// bootstrap. Emitting the root/subdomain URLs here would hand the user
+		// a link that 404s, so this arm surfaces the endpoint the client
+		// actually needs.
+		scheme, host := httpProxyPublicOrigin(serverHost)
+		endpoint := fmt.Sprintf("%s://%s:%s/mcp", scheme, host, serverPort)
+		base.ConnectionType = proto.ConnectionType(connectionType).String()
+		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
+			Hostname:   host,
+			Port:       serverPort,
+			ProxyToken: secretKey,
+			Command: `{
+				"mcp": "` + endpoint + `",
+				"curl": "curl -H 'Authorization: ` + secretKey + `' ` + endpoint + `"
+			}`,
+		}
 	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
-		scheme := "http"
-		host := serverHost
-		if appconfig.Get().GatewayTLSKey() != "" {
-			scheme = "https"
-			// When TLS is enabled, use the API URL's hostname instead of the listen address.
-			// The TLS certificate's SAN must match the hostname used by clients.
-			// Example: server listens on 0.0.0.0:18888 but certificate is valid for dev.hoop.dev:PORT
-			if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
-				host = apiURL.Hostname()
-			}
-		}
-		if host == "0.0.0.0" || host == "127.0.0.1" {
-			host = "localhost"
-		}
+		scheme, host := httpProxyPublicOrigin(serverHost)
 		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, host, serverPort)
 		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
 		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
@@ -936,6 +947,27 @@ func buildConnectionCredentialsResponse(
 	return &base
 }
 
+// httpProxyPublicOrigin resolves the scheme and host a client should dial for
+// a connection served by the shared HTTP proxy listener.
+//
+// With TLS enabled the listen address is not usable: the certificate's SAN
+// matches the API URL's hostname, not the bind address (the server may listen
+// on 0.0.0.0:18888 while the cert is valid for dev.hoop.dev). Wildcard binds
+// are rewritten to localhost so a copy-pasted URL works on a local install.
+func httpProxyPublicOrigin(serverHost string) (scheme, host string) {
+	scheme, host = "http", serverHost
+	if appconfig.Get().GatewayTLSKey() != "" {
+		scheme = "https"
+		if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
+			host = apiURL.Hostname()
+		}
+	}
+	if host == "0.0.0.0" || host == "127.0.0.1" {
+		host = "localhost"
+	}
+	return scheme, host
+}
+
 // decodeConnectionEnv returns the plaintext value of a connection env-var
 // secret (stored base64-encoded under the "envvar:NAME" key), or "" when the
 // key is absent or undecodable.
@@ -968,7 +1000,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeMcp, proto.ConnectionTypeMcpProxy:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -990,7 +1022,7 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
 		}
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeMcpProxy:
 		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
 			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}
@@ -1072,35 +1104,28 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	return reviewID, nil
 }
 
-// checkConnectionRequiresReview checks if a connection requires review/JIT approval
-// It checks both OSS reviewers and Enterprise access request rules
-func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connection) (bool, *models.AccessRequestRule) {
+// checkConnectionRequiresReview checks if a connection requires review/JIT approval.
+// It checks OSS reviewers and Enterprise access request rules (both name-targeted
+// and attribute-targeted, e.g. protection profiles). A non-nil error means the
+// requirement could not be determined — callers must fail closed, not issue credentials.
+func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connection) (bool, *models.AccessRequestRule, error) {
 	// Check OSS reviewers
 	if len(conn.Reviewers) > 0 {
-		return true, nil
+		return true, nil, nil
 	}
 
 	// Check Enterprise access request rules for JIT access
 	orgID, err := uuid.Parse(ctx.OrgID)
 	if err != nil {
-		log.Warnf("failed parsing org_id %s, err=%v", ctx.OrgID, err)
-		return false, nil
+		return false, nil, fmt.Errorf("failed parsing org id %s: %w", ctx.OrgID, err)
 	}
 
-	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit")
+	accessRule, err := services.GetRuleForConnection(orgID, conn.Name, "jit")
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		log.Warnf("failed checking access request rules for connection %s, err=%v", conn.Name, err)
-		return false, nil
+		return false, nil, fmt.Errorf("failed checking access request rules for connection %s: %w", conn.Name, err)
 	}
 
-	if accessRule != nil {
-		return true, accessRule
-	}
-
-	return false, nil
+	return accessRule != nil, accessRule, nil
 }
 
 // recoverSecretKey returns the plaintext secret key stored on the credential.
@@ -1160,6 +1185,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("claude-code", keySize)
 	case proto.ConnectionTypeMcp:
 		return keys.GenerateSecureRandomKey("mcp", keySize)
+	case proto.ConnectionTypeMcpProxy:
+		return keys.GenerateSecureRandomKey("mcpproxy", keySize)
 	case proto.ConnectionTypeKubernetes:
 		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:

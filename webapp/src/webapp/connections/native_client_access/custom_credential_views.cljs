@@ -1,6 +1,7 @@
 (ns webapp.connections.native-client-access.custom-credential-views
   (:require
    ["@radix-ui/themes" :refer [Box Heading Text]]
+   [clojure.string :as cs]
    [webapp.components.callout-link :as callout-link]
    [webapp.components.logs-container :as logs]))
 
@@ -97,3 +98,123 @@
        :text " Run Claude Code Command Line Interface "
        :log-id " claude-code-command-line-interface "
        :log-content " $ claude "}]]))
+
+;; ---------------------------------------------------------------------------
+;; MCP Gateway (mcpproxy)
+;; ---------------------------------------------------------------------------
+;;
+;; An MCP client does not take a host/port/username/password. It takes one
+;; endpoint URL plus an Authorization header, written into that client's own
+;; JSON config file. So this view hands the user the exact snippet to paste,
+;; per tool, rather than a set of fields they would have to assemble.
+;;
+;; Formats verified against each vendor's documentation:
+;;   Claude Code  https://code.claude.com/docs/en/mcp
+;;   Cursor       https://cursor.com/docs/mcp
+;;   Devin CLI    https://docs.devin.ai/cli/extensibility/mcp/configuration
+;;
+;; All three accept the same shape for a remote server — url + headers — under
+;; a "mcpServers" object. They disagree only on the transport discriminator:
+;; Claude Code requires an explicit "type" (an entry with a url and no type is
+;; a documented configuration error), Devin uses "transport", and Cursor infers
+;; it from the presence of "url".
+
+(defn- mcp-servers-json
+  "Render a client config snippet. `extra` carries the client-specific
+  transport discriminator."
+  [server-name url token extra]
+  (js/JSON.stringify
+   (clj->js {:mcpServers
+             {server-name (merge extra
+                                 {:url url
+                                  :headers {:Authorization token}})}})
+   nil 2))
+
+(defn mcp-proxy-credentials-fields
+  "MCP Gateway setup instructions: the endpoint plus a ready-to-paste config
+  block for each supported MCP client."
+  [{:keys [connection_credentials connection_name]}]
+  (let [{:keys [proxy_token port]} connection_credentials
+        hostname (let [h (.-hostname js/location)]
+                   (if (= h "localhost") "127.0.0.1" h))
+        protocol (.-protocol js/location)
+        url (str protocol "//" hostname ":" port "/mcp")
+        ;; The server key must be a valid identifier in every client's config;
+        ;; connection names allow characters these files do not. Runs of
+        ;; substituted characters collapse to one dash so "test role 8813!"
+        ;; reads as "test-role-8813" rather than "test-role-8813-".
+        server-name (-> (or connection_name "hoop-mcp")
+                        (cs/replace #"[^A-Za-z0-9_-]+" "-")
+                        (cs/replace #"^-+|-+$" ""))]
+    [:<>
+     [block-with-heading-and-text
+      {:heading "MCP endpoint"
+       :text "Every client below points at this URL. Traffic is inspected by hoop before it reaches the MCP server."
+       :log-id "mcp-endpoint-url"
+       :log-content url}]
+
+     [block-with-heading-and-text
+      {:heading "Authorization header"
+       :text "Your personal access token for this connection. Treat it as a credential — it is already embedded in the snippets below."
+       :log-id "mcp-proxy-token"
+       :log-content proxy_token}]
+
+     ;; ---- Claude Code ---------------------------------------------------
+     [:> Box {:class "space-y-2"}
+      [:> Box
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+        "Claude Code"]
+       [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
+        "Run this command, or add the block below to .mcp.json in your project."]]
+      [logs/new-container
+       {:status :success
+        :id "mcp-claude-code-cli"
+        :logs (str "claude mcp add --transport http " server-name " " url
+                   " --header \"Authorization: " proxy_token "\"")}]
+      [:> Box {:class "mt-2"}
+       [logs/new-container
+        {:status :success
+         :id "mcp-claude-code-json"
+         ;; Claude Code treats a url entry with no "type" as a stdio server
+         ;; and skips it, so the discriminator is mandatory here.
+         :logs [:pre (mcp-servers-json server-name url proxy_token {:type "http"})]}]]]
+
+     ;; ---- Cursor ----------------------------------------------------------
+     [:> Box {:class "space-y-2"}
+      [:> Box
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+        "Cursor"]
+       [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
+        "Add to ~/.cursor/mcp.json for every project, or .cursor/mcp.json for this one."]]
+      [logs/new-container
+       {:status :success
+        :id "mcp-cursor-json"
+        ;; Cursor infers the remote transport from the presence of "url".
+        :logs [:pre (mcp-servers-json server-name url proxy_token {})]}]]
+
+     ;; ---- Devin -----------------------------------------------------------
+     [:> Box {:class "space-y-2"}
+      [:> Box
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+        "Devin"]
+       [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
+        "Run this command, or add the block below to .devin/mcp_config.json."]]
+      [logs/new-container
+       {:status :success
+        :id "mcp-devin-cli"
+        :logs (str "devin mcp add " server-name " " url)}]
+      [:> Box {:class "mt-2"}
+       [logs/new-container
+        {:status :success
+         :id "mcp-devin-json"
+         :logs [:pre (mcp-servers-json server-name url proxy_token {:transport "http"})]}]]]
+
+     ;; ---- Anything else ---------------------------------------------------
+     [:> Box {:class "space-y-2"}
+      [:> Box
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+        "Other MCP clients"]
+       [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
+        "Any client that speaks streamable HTTP works. Point it at the endpoint above and send the Authorization header with every request."]]
+      [callout-link/main {:href "https://modelcontextprotocol.io/docs/develop/connect-local-servers"
+                          :text "See the Model Context Protocol documentation."}]]]))
