@@ -9,6 +9,7 @@ import SessionScript from './sections/SessionScript'
 import SessionAnalysis from './sections/SessionAnalysis'
 import GuardrailsInfo from './sections/GuardrailsInfo'
 import DataMaskingAnalytics from './sections/DataMaskingAnalytics'
+import SessionOutput from './sections/SessionOutput'
 import RejectionReason from './sections/RejectionReason'
 import ReviewActions from './sections/ReviewActions'
 import SessionHeaderActions from './sections/SessionHeaderActions'
@@ -60,6 +61,7 @@ export default function SessionDetailsModal() {
           <SessionAnalysis aiAnalysis={session.ai_analysis} />
           <GuardrailsInfo guardrailsInfo={session.guardrails_info} />
           <DataMaskingAnalytics session={session} report={detail.report} />
+          <SessionOutput session={session} detail={detail} />
           <RejectionReason session={session} />
           <ReviewActions session={session} />
         </Stack>

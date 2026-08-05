@@ -56,6 +56,9 @@ const EMPTY_DETAIL = {
   // (:audit->check-session-size dispatches :reports->get-report-by-session-id).
   // Never blocks the modal: data masking falls back to session.metrics.
   report: { status: 'idle', data: null },
+  // Only used when the event stream exceeds the 4 MB threshold: v1 then pulls
+  // the output from a separate endpoint instead of the session payload.
+  streamResult: { status: 'idle', data: null },
 }
 
 const EMPTY_BATCH = {
@@ -92,6 +95,25 @@ const appendUnique = (prev, next) => {
 const deriveHasMore = (items, total, addedCount) =>
   items.length < total && addedCount > 0
 
+
+
+/**
+ * :audit->get-session-stream-result (events/audit.cljs:301-312). Only fired for
+ * oversized exec payloads — the session response omits the event stream then.
+ */
+const loadStreamResult = (session, set, get) => {
+  set({ detail: { ...get().detail, streamResult: { status: 'loading', data: null } } })
+  sessionsService
+    .streamResult(session.id)
+    .then((data) => {
+      if (get().detail.session?.id !== session.id) return
+      set({ detail: { ...get().detail, streamResult: { status: 'ready', data } } })
+    })
+    .catch(() => {
+      if (get().detail.session?.id !== session.id) return
+      set({ detail: { ...get().detail, streamResult: { status: 'error', data: null } } })
+    })
+}
 
 /** Non-blocking: the data-masking block degrades to session.metrics without it. */
 const loadReport = (session, set, get) => {
@@ -159,6 +181,7 @@ export const useSessionsStore = create((set, get) => ({
           },
         })
         loadReport(probe, set, get)
+        if (isExec) loadStreamResult(probe, set, get)
         return
       }
 
@@ -193,6 +216,7 @@ export const useSessionsStore = create((set, get) => ({
         },
       })
       loadReport(full, set, get)
+      if (hasLargePayload && isExec) loadStreamResult(full, set, get)
     } catch (error) {
       if (get().detail.session?.id !== id) return
       set({

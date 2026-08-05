@@ -1,0 +1,25 @@
+/* Dark terminal surface. Mirrors the "black" variant of CodeSnippet so every
+   code/log surface in the app reads the same. */
+.root {
+  background-color: var(--mantine-color-dark-8);
+  color: var(--mantine-color-gray-2);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+}
+
+/* The scroll container the virtualizer listens to. `overflow` has no Mantine
+   style prop, so it has to live here. */
+.viewport {
+  overflow: auto;
+}
+
+/* Log lines are never wrapped or collapsed — a run of spaces is meaningful
+   output, and wrapping would break the fixed row height virtualization
+   depends on. Inherited by the <span> fancy-ansi renders.
+
+   The tightest line-height in the scale is the only one that fits inside the
+   row height set from JS (14px x 1.4 = 19.6px in a 20px row). */
+.line {
+  white-space: pre;
+  line-height: var(--mantine-line-height-xs);
+}
