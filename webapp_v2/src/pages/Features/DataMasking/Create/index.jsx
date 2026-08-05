@@ -130,12 +130,20 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
         </Button>
       </Box>
 
-      <div ref={sentinelRef} aria-hidden="true" />
+      {/* Pulled up by the shell header's height so it leaves the viewport at the
+          moment the sticky bar meets the header rather than 56px later —
+          useInViewport takes no rootMargin. Inert without the shell. */}
+      <Box
+        ref={sentinelRef}
+        aria-hidden="true"
+        pos="relative"
+        top="calc(-1 * var(--app-shell-header-offset, 0rem))"
+      />
       <Group
         justify="space-between"
         align="center"
         pos="sticky"
-        top={0}
+        top="var(--app-shell-header-offset, 0rem)"
         bg="var(--mantine-color-body)"
         py="md"
         mb="xl"

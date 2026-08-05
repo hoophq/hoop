@@ -12,7 +12,14 @@
 (defmulti markup identity)
 (defmethod markup :shown [_ state]
   (js/setTimeout #(rf/dispatch [:hide-snackbar]) 10000)
-  [:div {:class (str "flex align-center z-[50] fixed max-w-xs top-8 right-8 p-regular bg-gray-800 "
+  ;; Above the legacy overlay band — modal, dialog and the command palette are
+  ;; all z-[201] and Radix poppers 202 — so a toast fired from inside a modal is
+  ;; still readable. The top offset clears the React shell's global header the
+  ;; same way the sonner Toaster beside it does (see toaster-offset in app.cljs),
+  ;; and collapses back to the original 2rem when the shell is not mounted.
+  [:div {:class (str "flex align-center z-[203] fixed max-w-xs right-8 "
+                     "top-[calc(var(--app-shell-header-offset,0rem)_+_2rem)] "
+                     "p-regular bg-gray-800 "
                      "font-light text-gray-100 leading-5 rounded-lg shadow-lg animate-appear-right whitespace-normal")}
    [:figure {:class "flex-shrink-0 w-6 mr-regular"}
     [:img {:src (level-icon (:level state))}]]

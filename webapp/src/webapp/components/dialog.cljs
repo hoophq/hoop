@@ -6,9 +6,12 @@
 
 (defmulti markup identity)
 (defmethod markup :open [_ state]
-  ;; z-[201] matches components/modal.cljs and the Radix overlay: it has to clear
-  ;; the React shell's global header, which Mantine's AppShell paints at z-index
-  ;; 200. At the old z-30 this dialog rendered underneath the header strip.
+  ;; z-[201] matches components/modal.cljs and the Radix overlay so the three
+  ;; stack predictably against each other. It is not what clears the React
+  ;; shell's header (which is z-index 100, not 200): the Radix theme root used to
+  ;; wrap the whole CLJS tree in a stacking context, and no value here could
+  ;; escape it. Flattening that root is what lets these numbers reach the shell —
+  ;; see webapp/src/css/shell-viewport.css.
   [:div.fixed.inset-0.overflow-y-auto
    {"aria-modal" true
     :class "z-[201]"}

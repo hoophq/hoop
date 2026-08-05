@@ -57,8 +57,9 @@ export const DRAWER_WIDTH = 600
 export const DRAWER_OFFSET = 8
 
 // The legacy CLJS stylesheet parks Radix overlays at 201 and poppers/tooltips
-// at 202 (webapp/src/css/tailwind.css), and Mantine's AppShell header sits at
-// 200. The drawer has to clear all of them on CLJS routes.
+// at 202 (webapp/src/css/tailwind.css), and the legacy snackbar at 203. Those
+// are the values to clear on CLJS routes — the AppShell header itself is only
+// at 100 (Mantine's getDefaultZIndex('app')), and the navbar at 101.
 export const DRAWER_Z_INDEX = 300
 
 // Dialogs opened from inside the drawer have to clear it. Mantine's Modal

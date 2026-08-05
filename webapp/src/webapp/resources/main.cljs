@@ -480,12 +480,12 @@
            (cond
              ;; Loading state when no data
              (and resources-loading? (empty? resources-data))
-             [:> Box {:class "flex-1 min-h-96 h-[calc(100vh-12rem)"}
+             [:> Box {:class "flex-1 min-h-96 h-[calc(100vh-var(--app-shell-header-offset,0rem)-12rem)]"}
               [loading-list-view]]
 
              ;; Empty state
              (and (empty? resources-data) (not resources-loading?))
-             [:> Box {:class "flex flex-col min-h-96 h-[calc(100vh-12rem)"}
+             [:> Box {:class "flex flex-col min-h-96 h-[calc(100vh-var(--app-shell-header-offset,0rem)-12rem)]"}
               [empty-list-view (-> @user :data :admin?)]]
 
              ;; Content
@@ -509,7 +509,7 @@
            (cond
              ;; Loading state when no data
              (and connections-loading? (empty? connections-data))
-             [:> Box {:class "flex-1 min-h-96 h-[calc(100vh-12rem)"}
+             [:> Box {:class "flex-1 min-h-96 h-[calc(100vh-var(--app-shell-header-offset,0rem)-12rem)]"}
               [loading-list-view]]
 
              ;; Empty state
