@@ -8,6 +8,7 @@ export const userGroupsService = {
   // openapi.UserGroup, which has no other field, so a description would be
   // accepted and silently dropped. Responds 409 when the group already exists.
   create: (data) => api.post('/users/groups', data),
-  // 204 on success, 422 for the built-in admin group.
-  remove: (name) => api.delete(`/users/groups/${name}`),
+  // 204 on success, 422 for the built-in admin group. Group names are free
+  // text, so the path segment has to be encoded.
+  remove: (name) => api.delete(`/users/groups/${encodeURIComponent(name)}`),
 }
