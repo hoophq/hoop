@@ -40,7 +40,7 @@
   - `Button` - For actions with consistent styling
   - `Select` - For dropdown selections
 - **Styling**: Use Radix's built-in props (`:size`, `:variant`, `:color`) and Tailwind for custom styling
-- **Reference Components**: See `webapp.guardrails.*` and `webapp.jira_templates.*` for examples
+- **Reference Components**: See `webapp.features.ai-session-analyzer.*` and `webapp.features.access-control.*` for examples (the former guardrails/jira-templates references were migrated to React)
 
 ## Accessibility
 - **Baseline**: Ship basic accessibility on every UI change—keyboard navigation and screen-reader support are not optional extras.
@@ -53,7 +53,7 @@
 - New features should follow existing patterns in similar components
 - Use existing UI components when possible before creating new ones
 - Follow existing event/subscription patterns for state management
-- For forms and tables, refer to guardrails and jira_templates implementations
+- For forms and tables, refer to the ai_session_analyzer and access_control implementations
 
 ## Module Organization
 - **Feature Modules**: Organize features in their own directories with local `events.cljs` and `subs.cljs`

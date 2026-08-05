@@ -5,7 +5,7 @@
    ["lucide-react" :refer [ArrowUpRight Database FastForward FileLock2
                            Laptop ListCheck ListTodo Lock MonitorCheck
                            SearchCode Settings2 ShieldCheck
-                           Sparkles TextSearch UserRoundCheck]]
+                           Sparkles UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -151,44 +151,9 @@
                     "Activate Access Control"
                     "Request demo")}])
 
-(defn guardrails-promotion
-  "Specific component for Guardrails.
-
-   When dlp-available? is explicitly false, renders the 'DLP provider required'
-   variant: a documentation link and an explanation instead of the create CTA.
-   This mirrors how Live Data Masking presents its screen when no DLP provider
-   is configured — guardrails are enforced through a DLP provider (GCP or
-   Microsoft Presidio), so without one the feature cannot be set up (EVL-62)."
-  [{:keys [mode installed? dlp-available?]}]
-  (let [empty-state? (= mode :empty-state)
-        dlp-missing? (false? dlp-available?)]
-    [feature-promotion
-     (merge
-      {:feature-name "Guardrails"
-       :mode mode
-       :image "guardrails-promotion.png"
-       :description "Create custom rules to guide and protect usage within your resource roles."
-       :feature-items [{:icon [:> ListCheck {:size 20}]
-                        :title "Automated Policy Enforcement"
-                        :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}
-                       {:icon [:> ShieldCheck {:size 20}]
-                        :title "Smart Command Filtering"
-                        :description "Block potentially dangerous commands before execution and prevent accidental data modifications or deletions."}
-                       {:icon [:> TextSearch {:size 20}]
-                        :title "Context-Aware Access"
-                        :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]}
-      (if dlp-missing?
-        {:extra-information (str "Guardrails require a DLP provider (Microsoft Presidio or "
-                                "Google Cloud DLP) to be enforced. Configure a DLP provider "
-                                "to create and manage guardrails.")
-         :link-button-href [:features :guardrails]
-         :link-button-text "Go to Guardrails documentation"}
-        {:on-primary-click (if empty-state?
-                             #(rf/dispatch [:navigate :create-guardrail])
-                             request-demo)
-         :primary-text (if empty-state?
-                         "Create new Guardrails"
-                         "Request demo")}))]))
+;; The Guardrails promotion lives in the React app
+;; (webapp_v2 pages/Guardrails/components/GuardrailsPromotion.jsx) — the CLJS
+;; component was removed with the CLJS guardrails pages, its only consumer.
 
 (defn runbooks-promotion
   "Specific component for Runbooks"

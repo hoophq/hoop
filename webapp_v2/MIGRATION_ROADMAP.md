@@ -193,6 +193,15 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
 `:signup-callback-hoop` (url-for in `events/auth` + logout view),
 `:onboarding-protection-rules` (navigated from onboarding effects).
 
+Also on the keep-list, for the same reason as `:ai-data-masking` —
+`features/activation_journey/templates.cljs:42-62` names them as the
+`:route-list`/`:route-create` of a feature card CTA, and the cards navigate by
+route keyword: `:guardrails` and `:create-guardrail` (React-rendered since
+EVL-147 deleted the CLJS panels; also url-for'd from sidebar constants and the
+configure-role terminal tab), plus `:ai-session-analyzer` and
+`:create-ai-session-analyzer-rule` (still CLJS until B3.2). They can only be
+deleted once `activation_journey` itself migrates.
+
 ### PR A3 — Dead auth/users/org (M) — EVL-118
 
 - `auth/local/*`, `auth/views/login_panel.cljs` (fully orphaned — zero requires),
@@ -275,7 +284,7 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 
 | Ticket | Scope | Size | Notes |
 |---|---|---|---|
-| ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS files left in place, shadowed by React | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
+| ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS deleted in EVL-147 (`webapp/src/webapp/guardrails/`, the 3 `app.cljs` panels, the `:edit-guardrail` route, `:activation-journey/seed-guardrail-template`, `promotion/guardrails-promotion`); `events/guardrails.cljs` trimmed to the read path and the `:guardrails`/`:create-guardrail` route entries kept — see the A2 keep-list | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
 | B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Template seeding to copy from `pages/Guardrails/templates.js` (B3.1) |
 | B3.3 Access Control | `/features/access-control(+new,edit)`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`) | M | Independent |
 | B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
