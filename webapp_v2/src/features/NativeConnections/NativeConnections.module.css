@@ -64,7 +64,7 @@
 
 .accordionPanelContent {
   padding-inline: var(--mantine-spacing-md);
-  padding-bottom: var(--mantine-spacing-md);
+  padding: var(--mantine-spacing-md);
 }
 
 /* Credential content scrolls inside the row instead of pushing every other

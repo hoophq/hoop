@@ -24,6 +24,7 @@
    Standalone CLJS (shadow-cljs on :8280, no React shell) is unaffected: there is
    no unlayered CSS competing with it, so a layered preflight applies as before. */
 @import "tailwindcss/lib/css/preflight.css" layer(legacy-reset);
+@import "./legacy-border-default.css" layer(legacy-reset);
 
 @tailwind base;
 @tailwind components;
@@ -194,9 +195,11 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  /* The `* { @apply border-border }` that used to live here moved to
+     legacy-border-default.css, imported into the legacy-reset layer — see the
+     comment there. `body` stays unlayered on purpose: below `mantine` it would
+     hand the page background and text colour over to Mantine's own body rule,
+     repainting every ClojureScript page. */
 
   body {
     @apply bg-background text-foreground;
