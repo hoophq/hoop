@@ -1,6 +1,7 @@
 import { Group, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
+import { DRAWER_MODAL_Z_INDEX } from './constants'
 
 /**
  * Confirmation for Disconnect, matching the CLJS danger dialog.
@@ -11,7 +12,13 @@ import Modal from '@/components/Modal'
  */
 export function DisconnectConfirmModal({ opened, onClose, onConfirm, connectionName, loading }) {
   return (
-    <Modal opened={opened} onClose={onClose} title="Disconnect session" size="md">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Disconnect session"
+      size="md"
+      zIndex={DRAWER_MODAL_Z_INDEX}
+    >
       <Stack gap="lg">
         <Text fz="sm">
           {`Are you sure you want to disconnect the native client session for "${connectionName}"?`}

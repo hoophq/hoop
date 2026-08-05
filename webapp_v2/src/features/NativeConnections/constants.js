@@ -61,6 +61,11 @@ export const DRAWER_OFFSET = 8
 // 200. The drawer has to clear all of them on CLJS routes.
 export const DRAWER_Z_INDEX = 300
 
+// Dialogs opened from inside the drawer have to clear it. Mantine's Modal
+// defaults to 200, which put the disconnect confirmation behind the drawer and
+// made it impossible to click through to.
+export const DRAWER_MODAL_Z_INDEX = 400
+
 // Filtering runs over the whole array, but rendering thousands of accordion
 // items is what actually hurts. Above the cap the count line tells the user to
 // narrow the search instead of silently truncating.

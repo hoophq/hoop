@@ -7,14 +7,32 @@ import { normalizeSubtype, openRdpWebClient } from './helpers'
 import classes from './NativeConnections.module.css'
 
 /**
- * The established-connection view: credentials for the connection's subtype,
- * a live countdown when the credential is bounded, and the teardown actions.
+ * Bounded, scrollable region for the credential body.
+ *
+ * Credential blocks (claude-code is five instruction blocks) would otherwise
+ * push every other role out of the drawer and take the disconnect footer with
+ * them.
+ */
+function ScrollableBody({ children }) {
+  return (
+    <ScrollArea.Autosize className={classes.sessionScroll} type="auto" offsetScrollbars>
+      {children}
+    </ScrollArea.Autosize>
+  )
+}
+
+/**
+ * The established-connection view: credentials for the connection's subtype and
+ * the teardown actions. The row itself carries the session status, so there is
+ * no "connection established" line here.
  */
 export function SessionPanel({ credentials, onDisconnect }) {
   const rule = pickCredentialRenderer(credentials.connection_subtype)
   const [tab, setTab] = useState(rule.tabs?.[0]?.value ?? 'credentials')
 
   // Capitalised aliases so JSX treats them as components rather than DOM tags.
+  // Renderers are mounted as elements, not invoked as functions, so a renderer
+  // that later needs a hook does not break the rules of hooks.
   const SoleRenderer = rule.tabs?.length === 1 ? rule.tabs[0].render : null
   const BareRenderer = rule.tabs ? null : rule.render
 
@@ -25,42 +43,34 @@ export function SessionPanel({ credentials, onDisconnect }) {
   }
 
   return (
-    // No "Connection established" line: the row itself already carries the
-    // status, as the countdown pill or the connected indicator.
     <Stack gap="lg">
-      {/* Bounded and scrollable: credential blocks (claude-code especially) are
-          long enough to push every other role out of the drawer otherwise. The
-          footer sits outside, so Disconnect is always reachable. */}
-      <ScrollArea.Autosize className={classes.sessionScroll} type="auto" offsetScrollbars>
-        {/* Renderers are mounted as elements, not invoked as functions, so a
-            renderer that later needs a hook does not break the rules of hooks. */}
-        {rule.tabs ? (
-          rule.tabs.length === 1 ? (
-            // A single tab is just a label — render the body directly.
-            <SoleRenderer {...rendererProps} />
-          ) : (
-            <Tabs value={tab} onChange={setTab}>
-              <Tabs.List aria-label="Connection methods">
-                {rule.tabs.map((t) => (
-                  <Tabs.Tab key={t.value} value={t.value}>
-                    {t.label}
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
-              {rule.tabs.map((t) => {
-                const TabRenderer = t.render
-                return (
-                  <Tabs.Panel key={t.value} value={t.value} pt="md">
-                    <TabRenderer {...rendererProps} />
-                  </Tabs.Panel>
-                )
-              })}
-            </Tabs>
-          )
-        ) : (
-          <BareRenderer {...rendererProps} />
-        )}
-      </ScrollArea.Autosize>
+      {rule.tabs && rule.tabs.length > 1 ? (
+        // The tab list stays outside the scroll area so it stays pinned while
+        // the panel body scrolls underneath it.
+        <Tabs value={tab} onChange={setTab}>
+          <Tabs.List aria-label="Connection methods">
+            {rule.tabs.map((t) => (
+              <Tabs.Tab key={t.value} value={t.value}>
+                {t.label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+          <ScrollableBody>
+            {rule.tabs.map((t) => {
+              const TabRenderer = t.render
+              return (
+                <Tabs.Panel key={t.value} value={t.value} pt="md">
+                  <TabRenderer {...rendererProps} />
+                </Tabs.Panel>
+              )
+            })}
+          </ScrollableBody>
+        </Tabs>
+      ) : (
+        <ScrollableBody>
+          {SoleRenderer ? <SoleRenderer {...rendererProps} /> : <BareRenderer {...rendererProps} />}
+        </ScrollableBody>
+      )}
 
       <Divider />
 
