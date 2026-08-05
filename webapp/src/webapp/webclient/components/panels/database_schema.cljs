@@ -22,10 +22,10 @@
                 "Database Schema")]
 
     [:> Box {:as "aside"
-             ;; Same surface as the editor it sits beside (gray-4, #e8e8ec on the
-             ;; Radix scale). It was on gray-1, a near-white slab against the
-             ;; grey editor.
-             :class (str "h-full transition-all duration-300 border-r-2 border-gray-6 bg-gray-4 "
+             ;; One step lighter than the editor beside it (which is on gray-4),
+             ;; so the panel reads as a related surface rather than a slab. It
+             ;; was gray-1 — near-white against the grey canvas.
+             :class (str "h-full transition-all duration-300 border-r border-gray-5 bg-gray-3 "
                          (if collapsed? "w-16" "w-full"))
              :aria-label "Database schema"}
 
