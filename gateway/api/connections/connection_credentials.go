@@ -3,7 +3,6 @@ package apiconnections
 import (
 	"database/sql"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -26,8 +25,8 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"gorm.io/gorm"
 )
 
 var validConnectionTypes = []string{
@@ -114,7 +113,12 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 
 	// Check if connection requires review/JIT approval
-	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
+	requiresReview, accessRule, err := checkConnectionRequiresReview(ctx, conn)
+	if err != nil {
+		log.Errorf("failed checking review requirement for connection %s, err=%v", conn.Name, err)
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed checking review requirements"})
+		return
+	}
 
 	// Determine the audit status of the credential-issuance session.
 	// Persistent credentials (no review, no access_duration_seconds) mint a
@@ -743,7 +747,7 @@ func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialI
 // terminateActiveCredentialSessions tears down any in-flight proxy sessions for
 // the given credential. Shared by Revoke (with DB invalidation) and Close
 // (without DB invalidation).
-func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn *models.Connection) {
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _conn *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
@@ -1100,35 +1104,28 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	return reviewID, nil
 }
 
-// checkConnectionRequiresReview checks if a connection requires review/JIT approval
-// It checks both OSS reviewers and Enterprise access request rules
-func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connection) (bool, *models.AccessRequestRule) {
+// checkConnectionRequiresReview checks if a connection requires review/JIT approval.
+// It checks OSS reviewers and Enterprise access request rules (both name-targeted
+// and attribute-targeted, e.g. protection profiles). A non-nil error means the
+// requirement could not be determined — callers must fail closed, not issue credentials.
+func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connection) (bool, *models.AccessRequestRule, error) {
 	// Check OSS reviewers
 	if len(conn.Reviewers) > 0 {
-		return true, nil
+		return true, nil, nil
 	}
 
 	// Check Enterprise access request rules for JIT access
 	orgID, err := uuid.Parse(ctx.OrgID)
 	if err != nil {
-		log.Warnf("failed parsing org_id %s, err=%v", ctx.OrgID, err)
-		return false, nil
+		return false, nil, fmt.Errorf("failed parsing org id %s: %w", ctx.OrgID, err)
 	}
 
-	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit")
+	accessRule, err := services.GetRuleForConnection(orgID, conn.Name, "jit")
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		log.Warnf("failed checking access request rules for connection %s, err=%v", conn.Name, err)
-		return false, nil
+		return false, nil, fmt.Errorf("failed checking access request rules for connection %s: %w", conn.Name, err)
 	}
 
-	if accessRule != nil {
-		return true, accessRule
-	}
-
-	return false, nil
+	return accessRule != nil, accessRule, nil
 }
 
 // recoverSecretKey returns the plaintext secret key stored on the credential.
