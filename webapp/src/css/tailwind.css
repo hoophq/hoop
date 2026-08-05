@@ -6,6 +6,9 @@
 /* Unlayered and after the Tailwind directives below, so it outranks the style
    module CodeMirror prepends to <head>. */
 @import "./codemirror-surface.css";
+/* Must come after the Radix Themes import above — it overrides one of its
+   rules. */
+@import "./shell-viewport.css";
 
 /* Preflight is imported by hand, into its own cascade layer, instead of coming
    from `@tailwind base` (disabled via corePlugins.preflight in

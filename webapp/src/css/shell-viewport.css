@@ -1,0 +1,16 @@
+/* Radix Themes gives its root theme `min-height: 100vh`. Under the React shell
+ * that root sits inside AppShell.Main, which already reserves the global
+ * header with `padding-top: var(--app-shell-header-offset)` — so a full-viewport
+ * child makes the page exactly one header taller than the viewport. Every
+ * ClojureScript route picked up 56px of dead scroll, and on the web terminal it
+ * scrolled the toolbar out of sight.
+ *
+ * Subtract the same offset every other viewport height in this stylesheet uses.
+ * Outside the shell (standalone shadow-cljs, or routes rendered without the
+ * React Layout) the variable is absent and this falls back to plain 100vh.
+ *
+ * The class is doubled to clear the Radix rule regardless of import order.
+ */
+.radix-themes.radix-themes:where([data-is-root-theme='true']) {
+  min-height: calc(100vh - var(--app-shell-header-offset, 0rem));
+}
