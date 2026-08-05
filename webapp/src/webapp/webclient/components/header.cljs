@@ -29,18 +29,21 @@
                                          connection-selected?))
             script-loading? (= (:status @script-response) :loading)
             os (detect-os)]
-        [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
+        [:> Box {:class "h-10 border-b border-gray-3 bg-gray-1"}
          [:> Flex {:align "center"
                    :justify "between"
                    :class "h-full px-4"}
           [:> Flex {:align "center" :gap "4"}
-           [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+           [:> Heading {:as "h1" :size "3" :weight "bold" :class "text-gray-12"}
             "Terminal"]
 
            [:> Button
             {:radius "full"
              :size "1"
-             :variant "soft"
+             :variant (if (and @primary-connection
+                                (not @parallel-mode-active?))
+                         "solid"
+                         "soft")
              :color (if (and @primary-connection
                              (not @parallel-mode-active?))
                       "indigo"
@@ -75,8 +78,8 @@
 
            [:> Tooltip {:content "Search"}
             [:> IconButton
-             {:size "2"
-              :variant "soft"
+             {:size "1"
+              :variant "ghost"
               :color "gray"
               :highContrast true
               :aria-label "Search resource roles"
@@ -87,9 +90,9 @@
 
            [:> Tooltip {:content "Help"}
             [:> IconButton
-             {:size "2"
+             {:size "1"
               :color "gray"
-              :variant "soft"
+              :variant "ghost"
               :highContrast true
               :aria-label "Open help documentation"
               :onClick (fn []
@@ -101,9 +104,9 @@
             [:> IconButton
              {:class (when @dark-mode?
                        "bg-gray-8 text-gray-12")
-              :size "2"
+              :size "1"
               :color "gray"
-              :variant "soft"
+              :variant "ghost"
               :highContrast true
               :aria-label (if @dark-mode?
                             "Switch to light theme"
@@ -131,7 +134,8 @@
 
            [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button
-             {:disabled disable-run-button?
+             {:size "1"
+              :disabled disable-run-button?
               :loading script-loading?
               :id "run-button"
               :data-run-button true

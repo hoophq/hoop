@@ -178,7 +178,7 @@ module.exports = {
         'screen-90vh': '90vh',
         'logs-container': 'calc(100% - 38px)',
         'connection-selector': 'calc(100vh - 56px)',
-        'terminal-content': 'calc(100vh - var(--app-shell-header-offset, 0rem) - 62px)'
+        'terminal-content': 'calc(100vh - var(--app-shell-header-offset, 0rem) - 42px)'
       },
       minHeight: {
         screen: 'calc(100vh - var(--app-shell-header-offset, 0rem))'
