@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useUserStore } from '@/stores/useUserStore'
 
 // Helper to get cookie value by name
 const getCookieValue = (cookieName) => {
@@ -42,6 +43,12 @@ export const useAuthStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem('jwt-token')
     set({ token: null, isAuthenticated: false })
+    // Logout from the sidebar is a soft SPA navigation, so without this the
+    // next login in the same tab inherits the previous org's user, role and
+    // serverinfo-derived flags (disable_clipboard_copy_cut, license features) —
+    // ProtectedRoute short-circuits both its /me and its /serverinfo fetch when
+    // they are already in the store.
+    useUserStore.getState().clear()
   },
 
   // Save current URL for redirect after auth

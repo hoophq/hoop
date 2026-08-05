@@ -27,9 +27,11 @@
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->info {:loading false
                                   :data info})
+    ;; Document-level clipboard blocking moved to the React shell
+    ;; (webapp_v2 hooks/useClipboardGuard, installed in App.jsx) — the CLJS
+    ;; bundle is injected lazily, so it never ran on React-only routes.
     :fx [[:dispatch [:tracking->initialize-if-allowed]]
-         [:dispatch [:initialize-monitoring]]
-         [:dispatch [:clipboard/initialize]]]}))
+         [:dispatch [:initialize-monitoring]]]}))
 
 (rf/reg-event-fx
  :gateway->get-public-info

@@ -15,6 +15,7 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
+  const serverInfoRetriedPath = useRef(null)
 
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
@@ -104,6 +105,34 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
 
     initialize()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // /serverinfo self-heal. The effect above runs once per ProtectedRoute
+  // instance and React Router reuses that instance across navigations, so its
+  // retry never fires again — a transient /serverinfo failure would leave every
+  // control derived from it (license gating, the clipboard guard) off for the
+  // whole session. The CLJS app got this for free by refetching /serverinfo
+  // from six places; React has to ask again explicitly.
+  useEffect(() => {
+    if (!isAuthenticated || initializing) return
+
+    // initialize() already retried for the path we mounted on; only ask again
+    // once the user actually navigates, so a failing gateway gets one request
+    // per navigation rather than a burst.
+    const previousPath = serverInfoRetriedPath.current
+    serverInfoRetriedPath.current = location.pathname
+    if (previousPath === null || previousPath === location.pathname) return
+
+    if (useUserStore.getState().serverInfoLoaded) return
+
+    authService
+      .getServerInfo()
+      .then((serverInfo) => {
+        if (serverInfo) setServerInfo(serverInfo)
+      })
+      .catch(() => {
+        // Still unavailable — try again on the next navigation.
+      })
+  }, [location.pathname, isAuthenticated, initializing, setServerInfo])
 
   // React Router reuses this ProtectedRoute instance when navigating between
   // Route entries whose element tree starts with <ProtectedRoute> (both /* and

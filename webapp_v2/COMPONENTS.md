@@ -689,6 +689,19 @@ const roles = usePaginatedConnections({ pageSize: 50 })
 ```
 Returns `{ options ([{value,label,iconUrl}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
 
+### `useClipboardGuard()`
+Enforces the org setting `disable_clipboard_copy_cut` by blocking `copy`, `cut`, `beforecopy` and `beforecut` at the document level (capture phase, `preventDefault` + `stopImmediatePropagation`), with the same 2s toast cooldown as the CLJS original it replaces.
+```jsx
+import { useClipboardGuard } from '@/hooks/useClipboardGuard'
+```
+**Already called once in `App.jsx` — never call it from a page.** App is the only component mounted on every route (`Layout` misses `/onboarding/*`, `PageLayout` misses the CLJS catch-all). The install is refcounted so a second call site would not break, but the flag would then be read from two places.
+
+Companion rules for the two paths document listeners cannot see:
+- Programmatic copies → `copyToClipboard(text)` from `@/utils/clipboardPolicy` (resolves `false` when blocked). Never call `navigator.clipboard.writeText` directly.
+- Copy affordances in the UI → `@/components/CopyButton`, which renders nothing when the flag is on. Never import Mantine's `CopyButton` directly.
+
+Dev caveat: neither `hooks/useClipboardGuard.js` nor `utils/clipboardPolicy.js` exports a component, so neither is a Fast Refresh boundary — hard-reload after editing them instead of trusting HMR.
+
 ---
 
 ## Stores (`src/stores/`)

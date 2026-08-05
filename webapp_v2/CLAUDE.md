@@ -149,6 +149,21 @@ showSnackbar({ level: 'info',    text: 'Heads up.' })
   the CLJS Toaster only exists while the CLJS tree is mounted, so toasts fired from
   React-only routes would be silently lost. Always use `showSnackbar` from `@/utils/snackbar`.
 
+## Clipboard — the org can disable copy/cut
+
+`disable_clipboard_copy_cut` (from `/serverinfo`) is a security control, and React
+owns it: `useClipboardGuard()` in `src/App.jsx` blocks `copy`/`cut`/`beforecopy`/
+`beforecut` at the document level. Two paths that guard cannot see, so they have
+their own rules:
+
+- **Programmatic copies** → `copyToClipboard(text)` from `@/utils/clipboardPolicy`.
+  Never call `navigator.clipboard.writeText` directly — the async Clipboard API
+  does not emit a `copy` event, so a raw call silently bypasses the control.
+- **Copy affordances in the UI** → `@/components/CopyButton`, which renders nothing
+  when the flag is on. Never import Mantine's `CopyButton` directly.
+
+Full details and the "do not call the hook from a page" rule: `COMPONENTS.md`.
+
 ## Authentication Flow
 
 ### Overview

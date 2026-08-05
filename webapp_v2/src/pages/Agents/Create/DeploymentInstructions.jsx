@@ -1,23 +1,11 @@
-import { Stack, Text, Anchor, Title, Grid, Box, Flex, ActionIcon } from '@mantine/core';
-import { CopyButton } from '@mantine/core';
-import { Copy } from 'lucide-react';
+import { Stack, Text, Anchor, Title, Grid, Box, Flex } from '@mantine/core';
+import CopyButton from '@/components/CopyButton';
 import Table from '@/components/Table';
 import CodeSnippet from '@/components/CodeSnippet';
 import DocsBtnCallOut from '@/components/DocsBtnCallOut';
 import { docsUrl } from '@/utils/docsUrl';
 
 const HELM_DOCS_URL = 'https://helm.sh/docs/intro/install/';
-
-function InlineCopy({ value }) {
-  return (
-    <CopyButton value={value}>
-      {({ copy }) =>
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={copy}>
-          <Copy size={12} />
-        </ActionIcon>}
-    </CopyButton>
-  );
-}
 
 export function DockerDeployment({ hoopKey }) {
   const dockerImage = 'hoophq/hoopdev:latest';
@@ -35,7 +23,7 @@ export function DockerDeployment({ hoopKey }) {
             <Text size="xs" style={{ flex: 1 }}>
               {dockerImage}
             </Text>
-            <InlineCopy value={dockerImage} />
+            <CopyButton value={dockerImage} label="Copy Docker image" size="sm" />
           </Flex>
         </Box>
       </Stack>
@@ -58,7 +46,7 @@ export function DockerDeployment({ hoopKey }) {
                   <Text size="sm" ff="monospace">
                     HOOP_KEY
                   </Text>
-                  <InlineCopy value="HOOP_KEY" />
+                  <CopyButton value="HOOP_KEY" label="Copy env var name" size="sm" />
                 </Flex>
               </Table.Td>
               <Table.Td>
@@ -66,7 +54,7 @@ export function DockerDeployment({ hoopKey }) {
                   <Text size="xs" ff="monospace" style={{ wordBreak: 'break-all' }}>
                     {hoopKey}
                   </Text>
-                  <InlineCopy value={hoopKey} />
+                  <CopyButton value={hoopKey} label="Copy agent key" size="sm" />
                 </Flex>
               </Table.Td>
             </Table.Tr>
