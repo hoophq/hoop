@@ -7,7 +7,12 @@
   [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded
            size variant]
     :or {size "2" variant "soft"}}]
-  [:> Box {:class "relative"}
+  ;; inline-flex so the wrapper shrink-wraps the button. The ghost variant has
+  ;; no fixed box — Radix sizes it from padding and pulls it back with negative
+  ;; margins — so a block wrapper kept its own larger box and the icon drifted
+  ;; out of line with the sibling buttons. It also puts the notification dot on
+  ;; the button's real corner rather than the wrapper's.
+  [:> Box {:class "relative inline-flex"}
    [:> IconButton
     (merge
      {:class (str (when active? "bg-gray-8 text-gray-12 ")

@@ -123,7 +123,9 @@
                [:> Moon {:size 16}])]]
 
            [:> Tooltip {:content "Metadata"}
-            [:div
+            ;; inline-flex: this wrapper only exists to give Tooltip a ref, and
+            ;; as a block it added its own line box around the ghost button.
+            [:div {:class "inline-flex"}
              [notification-badge
               {:size "1"
                :variant "ghost"
