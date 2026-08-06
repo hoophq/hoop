@@ -99,8 +99,10 @@ function RowHeader({ role, state, active, iconSrc }) {
 export function RoleRow({ role, active, expanded }) {
   const getIcon = useConnectionIconGetter()
   const flowStatus = useNativeAccessStore((s) => s.statusByName[role.name])
+  const review = useNativeAccessStore((s) => s.reviewByName[role.name])
+  const hasCredentials = useNativeAccessStore((s) => Boolean(s.credentialsByName[role.name]))
   const resumeIfActive = useNativeAccessStore((s) => s.resumeIfActive)
-  const state = deriveRowState(role, active, flowStatus)
+  const state = deriveRowState(role, active, flowStatus, review)
 
   // Expanding only loads the secret for a session that already exists. It never
   // creates one — that is the action button's job.
@@ -109,12 +111,13 @@ export function RoleRow({ role, active, expanded }) {
   }, [expanded, role.name, resumeIfActive])
 
   const iconSrc = getIcon({ subtype: role.subtype, type: role.type })
-  // `expanded` is in the test so an open row always keeps a control to close
-  // itself with, even in the frame between being opened and its state catching
-  // up (the CLJS resume bridge opens the row before the request starts).
+  // Must agree with what RowBody can render, or a row ends up either holding
+  // unreachable content or — when `expanded` was the only truthy term — losing
+  // its control in the same commit that collapses it, which drops focus to
+  // <body> and leaves nothing to re-open by keyboard.
   const hasPanel =
-    expanded ||
     PANEL_STATES.has(state) ||
+    hasCredentials ||
     flowStatus === FLOW_STATUS.UNAVAILABLE ||
     flowStatus === FLOW_STATUS.REQUESTING
 

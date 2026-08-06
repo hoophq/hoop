@@ -5,8 +5,9 @@
    [re-frame.core :as rf]))
 
 (defn parallel-mode-button
-  "Size and variant are props so the web terminal can match its 24px toolbar
-   without changing the runbooks runner, whose header is still 64px."
+  "Size and variant are props. Both the web terminal and the runbooks runner now
+   pass size \"1\" / ghost for their 40px toolbars; the defaults are kept for any
+   other caller."
   [& [{:keys [size variant] :or {size "2" variant "soft"}}]]
   (let [selected-count (rf/subscribe [:parallel-mode/selected-count])
         is-active? (rf/subscribe [:parallel-mode/is-active?])

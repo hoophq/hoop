@@ -149,6 +149,20 @@ export const useNativeAccessStore = create((set, get) => ({
    * or — for a role with no review at all — connect in one click.
    */
   beginConnect: async (connectionName) => {
+    // A review is already open for this connection: resume it instead of
+    // opening a second one. The gateway does not dedupe — POST /credentials
+    // creates a fresh session and review every time — so without this guard a
+    // row that fell out of PENDING_REVIEW for any reason would spam reviewers.
+    const pending = get().reviewByName[connectionName]
+    if (pending?.sessionId) {
+      useNativeConnectionsStore.getState().setExpanded(connectionName)
+      return get().resumeAfterReview(
+        connectionName,
+        pending.sessionId,
+        pending.accessDurationSec
+      )
+    }
+
     set((s) => ({
       statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.CHECKING),
       errorByName: removeFrom(s.errorByName, connectionName),
@@ -194,6 +208,8 @@ export const useNativeAccessStore = create((set, get) => ({
         statusByName: removeFrom(s.statusByName, connectionName),
         requestFor: connectionName,
       }))
+      // Dropping a status can retire the last pending row and orphan the poll.
+      get().syncReviewWatcher()
       return
     }
 
@@ -210,7 +226,10 @@ export const useNativeAccessStore = create((set, get) => ({
   resumeIfActive: async (connectionName) => {
     if (get().credentialsByName[connectionName]) return
     if (!isSessionValid(get().activeByName[connectionName])) return
-    await get().fetchCredentials(connectionName)
+    // expand:false — the user opened this row themselves and may well have
+    // closed it again while the secret was in flight. Re-opening it under them
+    // when the response lands is the row popping back open on its own.
+    await get().fetchCredentials(connectionName, { expand: false })
   },
 
   /**
@@ -300,6 +319,15 @@ export const useNativeAccessStore = create((set, get) => ({
       if (status === 202 || !data.connection_credentials) {
         set((s) => ({
           statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.PENDING_REVIEW),
+          // Record the pointer here too. Coming in through the CLJS bridge this
+          // is the FIRST time we learn the session id, and without it the row
+          // has no "Check approval", no "View review" and nothing for the
+          // poller to act on.
+          reviewByName: setIn(s.reviewByName, connectionName, {
+            ...s.reviewByName[connectionName],
+            sessionId,
+            accessDurationSec,
+          }),
         }))
         if (!silent) {
           showSnackbar({
@@ -313,9 +341,17 @@ export const useNativeAccessStore = create((set, get) => ({
       showSnackbar({ level: 'success', text: 'Credentials obtained successfully!' })
     } catch (error) {
       const message = errorMessage(error, 'Failed to obtain credentials')
+      // 403 rejected, 404 gone, 410 expired — the review will never produce
+      // credentials, so drop the pointer. Leaving it would pin the row on
+      // "Pending review" with no way out, because the pointer is what the row
+      // now derives that state from.
+      const terminal = [403, 404, 410].includes(error?.response?.status)
       set((s) => ({
         statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
         errorByName: setIn(s.errorByName, connectionName, message),
+        reviewByName: terminal
+          ? removeFrom(s.reviewByName, connectionName)
+          : s.reviewByName,
       }))
       showSnackbar({ level: 'error', text: message })
     } finally {
@@ -373,20 +409,26 @@ export const useNativeAccessStore = create((set, get) => ({
   },
 
   /** Loads the secret for a connection that already has a live credential. */
-  fetchCredentials: async (connectionName) => {
+  fetchCredentials: async (connectionName, { expand = true } = {}) => {
     set((s) => ({
       statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.REQUESTING),
     }))
     try {
       const data = await connectionCredentialsService.get(connectionName)
-      get().storeCredentials(data)
+      get().storeCredentials(data, { expand })
     } catch (error) {
       // 404 means the credential was revoked or expired server-side while we
-      // were showing it as active. Drop it and fall back to the idle state so
-      // the user can just connect again.
+      // were showing it as active. Drop it locally and fall back to idle so the
+      // user can just connect again. Deliberately not clearSession: that also
+      // collapses the row, which would slam shut the row the user just opened.
       if (error?.response?.status === 404) {
-        get().clearSession(connectionName)
-        set((s) => ({ statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.IDLE) }))
+        set((s) => ({
+          activeByName: removeFrom(s.activeByName, connectionName),
+          credentialsByName: removeFrom(s.credentialsByName, connectionName),
+          statusByName: removeFrom(s.statusByName, connectionName),
+          errorByName: removeFrom(s.errorByName, connectionName),
+        }))
+        get().syncExpiryWatcher()
         return
       }
       const message = errorMessage(error, 'Failed to load credentials')
@@ -402,9 +444,9 @@ export const useNativeAccessStore = create((set, get) => ({
    * with this item open" after connecting, and an established session is the
    * only thing the panel has to show.
    */
-  storeCredentials: (data) => {
+  storeCredentials: (data, { expand = true } = {}) => {
     const name = data.connection_name
-    useNativeConnectionsStore.getState().setExpanded(name)
+    if (expand) useNativeConnectionsStore.getState().setExpanded(name)
     set((s) => ({
       credentialsByName: setIn(s.credentialsByName, name, data),
       activeByName: setIn(s.activeByName, name, {
@@ -478,12 +520,5 @@ export const useNativeAccessStore = create((set, get) => ({
     }))
     get().syncExpiryWatcher()
     get().syncReviewWatcher()
-  },
-
-  resetFlow: (connectionName) => {
-    set((s) => ({
-      statusByName: removeFrom(s.statusByName, connectionName),
-      errorByName: removeFrom(s.errorByName, connectionName),
-    }))
   },
 }))

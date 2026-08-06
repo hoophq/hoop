@@ -22,10 +22,19 @@ export const ROW_STATE = {
  * therefore collapses as IDLE and reveals the review requirement on expand,
  * when the row fetches the connection — same as the CLJS flow.
  */
-export function deriveRowState(role, active, flowStatus) {
-  if (flowStatus === FLOW_STATUS.PENDING_REVIEW) return ROW_STATE.PENDING_REVIEW
-
+export function deriveRowState(role, active, flowStatus, review) {
   const hasSession = isSessionValid(active) && Boolean(active?.session_id)
+
+  // `review` — the {sessionId, reviewId, accessDurationSec} pointer — is the
+  // durable half of this state; flowStatus is volatile and gets overwritten by
+  // any transient (a "Check approval" round trip writes REQUESTING, a failed
+  // poll writes UNAVAILABLE). Deriving from flowStatus alone dropped the row
+  // back to NEEDS_REVIEW and re-armed "Ask access", and clicking that opens a
+  // SECOND review server-side — the gateway does not dedupe. The pointer is
+  // cleared only when the review resolves or the session goes away.
+  if (flowStatus === FLOW_STATUS.PENDING_REVIEW || (review?.sessionId && !hasSession)) {
+    return ROW_STATE.PENDING_REVIEW
+  }
 
   // An admin can disable connect while a credential is still live. The row has
   // to survive that, otherwise the only way to disconnect disappears.

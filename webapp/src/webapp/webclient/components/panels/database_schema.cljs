@@ -33,9 +33,11 @@
                :justify "between"
                :class "w-full h-10 p-2 border-b border-gray-3"}
       [:> Flex {:align "center" :gap "2"}
-       [:> Database {:size 16 :class "text-[--gray-12]" :aria-hidden "true"}]
+       ;; 14px label and icon. Radix size "2" is 14px on this scale ("3" is
+       ;; 16px), so the type stays on the scale rather than an arbitrary class.
+       [:> Database {:size 14 :class "text-[--gray-12]" :aria-hidden "true"}]
        [:> Box {:class (when collapsed? "hidden")}
-        [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} title]]]
+        [:> Heading {:size "2" :weight "bold" :class "text-gray-12"} title]]]
       [:> IconButton {:variant "ghost"
                       :color "gray"
                       :tabIndex "0"

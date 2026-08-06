@@ -50,3 +50,23 @@
     min-height: calc(100dvh - var(--app-shell-header-offset, 0rem));
   }
 }
+
+/* The header offset only means anything when the document is the scrollport.
+ *
+ * A Radix dialog card is its own scroll container (`.rt-BaseDialogContent` is
+ * `position: relative; overflow: auto`) and is portalled to <body>, so the shell
+ * header is not above it in any meaningful sense — but the variable is set on
+ * :root and inherits straight through the portal. A `sticky top-app-header`
+ * inside a dialog therefore got shoved 56px down, painting over the content
+ * below it: the Session Details header is exactly that case, since
+ * sessions/components/session_header.cljs is modal content everywhere except
+ * /sessions/:id.
+ *
+ * Zeroing the variable per dialog fixes every such site at once and keeps the
+ * page-flow render of the same component correct. `#modal` is the legacy
+ * components/modal.cljs overlay, which is likewise a fixed, self-scrolling box.
+ */
+.rt-BaseDialogContent,
+#modal {
+  --app-shell-header-offset: 0rem;
+}

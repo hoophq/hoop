@@ -13,12 +13,14 @@
       (let [input-id "header-search"]
         (reset! has-text? (not (empty? @search-term)))
 
-        [:div {:class "relative w-8 h-8"}
+        ;; 24px box to sit on the 40px header's control scale, alongside the
+        ;; ghost icon buttons next to it.
+        [:div {:class "relative w-6 h-6"}
          [:input {:class (str "absolute top-0 right-0 "
                               " shadow-sm transition-all ease-in duration-150 "
                               " bg-gray-3 "
-                              " text-sm h-8 "
-                              (if @has-text? " w-64 " " w-8 ")
+                              " text-sm h-6 "
+                              (if @has-text? " w-64 " " w-6 ")
                               " rounded-md "
                               " outline-none pl-3 "
                               " focus:outline-none "
@@ -41,10 +43,9 @@
                                    (rf/dispatch [:primary-connection/set-filter value]))))}]
          (if @has-text?
            [:> IconButton
-            {:class (str " absolute top-0 right-0 w-8 h-8 "
-                         " bg-gray-3 hover:bg-gray-4 ")
-             :size "2"
-             :variant "soft"
+            {:class " absolute top-0 right-0 w-6 h-6 "
+             :size "1"
+             :variant "ghost"
              :color "gray"
              :highContrast true
              :onClick (fn [e]
@@ -59,10 +60,9 @@
             [:> X {:size 16}]]
 
            [:> IconButton
-            {:class (str " absolute top-0 right-0 w-8 h-8 "
-                         " bg-gray-3 hover:bg-gray-4 ")
-             :size "2"
-             :variant "soft"
+            {:class " absolute top-0 right-0 w-6 h-6 "
+             :size "1"
+             :variant "ghost"
              :color "gray"
              :highContrast true
              :onClick #(.focus (.getElementById js/document input-id))}
