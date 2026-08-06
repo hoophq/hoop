@@ -168,8 +168,8 @@ github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 h1:x0DndAGP+m1rk9JrlPL
 github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0/go.mod h1:2DZt7DdTnnd1o7biwC9Ab0Z3OAGXId56gYVPR7LsLQs=
 github.com/honeycombio/otel-config-go v1.17.0 h1:3/zig0L3IGnfgiCrEfAwBsM0rF57+TKTyJ/a8yqW2eM=
 github.com/honeycombio/otel-config-go v1.17.0/go.mod h1:g2mMdfih4sYKfXBtz2mNGvo3HiQYqX4Up4pdA8JOF2s=
-github.com/hoophq/mcpproxy v0.1.0 h1:NEBx+6Gd9XzGP6amRvJCjK4AB0fIJ7iElZGcoaePuA8=
-github.com/hoophq/mcpproxy v0.1.0/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
+github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
+github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
