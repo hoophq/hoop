@@ -1,0 +1,121 @@
+/* The terminal is intentionally dark in both color schemes, so colors come
+   from the fixed dark end of the Mantine palette rather than scheme-aware
+   aliases. rgba(...) values are hover/expanded overlays. */
+
+.terminal {
+  background-color: var(--mantine-color-dark-9);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--mantine-color-dark-5);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.7;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: var(--mantine-spacing-xs) 0;
+}
+
+.placeholder {
+  color: var(--mantine-color-dark-2);
+  padding: var(--mantine-spacing-md);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-md);
+  cursor: pointer;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+}
+
+.row:hover,
+.row:focus-visible {
+  background-color: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+
+.time {
+  color: var(--mantine-color-dark-2);
+  flex-shrink: 0;
+}
+
+.level {
+  flex-shrink: 0;
+  font-weight: 600;
+  width: 5ch;
+}
+
+.levelDebug {
+  composes: level;
+  color: var(--mantine-color-dark-2);
+}
+
+.levelInfo {
+  composes: level;
+  color: var(--mantine-color-green-5);
+}
+
+.levelWarn {
+  composes: level;
+  color: var(--mantine-color-yellow-6);
+}
+
+.levelError {
+  composes: level;
+  color: var(--mantine-color-red-5);
+}
+
+.sourceGateway {
+  color: var(--mantine-color-violet-4);
+  flex-shrink: 0;
+}
+
+.sourceAgent {
+  color: var(--mantine-color-cyan-4);
+  flex-shrink: 0;
+}
+
+.message {
+  color: var(--mantine-color-gray-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.fieldsHint {
+  color: var(--mantine-color-dark-2);
+  flex-shrink: 0;
+}
+
+.details {
+  margin: 0 var(--mantine-spacing-md) var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  background-color: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid var(--mantine-color-dark-4);
+  color: var(--mantine-color-dark-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detailsLabel {
+  color: var(--mantine-color-dark-2);
+  display: inline-block;
+  width: 10ch;
+}
+
+.detailsValue {
+  color: var(--mantine-color-gray-3);
+}
+
+.detailsFields {
+  color: var(--mantine-color-gray-3);
+  margin: var(--mantine-spacing-xs) 0 0 0;
+  font: inherit;
+}

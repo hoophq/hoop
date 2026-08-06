@@ -321,6 +321,23 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	case pbclient.HttpProxyConnectionWrite:
 		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
+	case pbagent.MCPProxyConnectionWrite:
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+	case pbclient.MCPProxyConnectionWrite:
+		// Two payload kinds share this type: raw response bytes, and the
+		// structured protocol events the MCP gateway emits (one JSON record
+		// per tool call, denial, approval…). Both belong in the session
+		// recording, and the spec key lets the session viewer render the
+		// structured ones as a tool-call timeline instead of a byte blob.
+		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
+	case pbclient.MCPStdioRequest:
+		// A tool call being handed to an MCP server on the user's own
+		// machine. It left the inspection pipeline, so recording it as input
+		// keeps the session replay complete: without this arm the reverse
+		// stdio transport would show tool calls with no counterpart.
+		return nil, p.writeOnReceive(pctx, eventlogv1.InputType, pkt.Payload, eventMetadata)
+	case pbagent.MCPStdioReply:
+		return nil, p.writeOnReceive(pctx, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 	}
 	return nil, nil
 }
@@ -395,6 +412,12 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 		metadata[spectypes.DataMaskingInfoKey] = maskingInfo
 	}
 
+	// Mark structured MCP protocol events so the session viewer can render a
+	// tool-call timeline instead of treating the payload as opaque bytes.
+	if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
+		metadata[pb.SpecMCPEventKey] = []byte("1")
+	}
+
 	if len(metadata) == 0 {
 		return nil
 	}
@@ -404,6 +427,7 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 // parseDataMaskingInfo extracts the DLP data-masking summary from a packet spec,
 // supporting both the current msgpack encoding and the legacy gob-encoded
 // transformation summary from older clients.
+
 func parseDataMaskingInfo(pkt *pb.Packet) []byte {
 	if dataMaskingInfo, ok := pkt.Spec[spectypes.DataMaskingInfoKey]; ok {
 		return dataMaskingInfo

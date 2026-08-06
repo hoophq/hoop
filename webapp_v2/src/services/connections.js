@@ -43,4 +43,9 @@ export const connectionsService = {
   // Single-use: the gateway consumes the flow on read.
   mcpOAuthToken: (flowId) =>
     api.get(`/mcp-oauth/token/${encodeURIComponent(flowId)}`).then((res) => res.data),
+
+  // Built-in catalog of publicly hosted remote MCP servers, used by the MCP
+  // Gateway server picker to pre-fill endpoint, transport and auth mode.
+  // Static build-time data on the gateway; read-only role, not admin-gated.
+  mcpCatalog: () => api.get('/mcp-catalog').then((res) => res.data),
 }

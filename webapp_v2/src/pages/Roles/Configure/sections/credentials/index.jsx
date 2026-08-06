@@ -4,6 +4,7 @@ import SshRenderer from '@/pages/Roles/Configure/sections/credentials/SshRendere
 import ClaudeCodeRenderer from '@/pages/Roles/Configure/sections/credentials/ClaudeCodeRenderer'
 import HttpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/HttpProxyRenderer'
 import McpRenderer from '@/pages/Roles/Configure/sections/credentials/McpRenderer'
+import McpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/McpProxyRenderer'
 import KubernetesTokenRenderer from '@/pages/Roles/Configure/sections/credentials/KubernetesTokenRenderer'
 import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
 
@@ -43,6 +44,18 @@ const RENDERER_RULES = [
     requiresCatalog: false,
     matches: (c) => c.type === 'httpproxy' && c.subtype === 'mcp',
     render: (props) => <McpRenderer {...props} />,
+  },
+  {
+    // MCP Gateway — the protocol-aware MCP type (ADR-0004), distinct from
+    // the legacy `mcp` byte relay above. It must be matched before the
+    // httpproxy catch-all: falling through renders a Remote URL and a
+    // headers list, which hides the transport, tool policy, limits and
+    // stdio child environment that are the whole point of the subtype, and
+    // marks REMOTE_URL required on a stdio connection that has none.
+    name: 'httpproxy-mcpproxy',
+    requiresCatalog: false,
+    matches: (c) => c.type === 'httpproxy' && c.subtype === 'mcpproxy',
+    render: (props) => <McpProxyRenderer {...props} />,
   },
   {
     name: 'httpproxy-generic',

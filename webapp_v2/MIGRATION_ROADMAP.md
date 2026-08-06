@@ -1,10 +1,25 @@
 # CLJS → React Migration Roadmap
 
-Status of record for finishing the `webapp/` (ClojureScript) → `webapp_v2/` (React)
+The plan for finishing the `webapp/` (ClojureScript) → `webapp_v2/` (React)
 migration. Produced from a full audit of both apps (routes, panels, dead code,
 navigation, global infra parity) on 2026-07-27. `CONTEXT_MIGRATION.md` explains the
 shell architecture; this file answers "what's left, in what order, and what can be
 deleted".
+
+## Tracked in Linear
+
+Live status lives in the **[CLJS → React Migration project](https://linear.app/hoophq/project/cljs-react-migration-webapp-v2-a3134fa1d0db)**. Every item below has a ticket, grouped into milestones that mirror the tracks and waves here, with dependencies wired so the board shows what is claimable right now.
+
+| Surface | Owns |
+|---|---|
+| The Linear project | What is claimable, who owns it, current status, and the **verified scope** of each item |
+| This file | *Why* the order is what it is — architectural reasoning, ordering constraints, the endgame plan |
+
+**Where a ticket's scope disagrees with a row below, the ticket wins.** The rows date from the 2026-07-27 audit; every near-term ticket was re-verified against the tree on 2026-07-31 and several rows turned out wrong — B3.7 is 727 LOC and not ~324 (the count omitted the whole `views/` subtree), B2.2 is *not* independent (no sidebar or palette entry — it is reachable only from Sessions surfaces), B2.1 owns ~150 of `events/audit.cljs`'s 786 LOC rather than all of it, and B1.3 has nine adoption sites rather than two.
+
+Those corrections live in the tickets deliberately. Copying them back here would give every fact two homes and start the drift over again — the problem EVL-115 removed from these docs in the first place.
+
+New work gets a ticket in the project **before** the branch. PR #1650 sat unticketed for two days and was invisible on the board the whole time.
 
 **Working model:** three parallel tracks (Cleanup, Migration, Parity) plus a Phase 0
 of quick wins and an Endgame (bundle removal). One Linear ticket = one worktree =
@@ -12,16 +27,15 @@ one draft PR, branch names from Linear. Every PR gates on: webapp compiles
 (shadow-cljs release), `npm run lint && npm run build` in `webapp_v2`, and smoke
 navigation of touched routes.
 
-**Excluded — in flight elsewhere:**
-- `/plugins/manage/:name` (Slack + Webhooks) is being migrated on EVL-101
-  (PR #1633): adds `pages/Integrations/{Slack,Webhooks}` at
+**Landed elsewhere (context):**
+- `/plugins/manage/:name` (Slack + Webhooks) migrated on EVL-101 (PR #1633,
+  merged): `pages/Integrations/{Slack,Webhooks}` live at
   `/integrations/{slack,webhooks}` with legacy redirects for
-  `/plugins/manage/{slack,webhooks}`, deletes the `Plugins/` stub, and removes the
-  CLJS `:manage-plugin` route/panel + plugin views + `events/slack_plugin.cljs`.
-  It does **not** redirect `/plugins/manage/jira` (still PR 0.1) and keeps the
-  `:manage-jira`/`:reviews-plugin-details` bidi entries (still Track A2). Nothing
-  in this roadmap touches `pages/Integrations` or `pages/Plugins` until it merges.
-- Snackbar unification is done on EVL-104 (PR #1638): all
+  `/plugins/manage/{slack,webhooks}`; the `Plugins/` stub and the CLJS
+  `:manage-plugin` route/panel + plugin views + `events/slack_plugin.cljs` are
+  gone. The `:manage-jira`/`:reviews-plugin-details` bidi entries remain
+  (still Track A2).
+- Snackbar unification landed on EVL-104 (PR #1638): all
   `@mantine/notifications` call sites moved to `showSnackbar`, the dependency
   removed, and `useBridgeStore.showSnackbar` deleted (the `show-snackbar` bridge
   event no longer exists).
@@ -30,7 +44,7 @@ navigation of touched routes.
 
 ## Phase 0 — Quick Wins (2 PRs, no dependencies)
 
-### PR 0.1 — Shell bug fixes (S) — EVL-105, PR #1641 (in review)
+### PR 0.1 — Shell bug fixes (S) — EVL-105, PR #1641 (merged)
 
 Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
 
@@ -59,13 +73,19 @@ Bugs found by the audit; all in `webapp_v2` except one CLJS one-liner:
   `/plugins/manage/{slack,webhooks}` — the jira gap is ours; expect a trivial
   `Router.jsx` merge conflict with #1633 in the redirect block.
 
-### PR 0.2 — Scaffolding deletion + doc refresh (S)
+### PR 0.2 — Scaffolding deletion + doc refresh (S) — EVL-115 (this PR)
 
-- Delete the unrouted, unreferenced 7-line stubs from the initial shell commit:
+- ✅ Delete the unrouted, unreferenced 7-line stubs from the initial shell commit:
   `pages/{Connections (incl. Setup/), Dashboard, Sessions, Reviews, Guardrails,
   Resources}`. Verified: zero imports anywhere; Sidebar/CommandPalette reference
-  those features by *path* only (they land in the CLJS catch-all).
-  Integrations/Plugins stubs are EVL-101 turf — untouched.
+  those features by *path* only (they land in the CLJS catch-all). Also deleted
+  the orphaned `pages/Integrations/Authentication` stub — EVL-101 merged without
+  touching it, and B3.7 rebuilds that page from scratch.
+- ✅ Reorganize the webapp_v2 docs to "single owner per topic": each topic lives
+  in exactly one of the 7 md files (see the Documentation map in `README.md`);
+  store/service inventories replaced by pointers to `src/stores/`/`src/services/`
+  (the filesystem is the source of truth) plus non-obvious notes in
+  `COMPONENTS.md`.
 - ~~Switch the bridge snackbar call sites to `@/utils/snackbar`~~ — resolved:
   `Roles/Configure` by EVL-104 (PR #1638, which also deletes
   `useBridgeStore.showSnackbar`), `Onboarding/ProtectionRules` already local since
@@ -83,13 +103,32 @@ is still compiled into the bundle. Deleting early shrinks the bundle and reduces
 
 Two ordering constraints govern everything:
 
-1. **bidi throws at namespace load.** `shared_ui/sidebar/constants.cljs` calls
-   `(routes/url-for …)` at load time for `:agents :settings-api-keys
+1. **bidi fails *silently*, so route deletions need a manual grep gate.**
+   `bidi/path-for` does **not** throw on an unknown handler (verified against the
+   bidi 2.1.6 jar: `bidi.cljc:391-398` `path-for*` throws only for a literally `nil`
+   handler; `bidi.cljc:324-326` `unmatch-pair` uses `when-let` and returns `nil`
+   otherwise). `routes.cljs:114-116` `url-for` is a thin `bidi/path-for` wrapper, so
+   a stale reference yields `nil` — the anchor renders with no `href` at all (dead
+   link) — and `routes.cljs:126-136` `navigate!` computes `(str nil "")` = `""` →
+   `pushy/set-token! ""` → **silent misnavigation**. Nothing — not the compiler, not
+   the runtime, not CI — catches a missed reference.
+   Consequence: **before deleting any route entry**,
+   `grep -rn "url-for :<kw>\|:navigate :<kw>" webapp/src` must return zero hits
+   outside the files that PR deletes, with the output pasted into the PR
+   description. **The gate — not PR ordering — is the safety mechanism**, so a route
+   entry and its sidebar entry may be removed in the *same* PR (EVL-119 did exactly
+   that for `:dashboard`). A1's separate prune of `shared_ui/sidebar/constants.cljs`
+   (which calls `(routes/url-for …)` at load time for `:agents :settings-api-keys
    :settings-attributes :settings-infrastructure :settings-experimental
    :settings-audit-logs :license-management :users :ai-data-masking
-   :integrations-authentication`. `bidi/path-for` throws on an unknown handler, so
-   sidebar constants must be pruned in a PR that lands **strictly before** the
-   route-entry removal.
+   :integrations-authentication`) is kept for reviewability, not because bidi throws.
+   Worked example waiting for A3: `features/attributes/events.cljs:74,108,131` each
+   dispatch `[:navigate :settings-attributes]` in a file A3 **keeps**. It is not a
+   live risk — those three `-success` handlers fire only from
+   `features/attributes/views/form.cljs:52,53,80`, which A3 deletes in the same PR
+   (live callers use `:attributes/create-inline`, which does not navigate) — so the
+   gate hit must be resolved by **deleting the three handlers**, not by repointing
+   them at a surviving route.
 2. **`webapp.events.auth` is load-bearing but only required by dead code.**
    `auth/views/signup.cljs` (dead) is the only app-reachable require of
    `events/auth`, which powers live flows (`:auth->logout` from onboarding pages and
@@ -97,20 +136,42 @@ Two ordering constraints govern everything:
    `/idplogin` panel). Add `[webapp.events.auth]` to `app.cljs` requires **before**
    deleting signup, or logout/idplogin silently break.
 
-### PR A1 — Safety prep (S) — must land first
+### PR A1 — Safety prep (S) — EVL-116 — must land first
 
 - Add `[webapp.events.auth]` to `webapp/src/webapp/app.cljs` requires.
 - Prune from `shared_ui/sidebar/constants.cljs` the entries whose `url-for` targets
   A2/A3 will delete: `:agents :settings-api-keys :settings-attributes
   :settings-infrastructure :settings-experimental :settings-audit-logs
-  :license-management :users`. Do **not** touch `:ai-data-masking` or
-  `:integrations-authentication` (still needed — see keep-list below).
+  :license-management :users`, plus the 4 `icons-registry` keys this orphans
+  (`"Agents" "infrastructure" "license" "users"`) and the now-unused `BrainCog`
+  refer. Do **not** touch `:ai-data-masking` or `:integrations-authentication`
+  (still needed — see keep-list below), nor the `"authentication"` icon.
+  `organization-routes` and `settings-management` are left as empty vectors. Their
+  five consumers iterate with `for`/`mapcat`/`concat` and emit nothing, but two of
+  them still render their own chrome over an empty vector: the Settings disclosure
+  at `navigation.cljs:158-197` and its collapsed-sidebar twin at
+  `main.cljs:210-219` (icon + "Settings" label + empty panel). No user sees it
+  because `app.cljs:260` drops `sidebar/main` entirely in shell mode — the defs are
+  harmless because the CLJS sidebar is unreachable, not because the consumers
+  degrade gracefully. The legacy `app.cljs:288` (`STATIC_UI_PATH`) path would show
+  the empty section. Deleting the defs, those two consumers, and the pre-existing
+  `icons-registry` orphans (`"Reviews" "JiraTemplates" "jira"`) is A3.
 - Remove two latent no-op dispatches (their registering namespaces are never
   loaded into the bundle): `events/users.cljs:143`
   (`:slack->send-message->user`) and `events/connections.cljs:88`
   (`:connections->filter-connections`).
+- Add the four entries React's palette lacks — API Keys, Attributes, Experimental,
+  Internal Audit Logs — to `features/CommandPalette/constants.js`, gating mirrored
+  from `layout/Sidebar/constants.js`. **This closes a separate, pre-existing gap in
+  the React palette — it does not restore what the prune removes.** The CLJS palette
+  is still the only one rendered on CLJS routes (`app.cljs` renders it in the
+  `react-shell` branch; `spotlight.js` delegates to it there) and builds its Quick
+  Access from the pruned vectors, so it does lose 8 entries. All 8 pages stay one
+  click away in the React sidebar, which is the shell and renders on every route, so
+  the loss is ⌘K discoverability on CLJS routes only — accepted, and it disappears
+  as those routes migrate.
 
-### PR A2 — Dead settings/admin panels + routes (M)
+### PR A2 — Dead settings/admin panels + routes (M) — EVL-117
 
 Delete files + their `app.cljs` requires/defmethods + `routes.cljs` entries:
 
@@ -122,8 +183,8 @@ Delete files + their `app.cljs` requires/defmethods + `routes.cljs` entries:
   initial-state key).
 - Orphan `:audit-plugin-panel` defmethod (no route points at it).
 - Route entries `:404 :runbooks-edit :hoop-app :reviews-plugin-details` (bidi
-  entries with no panel and no references) and `:manage-jira` — the latter **only
-  after** PR 0.1's React redirect is merged.
+  entries with no panel and no references) and `:manage-jira` — gate satisfied:
+  PR 0.1's React redirect merged with EVL-105/#1641.
 
 Route entries that must **stay** (url-for/`:navigate` from live code):
 `:configure-role` (navigated from live `/resources` pages), the `:ai-data-masking`
@@ -132,7 +193,7 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
 `:signup-callback-hoop` (url-for in `events/auth` + logout view),
 `:onboarding-protection-rules` (navigated from onboarding effects).
 
-### PR A3 — Dead auth/users/org (M)
+### PR A3 — Dead auth/users/org (M) — EVL-118
 
 - `auth/local/*`, `auth/views/login_panel.cljs` (fully orphaned — zero requires),
   `auth/views/signup.cljs` (safe: A1 landed), `events/localauth.cljs`.
@@ -144,10 +205,47 @@ activation-journey templates), `:login-hoop`/`:auth-callback-hoop`/
   dialog is mounted globally in the CLJS layout and is a Parity-track port source;
   the events/subs serve it and `features/promotion`).
 - `features/attributes/{main.cljs,views/form.cljs}` — **keep** `events.cljs` +
-  `subs.cljs` (used by live guardrails, resource setup/configure, machine
-  identities, access control until those migrate).
+  `subs.cljs` (used by resource setup/configure and machine identities until
+  those migrate).
+- **The sidebar scaffolding A1 left empty** — `organization-routes` and
+  `settings-management` in `shared_ui/sidebar/constants.cljs`, plus all five
+  consumers: `navigation.cljs:98` (the `organization-routes` loop) and `:158-197`
+  (the Settings disclosure), `main.cljs:186-198` and `:210-219` (their
+  collapsed-rail twins), and the four references in
+  `command_palette_constants.cljs:24,26,70,72`. Until this lands, an admin opening
+  the raw shadow-cljs dev server (`:8280`, `react-shell` unset) sees a "Settings"
+  disclosure that expands to nothing and a collapsed-rail gear that opens an empty
+  panel. Nothing throws and no deployment is affected — every packaging path
+  (`Makefile:256-258`, `scripts/dev/build-webapp.sh`) merges React's `index.html`
+  over the CLJS resources, so `STATIC_UI_PATH` always serves the shell and
+  `app.cljs:288` never runs. Flagged by Qodo on PR #1655; deliberately deferred
+  here rather than patched with a `(seq …)` guard on a literal `[]`.
 - **Deferred:** `events/reviews_plugin.cljs` (46 LOC) — session details still
   approves/rejects reviews through it; delete in Wave 6's cleanup commit.
+
+**Traps found while landing A1 — read before starting A3:**
+
+- `navigation.cljs:158-197` is **not** a whole-line deletion. The disclosure form
+  closes at line 197 *column 60*; the trailing `]])` on that same line closes the
+  enclosing `[:ul]` (95), `[:li]` (93) and `(when admin?)` (92). Those three closers
+  must survive.
+- Removing that disclosure leaves `navigation.cljs:94`'s
+  `[section-title "Organization"]` hollow — delete it too, or the section renders a
+  heading with no items.
+- The `:settings-attributes` grep-gate hit is resolved by **deleting** the three
+  `-success` handlers in `features/attributes/events.cljs` (74, 108, 131), not by
+  repointing them — see Track A constraint #1.
+- A3 must state explicitly that it removes the corresponding `routes.cljs` entries;
+  the grep gate also flags `features/users/main.cljs:27` and the users
+  `views/empty_state`.
+- `events/connections_filters.cljs` is now 100% dead (A1 removed its last dangling
+  dispatch site); confirm the deletion above actually lands, or the file lingers as
+  a false signal that connection filtering flows through it.
+- **Cross-PR orphan:** `LayoutDashboard` in the `lucide-react` refer of
+  `shared_ui/sidebar/constants.cljs` had two consumers — the `"Dashboard"` icon key
+  (removed by EVL-119) and `"infrastructure"` (removed by A1). Each PR is correct
+  alone; once both are merged the refer has zero consumers. Sweep it with the other
+  `icons-registry` orphans here.
 
 ---
 
@@ -160,7 +258,7 @@ wave can run in parallel. Shared CLJS infra migrates with its *first* consumer.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B1.1 Dashboard | `/dashboard` (admin-only): 3 charts + summary (`dashboard/` ~600 LOC, `events/reports.cljs`). Use `@mantine/charts` (recharts-based) — don't hand-roll recharts. | M | Priority #1 page; establishes chart patterns |
+| ✅ B1.1 Dashboard | **Done — EVL-119.** `/dashboard` migrated, CLJS `dashboard/` + `components/charts.cljs` + the dashboard half of `events/reports.cljs` deleted. Chart pattern established: `@mantine/charts` 8.3.18 + recharts 2.15.4, `components/{BarChart,DonutChart,SegmentedControl}`, `CHART_SERIES_COLORS` in `theme.js`. The route is lazily loaded so recharts stays out of the main chunk. | M | Priority #1 page; establishes chart patterns |
 | B1.2 Small-pages sweep | `/upgrade-plan` (60 LOC), `/idplogin`, `/logout`, `/slack/user/new/:id`, `/slack/organization/new`, `/` + `""` → redirect to `/onboarding` | S | Removes 6 routes from the catch-all cheaply; exercises the auth-redirect pattern in React |
 | B1.3 Shared ConfirmDialog | Build a shared ConfirmDialog component (Mantine Modal wrapper) + adopt in 1–2 existing pages | S | Every CRUD wave needs it; ends ad-hoc delete confirmations |
 
@@ -177,13 +275,13 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 
 | Ticket | Scope | Size | Notes |
 |---|---|---|---|
-| B3.1 Guardrails | `/guardrails(+new,edit)` incl. the `rules_table.cljs` port (257 LOC, fiddly) **+ port `activation_journey` template seeding** (2,482 LOC shared) | M+ | Do first in the wave — unblocks B3.2. Old URL stays even though React `/rulepacks` is the conceptual successor |
-| B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Needs B3.1's template seeding |
-| B3.3 Access Control | `/features/access-control(+new,edit)`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`) | M | Independent |
+| ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS files left in place, shadowed by React | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
+| B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Template seeding to copy from `pages/Guardrails/templates.js` (B3.1) |
+| ~~B3.3 Access Control~~ | ✅ **Done — EVL-149.** `/features/access-control(+new,edit)` in `pages/Features/AccessControl/`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`); the edit route keeps the legacy `?group=<name>` shape. CLJS files left in place, shadowed by React | M | No OSS count limit on this feature — license gating only |
 | B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
 | B3.5 Runbooks Setup | `/features/runbooks/setup` + rules new/edit (git repo config + path rules) | M | Independent of the runbooks *runner* (Wave 5) |
 | B3.6 Machine Identities | **Decision gate — see below** | S or M | |
-| B3.7 Integrations Authentication | `/integrations/authentication` (~324 LOC but **sensitive**: switches gateway auth method, rotates API key; admin + selfhosted only). Land **after EVL-101 merges**; requires a dedicated manual test pass on a selfhosted instance — CI green is not enough. Only afterwards may `:integrations-authentication` be pruned from CLJS sidebar/routes | M | |
+| B3.7 Integrations Authentication | `/integrations/authentication` (~324 LOC but **sensitive**: switches gateway auth method, rotates API key; admin + selfhosted only). EVL-101 merged — unblocked; requires a dedicated manual test pass on a selfhosted instance — CI green is not enough. Only afterwards may `:integrations-authentication` be pruned from CLJS sidebar/routes | M | |
 
 **Decision gate — Machine Identities (product decision pending):**
 CLJS `/features/machine-identities` (API `/machineidentities`, 812 LOC) and React
@@ -208,7 +306,7 @@ decision must close before the Endgame.
 | B4.1 Resources list + wizard core | `/resources` list (537 LOC) + multi-step wizard skeleton (state machine, step chrome); port `events/connections.cljs`; reuse the kept `agents/deployment` logic as a React service | XL pt.1 | Everything below |
 | B4.2 Resources new/configure/add-role | `/resources/new`, `/resources/configure/:id`, `/resources/:id/add-role`: federation OAuth, MCP OAuth popup + polling, terminal/native access tabs (needs B4.0). Reuse patterns from the already-React `/roles/:name/configure` — don't duplicate | XL pt.2 | Onboarding reuse |
 | B4.3 Resource catalog + onboarding | `/resource-catalog` (562 LOC, no API — seeds wizard state) + `/onboarding(+setup, setup/resource, setup/agent, resource-providers)` chrome (~700 LOC) on a no-sidebar layout, reusing the B4.1/B4.2 wizard | L | Kills the `/onboarding/*` ClojureApp route in `Router.jsx` |
-| B4.4 AWS Connect wizard | One shared wizard, two modes: `/integrations/aws-connect(+setup)` + `/onboarding/aws-connect` (~1,660 LOC). Port `events/jobs.cljs` 5s polling as a shared `useJobPolling` hook. **After EVL-101** (Integrations dir) | L | `useJobPolling` reused by Provisioning |
+| B4.4 AWS Connect wizard | One shared wizard, two modes: `/integrations/aws-connect(+setup)` + `/onboarding/aws-connect` (~1,660 LOC). Port `events/jobs.cljs` 5s polling as a shared `useJobPolling` hook. | L | `useJobPolling` reused by Provisioning |
 
 ### Wave 5 — Runner stack + Provisioning (parallel lanes)
 
@@ -297,7 +395,7 @@ after EVL-104: `users->get-user` (refreshLegacyUser), `command-palette->toggle`
   `MIGRATION_CHECKLIST.md`; update root `CLAUDE.md` / `DEV.md`.
 
 **Exit checklist before E1 starts:** all wave tickets merged; Parity table complete;
-Machine Identities decision closed; EVL-101 merged; one full week of production
+Machine Identities decision closed; EVL-101 merged (✅ done); one full week of production
 traffic with catch-all hit-count telemetry at zero (add a cheap counter/log to
 `ClojureApp.jsx` mount during Wave 7 to prove it).
 
@@ -311,7 +409,6 @@ Now ──► Track A (A1→A2→A3) ─┤ parallel
 Now ──► Wave 1 + Sentry ────┘
         Wave 2 + Segment track + clipboard + Clarity
         Wave 3 (parallel CRUD) + org-migration dialog + MI decision gate
-                                        [B3.7 & B4.4 wait for EVL-101]
         Wave 4 (B4.0 first, then wizard chain)
         Wave 5 (runner lane ∥ provisioning lane)
         Wave 6 (session details, 2 PRs)
@@ -321,16 +418,15 @@ Now ──► Wave 1 + Sentry ────┘
 
 ## Top Risks
 
-1. **EVL-101 collisions** — PR 0.1's jira redirect, B3.7 and B4.4 touch Integrations
-   territory; all are gated on the EVL-101 merge (PR #1633, in review), everything
-   else avoids those directories. Both #1633 and #1638 also edit
-   `CONTEXT_MIGRATION.md` — whoever merges last rebases the doc tables.
-2. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
+1. **Resource wizard scope (Wave 4)** — 6,614 LOC + OAuth popups; mitigated by the
    4-way PR split and reusing the already-React `/roles/:name/configure` patterns.
-3. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
+2. **Playback fidelity (Wave 6)** — RDP RLE canvas and SSE tail are
    behavior-fragile; vendor `rle.js` unchanged, port the fetch-ReadableStream
    pattern verbatim, add side-by-side manual comparison to the test plan.
-4. **bidi load-time throws during cleanup** — sidebar constants prune (A1) strictly
-   before route deletions (A2/A3); never delete the keep-list route entries.
-5. **Pending product decision** — Machine Identities has a default outcome (stays
+3. **bidi silent failures during cleanup** — a deleted route entry produces a dead
+   link or a no-op navigation, never an error, and CI cannot catch it. A2/A3 must run
+   the `url-for` / `:navigate` grep gate per deleted keyword (see Track A constraint
+   #1) and never delete the keep-list route entries. The sidebar constants prune (A1)
+   still lands before the route deletions.
+4. **Pending product decision** — Machine Identities has a default outcome (stays
    on CLJS) so no wave stalls, but it must close before the Endgame.

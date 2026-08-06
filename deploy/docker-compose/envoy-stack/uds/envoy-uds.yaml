@@ -1,0 +1,133 @@
+# Envoy talking to hoop-inspect over unix domain sockets.
+#
+# Same two lanes as ../envoy/envoy.yaml. The only difference is in the two
+# hoop_inspect_* clusters at the bottom: `pipe:` instead of `socket_address:`.
+# Nothing else about the topology moves, which is the point — the relay does
+# not care what carried the bytes.
+#
+# Use it with the overlay:
+#   docker compose -f docker-compose.yml -f uds/docker-compose.uds.yml up
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: https_ingress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8443 }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: { filename: /etc/envoy/certs/server.crt }
+                    private_key: { filename: /etc/envoy/certs/server.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_https
+                codec_type: AUTO
+
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[envoy] %REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% user=%REQ(X-HOOP-USER)% -> %RESPONSE_CODE% flags=%RESPONSE_FLAGS% upstream=%UPSTREAM_CLUSTER% %DURATION%ms\n"
+
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: inspect
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: hoop_inspect_http
+                            timeout: 60s
+
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      with_request_body:
+                        max_request_bytes: 8192
+                        allow_partial_message: true
+                        pack_as_bytes: true
+                      grpc_service:
+                        envoy_grpc: { cluster_name: opa }
+                        timeout: 2s
+
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    - name: postgres_ingress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 5432 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: ingress_pg
+                cluster: hoop_inspect_pg
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[envoy] tcp pg bytes_in=%BYTES_RECEIVED% bytes_out=%BYTES_SENT% flags=%RESPONSE_FLAGS% %DURATION%ms\n"
+
+  clusters:
+    - name: opa
+      type: STRICT_DNS
+      connect_timeout: 2s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: opa
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: opa, port_value: 9191 }
+
+    # ---------------------------------------------------------------- the UDS bit
+    # STATIC, not STRICT_DNS: there is no name to resolve. A pipe endpoint is a
+    # filesystem path, so both containers must mount the same directory.
+    #
+    # No port, no listen backlog on a network interface, nothing reachable from
+    # another host. Whoever can open the file can reach the relay, and that is
+    # decided by directory permissions.
+    - name: hoop_inspect_http
+      type: STATIC
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_http
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    pipe: { path: /run/hoop-inspect/http.sock }
+
+    - name: hoop_inspect_pg
+      type: STATIC
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_pg
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    pipe: { path: /run/hoop-inspect/pg.sock }

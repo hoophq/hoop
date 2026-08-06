@@ -240,3 +240,26 @@ export const theme = createTheme({
   }
 });
 
+// Categorical palette for chart series and slices, in the order they should be
+// consumed. Every entry is a theme color reference, so the theme stays the single
+// source of truth (Mantine's chart components resolve "green.5" against theme.colors).
+//
+// Consumers MUST cycle with `CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]`
+// rather than indexing directly — a category list longer than the palette would
+// otherwise resolve to `undefined` and render black.
+//
+// Shades 0–1 of every palette are deliberately excluded: they are near-white and
+// invisible against --mantine-color-body (#fcfcfd).
+export const CHART_SERIES_COLORS = [
+  'indigo.6',
+  'green.5',
+  'amber.5',
+  'sky.6',
+  'red.5',
+  'indigo.9',
+  'green.8',
+  'amber.8',
+  'sky.9',
+  'red.8',
+];
+

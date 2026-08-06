@@ -2,14 +2,14 @@ import { Checkbox, Stack, Text } from '@mantine/core'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import Table from '@/components/Table'
+import RuleTableControls from '@/components/RuleTableControls'
+import { makeRowOps } from '@/utils/rowOps'
 import {
   HOOP_VALUE_OPTIONS,
   MAPPING_TYPE_OPTIONS,
   createEmptyMappingRow,
   isNotConnectionTagRule,
-  makeRowOps,
 } from '../../helpers'
-import RuleTableControls from '../components/RuleTableControls'
 
 function ValueCell({ row, onPatch }) {
   if (!row.type) return null

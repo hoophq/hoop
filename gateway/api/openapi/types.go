@@ -445,12 +445,109 @@ type Connection struct {
 	// active protection profile attribute). Computed on reads; manage the
 	// association through the attributes field.
 	ManagedAttributes []string `json:"managed_attributes,omitempty" readonly:"true" example:"hoop_protection_profile-soc2_type2"`
+	// EffectiveFeatures reports which features will actually act on this connection,
+	// resolving attribute-based associations as well as direct ones.
+	//
+	// Null means "unknown", never "nothing is active" — the two must not be confused by
+	// a caller deciding whether to warn a user. It is null on the list endpoint, which
+	// does not resolve it, and on the detail endpoint when resolution failed (the
+	// gateway logs the failure).
+	//
+	// Deliberately not omitempty: an absent key and an explicit null are different
+	// contracts, and the one documented here is null.
+	EffectiveFeatures *ConnectionEffectiveFeatures `json:"effective_features" readonly:"true"`
 	// SecretsUpdatedAt is the timestamp of the last replacement of any inline
 	// secret value for this connection. Null when no inline secret has been
 	// modified since the write-only secrets feature was introduced. References
 	// to external providers (AWS Secrets Manager, Vault, IAM RDS) do not
 	// affect this field.
 	SecretsUpdatedAt *time.Time `json:"secrets_updated_at,omitempty" readonly:"true" example:"2025-01-15T10:30:00Z"`
+	// MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant
+	// for this connection. Write-only, and only meaningful for the "mcpproxy"
+	// subtype.
+	//
+	// The login runs before the connection exists, so the token it obtained is
+	// keyed by the flow rather than by connection. Passing the flow id here at
+	// save time joins the two: the gateway stores the refresh token against
+	// this connection and renews the access token at every session open,
+	// instead of relying on the frozen HEADER_AUTHORIZATION value alone, which
+	// stops working when the provider's token expires.
+	//
+	// Write-only is enforced by ToOpenApi, which never populates this field —
+	// not by a struct tag. swag reads `readonly` and has no `writeonly`
+	// counterpart (field_parser.go only consults readOnlyTag), so the tag that
+	// used to sit here was inert and the published spec advertised the field
+	// as readable. The omitempty keeps it out of every response body.
+	MCPOAuthFlowID string `json:"mcp_oauth_flow_id,omitempty" example:"7c8a1234-5678-9abc-def0-123456789abc"`
+	// MCPOAuthWarning reports that the connection was saved but the MCP OAuth
+	// login named by mcp_oauth_flow_id was not attached to it. Present only on
+	// the create/update response that produced it.
+	//
+	// The save succeeded and the connection still works on its frozen
+	// HEADER_AUTHORIZATION, so this is not an error status. What it is not is
+	// silent: without a grant the credential is never renewed, the connection
+	// stops working the moment the provider expires that token, and the admin
+	// needs to hear it at save time rather than from a failing session days
+	// later.
+	MCPOAuthWarning string `json:"mcp_oauth_warning,omitempty" readonly:"true" example:"the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"`
+	// MCPOAuthGranted reports that a durable MCP OAuth grant exists for this
+	// connection, so its credential is renewed from a refresh token at every
+	// session open rather than frozen at the value it was authorized with.
+	//
+	// The edit screen cannot infer this from the env vars. A brokered OAuth
+	// login and a pasted token both end up as one HEADER_AUTHORIZATION, and
+	// MCP_AUTH collapses "oauth" to "static" because that is all the agent
+	// needs to know (see services.MCPOAuthGrantSubType). Without this field
+	// the form has to guess which mode the admin chose, guesses "static", and
+	// an OAuth connection reopens offering to replace a token it should be
+	// offering to re-authorize.
+	//
+	// Presence only — no token, no expiry, nothing the grant holds.
+	MCPOAuthGranted bool `json:"mcp_oauth_granted,omitempty" readonly:"true" example:"true"`
+}
+
+// ConnectionEffectiveFeatures reports which hoop features will actually act on a
+// connection when it is used.
+//
+// This is deliberately distinct from the stored fields on Connection. Guardrails,
+// data masking and access requests can be attached either directly to the connection
+// or through an attribute — the mechanism protection profiles use — and the runtime
+// enforces the union of both. The stored fields only ever reflect direct associations,
+// so a connection governed by a protection profile reports empty guardrail_rules while
+// guardrails are in fact enforced.
+type ConnectionEffectiveFeatures struct {
+	// Guardrails is true when any guardrail rule resolves for this connection.
+	Guardrails bool `json:"guardrails" example:"true"`
+	// DataMasking is true when any data masking rule resolves for this connection AND
+	// the gateway has an active masking provider. Note that redact_enabled on the
+	// connection is a legacy display field that no runtime code reads.
+	DataMasking bool `json:"data_masking" example:"true"`
+	// AISessionAnalyzer is true when an analyzer rule resolves for this connection.
+	AISessionAnalyzer bool `json:"ai_session_analyzer" example:"false"`
+	// JiraTemplates is true when the connection has a Jira issue template. Projection
+	// of jira_issue_template_id — no attribute-based path exists for it.
+	JiraTemplates bool `json:"jira_templates" example:"false"`
+	// MandatoryMetadata is true when the connection requires metadata fields before a
+	// session starts. Projection of mandatory_metadata_fields — no attribute-based path
+	// exists for it.
+	MandatoryMetadata bool `json:"mandatory_metadata" example:"false"`
+	// AccessRequest reports approval coverage, split by access type.
+	AccessRequest ConnectionAccessRequestFeatures `json:"access_request"`
+}
+
+// ConnectionAccessRequestFeatures reports access-request coverage per access type.
+// The two types are not interchangeable: "command" gates exec verbs (the web Terminal,
+// runbooks, the CLI) and "jit" gates connect verbs (the native client). A caller must
+// pick the one matching how it will run, not assume either implies the other.
+type ConnectionAccessRequestFeatures struct {
+	// Command is true when an access request rule of type "command" resolves.
+	Command bool `json:"command" example:"true"`
+	// Jit is true when an access request rule of type "jit" resolves. The duration it
+	// enforces, when any, is reported by the connection's jit_access_duration_sec.
+	Jit bool `json:"jit" example:"false"`
+	// LegacyReviewers is true when the pre-rules review plugin has reviewer groups
+	// configured. It still applies on top of both access types.
+	LegacyReviewers bool `json:"legacy_reviewers" example:"false"`
 }
 
 type ConnectionPatch struct {
@@ -520,6 +617,17 @@ type ConnectionPatch struct {
 	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
 	// Attributes associated with this connection
 	Attributes *[]string `json:"attributes" example:"production,pii"`
+	// MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant
+	// for this connection. Write-only, and only meaningful for the "mcpproxy"
+	// subtype. See Connection.MCPOAuthFlowID for the full rationale.
+	//
+	// PATCH needs it for the same reason POST and PUT do, and more urgently:
+	// re-authorizing an EXISTING connection is the only way to replace a
+	// credential the provider has expired, and the edit screen speaks PATCH.
+	// Without this the browser could obtain a fresh token but never hand over
+	// the flow that owns its refresh token, so every re-authorization would
+	// freeze another token destined to expire exactly like the last one.
+	MCPOAuthFlowID *string `json:"mcp_oauth_flow_id,omitempty" example:"7c8a1234-5678-9abc-def0-123456789abc"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -1392,6 +1500,27 @@ type ServerInfo struct {
 	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
+}
+
+// ServerLogEntry is one runtime log record from the gateway process or a
+// connected agent, served from the in-memory tail buffers.
+type ServerLogEntry struct {
+	// When the entry was logged
+	Timestamp time.Time `json:"timestamp" example:"2024-07-25T15:56:35.317601Z"`
+	// The zap log level: info, warn, error, ...
+	Level string `json:"level" example:"info"`
+	// The log message
+	Message string `json:"message" example:"agent connected"`
+	// The trimmed caller path that emitted the entry
+	Logger string `json:"logger,omitempty" example:"transport/agent.go:74"`
+	// Structured fields attached to the entry
+	Fields map[string]any `json:"fields,omitempty"`
+	// Where the entry was captured
+	Source string `json:"source" enums:"gateway,agent" example:"gateway"`
+	// The agent unique identifier (agent entries only)
+	AgentID string `json:"agent_id,omitempty" format:"uuid"`
+	// The agent name (agent entries only)
+	AgentName string `json:"agent_name,omitempty" example:"default"`
 }
 
 // FeatureFlagItem represents a single feature flag from the catalog with its per-org state.
@@ -2341,6 +2470,37 @@ type MCPOAuthTokenResponse struct {
 	ServerURL string `json:"server_url" example:"https://mcp.figma.com/mcp"`
 }
 
+// MCPCatalogEntry describes one publicly hosted remote MCP server from the
+// built-in catalog. The connection create page renders these as a server
+// picker that pre-fills REMOTE_URL / MCP_TRANSPORT / MCP_AUTH for an
+// "mcpproxy" connection; "custom" falls back to the raw form.
+type MCPCatalogEntry struct {
+	// Name is the catalog key, unique and stable (e.g. "linear").
+	Name string `json:"name" example:"linear"`
+	// Description is a one-line summary of what the server exposes.
+	Description string `json:"description" example:"Linear issue tracking (official)"`
+	// URL is the MCP endpoint, the value for the connection's REMOTE_URL.
+	URL string `json:"url" example:"https://mcp.linear.app/mcp"`
+	// Transport is the backend protocol: "streamable-http" or "sse". It is
+	// the value for MCP_TRANSPORT.
+	Transport string `json:"transport" example:"streamable-http"`
+	// Auth is the mode the provider documents as its default: "none",
+	// "static" or "oauth". It seeds the connection form's selection.
+	Auth string `json:"auth" example:"oauth"`
+	// AuthModes lists every mode this server actually accepts, always
+	// including Auth. Most servers accept exactly one; a few (github,
+	// linear, stripe) take either an OAuth login or a long-lived token, and
+	// only the admin knows which credential they hold. The form offers a
+	// choice when this has more than one entry, and offering a mode absent
+	// here would strand the admin on a flow the provider cannot complete.
+	AuthModes []string `json:"auth_modes" example:"oauth,static"`
+	// Header names the static credential header and its value template, in
+	// "Name: value" form. Empty when no mode in AuthModes is "static".
+	Header string `json:"header,omitempty" example:"Authorization: Bearer ${TOKEN}"`
+	// Notes carries provider caveats worth reading before enabling.
+	Notes string `json:"notes,omitempty"`
+}
+
 type ServerMiscConfig struct {
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
@@ -2742,6 +2902,14 @@ type ResourceRoleRequest struct {
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Attributes associated with this connection
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant
+	// for this role. Write-only, and only meaningful for the "mcpproxy"
+	// subtype. See Connection.MCPOAuthFlowID for the full rationale; the
+	// wizard that creates a resource and its roles in one request runs the
+	// same login as the standalone connection form and must be able to hand
+	// over the same flow id, or every role it creates keeps a token nothing
+	// renews.
+	MCPOAuthFlowID string `json:"mcp_oauth_flow_id,omitempty" example:"7c8a1234-5678-9abc-def0-123456789abc"`
 }
 
 type ResourceRequest struct {
@@ -2757,6 +2925,17 @@ type ResourceRequest struct {
 	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The roles associated with this resource
 	Roles []ResourceRoleRequest `json:"roles" binding:"dive"`
+}
+
+// MCPOAuthRoleWarning names one role whose MCP OAuth login was not attached
+// to the connection created for it. See Connection.MCPOAuthWarning: the role
+// exists and works on its frozen credential, but nothing renews that
+// credential, so it stops working when the provider expires the token.
+type MCPOAuthRoleWarning struct {
+	// Name of the role (connection) the login failed to attach to
+	Name string `json:"name" example:"linear-mcp"`
+	// Warning is the reason the login was not attached
+	Warning string `json:"warning" example:"the oauth login authorized https://a.example/mcp but the connection points at https://b.example/mcp"`
 }
 
 type ResourceResponse struct {
@@ -2778,6 +2957,10 @@ type ResourceResponse struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// MCPOAuthWarnings reports the roles in this request whose mcp_oauth_flow_id
+	// was not adopted into a durable grant. Present only on the create
+	// response that produced them, and empty when every login attached.
+	MCPOAuthWarnings []MCPOAuthRoleWarning `json:"mcp_oauth_warnings,omitempty" readonly:"true"`
 }
 
 type ResourcHealthCheckResponse struct {
@@ -3192,7 +3375,8 @@ type AccessRequestRuleRequest struct {
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
-	// Groups that require approval
+	// User groups whose members require approval to access. An empty list makes
+	// the rule apply to all user groups (every requester requires approval)
 	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve
 	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`

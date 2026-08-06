@@ -32,7 +32,6 @@
      ["/roles/" :connection-name "/configure"] :configure-role
      "/client" :editor-plugin
      "/runbooks" :runbooks
-     "/dashboard" :dashboard
      "/features" [["/access-control" :access-control]
                   ["/access-control/new" :access-control-new]
                   ["/access-control/edit" :access-control-edit]

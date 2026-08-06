@@ -56,6 +56,7 @@ import (
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
+	serverlogsapi "github.com/hoophq/hoop/gateway/api/serverlogs"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
@@ -418,6 +419,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventReactivateApiKey),
 		apikeys.Reactivate)
 
+	r.GET("/server-logs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		serverlogsapi.List)
+	r.GET("/server-logs/stream",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		serverlogsapi.Stream)
+
 	r.GET("/ai-agents",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -579,6 +589,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiconnections.GetMCPOAuthToken)
 	r.GET("/mcp-oauth/callback",
 		apiconnections.MCPOAuthCallback)
+
+	// Built-in catalog of publicly hosted remote MCP servers (ADR-0004). The
+	// connection create page renders it as a server picker that pre-fills an
+	// "mcpproxy" connection's REMOTE_URL / MCP_TRANSPORT / MCP_AUTH. Static
+	// build-time data with no tenant content, so read-only role is enough.
+	r.GET("/mcp-catalog",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.ListMCPCatalog)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,

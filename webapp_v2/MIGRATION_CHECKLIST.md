@@ -40,7 +40,7 @@ export const featureService = {
 }
 ```
 
-Only add the methods the page actually uses. Check `CONTEXT_MIGRATION.md` for existing services before creating a new file.
+Only add the methods the page actually uses. Check `src/services/` for an existing domain file before creating a new one (non-obvious service notes are in `COMPONENTS.md`).
 
 ---
 
@@ -163,9 +163,10 @@ Compare with the running CLJS app:
 
 ---
 
-## Step 8 — Update CONTEXT_MIGRATION.md
+## Step 8 — Update the migration docs
 
 After completing the migration:
-1. Update the **Routing Split** table — change the route status to `Done`
-2. Update **What's Done vs Pending** section
-3. If any global CLJS component was removed, update the **Global Components** table
+1. Update the **Routing Split** table in `CONTEXT_MIGRATION.md` — change the route status to `Done`
+2. Update the **What's Done vs Pending** section in `CONTEXT_MIGRATION.md`
+3. If any global CLJS component was removed, update the **Global Components** table in `CONTEXT_MIGRATION.md`
+4. Mark the ticket/wave row done in `MIGRATION_ROADMAP.md`

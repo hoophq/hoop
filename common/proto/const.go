@@ -44,24 +44,71 @@ const (
 	SpecJitStatus           string = "jit.status"
 	SpecJitTimeout          string = "jit.timeout"
 
+	// SpecMCPEventKey marks an MCPProxyConnectionWrite packet as a structured
+	// protocol event (one JSON audit record) rather than response bytes bound
+	// for the MCP client. The gateway records it and does not forward it.
+	SpecMCPEventKey string = "mcp.event"
+
+	// SpecMCPStdioBackendKey scopes a client-hosted MCP child to one backend
+	// within a session. A hoop session runs one MCP connection today, but the
+	// gateway supports several backends under one session, and reusing the
+	// session id alone would make two backends share a child.
+	SpecMCPStdioBackendKey string = "mcp.stdio_backend"
+	// SpecMCPStdioRequestKey correlates an MCPStdioRequest with the
+	// MCPStdioReply answering it. JSON-RPC ids cannot serve: notifications
+	// have none, and the id is chosen by the MCP client, so two concurrent
+	// sessions could collide.
+	SpecMCPStdioRequestKey string = "mcp.stdio_request_id"
+	// SpecMCPStdioErrorKey carries a spawn or write failure from the client
+	// back to the agent's backend, which surfaces it as a JSON-RPC error
+	// rather than a silent timeout.
+	SpecMCPStdioErrorKey string = "mcp.stdio_error"
+	// SpecMCPStdioCommandKey carries the command line the client must run,
+	// gob-encoded []string. It originates from the connection's configuration
+	// on the gateway, never from the client.
+	SpecMCPStdioCommandKey string = "mcp.stdio_command"
+	// SpecMCPStdioEnvKey carries the child's environment, gob-encoded
+	// map[string]string, sourced from the connection's MCPENV_* settings.
+	SpecMCPStdioEnvKey string = "mcp.stdio_env"
+
+	// MCPHeldCallBudget is how long one MCP tool call may stay in flight
+	// while a human decides on it. A call held for review is not a network
+	// round trip: it parks until a reviewer approves or rejects, so the
+	// budget is measured in human minutes.
+	//
+	// Both ends of the tunnel must agree on it or the shorter one silently
+	// wins. The agent arms it as the mcpgateway RequestTimeout
+	// (agent/controller/mcpproxy.go) and the gateway derives its
+	// response-wait window from it (gateway/proxyproto/httpproxy: the wait
+	// adds a grace margin on top). Changing one without the other makes the
+	// gateway abandon a call the agent is still holding, or the reverse —
+	// which is why the number lives here rather than at either end.
+	MCPHeldCallBudget time.Duration = 30 * time.Minute
+
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
 	ConnectionTypeClaudeCode  ConnectionType = "claude-code"
 	ConnectionTypeMcp         ConnectionType = "mcp"
-	ConnectionTypeDynamoDB    ConnectionType = "dynamodb"
-	ConnectionTypeCloudWatch  ConnectionType = "cloudwatch"
-	ConnectionTypePostgres    ConnectionType = "postgres"
-	ConnectionTypeMySQL       ConnectionType = "mysql"
-	ConnectionTypeMSSQL       ConnectionType = "mssql"
-	ConnectionTypeMongoDB     ConnectionType = "mongodb"
-	ConnectionTypeOracleDB    ConnectionType = "oracledb"
-	ConnectionTypeTCP         ConnectionType = "tcp"
-	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
-	ConnectionTypeKubernetes  ConnectionType = "kubernetes"
-	ConnectionTypeSSH         ConnectionType = "ssh"
-	ConnectionTypeRDP         ConnectionType = "rdp"
-	ConnectionTypeSSM         ConnectionType = "aws-ssm"
+	// ConnectionTypeMcpProxy is the protocol-aware MCP gateway (ADR-0004).
+	// Unlike ConnectionTypeMcp — an httpproxy alias that relays MCP as opaque
+	// HTTP bytes — this type parses every JSON-RPC message, so tool-level
+	// policy, per-tool-call review, rug-pull detection and structured audit
+	// become expressible. The two coexist until the alias is migrated.
+	ConnectionTypeMcpProxy   ConnectionType = "mcpproxy"
+	ConnectionTypeDynamoDB   ConnectionType = "dynamodb"
+	ConnectionTypeCloudWatch ConnectionType = "cloudwatch"
+	ConnectionTypePostgres   ConnectionType = "postgres"
+	ConnectionTypeMySQL      ConnectionType = "mysql"
+	ConnectionTypeMSSQL      ConnectionType = "mssql"
+	ConnectionTypeMongoDB    ConnectionType = "mongodb"
+	ConnectionTypeOracleDB   ConnectionType = "oracledb"
+	ConnectionTypeTCP        ConnectionType = "tcp"
+	ConnectionTypeHttpProxy  ConnectionType = "httpproxy"
+	ConnectionTypeKubernetes ConnectionType = "kubernetes"
+	ConnectionTypeSSH        ConnectionType = "ssh"
+	ConnectionTypeRDP        ConnectionType = "rdp"
+	ConnectionTypeSSM        ConnectionType = "aws-ssm"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"

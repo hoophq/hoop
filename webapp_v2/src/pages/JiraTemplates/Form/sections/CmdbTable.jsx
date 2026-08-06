@@ -2,12 +2,9 @@ import { Checkbox, Stack } from '@mantine/core'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import Table from '@/components/Table'
-import {
-  REQUIRED_OPTIONS,
-  createEmptyCmdbRow,
-  makeRowOps,
-} from '../../helpers'
-import RuleTableControls from '../components/RuleTableControls'
+import RuleTableControls from '@/components/RuleTableControls'
+import { makeRowOps } from '@/utils/rowOps'
+import { REQUIRED_OPTIONS, createEmptyCmdbRow } from '../../helpers'
 import CmdbAssetPicker from './CmdbAssetPicker'
 
 export default function CmdbTable({

@@ -7,6 +7,20 @@ FILE="store/connections.json"
 OUTPUT_DIR="resources/public/data"
 OUTPUT_FILE="connections-metadata.json"
 
+# Escape hatch for building against a connections.json that has not reached
+# hoophq/documentation@main yet (a new connection type is added there first,
+# and until it merges this download replaces the local file with the older
+# published one). Opt-in only, so CI and release builds keep pulling the
+# published metadata.
+if [ -n "$SKIP_CONNECTION_METADATA_DOWNLOAD" ]; then
+    if [ ! -f "$OUTPUT_DIR/$OUTPUT_FILE" ]; then
+        echo "ERROR: SKIP_CONNECTION_METADATA_DOWNLOAD is set but $OUTPUT_DIR/$OUTPUT_FILE does not exist"
+        exit 1
+    fi
+    echo "Skipping download, using local $OUTPUT_DIR/$OUTPUT_FILE"
+    exit 0
+fi
+
 echo "Downloading connection metadata..."
 echo "  Source: $ORG/$REPO/$FILE"
 

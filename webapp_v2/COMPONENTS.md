@@ -61,19 +61,28 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 ```
 
 ### `EmptyState` (`src/layout/EmptyState/`)
-Empty list / zero-data state with icon, title, description, and optional CTA.
+Empty list / zero-data state: illustration, title, description, and optional CTA.
 ```jsx
 import EmptyState from '@/layout/EmptyState'
-import { Zap } from 'lucide-react'
 
 <EmptyState
-  icon={Zap}
   title="No agents yet"
   description="Set up your first agent to connect resources."
   action={{ label: 'Setup new Agent', onClick: () => navigate('/agents/new') }}
 />
+
+// Empty result inside a page that already renders its own header and filters
+<EmptyState
+  compact
+  title="No Guardrails match your filters"
+  description="Try clearing the filter above."
+/>
 ```
 `action` is optional — omit when the user has no permission to create.
+`compact` tightens the vertical space (drops the 50vh floor, smaller padding
+and gap; the illustration is unchanged) for an empty result rendered below a
+page header, callout or filter bar rather than as the whole screen.
+Optional `docsUrl` + `docsLabel` append a documentation line.
 
 ### `CodeSnippet`
 Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
@@ -166,6 +175,63 @@ import RingProgress from '@/components/RingProgress'
 <RingProgress value={33} />                    // 32px ring, "33%" label
 <RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
 ```
+
+### `BarChart`
+Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
+```jsx
+import BarChart from '@/components/BarChart'
+
+// Grouped bars, no axes (identification via tooltip):
+<BarChart
+  h={300}
+  data={buckets}
+  dataKey="label"
+  withXAxis={false}
+  withYAxis={false}
+  barProps={{ radius: 4 }}
+  series={[
+    { name: 'approved', label: 'Approved', color: 'green.5' },
+    { name: 'rejected', label: 'Rejected', color: 'red.5' },
+  ]}
+/>
+```
+Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
+
+### `DonutChart`
+Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
+```jsx
+import DonutChart from '@/components/DonutChart'
+
+<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
+```
+Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
+
+### `CHART_SERIES_COLORS` (theme export, not a component)
+The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
+```jsx
+import { CHART_SERIES_COLORS } from '@/theme'
+
+const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
+```
+**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
+
+### `SegmentedControl`
+Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
+```jsx
+import SegmentedControl from '@/components/SegmentedControl'
+
+<SegmentedControl
+  size="xs"
+  value={range}
+  onChange={setRange}
+  lockedTooltip="Available on Enterprise plan only."
+  data={[
+    { value: '1', label: '24h', locked: isFreeLicense },
+    { value: '7', label: '7d' },
+  ]}
+/>
+```
+Locked items render dimmed, show `lockedTooltip` on hover, and are dropped in `onChange`. Do **not** reach for Mantine's `disabled` instead: it sets `pointer-events: none`, which kills hover, so the tooltip would never open and the user would see a greyed-out option with no explanation.
 
 ### `StepAccordion`
 Multi-step accordion that mirrors the CLJS wizard pattern.
@@ -455,16 +521,16 @@ import TagsInput from '@/components/TagsInput'
 ---
 
 ### `AsyncValueFilter`
-Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the full option object. An option may carry an optional `iconUrl`, rendered as a 16px image before its label — that is how the Resource Role filter shows connection-type icons.
 ```jsx
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
-import { Shapes } from 'lucide-react'
+import { Rotate3d } from 'lucide-react'
 
 const roles = usePaginatedConnections({ pageSize: 50 })
 
 <AsyncValueFilter
-  icon={Shapes}
+  icon={Rotate3d}
   label="Resource Role"
   placeholder="Search resource roles"
   selected={selectedRole}
@@ -479,7 +545,7 @@ const roles = usePaginatedConnections({ pageSize: 50 })
   onOpen={roles.ensureLoaded}
 />
 ```
-Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+Props: `icon`, `label`, `placeholder`, `selected` (option | null), `onSelect(option)`, `onClear()`, `options` (`[{value,label,iconUrl?}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
 
 ---
 
@@ -504,7 +570,7 @@ Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `pl
 ---
 
 ### `FeaturePromotion`
-Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, and future Access Control / Guardrails / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
+Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, Guardrails, and future Access Control / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
 ```jsx
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { FolderLock } from 'lucide-react'
@@ -522,6 +588,25 @@ import { FolderLock } from 'lucide-react'
 />
 ```
 Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+
+---
+
+### `RuleTableControls`
+Toolbar under an editable rule table: New / Select / Select all / Delete. Port of the CLJS `rule_buttons`, shared by Jira Templates and Guardrails. Pair it with `makeRowOps` (see Utils below) — `ops.allSelected`, `ops.toggleAll`, `ops.deleteSelected` and `ops.addRow` map 1:1 onto its props. On the free plan pass `disableNew` so a second rule can't be added; selection and deletion stay available (the button is disabled, never hidden).
+```jsx
+import RuleTableControls from '@/components/RuleTableControls'
+
+<RuleTableControls
+  onAdd={() => ops.addRow()}
+  selectMode={selectMode}
+  onToggleSelectMode={() => setSelectMode((v) => !v)}
+  allSelected={ops.allSelected}
+  onToggleAll={ops.toggleAll}
+  onDelete={ops.deleteSelected}
+  disableNew={freeLicense && rows.length >= 1}
+/>
+```
+Props: `onAdd()`, `selectMode`, `onToggleSelectMode()`, `allSelected`, `onToggleAll()`, `onDelete()`, `disableNew`.
 
 ---
 
@@ -602,59 +687,93 @@ const roles = usePaginatedConnections({ pageSize: 50 })
 // roles.options, roles.loading, roles.hasMore, roles.searchValue
 // roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
 ```
-Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+Returns `{ options ([{value,label,iconUrl}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
 
 ---
 
 ## Stores (`src/stores/`)
 
-| Hook | Responsibility | Key state / actions |
-|------|---------------|---------------------|
-| `useAuthStore` | JWT token lifecycle | `token`, `setToken()`, `logout()`, `redirectUrl` |
-| `useUserStore` | Current user data | `user`, `isAdmin`, `isFreeLicense`, `fetchUser()` |
-| `useUIStore` | Sidebar open/collapsed | `sidebarOpened`, `toggle()`, `pendingSection` |
-| `useBridgeStore` | Cross-cutting CLJS re-frame dispatches | `showSnackbar()`, `refreshLegacyUser()`, `openNativeClientAccess()`, `openNativeClientAccessWhenReady()` |
-| `useConfigStatusStore` | Sidebar setup-checklist snapshot (admin only) | `status`, `checks`, `execConnectionName`, `fetchStatus({force})` |
-| `useAgentStore` | Agents CRUD | `agents`, `loading`, `error`, `agentKey`, `fetchAgents()`, `createAgent()`, `deleteAgent()` |
-| `useCommandPaletteStore` | Command palette state | `page`, `context`, `searchStatus`, `results`, `search()` |
+One Zustand store per concern — **the filesystem is the source of truth**
+(`ls src/stores/`); store names describe their responsibility. Check the
+directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
 useAuthStore.getState().token
 ```
 
+Non-obvious notes only:
+
+- `useBridgeStore` — wraps `window.hoopDispatch` re-frame bridge calls; never
+  call `hoopDispatch` from a component (rule in `CLAUDE.md` "Re-frame Interop").
+  Current methods: `refreshLegacyUser()`, `openNativeClientAccess()`,
+  `openNativeClientAccessWhenReady()`, `syncPrimaryConnectionFromUrl()`.
+  Snackbars are NOT bridged — use `showSnackbar` from `@/utils/snackbar`.
+- `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only;
+  refreshes on the `hoop:session-executed` DOM event from the CLJS terminal.
+- `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
+  credential field schemas + connection icons; `load()` is idempotent.
+
 ---
 
 ## Services (`src/services/`)
 
-| File | What it wraps |
-|------|--------------|
-| `api.js` | Base Axios instance — adds Bearer token, handles 401 logout |
-| `auth.js` | Login, register, OAuth, user info, server info |
-| `agents.js` | CRUD `/agents` and `/agents/:id` |
-| `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
-| `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
-| `guardrails.js` | GET `/guardrails` |
-| `sessions.js` | GET `/sessions` (`list(params)` — e.g. `{ limit: 1 }` as a cheap existence/total probe) |
-| `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
-| `attributes.js` | CRUD `/attributes` |
-| `search.js` | GET `/search?term=` |
-| `infrastructure.js` | GET/PUT `/serverconfig/misc` |
-| `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
-| `protectionProfiles.js` | GET/PUT `/orgs/protection-profile` (protection rules profile; `profile: null` = manual) |
+One Axios service file per API domain — **the filesystem is the source of
+truth** (`ls src/services/`). Check the directory before creating a new file;
+when adding one, follow the pattern in `services/agents.js`.
 
-When adding a new service file, follow the pattern in `services/agents.js`.
+Non-obvious notes only:
+
+- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
+  URL + logout). Every other service imports it; never call axios directly.
+- `analytics.js` — Segment (`identify()` only today), not a gateway API
+  wrapper; the write key is a build-time define (see the env table in
+  `README.md`).
+- `attributes.js` — `list(params)` is paginated (`page`, `page_size`); the
+  gateway caps `page_size` at 100, so reading them all means looping until a
+  short page comes back.
+- `connections.js` — both `getConnections()` (full list — only for resolving
+  every `connection_ids → name`, e.g. list displays) and
+  `getConnectionsPaginated({page,pageSize,search,connectionIds})` for
+  infinite-scroll dropdowns.
+- `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
+  the service boundary.
+- `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
+  existence/total probe.
+- `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
+  is **exclusive** (the gateway compares against midnight *starting* that day, so
+  send tomorrow to include today). Never send `group_by`.
+- `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
+  is unbounded; fetch it once and filter client-side.
+- `userGroups.js` — `list()` returns a bare string array, and `null` (not
+  `[]`) when the organization has no groups; callers must coalesce.
+
+---
+
+## Utils (`src/utils/`)
+
+Pure helpers with no React or Mantine dependency. `snackbar.jsx` is documented under Notifications below.
+
+### `makeRowOps({ rows, setRows, factory, filterFn })`
+Row operations for editable rule tables (Jira Templates, Guardrails). Rows are plain objects with a stable `id` and a `selected` flag; the table owns the array through a `setRows` state setter. Deleting the last row reseeds a blank one via `factory`, so a table is never left with nothing to type into. Pass `filterFn` only when several tables render disjoint subsets of one shared rows array — select/delete then touch only the rows that table actually shows. Pairs with `RuleTableControls`.
+```jsx
+import { makeRowOps } from '@/utils/rowOps'
+
+const ops = makeRowOps({ rows, setRows, factory: createEmptyRow })
+// ops.visible, ops.allSelected
+// ops.patchRow(id, patch), ops.toggleSelect(id), ops.toggleAll()
+// ops.deleteSelected(), ops.addRow(transform?)
+<Table.Tr key={row.id}>…</Table.Tr>
+```
+Returns `{ visible, allSelected, patchRow, toggleSelect, toggleAll, deleteSelected, addRow }`. `addRow(transform)` applies `transform` to the fresh row before appending (used to pre-fill a type/value).
 
 ---
 
 ## Notifications — `showSnackbar`
 
-Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
-same library the legacy CLJS app uses — and renders through
-`src/components/Snackbar/Toast.jsx`, a one-to-one port of the legacy
-`webapp.components.toast`, so snackbars appear at the **top-right** and look
-identical across React and CLJS routes.
-The single `<Toaster>` is mounted in `src/App.jsx`.
+Use the `showSnackbar` helper from `@/utils/snackbar`. Rules (never
+`@mantine/notifications`, single `<Toaster>` in `App.jsx`, never via the CLJS
+bridge): see `CLAUDE.md` "Snackbars / Toasts".
 
 ```js
 import { showSnackbar } from '@/utils/snackbar'
@@ -672,9 +791,7 @@ showSnackbar({
 ```
 
 Error toasts auto-dismiss after 10 seconds (mirrors v1); other levels use sonner's
-default. Do NOT use `@mantine/notifications` — the dependency has been removed from
-the project (it rendered a completely different visual and broke parity with v1).
-See the "Snackbars / Toasts" section of `CLAUDE.md` for the full rule.
+default.
 
 ---
 
