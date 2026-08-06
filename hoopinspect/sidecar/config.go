@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoopinspect/analyzer"
 	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
 )
@@ -50,6 +51,15 @@ type Config struct {
 	// so a build wired without a detector can say "this section needs one"
 	// instead of "unknown field pii".
 	PII json.RawMessage `json:"pii,omitempty"`
+
+	// Analyzer configures the optional AI risk analyzer.
+	//
+	// Unlike PII this IS interpreted here, because the shape is small and
+	// provider-independent: the provider-specific parts live in Extra, and
+	// the credential is a path this package reads rather than material it
+	// holds. A provider needing a dependency (Vertex needs GCP OAuth2)
+	// stays out via the analyzer registry, not via an opaque section.
+	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
@@ -119,6 +129,10 @@ type ListenerConfig struct {
 	// concatenating two lists produces two rewrites competing for one entity
 	// with slice order picking the winner. Enabled replaces when set.
 	Mask *MaskConfig `json:"mask,omitempty"`
+
+	// HTTP configures what this lane's HTTP codec captures. Only valid on
+	// an http lane.
+	HTTP *HTTPCodecConfig `json:"http,omitempty"`
 }
 
 // TLSConfig configures an upstream TLS connection.
@@ -374,13 +388,26 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// first request that hits it. With a pii section present, Main runs the
 	// real check against the detector; a pii rule has no scanner yet here and
 	// would fail for the wrong reason.
-	if len(pc.Rules) > 0 && len(c.PII) == 0 {
-		if _, err := policy.NewRules(pc.Rules); err != nil {
+	localRules, aiRules := splitAnalyzerRules(pc.Rules)
+	if len(localRules) > 0 && len(c.PII) == 0 {
+		if _, err := policy.NewRules(localRules); err != nil {
 			problems = append(problems, name+": "+err.Error())
 		}
 	}
+	problems = append(problems, validateAIRules(aiRules, c.Analyzer, name)...)
 	if pc.OPA != nil && pc.OPA.URL == "" {
 		problems = append(problems, name+": policy.opa set but url is empty")
+	}
+
+	// An http block on a lane with no HTTP codec would load and do nothing,
+	// which is the failure this package refuses everywhere else.
+	if lc.HTTP != nil {
+		if hoopinspect.Protocol(lc.Protocol) != hoopinspect.HTTP {
+			problems = append(problems, fmt.Sprintf(
+				"%s: an \"http\" block is only valid on an http listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.HTTP.validate(name)...)
 	}
 
 	// Mask rule SHAPE belongs to the plugin, which checks it when building
@@ -437,19 +464,24 @@ type Plugin interface {
 // Returns nil in observe-only mode. det may be nil, and a lane with pii rules
 // then fails to build by design: a guardrail that cannot see must not
 // start.
-func buildPolicy(pc PolicyConfig, det Plugin) (policy.Evaluator, error) {
+func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
 	if !pc.enforcing() {
 		return nil, nil
 	}
 
+	// ai_analysis rules are lifted out before Rules sees them: they need a
+	// provider and a deadline, which a local matcher has no business
+	// holding, and Rules refuses one that reaches it.
+	localRules, aiRules := splitAnalyzerRules(pc.Rules)
+
 	var chain policy.Chain
-	if len(pc.Rules) > 0 {
+	if len(localRules) > 0 {
 		var rules *policy.Rules
 		var err error
 		if det != nil {
-			rules, err = policy.NewRulesWithScanner(pc.Rules, det)
+			rules, err = policy.NewRulesWithScanner(localRules, det)
 		} else {
-			rules, err = policy.NewRules(pc.Rules)
+			rules, err = policy.NewRules(localRules)
 		}
 		if err != nil {
 			return nil, err
@@ -467,10 +499,38 @@ func buildPolicy(pc PolicyConfig, det Plugin) (policy.Evaluator, error) {
 			FailOpen: pc.OPA.FailOpen,
 		})
 	}
+
+	// The analyzer goes LAST, and the ordering is the cost control: a
+	// statement a free local rule or OPA already denied never reaches a
+	// paid classifier, because Chain short-circuits on the first denial.
+	if len(aiRules) > 0 {
+		var cfg *AnalyzerConfig
+		var provider analyzer.Provider
+		var redact func(string) string
+		if ac != nil {
+			cfg, provider, redact = ac.cfg, ac.provider, ac.redact
+		}
+		evs, err := buildAnalyzerEvaluators(aiRules, cfg, provider, redact)
+		if err != nil {
+			return nil, err
+		}
+		for _, ev := range evs {
+			chain = append(chain, ev)
+		}
+	}
+
 	if len(chain) == 0 {
 		return nil, nil
 	}
 	return chain, nil
+}
+
+// analyzerDeps carries the process-wide analyzer to each lane's policy build.
+// One provider serves every lane, so the credential is read once.
+type analyzerDeps struct {
+	cfg      *AnalyzerConfig
+	provider analyzer.Provider
+	redact   func(string) string
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.

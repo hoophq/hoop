@@ -39,7 +39,9 @@ Two lanes, decreasing Envoy visibility:
 ./run.sh down         # tear down, including volumes
 ```
 
-Needs `docker`, `curl`, `openssl`, `python3`.
+Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
+compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
+`hoopinspect/` declares.
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
 admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
@@ -93,6 +95,10 @@ starting anything:
 cd ../../../hoopinspect/cmd && go run . -validate \
   -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
 ```
+
+That one runs on the host, so it needs Go 1.26.5 or newer. An older toolchain
+stops at `requires go >= 1.26.5`; `GOTOOLCHAIN=auto`, the default, fetches the
+right one instead.
 
 ## The tiers
 
@@ -189,6 +195,56 @@ docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
 
 `read-audit.py` also asserts the trail contains no value that masking removed
 — recording a masked value in the clear has un-masked it.
+
+## Tier 2c — AI risk analysis (off in this stack)
+
+A `type: ai_analysis` rule sends a statement to a language model and denies on
+the risk it reports, on either lane. It is commented out in `hoopinspect/config.yaml`
+because it needs a credential and spends money per statement; uncomment the
+`analyzer:` block, uncomment the rule on the lane you want, and rebuild.
+
+```yaml
+analyzer:
+  provider: vertex                 # vertex | anthropic | openai
+  model: claude-sonnet-4-5@20250929
+  extra: {project: my-gcp-project, region: global}
+  # credentials_file omitted -> Application Default Credentials
+  send: redacted                   # the pii detector above withholds values
+  cache: {size: 4096, ttl_sec: 900}
+
+# on the appdb lane:
+  - name: risky-writes
+    type: ai_analysis
+    trigger: {operations: [update]}   # select and delete never reach a model
+    high: block
+    medium: warn
+```
+
+Three things keep it affordable, and the stack's own config shows all three.
+The **trigger** excludes `select`, so an ORM's read traffic costs nothing. The
+**cache** keys on the statement shape, so `WHERE id = 1` and `WHERE id = 2`
+are one verdict. And the analyzer runs **last** in the chain, after
+`no-destructive-sql` and OPA, so anything a free rule already refused never
+reaches a model.
+
+On the httpbin lane it also needs an `http:` block with `capture_body: true`.
+Without a body the model sees `POST /anything` and nothing else, and a request
+with no body is skipped rather than classified — so a forgotten flag looks
+like an analyzer that never fires.
+
+Verdicts land in the audit trail as `metadata.risk_level` and roll up per
+session:
+
+```bash
+curl -s localhost:19000/api/stats | python3 -m json.tool   # by_risk
+curl -s localhost:19000/config    | python3 -m json.tool   # ai_rules per lane
+```
+
+Unlike OPA, this evaluator **fails open** by default: it depends on a
+third-party API, and refusing every statement during a vendor outage is a
+larger incident than the one it guards against. Full reference in
+[`hoopinspect/README.md`](../../../hoopinspect/README.md) and
+[`docs/adr/hoopinspect-flow.md`](../../../docs/adr/hoopinspect-flow.md#risk-analysis-the-ai-session-analyzer).
 
 ## Identity
 
