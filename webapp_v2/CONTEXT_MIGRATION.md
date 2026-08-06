@@ -107,6 +107,9 @@ Gateway backend (port 8009)
 | `/features/access-control` | React | Done |
 | `/features/access-control/new` | React | Done |
 | `/features/access-control/edit` | React | Done — group name comes from `?group=<name>`, the legacy URL shape |
+| `/features/ai-session-analyzer` | React | Done — `?tab=configure` opens the provider tab |
+| `/features/ai-session-analyzer/rules/new` | React | Done — `?template=<name>&connections=<names-csv>` seeds a rule; note the analyzer journey carries connection **names**, unlike Guardrails, which carries ids |
+| `/features/ai-session-analyzer/rules/edit/:ruleName` | React | Done — the rule name is a clean path segment, as in the legacy CLJS route |
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
@@ -136,7 +139,6 @@ Gateway backend (port 8009)
 /features/access-request/*
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
-/features/ai-session-analyzer/*
 /plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
@@ -153,13 +155,39 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`.
+the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`,
+`/features/ai-session-analyzer/*`.
 `events/guardrails.cljs` stays regardless — resource setup/configure and the
 activation journey still subscribe to it. The `features/access_control/` tree
 has no consumer outside itself (its `events.cljs` also registers
 `:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
 so it can go whole, together with the `access-control-promotion` block in
 `features/promotion.cljs`. Removal belongs to a Track A cleanup PR.
+
+`features/ai_session_analyzer/` only partly falls into that cleanup. Its page
+files — `main.cljs` and `views/{rule_form,rule_list,configuration_view,empty_state}.cljs`
+— are now unreachable and can go. Its `events.cljs`, `subs.cljs` and
+`views/{ai_analyzer_card,ai_block_card,session_analysis}.cljs` must **stay**:
+the webclient (`webclient/panel.cljs`, `webclient/events/primary_connection.cljs`),
+the runbooks runner (`features/runbooks/runner/{main,events}.cljs`), session
+details (`audit/views/session_details.cljs`) and the activation journey all
+still dispatch `:ai-session-analyzer/*` and render those cards. The two
+`app.cljs` requires that exist purely for their registration side effects
+therefore stay too.
+
+Deleting the analyzer bidi entries is **not** part of that cleanup either:
+`routes/url-for` is `bidi/path-for` over the live route table, and
+`shared_ui/sidebar/constants.cljs`, `features/activation_journey/templates.cljs`
+and `features/promotion.cljs` all build analyzer URLs from
+`:ai-session-analyzer` / `:create-ai-session-analyzer-rule`. The entries have to
+outlive the panels until those callers move to React.
+
+One knock-on: the shadowed `views/rule_form.cljs` was the only cross-feature
+consumer of `features/access_request/{events,subs}.cljs` (it subscribed to
+`:access-request/rules` to fill the `require_access_request` picker; React reads
+`services/accessRequests.js` instead). That tree now serves nothing but the
+still-CLJS `/features/access-request/*` page, so once B3.4 (EVL-150) lands it
+can be removed whole — tracked in **EVL-184**.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
