@@ -1,0 +1,5 @@
+# Reviewed bootstrap pins for releases that predate GitHub asset uploads.
+# Once a release carries GitHub-recorded asset digests, the weekly rebuild uses
+# those independent digests and does not consult this compatibility manifest.
+deee3ee414356dafc029e4fb8b85f3060fa98be5697d989e6f702a19fbdb1539  hoop_1.126.3_Linux_x86_64.tar.gz
+3bbe1fca336537ff310f44aae73c8b4c3d5cfd2caefa1f5c76feb836f53cf10e  hoop_1.126.3_Linux_aarch64.tar.gz

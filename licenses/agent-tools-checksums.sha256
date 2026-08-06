@@ -1,0 +1,16 @@
+# Reviewed SHA-256 pins for versioned archives selected by Dockerfile.tools.
+# Sources: Kubernetes release checksums, AWS CLI versioned archives, and
+# microsoft/go-sqlcmd GitHub Release assets. A version bump must update both
+# architectures here before either agent-tools train can build or publish.
+3473e14c7b024a6e5403c6401b273b3faff8e5b1fed022d633815eb3168e4516  kubectl-v1.29.15-linux-amd64
+a41984dc0ff34ee05f1283ebd9b3121c003b3469b97214738246faa5b6788f7c  kubectl-v1.29.15-linux-arm64
+ebbd080e7c2e275093b55915722043257eb24004363e20acb3c4d71919f88336  kubectl-v1.36.3-linux-amd64
+3d86f24401c41ae5a46ac50eef8865fe891d3647d324a0836f6c63757a126e62  kubectl-v1.36.3-linux-arm64
+bd9094f7ca6a4e8c9e39c67c2d5bfa32111cc82adc3e0a9584578d2bf3b336e6  awscli-exe-linux-x86_64-2.28.6.zip
+3833ff8891fe1416150b19e4bc1776b3dbad47898f85c3a6e52e37539bbe60a9  awscli-exe-linux-aarch64-2.28.6.zip
+43b34875482244039716cc3725d1f60e7d47ef3cfb2a19e114759a46db24dc30  awscli-exe-linux-x86_64-2.36.14.zip
+61e2fb72b36dc0ad98912b3a7b7469c886b90ea703f1096428a152ab09babd8a  awscli-exe-linux-aarch64-2.36.14.zip
+ee0a9b2d55d57a41b2225cf1392642a683d2be05c8511aeeb45f9108e9d945b8  sqlcmd-linux-amd64-v1.8.2.tar.bz2
+17e3dc449c178d73d9e644459c4cf16c29ea77afbb7f1f226db32ff83240ac3c  sqlcmd-linux-arm64-v1.8.2.tar.bz2
+92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  sqlcmd-linux-amd64-v1.10.0.tar.bz2
+9faaa981f9c374f319ac796dedb4678499b8596c87d5b6c512e9b0e7a3b74f8e  sqlcmd-linux-arm64-v1.10.0.tar.bz2
