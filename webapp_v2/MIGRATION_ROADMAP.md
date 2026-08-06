@@ -214,8 +214,8 @@ deleted once `activation_journey` itself migrates.
   dialog is mounted globally in the CLJS layout and is a Parity-track port source;
   the events/subs serve it and `features/promotion`).
 - `features/attributes/{main.cljs,views/form.cljs}` — **keep** `events.cljs` +
-  `subs.cljs` (used by resource setup/configure, machine identities, access
-  control until those migrate).
+  `subs.cljs` (used by resource setup/configure and machine identities until
+  those migrate).
 - **The sidebar scaffolding A1 left empty** — `organization-routes` and
   `settings-management` in `shared_ui/sidebar/constants.cljs`, plus all five
   consumers: `navigation.cljs:98` (the `organization-routes` loop) and `:158-197`
@@ -286,7 +286,7 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 |---|---|---|---|
 | ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS deleted in EVL-147 (`webapp/src/webapp/guardrails/`, the 3 `app.cljs` panels, the `:edit-guardrail` route, `:activation-journey/seed-guardrail-template`, `promotion/guardrails-promotion`); `events/guardrails.cljs` trimmed to the read path and the `:guardrails`/`:create-guardrail` route entries kept — see the A2 keep-list | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
 | B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Template seeding to copy from `pages/Guardrails/templates.js` (B3.1) |
-| B3.3 Access Control | `/features/access-control(+new,edit)`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`) | M | Independent |
+| ~~B3.3 Access Control~~ | ✅ **Done — EVL-149.** `/features/access-control(+new,edit)` in `pages/Features/AccessControl/`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`); the edit route keeps the legacy `?group=<name>` shape. CLJS files left in place, shadowed by React | M | No OSS count limit on this feature — license gating only |
 | B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
 | B3.5 Runbooks Setup | `/features/runbooks/setup` + rules new/edit (git repo config + path rules) | M | Independent of the runbooks *runner* (Wave 5) |
 | B3.6 Machine Identities | **Decision gate — see below** | S or M | |
