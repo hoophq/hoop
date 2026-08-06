@@ -38,6 +38,8 @@ import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
+import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
+import AiSessionAnalyzerRuleForm from '@/pages/Features/AiSessionAnalyzer/Create'
 import Guardrails from '@/pages/Guardrails'
 import GuardrailForm from '@/pages/Guardrails/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
@@ -469,6 +471,45 @@ function Router() {
             <Layout>
               <PageLayout>
                 <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* AI Session Analyzer. The rule name is a clean path segment, as in the
+          legacy CLJS route, so existing links keep resolving. */}
+      <Route
+        path="/features/ai-session-analyzer"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="ai-session-analyzer">
+            <Layout>
+              <PageLayout>
+                <AiSessionAnalyzer />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/ai-session-analyzer/rules/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="ai-session-analyzer">
+            <Layout>
+              <PageLayout>
+                <AiSessionAnalyzerRuleForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/ai-session-analyzer/rules/edit/:ruleName"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="ai-session-analyzer">
+            <Layout>
+              <PageLayout>
+                <AiSessionAnalyzerRuleForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
