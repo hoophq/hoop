@@ -9,7 +9,13 @@
   ;; keep the footer at the bottom on short pages; shrink-0 keeps tall content from
   ;; being clipped (the container scrolls instead). Content + footer always fit the
   ;; viewport, so the footer never spills below the fold.
-  [:> Box {:class "h-screen overflow-y-auto"}
+  ;; `relative` is required, not cosmetic: it makes this box the containing block
+  ;; for absolutely positioned descendants (e.g. react-select's off-screen a11y
+  ;; text). Without it they resolve against an ancestor, escape this scroll
+  ;; container and extend the document, producing a second scrollbar that drags
+  ;; the in-flow footer into the middle of the viewport. The Radix ScrollArea this
+  ;; replaced provided the same guarantee via its relatively positioned viewport.
+  [:> Box {:class "relative h-screen overflow-y-auto"}
    [:> Box {:class "min-h-full flex flex-col"}
     ;; bg-gray-1 here so the fill area (below short content) keeps the page
     ;; background instead of exposing the app shell behind it — pages no longer
