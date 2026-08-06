@@ -11350,7 +11350,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "jit",
-                        "command"
+                        "command",
+                        "jit_command"
                     ],
                     "example": "command"
                 },
@@ -11476,7 +11477,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "jit",
-                        "command"
+                        "command",
+                        "jit_command"
                     ],
                     "example": "command"
                 },

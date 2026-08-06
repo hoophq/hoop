@@ -75,6 +75,13 @@ func TestValidateAccessRequestRuleInput(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "jit_command access type is accepted",
+			mutate: func(in *accessRequestRulesCreateInput) {
+				in.AccessType = "jit_command"
+			},
+			wantErr: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,6 +136,13 @@ func TestValidateAccessRequestRuleInputForUpdate(t *testing.T) {
 				in.MinApprovals = nil
 			},
 			wantErr: true,
+		},
+		{
+			name: "jit_command access type is accepted",
+			mutate: func(in *accessRequestRulesUpdateInput) {
+				in.AccessType = "jit_command"
+			},
+			wantErr: false,
 		},
 	}
 	for _, tc := range tests {

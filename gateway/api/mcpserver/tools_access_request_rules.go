@@ -24,7 +24,7 @@ type accessRequestRulesGetInput struct {
 type accessRequestRulesCreateInput struct {
 	Name                   string   `json:"name" jsonschema:"unique rule name"`
 	Description            *string  `json:"description,omitempty" jsonschema:"human-readable description"`
-	AccessType             string   `json:"access_type" jsonschema:"access type: jit or command"`
+	AccessType             string   `json:"access_type" jsonschema:"access type: jit (connect verbs), command (exec verbs), or jit_command (both)"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
@@ -38,7 +38,7 @@ type accessRequestRulesCreateInput struct {
 type accessRequestRulesUpdateInput struct {
 	Name                   string   `json:"name" jsonschema:"access request rule name to update"`
 	Description            *string  `json:"description,omitempty" jsonschema:"human-readable description"`
-	AccessType             string   `json:"access_type" jsonschema:"access type: jit or command"`
+	AccessType             string   `json:"access_type" jsonschema:"access type: jit (connect verbs), command (exec verbs), or jit_command (both)"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
@@ -352,8 +352,10 @@ func validateAccessRequestRuleInput(args *accessRequestRulesCreateInput) error {
 	if len(args.ConnectionNames) == 0 && len(args.Attributes) == 0 {
 		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
-	if args.AccessType != "jit" && args.AccessType != "command" {
-		return fmt.Errorf("access_type must be either 'jit' or 'command'")
+	switch args.AccessType {
+	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
+	default:
+		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
 	}
 	if len(args.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
@@ -368,8 +370,10 @@ func validateAccessRequestRuleInputForUpdate(args *accessRequestRulesUpdateInput
 	if len(args.ConnectionNames) == 0 && len(args.Attributes) == 0 {
 		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
-	if args.AccessType != "jit" && args.AccessType != "command" {
-		return fmt.Errorf("access_type must be either 'jit' or 'command'")
+	switch args.AccessType {
+	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
+	default:
+		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
 	}
 	if len(args.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")

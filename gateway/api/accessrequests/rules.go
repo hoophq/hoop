@@ -34,8 +34,10 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
 
-	if req.AccessType != "jit" && req.AccessType != "command" {
-		return fmt.Errorf("access_type must be either 'jit' or 'command'")
+	switch req.AccessType {
+	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
+	default:
+		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
 	}
 
 	if len(req.ReviewersGroups) == 0 {
