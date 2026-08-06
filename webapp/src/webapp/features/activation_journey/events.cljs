@@ -120,18 +120,9 @@
        db
        (update-in db [:activation-journey :roles] (fnil conj []) role)))))
 
-;; Seeds the guardrail create form (?template=<name>&connections=<csv of ids>).
-;; An unknown or stale template id falls back to the regular blank form —
-;; a broken deep link must never break the page.
-(rf/reg-event-fx
- :activation-journey/seed-guardrail-template
- (fn [_ [_ template-id connections-csv]]
-   (if-let [template (templates/find-guardrail-template template-id)]
-     {:fx [[:dispatch [:guardrails->set-active-guardrail
-                       (-> (templates/guardrail-payload template)
-                           (assoc :id ""
-                                  :connection_ids (parse-csv connections-csv)))]]]}
-     {:fx [[:dispatch [:guardrails->clear-active-guardrail]]]})))
+;; There is no guardrail counterpart to the event below: the guardrail create
+;; form is a React page (webapp_v2 pages/Guardrails/Create) and seeds itself
+;; from ?template=&connections= through findGuardrailTemplate.
 
 ;; Seeds the AI Session Analyzer create form
 ;; (?template=<name>&connections=<csv of role names>).

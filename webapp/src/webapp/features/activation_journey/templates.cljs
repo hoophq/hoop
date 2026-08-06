@@ -78,16 +78,8 @@
   [template]
   (or (:id template) (:name template)))
 
-(defn find-guardrail-template [template-id]
-  (guardrail-templates/find-by-name template-id))
-
 (defn find-ai-analyzer-template [template-id]
   (ai-analyzer-templates/find-by-name template-id))
-
-(defn guardrail-payload
-  "Strips UI-only keys, leaving the exact POST /guardrails body."
-  [template]
-  (dissoc template :title :card-description))
 
 (defn ai-analyzer-payload
   "Strips UI-only keys, leaving the exact POST /ai/session-analyzer/rules body."
