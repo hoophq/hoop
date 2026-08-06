@@ -385,16 +385,16 @@ function RuleFormFields({ rule, isEdit }) {
               <SimpleGrid cols={2} spacing="md">
                 <AccessTypeCard
                   icon={ClockArrowUp}
-                  title="Just-in-Time"
-                  description="For temporary access expiring automatically after defined time range"
+                  title="Native Just-in-Time Access"
+                  description="Controls how much time someone can access your resources using Native Connection."
                   checked={accessTypeIncludes(accessType, ACCESS_TYPE.JIT)}
                   disabled={managed}
                   onToggle={() => requestAccessTypeToggle(ACCESS_TYPE.JIT)}
                 />
                 <AccessTypeCard
                   icon={CodeXml}
-                  title="by Command"
-                  description="For execution-based with approval workflow"
+                  title="Command"
+                  description="For execution-based within Web Terminal or hoop exec command line"
                   checked={accessTypeIncludes(accessType, ACCESS_TYPE.COMMAND)}
                   disabled={managed}
                   onToggle={() => requestAccessTypeToggle(ACCESS_TYPE.COMMAND)}
@@ -413,7 +413,7 @@ function RuleFormFields({ rule, isEdit }) {
           {accessTypeIncludes(accessType, ACCESS_TYPE.JIT) && (
             <SectionRow
               title="Access time range"
-              description="Select for how long temporary access will be available for your resource roles."
+              description="Select for how long temporary access will be available for your resource roles. Rule applied for Native Just-in-Time only."
             >
               <Select
                 label="Time Range"
@@ -459,8 +459,8 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="User groups requiring review"
-            description="Users in these groups must go through an approval review when requesting access with this rule."
+            title="Who needs approval"
+            description="Requests from these groups go through review."
           >
             <Stack gap="xs">
               <MultiSelect
@@ -484,7 +484,7 @@ function RuleFormFields({ rule, isEdit }) {
 
           {approvalRequiredGroups.length === 0 && (
             <SectionRow
-              title="User groups skipping review (Optional)"
+              title="Who can skip approval (optional)"
               description="Users in these groups get access without going through an approval review when requesting access with this rule."
             >
               <MultiSelect
@@ -501,8 +501,8 @@ function RuleFormFields({ rule, isEdit }) {
           )}
 
           <SectionRow
-            title="Approver user groups"
-            description="Select which user groups can approve access requests in this rule. Each group counts as one approval."
+            title="Who can approve"
+            description="Members of these groups can approve requests. Each group counts as one approval."
           >
             <Stack gap="lg">
               <MultiSelect
@@ -532,8 +532,8 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="Approval amount"
-            description="Define the minimum number of groups that must approve each session."
+            title="Minimum Required approvals"
+            description="Define the minimum number of groups that must approve each request."
           >
             <NumberInput
               label="Minimum Approval Amount"
@@ -547,8 +547,8 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="Force approval groups (Optional)"
-            description="Select which user groups are allowed to bypass other approval rules."
+            title="Who can override (optional)"
+            description="One approval from these groups clears the request, whatever the other rules require."
           >
             <MultiSelect
               label="User Groups"
