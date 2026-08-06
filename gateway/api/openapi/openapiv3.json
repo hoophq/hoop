@@ -1002,6 +1002,16 @@
             },
             "type": "array"
           },
+          "skip_review_groups": {
+            "description": "Groups whose members skip the approval review. Only honored when\napproval_required_groups is empty",
+            "example": [
+              "sre"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "updated_at": {
             "description": "The time the resource was updated",
             "example": "2024-07-25T15:56:35.317601Z",
@@ -1096,6 +1106,16 @@
             "example": [
               "sre",
               "dba"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skip_review_groups": {
+            "description": "Groups whose members skip the approval review. Only allowed when\napproval_required_groups is empty",
+            "example": [
+              "sre"
             ],
             "items": {
               "type": "string"
