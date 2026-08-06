@@ -38,6 +38,7 @@ type AccessRequestRule struct {
 	AllGroupsMustApprove   bool           `gorm:"column:all_groups_must_approve;default:false"`
 	ReviewersGroups        pq.StringArray `gorm:"column:reviewers_groups;type:text[]"`
 	ForceApprovalGroups    pq.StringArray `gorm:"column:force_approval_groups;type:text[]"`
+	SkipReviewGroups       pq.StringArray `gorm:"column:skip_review_groups;type:text[]"`
 
 	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 	MinApprovals      *int `gorm:"column:min_approvals"`

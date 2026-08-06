@@ -48,6 +48,10 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
 	}
 
+	if len(req.SkipReviewGroups) > 0 && len(req.ApprovalRequiredGroups) > 0 {
+		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
+	}
+
 	return nil
 }
 
@@ -124,6 +128,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		AllGroupsMustApprove:   req.AllGroupsMustApprove,
 		ReviewersGroups:        req.ReviewersGroups,
 		ForceApprovalGroups:    req.ForceApprovalGroups,
+		SkipReviewGroups:       req.SkipReviewGroups,
 		AccessMaxDuration:      req.AccessMaxDuration,
 		MinApprovals:           req.MinApprovals,
 	}
@@ -348,6 +353,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	existingRule.AllGroupsMustApprove = req.AllGroupsMustApprove
 	existingRule.ReviewersGroups = req.ReviewersGroups
 	existingRule.ForceApprovalGroups = req.ForceApprovalGroups
+	existingRule.SkipReviewGroups = req.SkipReviewGroups
 	existingRule.AccessMaxDuration = req.AccessMaxDuration
 	existingRule.MinApprovals = req.MinApprovals
 
@@ -393,10 +399,15 @@ func updateManagedAccessRequestRule(c *gin.Context, rule *models.AccessRequestRu
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "min_approvals must be at least 1 when all_groups_must_approve is false"})
 		return
 	}
+	if len(req.SkipReviewGroups) > 0 && len(req.ApprovalRequiredGroups) > 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "skip_review_groups can only be set when approval_required_groups is empty"})
+		return
+	}
 
 	rule.ApprovalRequiredGroups = req.ApprovalRequiredGroups
 	rule.ReviewersGroups = req.ReviewersGroups
 	rule.ForceApprovalGroups = req.ForceApprovalGroups
+	rule.SkipReviewGroups = req.SkipReviewGroups
 	rule.AllGroupsMustApprove = req.AllGroupsMustApprove
 	rule.MinApprovals = req.MinApprovals
 
@@ -503,6 +514,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		ReviewersGroups:        rule.ReviewersGroups,
 		AllGroupsMustApprove:   rule.AllGroupsMustApprove,
 		ForceApprovalGroups:    rule.ForceApprovalGroups,
+		SkipReviewGroups:       rule.SkipReviewGroups,
 		AccessMaxDuration:      rule.AccessMaxDuration,
 		MinApprovals:           rule.MinApprovals,
 		CreatedAt:              rule.CreatedAt,

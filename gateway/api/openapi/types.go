@@ -3347,6 +3347,9 @@ type AccessRequestRule struct {
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	// Groups whose members skip the approval review. Only honored when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
@@ -3381,6 +3384,9 @@ type AccessRequestRuleRequest struct {
 	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
+	// Groups whose members skip the approval review. Only allowed when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups,omitempty" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required

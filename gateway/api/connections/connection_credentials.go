@@ -27,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 var validConnectionTypes = []string{
@@ -1125,6 +1126,10 @@ func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connecti
 		return false, nil, fmt.Errorf("failed checking access request rules for connection %s: %w", conn.Name, err)
 	}
 
+	if accessRule != nil && len(accessRule.ApprovalRequiredGroups) == 0 &&
+		utils.SlicesHasIntersection([]string(accessRule.SkipReviewGroups), ctx.GetUserGroups()) {
+		return false, nil, nil
+	}
 	return accessRule != nil, accessRule, nil
 }
 

@@ -82,6 +82,21 @@ func TestValidateAccessRequestRuleInput(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "skip_review_groups with non-empty approval_required_groups is rejected",
+			mutate: func(in *accessRequestRulesCreateInput) {
+				in.SkipReviewGroups = []string{"sre"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "skip_review_groups with empty approval_required_groups is allowed",
+			mutate: func(in *accessRequestRulesCreateInput) {
+				in.ApprovalRequiredGroups = nil
+				in.SkipReviewGroups = []string{"sre"}
+			},
+			wantErr: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -141,6 +156,21 @@ func TestValidateAccessRequestRuleInputForUpdate(t *testing.T) {
 			name: "jit_command access type is accepted",
 			mutate: func(in *accessRequestRulesUpdateInput) {
 				in.AccessType = "jit_command"
+			},
+			wantErr: false,
+		},
+		{
+			name: "skip_review_groups with non-empty approval_required_groups is rejected",
+			mutate: func(in *accessRequestRulesUpdateInput) {
+				in.SkipReviewGroups = []string{"sre"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "skip_review_groups with empty approval_required_groups is allowed",
+			mutate: func(in *accessRequestRulesUpdateInput) {
+				in.ApprovalRequiredGroups = nil
+				in.SkipReviewGroups = []string{"sre"}
 			},
 			wantErr: false,
 		},

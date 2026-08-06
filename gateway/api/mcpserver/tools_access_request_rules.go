@@ -29,6 +29,7 @@ type accessRequestRulesCreateInput struct {
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
+	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval review; only allowed when approval_required_groups is empty"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
 	MinApprovals           *int     `json:"min_approvals,omitempty" jsonschema:"minimum number of approvals required"`
 	AccessMaxDuration      *int     `json:"access_max_duration,omitempty" jsonschema:"maximum access duration in seconds"`
@@ -43,6 +44,7 @@ type accessRequestRulesUpdateInput struct {
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
+	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval review; only allowed when approval_required_groups is empty"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
 	MinApprovals           *int     `json:"min_approvals,omitempty" jsonschema:"minimum number of approvals required"`
 	AccessMaxDuration      *int     `json:"access_max_duration,omitempty" jsonschema:"maximum access duration in seconds"`
@@ -218,6 +220,7 @@ func accessRequestRulesCreateHandler(ctx context.Context, _ *mcp.CallToolRequest
 		AllGroupsMustApprove:   args.AllGroupsMustApprove,
 		ReviewersGroups:        ensureStringArray(args.ReviewersGroups),
 		ForceApprovalGroups:    ensureStringArray(args.ForceApprovalGroups),
+		SkipReviewGroups:       ensureStringArray(args.SkipReviewGroups),
 		AccessMaxDuration:      args.AccessMaxDuration,
 		MinApprovals:           args.MinApprovals,
 	}
@@ -299,6 +302,7 @@ func accessRequestRulesUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest
 	existingRule.AllGroupsMustApprove = args.AllGroupsMustApprove
 	existingRule.ReviewersGroups = ensureStringArray(args.ReviewersGroups)
 	existingRule.ForceApprovalGroups = ensureStringArray(args.ForceApprovalGroups)
+	existingRule.SkipReviewGroups = ensureStringArray(args.SkipReviewGroups)
 	existingRule.AccessMaxDuration = args.AccessMaxDuration
 	existingRule.MinApprovals = args.MinApprovals
 
@@ -363,6 +367,9 @@ func validateAccessRequestRuleInput(args *accessRequestRulesCreateInput) error {
 	if !args.AllGroupsMustApprove && (args.MinApprovals == nil || *args.MinApprovals < 1) {
 		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
 	}
+	if len(args.SkipReviewGroups) > 0 && len(args.ApprovalRequiredGroups) > 0 {
+		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
+	}
 	return nil
 }
 
@@ -380,6 +387,9 @@ func validateAccessRequestRuleInputForUpdate(args *accessRequestRulesUpdateInput
 	}
 	if !args.AllGroupsMustApprove && (args.MinApprovals == nil || *args.MinApprovals < 1) {
 		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
+	}
+	if len(args.SkipReviewGroups) > 0 && len(args.ApprovalRequiredGroups) > 0 {
+		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
 	}
 	return nil
 }
@@ -416,6 +426,9 @@ func accessRequestRuleToMap(rule *models.AccessRequestRule) map[string]any {
 	}
 	if len(rule.ForceApprovalGroups) > 0 {
 		m["force_approval_groups"] = []string(rule.ForceApprovalGroups)
+	}
+	if len(rule.SkipReviewGroups) > 0 {
+		m["skip_review_groups"] = []string(rule.SkipReviewGroups)
 	}
 	if rule.MinApprovals != nil {
 		m["min_approvals"] = *rule.MinApprovals

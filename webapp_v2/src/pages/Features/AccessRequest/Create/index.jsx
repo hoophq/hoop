@@ -144,6 +144,9 @@ function RuleFormFields({ rule, isEdit }) {
   const [forceApprovalGroups, setForceApprovalGroups] = useState(
     () => rule?.force_approval_groups ?? [],
   )
+  const [skipReviewGroups, setSkipReviewGroups] = useState(
+    () => rule?.skip_review_groups ?? [],
+  )
   const [minApprovals, setMinApprovals] = useState(() => rule?.min_approvals ?? '')
 
   // Roles already selected may become ineligible under the other access type;
@@ -225,6 +228,7 @@ function RuleFormFields({ rule, isEdit }) {
       all_groups_must_approve: allGroupsMustApprove,
       reviewers_groups: reviewersGroups,
       force_approval_groups: forceApprovalGroups,
+      skip_review_groups: skipReviewGroups,
       min_approvals: minApprovals === '' ? null : Number(minApprovals),
     }
     // Managed rules must omit attributes — the API requires them absent or
@@ -464,7 +468,10 @@ function RuleFormFields({ rule, isEdit }) {
                 placeholder="Select groups..."
                 data={userGroupOptions}
                 value={approvalRequiredGroups}
-                onChange={setApprovalRequiredGroups}
+                onChange={(groups) => {
+                  setApprovalRequiredGroups(groups)
+                  if (groups.length > 0) setSkipReviewGroups([])
+                }}
                 disabled={submitting}
                 searchable
                 clearable
@@ -474,6 +481,24 @@ function RuleFormFields({ rule, isEdit }) {
               </Text>
             </Stack>
           </SectionRow>
+
+          {approvalRequiredGroups.length === 0 && (
+            <SectionRow
+              title="User groups skipping review (Optional)"
+              description="Users in these groups get access without going through an approval review when requesting access with this rule."
+            >
+              <MultiSelect
+                label="User Groups"
+                placeholder="Select groups..."
+                data={userGroupOptions}
+                value={skipReviewGroups}
+                onChange={setSkipReviewGroups}
+                disabled={submitting}
+                searchable
+                clearable
+              />
+            </SectionRow>
+          )}
 
           <SectionRow
             title="Approver user groups"
