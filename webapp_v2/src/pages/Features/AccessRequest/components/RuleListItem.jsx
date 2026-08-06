@@ -11,7 +11,7 @@ export default function RuleListItem({ rule, isFirst, isLast, onConfigure }) {
       data-first={isFirst || undefined}
       data-last={isLast || undefined}
     >
-      <Flex p="lg" mih={106} align="center" justify="space-between" gap="md">
+      <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>
           <Text fw={500} fz="lg">
             {rule.name}
