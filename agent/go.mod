@@ -86,8 +86,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
-	github.com/hoophq/alcatraz v0.3.1 // indirect
-	github.com/hoophq/alcatraz/ner v0.0.0-20260720163351-f1cbbffbd4c3 // indirect
+	github.com/hoophq/alcatraz v0.14.1 // indirect
+	github.com/hoophq/alcatraz/ner v0.14.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
