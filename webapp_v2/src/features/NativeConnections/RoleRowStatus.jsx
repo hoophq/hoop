@@ -39,8 +39,11 @@ export function RoleRowStatus({ state, active }) {
     case ROW_STATE.ACTIVE_PERSISTENT:
       return <OpenIndicator />
 
+    // Amber, matching the waiting callout in the panel. `blue` is not in the
+    // theme palette at all — it was silently falling back to Mantine's stock
+    // blue and sitting outside the product's colour identity.
     case ROW_STATE.PENDING_REVIEW:
-      return <Badge variant="light" color="blue" radius="xl">Pending review</Badge>
+      return <Badge variant="light" color="amber" radius="xl">Pending review</Badge>
 
     case ROW_STATE.OFFLINE:
       return (

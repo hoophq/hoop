@@ -125,7 +125,11 @@ export function RoleRow({ role, active, expanded }) {
       <Box className={classes.rowHeader}>
         {hasPanel ? (
           <Accordion.Control
-            classNames={{ control: classes.rowControl, chevron: classes.rowChevron }}
+            classNames={{
+              control: classes.rowControl,
+              chevron: classes.rowChevron,
+              label: classes.rowLabel,
+            }}
           >
             {header}
           </Accordion.Control>

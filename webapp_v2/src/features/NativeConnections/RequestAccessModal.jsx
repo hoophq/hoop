@@ -33,8 +33,10 @@ function RequestAccessForm({ connectionName, connection, onCancel }) {
           : `Specify how long you need access to "${connectionName}".`}
       </Text>
 
+      {/* sky, not blue: `blue` is not defined in theme.js and falls back to
+          Mantine's stock palette, outside the product's identity. */}
       {jitSec ? (
-        <Alert color="blue" icon={<ShieldCheck size={16} />}>
+        <Alert color="sky" icon={<ShieldCheck size={16} />}>
           {`This resource role has a fixed just-in-time window of ${formatDurationSec(jitSec)}. A reviewer must approve the request before the credentials are issued.`}
         </Alert>
       ) : (

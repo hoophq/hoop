@@ -1,17 +1,16 @@
 import { PanelRightOpen } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
-import Badge from '@/components/Badge'
 import Button from '@/components/Button'
-import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
 import { DRAWER_ID } from '@/features/NativeConnections/constants'
 import classes from './Header.module.css'
 
 /**
- * Opens the Native Connections drawer, and carries the active-session count.
+ * Opens the Native Connections drawer.
  *
- * That badge matters: it is the replacement for the floating draggable card's
- * always-visible "you have a live session" cue, which a closed drawer loses.
+ * No active-session count: the Figma header carries the label alone. The live
+ * session cue lives on the rows themselves (countdown badge and open
+ * indicator), which is where it can say which connection it refers to.
  *
  * aria-controls is emitted even while the drawer is unmounted. Making the id
  * always resolvable would mean keepMounted, i.e. mounting a hidden drawer on
@@ -21,16 +20,13 @@ import classes from './Header.module.css'
 export function NativeConnectionsButton() {
   const opened = useNativeConnectionsStore((s) => s.opened)
   const toggle = useNativeConnectionsStore((s) => s.toggle)
-  const activeCount = useNativeAccessStore((s) => Object.keys(s.activeByName).length)
-
-  const label = activeCount > 0 ? `Native Connections, ${activeCount} active` : 'Native Connections'
 
   const shared = {
     onClick: toggle,
     'aria-haspopup': 'dialog',
     'aria-expanded': opened,
     'aria-controls': DRAWER_ID,
-    'aria-label': label,
+    'aria-label': 'Native Connections',
   }
 
   return (
@@ -42,13 +38,6 @@ export function NativeConnectionsButton() {
         size="sm"
         className={classes.nativeButton}
         leftSection={<PanelRightOpen size={16} aria-hidden="true" />}
-        rightSection={
-          activeCount > 0 ? (
-            <Badge variant="active" radius="xl" size="xs">
-              {activeCount}
-            </Badge>
-          ) : null
-        }
       >
         Native Connections
       </Button>

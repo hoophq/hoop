@@ -7,15 +7,12 @@
   border-color: transparent;
 }
 
-.searchInput:hover {
-  background-color: var(--mantine-color-gray-0);
-}
-
-/* Gray pill, matching the Figma (gray-1). Mantine's `default` variant would
-   paint it white with a border. */
+/* Gray pill, matching the Figma: gray-1 fill (#e5e5e5) with gray-9 text
+   (#4d4d60). Mantine's `default` variant would paint it white with a border,
+   and its default text colour is near-black. */
 .nativeButton {
   background-color: var(--mantine-color-gray-1);
-  color: var(--mantine-color-text);
+  color: var(--mantine-color-gray-9);
   border: none;
 }
 
@@ -29,12 +26,6 @@
   padding: var(--mantine-spacing-xs);
   border-radius: var(--mantine-radius-sm);
   color: var(--mantine-color-text);
-}
-
-/* Neutral Alpha tint — the same literal Sidebar.module.css uses for hover and
-   active states. It has no Mantine variable. */
-.userButton:hover {
-  background-color: rgba(0, 0, 51, 0.06);
 }
 
 .userButton:focus-visible {
