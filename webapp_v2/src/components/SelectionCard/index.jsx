@@ -1,11 +1,19 @@
 import { Group, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
 import classes from './SelectionCard.module.css'
 
-function SelectionCard({ icon: Icon, title, description, selected, onClick }) {
+function SelectionCard({
+  icon: Icon,
+  title,
+  description,
+  selected,
+  disabled,
+  onClick,
+}) {
   return (
     <UnstyledButton
       p="md"
       onClick={onClick}
+      disabled={disabled}
       className={classes.card}
       data-selected={selected || undefined}
       aria-pressed={!!selected}

@@ -107,6 +107,9 @@ Gateway backend (port 8009)
 | `/features/access-control` | React | Done |
 | `/features/access-control/new` | React | Done |
 | `/features/access-control/edit` | React | Done — group name comes from `?group=<name>`, the legacy URL shape |
+| `/features/access-request` | React | Done |
+| `/features/access-request/new` | React | Done |
+| `/features/access-request/edit/:ruleName` | React | Done — rule name stays a path segment, the legacy URL shape |
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
@@ -133,7 +136,6 @@ Gateway backend (port 8009)
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
-/features/access-request/*
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
 /features/ai-session-analyzer/*
@@ -153,13 +155,19 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`.
+the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`,
+`/features/access-request/*`.
 `events/guardrails.cljs` stays regardless — resource setup/configure and the
 activation journey still subscribe to it. The `features/access_control/` tree
 has no consumer outside itself (its `events.cljs` also registers
 `:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
 so it can go whole, together with the `access-control-promotion` block in
-`features/promotion.cljs`. Removal belongs to a Track A cleanup PR.
+`features/promotion.cljs`. `features/access_request/` is only partly removable:
+`main.cljs` and `views/` have no outside consumer, but `events.cljs` and
+`subs.cljs` do — `features/ai_session_analyzer/views/rule_form.cljs` dispatches
+`:access-request/list-rules` and subscribes to `:access-request/rules` to fill
+its approval-rule picker, so those two files must survive until B3.2 lands.
+Removal belongs to a Track A cleanup PR.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
