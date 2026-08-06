@@ -1,0 +1,76 @@
+# Build-only smoke check for the minimal agent image (hoophq/hoopdev-minimal).
+#
+# The release workflow (release.yml) is the ONLY place Dockerfile.minimal is
+# otherwise built, and only after a tag push once the release binaries exist.
+# That leaves a gap where a broken Dockerfile.minimal can reach main and only
+# fail post-merge at release time. This workflow closes it: on PRs touching the
+# minimal image inputs it builds the same Dockerfile for both release platforms
+# (amd64+arm64) WITHOUT pushing, then loads the amd64 image and asserts the
+# runtime user is the unprivileged 'hoop' user (uid 10001) — the same guard the
+# OCR smoke workflow applies.
+#
+# The image extracts the release tar from dist/binaries/ (glob
+# hoop_*_<uname -s>_<uname -m>.tar.gz), which is produced by the release build
+# and is absent at PR time. We stage a throwaway placeholder binary under that
+# exact name so the Dockerfile's `tar -xf` and layout steps exercise for real;
+# this is a Dockerfile-correctness gate, not a functional agent build.
+name: Minimal Agent Image Build
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile.minimal'
+      - '.github/workflows/minimal-image-build.yml'
+
+jobs:
+  build-minimal-agent:
+    name: Build Minimal Agent Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      # Stage placeholder release tars under the names the Dockerfile's glob
+      # expects, for every arch the build matrix covers. `uname -m` inside the
+      # build reports aarch64/x86_64, so name the tars to match.
+      - name: Stage placeholder release tars
+        run: |
+          mkdir -p dist/binaries stage
+          printf '#!/bin/sh\necho hoop (pr-smoke placeholder)\n' > stage/hoop
+          chmod +x stage/hoop
+          for arch in x86_64 aarch64; do
+            tar -C stage -czf "dist/binaries/hoop_pr-smoke_Linux_${arch}.tar.gz" hoop
+          done
+      - name: Build (multiarch, no push)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.minimal
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: false
+      # Multiarch builds cannot be --load'ed; rebuild amd64 from the warm
+      # buildx cache to run the runtime-privilege assertion below.
+      - name: Build (amd64, load for runtime check)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.minimal
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: false
+          load: true
+          tags: hoopdev-minimal:pr-smoke
+      # The image must run as the unprivileged 'hoop' user (uid 10001) so a
+      # missing 'USER hoop' can never ship.
+      - name: Verify runtime user is unprivileged
+        run: |
+          uid="$(docker run --rm --entrypoint id hoopdev-minimal:pr-smoke -u)"
+          echo "runtime uid: ${uid}"
+          test "${uid}" = "10001"
