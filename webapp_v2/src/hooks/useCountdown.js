@@ -4,8 +4,13 @@ import { subscribeTick, getTick } from '@/utils/tick'
 const padZero = (n) => String(n).padStart(2, '0')
 
 /**
- * Formats a remaining duration the way the legacy components/timer.cljs did:
- * HH:MM:SS above an hour, MM:SS below it, always zero-padded.
+ * H:MM:SS above an hour, MM:SS below it.
+ *
+ * The hour is NOT zero-padded — the Figma badge reads "2:43:33", and the legacy
+ * components/timer.cljs rendered "02:43:33". Minutes keep their padding when
+ * they lead, both because nothing in the design says otherwise and because a
+ * countdown that changes width as it ticks makes the row jitter, and sub-hour
+ * is where a session spends most of its life.
  */
 export function formatRemaining(ms) {
   const totalSeconds = Math.floor(ms / 1000)
@@ -13,7 +18,7 @@ export function formatRemaining(ms) {
   const minutes = Math.floor(totalSeconds / 60) % 60
   const seconds = totalSeconds % 60
   return hours > 0
-    ? `${padZero(hours)}:${padZero(minutes)}:${padZero(seconds)}`
+    ? `${hours}:${padZero(minutes)}:${padZero(seconds)}`
     : `${padZero(minutes)}:${padZero(seconds)}`
 }
 

@@ -83,6 +83,23 @@
   margin-inline-start: var(--mantine-spacing-lg);
 }
 
+/* Countdown pill, off the Figma badge: gray-0 fill with no border, gray-9 12px
+   medium text, 6px radius, 24px tall, 6px between the icon and the digits.
+   Mantine's Badge presets are much smaller (10px text on an 18px box) and the
+   `inactive` semantic is an outline, so none of it comes for free. */
+.timerBadge {
+  height: 24px;
+  padding-inline: var(--mantine-spacing-sm);
+  background-color: var(--mantine-color-gray-0);
+  color: var(--mantine-color-gray-9);
+  border: none;
+  text-transform: none;
+}
+
+.timerBadgeSection {
+  margin-inline-end: 6px;
+}
+
 /* Connected indicator: 24px circle, green-1 on green-6. */
 .activeIndicator {
   background-color: var(--mantine-color-green-1);

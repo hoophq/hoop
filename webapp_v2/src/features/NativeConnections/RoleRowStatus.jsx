@@ -1,5 +1,5 @@
 import { Group, Text, ThemeIcon, VisuallyHidden } from '@mantine/core'
-import { Clock, Radio, WifiOff } from 'lucide-react'
+import { Radio, Timer, WifiOff } from 'lucide-react'
 import Badge from '@/components/Badge'
 import { SessionTimer } from './components/SessionTimer'
 import { ROW_STATE } from './rowState'
@@ -29,8 +29,14 @@ export function RoleRowStatus({ state, active }) {
     case ROW_STATE.ACTIVE_BOUNDED:
       return (
         <Group gap="sm" wrap="nowrap">
-          <Badge variant="inactive" radius="xl" leftSection={<Clock size={12} aria-hidden="true" />}>
-            <SessionTimer expireAt={active.expire_at} fz="xs" />
+          {/* Stopwatch, not a clock face — the Figma badge uses `timer`. */}
+          <Badge
+            variant="light"
+            color="gray"
+            classNames={{ root: classes.timerBadge, section: classes.timerBadgeSection }}
+            leftSection={<Timer size={12} aria-hidden="true" />}
+          >
+            <SessionTimer expireAt={active.expire_at} fz="xs" fw={500} />
           </Badge>
           <OpenIndicator />
         </Group>
