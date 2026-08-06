@@ -53,10 +53,18 @@ export default function AccessRequest() {
     fetchAttributes()
   }, [fetchRules, fetchAttributes])
 
-  const attributeFilterValues = useMemo(
-    () => [...new Set(attributes.map((a) => a.name))].sort((a, b) => a.localeCompare(b)),
-    [attributes],
-  )
+  // `/attributes` is the authoritative list, but every rule also carries the
+  // attributes bound to it. The union keeps the filter working when that
+  // request fails — `rulesForAttribute` already falls back to the rule's own
+  // copy, so a failed load costs nothing but the attributes no rule uses,
+  // which match nothing anyway.
+  const attributeFilterValues = useMemo(() => {
+    const names = new Set(attributes.map((a) => a.name))
+    for (const rule of rules) {
+      for (const name of rule.attributes ?? []) names.add(name)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [attributes, rules])
 
   // Rules reference resource roles by name, so the filter matches on the
   // option's label rather than the connection id it carries.
