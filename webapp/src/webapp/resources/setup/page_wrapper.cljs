@@ -1,6 +1,6 @@
 (ns webapp.resources.setup.page-wrapper
   (:require
-   ["@radix-ui/themes" :refer [Avatar Button Box Badge Flex Text ScrollArea]]
+   ["@radix-ui/themes" :refer [Avatar Button Box Badge Flex Text]]
    ["lucide-react" :refer [PackagePlus Check BrainCog UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]))
@@ -89,64 +89,72 @@
                     :completed? false
                     :active? (= current-step :roles)}]]))
 
+(def ^:private viewport-height
+  "Height of the visible area available to the page.
+
+  Inside the React shell (webapp_v2) the CLJS app renders in Mantine's
+  AppShell.Main, which is offset by a header on viewports below the desktop
+  breakpoint. Subtracting Mantine's own offset variable keeps the wrapper within
+  the visible area, so the in-flow footer is never pushed below the fold. The
+  0px fallback applies when the shell is absent (standalone shadow-cljs), where
+  the full viewport is available."
+  "calc(100vh - var(--app-shell-header-offset, 0px))")
+
+(defn footer-nav
+  "Wizard navigation footer. Flows at the end of the scrollable content instead of
+  being pinned to the viewport, so the primary action (Next / Save and Finish) only
+  becomes visible once the user has scrolled past every field — removing the
+  \"false bottom\" that let people submit incomplete forms (EVL-103)."
+  [{:keys [hide-footer? on-cancel next-hidden? next-disabled? on-next next-text]}]
+  (when-not hide-footer?
+    [:> Flex {:justify "end"
+              :align "center"
+              :class "border-t border-gray-6 p-6 bg-white flex-shrink-0"}
+     [:> Flex {:gap "5" :align "center"}
+      (when on-cancel
+        [:> Button {:size "2"
+                    :variant "ghost"
+                    :color "gray"
+                    :on-click on-cancel}
+         "Back"])
+
+      (when-not next-hidden?
+        [:> Button {:size "2"
+                    :disabled next-disabled?
+                    :on-click on-next}
+         (or next-text "Next")])]]))
+
 (defn main [{:keys [children footer-props onboarding?]}]
   (let [current-step @(rf/subscribe [:resource-setup/current-step])
         show-stepper? (and onboarding? (not= current-step :success))]
     (if onboarding?
-      ;; Onboarding layout: with stepper on left
-      [:> Box {:class "bg-gray-1 flex flex-col" :style {:height "calc(100vh - 72px)"}}
-       ;; Main content area with stepper on left and children on right
-       [:> Flex {:class "flex-1 min-h-0 overflow-hidden"}
-        ;; Stepper on the left (only if not success step)
-        (when show-stepper?
-          [stepper])
+      ;; Onboarding layout: stepper on the left + form on the right. The whole
+      ;; area scrolls as one document so the full-width footer flows at the true
+      ;; end — spanning edge-to-edge, not confined to the content column.
+      [:> Box {:class "relative bg-gray-1 overflow-y-auto"
+               :style {:height (str "calc(" viewport-height " - 72px)")}}
+       [:> Flex {:direction "column" :class "min-h-full"}
+        ;; grow => the row fills the viewport on short steps;
+        ;; shrink-0 => tall content is never clipped, the whole area scrolls.
+        [:> Flex {:class "grow shrink-0"}
+         ;; Stepper on the left (only if not success step)
+         (when show-stepper?
+           [stepper])
+         [:> Box {:class (if show-stepper? "flex-1" "w-full")}
+          children]]
+        [footer-nav footer-props]]]
 
-        [:> ScrollArea {:class (if show-stepper?
-                                 "flex-1 bg-gray-1"
-                                 "w-full bg-gray-1")}
-         children]]
-
-       ;; Footer with navigation buttons - fixed at bottom
-       (when-not (:hide-footer? footer-props)
-         [:> Flex {:justify "end"
-                   :align "center"
-                   :class "border-t border-gray-6 p-6 bg-white flex-shrink-0"}
-
-          [:> Flex {:gap "5" :align "center"}
-           (when (:on-cancel footer-props)
-             [:> Button {:size "2"
-                         :variant "ghost"
-                         :color "gray"
-                         :on-click (:on-cancel footer-props)}
-              "Back"])
-
-           (when-not (:next-hidden? footer-props)
-             [:> Button {:size "2"
-                         :disabled (:next-disabled? footer-props)
-                         :on-click (:on-next footer-props)}
-              (or (:next-text footer-props) "Next")])]])]
-
-      ;; Normal layout: full-width without stepper
-      [:> Box {:class "h-screen bg-gray-1 flex flex-col"}
-       [:> ScrollArea {:class "flex-1 bg-gray-1"}
-        children]
-
-       ;; Footer with navigation buttons - fixed at bottom
-       (when-not (:hide-footer? footer-props)
-         [:> Flex {:justify "end"
-                   :align "center"
-                   :class "border-t border-gray-6 p-6 bg-white"}
-
-          [:> Flex {:gap "5" :align "center"}
-           (when (:on-cancel footer-props)
-             [:> Button {:size "2"
-                         :variant "ghost"
-                         :color "gray"
-                         :on-click (:on-cancel footer-props)}
-              "Back"])
-
-           (when-not (:next-hidden? footer-props)
-             [:> Button {:size "2"
-                         :disabled (:next-disabled? footer-props)
-                         :on-click (:on-next footer-props)}
-              (or (:next-text footer-props) "Next")])]])])))
+      ;; Normal layout: full-width without stepper. The whole page scrolls and the
+      ;; footer flows at the end.
+      ;; `relative` is required, not cosmetic: it makes this box the containing
+      ;; block for absolutely positioned descendants (e.g. react-select's
+      ;; off-screen a11y text in the Attributes field). Without it they resolve
+      ;; against an ancestor, escape this scroll container and extend the
+      ;; document, producing a second scrollbar that drags the in-flow footer
+      ;; into the middle of the viewport. The Radix ScrollArea this replaced gave
+      ;; the same guarantee via its relatively positioned viewport.
+      [:> Box {:class "relative overflow-y-auto bg-gray-1" :style {:height viewport-height}}
+       [:> Flex {:direction "column" :class "min-h-full"}
+        [:> Box {:class "grow shrink-0"}
+         children]
+        [footer-nav footer-props]]])))
