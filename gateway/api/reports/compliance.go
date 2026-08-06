@@ -148,7 +148,7 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 		overallWeight        float64
 		overallCompliant     int
 		overallApplicable    int
-		firstActionByCheckID = map[string]openapi.ComplianceAction{}
+		firstActionByCheckID = map[string]complianceAction{}
 	)
 
 	for _, fwDef := range complianceFrameworks {
@@ -171,7 +171,6 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 					Status:      res.Status,
 					Message:     res.Message,
 					Evidence:    res.Evidence,
-					Action:      ctrlDef.Action,
 				})
 				if _, ok := firstActionByCheckID[ctrlDef.CheckID]; !ok {
 					firstActionByCheckID[ctrlDef.CheckID] = ctrlDef.Action
@@ -257,7 +256,6 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 			Status:   res.Status,
 			Message:  res.Message,
 			Evidence: res.Evidence,
-			Action:   action,
 		})
 	}
 	// non_compliant first, then warning; stable to preserve catalog order.

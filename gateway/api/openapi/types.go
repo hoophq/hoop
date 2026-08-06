@@ -3699,15 +3699,6 @@ const (
 	ComplianceStatusIdpDependent   ComplianceStatusType = "idp_dependent"
 )
 
-type ComplianceAction struct {
-	// Label is the display text of the remediation action
-	Label string `json:"label" example:"Configure SSO"`
-	// Type of remediation target: app (in-app route), docs (documentation page), external (verify in IdP/infra), none
-	Type string `json:"type" enums:"app,docs,external,none" example:"app"`
-	// Target is the route or documentation path; empty when type is none or external
-	Target string `json:"target" example:"/organization/users"`
-}
-
 type ComplianceCheckResult struct {
 	// ID is the stable evaluator id of the check
 	ID string `json:"id" example:"sso_enabled"`
@@ -3721,8 +3712,6 @@ type ComplianceCheckResult struct {
 	Message string `json:"message" example:"SSO is enabled via OIDC provider"`
 	// Evidence is the data supporting the evaluated status
 	Evidence string `json:"evidence" example:"Authentication method: OIDC"`
-	// Action is the suggested remediation
-	Action ComplianceAction `json:"action"`
 }
 
 type ComplianceControl struct {
@@ -3742,8 +3731,6 @@ type ComplianceControl struct {
 	Message string `json:"message"`
 	// Evidence is the data supporting the evaluated status
 	Evidence string `json:"evidence"`
-	// Action is the suggested remediation
-	Action ComplianceAction `json:"action"`
 }
 
 type ComplianceControlGroup struct {

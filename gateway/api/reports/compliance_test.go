@@ -364,8 +364,10 @@ func TestActionRequired(t *testing.T) {
 		if res.Status != openapi.ComplianceStatusWarning && res.Status != openapi.ComplianceStatusNonCompliant {
 			t.Errorf("action_required contains %s with status %v", item.ID, res.Status)
 		}
-		if item.Action.Type != "app" && item.Action.Type != "docs" {
-			t.Errorf("action_required item %s has non-actionable action type %q", item.ID, item.Action.Type)
+		if item.ID == "mfa_status" {
+			// mfa_status maps only to external actions (Verify in IdP) and
+			// must stay out of the actionable list.
+			t.Errorf("action_required contains %s, whose only remediation is external", item.ID)
 		}
 		if item.Status == openapi.ComplianceStatusWarning {
 			seenWarning = true

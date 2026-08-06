@@ -1,7 +1,5 @@
 package apireports
 
-import "github.com/hoophq/hoop/gateway/api/openapi"
-
 // Category identifiers and display titles, in fixed report order.
 const (
 	categoryIdentity           = "identity"
@@ -89,12 +87,21 @@ var complianceCheckByID = func() map[string]complianceCheckDef {
 	return m
 }()
 
+// complianceAction is internal remediation metadata. It is not exposed in the
+// API payload; its Type drives the action-required filter (app/docs are
+// actionable in-product, external/none are not).
+type complianceAction struct {
+	Label  string
+	Type   string // app, docs, external, none
+	Target string
+}
+
 type complianceControlDef struct {
 	ID          string
 	Title       string
 	Description string
 	CheckID     string
-	Action      openapi.ComplianceAction
+	Action      complianceAction
 }
 
 type complianceGroupDef struct {
@@ -111,25 +118,24 @@ type complianceFrameworkDef struct {
 
 // Shared remediation actions.
 var (
-	actionDocsIdentityProviders = openapi.ComplianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/identity-providers"}
-	actionDocsSessionRecording  = openapi.ComplianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/session-recording"}
-	actionDocsSessionRecGoTo    = openapi.ComplianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/session-recording"}
-	actionDocsArchitecture      = openapi.ComplianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/architecture"}
-	actionDocsDataMasking       = openapi.ComplianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/data-masking"}
-	actionDocsDataMaskingLearn  = openapi.ComplianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/data-masking"}
-	actionDocsAccessControl     = openapi.ComplianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/access-control"}
-	actionDocsAgent             = openapi.ComplianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/agent"}
-	actionAppUsers              = openapi.ComplianceAction{Label: "Go to Users ↗", Type: "app", Target: "/organization/users"}
-	actionAppResources          = openapi.ComplianceAction{Label: "Go to Resources ↗", Type: "app", Target: "/resources"}
-	actionAppSessions           = openapi.ComplianceAction{Label: "Go to Sessions ↗", Type: "app", Target: "/sessions"}
-	actionAppAgents             = openapi.ComplianceAction{Label: "Go to Agents ↗", Type: "app", Target: "/agents"}
-	actionAppWebhooks           = openapi.ComplianceAction{Label: "Go to Webhooks ↗", Type: "app", Target: "/integrations/webhooks"}
-	actionAppGuardrails         = openapi.ComplianceAction{Label: "Go to Guardrails ↗", Type: "app", Target: "/guardrails"}
-	actionAppServiceAccounts    = openapi.ComplianceAction{Label: "Go to Service Accounts ↗", Type: "app", Target: "/organization/service-accounts"}
-	actionAppReviews            = openapi.ComplianceAction{Label: "Go to Reviews ↗", Type: "app", Target: "/reviews"}
-	actionExternalIdP           = openapi.ComplianceAction{Label: "Verify in IdP ↗", Type: "external", Target: ""}
-	actionExternalInfra         = openapi.ComplianceAction{Label: "Verify in Infrastructure ↗", Type: "external", Target: ""}
-	actionNone                  = openapi.ComplianceAction{Label: "—", Type: "none", Target: ""}
+	actionDocsIdentityProviders = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/identity-providers"}
+	actionDocsSessionRecording  = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/session-recording"}
+	actionDocsArchitecture      = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/architecture"}
+	actionDocsDataMasking       = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/data-masking"}
+	actionDocsDataMaskingLearn  = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/data-masking"}
+	actionDocsAccessControl     = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/access-control"}
+	actionDocsAgent             = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/agent"}
+	actionAppUsers              = complianceAction{Label: "Go to Users ↗", Type: "app", Target: "/organization/users"}
+	actionAppResources          = complianceAction{Label: "Go to Resources ↗", Type: "app", Target: "/resources"}
+	actionAppSessions           = complianceAction{Label: "Go to Sessions ↗", Type: "app", Target: "/sessions"}
+	actionAppAgents             = complianceAction{Label: "Go to Agents ↗", Type: "app", Target: "/agents"}
+	actionAppWebhooks           = complianceAction{Label: "Go to Webhooks ↗", Type: "app", Target: "/integrations/webhooks"}
+	actionAppGuardrails         = complianceAction{Label: "Go to Guardrails ↗", Type: "app", Target: "/guardrails"}
+	actionAppServiceAccounts    = complianceAction{Label: "Go to Service Accounts ↗", Type: "app", Target: "/organization/service-accounts"}
+	actionAppReviews            = complianceAction{Label: "Go to Reviews ↗", Type: "app", Target: "/reviews"}
+	actionExternalIdP           = complianceAction{Label: "Verify in IdP ↗", Type: "external", Target: ""}
+	actionExternalInfra         = complianceAction{Label: "Verify in Infrastructure ↗", Type: "external", Target: ""}
+	actionNone                  = complianceAction{Label: "—", Type: "none", Target: ""}
 )
 
 var complianceFrameworks = []complianceFrameworkDef{

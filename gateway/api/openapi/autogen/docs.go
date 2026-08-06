@@ -11961,32 +11961,6 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ComplianceAction": {
-            "type": "object",
-            "properties": {
-                "label": {
-                    "description": "Label is the display text of the remediation action",
-                    "type": "string",
-                    "example": "Configure SSO"
-                },
-                "target": {
-                    "description": "Target is the route or documentation path; empty when type is none or external",
-                    "type": "string",
-                    "example": "/organization/users"
-                },
-                "type": {
-                    "description": "Type of remediation target: app (in-app route), docs (documentation page), external (verify in IdP/infra), none",
-                    "type": "string",
-                    "enum": [
-                        "app",
-                        "docs",
-                        "external",
-                        "none"
-                    ],
-                    "example": "app"
-                }
-            }
-        },
         "openapi.ComplianceCategorySummary": {
             "type": "object",
             "properties": {
@@ -12013,14 +11987,6 @@ const docTemplate = `{
         "openapi.ComplianceCheckResult": {
             "type": "object",
             "properties": {
-                "action": {
-                    "description": "Action is the suggested remediation",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.ComplianceAction"
-                        }
-                    ]
-                },
                 "category": {
                     "description": "Category groups checks by security domain",
                     "type": "string",
@@ -12066,14 +12032,6 @@ const docTemplate = `{
         "openapi.ComplianceControl": {
             "type": "object",
             "properties": {
-                "action": {
-                    "description": "Action is the suggested remediation",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.ComplianceAction"
-                        }
-                    ]
-                },
                 "category": {
                     "description": "Category groups the control by security domain",
                     "type": "string"
