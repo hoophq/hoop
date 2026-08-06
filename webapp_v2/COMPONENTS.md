@@ -772,6 +772,11 @@ Non-obvious notes only:
   is unbounded; fetch it once and filter client-side.
 - `userGroups.js` — `list()` returns a bare string array, and `null` (not
   `[]`) when the organization has no groups; callers must coalesce.
+- `aiSessionAnalyzer.js` — `getProvider()` answers **404 when the org never
+  configured a provider**; that is "not set up", not an error. Rule names are
+  user-supplied path segments, so every interpolation is `encodeURIComponent`d.
+- `accessRequests.js` — `list()` omits `page_size`, which the gateway reads as
+  "no pagination"; the response is the `{ pages, data }` envelope regardless.
 
 ---
 
