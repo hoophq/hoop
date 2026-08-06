@@ -7,7 +7,9 @@
 // it, so `go build ./...` at the root still resolves nothing.
 module github.com/hoophq/hoopinspect/cmd
 
-go 1.24
+go 1.26.5
+
+toolchain go1.26.5
 
 require (
 	github.com/hoophq/hoopinspect v0.0.0

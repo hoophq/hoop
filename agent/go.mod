@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/agent
 
-go 1.26.2
+go 1.26.5
 
 replace github.com/hoophq/hoop/common => ../common
 

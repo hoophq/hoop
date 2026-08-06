@@ -12,6 +12,8 @@ module github.com/hoophq/hoopinspect/store/sqlite
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/hoophq/hoopinspect v0.0.0
 	modernc.org/sqlite v1.49.1
