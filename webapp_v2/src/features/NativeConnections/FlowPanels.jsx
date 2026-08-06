@@ -37,10 +37,11 @@ export function RequestingPanel({ connectionName }) {
  * The CLJS flow navigated away into the session-details modal here. Keeping the
  * state inline means the user does not lose the drawer or the page they were on.
  *
- * There is no push channel for an approval, so the row cannot update itself —
- * "Check approval" re-issues the request, which returns the credentials once a
- * reviewer has approved and another 202 until then. The CLJS session page can
- * also drive this through the hoop:native-access-resume bridge event.
+ * There is no push channel for an approval, so the store polls the resume
+ * endpoint while this is on screen (syncReviewWatcher) and swaps this panel for
+ * the credentials — and the row for its countdown — as soon as it goes through.
+ * "Check approval" is the same call on demand, for anyone who does not want to
+ * wait out the interval.
  */
 export function PendingReviewPanel({ connectionName, sessionId, accessDurationSec }) {
   const resumeAfterReview = useNativeAccessStore((s) => s.resumeAfterReview)
@@ -48,7 +49,8 @@ export function PendingReviewPanel({ connectionName, sessionId, accessDurationSe
   return (
     <Stack gap="sm">
       <Alert color="blue" icon={<Clock size={16} />} title="Waiting for review approval">
-        A reviewer has to approve this request before the credentials are issued.
+        A reviewer has to approve this request before the credentials are issued. This row picks
+        them up on its own once that happens.
       </Alert>
       <Group gap="sm">
         {sessionId && (

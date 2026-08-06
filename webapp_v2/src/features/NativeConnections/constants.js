@@ -51,6 +51,12 @@ export const SUBTYPE_LABELS = {
 
 export const CLAUDE_CODE_DOCS_URL = 'https://code.claude.com/docs/en/overview'
 
+// How often a row waiting on a review re-tries the resume endpoint. There is no
+// push channel for an approval, and a review is not something a person approves
+// in the same breath — 10s is responsive enough without hammering an endpoint
+// that sweeps expired credential sessions on every call.
+export const REVIEW_POLL_MS = 10_000
+
 export const DRAWER_ID = 'native-connections-drawer'
 export const DRAWER_TITLE_ID = 'native-connections-drawer-title'
 export const DRAWER_WIDTH = 600

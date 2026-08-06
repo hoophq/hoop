@@ -7,6 +7,7 @@ import { subscribeTick } from '@/utils/tick'
 import {
   ERROR_MESSAGES,
   REQUEST_FAILED_FALLBACK,
+  REVIEW_POLL_MS,
 } from '@/features/NativeConnections/constants'
 import { errorMessage, isSessionValid } from '@/features/NativeConnections/helpers'
 
@@ -49,6 +50,8 @@ const removeFrom = (map, key) => {
 }
 
 let unsubscribeTick = null
+let reviewPollId = null
+let reviewPollInFlight = false
 
 export const useNativeAccessStore = create((set, get) => ({
   // connectionName -> ConnectionCredentialsListItem (no secrets)
@@ -251,6 +254,9 @@ export const useNativeAccessStore = create((set, get) => ({
           requestFor: null,
         }))
         useNativeConnectionsStore.getState().setExpanded(connectionName)
+        // Start watching straight away: the review exists but the credential
+        // does not, and only a later resume will create it.
+        get().syncReviewWatcher()
         showSnackbar({ level: 'info', text: 'This connection requires review approval' })
         return
       }
@@ -274,11 +280,17 @@ export const useNativeAccessStore = create((set, get) => ({
    * POST /connections/{name}/credentials/{sessionId} after a reviewer approves.
    * Still answers 202 while the review is pending — the CLJS version treated
    * that as success and cached a session under the key "undefined".
+   *
+   * `silent` is for the poller: it suppresses the "still waiting" toast and the
+   * intermediate REQUESTING state, so a row that is being watched does not
+   * flicker or nag once every interval. Success and failure always speak up.
    */
-  resumeAfterReview: async (connectionName, sessionId, accessDurationSec) => {
-    set((s) => ({
-      statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.REQUESTING),
-    }))
+  resumeAfterReview: async (connectionName, sessionId, accessDurationSec, { silent } = {}) => {
+    if (!silent) {
+      set((s) => ({
+        statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.REQUESTING),
+      }))
+    }
     try {
       const { status, data } = await connectionCredentialsService.resume(
         connectionName,
@@ -289,7 +301,12 @@ export const useNativeAccessStore = create((set, get) => ({
         set((s) => ({
           statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.PENDING_REVIEW),
         }))
-        showSnackbar({ level: 'info', text: 'This connection is still waiting for review approval' })
+        if (!silent) {
+          showSnackbar({
+            level: 'info',
+            text: 'This connection is still waiting for review approval',
+          })
+        }
         return
       }
       get().storeCredentials(data)
@@ -301,6 +318,57 @@ export const useNativeAccessStore = create((set, get) => ({
         errorByName: setIn(s.errorByName, connectionName, message),
       }))
       showSnackbar({ level: 'error', text: message })
+    } finally {
+      get().syncReviewWatcher()
+    }
+  },
+
+  /**
+   * Watches every row that is waiting on a review and finishes the flow the
+   * moment it is approved.
+   *
+   * A review-gated connection always ends in a bounded session, so this is what
+   * makes the countdown appear at all: the 202 branch creates the review but no
+   * credential, and the credential only exists once someone calls resume again.
+   * Without this the row sat on "Pending review" forever and the user had to
+   * know to come back and press a button.
+   *
+   * Polls resume rather than GET /reviews/{id} for two reasons: resume already
+   * documents "202 while pending, 201 with credentials once approved", so an
+   * approval is picked up in one round trip instead of two; and the reviews
+   * endpoint is wrapped in TrackRequest(EventFetchReviews), which a poller would
+   * quietly inflate into a meaningless number.
+   */
+  syncReviewWatcher: () => {
+    const pending = Object.values(get().statusByName).some(
+      (status) => status === FLOW_STATUS.PENDING_REVIEW
+    )
+    if (pending && !reviewPollId) {
+      reviewPollId = setInterval(() => get().checkPendingReviews(), REVIEW_POLL_MS)
+    } else if (!pending && reviewPollId) {
+      clearInterval(reviewPollId)
+      reviewPollId = null
+    }
+  },
+
+  checkPendingReviews: async () => {
+    // A slow round trip must not stack up behind the interval.
+    if (reviewPollInFlight) return
+    reviewPollInFlight = true
+    try {
+      const { statusByName, reviewByName } = get()
+      const pending = Object.keys(statusByName).filter(
+        (name) => statusByName[name] === FLOW_STATUS.PENDING_REVIEW
+      )
+      for (const name of pending) {
+        const review = reviewByName[name]
+        if (!review?.sessionId) continue
+        await get().resumeAfterReview(name, review.sessionId, review.accessDurationSec, {
+          silent: true,
+        })
+      }
+    } finally {
+      reviewPollInFlight = false
     }
   },
 
@@ -353,6 +421,8 @@ export const useNativeAccessStore = create((set, get) => ({
       errorByName: removeFrom(s.errorByName, name),
     }))
     get().syncExpiryWatcher()
+    // This row is no longer pending, so the poller may have nothing left to do.
+    get().syncReviewWatcher()
   },
 
   // ── teardown ──────────────────────────────────────────────────────────
@@ -407,6 +477,7 @@ export const useNativeAccessStore = create((set, get) => ({
       errorByName: removeFrom(s.errorByName, connectionName),
     }))
     get().syncExpiryWatcher()
+    get().syncReviewWatcher()
   },
 
   resetFlow: (connectionName) => {
