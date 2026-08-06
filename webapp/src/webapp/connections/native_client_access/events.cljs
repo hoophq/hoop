@@ -30,8 +30,14 @@
 
 (rf/reg-fx
  :native-access->emit-react-event
- (fn [{:keys [event detail]}]
-   (emit-to-react! event detail)))
+ (fn [{:keys [event detail on-done]}]
+   (emit-to-react! event detail)
+   ;; Handing off to the React drawer completes this side's work immediately —
+   ;; there is no request to wait on. Callers that put a button into a loading
+   ;; state for the old in-place flow pass their reset here, otherwise the
+   ;; button spins forever waiting for a response that will never come back
+   ;; through re-frame.
+   (when on-done (on-done))))
 
 (rf/reg-fx
  :open-rdp-web-client
@@ -343,7 +349,8 @@
        {:native-access->emit-react-event {:event "hoop:native-access-resume"
                                           :detail {:connectionName connection-name
                                                    :sessionId session-id
-                                                   :accessDurationSec access-duration-sec}}}
+                                                   :accessDurationSec access-duration-sec}
+                                          :on-done on-error-cb}}
        {:fx [[:dispatch [:fetch {:method "POST"
                                  :uri (str "/connections/" connection-name "/credentials/" session-id)
                                  :body {:access_duration_seconds access-duration-sec}
