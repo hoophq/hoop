@@ -1,42 +1,34 @@
-import { Flex, Stack, Text } from '@mantine/core'
-import { ChevronRight } from 'lucide-react'
-import ActionIcon from '@/components/ActionIcon'
+import { Box, Flex, Stack, Text } from '@mantine/core'
+import Button from '@/components/Button'
 import classes from './RuleListItem.module.css'
 
 // One row of the access request list. Rows stack into a single bordered block,
 // so only the first and last ones carry the outer corners.
 export default function RuleListItem({ rule, isFirst, isLast, onConfigure }) {
   return (
-    <Flex
+    <Box
       className={classes.row}
       data-first={isFirst || undefined}
       data-last={isLast || undefined}
-      p="lg"
-      mih={106}
-      align="center"
-      justify="space-between"
-      gap="md"
     >
-      <Stack gap="xs" miw={0}>
-        <Text fw={500} fz="lg">
-          {rule.name}
-        </Text>
-        {rule.description && (
-          <Text size="sm" c="dimmed">
-            {rule.description}
+      <Flex p="lg" mih={106} align="center" justify="space-between" gap="md">
+        <Stack gap="xs" flex={1} miw={0}>
+          <Text fw={500} fz="lg">
+            {rule.name}
           </Text>
-        )}
-      </Stack>
-
-      <ActionIcon
-        variant="subtle"
-        color="gray"
-        size="lg"
-        aria-label={`Edit ${rule.name}`}
-        onClick={() => onConfigure(rule.name)}
-      >
-        <ChevronRight size={24} />
-      </ActionIcon>
-    </Flex>
+          {rule.description && (
+            <Text size="sm" c="dimmed">
+              {rule.description}
+            </Text>
+          )}
+        </Stack>
+        {/* Hoop-managed rules stay configurable: the API locks their name,
+            access type, duration and targeting, but the approval settings
+            are still editable. */}
+        <Button variant="default" onClick={() => onConfigure(rule.name)}>
+          Configure
+        </Button>
+      </Flex>
+    </Box>
   )
 }
