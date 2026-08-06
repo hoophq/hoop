@@ -36,9 +36,10 @@ export function SearchBar({ query, onQueryChange, onClearQuery, total, matched, 
         {searching && (
           // On the app's control scale like every other button here: size="xs"
           // is 24px in components/Button/theme.js. `compact-xs` with a pill
-          // radius was a one-off that sat outside that scale.
+          // radius was a one-off that sat outside that scale. The `light`
+          // variant keeps the soft indigo it always had.
           <Button
-            variant="default"
+            variant="light"
             size="xs"
             leftSection={<CircleX size={12} aria-hidden="true" />}
             onClick={onClearQuery}

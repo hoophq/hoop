@@ -1,5 +1,6 @@
 import { Group, Loader, Stack, Text } from '@mantine/core'
 import { Clock, TriangleAlert } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
@@ -44,21 +45,18 @@ export function RequestingPanel({ connectionName }) {
  * wait out the interval.
  */
 export function PendingReviewPanel({ connectionName, sessionId, accessDurationSec }) {
+  const navigate = useNavigate()
   const resumeAfterReview = useNativeAccessStore((s) => s.resumeAfterReview)
   const closeDrawer = useNativeConnectionsStore((s) => s.close)
 
-  // Full navigation rather than a React Router <Link>. The session page is
-  // ClojureScript, and the legacy router only dispatches a panel keyword —
-  // webapp/src/webapp/core.cljs hoopSetRoute and routes.cljs dispatch both drop
-  // the route params. Panels read their id straight off window.location at
-  // render time, so going from /sessions/A to /sessions/B leaves :active-panel
-  // unchanged, nothing re-renders, and the old session stays on screen. That is
-  // a pre-existing limitation of the legacy router (untouched by this branch);
-  // a reload is the one transition it always gets right. Remove this once the
-  // session page is React.
+  // Client-side navigation: the legacy panel used to ignore a param-only move
+  // like /sessions/A → /sessions/B, which is why this briefly did a full page
+  // load. That is fixed at the source now — webapp/src/webapp/events.cljs
+  // records the pathname and main-panel keys the panel on it — so the drawer
+  // can navigate without throwing away the app's state.
   const viewReview = () => {
     closeDrawer()
-    window.location.assign(`/sessions/${sessionId}`)
+    navigate(`/sessions/${sessionId}`)
   }
 
   return (

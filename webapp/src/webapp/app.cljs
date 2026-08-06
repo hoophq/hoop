@@ -828,6 +828,7 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
+        route-path (rf/subscribe [::subs/route-path])
         gateway-public-info (rf/subscribe [:gateway->public-info])
         react-shell? (boolean (.getItem js/localStorage "react-shell"))]
     ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
@@ -843,4 +844,10 @@
 
         :else
         [theme-provider
-         [routes/panels @active-panel @gateway-public-info]]))))
+         ;; Keyed on the path, not just the panel. Panels read their route
+         ;; params from window.location at render time, so /sessions/A →
+         ;; /sessions/B keeps the same :active-panel and would otherwise never
+         ;; re-render. A panel change already remounted this subtree (different
+         ;; component type), so the only behaviour this adds is for the
+         ;; param-only case, which is currently a no-op.
+         ^{:key @route-path} [routes/panels @active-panel @gateway-public-info]]))))
