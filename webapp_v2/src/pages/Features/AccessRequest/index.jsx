@@ -130,7 +130,7 @@ export default function AccessRequest() {
         <EmptyState
           title="No Access Request rules configured in your Organization yet"
           action={{ label: CREATE_LABEL, onClick: goCreate }}
-          docsUrl={docsUrl.features.reviews}
+          docsUrl={docsUrl.features.accessRequests}
           docsLabel="Access Request documentation"
         />
       ) : (
