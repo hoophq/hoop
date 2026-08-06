@@ -147,6 +147,13 @@ config:
   # LOG_LEVEL: 'debug|info|warn|error'
   # LOG_GRPC: "0|1|2"
   # ASK_AI_CREDENTIALS: ''
+  # Data masking provider: 'mspresidio' (or dataMasking.enabled above),
+  # 'gcp' (requires GOOGLE_APPLICATION_CREDENTIALS_JSON) or 'alcatraz'
+  # (in-process pattern engine on the agent, no extra services or
+  # credentials; statistical entity types such as PERSON/LOCATION also
+  # need the experimental.alcatraz_ner feature flag — see the agent chart).
+  # DLP_PROVIDER: ''
+  # DLP_MODE: 'best-effort|strict'
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
   # PLUGIN_AUDIT_PATH: ''
   # PLUGIN_INDEX_PATH: ''

@@ -16,18 +16,23 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+// staticServerInfo holds the fields that derive purely from process-wide
+// environment and never vary per request. Everything organization-scoped
+// (redact provider, feature flags, license, ...) is filled in on a copy of
+// this value inside Get, so concurrent requests from different orgs cannot
+// observe each other's data.
 var (
 	isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 	vinfo            = version.Get()
-	serverInfoData   = openapi.ServerInfo{
+	staticServerInfo = openapi.ServerInfo{
 		Version:                 vinfo.Version,
 		Commit:                  vinfo.GitCommit,
 		LogLevel:                os.Getenv("LOG_LEVEL"),
 		GoDebug:                 os.Getenv("GODEBUG"),
-		RedactProvider:          os.Getenv("DLP_PROVIDER"),
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
@@ -48,6 +53,7 @@ var (
 //	@Router			/serverinfo [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+	serverInfoData := staticServerInfo
 	org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining organization: %v", err)
@@ -97,7 +103,12 @@ func Get(c *gin.Context) {
 	serverInfoData.GrpcURL = ctx.GrpcURL
 	serverInfoData.ApiURL = appc.ApiURL()
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
-	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
+	// Report the provider the organization actually masks with, not the raw
+	// DLP_PROVIDER env: experimental.alcatraz_dlp overrides it per org, and
+	// the transport already routes sessions by the effective value. Reporting
+	// the env here would make the UI gate on a provider that is not in use.
+	serverInfoData.RedactProvider = services.DLPProviderForOrg(ctx.OrgID)
+	serverInfoData.HasRedactCredentials = services.CheckRedactProviderForOrg(ctx.OrgID) == nil
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
 	serverInfoData.PostgresProxyEnabled = miscConf != nil &&
 		miscConf.PostgresServerConfig != nil &&

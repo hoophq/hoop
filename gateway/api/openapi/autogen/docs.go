@@ -17258,7 +17258,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "has_redact_credentials": {
-                    "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set",
+                    "description": "Report if the requesting organization can enforce data masking: the\ncredentials of the configured provider are set (GOOGLE_APPLICATION_CREDENTIALS_JSON\nor MSPRESIDIO), or the effective provider is alcatraz, which needs none",
                     "type": "boolean"
                 },
                 "has_ssh_client_host_key": {
@@ -17301,11 +17301,12 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "redact_provider": {
-                    "description": "Redact Provider used by the server",
+                    "description": "Redact Provider in effect for the requesting organization. The\nexperimental.alcatraz_dlp feature flag overrides the DLP_PROVIDER env\nper organization, so this may differ from the server-wide setting.",
                     "type": "string",
                     "enum": [
                         "gcp",
-                        "mspresidio"
+                        "mspresidio",
+                        "alcatraz"
                     ],
                     "example": "gcp"
                 },

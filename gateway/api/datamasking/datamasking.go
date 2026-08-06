@@ -25,7 +25,7 @@ import (
 // live in services.CheckRedactProvider). Read/list/delete stay available so
 // existing rules remain visible and removable.
 func requireRedactProvider(c *gin.Context) bool {
-	if err := services.CheckRedactProvider(); err != nil {
+	if err := services.CheckRedactProviderForOrg(storagev2.ParseContext(c).GetOrgID()); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return false
 	}

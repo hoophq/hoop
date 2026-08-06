@@ -35,7 +35,7 @@ func UpdateDataMaskingRuleConnection(c *gin.Context) {
 	// not enforced without one); clearing the associations (empty set) is
 	// always allowed.
 	if len(req) > 0 {
-		if err := services.CheckRedactProvider(); err != nil {
+		if err := services.CheckRedactProviderForOrg(ctx.GetOrgID()); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}

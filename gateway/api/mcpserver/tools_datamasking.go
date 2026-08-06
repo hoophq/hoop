@@ -138,7 +138,7 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if !sc.IsAdminUser() {
 		return errResult("admin access required"), nil, nil
 	}
-	if err := services.CheckRedactProvider(); err != nil {
+	if err := services.CheckRedactProviderForOrg(sc.GetOrgID()); err != nil {
 		return errResult(err.Error()), nil, nil
 	}
 
@@ -213,7 +213,7 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if !sc.IsAdminUser() {
 		return errResult("admin access required"), nil, nil
 	}
-	if err := services.CheckRedactProvider(); err != nil {
+	if err := services.CheckRedactProviderForOrg(sc.GetOrgID()); err != nil {
 		return errResult(err.Error()), nil, nil
 	}
 
