@@ -5,6 +5,7 @@ import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import { DrawerHeader } from './DrawerHeader'
 import { SearchBar } from './SearchBar'
 import { RoleList } from './RoleList'
+import { RequestAccessModal } from './RequestAccessModal'
 import { useCljsBridge } from './useCljsBridge'
 import { matchesQuery } from './helpers'
 import {
@@ -90,6 +91,7 @@ export default function NativeConnectionsDrawer() {
   }, [roles, activeByName, query])
 
   return (
+    <>
     <Drawer
       id={DRAWER_ID}
       opened={opened}
@@ -131,5 +133,10 @@ export default function NativeConnectionsDrawer() {
         </ScrollArea>
       </Stack>
     </Drawer>
+
+    {/* Outside the Drawer so it is not clipped by it, and mounted once rather
+        than per row — the drawer stays visible behind it by design. */}
+    <RequestAccessModal />
+    </>
   )
 }

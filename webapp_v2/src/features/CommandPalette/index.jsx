@@ -6,7 +6,7 @@ import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { searchAll } from '@/services/search';
 import { useBridgeStore } from '@/stores/useBridgeStore';
-import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore';
+import { useNativeAccessStore } from '@/stores/useNativeAccessStore';
 import { showSnackbar } from '@/utils/snackbar';
 import CommandPaletteRoot from './CommandPaletteRoot';
 import MainPage from './MainPage';
@@ -86,7 +86,7 @@ function ConnectedCommandPalette() {
       case ACTION_TYPES.NATIVE_CLIENT:
         // The drawer is mounted by Layout on every route, so no navigation and
         // no CLJS bridge are needed any more.
-        useNativeConnectionsStore.getState().openConnection(connection?.name);
+        useNativeAccessStore.getState().openAndConnect(connection?.name);
         break;
 
       case ACTION_TYPES.CONFIGURE:

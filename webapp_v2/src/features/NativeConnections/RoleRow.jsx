@@ -1,21 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Group, Image, Stack, Text } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import Accordion from '@/components/Accordion'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { useNativeAccessStore, FLOW_STATUS } from '@/stores/useNativeAccessStore'
 import { RoleRowStatus } from './RoleRowStatus'
+import { RoleRowAction } from './RoleRowAction'
 import { SessionPanel } from './SessionPanel'
-import { RequestAccessPanel } from './RequestAccessPanel'
 import { DisconnectConfirmModal } from './DisconnectConfirmModal'
 import { PendingReviewPanel, RequestingPanel, UnavailablePanel } from './FlowPanels'
-import { deriveRowState } from './rowState'
+import { deriveRowState, ROW_STATE } from './rowState'
 import classes from './NativeConnections.module.css'
+
+// A row is expandable only when the panel has something in it. The design gives
+// a plain "Connect" / "Ask access" row no chevron, and a control that expands
+// into nothing is a button that does nothing.
+const PANEL_STATES = new Set([
+  ROW_STATE.ACTIVE_BOUNDED,
+  ROW_STATE.ACTIVE_PERSISTENT,
+  ROW_STATE.ACCESS_REVOKED,
+  ROW_STATE.PENDING_REVIEW,
+])
 
 function RowBody({ role }) {
   const status = useNativeAccessStore((s) => s.statusByName[role.name])
   const credentials = useNativeAccessStore((s) => s.credentialsByName[role.name])
-  const connection = useNativeAccessStore((s) => s.connectionByName[role.name])
   const review = useNativeAccessStore((s) => s.reviewByName[role.name])
   const error = useNativeAccessStore((s) => s.errorByName[role.name])
   const disconnect = useNativeAccessStore((s) => s.disconnect)
@@ -34,14 +43,18 @@ function RowBody({ role }) {
   if (status === FLOW_STATUS.UNAVAILABLE) {
     body = <UnavailablePanel message={error} />
   } else if (status === FLOW_STATUS.PENDING_REVIEW) {
-    body = <PendingReviewPanel sessionId={review?.sessionId} />
-  } else if (status === FLOW_STATUS.CONFIGURING) {
-    body = <RequestAccessPanel connectionName={role.name} connection={connection} />
-  } else if (status === FLOW_STATUS.READY && credentials) {
+    body = (
+      <PendingReviewPanel
+        connectionName={role.name}
+        sessionId={review?.sessionId}
+        accessDurationSec={review?.accessDurationSec}
+      />
+    )
+  } else if (credentials) {
     body = <SessionPanel credentials={credentials} onDisconnect={openConfirm} />
   } else {
-    // Opening the row is what starts the flow, and tearing a session down also
-    // collapses the row (clearSession), so an open row always has one running.
+    // A session exists but its secret is still loading — resumeIfActive is in
+    // flight, or a fresh credential is being issued.
     body = <RequestingPanel connectionName={role.name} />
   }
 
@@ -59,55 +72,68 @@ function RowBody({ role }) {
   )
 }
 
+/** Everything left of the action button. Never contains an interactive element. */
+function RowHeader({ role, state, active, iconSrc }) {
+  return (
+    <Group justify="space-between" wrap="nowrap" gap="md" w="100%">
+      <Group gap="md" wrap="nowrap" miw={0}>
+        {/* The getter always resolves to a URL, falling back to a generic icon
+            when the subtype is missing from the metadata catalog. */}
+        <Box className={classes.rowAvatar}>
+          <Image src={iconSrc} w={20} h={20} alt="" />
+        </Box>
+        <Stack gap={2} miw={0}>
+          <Text fz="sm" fw={700} truncate>
+            {role.name}
+          </Text>
+          <Text fz="xs" c="dimmed" truncate>
+            {role.subtype || role.type}
+          </Text>
+        </Stack>
+      </Group>
+      <RoleRowStatus state={state} active={active} />
+    </Group>
+  )
+}
+
 export function RoleRow({ role, active, expanded }) {
   const getIcon = useConnectionIconGetter()
   const flowStatus = useNativeAccessStore((s) => s.statusByName[role.name])
-  const startFlow = useNativeAccessStore((s) => s.startFlow)
+  const resumeIfActive = useNativeAccessStore((s) => s.resumeIfActive)
   const state = deriveRowState(role, active, flowStatus)
 
-  // Expanding a row starts the flow — exactly once per expansion.
-  //
-  // The guard is a ref rather than `!flowStatus`: disconnecting (and expiring)
-  // deletes the status entry, so a status-derived guard would see "no flow yet"
-  // on a still-expanded row and immediately issue a fresh credential, undoing
-  // the disconnect the user just confirmed.
-  const startedRef = useRef(false)
+  // Expanding only loads the secret for a session that already exists. It never
+  // creates one — that is the action button's job.
   useEffect(() => {
-    if (!expanded) {
-      startedRef.current = false
-      return
-    }
-    if (startedRef.current) return
-    startedRef.current = true
-    startFlow(role.name)
-  }, [expanded, role.name, startFlow])
+    if (expanded) resumeIfActive(role.name)
+  }, [expanded, role.name, resumeIfActive])
 
   const iconSrc = getIcon({ subtype: role.subtype, type: role.type })
+  // `expanded` is in the test so an open row always keeps a control to close
+  // itself with, even in the frame between being opened and its state catching
+  // up (the CLJS resume bridge opens the row before the request starts).
+  const hasPanel =
+    expanded ||
+    PANEL_STATES.has(state) ||
+    flowStatus === FLOW_STATUS.UNAVAILABLE ||
+    flowStatus === FLOW_STATUS.REQUESTING
+
+  const header = <RowHeader role={role} state={state} active={active} iconSrc={iconSrc} />
 
   return (
     <Accordion.Item value={role.name} className={classes.accordionItem}>
-      <Accordion.Control
-        classNames={{ control: classes.rowControl, chevron: classes.rowChevron }}
-      >
-        <Group justify="space-between" wrap="nowrap" gap="md">
-          <Group gap="md" wrap="nowrap" miw={0}>
-            {/* The getter always resolves to a URL, falling back to a generic
-                icon when the subtype is missing from the metadata catalog. */}
-            <Box className={classes.rowAvatar}>
-              <Image src={iconSrc} w={20} h={20} alt="" />
-            </Box>
-            <Stack gap={2} miw={0}>
-              <Text fz="sm" fw={700} truncate>
-                {role.name}
-              </Text>
-              <Text fz="xs" c="dimmed" truncate>
-                {role.subtype || role.type}
-              </Text>
-            </Stack>
-          </Group>
-          <RoleRowStatus state={state} active={active} />
-        </Group>
-      </Accordion.Control>
+      <Box className={classes.rowHeader}>
+        {hasPanel ? (
+          <Accordion.Control
+            classNames={{ control: classes.rowControl, chevron: classes.rowChevron }}
+          >
+            {header}
+          </Accordion.Control>
+        ) : (
+          <Box className={classes.rowStatic}>{header}</Box>
+        )}
+        <RoleRowAction role={role} state={state} />
+      </Box>
       <Accordion.Panel classNames={{ content: classes.accordionPanelContent }}>
         {expanded && <RowBody role={role} />}
       </Accordion.Panel>

@@ -8,7 +8,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStatusStore } from '@/stores/useConfigStatusStore'
 import { useBridgeStore } from '@/stores/useBridgeStore'
-import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
+import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import { computeProgress, STEP_DEFS } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
@@ -118,7 +118,7 @@ export function ConfigStatus() {
         // instead. The drawer is mounted by Layout on every route, so the
         // detour through /resources (which only existed to give the CLJS modal
         // a host to render in) is gone.
-        useNativeConnectionsStore.getState().openConnection(firstConnectionName)
+        useNativeAccessStore.getState().openAndConnect(firstConnectionName)
       } else {
         navigate('/resource-catalog')
       }

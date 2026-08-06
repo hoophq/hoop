@@ -64,6 +64,12 @@ export const useNativeAccessStore = create((set, get) => ({
   // connectionName -> user-facing message for the unavailable state
   errorByName: {},
 
+  // The connection whose "ask for access" dialog is open, or null. The design
+  // puts the duration step in a dialog over the drawer rather than inside the
+  // row, so the drawer stays visible behind it and the row it belongs to keeps
+  // whatever state it already had.
+  requestFor: null,
+
   activeLoading: false,
   activeLoaded: false,
 
@@ -122,38 +128,51 @@ export const useNativeAccessStore = create((set, get) => ({
 
   // ── the flow ──────────────────────────────────────────────────────────
 
+  openRequestDialog: (connectionName) => set({ requestFor: connectionName }),
+  closeRequestDialog: () => set({ requestFor: null }),
+
   /**
-   * Entry point for every "connect natively" affordance.
+   * The row's action button — "Connect", or "Ask access" when the role is
+   * gated on review.
    *
-   * Mirrors :native-client-access->start-flow: look the connection up first so
-   * we know whether the agent is online and whether a review is required, then
-   * either surface the unavailable state, jump straight to a persistent
-   * credential, or ask for a duration.
+   * Connecting is driven by this button, never by expanding the row. Expanding
+   * used to start the flow, which meant a review-gated role fired a request the
+   * moment it was opened, before the user had chosen anything.
+   *
+   * Look the connection up first: the list payload carries `reviewers` but not
+   * `jit_access_duration_sec` (ToOpenApi populates it only on Get), so a JIT
+   * window is invisible until we fetch. Then either surface the unavailable
+   * state, show the credential that already exists, open the duration dialog,
+   * or — for a role with no review at all — connect in one click.
    */
-  startFlow: async (connectionName) => {
+  beginConnect: async (connectionName) => {
     set((s) => ({
       statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.CHECKING),
       errorByName: removeFrom(s.errorByName, connectionName),
     }))
 
+    const unavailable = (message) => {
+      set((s) => ({
+        statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
+        errorByName: setIn(s.errorByName, connectionName, message),
+      }))
+      // Open the row so the reason is visible — the button is gone at this
+      // point and the row would otherwise just stop responding.
+      useNativeConnectionsStore.getState().setExpanded(connectionName)
+    }
+
     let connection
     try {
       connection = await connectionsService.getConnection(connectionName)
     } catch {
-      set((s) => ({
-        statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
-        errorByName: setIn(s.errorByName, connectionName, ERROR_MESSAGES.agentOffline),
-      }))
+      unavailable(ERROR_MESSAGES.agentOffline)
       return
     }
 
     set((s) => ({ connectionByName: setIn(s.connectionByName, connectionName, connection) }))
 
     if (connection.status !== 'online') {
-      set((s) => ({
-        statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
-        errorByName: setIn(s.errorByName, connectionName, ERROR_MESSAGES.agentOffline),
-      }))
+      unavailable(ERROR_MESSAGES.agentOffline)
       return
     }
 
@@ -169,14 +188,36 @@ export const useNativeAccessStore = create((set, get) => ({
 
     if (requiresReview) {
       set((s) => ({
-        statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.CONFIGURING),
+        statusByName: removeFrom(s.statusByName, connectionName),
+        requestFor: connectionName,
       }))
       return
     }
 
-    // No review and no session: skip the duration step and issue a persistent
-    // credential straight away, matching the CLJS skip-configure path.
+    // No review and no session: no dialog to show, so connect straight away
+    // with a persistent credential — the CLJS skip-configure path.
     await get().requestAccess(connectionName, null)
+  },
+
+  /**
+   * Called when a row is expanded. Only loads the secret for a session that
+   * already exists; it never creates one. Rows with nothing to show are not
+   * expandable, so this is a no-op for them.
+   */
+  resumeIfActive: async (connectionName) => {
+    if (get().credentialsByName[connectionName]) return
+    if (!isSessionValid(get().activeByName[connectionName])) return
+    await get().fetchCredentials(connectionName)
+  },
+
+  /**
+   * "Connect natively to X" from outside the drawer — the command palette, the
+   * sidebar ConfigStatus and the ClojureScript bridge. Opens the drawer and
+   * runs the same flow the row button runs.
+   */
+  openAndConnect: (connectionName) => {
+    useNativeConnectionsStore.getState().open()
+    return get().beginConnect(connectionName)
   },
 
   /**
@@ -203,12 +244,18 @@ export const useNativeAccessStore = create((set, get) => ({
           reviewByName: setIn(s.reviewByName, connectionName, {
             sessionId: data.session_id,
             reviewId: data.review_id,
+            // Kept so the pending row can re-issue the same request once a
+            // reviewer approves, without asking for the duration again.
+            accessDurationSec,
           }),
+          requestFor: null,
         }))
+        useNativeConnectionsStore.getState().setExpanded(connectionName)
         showSnackbar({ level: 'info', text: 'This connection requires review approval' })
         return
       }
 
+      set({ requestFor: null })
       get().storeCredentials(data)
       showSnackbar({ level: 'success', text: 'Native client access granted successfully!' })
     } catch (error) {
@@ -216,7 +263,9 @@ export const useNativeAccessStore = create((set, get) => ({
       set((s) => ({
         statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
         errorByName: setIn(s.errorByName, connectionName, message),
+        requestFor: null,
       }))
+      useNativeConnectionsStore.getState().setExpanded(connectionName)
       showSnackbar({ level: 'error', text: message })
     }
   },
@@ -280,8 +329,14 @@ export const useNativeAccessStore = create((set, get) => ({
     }
   },
 
+  /**
+   * Also opens the row. The design asks the user to "come back to this view
+   * with this item open" after connecting, and an established session is the
+   * only thing the panel has to show.
+   */
   storeCredentials: (data) => {
     const name = data.connection_name
+    useNativeConnectionsStore.getState().setExpanded(name)
     set((s) => ({
       credentialsByName: setIn(s.credentialsByName, name, data),
       activeByName: setIn(s.activeByName, name, {
@@ -338,9 +393,8 @@ export const useNativeAccessStore = create((set, get) => ({
   /**
    * Local-only cleanup. Does not call the API.
    *
-   * Collapses the row as well. Expanding is what starts the flow, so a torn-down
-   * row that stayed open would either sit in a dead state or silently reconnect;
-   * closing it makes "open the accordion to connect" true in both directions.
+   * Collapses the row as well: with the session gone the panel has nothing to
+   * show, and the row goes back to being a plain "Connect" row.
    */
   clearSession: (connectionName) => {
     const { expanded, setExpanded } = useNativeConnectionsStore.getState()

@@ -23,10 +23,12 @@ export const NATIVE_ACCESS_RESUME_EVENT = 'hoop:native-access-resume'
 
 export function useCljsBridge() {
   useEffect(() => {
+    // "Connect natively to X" from a CLJS page: open the drawer and run the
+    // same flow the row's own button runs, dialog included.
     const onOpen = (event) => {
       const { connectionName } = event.detail || {}
       if (!connectionName) return
-      useNativeConnectionsStore.getState().openConnection(connectionName)
+      useNativeAccessStore.getState().openAndConnect(connectionName)
     }
 
     // Post-approval resume. accessDurationSec travels in the detail because it

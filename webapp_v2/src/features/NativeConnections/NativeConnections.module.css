@@ -12,11 +12,38 @@
   overflow: hidden;
 }
 
+/* The header is a flex row so the action button can be a SIBLING of
+   Accordion.Control rather than a child: the control renders a <button>, and a
+   button inside a button is invalid HTML. The control takes the remaining
+   width so the row still reads — and highlights — as one surface. */
+.rowHeader {
+  display: flex;
+  align-items: center;
+}
+
 /* Row metrics measured off the Figma accordion component: 76px rows and 16px
    of padding on every side. */
 .rowControl {
+  flex: 1 1 auto;
+  min-width: 0;
   padding-inline: var(--mantine-spacing-md);
   padding-block: var(--mantine-spacing-md);
+}
+
+/* Same box as .rowControl, for rows that have nothing to expand into and so are
+   not rendered as a control at all. */
+.rowStatic {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-md);
+}
+
+/* Sits where the chevron would be — the two are mutually exclusive, since a row
+   with a live session has no action and a row with an action has no panel. */
+.rowAction {
+  flex-shrink: 0;
+  padding-inline-end: var(--mantine-spacing-md);
 }
 
 /* Only the CONTROL of the open row is tinted, never the panel. Mantine's
