@@ -1,7 +1,16 @@
-import { Group, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
+import { Group, Image, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
 import classes from './SelectionCard.module.css'
 
-function SelectionCard({ icon: Icon, title, description, selected, onClick }) {
+/**
+ * Selectable card with a leading glyph, a title and an optional description.
+ *
+ * Props:
+ * - icon:   lucide component rendered at 20px (mutually exclusive with `image`)
+ * - image:  logo `src` rendered in the same slot; flattened to white when the
+ *           card is selected, since the selected surface is dark
+ * - badge:  node rendered next to the title (e.g. a "Recommended" pill)
+ */
+function SelectionCard({ icon: Icon, image, badge, title, description, selected, onClick }) {
   return (
     <UnstyledButton
       p="md"
@@ -11,15 +20,29 @@ function SelectionCard({ icon: Icon, title, description, selected, onClick }) {
       aria-pressed={!!selected}
     >
       <Group gap="md" align="center" wrap="nowrap">
-        {Icon && (
+        {(image || Icon) && (
           <ThemeIcon size="lg" radius="md" variant="default" className={classes.icon}>
-            <Icon size={20} aria-hidden="true" />
+            {image ? (
+              <Image
+                src={image}
+                alt=""
+                w={20}
+                h={20}
+                fit="contain"
+                className={classes.logo}
+              />
+            ) : (
+              <Icon size={20} aria-hidden="true" />
+            )}
           </ThemeIcon>
         )}
         <Stack gap={2} align="flex-start">
-          <Text size="sm" fw={500} c={selected ? 'white' : undefined}>
-            {title}
-          </Text>
+          <Group gap="xs" align="center" wrap="nowrap">
+            <Text size="sm" fw={500} c={selected ? 'white' : undefined}>
+              {title}
+            </Text>
+            {badge}
+          </Group>
           {description && (
             <Text size="xs" ta="left" c={selected ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
               {description}
