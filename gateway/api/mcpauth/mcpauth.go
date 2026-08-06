@@ -75,10 +75,18 @@ func MetadataHandler(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+	// With a static client configured, this gateway mirrors the IdP's
+	// authorization-server metadata and serves the RFC 7591 registration shim,
+	// so it advertises itself as the authorization server. Otherwise clients
+	// go to the IdP directly and use its native Dynamic Client Registration.
+	authorizationServer := cfg.IssuerURL
+	if cfg.ClientID != "" {
+		authorizationServer = authorizationServerIssuer()
+	}
 	c.Header("Cache-Control", "public, max-age=3600")
 	c.JSON(http.StatusOK, protectedResourceMetadata{
 		Resource:               cfg.ResourceURI,
-		AuthorizationServers:   []string{cfg.IssuerURL},
+		AuthorizationServers:   []string{authorizationServer},
 		BearerMethodsSupported: []string{"header"},
 		ResourceName:           "Hoop MCP",
 		ResourceDocumentation:  "https://hoop.dev/docs",

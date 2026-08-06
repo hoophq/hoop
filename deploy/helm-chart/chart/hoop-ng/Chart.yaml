@@ -1,0 +1,13 @@
+apiVersion: v2
+# Clean image line (DEP-66). Thin wrapper over hoop-chart that only changes the
+# default image repositories to the clean-only, no-dirty-history hoophq/*-ng
+# repos, so a deployment can never accidentally pull an AGPL/SSPL image. All
+# templates and other values are inherited from hoop-chart (no duplication).
+name: hoop-ng-chart
+description: Clean-only (AGPL/SSPL-free) Hoop gateway chart
+type: application
+version: 0.0.1
+dependencies:
+  - name: hoop-chart
+    version: "0.0.2"
+    repository: "file://../gateway"

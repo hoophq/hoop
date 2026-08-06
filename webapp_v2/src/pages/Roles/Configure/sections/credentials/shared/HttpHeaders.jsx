@@ -19,8 +19,6 @@ import {
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import { sourceOptionsFor } from '@/pages/Roles/Configure/components/SecretField/util'
 
-const HEADER_PREFIX = 'envvar:HEADER_'
-
 // HTTP headers editor for httpproxy connections. Same row shape as
 // EnvironmentVariables but keyed under `envvar:HEADER_*`. CLJS
 // reference: configuration_inputs.cljs::http-headers-section
@@ -36,6 +34,7 @@ function HeaderRow({
   availableSources,
   writeOnly,
   stagedAction,
+  keyPlaceholder,
   onCommitKey,
   onValueChange,
   onSourceChange,
@@ -67,7 +66,7 @@ function HeaderRow({
             if (!trimmed) return
             onCommitKey(trimmed)
           }}
-          placeholder="X-Request-Id"
+          placeholder={keyPlaceholder}
         />
       </Grid.Col>
       <Grid.Col span={6}>
@@ -109,7 +108,6 @@ function HeaderRow({
         <ActionIcon
           variant="subtle"
           color="red"
-          size={36}
           onClick={onRemove}
           aria-label={'Remove ' + displayName}
         >
@@ -123,11 +121,23 @@ function HeaderRow({
 // `excludeKeys` lists envvar keys this section should ignore — used by
 // ClaudeCodeRenderer to hide HEADER_X_API_KEY (which has its own input
 // in the Basic info section).
+//
+// `prefix` and the copy props retarget the same editor at a different
+// carve-out namespace. A stdio MCP Gateway server needs its secrets in the
+// child process's environment, which the agent collects from `MCPENV_*`
+// (agent/controller/mcpproxy.go::stripPrefixKeys) — the same rows, the same
+// rename-on-blur, a different prefix. Duplicating the component to change one
+// string is how the two copies drift.
 export default function HttpHeaders({
   connection,
   availableSources,
   excludeKeys = [],
   hideRoleInfo,
+  prefix = 'envvar:HEADER_',
+  title = 'HTTP headers',
+  description = 'Add HTTP headers that will be sent with each proxied request.',
+  keyPlaceholder = 'X-Request-Id',
+  addLabel = 'Add header',
 }) {
   const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
   const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
@@ -148,14 +158,14 @@ export default function HttpHeaders({
       .map(([k]) => k),
   )
   const existingKeys = Object.keys(currentSecrets)
-    .filter((k) => k.startsWith(HEADER_PREFIX))
+    .filter((k) => k.startsWith(prefix))
     .filter((k) => !exclude.has(k))
     .filter((k) => !stagedDeletedKeys.has(k))
   const stagedNewKeys = Object.entries(stagedSecrets)
     .filter(
       ([k, change]) =>
         change.action === 'new' &&
-        k.startsWith(HEADER_PREFIX) &&
+        k.startsWith(prefix) &&
         !exclude.has(k) &&
         !existingKeys.includes(k),
     )
@@ -167,22 +177,22 @@ export default function HttpHeaders({
   // always shows a blank input even when no headers exist yet.
   useEffect(() => {
     if (allKeys.length === 0) {
-      replaceSecret(`${HEADER_PREFIX}NEW_HEADER_1`, '')
+      replaceSecret(`${prefix}NEW_HEADER_1`, '')
     }
-  }, [allKeys.length, replaceSecret])
+  }, [allKeys.length, prefix, replaceSecret])
 
   const addEmptyRow = () => {
     let i = 1
-    while (allKeys.includes(`${HEADER_PREFIX}NEW_HEADER_${i}`)) i += 1
-    replaceSecret(`${HEADER_PREFIX}NEW_HEADER_${i}`, '')
+    while (allKeys.includes(`${prefix}NEW_HEADER_${i}`)) i += 1
+    replaceSecret(`${prefix}NEW_HEADER_${i}`, '')
   }
 
   return (
     <Stack gap="md">
       <Stack gap="xs">
-        <Title order={4}>HTTP headers</Title>
+        <Title order={4}>{title}</Title>
         <Text size="sm" c="dimmed">
-          Add HTTP headers that will be sent with each proxied request.
+          {description}
         </Text>
       </Stack>
 
@@ -196,7 +206,7 @@ export default function HttpHeaders({
             !isExisting && PLACEHOLDER_KEY_RE.test(effectiveKey)
           const displayName = isPlaceholder
             ? ''
-            : effectiveKey.slice(HEADER_PREFIX.length)
+            : effectiveKey.slice(prefix.length)
           const value = staged
             ? decodeForDisplay(staged.value || '')
             : decodeForDisplay(currentSecrets[envKey])
@@ -219,12 +229,13 @@ export default function HttpHeaders({
               availableSources={availableSources}
               writeOnly={writeOnly}
               stagedAction={staged?.action}
+              keyPlaceholder={keyPlaceholder}
               onCommitKey={(newName) => {
                 // Header names round-trip case-sensitive — don't
                 // uppercase like env vars do.
-                const nextKey = newName.startsWith(HEADER_PREFIX)
+                const nextKey = newName.startsWith(prefix)
                   ? newName
-                  : HEADER_PREFIX + newName
+                  : prefix + newName
                 renameSecret(envKey, nextKey)
               }}
               onValueChange={(plain) =>
@@ -250,7 +261,7 @@ export default function HttpHeaders({
           w="fit-content"
           onClick={addEmptyRow}
         >
-          Add header
+          {addLabel}
         </Button>
       </Stack>
     </Stack>

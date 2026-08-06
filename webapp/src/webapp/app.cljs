@@ -27,13 +27,13 @@
    [webapp.connections.views.setup.events.db-events]
    [webapp.connections.views.setup.events.effects]
    [webapp.connections.views.setup.events.subs]
-   [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
    [webapp.provisioning.main :as provisioning]
    [webapp.resources.setup.main :as resource-setup]
    [webapp.resources.setup.events.effects]
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.mcp-oauth]
+   [webapp.resources.setup.events.mcp-catalog]
    [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
@@ -47,6 +47,7 @@
    [webapp.events.agents]
    [webapp.events.ask-ai]
    [webapp.events.audit]
+   [webapp.events.auth]
    [webapp.events.clarity]
    [webapp.events.components.dialog]
    [webapp.events.components.draggable-card]
@@ -71,7 +72,6 @@
    [webapp.events.reviews-plugin]
    [webapp.events.routes]
    [webapp.events.segment]
-   [webapp.events.slack-plugin]
    [webapp.events.tracking]
    [webapp.events.users]
    [webapp.shared-ui.cmdk.events.command-palette]
@@ -98,6 +98,8 @@
    [webapp.features.attributes.main :as attributes-main]
    [webapp.features.attributes.subs]
    [webapp.features.attributes.views.form :as attributes-form]
+   [webapp.features.protection-profiles.events]
+   [webapp.features.protection-profiles.subs]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -116,9 +118,6 @@
    [webapp.integrations.authentication.main :as integrations-authentication]
    [webapp.integrations.authentication.subs]
    [webapp.integrations.events]
-   [webapp.integrations.jira.main :as jira-integration]
-   [webapp.jira-templates.create-update-form :as jira-templates-create-update]
-   [webapp.jira-templates.main :as jira-templates]
    [webapp.onboarding.aws-connect :as aws-connect]
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
@@ -127,7 +126,6 @@
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
-   [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.routes :as routes]
    [webapp.settings.api-keys.events]
    [webapp.settings.api-keys.main :as api-keys-main]
@@ -348,8 +346,9 @@
 
 (defmethod routes/panels :provisioning-panel []
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [provisioning/panel]]])
+   [routes/wrap-license-feature "provisioning-hub"
+    [routes/wrap-admin-only
+     [provisioning/panel]]]])
 
 (defmethod routes/panels :resource-setup-new-panel []
   ;; Initialize if not coming from catalog
@@ -387,10 +386,11 @@
 (defmethod routes/panels :integrations-aws-connect-panel []
   [layout :application-hoop
    [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 overflow-auto h-full"}
-    [routes/wrap-admin-only
-     [:<>
-      [h/h2 "AWS Connect" {:class "mb-6"}]
-      [aws-connect-page/panel]]]]])
+    [routes/wrap-license-feature "resource-discovery"
+     [routes/wrap-admin-only
+      [:<>
+       [h/h2 "AWS Connect" {:class "mb-6"}]
+       [aws-connect-page/panel]]]]]])
 
 (defmethod routes/panels :integrations-aws-connect-setup-panel []
   (rf/dispatch [:aws-connect/initialize-state])
@@ -398,8 +398,9 @@
 
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-full"}
-    [routes/wrap-admin-only
-     [aws-connect/main :create]]]])
+    [routes/wrap-license-feature "resource-discovery"
+     [routes/wrap-admin-only
+      [aws-connect/main :create]]]]])
 
 (defmethod routes/panels :integrations-authentication-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -448,17 +449,11 @@
      [routes/wrap-admin-only
       [add-role/main resource-id]]]))
 
-(defmethod routes/panels :dashboard-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "Dashboard" {:class "mb-6"}]
-                               [dashboard/main]]]]])
-
 (defmethod routes/panels :guardrails-panel []
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [guardrails/panel]]])
+   [routes/wrap-license-feature "guardrails"
+    [routes/wrap-admin-only
+     [guardrails/panel]]]])
 
 (defmethod routes/panels :create-guardrail-panel []
   (let [params (js/URLSearchParams. (.. js/window -location -search))
@@ -469,8 +464,9 @@
       (rf/dispatch [:guardrails->clear-active-guardrail])))
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [guardrail-create-update/main :create]]]])
+    [routes/wrap-license-feature "guardrails"
+     [routes/wrap-admin-only
+      [guardrail-create-update/main :create]]]]])
 
 (defmethod routes/panels :edit-guardrail-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -479,30 +475,10 @@
     (rf/dispatch [:guardrails->get-by-id guardrail-id])
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [guardrail-create-update/main :edit]]]]))
+      [routes/wrap-license-feature "guardrails"
+       [routes/wrap-admin-only
+        [guardrail-create-update/main :edit]]]]]))
 
-(defmethod routes/panels :jira-templates-panel []
-  [layout :application-hoop
-   [routes/wrap-admin-only
-    [jira-templates/panel]]])
-
-(defmethod routes/panels :create-jira-template-panel []
-  (rf/dispatch [:jira-templates->clear-active-template])
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [jira-templates-create-update/main :create]]]])
-
-(defmethod routes/panels :edit-jira-template-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        jira-template-id (:jira-template-id (:route-params current-route))]
-    (rf/dispatch [:jira-templates->get-by-id jira-template-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [jira-templates-create-update/main :edit]]]]))
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -512,25 +488,9 @@
 (defmethod routes/panels :runbooks-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "h-full"}
-                             [runbooks-runner/main]]])
+                             [routes/wrap-license-feature "runbooks"
+                              [runbooks-runner/main]]]])
 
-(defmethod routes/panels :manage-plugin-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        plugin-name (:plugin-name (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:plugins->get-plugin-by-name plugin-name])
-    [layout :application-hoop
-     [routes/wrap-admin-only
-      [manage-plugin/main plugin-name]]]))
-
-(defmethod routes/panels :settings-jira-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "Jira" {:class "mb-6"}]
-                               [jira-integration/main]]]]))
 
 (defmethod routes/panels :audit-plugin-panel []
   ;; this performs a redirect while we're migrating
@@ -629,15 +589,17 @@
 (defmethod routes/panels :access-control-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [access-control/main]]])
+   [routes/wrap-license-feature "access-control"
+    [routes/wrap-admin-only
+     [access-control/main]]]])
 
 (defmethod routes/panels :access-control-new-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-     [group-form/main :create]]]])
+   [routes/wrap-license-feature "access-control"
+    [routes/wrap-admin-only
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [group-form/main :create]]]]])
 
 (defmethod routes/panels :access-control-edit-panel []
   (let [search (.. js/window -location -search)
@@ -645,22 +607,25 @@
         group-id (.get url-params "group")]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
-     [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [group-form/main :edit {:group-id group-id}]]]]))
+     [routes/wrap-license-feature "access-control"
+      [routes/wrap-admin-only
+       [:div {:class "bg-gray-1 min-h-full h-max relative"}
+        [group-form/main :edit {:group-id group-id}]]]]]))
 
 (defmethod routes/panels :access-request-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [access-request/main]]])
+   [routes/wrap-license-feature "access-requests"
+    [routes/wrap-admin-only
+     [access-request/main]]]])
 
 (defmethod routes/panels :access-request-new-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-     [rule-form/main :create]]]])
+   [routes/wrap-license-feature "access-requests"
+    [routes/wrap-admin-only
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [rule-form/main :create]]]]])
 
 (defmethod routes/panels :access-request-edit-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -668,22 +633,25 @@
         rule-name (:rule-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
-     [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [rule-form/main :edit {:rule-name rule-name}]]]]))
+     [routes/wrap-license-feature "access-requests"
+      [routes/wrap-admin-only
+       [:div {:class "bg-gray-1 min-h-full h-max relative"}
+        [rule-form/main :edit {:rule-name rule-name}]]]]]))
 
 (defmethod routes/panels :machine-identities-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [machine-identities/main]]])
+   [routes/wrap-license-feature "machine-identities"
+    [routes/wrap-admin-only
+     [machine-identities/main]]]])
 
 (defmethod routes/panels :machine-identities-new-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-     [identity-form/main :create]]]])
+   [routes/wrap-license-feature "machine-identities"
+    [routes/wrap-admin-only
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [identity-form/main :create]]]]])
 
 (defmethod routes/panels :machine-identities-edit-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -691,9 +659,10 @@
         identity-name (:identity-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
-     [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [identity-form/main :edit {:identity-name identity-name}]]]]))
+     [routes/wrap-license-feature "machine-identities"
+      [routes/wrap-admin-only
+       [:div {:class "bg-gray-1 min-h-full h-max relative"}
+        [identity-form/main :edit {:identity-name identity-name}]]]]]))
 
 (defmethod routes/panels :machine-identities-roles-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -701,23 +670,26 @@
         identity-name (:identity-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
-     [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [identity-roles/main {:identity-name identity-name}]]]]))
+     [routes/wrap-license-feature "machine-identities"
+      [routes/wrap-admin-only
+       [:div {:class "bg-gray-1 min-h-full h-max relative"}
+        [identity-roles/main {:identity-name identity-name}]]]]]))
 
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [runbooks-setup/main]]])
+   [routes/wrap-license-feature "runbooks"
+    [routes/wrap-admin-only
+     [runbooks-setup/main]]]])
 
 (defmethod routes/panels :create-runbooks-rule-panel []
   (rf/dispatch [:destroy-page-loader])
   (rf/dispatch [:runbooks-rules/clear-active-rule])
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [runbook-rule-form/main :create]]]])
+    [routes/wrap-license-feature "runbooks"
+     [routes/wrap-admin-only
+      [runbook-rule-form/main :create]]]]])
 
 (defmethod routes/panels :edit-runbooks-rule-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -727,14 +699,16 @@
     (rf/dispatch [:runbooks-rules/get-by-id rule-id])
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [runbook-rule-form/main :edit {:rule-id rule-id}]]]]))
+      [routes/wrap-license-feature "runbooks"
+       [routes/wrap-admin-only
+        [runbook-rule-form/main :edit {:rule-id rule-id}]]]]]))
 
 (defmethod routes/panels :ai-session-analyzer-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [ai-session-analyzer/main]]])
+   [routes/wrap-license-feature "ai-session-analyzer"
+    [routes/wrap-admin-only
+     [ai-session-analyzer/main]]]])
 
 (defmethod routes/panels :create-ai-session-analyzer-rule-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -746,8 +720,9 @@
       (rf/dispatch [:ai-session-analyzer/clear-active-rule])))
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-admin-only
-     [ai-session-analyzer-rule-form/main :create]]]])
+    [routes/wrap-license-feature "ai-session-analyzer"
+     [routes/wrap-admin-only
+      [ai-session-analyzer-rule-form/main :create]]]]])
 
 (defmethod routes/panels :edit-ai-session-analyzer-rule-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -756,8 +731,9 @@
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-admin-only
-       [ai-session-analyzer-rule-form/main :edit {:rule-name rule-name}]]]]))
+      [routes/wrap-license-feature "ai-session-analyzer"
+       [routes/wrap-admin-only
+        [ai-session-analyzer-rule-form/main :edit {:rule-name rule-name}]]]]]))
 
 (defmethod routes/panels :settings-attributes-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -774,9 +750,9 @@
      [attributes-form/main :create]]]])
 
 (defmethod routes/panels :settings-attributes-edit-panel []
-  (let [attr-name (-> js/window .-location .-search
-                      js/URLSearchParams.
-                      (.get "name"))]
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        attr-name (safe-decode-uri-component (:name (:route-params current-route)))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:attributes/get attr-name])
     [layout :application-hoop

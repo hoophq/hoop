@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
@@ -180,6 +181,49 @@ func CreateResource(c *gin.Context) {
 		return
 	}
 
+	// Roles whose MCP OAuth login could not be adopted. Carried back on the
+	// response so the wizard can tell the admin which of the connections it
+	// just created has a credential nothing will renew.
+	var oauthWarnings []openapi.MCPOAuthRoleWarning
+
+	if len(connections) > 0 {
+		orgUUID, uerr := uuid.Parse(ctx.OrgID)
+		if uerr != nil {
+			evt.Err(uerr)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, uerr, "invalid organization id: %v", uerr)
+			return
+		}
+		// Attributes are persisted after the resource/connections transaction,
+		// mirroring POST /connections: a failure here leaves the resource and
+		// connections in place and returns 500.
+		for i, role := range req.Roles {
+			connName := connections[i].Name
+			if len(role.Attributes) > 0 {
+				if err := models.UpsertConnectionAttributes(models.DB, orgUUID, connName, role.Attributes); err != nil {
+					evt.Err(err)
+					httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting connection attributes: %v", err)
+					return
+				}
+			}
+			// Same adoption POST /connections performs, for the wizard that
+			// creates a resource and its roles in one request. Without it an
+			// mcpproxy role created here keeps only the frozen
+			// HEADER_AUTHORIZATION and stops working at the provider's token
+			// TTL. A refusal does not fail the create — the connection is
+			// already written and works today — so it rides back on the role
+			// in the response, next to the name it belongs to.
+			//
+			// UpsertBatchConnections has assigned every connection its ID by
+			// now, which AdoptMCPOAuthGrant keys the grant on.
+			if warning := apiconnections.AdoptMCPOAuthGrant(ctx.OrgID, connections[i], role.SubType, role.MCPOAuthFlowID); warning != "" {
+				oauthWarnings = append(oauthWarnings, openapi.MCPOAuthRoleWarning{
+					Name:    connName,
+					Warning: warning,
+				})
+			}
+		}
+	}
+
 	if len(connections) > 0 && ctx.UserEmail != "" && ctx.OrgID != "" {
 		trackClient := analytics.New()
 		defer trackClient.Close()
@@ -197,7 +241,9 @@ func CreateResource(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusCreated, toOpenApi(&resource))
+	out := toOpenApi(&resource)
+	out.MCPOAuthWarnings = oauthWarnings
+	c.JSON(http.StatusCreated, out)
 }
 
 func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, err error) {

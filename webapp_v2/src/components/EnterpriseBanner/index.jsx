@@ -46,7 +46,7 @@ export default function EnterpriseBanner({
             {subtitle}
           </Text>
         </Stack>
-        <Button size="sm" className={classes.action} onClick={handleTalkToSales}>
+        <Button className={classes.action} onClick={handleTalkToSales}>
           Talk to Sales
         </Button>
       </Group>

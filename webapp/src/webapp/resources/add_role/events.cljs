@@ -1,5 +1,6 @@
 (ns webapp.resources.add-role.events
   (:require
+   [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.resources.setup.events.process-form :as process-form]))
 
@@ -47,7 +48,8 @@
                                     resource-metadata
                                     (:subtype role))
                           command-role (get-in metadata [:resourceConfiguration :command])
-                          processed-role (process-form/process-role role agent-id command-role)
+                          processed-role (-> (process-form/process-role role agent-id command-role)
+                                             (process-form/with-profile-attribute role db))
                           body (assoc processed-role :resource_name resource-name)]
                       [:dispatch [:fetch {:method "POST"
                                           :uri "/connections"
@@ -103,18 +105,32 @@
    (let [created-roles (get-in db [:resource-setup :created-roles] [])
          failed-roles (get-in db [:resource-setup :failed-roles] [])
          success-count (count created-roles)
-         failed-count (count failed-roles)]
+         failed-count (count failed-roles)
+         ;; A role can be created and still not have its MCP OAuth login
+         ;; attached: the connection exists on the frozen
+         ;; HEADER_AUTHORIZATION, but nothing renews it, so it dies at the
+         ;; provider's token TTL. Counting it under "created" and saying
+         ;; nothing is how that becomes a mystery outage weeks later.
+         oauth-warned (filterv #(not (str/blank? (:mcp_oauth_warning %))) created-roles)]
 
      {:db (-> db
               (assoc-in [:resource-setup :submitting?] false)
               (assoc-in [:resource-setup :current-step] :success)
               (assoc-in [:resources :last-created-roles] created-roles))
-      :fx [[:dispatch [:show-snackbar {:level (if (zero? failed-count) :success :warning)
-                                       :text (str success-count " role(s) created"
-                                                  (when (pos? failed-count)
-                                                    (str ", " failed-count " failed")))}]]
-           [:dispatch [:plugins->get-my-plugins]]
-           [:dispatch [:connections/get-connections-paginated {:force-refresh? true}]]]})))
+      :fx (cond-> [[:dispatch [:show-snackbar {:level (if (zero? failed-count) :success :warning)
+                                               :text (str success-count " role(s) created"
+                                                          (when (pos? failed-count)
+                                                            (str ", " failed-count " failed")))}]]]
+            (seq oauth-warned)
+            (conj [:dispatch [:show-snackbar
+                              {:level :warning
+                               :text (str "MCP OAuth login not attached to "
+                                          (str/join ", " (map :name oauth-warned)))
+                               :description (:mcp_oauth_warning (first oauth-warned))}]])
+
+            :always
+            (into [[:dispatch [:plugins->get-my-plugins]]
+                   [:dispatch [:connections/get-connections-paginated {:force-refresh? true}]]]))})))
 
 ;; Clear state when leaving
 (rf/reg-event-db

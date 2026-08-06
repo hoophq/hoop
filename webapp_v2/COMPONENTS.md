@@ -8,6 +8,29 @@ App code **never imports UI primitives directly from Mantine**. Every primitive 
 
 Before creating a new component, check this list. Re-use what already exists.
 
+## Control size scale — Button, ActionIcon, and every input
+
+All interactive controls share one 4-step height scale, owned by the theme
+(`--hoop-control-height-*` in `src/theme.js` `cssVariablesResolver`, applied by
+the vars resolvers in `src/components/{Button,ActionIcon,Input}/theme.js`).
+Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
+
+| `size` | Height | When |
+|---|---|---|
+| *(none)* / `md` | 40px | **Default — do not pass a size prop** |
+| `xs` | 24px | Micro affordances in dense chrome |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. |
+| `lg` | 48px | Prominent/hero actions |
+
+Rules:
+- **Never pass `size` for the regular 40px control** — the theme default handles it.
+- `xs`, `sm`, and `lg` are the only variants. Do not use `xl` or numeric sizes on
+  Button, ActionIcon, or input-family components (`compact-*` on Button is allowed —
+  it's a separate inline-button axis, not a height override).
+- **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
+- Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
+  and align automatically.
+
 ---
 
 ## Reusable Components (`src/components/`)
@@ -38,19 +61,28 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 ```
 
 ### `EmptyState` (`src/layout/EmptyState/`)
-Empty list / zero-data state with icon, title, description, and optional CTA.
+Empty list / zero-data state: illustration, title, description, and optional CTA.
 ```jsx
 import EmptyState from '@/layout/EmptyState'
-import { Zap } from 'lucide-react'
 
 <EmptyState
-  icon={Zap}
   title="No agents yet"
   description="Set up your first agent to connect resources."
   action={{ label: 'Setup new Agent', onClick: () => navigate('/agents/new') }}
 />
+
+// Empty result inside a page that already renders its own header and filters
+<EmptyState
+  compact
+  title="No Guardrails match your filters"
+  description="Try clearing the filter above."
+/>
 ```
 `action` is optional — omit when the user has no permission to create.
+`compact` tightens the vertical space (drops the 50vh floor, smaller padding
+and gap; the illustration is unchanged) for an empty result rendered below a
+page header, callout or filter bar rather than as the whole screen.
+Optional `docsUrl` + `docsLabel` append a documentation line.
 
 ### `CodeSnippet`
 Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
@@ -92,9 +124,9 @@ import Table from '@/components/Table'
   </Table.Tbody>
 </Table>
 ```
-Styles: `1px solid gray.3` border with `border-radius`, subtle gray.1 header background, row separators, `verticalSpacing="sm"` / `horizontalSpacing="md"`. Defined in `components/Table/Table.module.css`.
+Styles: light chrome — `1px solid gray.1` outer border with `border-radius`, `gray.1` row separators, `verticalSpacing="sm"` / `horizontalSpacing="md"`. Striping is opt-in: pass `striped` and rows alternate with `gray.0`. Defined in `components/Table/index.jsx` + `Table.module.css`.
 
-> **Note on `Table.Th`**: The wrapper's CSS already sets `font-size: xs` and `font-weight: 600` on all `th` cells. Do not wrap the content in `<Text size="xs">` — it's redundant.
+> **Note on `Table.Th`**: The wrapper's CSS already sets `font-size: sm` and `font-weight: 700` on all `th` cells. Do not wrap the content in `<Text>` — it's redundant.
 
 ### `DocsBtnCallOut`
 Bordered link to external documentation. Equivalent of `webapp.components.callout-link` in CLJS.
@@ -135,6 +167,72 @@ import { BarChart3 } from 'lucide-react'
 ```
 Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`.
 
+### `RingProgress`
+Compact progress ring with a built-in percentage label, sized for inline/sidebar use (e.g. the Config Status checklist). `value` is 0–100. Arc color defaults to `indigo.5` (the Figma main accent), track to `gray.2`.
+```jsx
+import RingProgress from '@/components/RingProgress'
+
+<RingProgress value={33} />                    // 32px ring, "33%" label
+<RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
+```
+
+### `BarChart`
+Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
+```jsx
+import BarChart from '@/components/BarChart'
+
+// Grouped bars, no axes (identification via tooltip):
+<BarChart
+  h={300}
+  data={buckets}
+  dataKey="label"
+  withXAxis={false}
+  withYAxis={false}
+  barProps={{ radius: 4 }}
+  series={[
+    { name: 'approved', label: 'Approved', color: 'green.5' },
+    { name: 'rejected', label: 'Rejected', color: 'red.5' },
+  ]}
+/>
+```
+Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
+
+### `DonutChart`
+Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
+```jsx
+import DonutChart from '@/components/DonutChart'
+
+<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
+```
+Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
+
+### `CHART_SERIES_COLORS` (theme export, not a component)
+The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
+```jsx
+import { CHART_SERIES_COLORS } from '@/theme'
+
+const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
+```
+**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
+
+### `SegmentedControl`
+Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
+```jsx
+import SegmentedControl from '@/components/SegmentedControl'
+
+<SegmentedControl
+  size="xs"
+  value={range}
+  onChange={setRange}
+  lockedTooltip="Available on Enterprise plan only."
+  data={[
+    { value: '1', label: '24h', locked: isFreeLicense },
+    { value: '7', label: '7d' },
+  ]}
+/>
+```
+Locked items render dimmed, show `lockedTooltip` on hover, and are dropped in `onChange`. Do **not** reach for Mantine's `disabled` instead: it sets `pointer-events: none`, which kills hover, so the tooltip would never open and the user would see a greyed-out option with no explanation.
+
 ### `StepAccordion`
 Multi-step accordion that mirrors the CLJS wizard pattern.
 ```jsx
@@ -155,6 +253,15 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
+
+### `Input` (theme-level, no wrapper)
+Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
+
+### `Paper` (theme-level, no wrapper)
+Global border color for `Paper` — and `Card`, which renders through Paper — via `Paper.extend()` in `src/components/Paper/theme.js` (registered in `src/theme.js`). Same story as `Input`: Mantine declares `--paper-border-color` per color scheme directly on the Paper root, out of reach of `cssVariablesResolver`, so a co-located CSS Module rule overrides it on the element. Only visible on instances using `withBorder`; the value matches the app-wide input resting border. To change it, edit `src/components/Paper/Paper.module.css`.
+
+### `Pill` (theme-level, no wrapper)
+Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
 
 ### `Badge`
 Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
@@ -222,6 +329,22 @@ import MultiSelect from '@/components/MultiSelect'
 />
 ```
 
+### `Radio`
+Radio input. Re-exports `Radio.Group` and `Radio.Indicator` so call sites never import from Mantine directly. `Radio.Indicator` renders the radio visual without an `<input>` — use it inside buttons/cards (e.g. selectable option cards) where a nested input would be invalid markup.
+```jsx
+import Radio from '@/components/Radio'
+
+<Radio.Group value={value} onChange={setValue} label="Mode">
+  <Radio value="a" label="Option A" />
+  <Radio value="b" label="Option B" />
+</Radio.Group>
+
+// Inside a selectable card (no real input):
+<UnstyledButton role="radio" aria-checked={selected} onClick={onSelect}>
+  <Radio.Indicator checked={selected} size="sm" />
+</UnstyledButton>
+```
+
 ### `Switch`
 Toggle switch for boolean settings.
 ```jsx
@@ -254,10 +377,10 @@ import SourcedInput from '@/components/SourcedInput'
   onSourceChange={setSource}
 />
 
-// Sizes match Mantine inputs — default `sm`, accepts xs/sm/md/lg/xl:
-<SourcedInput size="md" {...props} />
+// Sizes follow the app control scale — default `md` (40px), sm/lg variants:
+<SourcedInput size="sm" {...props} />
 ```
-Supports `type="text" | "password" | "textarea"` and `size="xs" | "sm" | "md" | "lg" | "xl"` (default `sm`, Mantine's input default). Heights track Mantine's `--input-height-*` variables so a `size="md"` SourcedInput lines up with a `size="md"` TextInput on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
+Supports `type="text" | "password" | "textarea"` and `size="sm" | "md" | "lg"` (default `md`, the app-wide control default). Heights track the `--hoop-control-height-*` variables so a SourcedInput lines up with a TextInput of the same size on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -296,7 +419,9 @@ Icon button that copies `value` to the clipboard. Shows a checkmark for 2 second
 import CopyButton from '@/components/CopyButton'
 
 <CopyButton value="secret-key-here" />
-<CopyButton value={key} label="Copy API Key" size="md" />
+<CopyButton value={key} label="Copy API Key" />
+// Inside an input rightSection (~38px slot), use the small variant:
+<TextInput rightSection={<CopyButton value={key} size="sm" />} />
 ```
 
 ### `DatePickerInput`
@@ -307,7 +432,7 @@ import DatePickerInput from '@/components/DatePickerInput'
 // Single date:
 <DatePickerInput label="Start date" value={date} onChange={setDate} />
 // Date range:
-<DatePickerInput type="range" label="Period" value={[start, end]} onChange={setRange} w={220} size="sm" />
+<DatePickerInput type="range" label="Period" value={[start, end]} onChange={setRange} w={220} />
 ```
 
 ### `FreeLicenseCallout`
@@ -328,7 +453,7 @@ const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 Props: `message` (string), `variant` (`'info'` | `'limit'`, default `'info'`). Always gate the render on `useUserStore.isFreeLicense` at the call site so it disappears for Enterprise users.
 
 ### `EnterpriseBanner`
-Dark-navy enterprise upsell banner pinned to feature pages for free-plan users (activation journey). React counterpart of the CLJS `webapp.features.activation-journey.views.enterprise-banner`, sharing the same visual (`--sidebar-bg`, the app's sidebar navy). The built-in "Talk to Sales" button opens Intercom when analytics tracking is enabled (booting it first if needed, via `useUserStore.showIntercomMessage`), otherwise `https://hoop.dev/meet` in a new tab.
+Dark-navy enterprise upsell banner pinned to feature pages for free-plan users (activation journey). React counterpart of the CLJS `webapp.features.activation-journey.views.enterprise-banner`, sharing the same visual (`--brand-navy`, the brand's dark navy). The built-in "Talk to Sales" button opens Intercom when analytics tracking is enabled (booting it first if needed, via `useUserStore.showIntercomMessage`), otherwise `https://hoop.dev/meet` in a new tab.
 ```jsx
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { useUserStore } from '@/stores/useUserStore'
@@ -396,16 +521,16 @@ import TagsInput from '@/components/TagsInput'
 ---
 
 ### `AsyncValueFilter`
-Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the full option object. An option may carry an optional `iconUrl`, rendered as a 16px image before its label — that is how the Resource Role filter shows connection-type icons.
 ```jsx
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
-import { Shapes } from 'lucide-react'
+import { Rotate3d } from 'lucide-react'
 
 const roles = usePaginatedConnections({ pageSize: 50 })
 
 <AsyncValueFilter
-  icon={Shapes}
+  icon={Rotate3d}
   label="Resource Role"
   placeholder="Search resource roles"
   selected={selectedRole}
@@ -420,7 +545,7 @@ const roles = usePaginatedConnections({ pageSize: 50 })
   onOpen={roles.ensureLoaded}
 />
 ```
-Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+Props: `icon`, `label`, `placeholder`, `selected` (option | null), `onSelect(option)`, `onClear()`, `options` (`[{value,label,iconUrl?}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
 
 ---
 
@@ -445,7 +570,7 @@ Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `pl
 ---
 
 ### `FeaturePromotion`
-Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, and future Access Control / Guardrails / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
+Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, Guardrails, and future Access Control / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
 ```jsx
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { FolderLock } from 'lucide-react'
@@ -463,6 +588,25 @@ import { FolderLock } from 'lucide-react'
 />
 ```
 Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+
+---
+
+### `RuleTableControls`
+Toolbar under an editable rule table: New / Select / Select all / Delete. Port of the CLJS `rule_buttons`, shared by Jira Templates and Guardrails. Pair it with `makeRowOps` (see Utils below) — `ops.allSelected`, `ops.toggleAll`, `ops.deleteSelected` and `ops.addRow` map 1:1 onto its props. On the free plan pass `disableNew` so a second rule can't be added; selection and deletion stay available (the button is disabled, never hidden).
+```jsx
+import RuleTableControls from '@/components/RuleTableControls'
+
+<RuleTableControls
+  onAdd={() => ops.addRow()}
+  selectMode={selectMode}
+  onToggleSelectMode={() => setSelectMode((v) => !v)}
+  allSelected={ops.allSelected}
+  onToggleAll={ops.toggleAll}
+  onDelete={ops.deleteSelected}
+  disableNew={freeLicense && rows.length >= 1}
+/>
+```
+Props: `onAdd()`, `selectMode`, `onToggleSelectMode()`, `allSelected`, `onToggleAll()`, `onDelete()`, `disableNew`.
 
 ---
 
@@ -488,6 +632,18 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 - `CustomCredentials.jsx` handles the free-form `custom` type: list existing envvars + an "Add new variable" row that stages keys with `action: 'new'`.
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
+
+> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
+> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
+> protection-profile attributes render as indigo award pills (removable and
+> re-addable like any other — removing one detaches the role from the
+> profile on save), user attributes as plain pills. Deliberately NOT built on
+> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
+> individual selected pills) nor on `components/PaginatedMultiSelect` (its
+> contract is pagination/server-search specific, and it also only renders
+> uniform pills). When the React resource-creation wizard needs the same
+> control, graduate this to `src/components/` and consider extracting a
+> shared PillsInput base with `PaginatedMultiSelect`.
 
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
@@ -531,60 +687,99 @@ const roles = usePaginatedConnections({ pageSize: 50 })
 // roles.options, roles.loading, roles.hasMore, roles.searchValue
 // roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
 ```
-Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+Returns `{ options ([{value,label,iconUrl}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
 
 ---
 
 ## Stores (`src/stores/`)
 
-| Hook | Responsibility | Key state / actions |
-|------|---------------|---------------------|
-| `useAuthStore` | JWT token lifecycle | `token`, `setToken()`, `logout()`, `redirectUrl` |
-| `useUserStore` | Current user data | `user`, `isAdmin`, `isFreeLicense`, `fetchUser()` |
-| `useUIStore` | Sidebar open/collapsed | `sidebarOpened`, `toggle()`, `pendingSection` |
-| `useAgentStore` | Agents CRUD | `agents`, `loading`, `error`, `agentKey`, `fetchAgents()`, `createAgent()`, `deleteAgent()` |
-| `useCommandPaletteStore` | Command palette state | `page`, `context`, `searchStatus`, `results`, `search()` |
+One Zustand store per concern — **the filesystem is the source of truth**
+(`ls src/stores/`); store names describe their responsibility. Check the
+directory before creating a new store.
 
 Access store state outside React (e.g., inside another store action):
 ```js
 useAuthStore.getState().token
 ```
 
+Non-obvious notes only:
+
+- `useBridgeStore` — wraps `window.hoopDispatch` re-frame bridge calls; never
+  call `hoopDispatch` from a component (rule in `CLAUDE.md` "Re-frame Interop").
+  Current methods: `refreshLegacyUser()`, `openNativeClientAccess()`,
+  `openNativeClientAccessWhenReady()`, `syncPrimaryConnectionFromUrl()`.
+  Snackbars are NOT bridged — use `showSnackbar` from `@/utils/snackbar`.
+- `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only;
+  refreshes on the `hoop:session-executed` DOM event from the CLJS terminal.
+- `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
+  credential field schemas + connection icons; `load()` is idempotent.
+
 ---
 
 ## Services (`src/services/`)
 
-| File | What it wraps |
-|------|--------------|
-| `api.js` | Base Axios instance — adds Bearer token, handles 401 logout |
-| `auth.js` | Login, register, OAuth, user info, server info |
-| `agents.js` | CRUD `/agents` and `/agents/:id` |
-| `connections.js` | GET `/connections` (full list) + `getConnectionsPaginated({page,pageSize,search,connectionIds})` for infinite-scroll dropdowns |
-| `connections.js` | GET/PATCH/DELETE `/connections`, POST `/connections/:name/test` |
-| `guardrails.js` | GET `/guardrails` |
-| `jiraTemplates.js` | GET `/integrations/jira/issuetemplates` |
-| `attributes.js` | CRUD `/attributes` |
-| `search.js` | GET `/search?term=` |
-| `infrastructure.js` | GET/PUT `/serverconfig/misc` |
-| `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
+One Axios service file per API domain — **the filesystem is the source of
+truth** (`ls src/services/`). Check the directory before creating a new file;
+when adding one, follow the pattern in `services/agents.js`.
 
-When adding a new service file, follow the pattern in `services/agents.js`.
+Non-obvious notes only:
+
+- `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
+  URL + logout). Every other service imports it; never call axios directly.
+- `analytics.js` — Segment (`identify()` only today), not a gateway API
+  wrapper; the write key is a build-time define (see the env table in
+  `README.md`).
+- `attributes.js` — `list(params)` is paginated (`page`, `page_size`); the
+  gateway caps `page_size` at 100, so reading them all means looping until a
+  short page comes back.
+- `connections.js` — both `getConnections()` (full list — only for resolving
+  every `connection_ids → name`, e.g. list displays) and
+  `getConnectionsPaginated({page,pageSize,search,connectionIds})` for
+  infinite-scroll dropdowns.
+- `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
+  the service boundary.
+- `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
+  existence/total probe.
+- `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
+  is **exclusive** (the gateway compares against midnight *starting* that day, so
+  send tomorrow to include today). Never send `group_by`.
+- `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
+  is unbounded; fetch it once and filter client-side.
+- `userGroups.js` — `list()` returns a bare string array, and `null` (not
+  `[]`) when the organization has no groups; callers must coalesce.
+
+---
+
+## Utils (`src/utils/`)
+
+Pure helpers with no React or Mantine dependency. `snackbar.jsx` is documented under Notifications below.
+
+### `makeRowOps({ rows, setRows, factory, filterFn })`
+Row operations for editable rule tables (Jira Templates, Guardrails). Rows are plain objects with a stable `id` and a `selected` flag; the table owns the array through a `setRows` state setter. Deleting the last row reseeds a blank one via `factory`, so a table is never left with nothing to type into. Pass `filterFn` only when several tables render disjoint subsets of one shared rows array — select/delete then touch only the rows that table actually shows. Pairs with `RuleTableControls`.
+```jsx
+import { makeRowOps } from '@/utils/rowOps'
+
+const ops = makeRowOps({ rows, setRows, factory: createEmptyRow })
+// ops.visible, ops.allSelected
+// ops.patchRow(id, patch), ops.toggleSelect(id), ops.toggleAll()
+// ops.deleteSelected(), ops.addRow(transform?)
+<Table.Tr key={row.id}>…</Table.Tr>
+```
+Returns `{ visible, allSelected, patchRow, toggleSelect, toggleAll, deleteSelected, addRow }`. `addRow(transform)` applies `transform` to the fresh row before appending (used to pre-fill a type/value).
 
 ---
 
 ## Notifications — `showSnackbar`
 
-Use the `showSnackbar` helper from `@/utils/snackbar`. It is backed by `sonner` — the
-same library the legacy CLJS app uses — and renders through
-`src/components/Snackbar/Toast.jsx`, a one-to-one port of
-`webapp.components.toast` so toasts look identical across React and CLJS routes.
-The single `<Toaster>` is mounted in `src/App.jsx`.
+Use the `showSnackbar` helper from `@/utils/snackbar`. Rules (never
+`@mantine/notifications`, single `<Toaster>` in `App.jsx`, never via the CLJS
+bridge): see `CLAUDE.md` "Snackbars / Toasts".
 
 ```js
 import { showSnackbar } from '@/utils/snackbar'
 
-showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
-showSnackbar({ level: 'error',   text: 'Failed to update.', description: err.message })
+showSnackbar({ level: 'success', text: 'Agent deleted.' })
+showSnackbar({ level: 'error',   text: 'Failed to delete agent.', description: err.message })
 showSnackbar({ level: 'info',    text: 'Heads up.' })
 
 // Error toasts can expand to show a `details` panel (object → key/value lines)
@@ -596,10 +791,7 @@ showSnackbar({
 ```
 
 Error toasts auto-dismiss after 10 seconds (mirrors v1); other levels use sonner's
-default. Do NOT import `notifications` from `@mantine/notifications` in new code — it
-renders a completely different visual and breaks parity with v1. Pre-existing pages
-that still use it should be migrated opportunistically. See the "Snackbars / Toasts"
-section of `CLAUDE.md` for the full rule.
+default.
 
 ---
 

@@ -1,0 +1,12 @@
+/* Mantine declares --paper-border-color per color scheme directly on the
+   Paper root ([data-mantine-color-scheme='light'] .m_xxx), so a :root
+   override from cssVariablesResolver never reaches it — the element-level
+   declaration wins over inheritance. This rule targets the same element
+   and, being outside @layer mantine, takes precedence.
+
+   No state/variant scoping needed: unlike --input-bd, Paper never swaps
+   this variable for focus/error/variant states. Matches the input resting
+   border (see components/Input/Input.module.css). */
+.root {
+  --paper-border-color: var(--mantine-color-gray-2);
+}

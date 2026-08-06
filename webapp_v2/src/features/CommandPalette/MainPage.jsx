@@ -1,31 +1,41 @@
 import { SpotlightAction, SpotlightActionsGroup, SpotlightEmpty } from '@mantine/spotlight'
 import { Loader, Text, Group } from '@mantine/core'
 import { Package, Rotate3d, File, ChevronRight } from 'lucide-react'
+import { useUserStore } from '@/stores/useUserStore'
+import { shouldHide } from '@/layout/Sidebar/helpers'
 import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from './constants'
 
 function SuggestionsAndQuickAccess({ onNavigate }) {
+  const { isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
+  const visibleSuggestions = SUGGESTION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+  const visibleQuickAccess = QUICK_ACCESS_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+
   return (
     <>
-      <SpotlightActionsGroup label="Suggestions">
-        {SUGGESTION_ITEMS.map((item) => (
-          <SpotlightAction
-            key={item.id}
-            label={item.label}
-            leftSection={<item.icon size={16} />}
-            onClick={() => onNavigate(item.path)}
-          />
-        ))}
-      </SpotlightActionsGroup>
-      <SpotlightActionsGroup label="Quick Access">
-        {QUICK_ACCESS_ITEMS.map((item) => (
-          <SpotlightAction
-            key={item.id}
-            label={item.label}
-            leftSection={<item.icon size={16} />}
-            onClick={() => onNavigate(item.path)}
-          />
-        ))}
-      </SpotlightActionsGroup>
+      {visibleSuggestions.length > 0 && (
+        <SpotlightActionsGroup label="Suggestions">
+          {visibleSuggestions.map((item) => (
+            <SpotlightAction
+              key={item.id}
+              label={item.label}
+              leftSection={<item.icon size={16} />}
+              onClick={() => onNavigate(item.path)}
+            />
+          ))}
+        </SpotlightActionsGroup>
+      )}
+      {visibleQuickAccess.length > 0 && (
+        <SpotlightActionsGroup label="Quick Access">
+          {visibleQuickAccess.map((item) => (
+            <SpotlightAction
+              key={item.id}
+              label={item.label}
+              leftSection={<item.icon size={16} />}
+              onClick={() => onNavigate(item.path)}
+            />
+          ))}
+        </SpotlightActionsGroup>
+      )}
     </>
   )
 }

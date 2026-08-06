@@ -1,0 +1,143 @@
+# Manifest of binaries installed OUTSIDE apt/dpkg (via curl / tarball / zip) in
+# Dockerfile.tools. Trivy's license scanner is package-manager-based and cannot
+# see these — per Trivy's own docs, "custom-built binaries or those installed
+# via curl may not be detected". That is exactly how the SSPL-licensed legacy
+# MongoDB 5.0 shell slipped past the AGPL/SSPL gate. This manifest closes that
+# blind spot: it is the declared source of truth for hand-installed artifacts,
+# enforced in CI by scripts/ci/check-manual-binaries.py.
+#
+# Rules enforced against a built image, for a given train:
+#   1. Every file/symlink under `scan_dirs` that is not in the dpkg package file
+#      lists must match an entry below (by exact `path`, or by a `path` prefix
+#      ending in "/"). An undeclared hand-installed artifact fails CI — you
+#      cannot add a curl/tarball install without declaring its license here.
+#      (Would-be violations are re-confirmed with `dpkg -S` before failing, so a
+#      dpkg-owned file is never misreported.)
+#   2. An entry whose `license` matches the forbidden pattern (AGPL/SSPL family)
+#      may only be present on the trains listed in its `trains` array. It is a
+#      failure for such a binary to appear on a train not listed.
+#   => The "clean" train therefore must contain no AGPL/SSPL-licensed binary.
+#
+# `scan_dirs` must cover every directory where Dockerfile.tools drops
+# hand-installed (non-dpkg) artifacts; if you add a curl/tar/zip install to a new
+# location, add it here (and a covering entry) or the gate cannot see it.
+#
+# Licenses use SPDX identifiers where one exists; proprietary licenses use a
+# LicenseRef- prefix. `trains` values are "legacy" and "clean".
+
+scan_dirs = ["/usr/local/bin", "/usr/local/aws-cli", "/opt/oracle/instantclient"]
+
+# --- MongoDB legacy shell: the SSPL artifact this whole effort is about -------
+[[binaries]]
+path = "/usr/local/bin/mongo"
+name = "MongoDB legacy shell"
+version = "5.0.31"
+license = "SSPL-1.0"
+trains = ["legacy"]
+note = "SSPL. Retained for a customer that depends on the 5.0 shell; legacy train only. Excluded from the clean train, which ships mongosh (Apache-2.0)."
+
+# --- Node.js runtime (tarball from nodejs.org) -------------------------------
+[[binaries]]
+path = "/usr/local/bin/node"
+name = "Node.js"
+license = "MIT"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/nodejs"
+name = "Node.js (symlink to node)"
+license = "MIT"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/npm"
+name = "npm"
+license = "Artistic-2.0"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/npx"
+name = "npx"
+license = "Artistic-2.0"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/corepack"
+name = "corepack"
+license = "MIT"
+trains = ["legacy", "clean"]
+
+# --- Cloud / DB CLIs (curl or tarball) ---------------------------------------
+[[binaries]]
+path = "/usr/local/bin/kubectl"
+name = "kubectl"
+license = "Apache-2.0"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/aws"
+name = "AWS CLI v2 (symlink)"
+license = "Apache-2.0"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/aws_completer"
+name = "AWS CLI v2 completer (symlink)"
+license = "Apache-2.0"
+trains = ["legacy", "clean"]
+
+# The /usr/local/bin/aws* entries are symlinks into this install tree (the
+# `aws/install` target). Directory prefix covers the real binary + bundled libs.
+[[binaries]]
+path = "/usr/local/aws-cli/"
+name = "AWS CLI v2 (install tree)"
+license = "Apache-2.0"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/sqlcmd"
+name = "go-sqlcmd"
+license = "MIT"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/session-manager-plugin"
+name = "AWS Session Manager plugin (symlink)"
+license = "Apache-2.0"
+trains = ["legacy", "clean"]
+note = "Installed via the AWS .deb, but the /usr/local/bin symlink is created in postinst and is not dpkg-tracked, so it is declared here."
+
+# --- Python console scripts from the pinned pip install ----------------------
+# boto3==1.40.6 + requests==2.32.4 (Dockerfile.tools) drop these console
+# scripts into /usr/local/bin. Their packages are also visible to Trivy's
+# Python analyzer; declared here so the provenance scan of /usr/local/bin is
+# complete. Pinned versions keep this set stable — a bump that adds a script
+# will (correctly) fail the gate until declared.
+[[binaries]]
+path = "/usr/local/bin/jp.py"
+name = "jmespath CLI"
+license = "MIT"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/normalizer"
+name = "charset-normalizer CLI"
+license = "MIT"
+trains = ["legacy", "clean"]
+
+[[binaries]]
+path = "/usr/local/bin/idna"
+name = "idna CLI"
+license = "BSD-3-Clause"
+trains = ["legacy", "clean"]
+
+# --- Oracle Instant Client + SQL*Plus (zip from oracle.com) ------------------
+# Directory prefix (trailing slash): covers sqlplus, adrci, genezi, the shared
+# libraries and glogin.sql. Oracle OTN is proprietary (redistribution terms) but
+# not AGPL/SSPL, so it is not blocked here — only tracked.
+[[binaries]]
+path = "/opt/oracle/instantclient/"
+name = "Oracle Instant Client + SQL*Plus"
+version = "23.9"
+license = "LicenseRef-Oracle-OTN"
+trains = ["legacy", "clean"]

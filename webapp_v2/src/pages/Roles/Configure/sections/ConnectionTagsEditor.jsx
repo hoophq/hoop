@@ -199,7 +199,6 @@ function RowFragment({
           <ActionIcon
             variant="subtle"
             color="red"
-            size="lg"
             onClick={onRemove}
             aria-label={'Remove tag ' + keyLabel}
           >

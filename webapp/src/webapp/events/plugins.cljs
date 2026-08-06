@@ -104,10 +104,4 @@
                                :body plugin
                                :on-failure on-failure
                                :on-success on-success}]]]})))
-(rf/reg-event-fx
- :plugins->navigate->manage-plugin
- (fn
-   [_ [_ plugin-name]]
-   {:fx [[:dispatch [:plugins->get-plugin-by-name plugin-name]]
-         [:dispatch [:navigate :manage-plugin {} :plugin-name plugin-name]]]}))
 

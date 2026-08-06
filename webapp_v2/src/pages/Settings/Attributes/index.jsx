@@ -55,7 +55,6 @@ function ConnectionFilter({ value, onChange, connections }) {
             <Button
               variant="subtle"
               color="gray"
-              size="sm"
               fullWidth
               onClick={() => { onChange(null); setOpened(false) }}
             >
@@ -78,7 +77,6 @@ function ConnectionFilter({ value, onChange, connections }) {
                     key={conn.name}
                     variant={conn.name === value ? 'light' : 'subtle'}
                     color="gray"
-                    size="sm"
                     fullWidth
                     justify="flex-start"
                     onClick={() => { onChange(conn.name === value ? null : conn.name); setOpened(false) }}
@@ -195,7 +193,6 @@ export default function Attributes() {
                     <Button
                       variant="outline"
                       color="gray"
-                      size="sm"
                       onClick={() => navigate(`/settings/attributes/edit/${attr.name}`)}
                     >
                       Configure

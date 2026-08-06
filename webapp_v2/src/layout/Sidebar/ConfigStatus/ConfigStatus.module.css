@@ -1,0 +1,127 @@
+/* Config Status checklist card (Figma: EVAL Config status, node 14:2) */
+
+.card {
+  background-color: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-gray-2);
+  border-radius: var(--mantine-radius-lg);
+  padding: var(--mantine-spacing-smAlt);
+}
+
+/* ── Widget header (always visible) ────────────────────────── */
+
+.headerBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
+}
+
+.headerLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  line-height: var(--mantine-line-height-xs);
+  color: var(--mantine-color-text);
+}
+
+.chevron {
+  color: var(--mantine-color-dimmed);
+  flex-shrink: 0;
+}
+
+/* ── Steps ─────────────────────────────────────────────────── */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+  padding-top: var(--mantine-spacing-smAlt);
+}
+
+.step {
+  padding: 0 var(--mantine-spacing-smAlt);
+}
+
+.stepHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-smAlt);
+  width: 100%;
+}
+
+.stepIcon {
+  color: var(--mantine-color-text);
+  flex-shrink: 0;
+}
+
+.stepActionIcon {
+  flex-shrink: 0;
+}
+
+.stepTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  line-height: var(--mantine-line-height-xs);
+  color: var(--mantine-color-text);
+}
+
+.stepTitle[data-done] {
+  color: var(--mantine-color-gray-5);
+  text-decoration: line-through;
+}
+
+/* ── Sub-items ─────────────────────────────────────────────── */
+
+.subItems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-smAlt);
+  padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-md) 0;
+}
+
+.subItem {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xsAlt);
+  width: 100%;
+}
+
+.subItemIcon {
+  color: var(--mantine-color-dimmed);
+  flex-shrink: 0;
+}
+
+.subItem[data-done] .subItemIcon {
+  color: var(--mantine-color-green-8);
+}
+
+.subItemLabel {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
+  color: var(--mantine-color-text);
+}
+
+.subItem:not([data-done]):hover .subItemLabel {
+  text-decoration: underline;
+}
+
+.subItem[data-done] .subItemLabel {
+  color: var(--mantine-color-gray-5);
+  text-decoration: line-through;
+}
+
+.subItemArrow {
+  color: var(--mantine-color-dimmed);
+  flex-shrink: 0;
+}
+
+.divider {
+  border-top: 1px solid var(--mantine-color-gray-1);
+  width: 100%;
+}

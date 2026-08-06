@@ -1,0 +1,31 @@
+/* The header sticks to the top of the scroll area and grows a separator once
+   it detaches from the sentinel rendered above it. The border is declared
+   transparent up front so the header never shifts by a pixel when it appears.
+   Mantine has no style prop for either z-index or a conditional border. */
+.stickyHeader {
+  z-index: 10;
+  border-bottom: 1px solid transparent;
+}
+
+.stickyHeader[data-scrolled] {
+  border-bottom-color: var(--mantine-color-default-border);
+}
+
+/* Field labels match the rules-table headings (14px/700) instead of tracking
+   the md field size, which components/Input/theme.js pins them to (16px/500).
+
+   Scoped to this form on purpose: label typography is a theme-level decision
+   that hasn't been made yet, so this stays one rule to delete once it is.
+
+   Targets Mantine's static InputWrapper class — a documented part of its
+   styling API — so every field in the form is covered, including the ones
+   rendered by shared wrappers such as ConnectionsMultiSelect, which don't
+   expose a label className. Per-instance classNames would spread the same
+   decision over every call site and still miss those wrappers. Declared
+   outside @layer mantine, so it wins over Mantine's own label rules (whose
+   font-size reads an --input-label-size that Mantine sets inline on this
+   element, out of reach of a variable override). */
+.form :global(.mantine-InputWrapper-label) {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 700;
+}

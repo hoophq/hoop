@@ -304,12 +304,25 @@ together (recommended). Individual targets:
 | shadow-cljs (CLJS) | 8280 | `cd webapp && npm run dev` |
 | Gateway (backend) | 8009 | see `Makefile` |
 
-Hot reload: Vite HMRs React sources instantly. shadow-cljs rebuilds
-`/js/app.js` and `/css/site.css`, which Vite **proxies** — so CLJS/Tailwind
-edits do NOT propagate as HMR into the running page. Hard-reload the tab
-(Cmd+Shift+R) after a CLJS change.
+Hot reload: CLJS/Tailwind edits do NOT propagate as HMR through the Vite
+proxy — hard-reload the tab (Cmd+Shift+R) after a CLJS change; details in
+`webapp_v2/README.md`.
 
-A `.env` in `webapp_v2/` is optional — `vite.config.js` defaults all dev
-proxy targets. Same goes for `webapp/.env`: only override `SENTRY_DSN`,
+A `.env` in `webapp_v2/` is optional — see `webapp_v2/README.md` (Environment
+Variables). Same goes for `webapp/.env`: only override `SENTRY_DSN`,
 `SEGMENT_WRITE_KEY` or `API_URL` if you need to (closure-defines in
 `shadow-cljs.edn` already supply usable defaults).
+
+## Team AI Workflow
+
+Shared Claude Code config lives in `.claude/` (see `.claude/README.md` for
+setup, hoop-specific worktree notes, and the daily flow). Conventions the
+tooling enforces:
+
+- One ticket = one worktree = one session (`claude --worktree <ticket-id>`)
+- `/fix-ticket <ID>` runs the standard ticket→draft-PR flow; `/test-plan`
+  generates the mandatory "How to test" PR section
+- Branch names come from Linear's `branchName`; commits start with the ticket ID
+- Go changes: `make test-oss` green before PR; `webapp_v2/`: `npm run lint`
+  and `npm run build`
+- Every PR is born draft

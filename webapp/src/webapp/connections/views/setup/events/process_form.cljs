@@ -303,6 +303,18 @@
                             local-ssh? "ssh-local"
 
                             :else connection-subtype)
+        ;; An MCP Gateway connection is edited through the CREATE form
+        ;; (roles-step/mcpproxy-role-form) against a role at
+        ;; [:resource-setup :roles 0], so its secret and command come from the
+        ;; create-flow builder too. Nothing else can: this subtype's env vars
+        ;; are settings the agent parses (MCP_TRANSPORT, MCP_AUTH, the tool
+        ;; policy) plus a stdio command that belongs in the command array,
+        ;; while the generic httpproxy branch below re-emits every env var as
+        ;; an HTTP header. One save through that branch renames MCP_TRANSPORT
+        ;; to HEADER_MCP_TRANSPORT and the agent then refuses the connection.
+        mcpproxy? (= effective-subtype "mcpproxy")
+        mcpproxy-role (when mcpproxy?
+                        (get-in db [:resource-setup :roles 0]))
         payload {:type api-type
                  :subtype effective-subtype
                  :name connection-name
@@ -311,9 +323,13 @@
                  :attributes selected-attributes
                  :connection_tags tags
                  :tags old-tags
-                 :secret secret
+                 :secret (if mcpproxy?
+                           (resource-process-form/process-role-secret mcpproxy-role)
+                           secret)
                  :command (cond
                             (= api-type "database") []
+                            mcpproxy? (vec (resource-process-form/mcpproxy-stdio-command
+                                            effective-subtype (:credentials mcpproxy-role)))
                             (seq command-args-from-metadata) command-args-from-metadata
                             :else
                             command-array)
@@ -343,9 +359,17 @@
                  :access_max_duration (when access-max-duration
                                         (if (number? access-max-duration)
                                           access-max-duration
-                                          (js/parseInt access-max-duration 10)))}]
+                                          (js/parseInt access-max-duration 10)))}
+        ;; An MCP Gateway connection re-authorized on this screen carries the
+        ;; flow id so the gateway adopts that login into a durable grant. The
+        ;; header alone would go stale at the provider's TTL. It rides on the
+        ;; hydrated role, because the widget that produced it is the create
+        ;; form's, writing to the create flow's OAuth state.
+        mcp-flow-id (get-in mcpproxy-role [:mcp-oauth :flow-id])]
 
-    payload))
+    (cond-> payload
+      (and mcpproxy? (not (str/blank? mcp-flow-id)))
+      (assoc :mcp_oauth_flow_id mcp-flow-id))))
 
 ;; Update an existing connection
 (defn is-base64? [str]
@@ -395,6 +419,133 @@
                    acc))
                []
                secret)))
+
+;; ---------------------------------------------------------------------------
+;; MCP Gateway (mcpproxy) on the edit screen
+;; ---------------------------------------------------------------------------
+;;
+;; The edit screen reuses the CREATE form for this subtype
+;; (roles-step/mcpproxy-role-form) rather than carrying its own copy, and that
+;; form is written against a create-flow role at
+;; [:resource-setup :roles role-index]. So a saved connection is hydrated back
+;; into one such role here, edited by the same component, and written back out
+;; by the same payload builder (resource-process-form/process-role).
+;;
+;; Why not a second form bound to [:connection-setup]: the generic httpproxy
+;; edit form is what this subtype used to fall through to, and it is wrong for
+;; it in a way that is invisible until an agent picks the connection up. That
+;; form treats every non-REMOTE_URL env var as an HTTP header and re-emits it
+;; with a HEADER_ prefix, so one save through it renames MCP_TRANSPORT to
+;; HEADER_MCP_TRANSPORT — after which validateMCPProxyEnv rejects the
+;; connection for having no transport at all — and drops the stdio command
+;; array outright. A hand-written mcpproxy edit form would have fixed the
+;; visible half (no OAuth widget, so the flow id an update needs could never
+;; be produced) while leaving both forms free to drift apart again on the
+;; next field either one grows.
+
+(defn mcpproxy-edit-role
+  "One create-flow role reconstructed from a saved mcpproxy connection.
+
+  Every envvar becomes a credential under the name the form reads it by,
+  lower-cased because that is the spelling the form uses and config->json
+  upper-cases it again on the way out. HEADER_* keeps its case: the header
+  name travels inside the key and reaches the provider verbatim, so
+  normalizing the keys around it must not touch X-Goog-Api-Key.
+
+  MCPENV_* moves out of the credentials and back into the role's environment
+  variables, which is where the form edits them and where process-role-secret
+  re-applies the prefix. Left in the credentials they would be emitted a
+  second time, double-prefixed.
+
+  A stdio connection's command lives in the connection's command ARRAY rather
+  than its env vars (resource process-role puts it there). The form edits it
+  as a plain command line, so it is joined here and re-split on save.
+
+  Three credentials the form reads are deliberately never saved
+  (process-form/mcp-ui-only-credentials): the catalog entry that pre-filled
+  it, the auth mode the admin chose, and the header a pasted token rides in.
+  Nothing on the agent reads them, so emitting them would put three keys
+  nothing consumes on every connection — but absent, the form falls back to
+  its defaults, and the fallbacks are wrong for a saved connection: it looks
+  for the token under HEADER_Authorization when the provider wants
+  CONTEXT7_API_KEY, renders that field empty AND required (blocking save),
+  and a token pasted into it lands under a second, wrong header.
+
+  So they are derived back here.
+
+  mcp_static_header comes off the connection's own HEADER_* key, which is
+  sound because the auth widget emits exactly one credential header per
+  connection: extra headers an admin adds live in :environment-variables and
+  only gain the prefix at save time. Authorization breaks a tie, since that
+  is the only name the widget produces on its own.
+
+  mcp_auth_mode follows MCP_AUTH, whose one lossy case is oauth — collapsed
+  to \"static\" because the agent has no oauth mode (the gateway resolves the
+  grant into a header before the session opens). Static is the safe landing:
+  it shows the stored token rather than offering a login the admin may not
+  need, and the mode selector is right there.
+
+  mcp_server is left alone. The picker's only effect is to write the URL,
+  transport and auth defaults that are already in the credentials, so naming
+  the entry would change nothing the admin can see — while a wrong guess
+  would re-fire the picker's coercions and clear their headers."
+  [connection]
+  (let [envvars (process-connection-secret (:secret connection) "envvar")
+        header? #(str/starts-with? % "HEADER_")
+        mcpenv? #(str/starts-with? % "MCPENV_")
+        credentials (reduce-kv (fn [acc k v]
+                                 (cond
+                                   (mcpenv? k) acc
+                                   (header? k) (assoc acc k v)
+                                   :else (assoc acc (str/lower-case k) v)))
+                               {}
+                               envvars)
+        env-vars (reduce-kv (fn [acc k v]
+                              (if (mcpenv? k)
+                                (conj acc {:key (subs k (count "MCPENV_"))
+                                           :value (connection-method/normalize-credential-value v)})
+                                acc))
+                            []
+                            envvars)
+        ;; The secret still carries whatever prefix the source used
+        ;; (_vaultkv1: and friends), so which credential method this
+        ;; connection was saved with is read back off the values themselves —
+        ;; the same inference the rest of the edit screen does.
+        header-keys (filter header? (keys envvars))
+        credential-header (or (first (filter #(= "authorization"
+                                                 (str/lower-case (subs % (count "HEADER_"))))
+                                             header-keys))
+                              (first header-keys))
+        ;; :value, not the map normalize-credential-value returns — comparing
+        ;; the wrapper against a string silently never matches, which reads
+        ;; every mode as static.
+        auth-env (str/trim (:value (connection-method/normalize-credential-value
+                                    (get envvars "MCP_AUTH"))))
+        auth-mode (cond
+                    (= auth-env "passthrough") "passthrough"
+                    (= auth-env "none") "none"
+                    ;; No MCP_AUTH at all predates the setting; the presence
+                    ;; of a credential header is then the only answer, and it
+                    ;; beats defaulting a configured connection to "none".
+                    (str/blank? auth-env) (if credential-header "static" "none")
+                    :else "static")
+        method-info (connection-method/infer-connection-method credentials)]
+    {:name (:name connection)
+     :type (:type connection)
+     :subtype (:subtype connection)
+     :connection-method (:connection-method method-info)
+     :secrets-manager-provider (:secrets-manager-provider method-info)
+     :credentials (cond-> credentials
+                    (seq (:command connection))
+                    (assoc "command" (str/join " " (:command connection)))
+
+                    credential-header
+                    (assoc "mcp_static_header" (subs credential-header (count "HEADER_")))
+
+                    :always
+                    (assoc "mcp_auth_mode" auth-mode))
+     :environment-variables env-vars
+     :configuration-files []}))
 
 (defn transform-filtered-guardrails-selected [guardrails connection-guardrail-ids]
   (->> guardrails

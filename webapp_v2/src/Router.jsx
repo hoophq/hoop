@@ -1,5 +1,7 @@
-import { Routes, Route } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import PageLoader from '@/components/PageLoader'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
 import ClojureApp from '@/components/ClojureApp'
@@ -21,7 +23,10 @@ import SettingsApiKeysForm from '@/pages/Settings/ApiKeys/Form'
 import SettingsApiKeysCreated from '@/pages/Settings/ApiKeys/Created'
 import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
+import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
+import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
+import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
@@ -31,9 +36,22 @@ import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import AccessControl from '@/pages/Features/AccessControl'
+import AccessControlForm from '@/pages/Features/AccessControl/Create'
+import Guardrails from '@/pages/Guardrails'
+import GuardrailForm from '@/pages/Guardrails/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
+import JiraTemplates from '@/pages/JiraTemplates'
+import JiraTemplateForm from '@/pages/JiraTemplates/Form'
+import IntegrationsSlack from '@/pages/Integrations/Slack'
+import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
+
+// The only lazily-loaded page. Every other route is imported eagerly, but the
+// Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
+// only — no reason to put that in the bundle every user downloads.
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
 /**
  * Routing strategy:
@@ -65,6 +83,20 @@ function Router() {
       <Route path="/signup/callback" element={<SignupCallback />} />
 
       {/* React pages — fully migrated */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <Suspense fallback={<PageLoader h={400} />}>
+                  <Dashboard />
+                </Suspense>
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/agents"
         element={
@@ -219,6 +251,20 @@ function Router() {
         }
       />
 
+      {/* Protection Rules */}
+      <Route
+        path="/settings/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsProtectionRules />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Audit Logs */}
       <Route
         path="/settings/audit-logs"
@@ -227,6 +273,20 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsAuditLogs />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Server Logs */}
+      <Route
+        path="/settings/server-logs"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsServerLogs />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
@@ -251,7 +311,7 @@ function Router() {
       <Route
         path="/rulepacks"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="rulepacks">
             <Layout>
               <PageLayout>
                 <Rulepacks />
@@ -263,7 +323,7 @@ function Router() {
       <Route
         path="/rulepacks/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="rulepacks">
             <Layout>
               <PageLayout>
                 <RulepackDetail />
@@ -291,7 +351,7 @@ function Router() {
       <Route
         path="/features/event-routing"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRouting />
@@ -303,7 +363,7 @@ function Router() {
       <Route
         path="/features/event-routing/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingForm />
@@ -315,7 +375,7 @@ function Router() {
       <Route
         path="/features/event-routing/:id/edit"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingForm />
@@ -327,7 +387,7 @@ function Router() {
       <Route
         path="/features/event-routing/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="event-routing">
             <Layout>
               <PageLayout>
                 <EventRoutingDetail />
@@ -340,7 +400,7 @@ function Router() {
       <Route
         path="/features/data-masking"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMasking />
@@ -352,7 +412,7 @@ function Router() {
       <Route
         path="/features/data-masking/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
@@ -364,10 +424,89 @@ function Router() {
       <Route
         path="/features/data-masking/edit/:id"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="data-masking">
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Access Control. The edit route carries the group name as a query
+          parameter (`?group=<name>`) to match the legacy CLJS route: a path
+          segment would leave the old URL shape unclaimed by React Router and
+          it would fall through to the ClojureScript catch-all. */}
+      <Route
+        path="/features/access-control"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControl />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-control/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-control/edit"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Guardrails */}
+      <Route
+        path="/guardrails"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <Guardrails />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guardrails/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <GuardrailForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guardrails/edit/:id"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <GuardrailForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
@@ -378,7 +517,7 @@ function Router() {
       <Route
         path="/ai-agents-identities"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentities />
@@ -390,7 +529,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/new"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
@@ -402,7 +541,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/created"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesCreated />
@@ -414,7 +553,7 @@ function Router() {
       <Route
         path="/ai-agents-identities/:id/configure"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute adminOnly licenseFeature="ai-agents">
             <Layout>
               <PageLayout>
                 <AiAgentsIdentitiesForm />
@@ -424,7 +563,99 @@ function Router() {
         }
       />
 
+      {/* Jira Templates (includes the Jira integration Configuration tab) */}
+      <Route
+        path="/jira-templates"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="jira-integration">
+            <Layout>
+              <PageLayout>
+                <JiraTemplates />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="jira-integration">
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jira-templates/edit/:id"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="jira-integration">
+            <Layout>
+              <PageLayout>
+                <JiraTemplateForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      {/* Legacy URLs absorbed into the Configuration tab — keep old bookmarks working.
+          /plugins/manage/jira still exists in the CLJS bidi routes but its panel was
+          deleted, so without this redirect it renders an infinite loading spinner. */}
+      <Route
+        path="/settings/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+      <Route
+        path="/plugins/manage/jira"
+        element={<Navigate to="/jira-templates?tab=configuration" replace />}
+      />
+
+      {/* Integrations */}
+      {/* Legacy plugin-manage URLs — keep old bookmarks working */}
+      <Route
+        path="/plugins/manage/slack"
+        element={<Navigate to="/integrations/slack" replace />}
+      />
+      <Route
+        path="/plugins/manage/webhooks"
+        element={<Navigate to="/integrations/webhooks" replace />}
+      />
+      <Route
+        path="/integrations/slack"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsSlack />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/integrations/webhooks"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <IntegrationsWebhooks />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
+      <Route
+        path="/onboarding/protection-rules"
+        element={
+          <ProtectedRoute adminOnly>
+            <OnboardingProtectionRules />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/onboarding/*"
         element={

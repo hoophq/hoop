@@ -1,0 +1,18 @@
+/* Background/text colors come from the `bg`/`c` props on the managed Pill
+   (instance props override the global Pill theme). Only the pieces the
+   props can't reach live here. */
+.managedPill {
+  color: var(--mantine-color-indigo-9);
+}
+
+.managedPill svg {
+  color: var(--mantine-color-indigo-9);
+}
+
+.managedPill button {
+  color: var(--mantine-color-indigo-9);
+}
+
+.managedOption {
+  color: var(--mantine-color-indigo-9);
+}

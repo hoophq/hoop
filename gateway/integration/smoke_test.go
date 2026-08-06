@@ -3,9 +3,12 @@
 package integration
 
 import (
+	"bufio"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
@@ -193,6 +196,148 @@ func TestConnectionCRUD(t *testing.T) {
 	}
 }
 
+// T6b — POST /resources persists per-role attributes on the created connections.
+func TestResourceCreateWithRoleAttributes(t *testing.T) {
+	token := adminToken(t)
+	agentID := createAgentReturningID(t, token, "resource-attrs-agent")
+	defer deleteAgent(t, token, "resource-attrs-agent")
+
+	const resourceName = "smoke-resource-attrs"
+	const roleWithAttrs = "smoke-resource-attrs-role-1"
+	const roleWithoutAttrs = "smoke-resource-attrs-role-2"
+
+	created := testServer.Post(t, "/resources", token, openapi.ResourceRequest{
+		Name:    resourceName,
+		Type:    "database",
+		SubType: "postgres",
+		AgentID: agentID,
+		EnvVars: map[string]string{},
+		Roles: []openapi.ResourceRoleRequest{
+			{
+				Name:       roleWithAttrs,
+				Type:       "database",
+				SubType:    "postgres",
+				Command:    []string{"psql"},
+				Attributes: []string{"evl87-team", "evl87-pii"},
+			},
+			{
+				Name:    roleWithoutAttrs,
+				Type:    "database",
+				SubType: "postgres",
+				Command: []string{"psql"},
+			},
+		},
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	defer func() {
+		// Connections must go before the resource.
+		for _, name := range []string{roleWithAttrs, roleWithoutAttrs} {
+			del := testServer.Delete(t, "/connections/"+name, token)
+			del.Body.Close()
+		}
+		del := testServer.Delete(t, "/resources/"+resourceName, token)
+		del.Body.Close()
+	}()
+
+	got := testServer.Get(t, "/connections/"+roleWithAttrs, token)
+	defer got.Body.Close()
+	testutil.RequireStatus(t, got, http.StatusOK)
+	var conn map[string]any
+	testutil.DecodeJSON(t, got, &conn)
+	attrs, _ := conn["attributes"].([]any)
+	for _, want := range []string{"evl87-team", "evl87-pii"} {
+		found := false
+		for _, a := range attrs {
+			if a == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("connection %q: expected attribute %q in %v", roleWithAttrs, want, attrs)
+		}
+	}
+
+	gotBare := testServer.Get(t, "/connections/"+roleWithoutAttrs, token)
+	defer gotBare.Body.Close()
+	testutil.RequireStatus(t, gotBare, http.StatusOK)
+	var bare map[string]any
+	testutil.DecodeJSON(t, gotBare, &bare)
+	if bareAttrs, ok := bare["attributes"].([]any); ok && len(bareAttrs) > 0 {
+		t.Errorf("connection %q: expected no attributes, got %v", roleWithoutAttrs, bareAttrs)
+	}
+}
+
+// T6c — protection profile: managed rules expose managed_by and managed
+// masking rules are immutable.
+func TestProtectionProfileManagedRules(t *testing.T) {
+	token := adminToken(t)
+
+	applied := testServer.Put(t, "/orgs/protection-profile", token, map[string]any{
+		"profile": "protection-permissive",
+		"source":  "settings",
+	})
+	defer applied.Body.Close()
+	testutil.RequireStatus(t, applied, http.StatusOK)
+	defer func() {
+		// Back to manual configuration: tears down all managed rules/attributes
+		// so later tests see a clean org.
+		reset := testServer.Put(t, "/orgs/protection-profile", token, map[string]any{
+			"profile": nil,
+			"source":  "settings",
+		})
+		reset.Body.Close()
+	}()
+
+	// Managed guardrail is listed with managed_by set.
+	grList := testServer.Get(t, "/guardrails", token)
+	defer grList.Body.Close()
+	testutil.RequireStatus(t, grList, http.StatusOK)
+	var guardrails []map[string]any
+	testutil.DecodeJSON(t, grList, &guardrails)
+	managedGuardrails := 0
+	for _, g := range guardrails {
+		if g["managed_by"] == "hoop" {
+			managedGuardrails++
+		}
+	}
+	if managedGuardrails == 0 {
+		t.Errorf("guardrails list: expected at least one rule with managed_by=hoop, got none")
+	}
+
+	// Managed masking rule is listed with managed_by set and refuses updates.
+	dmList := testServer.Get(t, "/datamasking-rules", token)
+	defer dmList.Body.Close()
+	testutil.RequireStatus(t, dmList, http.StatusOK)
+	var maskingRules []map[string]any
+	testutil.DecodeJSON(t, dmList, &maskingRules)
+	var managedMasking map[string]any
+	for _, r := range maskingRules {
+		if r["managed_by"] == "hoop" {
+			managedMasking = r
+			break
+		}
+	}
+	if managedMasking == nil {
+		t.Fatalf("datamasking list: expected a rule with managed_by=hoop, got none")
+	}
+	blocked := testServer.Put(t, "/datamasking-rules/"+managedMasking["id"].(string), token, map[string]any{
+		"name":                   managedMasking["name"],
+		"description":            "tampered",
+		"connection_ids":         []string{},
+		"attributes":             []string{},
+		"supported_entity_types": []map[string]any{},
+		"custom_entity_types":    []map[string]any{},
+		"score_threshold":        0.6,
+	})
+	defer blocked.Body.Close()
+	if blocked.StatusCode != http.StatusBadRequest {
+		t.Errorf("update managed masking rule: expected 400, got %d (body: %s)",
+			blocked.StatusCode, testutil.ReadBody(t, blocked))
+	}
+}
+
 // T7 — unknown connection returns 404.
 func TestConnectionNotFound(t *testing.T) {
 	token := adminToken(t)
@@ -321,6 +466,81 @@ func TestHealthzDegraded(t *testing.T) {
 	testutil.DecodeJSON(t, resp, &body)
 	if body["liveness"] != "ERR" {
 		t.Errorf("healthz (no gRPC): expected liveness=ERR, got %v", body["liveness"])
+	}
+}
+
+// T13 — server-logs tail requires auth and returns buffered gateway entries.
+func TestServerLogsTail(t *testing.T) {
+	// No token → 401.
+	noAuth := testServer.Get(t, "/server-logs", "")
+	defer noAuth.Body.Close()
+	if noAuth.StatusCode != http.StatusUnauthorized {
+		t.Errorf("server-logs without token: expected 401, got %d", noAuth.StatusCode)
+	}
+
+	token := adminToken(t)
+	resp := testServer.Get(t, "/server-logs", token)
+	defer resp.Body.Close()
+	testutil.RequireStatus(t, resp, http.StatusOK)
+	var entries []map[string]any
+	testutil.DecodeJSON(t, resp, &entries)
+	if len(entries) == 0 {
+		t.Fatal("server-logs: expected non-empty tail, the gateway has logged at info level by now")
+	}
+	for i, entry := range entries {
+		for _, key := range []string{"timestamp", "level", "message"} {
+			if v, _ := entry[key].(string); v == "" {
+				t.Fatalf("server-logs: entry %d missing %q, got keys %v", i, key, keysOf(entry))
+			}
+		}
+		if entry["source"] != "gateway" {
+			t.Fatalf("server-logs: entry %d expected source=gateway, got %v", i, entry["source"])
+		}
+	}
+}
+
+// T14 — server-logs SSE stream requires auth and replays a backlog on connect.
+func TestServerLogsStream(t *testing.T) {
+	// No token → 401.
+	noAuth := testServer.Get(t, "/server-logs/stream", "")
+	defer noAuth.Body.Close()
+	if noAuth.StatusCode != http.StatusUnauthorized {
+		t.Errorf("server-logs/stream without token: expected 401, got %d", noAuth.StatusCode)
+	}
+
+	token := adminToken(t)
+	resp := testServer.Get(t, "/server-logs/stream", token)
+	defer resp.Body.Close()
+	testutil.RequireStatus(t, resp, http.StatusOK)
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("server-logs/stream: expected text/event-stream content type, got %q", ct)
+	}
+
+	// Backlog replay guarantees a data frame right after ": connected".
+	dataCh := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			if line := scanner.Text(); strings.HasPrefix(line, "data: ") {
+				dataCh <- strings.TrimPrefix(line, "data: ")
+				return
+			}
+		}
+	}()
+	select {
+	case data := <-dataCh:
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(data), &entry); err != nil {
+			t.Fatalf("server-logs/stream: invalid event payload %q: %v", data, err)
+		}
+		if entry["source"] != "gateway" {
+			t.Errorf("server-logs/stream: expected source=gateway, got %v", entry["source"])
+		}
+		if msg, _ := entry["message"].(string); msg == "" {
+			t.Errorf("server-logs/stream: expected non-empty message, got %v", entry["message"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server-logs/stream: no data frame within 5s, backlog replay should be immediate")
 	}
 }
 

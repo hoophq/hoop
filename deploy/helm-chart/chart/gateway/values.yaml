@@ -186,6 +186,13 @@ config:
   # HOOP_SPIFFE_BUNDLE_URL: ''
   # HOOP_SPIFFE_BUNDLE_JWKS: ''
 
+# -- Load environment variables from a Secret that already exists in the
+# namespace. The chart only references it, it does not create or manage it.
+# Every key of the Secret becomes an environment variable, loaded after
+# 'hoop-config', so it overrides the same key defined in '.Values.config'.
+existingSecret: ''
+# existingSecret: hoop-gateway-credentials
+
 mainService:
   # -- Annotations to add in the main service
   annotations: {}

@@ -7,5 +7,5 @@ import { PasswordInput as MantinePasswordInput } from '@mantine/core'
  *   <PasswordInput label="API Token" value={token} onChange={(e) => setToken(e.currentTarget.value)} />
  */
 export default function PasswordInput(props) {
-  return <MantinePasswordInput radius="sm" {...props} />
+  return <MantinePasswordInput {...props} />
 }

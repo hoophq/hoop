@@ -56,6 +56,7 @@ import (
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
+	serverlogsapi "github.com/hoophq/hoop/gateway/api/serverlogs"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
@@ -181,6 +182,20 @@ func (a *Api) BuildEngine() *gin.Engine {
 
 	route.GET("/.well-known/oauth-protected-resource", apimcpauth.MetadataHandler)
 	route.GET("/.well-known/oauth-protected-resource"+apimcpauth.McpResourcePath(), apimcpauth.MetadataHandler)
+
+	// Authorization-server metadata mirror + RFC 7591 DCR shim, served only
+	// when a static MCP OAuth client is configured (404 otherwise). Both the
+	// RFC 8414 path-insertion and OIDC-discovery suffix derivations of the
+	// issuer URL are registered so any well-known probing strategy resolves.
+	route.GET("/.well-known/oauth-authorization-server", apimcpauth.AuthorizationServerMetadataHandler)
+	route.GET("/.well-known/openid-configuration", apimcpauth.AuthorizationServerMetadataHandler)
+	if baseURL != "" {
+		route.GET("/.well-known/oauth-authorization-server"+baseURL, apimcpauth.AuthorizationServerMetadataHandler)
+		route.GET("/.well-known/openid-configuration"+baseURL, apimcpauth.AuthorizationServerMetadataHandler)
+		route.GET(baseURL+"/.well-known/oauth-authorization-server", apimcpauth.AuthorizationServerMetadataHandler)
+		route.GET(baseURL+"/.well-known/openid-configuration", apimcpauth.AuthorizationServerMetadataHandler)
+	}
+	route.POST(apimcpauth.RegistrationPath(), apimcpauth.ClientRegistrationHandler)
 
 	ssmGroup := route.Group(baseURL + "/ssm")
 	ssmInstance := ssmproxy.GetServerInstance()
@@ -404,6 +419,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventReactivateApiKey),
 		apikeys.Reactivate)
 
+	r.GET("/server-logs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		serverlogsapi.List)
+	r.GET("/server-logs/stream",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		serverlogsapi.Stream)
+
 	r.GET("/ai-agents",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -566,6 +590,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/mcp-oauth/callback",
 		apiconnections.MCPOAuthCallback)
 
+	// Built-in catalog of publicly hosted remote MCP servers (ADR-0004). The
+	// connection create page renders it as a server picker that pre-fills an
+	// "mcpproxy" connection's REMOTE_URL / MCP_TRANSPORT / MCP_AUTH. Static
+	// build-time data with no tenant content, so read-only role is enough.
+	r.GET("/mcp-catalog",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.ListMCPCatalog)
+
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -722,6 +755,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apiorgs.UpdateOrgHideRoleInfo)
+
+	r.GET("/orgs/protection-profile",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.GetOrgProtectionProfile)
+	r.PUT("/orgs/protection-profile",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiorgs.UpdateOrgProtectionProfile)
 
 	r.PUT("/orgs/features",
 		apiroutes.AdminOnlyAccessRole,

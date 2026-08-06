@@ -68,7 +68,7 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
                   </Text>
                 </Group>
                 <Button
-                  size="xs"
+                  size="sm"
                   variant="default"
                   onClick={() => onConfigureConnection(connection.name)}
                 >
@@ -145,7 +145,7 @@ export default function RuleListItem({
         <Group gap="sm" wrap="nowrap">
           {hasConnections && (
             <Button
-              size="xs"
+              size="sm"
               variant="subtle"
               color="gray"
               onClick={() => setShowConnections((v) => !v)}
@@ -160,9 +160,13 @@ export default function RuleListItem({
               Resource Roles
             </Button>
           )}
-          <Button variant="default" onClick={() => onConfigure(rule.id)}>
-            Configure
-          </Button>
+          {/* Hoop-managed rules (protection profiles) are immutable — the API
+              rejects updates, so there is nothing to configure. */}
+          {!rule.managed_by && (
+            <Button variant="default" onClick={() => onConfigure(rule.id)}>
+              Configure
+            </Button>
+          )}
         </Group>
       </Flex>
       {showConnections && (

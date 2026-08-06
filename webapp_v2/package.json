@@ -12,18 +12,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mantine/charts": "^8.3.18",
     "@mantine/core": "^8.3.18",
     "@mantine/dates": "^8.3.18",
     "@mantine/hooks": "^8.3.18",
-    "@mantine/notifications": "^8.3.18",
     "@mantine/spotlight": "^8.3.18",
     "@segment/analytics-next": "^1.64.0",
     "axios": "^1.13.5",
     "dayjs": "^1.11.20",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.27.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",
+    "recharts": "^2.15.4",
     "sonner": "^2.0.7",
     "zustand": "^5.0.11"
   },

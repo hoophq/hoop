@@ -93,7 +93,6 @@ export default function PaginatedMultiSelect({
         withRemoveButton
         disabled={disabled}
         onRemove={() => handleValueRemove(val)}
-        className={classes.pill}
       >
         {label != null ? (
           label

@@ -46,6 +46,13 @@ import (
 // runbook hook has its own (longer) timeout managed by transportsystem.
 const federationResolveTimeout = 30 * time.Second
 
+// mcpOAuthResolveTimeout caps the SessionOpen-time grant refresh. It exceeds
+// the token-endpoint timeout inside the service because the call may also wait
+// on the grant's row lock while another replica refreshes the same credential
+// — that wait ends with a token already renewed, so it is worth sitting
+// through.
+const mcpOAuthResolveTimeout = 45 * time.Second
+
 func requestProxyConnection(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
 	if !stream.IsAgentOnline() {
@@ -289,6 +296,18 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 // into an empty NON-nil slice. A nil-ness check made every ruleless
 // connection look guarded, which the fail-closed admission check (DEP-48)
 // then refused for connection types without guardrail enforcement.
+func configuredGuardRailRules(rules []guardrails.DataRules) []guardrails.DataRules {
+	n := 0
+	for _, rule := range rules {
+		if len(rule.Items) == 0 {
+			continue
+		}
+		rules[n] = rule
+		n++
+	}
+	return rules[:n]
+}
+
 func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (json.RawMessage, error) {
 	if connGuardRailRules == nil {
 		return nil, nil
@@ -311,7 +330,8 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 		}
 	}
 
-	// no rules to enforce -> no guardrail payload
+	inputRules = configuredGuardRailRules(inputRules)
+	outputRules = configuredGuardRailRules(outputRules)
 	if len(inputRules) == 0 && len(outputRules) == 0 {
 		return nil, nil
 	}
@@ -333,11 +353,17 @@ func encodeGuardRailRules(connGuardRailRules *models.ConnectionGuardRailRules) (
 
 // Guardrail enforcement admission is NOT checked here. The authoritative
 // fail-closed check (DEP-48) lives in libhoop at proxy construction: native
-// proxies without a guardrail evaluation path (mysql, mssql, mongodb, ssm,
-// raw tcp) refuse guarded sessions at the agent, at the point of
-// enforcement. Gateways and agents are upgraded together, so a
-// gateway-side duplicate of that list would only drift (it did: DEP-48 →
-// #1611 → the mysql/mongodb web terminal regression).
+// proxies without a guardrail evaluation path (mysql, mongodb, ssm, raw tcp)
+// refuse guarded sessions at the agent, at the point of enforcement. Gateways
+// and agents are upgraded together, so a gateway-side duplicate of that list
+// would only drift (it did: DEP-48 → #1611 → the mysql/mongodb web terminal
+// regression).
+//
+// MSSQL is no longer in that fail-closed list: its native proxy evaluates INPUT
+// guardrails (DEP-69), and refuses at construction when only output rules are
+// configured (which it cannot enforce). There is no gateway-side knob — native
+// MSSQL enforcement is driven purely by whether the connection has guardrail
+// rules configured, exactly like Postgres and MySQL.
 
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
@@ -358,23 +384,41 @@ func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	return analyzerMetricsRulesJsonData, nil
 }
 
+// agentEnforcesAIAnalysis reports whether the agent classifies and enforces AI
+// risk analysis inline for a connection type.
+//
+// Only these types carry an analyzer through to the agent. Every other type
+// either has no inline analysis at all or is analyzed gateway-side on the exec
+// path, where the whole script is classified once before the session starts.
+//
+//   - httpproxy / kubernetes: one verdict per proxied HTTP request.
+//   - mcpproxy: one verdict per MCP tool call, produced by a stage of the MCP
+//     inspection pipeline (agent/controller/mcpproxy_aianalyzer.go). The unit
+//     analyzed is the tool name plus its arguments, not an HTTP request line —
+//     every MCP call is a POST to the same path.
+func agentEnforcesAIAnalysis(connType pb.ConnectionType) bool {
+	switch connType {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes, pb.ConnectionTypeMcpProxy:
+		return true
+	}
+	return false
+}
+
 // getAISessionAnalyzerParams resolves the per-connection AI session analyzer
-// configuration shipped to the agent so its HTTP proxy can classify and enforce
-// requests inline.
+// configuration shipped to the agent so it can classify and enforce requests
+// inline.
 //
 // It returns (nil, nil) — analysis disabled — when:
 //   - the experimental.http_session_analyzer flag is off for the org,
-//   - the connection is not an HTTP-family type (the agent only enforces
-//     analysis in the HTTP proxy path; DB/exec analysis runs gateway-side),
+//   - the connection is not one the agent analyzes inline (the HTTP-family
+//     types and mcpproxy; DB/exec analysis runs gateway-side),
 //   - the connection has no analyzer rule (the feature is opt-in), or
 //   - no AI provider is configured for the org (can't analyze without one).
 func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyzerParams, error) {
 	if !featureflag.IsEnabled(pctx.OrgID, "experimental.http_session_analyzer") {
 		return nil, nil
 	}
-	switch pctx.ProtoConnectionType() {
-	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
-	default:
+	if !agentEnforcesAIAnalysis(pctx.ProtoConnectionType()) {
 		return nil, nil
 	}
 
@@ -516,6 +560,11 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			// input, so guardrail rules are not fetched nor enforced for it — the
 			// same long-standing behavior as DLP redaction, which is also disabled
 			// for plain-exec sessions.
+			//
+			// The rules are shipped as-is when the connection has them; there is no
+			// gateway-side connection-type or feature-flag gate. libhoop is the sole
+			// authority — it enforces the input rules in-process and fails closed at
+			// proxy construction for protocol paths that cannot evaluate them.
 		}
 
 		// Resolve the AI session analyzer config for HTTP-family connections.
@@ -542,6 +591,15 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		if err := resolveFederationForSession(&pctx, stream); err != nil {
 			return err
 		}
+
+		// MCP Gateway OAuth. An mcpproxy connection authorized against an
+		// OAuth-protected remote carries a durable grant; renew it and
+		// overwrite the frozen HEADER_AUTHORIZATION with the live credential.
+		// Runs after federation so the two never fight over the same env var:
+		// no federation provider emits HEADER_AUTHORIZATION today, and if one
+		// ever does, the credential minted for this specific MCP resource is
+		// the more specific answer.
+		resolveMCPOAuthForSession(&pctx)
 
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
@@ -721,6 +779,55 @@ func resolveFederationForSession(pctx *plugintypes.Context, stream *streamclient
 		len(res.EnvVars), len(supersededRemoved))
 	_ = stream // reserved for future stream-level acks; suppress unused param warning.
 	return nil
+}
+
+// resolveMCPOAuthForSession injects a live Authorization header for an
+// mcpproxy connection whose credential was brokered through the MCP OAuth
+// login.
+//
+// The connection's stored HEADER_AUTHORIZATION is the token that login
+// produced, frozen at create time. That value stops working the moment the
+// provider's TTL elapses, which is why the gateway also keeps the grant: here
+// the access token is renewed from its refresh token and the env var the agent
+// reads is overwritten for this session. The agent is untouched by design — it
+// still receives an ordinary static header and still refuses MCP_AUTH=oauth,
+// because the credential is resolved before the session starts, exactly as
+// federation resolves one.
+//
+// Renewal is therefore per session open, not mid-session: a session outliving
+// the token still breaks at the TTL. Every new session gets a live credential
+// instead of a permanently dead one, which is the whole difference.
+//
+// Failure is logged and the session proceeds on the frozen value. Refusing to
+// open would take down a connection that, before grants existed, would at
+// least have had a chance of working.
+func resolveMCPOAuthForSession(pctx *plugintypes.Context) {
+	if pctx.ConnectionSubType != services.MCPOAuthGrantSubType {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mcpOAuthResolveTimeout)
+	defer cancel()
+
+	header, err := services.ResolveMCPOAuthHeader(ctx, pctx.OrgID, pctx.ConnectionID)
+	if err != nil {
+		log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+			Warnf("mcp oauth: failed resolving grant, session runs on the stored token: %v", err)
+		return
+	}
+	if header == "" {
+		// No grant for this connection: a static token or no credential at
+		// all. Leave the connection's own env vars exactly as configured.
+		return
+	}
+	if pctx.ConnectionSecret == nil {
+		pctx.ConnectionSecret = map[string]any{}
+	}
+	// Same wire contract as federation: keys are "envvar:NAME", values are
+	// base64 plaintext that the agent's env store decodes once.
+	pctx.ConnectionSecret["envvar:HEADER_AUTHORIZATION"] =
+		base64.StdEncoding.EncodeToString([]byte(header))
+	log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).
+		Infof("mcp oauth: resolved grant credential for session")
 }
 
 func clientArgsDecode(spec map[string][]byte) []string {

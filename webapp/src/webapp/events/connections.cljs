@@ -3,6 +3,8 @@
    [clojure.edn :refer [read-string]]
    [re-frame.core :as rf]
    [webapp.connections.constants :as constants]
+   ;; Registers :mcp-oauth/report-save-outcome, dispatched on every save.
+   [webapp.resources.setup.events.mcp-oauth]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 ;; Cache configuration
@@ -78,21 +80,14 @@
 
 (rf/reg-event-fx
  :connections->get-connections
- (fn [{:keys [db]} [_ {:keys [filters on-success on-failure force-refresh?]
+ (fn [{:keys [db]} [_ {:keys [on-success on-failure force-refresh?]
                        :or {on-success [:connections->set-connections]
                             on-failure [:connections->set-connections-error]}}]]
 
-   (cond
-     filters
-     ;; If filters are provided, delegate to filter-connections
-     {:fx [[:dispatch [:connections->filter-connections filters]]]}
-
-     (and (not force-refresh?) (cache-valid? db))
+   (if (and (not force-refresh?) (cache-valid? db))
      ;; Use cached data if valid
      (let [cached-connections (get-cached-connections db)]
        {:fx [[:dispatch (conj on-success cached-connections)]]})
-
-     :else
      ;; Make fresh request
      {:db (assoc-in db [:connections :loading] true)
       :fx [[:dispatch [:fetch {:method "GET"
@@ -211,14 +206,15 @@
                        {:method "POST"
                         :uri "/connections"
                         :body body
-                        :on-success (fn [connection]
+                        :on-success (fn [response]
                                       (rf/dispatch [:close-modal])
                                       ;; plugins might be updated in the connection
                                       ;; creation action, so we get them again here
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
-                                      (rf/dispatch [:show-snackbar {:level :success
-                                                                    :text "Connection created!"}])
+                                      (rf/dispatch [:mcp-oauth/report-save-outcome
+                                                    response
+                                                    "Connection created!"])
 
                                       (rf/dispatch [:navigate :resources]))}]]]})))
 
@@ -232,11 +228,11 @@
                        {:method "PUT"
                         :uri (str "/connections/" (:name connection))
                         :body body
-                        :on-success (fn []
+                        :on-success (fn [response]
                                       (rf/dispatch [:modal->close])
-                                      (rf/dispatch [:show-snackbar
-                                                    {:level :success
-                                                     :text (str "Connection " (:name connection) " updated!")}])
+                                      (rf/dispatch [:mcp-oauth/report-save-outcome
+                                                    response
+                                                    (str "Connection " (:name connection) " updated!")])
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       (rf/dispatch [:navigate :resources]))}]]]})))
@@ -348,11 +344,18 @@ ORDER BY total_amount DESC;")
  :connections->quickstart-create-postgres-demo
  (fn [{:keys [db]} [_]]
    (let [agents (get-in db [:agents :data])
-         agent (first agents)]
+         agent (first agents)
+         ;; While a protection profile is active, the demo connection carries
+         ;; its attribute so the profile rules apply to the evaluator's first
+         ;; query — the payload is authoritative, nothing is tagged
+         ;; automatically (same model as the setup wizard's
+         ;; with-profile-attribute). Fetched at onboarding setup mount.
+         profile-attr (get-in db [:protection-profile :active :attribute-name])]
      (if agent
        ;; If agent exists in app state, use it directly
-       (let [connection (merge constants/connection-postgres-demo
-                               {:agent_id (:id agent)})
+       (let [connection (cond-> (merge constants/connection-postgres-demo
+                                       {:agent_id (:id agent)})
+                          profile-attr (assoc :attributes [profile-attr]))
              code-tmp-db {:date (.now js/Date)
                           :code quickstart-query}
              code-tmp-db-json (.stringify js/JSON (clj->js code-tmp-db))]

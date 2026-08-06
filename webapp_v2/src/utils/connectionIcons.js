@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 
 // Icon for any connection. The connection's `subtype` is the only key
@@ -30,11 +31,14 @@ export function getConnectionIcon(connection) {
 
 export function useConnectionIconGetter() {
   // Subscribe to the metadata slice so consumers re-render when the
-  // catalog finishes loading. Re-creating the getter on every metadata
-  // change is cheap and keeps the returned function pointing at the
-  // latest store snapshot.
+  // catalog finishes loading. The getter identity only changes with the
+  // store snapshot (the catalog loads once), so callers can safely use it
+  // as a useMemo/useEffect dependency.
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
   const getIconName = useConnectionsMetadataStore((s) => s.getIconName)
-  return (connection) =>
-    iconUrlFromMetadata(connection, metadata ? getIconName : () => null)
+  return useCallback(
+    (connection) =>
+      iconUrlFromMetadata(connection, metadata ? getIconName : () => null),
+    [metadata, getIconName],
+  )
 }

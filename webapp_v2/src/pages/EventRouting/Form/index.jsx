@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { Anchor, Box, Card, Grid, Group, Stack, Text, Title } from "@mantine/core"
 import { useInViewport } from "@mantine/hooks"
-import { notifications } from "@mantine/notifications"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import Button from "@/components/Button"
 import Code from "@/components/Code"
@@ -11,6 +10,7 @@ import Radio from "@/components/Radio"
 import Select from "@/components/Select"
 import TextInput from "@/components/TextInput"
 import Textarea from "@/components/Textarea"
+import { showSnackbar } from "@/utils/snackbar"
 import { useEventRoutingStore } from "../store"
 import EventDescription from "../components/EventDescription"
 
@@ -231,9 +231,9 @@ export default function EventRoutingForm() {
   const handleSave = async () => {
     if (!canSubmit) return
     if (!selectedRunbook) {
-      notifications.show({
-        message: "Pick a runbook before saving.",
-        color: "red",
+      showSnackbar({
+        level: "error",
+        text: "Pick a runbook before saving.",
       })
       return
     }
@@ -252,27 +252,27 @@ export default function EventRoutingForm() {
     try {
       if (isEdit) {
         await updateSubscription(id, payload)
-        notifications.show({
-          message: "Subscription updated.",
-          color: "green",
+        showSnackbar({
+          level: "success",
+          text: "Subscription updated.",
         })
         navigate(`/features/event-routing/${id}`)
       } else {
         await createSubscription(payload)
-        notifications.show({
-          message: "Subscription created.",
-          color: "green",
+        showSnackbar({
+          level: "success",
+          text: "Subscription created.",
         })
         navigate("/features/event-routing")
       }
     } catch (e) {
-      notifications.show({
-        message:
+      showSnackbar({
+        level: "error",
+        text:
           e?.response?.data?.message ||
           (isEdit
             ? "Failed to update subscription."
             : "Failed to create subscription."),
-        color: "red",
       })
     }
   }

@@ -5,7 +5,7 @@
 }
 
 .item[data-active] .control {
-  background-color: var(--mantine-color-indigo-1);
+  background-color: var(--mantine-color-indigo-0);
 }
 
 .item[data-disabled] {
@@ -19,7 +19,7 @@
 
 .control:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--mantine-color-blue-5);
+  box-shadow: 0 0 0 2px var(--mantine-color-indigo-5);
 }
 
 .content {

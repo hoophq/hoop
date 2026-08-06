@@ -8,7 +8,7 @@ import (
 )
 
 // MCPOAuthFlow is a short-lived row backing the MCP connection OAuth login
-// flow (see rootfs/app/migrations/000099_mcp_oauth_flows.up.sql and
+// flow (see migrations/000100_mcp_oauth_flows.up.sql and
 // api/connections/connection_mcp_oauth.go). The authorize endpoint creates it
 // keyed by a random UUID (the OAuth "state" parameter); the callback endpoint
 // updates it with the obtained token; the token endpoint reads it once and
@@ -45,6 +45,12 @@ const (
 	MCPOAuthFlowStatusPending   = "pending"
 	MCPOAuthFlowStatusCompleted = "completed"
 	MCPOAuthFlowStatusError     = "error"
+	// MCPOAuthFlowStatusConsumed marks a flow whose token has been handed to
+	// the create page. The row lives on only so the connection it authorized
+	// can adopt its refresh token when it is saved; the access token is
+	// scrubbed at the same moment, so a consumed row holds no credential the
+	// browser did not already receive.
+	MCPOAuthFlowStatusConsumed = "consumed"
 )
 
 const mcpOAuthFlowsTable = "private.mcp_oauth_flows"
@@ -94,4 +100,34 @@ func UpdateMCPOAuthFlowResult(db *gorm.DB, flow *MCPOAuthFlow) error {
 // returned the obtained token so a flow is single use.
 func DeleteMCPOAuthFlow(db *gorm.DB, id string) error {
 	return db.Exec(`DELETE FROM private.mcp_oauth_flows WHERE id = ?`, id).Error
+}
+
+// PurgeStaleMCPOAuthFlows deletes flow rows older than the given age.
+//
+// A flow is normally consumed by the token endpoint, but a login the admin
+// abandons (closes the popup, walks away) is never polled and would otherwise
+// sit forever holding an encrypted PKCE verifier and, for a login that did
+// complete, a token nobody will use. Called opportunistically from the
+// authorize handler so the sweep costs no scheduler and no extra connection.
+func PurgeStaleMCPOAuthFlows(db *gorm.DB, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().UTC().Add(-olderThan)
+	res := db.Exec(`DELETE FROM private.mcp_oauth_flows WHERE created_at < ?`, cutoff)
+	return res.RowsAffected, res.Error
+}
+
+// ConsumeMCPOAuthFlow marks a flow as redeemed and scrubs its access token.
+//
+// The row survives redemption because the connection it authorized does not
+// exist yet: the grant that will renew this credential can only be created
+// when that connection is saved (services.AdoptMCPOAuthGrant). Only the
+// refresh token and the endpoint/client identity needed to use it stay behind,
+// so the access token's exposure at rest ends exactly where it did when the
+// row was deleted outright.
+func ConsumeMCPOAuthFlow(db *gorm.DB, id string) error {
+	return db.Table(mcpOAuthFlowsTable).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":                 MCPOAuthFlowStatusConsumed,
+			"access_token_encrypted": nil,
+		}).Error
 }

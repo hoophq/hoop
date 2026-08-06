@@ -405,6 +405,11 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
+	if existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name")); gerr == nil && existing.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be modified directly"})
+		return
+	}
+
 	lowTier, mediumTier, highTier, err := validateAnalyzerRuleRequest(orgID, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -471,6 +476,11 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
+	if existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name")); gerr == nil && existing.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be deleted directly"})
+		return
+	}
+
 	err = models.DeleteAISessionAnalyzerRule(orgID, c.Param("name"))
 	switch err {
 	case gorm.ErrRecordNotFound:
@@ -534,6 +544,7 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		Name:            r.Name,
 		Description:     r.Description,
 		ConnectionNames: r.ConnectionNames,
+		ManagedBy:       r.ManagedBy,
 		CustomPrompt:    r.CustomPrompt,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
 			LowRiskAction:    string(lowTier.Action),

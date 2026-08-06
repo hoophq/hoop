@@ -1,0 +1,22 @@
+.card {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--mantine-color-white);
+  border: 1px solid var(--mantine-color-gray-2);
+  border-radius: var(--mantine-radius-md);
+}
+
+.card:hover:not(:disabled) {
+  border-color: var(--mantine-color-gray-3);
+}
+
+.card[data-selected] {
+  background: rgba(240, 240, 243, .3);
+  border-color: var(--mantine-color-gray-2);
+}
+
+.card:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

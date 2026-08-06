@@ -1,5 +1,15 @@
 import { useRef, useState } from 'react'
-import { Box, Flex, Group, Loader, Popover, ScrollArea, Stack, Text } from '@mantine/core'
+import {
+  Box,
+  Flex,
+  Group,
+  Image,
+  Loader,
+  Popover,
+  ScrollArea,
+  Stack,
+  Text,
+} from '@mantine/core'
 import { Check, Search, X } from 'lucide-react'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
@@ -8,11 +18,13 @@ import classes from './AsyncValueFilter.module.css'
 /**
  * Single-value filter dropdown over a paginated, server-searched option source —
  * the async counterpart of `ValueFilter`. `selected` is the chosen option
- * (`{ value, label }`) or null; `onSelect` receives the full option.
+ * (`{ value, label }`) or null; `onSelect` receives the full option. An option
+ * may carry an optional `iconUrl`, rendered before its label (connection-type
+ * icons come from `usePaginatedConnections`).
  *
  * Usage:
  *   <AsyncValueFilter
- *     icon={Shapes} label="Resource Role"
+ *     icon={Rotate3d} label="Resource Role"
  *     selected={selected} onSelect={setSelected} onClear={() => setSelected(null)}
  *     options={options} loading={loading} hasMore={hasMore} onLoadMore={loadMore}
  *     searchValue={search} onSearchChange={setSearch} onOpen={ensureLoaded}
@@ -67,10 +79,17 @@ export default function AsyncValueFilter({
       width={320}
       withinPortal
     >
+      {/* The trigger reads one step below the app-wide button scale: a 14px
+          dimmed label instead of 16px near-black, matching the legacy Radix
+          filter chip (text size "2" on gray-11). Only the type is toned down —
+          the chip keeps the md height so it lines up with the other controls
+          in the filter bar. */}
       <Popover.Target>
         <Button
           variant={hasSelected ? 'light' : 'default'}
           color="gray"
+          fz="sm"
+          c="dimmed"
           onClick={handleTrigger}
           leftSection={<Icon size={16} />}
           rightSection={
@@ -111,7 +130,6 @@ export default function AsyncValueFilter({
             value={searchValue}
             onChange={(event) => onSearchChange?.(event.currentTarget.value)}
             leftSection={<Search size={14} />}
-            size="xs"
           />
           <ScrollArea
             h={288}
@@ -134,9 +152,21 @@ export default function AsyncValueFilter({
                       close()
                     }}
                   >
-                    <Text size="sm" lineClamp={1}>
-                      {option.label}
-                    </Text>
+                    <Group gap="xs" wrap="nowrap" miw={0}>
+                      {option.iconUrl && (
+                        <Image
+                          src={option.iconUrl}
+                          w={16}
+                          h={16}
+                          miw={16}
+                          fit="contain"
+                          alt=""
+                        />
+                      )}
+                      <Text size="sm" lineClamp={1}>
+                        {option.label}
+                      </Text>
+                    </Group>
                     {option.value === selected?.value && <Check size={14} />}
                   </Flex>
                 ))}

@@ -1,6 +1,5 @@
 (ns webapp.events.users
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]))
+  (:require [re-frame.core :as rf]))
 
 (rf/reg-event-fx
  :users->get-users
@@ -139,10 +138,7 @@
                    (rf/dispatch [:users->get-users])
                    (rf/dispatch [:users->get-user-groups])
                    (rf/dispatch [:show-snackbar {:level :success
-                                                 :text "User slack id updated!"}])
-                   (rf/dispatch [:slack->send-message->user {:slackMessage "You have registered successfully your user with slack hoop.dev app."
-                                                             :slackTeamId (first (cs/split (:slack-id user) #"-"))
-                                                             :slackUserId (second (cs/split (:slack-id user) #"-"))}]))]
+                                                 :text "User slack id updated!"}]))]
      {:fx [[:dispatch [:fetch
                        {:method "PATCH"
                         :uri (str "/users/self/slack")

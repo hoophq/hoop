@@ -14,14 +14,16 @@ type Attribute struct {
 	Name        string     `gorm:"column:name;index:idx_attributes_org_name,unique"`
 	Description *string    `gorm:"column:description"`
 	RulepackID  *uuid.UUID `gorm:"column:rulepack_id"`
+	ManagedBy   *string    `gorm:"column:managed_by"`
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime"`
 
-	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	GuardrailRules      []GuardrailRuleAttribute      `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	DatamaskingRules    []DatamaskingRuleAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	MachineIdentities   []MachineIdentityAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessControlGroups []AccessControlGroupAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	Connections         []ConnectionAttribute            `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessRequestRules  []AccessRequestRuleAttribute     `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	GuardrailRules      []GuardrailRuleAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	DatamaskingRules    []DatamaskingRuleAttribute       `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	MachineIdentities   []MachineIdentityAttribute       `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessControlGroups []AccessControlGroupAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AnalyzerRules       []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 }
 
 func (Attribute) TableName() string {
@@ -58,6 +60,17 @@ type GuardrailRuleAttribute struct {
 
 func (GuardrailRuleAttribute) TableName() string {
 	return "private.guardrail_rules_attributes"
+}
+
+// AI Session Analyzer Rule and Attribute
+type AISessionAnalyzerRuleAttribute struct {
+	OrgID            uuid.UUID `gorm:"column:org_id;primaryKey"`
+	AttributeName    string    `gorm:"column:attribute_name;primaryKey"`
+	AnalyzerRuleName string    `gorm:"column:analyzer_rule_name;primaryKey"`
+}
+
+func (AISessionAnalyzerRuleAttribute) TableName() string {
+	return "private.ai_session_analyzer_rules_attributes"
 }
 
 // Data Masking Rule and Attribute
@@ -195,9 +208,9 @@ func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 }
 
 type AttributeFilterOption struct {
-	Search   string
-	Page     int
-	PageSize int
+	Search               string
+	Page                 int
+	PageSize             int
 	IncludeRulepackOwned bool
 }
 
@@ -287,12 +300,14 @@ func GetConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string
 	return attributeNames, nil
 }
 
-// UpsertConnectionAttributes replaces the user-owned attribute associations for the given
-// connection. Rulepack-owned attribute associations (those whose attribute row has a non-null
-// rulepack_id) are preserved across the update so that a round-trip from the list endpoint
-// (which omits rulepack-owned attributes from the response) cannot accidentally remove them.
-// If an attribute name in the request does not exist in the attributes table, it is created
-// automatically as a non-rulepack attribute.
+// UpsertConnectionAttributes replaces the attribute associations for the given connection.
+// Hoop-managed attributes (e.g. the protection-profile attribute) round-trip through the
+// connection's `attributes` field on reads, so they are replaceable like any user attribute —
+// omitting one from the request detaches it. Only rulepack-owned associations (attribute rows
+// with a non-null rulepack_id) are preserved across the update, because the read path omits
+// them and a round-trip would otherwise silently drop them. If an attribute name in the
+// request does not exist in the attributes table, it is created automatically as a plain
+// user attribute.
 func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string, attributeNames []string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Exec(`
