@@ -14,20 +14,42 @@
 
 /* The header is a flex row so the action button can be a SIBLING of
    Accordion.Control rather than a child: the control renders a <button>, and a
-   button inside a button is invalid HTML. The control takes the remaining
-   width so the row still reads — and highlights — as one surface. */
+   button inside a button is invalid HTML.
+
+   This wrapper — not the control — owns the row's surface, so the button sits
+   on the same background as the rest of the header instead of on a strip of its
+   own. In the Figma the avatar, the text and the button are all children of one
+   padded row frame; splitting them across two boxes is only a DOM concession. */
 .rowHeader {
   display: flex;
   align-items: center;
 }
 
+/* Only the HEADER of the open row is tinted, never the panel. Mantine's
+   `filled` variant would wash the whole item, credential content included.
+   Hover is scoped to rows that actually have a control: a row with nothing to
+   expand into is not clickable and must not look like it is. */
+.rowHeader:has(.rowControl):hover,
+.rowHeader:has([data-active]) {
+  background-color: var(--mantine-color-gray-0);
+}
+
 /* Row metrics measured off the Figma accordion component: 76px rows and 16px
-   of padding on every side. */
+   of padding on every side. The control keeps its padding so the click target
+   still covers the whole left side of the row; its own background is dropped so
+   the wrapper above is the single painted surface. */
 .rowControl {
   flex: 1 1 auto;
   min-width: 0;
+  width: auto;
   padding-inline: var(--mantine-spacing-md);
   padding-block: var(--mantine-spacing-md);
+}
+
+.rowControl,
+.rowControl:hover,
+.rowControl[data-active] {
+  background-color: transparent;
 }
 
 /* Same box as .rowControl, for rows that have nothing to expand into and so are
@@ -40,16 +62,11 @@
 }
 
 /* Sits where the chevron would be — the two are mutually exclusive, since a row
-   with a live session has no action and a row with an action has no panel. */
+   with a live session has no action and a row with an action has no panel. The
+   16px gap to its left comes from the control's own end padding. */
 .rowAction {
   flex-shrink: 0;
   padding-inline-end: var(--mantine-spacing-md);
-}
-
-/* Only the CONTROL of the open row is tinted, never the panel. Mantine's
-   `filled` variant would wash the whole item, credential content included. */
-.rowControl[data-active] {
-  background-color: var(--mantine-color-gray-0);
 }
 
 /* The chevron is its own Accordion.Control slot, sitting flush against the end

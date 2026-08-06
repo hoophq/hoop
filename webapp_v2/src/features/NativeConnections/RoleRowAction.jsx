@@ -30,11 +30,12 @@ export function RoleRowAction({ role, state }) {
 
   return (
     <div className={classes.rowAction}>
+      {/* size="sm" is the Figma spec straight out of the theme's control scale:
+          32px tall, 12px of horizontal padding, 14px text (Button/theme.js). */}
       <Button
         variant="light"
         color="indigo"
         size="sm"
-        h={32}
         loading={busy}
         onClick={() => beginConnect(role.name)}
       >
