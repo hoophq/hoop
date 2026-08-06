@@ -22,12 +22,14 @@ import (
 
 // mcpPost drives one JSON-RPC message through a gateway's HTTP handler the
 // way hoop's proxy listener does: a POST to /mcp carrying the session header
-// once the handshake assigned one.
+// once the handshake assigned one, plus the negotiated protocol version once
+// there is one to echo.
 //
-// No MCP-Protocol-Version header is sent. That header marks the "Modern"
-// stateless era, which the gateway refuses because its policy controls need
-// session state (mcpproxy gateway/revision.go). A legacy client sends none,
-// and a legacy client is what hoop proxies.
+// Echoing MCP-Protocol-Version after `initialize` is mandatory for a legacy
+// client (spec, since 2025-06-18), and it is what every real client does.
+// Omitting it here is what let a gateway bug that rejected the header ship
+// green: this harness looked like a legacy client while sending strictly less
+// than one.
 func mcpPost(t *testing.T, h http.Handler, sid, body string) (int, string, string) {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
@@ -35,6 +37,7 @@ func mcpPost(t *testing.T, h http.Handler, sid, body string) (int, string, strin
 	r.Header.Set("Accept", "application/json, text/event-stream")
 	if sid != "" {
 		r.Header.Set("Mcp-Session-Id", sid)
+		r.Header.Set("MCP-Protocol-Version", mcpNegotiatedVersion)
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -45,8 +48,12 @@ func mcpPost(t *testing.T, h http.Handler, sid, body string) (int, string, strin
 }
 
 const (
+	// mcpNegotiatedVersion is the revision hoop's MCP clients negotiate and
+	// must echo on every later request.
+	mcpNegotiatedVersion = "2025-11-25"
+
 	mcpInitialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":` +
-		`{"protocolVersion":"2025-11-25","capabilities":{},` +
+		`{"protocolVersion":"` + mcpNegotiatedVersion + `","capabilities":{},` +
 		`"clientInfo":{"name":"hoop-test","version":"1"}}}`
 	mcpToolsList = `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
 )
