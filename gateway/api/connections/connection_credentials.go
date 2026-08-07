@@ -121,6 +121,20 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	// A matching rule where the user skips the approval review still bounds
+	// credential lifetime: skipping the review must not grant persistent
+	// access nor exceed the rule's max duration.
+	if !requiresReview && accessRule != nil {
+		if req.AccessDurationSec <= 0 {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for connections with an access request rule"})
+			return
+		}
+		if accessRule.AccessMaxDuration != nil && req.AccessDurationSec > *accessRule.AccessMaxDuration {
+			c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf("access duration cannot exceed the rule's max duration of %d seconds", *accessRule.AccessMaxDuration)})
+			return
+		}
+	}
+
 	// Determine the audit status of the credential-issuance session.
 	// Persistent credentials (no review, no access_duration_seconds) mint a
 	// Done bookkeeping row immediately: this session is not bound to any TCP
@@ -748,7 +762,7 @@ func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialI
 // terminateActiveCredentialSessions tears down any in-flight proxy sessions for
 // the given credential. Shared by Revoke (with DB invalidation) and Close
 // (without DB invalidation).
-func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _conn *models.Connection) {
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _ *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
@@ -1126,9 +1140,11 @@ func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connecti
 		return false, nil, fmt.Errorf("failed checking access request rules for connection %s: %w", conn.Name, err)
 	}
 
+	// Users in the skip groups bypass the review, but the matched rule is
+	// still returned so the caller keeps enforcing its duration bounds.
 	if accessRule != nil && len(accessRule.ApprovalRequiredGroups) == 0 &&
 		utils.SlicesHasIntersection([]string(accessRule.SkipReviewGroups), ctx.GetUserGroups()) {
-		return false, nil, nil
+		return false, accessRule, nil
 	}
 	return accessRule != nil, accessRule, nil
 }

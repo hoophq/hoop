@@ -216,13 +216,6 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 		}
 	}
 
-	if len(accessRule.ApprovalRequiredGroups) == 0 && len(accessRule.SkipReviewGroups) > 0 &&
-		utils.SlicesHasIntersection(accessRule.SkipReviewGroups, pctx.UserGroups) {
-		log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID,
-			"access-rule-id", accessRule.ID).Infof("user is part of access rule skip review groups, skipping review")
-		return nil, nil
-	}
-
 	// Access duration for JIT reviews
 	var accessDuration time.Duration
 	if isJitReview {
@@ -242,6 +235,13 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 		} else if accessDuration.Hours() > 48 {
 			return nil, plugintypes.InvalidArgument("jit access input must not be greater than 48 hours")
 		}
+	}
+
+	if len(accessRule.ApprovalRequiredGroups) == 0 && len(accessRule.SkipReviewGroups) > 0 &&
+		utils.SlicesHasIntersection(accessRule.SkipReviewGroups, pctx.UserGroups) {
+		log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID,
+			"access-rule-id", accessRule.ID).Infof("user is part of access rule skip review groups, skipping review")
+		return nil, nil
 	}
 
 	// these values are only used for ad-hoc executions
