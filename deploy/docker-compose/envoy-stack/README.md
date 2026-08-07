@@ -196,12 +196,13 @@ docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
 `read-audit.py` also asserts the trail contains no value that masking removed
 — recording a masked value in the clear has un-masked it.
 
-## Tier 2c — AI risk analysis (off in this stack)
+## Tier 2c: AI risk analysis (off in this stack)
 
 A `type: ai_analysis` rule sends a statement to a language model and denies on
-the risk it reports, on either lane. It is commented out in `hoopinspect/config.yaml`
-because it needs a credential and spends money per statement; uncomment the
-`analyzer:` block, uncomment the rule on the lane you want, and rebuild.
+the risk it reports, on either lane. It is commented out in
+`hoopinspect/config.yaml` because it needs a credential and spends money per
+statement; uncomment the `analyzer:` block, uncomment the rule on the lane you
+want, and rebuild.
 
 ```yaml
 analyzer:
@@ -229,8 +230,8 @@ reaches a model.
 
 On the httpbin lane it also needs an `http:` block with `capture_body: true`.
 Without a body the model sees `POST /anything` and nothing else, and a request
-with no body is skipped rather than classified — so a forgotten flag looks
-like an analyzer that never fires.
+with no body is skipped rather than classified, so a forgotten flag looks like
+an analyzer that does not fire.
 
 Verdicts land in the audit trail as `metadata.risk_level` and roll up per
 session:
@@ -240,10 +241,10 @@ curl -s localhost:19000/api/stats | python3 -m json.tool   # by_risk
 curl -s localhost:19000/config    | python3 -m json.tool   # ai_rules per lane
 ```
 
-Unlike OPA, this evaluator **fails open** by default: it depends on a
-third-party API, and refusing every statement during a vendor outage is a
-larger incident than the one it guards against. Full reference in
-[`hoopinspect/README.md`](../../../hoopinspect/README.md) and
+This evaluator **fails open** by default. It depends on a third-party API, and
+refusing every statement during a vendor outage is a larger incident than the
+one it guards against. OPA and the local rules still fail closed. Full
+reference in [`hoopinspect/README.md`](../../../hoopinspect/README.md) and
 [`docs/adr/hoopinspect-flow.md`](../../../docs/adr/hoopinspect-flow.md#risk-analysis-the-ai-session-analyzer).
 
 ## Identity

@@ -331,13 +331,13 @@ Read the hit rate before you enable `block` anywhere:
 curl -s localhost:19000/stats | python3 -m json.tool
 ```
 
-Roll out with every tier on `warn`, watch `by_risk` in
-`/api/stats` for a week, then move `high` to `block`.
+Roll out with every tier on `warn`, watch `by_risk` in `/api/stats` for a
+week, then move `high` to `block`.
 
 ### For an HTTP lane, turn on body capture
 
-The HTTP codec exposes nothing by default. Without a body the model sees
-`POST /orders` and nothing else:
+The HTTP codec exposes nothing by default. Without a body the model sees `POST
+/orders` and nothing else:
 
 ```yaml
   - name: api
@@ -384,7 +384,7 @@ FATAL:  unbounded delete against the customer ledger
 ### The credential
 
 The config names a **path**, never the material, and the file must not be
-readable by group or other — a `0644` key file is refused at startup with its
+readable by group or other. A `0644` key file is refused at startup with its
 mode in the message. `/config` reports the endpoint host and whether a custom
 prompt is set, never the credential or the prompt text.
 
@@ -405,22 +405,22 @@ volumes:
       defaultMode: 0400
 ```
 
-### It fails open, unlike everything else here
+### The fail-open default
 
-Every other evaluator in the relay fails closed. This one defaults to
-`fail_open: true`, because it depends on a third-party API rather than a
-service you run: refusing every `UPDATE` during a vendor outage turns "we
-could not score this statement" into "the database is down".
+This evaluator defaults to `fail_open: true`, while the local rules and OPA
+fail closed. It depends on a third-party API rather than a service you run,
+and refusing every `UPDATE` during a vendor outage turns "we could not score
+this statement" into "the database is down".
 
-The local rules and OPA still ran and still allowed, so a silent analyzer means
-"guarded by everything except the optional expensive layer". The error still
-reaches the audit trail. Set `fail_open: false` where the classification is a
-compliance requirement.
+The local rules and OPA still ran and still allowed, so a silent analyzer
+means "guarded by everything except the optional expensive layer". The error
+still reaches the audit trail. Set `fail_open: false` where the classification
+is a compliance requirement.
 
 ### Writing your own prompt
 
-`analyzer.prompt` sets the risk guidance for every rule; a rule's own `prompt:`
-beats it.
+`analyzer.prompt` sets the risk guidance for every rule; a rule's own
+`prompt:` beats it.
 
 `analyzer.prompt` reaches **every lane**, so keep it protocol-neutral and put
 SQL- or HTTP-specific wording on the rule. Guidance reading "you are
@@ -454,9 +454,9 @@ entity rule when it does not.
 
 **An `ai_analysis` rule on an HTTP lane needs `capture_body: true`.** The HTTP
 codec exposes no body by default, and a request with no body is skipped rather
-than classified — so the symptom is a rule that never fires, not an error. The
-same rule on a postgres lane needs nothing extra: the statement text is always
-there.
+than classified, so the symptom is a rule that does not fire rather than an
+error. The same rule on a postgres lane needs nothing extra, because the
+statement text is there either way.
 
 ---
 
@@ -471,5 +471,5 @@ there.
 - [`docs/adr/hoopinspect-flow.md`](../docs/adr/hoopinspect-flow.md) — the code
   path behind each command, a per-command runbook and a troubleshooting table.
   [Risk analysis](../docs/adr/hoopinspect-flow.md#risk-analysis-the-ai-session-analyzer)
-  covers why the analyzer fails open, what the cache keys on, and which half of
-  the prompt a config cannot replace.
+  covers the fail-open default, the cache key, and the half of the prompt a
+  config cannot replace.

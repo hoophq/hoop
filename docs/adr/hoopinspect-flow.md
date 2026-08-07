@@ -561,20 +561,20 @@ those are the overwhelming majority.
 | `max_calls` | Process-lifetime budget, then fall through | A backstop against a pathological workload. Falling through allows, because the local rules and OPA already ran. |
 
 The cache key is `fingerprint(system_prompt) + ":" + shape`. Including the
-prompt matters: without it a reworded prompt keeps serving verdicts the old one
-produced until the TTL expires, and an operator watching for their change to
-take effect sees nothing for fifteen minutes.
+prompt matters: without it a reworded prompt keeps serving verdicts the old
+one produced until the TTL expires, and an operator watching for their change
+to take effect sees nothing for fifteen minutes.
 
 `sqlCacheKey` strips string and numeric literals from the already-lowercased,
-whitespace-normalized text. `httpCacheKey` uses `HTTPDetail.Resource`, which the
-codec has already collapsed, so `/users/12345/orders` and `/users/67890/orders`
-are one entry.
+whitespace-normalized text. `httpCacheKey` uses `HTTPDetail.Resource`, which
+the codec has already collapsed, so `/users/12345/orders` and
+`/users/67890/orders` are one entry.
 
 ### Requests only
 
 `classify` returns immediately on `FromServer`. By the time a response comes
 back a write has already executed, so a verdict cannot prevent anything, and
-read-side exposure is masking's job — which is cheaper and already runs.
+read-side exposure is masking's job, which is cheaper and already runs.
 
 ### Why this one fails open
 
@@ -583,14 +583,14 @@ mode. The analyzer is the third, and it defaults the other way.
 
 `OPAClient` depends on a service you run, usually on the same host. The
 analyzer depends on a third-party API over the public internet. Fail closed
-there and a vendor's outage refuses every `UPDATE` on the lane: you have turned
-"we could not score this statement" into "the database is down", which is a
-larger incident than the one the classifier was guarding against.
+there and a vendor's outage refuses every `UPDATE` on the lane: you have
+turned "we could not score this statement" into "the database is down", which
+is a larger incident than the one the classifier was guarding against.
 
-Failing open is not failing silently. The verdict keeps `OPAClient.failure`'s
-exact shape — `Denied: false` with `Err` set — so `policy.Chain` accumulates
-the error rather than discarding it, and the audit record shows the analyzer
-could not answer:
+Failing open still reports. The verdict keeps `OPAClient.failure`'s exact
+shape, `Denied: false` with `Err` set, so `policy.Chain` accumulates the error
+rather than discarding it, and the audit record shows the analyzer could not
+answer:
 
 ```go
 func (e *Evaluator) failure(err error) policy.Verdict {
@@ -613,15 +613,14 @@ Set `fail_open: false` where the classification is a compliance requirement.
 | `redacted` | detected entities are named, their values withheld |
 | `refuse` | a statement containing a detected entity is denied locally, no call |
 
-`redacted` and `refuse` are refused at startup without a `pii` section, because
-a mode that cannot do what its name says is worse than one that is off. A relay
-whose pitch is keeping taxpayer ids out of the database's own query log must not
-post them to a model vendor.
+`redacted` and `refuse` are refused at startup without a `pii` section,
+because a mode that cannot do what its name says is worse than one that is
+off. A relay whose pitch is keeping taxpayer ids out of the database's own
+query log must not post them to a model vendor.
 
-HTTP headers never reach the model, even ones a lane allowlisted for policy. An
-allowlist that is safe for a local rule is not automatically safe to hand a
-third party, and the header anyone would want here is the one that must never
-leave.
+HTTP headers never reach the model, even ones a lane allowlisted for policy.
+An allowlist that is safe for a local rule is not safe to hand a third party,
+and the header anyone would want here is the one that must never leave.
 
 ### The prompt, and the half of it you cannot change
 
@@ -646,19 +645,18 @@ The contract is unexported and appended after whatever you write. It carries
 two instructions, and both are load-bearing:
 
 - **Call exactly one of the three risk tools.** The risk level IS which tool
-  the model chose, which is what makes it an enum rather than a parsing
-  problem. Lose this and the model answers in prose, nothing maps, and every
-  statement fails classification — which under `fail_open: true` means allowing
-  everything.
+the model chose, which is what makes it an enum rather than a parsing problem.
+Lose this and the model answers in prose, nothing maps, and every statement
+fails classification, which under `fail_open: true` allows everything.
 - **Never quote a literal value from the statement.** The verdict reaches an
-  audit record, and `audit.SinkOptions` redaction fingerprints `Statement` and
-  `HTTP.Body` but never touches `Event.Metadata`. A title repeating the
-  identifier it objected to has published that identifier, through a channel
-  that bypasses the operator's `redact_statements` setting.
+audit record, and `audit.SinkOptions` redaction fingerprints `Statement` and
+`HTTP.Body` but never touches `Event.Metadata`. A title repeating the
+identifier it objected to has published that identifier, through a channel
+that bypasses the operator's `redact_statements` setting.
 
-Neither can be removed by configuration. Both failures are silent — the
-classifier keeps answering, just worse and leakier — which is exactly why they
-are not a config surface.
+Neither can be removed by configuration. Both failures raise no error: the
+classifier keeps answering, worse and leakier, so neither belongs in a config
+file.
 
 ### Where the verdict goes
 
@@ -673,8 +671,8 @@ Annotations ──> gate copies onto    risk_level, risk_action. Facts about it.
 
 `Chain` merges annotations on every hop, denial or not, and that "or not" is
 the point: a high-risk statement running under `high: warn` forwards, and its
-risk still has to reach the record. Otherwise observe-only mode — the whole
-reason `warn` exists — reports clean until something gets blocked.
+risk still has to reach the record. Otherwise observe-only mode, the whole
+reason `warn` exists, reports clean until something gets blocked.
 
 A lane may carry several `ai_analysis` rules, each its own evaluator emitting
 the same two keys, so the merge is **highest-wins rather than last-wins**. The
@@ -683,10 +681,10 @@ across statements, so letting a rule that rated a statement low overwrite one
 that rated it high would understate the whole session.
 
 The level and its action move as a **pair**. Merging the two keys
-independently produces `{high, allow}` out of a `high: warn` rule and a
-`low: allow` one — a mapping no rule configured. `policy.mergeAnnotations`
-owns both rules, and the keys live in `policy` rather than `analyzer` because
-`Chain` has to merge them and cannot import its own callers.
+independently produces `{high, allow}` out of a `high: warn` rule and a `low:
+allow` one, a mapping no rule configured. `policy.mergeAnnotations` owns both
+rules, and the keys live in `policy` rather than `analyzer` because `Chain`
+has to merge them and cannot import its own callers.
 
 `Metadata["risk_level"]` is read by `store.MemoryStore.applyEvent` and the
 SQLite store, which keep a session's HIGHEST risk (`riskRank`, a severity
@@ -694,14 +692,15 @@ comparison rather than a lexical one) and surface it as
 `SessionRecord.RiskLevel` and `Stats.ByRisk`. That rollup shipped before any
 producer existed; its doc comment predicted a plugin would write the key.
 
-The vocabulary is deliberately two keys. Model prose does not go there.
+The vocabulary is two keys. Model prose does not go there.
 
 ### The HTTP lane needs `capture_body`
 
-`codec/http` exposes nothing by default — no bodies, no headers — and the
+`codec/http` exposes nothing by default, no bodies and no headers, and the
 registry factory takes no arguments, so every lane in the process shared one
-zero-value `Options` and no lane could see a request body. `gate.Config.CodecFactory`
-is the seam that fixes it, nil meaning the registry, and a lane opts in:
+zero-value `Options` and no lane could see a request body.
+`gate.Config.CodecFactory` is the seam that fixes it, nil meaning the
+registry, and a lane opts in:
 
 ```yaml
   - name: api
@@ -712,8 +711,8 @@ is the seam that fixes it, nil meaning the registry, and a lane opts in:
       headers: [Content-Type]      # authorization is refused at startup
 ```
 
-Without it the analyzer sees `POST /anything` and no payload. A request with no
-body is skipped rather than classified, so a forgotten flag shows up as an
+Without it the analyzer sees `POST /anything` and no payload. A request with
+no body is skipped rather than classified, so a forgotten flag shows up as an
 analyzer that never fires rather than as an error.
 
 ### Providers
@@ -728,17 +727,18 @@ analyzer            (0 deps)  contract + registry, declares Provider
   └─ vertex         (nested)  golang.org/x/oauth2
 ```
 
-Claude on Vertex is the Anthropic Messages API with three transport changes —
-the model moves into the URL, `anthropic_version: vertex-2023-10-16` moves into
-the body, and auth becomes an OAuth bearer — so `analyzer/vertex` imports
-`anthropic.BuildRequest` and `anthropic.ParseResponse` rather than carrying a
-second copy of the encoder to drift.
+Claude on Vertex is the Anthropic Messages API with two transport changes: the
+model moves into the URL and auth becomes an OAuth bearer, with
+`anthropic_version: vertex-2023-10-16` in the body. So `analyzer/vertex`
+imports `anthropic.BuildRequest` and `anthropic.ParseResponse` rather than
+carrying a second copy of the encoder to drift.
 
-Vertex mints its bearer from a service account and refreshes before expiry. The
-`oauth2.TokenSource` is built once under a `sync.Once`, because it caches
+Vertex mints its bearer from a service account and refreshes it before expiry.
+The `oauth2.TokenSource` is built once under a `sync.Once`, because it caches
 internally: building one per request would mint one per request. `-validate`
-mints a single token so a bad key, a missing `roles/aiplatform.user` binding or
-a skewed clock fails the config check rather than the first risky statement.
+mints a single token so a bad key, a missing `roles/aiplatform.user` binding
+or a skewed clock fails the config check rather than the first risky
+statement.
 
 Prefer Application Default Credentials and omit `credentials_file`. Under GKE
 Workload Identity there is then no credential on disk at all, which is a
@@ -748,13 +748,12 @@ stronger answer than any file-permission check.
 
 The config names a path, never material. `analyzer.ReadSecretFile` refuses a
 file readable by group or other, the way `ssh` refuses a private key, and
-reports the mode because the usual cause is a ConfigMap default nobody looked
-at.
+reports the mode because the usual cause is an unreviewed ConfigMap default.
 
-What it returns is an `analyzer.Secret`, whose `String`, `GoString`,
-`MarshalJSON` and `LogValue` all return `[REDACTED]`. One type closes `%v`,
-`%+v`, a debug endpoint's `json.Marshal` and a structured log line at once, so
-a field added beside it later cannot leak by forgetting a tag.
+It returns an `analyzer.Secret`, whose `String`, `GoString`, `MarshalJSON` and
+`LogValue` all return `[REDACTED]`. One type closes `%v`, `%+v`, a debug
+endpoint's `json.Marshal` and a structured log line at once, so a field added
+beside it later cannot leak by forgetting a tag.
 
 `/config` reports the endpoint HOST and `custom_prompt: true`, never the path,
 the query string or the prompt text. An endpoint URL carrying userinfo or a
@@ -771,14 +770,15 @@ shape is real rather than hypothetical.
 | `block` | deny, with the model's title in the protocol's error frame |
 | `require_review` | **refused at startup** |
 
-An unset level defaults to `allow`, so an operator opts into blocking a tier by
-naming it.
+An unset level defaults to `allow`, so an operator opts into blocking a tier
+by naming it.
 
-`require_review` is declared in the enum and refused by name. Declaring it keeps
-the schema stable for when a review backend lands; refusing it means nobody
-ships a config that appears to hold statements for human approval and quietly
-does not. The gateway's inline path silently degrades the equivalent action to
-`warn`, which is the failure this refusal exists to avoid.
+`require_review` is declared in the enum and refused by name. Declaring it
+keeps the schema stable for when a review backend lands. Refusing it stops an
+operator from shipping a config that reads as a human-approval gate and
+forwards every statement. The gateway's inline path degrades the equivalent
+action to `warn` with no error, which is the failure this refusal exists to
+avoid.
 
 ## Masking, and why postgres needed a second mechanism
 
