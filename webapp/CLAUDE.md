@@ -76,7 +76,9 @@
   - Feature/module-specific events and subs should live within their module directory
 - **Namespacing**: Use namespaced keywords (e.g., `:module-name/event-name`)
 - **Initial State**: Define in `/src/webapp/db.cljs` under the module key
-- **Examples**: See `webapp.features.access_request.*`, `webapp.features.runbooks.*`, `webapp.audit_logs.*`
+- **Examples**: See `webapp.features.ai_session_analyzer.*`, `webapp.features.runbooks.*`, `webapp.audit_logs.*`
+  (`webapp.features.access_request.*` used to be the canonical example; its views moved to React in EVL-184
+  and only the trimmed `events.cljs`/`subs.cljs` remain)
 
 ## Response Guidelines
 - Prefer concise and objective responses

@@ -155,19 +155,20 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`,
-`/features/access-request/*`.
+the CLJS page is unreachable): `/guardrails/*`.
 `events/guardrails.cljs` stays regardless — resource setup/configure and the
-activation journey still subscribe to it. The `features/access_control/` tree
-has no consumer outside itself (its `events.cljs` also registers
-`:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
-so it can go whole, together with the `access-control-promotion` block in
-`features/promotion.cljs`. `features/access_request/` is only partly removable:
-`main.cljs` and `views/` have no outside consumer, but `events.cljs` and
-`subs.cljs` do — `features/ai_session_analyzer/views/rule_form.cljs` dispatches
-`:access-request/list-rules` and subscribes to `:access-request/rules` to fill
-its approval-rule picker, so those two files must survive until B3.2 lands.
-Removal belongs to a Track A cleanup PR.
+activation journey still subscribe to it.
+
+`/features/access-control/*` and `/features/access-request/*` are **no longer
+shadowed — the CLJS side is gone** (EVL-184). Both bidi entries, both sets of
+panel defmethods, both sidebar entries and both promotion blocks were removed;
+`features/access_control/` was deleted whole. `features/access_request/` keeps
+only `events.cljs` and `subs.cljs`, trimmed to the rule *list* read path
+(`:access-request/list-rules`, `:access-request/set-rules`, the
+`:access-request/rules` sub) because
+`features/ai_session_analyzer/views/rule_form.cljs` still dispatches and
+subscribes to them to fill its approval-rule picker. Those last two files go
+once B3.2 (EVL-148) migrates the AI Session Analyzer.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
