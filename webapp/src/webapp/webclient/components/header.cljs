@@ -30,18 +30,25 @@
                                          connection-selected?))
             script-loading? (= (:status @script-response) :loading)
             os (detect-os)]
-        [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
+        ;; Sampled off the Figma top bar: #e5e5e5 surface over a 2px #90909c
+        ;; rule, which on the Radix scale the legacy app uses is gray-4 and
+        ;; gray-9. The old bg-gray-1/border-gray-3 pairing was near-white on
+        ;; near-white and read as no bar at all under the new global header.
+        [:> Box {:class "h-10 shrink-0 border-b-2 border-gray-9 bg-gray-4"}
          [:> Flex {:align "center"
                    :justify "between"
                    :class "h-full px-4"}
           [:> Flex {:align "center" :gap "4"}
-           [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+           [:> Heading {:as "h1" :size "3" :weight "bold" :class "text-gray-12"}
             "Terminal"]
 
            [:> Button
             {:radius "full"
              :size "1"
-             :variant "soft"
+             :variant (if (and @primary-connection
+                                (not @parallel-mode-active?))
+                         "solid"
+                         "soft")
              :color (if (and @primary-connection
                              (not @parallel-mode-active?))
                       "indigo"
@@ -81,8 +88,8 @@
 
            [:> Tooltip {:content "Search"}
             [:> IconButton
-             {:size "2"
-              :variant "soft"
+             {:size "1"
+              :variant "ghost"
               :color "gray"
               :highContrast true
               :aria-label "Search resource roles"
@@ -93,9 +100,9 @@
 
            [:> Tooltip {:content "Help"}
             [:> IconButton
-             {:size "2"
+             {:size "1"
               :color "gray"
-              :variant "soft"
+              :variant "ghost"
               :highContrast true
               :aria-label "Open help documentation"
               :onClick (fn []
@@ -107,9 +114,9 @@
             [:> IconButton
              {:class (when @dark-mode?
                        "bg-gray-8 text-gray-12")
-              :size "2"
+              :size "1"
               :color "gray"
-              :variant "soft"
+              :variant "ghost"
               :highContrast true
               :aria-label (if @dark-mode?
                             "Switch to light theme"
@@ -122,9 +129,13 @@
                [:> Moon {:size 16}])]]
 
            [:> Tooltip {:content "Metadata"}
-            [:div
+            ;; inline-flex: this wrapper only exists to give Tooltip a ref, and
+            ;; as a block it added its own line box around the ghost button.
+            [:div {:class "inline-flex"}
              [notification-badge
-              {:icon [:> PackagePlus {:size 16}]
+              {:size "1"
+               :variant "ghost"
+               :icon [:> PackagePlus {:size 16}]
                :on-click #(rf/dispatch [:webclient/set-active-panel :metadata])
                :active? (= @active-panel :metadata)
                :has-notification? has-metadata?
@@ -133,11 +144,12 @@
                :aria-expanded (= @active-panel :metadata)}]]]
 
            ;; New Parallel Mode Button
-           [parallel-mode-button/parallel-mode-button]
+           [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost"}]
 
            [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button
-             {:disabled disable-run-button?
+             {:size "1"
+              :disabled disable-run-button?
               :loading script-loading?
               :id "run-button"
               :data-run-button true

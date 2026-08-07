@@ -1818,6 +1818,65 @@
         },
         "type": "object"
       },
+      "openapi.ConnectionCredentialsList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/openapi.ConnectionCredentialsListItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ConnectionCredentialsListItem": {
+        "properties": {
+          "connection_id": {
+            "description": "Unique ID of the connection this credential belongs to",
+            "example": "5364ec99-653b-41ba-8165-67236e894990",
+            "format": "uuid",
+            "type": "string"
+          },
+          "connection_name": {
+            "description": "The name of the connection",
+            "example": "pgdemo",
+            "type": "string"
+          },
+          "connection_subtype": {
+            "description": "The connection subtype",
+            "example": "postgres",
+            "type": "string"
+          },
+          "connection_type": {
+            "description": "Connection type",
+            "example": "database",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the credential was issued",
+            "example": "2025-08-25T12:00:00Z",
+            "type": "string"
+          },
+          "expire_at": {
+            "description": "When the credential expires. Null when the credential is persistent\n(issued without access_duration_seconds).",
+            "example": "2025-08-25T13:00:00Z",
+            "type": "string"
+          },
+          "id": {
+            "description": "The unique identifier of the credential",
+            "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The audit session currently linked to this credential. Empty when the user\nclosed the session but kept the credential.",
+            "example": "2CBC8DB5-FBF8-4293-8E35-59A6EEA40207",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.ConnectionCredentialsRequest": {
         "properties": {
           "access_duration_seconds": {
@@ -10465,6 +10524,37 @@
         "summary": "OIDC | Login Callback",
         "tags": [
           "Authentication"
+        ]
+      }
+    },
+    "/connection-credentials": {
+      "get": {
+        "description": "Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.ConnectionCredentialsList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Active Connection Credentials",
+        "tags": [
+          "Connections"
         ]
       }
     },

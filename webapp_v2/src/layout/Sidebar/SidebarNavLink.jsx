@@ -2,29 +2,14 @@ import { NavLink } from '@mantine/core';
 import classes from './Sidebar.module.css';
 
 /**
- * NavLink styled for the dark sidebar shell.
+ * NavLink styled for the sidebar shell.
  * All visual decisions live in Sidebar.module.css — never pass styles={} on instances.
- *
- * Props:
- *   danger      — destructive action color (e.g. Log out)
- *   profileItem — square corners for items nested in the profile disclosure
  */
-export function SidebarNavLink({
-  danger = false,
-  profileItem = false,
-  classNames: extra,
-  ...props
-}) {
-  const rootClass = [
-    classes.navLink,
-    danger      && classes.navLinkDanger,
-    profileItem && classes.profileItem,
-  ].filter(Boolean).join(' ');
-
+export function SidebarNavLink({ classNames: extra, ...props }) {
   return (
     <NavLink
       classNames={{
-        root:     rootClass,
+        root:     classes.navLink,
         label:    classes.navLinkLabel,
         section:  classes.navLinkSection,
         chevron:  classes.navLinkChevron,

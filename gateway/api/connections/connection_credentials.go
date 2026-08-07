@@ -41,6 +41,9 @@ var validConnectionTypes = []string{
 // gateway/services/credentials.go.
 const noExpirySentinel = "9999-12-31T00:00:00Z"
 
+// Ceiling for any credential window, review-gated or not.
+const maxAccessDurationSec = 48 * 60 * 60
+
 func noExpiryTime() time.Time {
 	t, _ := time.Parse(time.RFC3339, noExpirySentinel)
 	return t
@@ -135,6 +138,31 @@ func CreateConnectionCredentials(c *gin.Context) {
 		}
 	}
 
+	// Validate the requested window BEFORE anything is persisted. This used to
+	// live inside each branch, below the session insert, so a rejected request
+	// still left an Open session row (and a session-start event) behind with
+	// nothing that would ever close it. Both branches answer to the same rules:
+	// a review-required connection must name a window, no window may exceed the
+	// 48-hour ceiling, and none may exceed the access rule's own maximum — the
+	// last of which the review branch was not checking at all, so a JIT rule
+	// capped at 30 minutes happily accepted a 48-hour request.
+	if requiresReview && req.AccessDurationSec <= 0 {
+		c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
+		return
+	}
+	if req.AccessDurationSec > 0 {
+		if req.AccessDurationSec > maxAccessDurationSec {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
+			return
+		}
+		if accessRule != nil && accessRule.AccessMaxDuration != nil &&
+			req.AccessDurationSec > *accessRule.AccessMaxDuration {
+			c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf(
+				"access duration cannot exceed %d seconds for this connection", *accessRule.AccessMaxDuration)})
+			return
+		}
+	}
+
 	// Determine the audit status of the credential-issuance session.
 	// Persistent credentials (no review, no access_duration_seconds) mint a
 	// Done bookkeeping row immediately: this session is not bound to any TCP
@@ -184,10 +212,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// Review-required connections always need a bounded access window — the
 	// configure-session step in the UI is responsible for supplying it.
 	if requiresReview {
-		if req.AccessDurationSec <= 0 {
-			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
-			return
-		}
 		reviewID, err := createConnectionCredentialsReview(ctx, conn, accessRule, sid, req.AccessDurationSec)
 		if err != nil {
 			log.Errorf("failed creating review, err=%v", err)
@@ -215,10 +239,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 	var expireAt time.Time
 	if req.AccessDurationSec > 0 {
 		expireAt = time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
-		if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
-			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
-			return
-		}
 	} else {
 		expireAt = noExpiryTime()
 	}
@@ -732,6 +752,50 @@ func GetConnectionCredentials(c *gin.Context) {
 	}
 
 	c.JSON(200, resp)
+}
+
+// ListActiveConnectionCredentials
+//
+//	@Summary		List Active Connection Credentials
+//	@Description	Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).
+//	@Tags			Connections
+//	@Produce		json
+//	@Success		200	{object}	openapi.ConnectionCredentialsList
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/connection-credentials [get]
+func ListActiveConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	rows, err := models.ListActiveCredentialsByUser(models.DB, ctx.OrgID, ctx.UserID)
+	if err != nil {
+		// Logged, not returned: the driver error can name tables, columns and
+		// the query itself, and this is an unauthenticated-shaped surface in the
+		// sense that any signed-in user can reach it.
+		log.Errorf("failed listing connection credentials for user %s, err=%v", ctx.UserID, err)
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed listing connection credentials"})
+		return
+	}
+
+	// Initialised so an empty result serialises as {"items":[]} instead of null.
+	result := openapi.ConnectionCredentialsList{Items: []openapi.ConnectionCredentialsListItem{}}
+	for _, row := range rows {
+		var expireAt *time.Time
+		if !isPersistentExpireAt(row.ExpireAt) {
+			t := row.ExpireAt
+			expireAt = &t
+		}
+		result.Items = append(result.Items, openapi.ConnectionCredentialsListItem{
+			ID:                row.ID,
+			ConnectionID:      row.ConnectionID,
+			ConnectionName:    row.ConnectionName,
+			ConnectionType:    row.ConnectionType,
+			ConnectionSubType: row.ConnectionSubType,
+			SessionID:         row.SessionID,
+			ExpireAt:          expireAt,
+			CreatedAt:         row.CreatedAt,
+		})
+	}
+	c.JSON(200, result)
 }
 
 type handlerError struct {

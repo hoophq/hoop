@@ -1,0 +1,72 @@
+/* Reconciles the Radix Themes root theme with the React shell's AppShell.
+ * Radix sets three things here that both matter to us:
+ * `position: relative; z-index: 0; min-height: 100vh`.
+ *
+ * 1. min-height. Under the shell this root sits inside AppShell.Main, which
+ *    already reserves the global header with
+ *    `padding-top: var(--app-shell-header-offset)` — so a full-viewport child
+ *    makes the page exactly one header taller than the viewport. Every
+ *    ClojureScript route picked up 56px of dead scroll, and on the web terminal
+ *    it scrolled the toolbar out of sight. Main is sized in `dvh`, so we mirror
+ *    Radix's own @supports split instead of flattening to `vh`: on mobile
+ *    browsers with collapsible chrome `100vh > 100dvh` and the overflow returns.
+ *
+ * 2. z-index — the one that actually hurt. `position: relative` with a numeric
+ *    z-index creates a stacking context around the ENTIRE ClojureScript tree.
+ *    The shell's header is `position: fixed; z-index: 100`, and nothing between
+ *    the two creates a stacking context, so the header painted above every CLJS
+ *    descendant regardless of its own z-index: the legacy modal and dialog sit
+ *    at z-[201] and were still occluded, and raising them further could never
+ *    have helped. `z-index: auto` on a positioned element creates no stacking
+ *    context, so the subtree merges into the root context and those values mean
+ *    what they say again. `position: relative` is kept — it is the containing
+ *    block for absolutely positioned descendants.
+ *
+ *    Flattening is only safe because nothing inside relies on the isolation. A
+ *    `z-index: -1` child of a flattened root paints behind the root's own opaque
+ *    background (Radix sets `background-color: var(--color-background)` on the
+ *    root theme) and would silently vanish. All six Radix rules that use a
+ *    negative z-index are contained by a nearer stacking context of their own:
+ *    `.rt-BaseButton.rt-variant-classic` and `.rt-SelectTrigger.rt-variant-classic`
+ *    via `z-index: 0`, `.rt-BaseCard` via `contain: paint`,
+ *    `.rt-SegmentedControlRoot` via `isolation: isolate`, and `.rt-SliderThumb`
+ *    via the transform its primitive sets inline. Anything new in ClojureScript
+ *    that wants a negative z-index has to bring its own stacking context.
+ *
+ * Outside the shell (standalone shadow-cljs, or routes rendered without the
+ * React Layout) the offset variable is absent and the height falls back to a
+ * plain viewport height; the z-index change is inert there, because nothing is
+ * layered above the app to begin with.
+ *
+ * The class is doubled to clear the Radix rule regardless of import order.
+ */
+.radix-themes.radix-themes:where([data-is-root-theme='true']) {
+  min-height: calc(100vh - var(--app-shell-header-offset, 0rem));
+  z-index: auto;
+}
+
+@supports (min-height: 100dvh) {
+  .radix-themes.radix-themes:where([data-is-root-theme='true']) {
+    min-height: calc(100dvh - var(--app-shell-header-offset, 0rem));
+  }
+}
+
+/* The header offset only means anything when the document is the scrollport.
+ *
+ * A Radix dialog card is its own scroll container (`.rt-BaseDialogContent` is
+ * `position: relative; overflow: auto`) and is portalled to <body>, so the shell
+ * header is not above it in any meaningful sense — but the variable is set on
+ * :root and inherits straight through the portal. A `sticky top-app-header`
+ * inside a dialog therefore got shoved 56px down, painting over the content
+ * below it: the Session Details header is exactly that case, since
+ * sessions/components/session_header.cljs is modal content everywhere except
+ * /sessions/:id.
+ *
+ * Zeroing the variable per dialog fixes every such site at once and keeps the
+ * page-flow render of the same component correct. `#modal` is the legacy
+ * components/modal.cljs overlay, which is likewise a fixed, self-scrolling box.
+ */
+.rt-BaseDialogContent,
+#modal {
+  --app-shell-header-offset: 0rem;
+}

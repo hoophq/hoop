@@ -302,7 +302,7 @@ decision must close before the Endgame.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B4.0 Native-client-access port | Port the native-client-access flow + draggable countdown card (~1,100 LOC) to React; switch CommandPalette from `clojureDispatch('native-client-access->start-flow')` to the native implementation | L | **Hard Endgame blocker** (React's own palette depends on the CLJS flow); needed by B4.2 and Wave 7 |
+| ~~B4.0 Native-client-access port~~ | ✅ **Done** — shipped early with EVL-171, because the Native Connections drawer had to live in the React shell to work on CLJS routes. `features/NativeConnections/` + `stores/useNativeAccessStore`; CommandPalette and Config Status now call the store directly. CLJS stands down via `react-shell?`; namespace deletion is a follow-up | L | — |
 | B4.1 Resources list + wizard core | `/resources` list (537 LOC) + multi-step wizard skeleton (state machine, step chrome); port `events/connections.cljs`; reuse the kept `agents/deployment` logic as a React service | XL pt.1 | Everything below |
 | B4.2 Resources new/configure/add-role | `/resources/new`, `/resources/configure/:id`, `/resources/:id/add-role`: federation OAuth, MCP OAuth popup + polling, terminal/native access tabs (needs B4.0). Reuse patterns from the already-React `/roles/:name/configure` — don't duplicate | XL pt.2 | Onboarding reuse |
 | B4.3 Resource catalog + onboarding | `/resource-catalog` (562 LOC, no API — seeds wizard state) + `/onboarding(+setup, setup/resource, setup/agent, resource-providers)` chrome (~700 LOC) on a no-sidebar layout, reusing the B4.1/B4.2 wizard | L | Kills the `/onboarding/*` ClojureApp route in `Router.jsx` |
@@ -359,14 +359,16 @@ dies silently).
 | Clipboard copy/cut blocking | Wave 2 (own S ticket) | Gap **today** on React-only routes: CLJS installs document-level copy/cut listeners when `disable_clipboard_copy_cut` is on; React only hides copy buttons. Install/remove the listeners in the React shell keyed on the flag |
 | MS Clarity port | Wave 2–3 (own S ticket) | Port the script injection (`events/tracking.cljs`) + environment start/stop gating (`events/clarity.cljs`) |
 | org-migration dialog | Wave 3 (own S ticket) | Port `features/users/views/org_migration_dialog.cljs` into the React Layout so it fires on React routes too (source kept alive by PR A3 for this purpose) |
-| native-client-access | Wave 4 (B4.0) | Hard blocker; first ticket of Wave 4 |
+| native-client-access | ✅ Done (EVL-171) | Ported ahead of Wave 4; see B4.0 |
 
 **Bridge teardown inventory** (deleted in the Endgame): `utils/clojureDispatch.js`,
 `stores/useBridgeStore.js`, `components/ClojureApp.jsx`, the CLJS branch in
 `features/CommandPalette/spotlight.js`, `window.__hoopReactShellPresent` /
 `__hoopReactShellCljsVisible`, `localStorage react-shell`. Remaining bridge events
 after EVL-104: `users->get-user` (refreshLegacyUser), `command-palette->toggle`
-(spotlight CLJS branch), `native-client-access->start-flow` (blocked on B4.0).
+(spotlight CLJS branch). `native-client-access->start-flow` is gone from the React side —
+the traffic now runs the other way, over the `hoop:native-access-*` CustomEvents, which
+outlive the flag because `/resources` and `/sessions/:id` stay CLJS.
 
 ---
 

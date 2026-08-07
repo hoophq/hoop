@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react'
 import { Center, Stack, Loader, Text, Transition } from '@mantine/core'
 import { XCircle } from 'lucide-react'
 
+// Most callers pass no `h` and render inside AppShell.Main, which already
+// reserves the shell header with `padding-top: var(--app-shell-header-offset)`.
+// A raw 100vh there is one header taller than the space it has, so every load
+// flashed a scrollbar. Outside the shell (auth, onboarding) the variable is
+// absent and this is a plain viewport height, which is what those pages want.
+const DEFAULT_HEIGHT = 'calc(100dvh - var(--app-shell-header-offset, 0rem))'
+
 function PageLoader({ message, description, error, overlay, h }) {
   const [visible, setVisible] = useState(false)
 
@@ -20,7 +27,7 @@ function PageLoader({ message, description, error, overlay, h }) {
     : undefined
 
   return (
-    <Center style={containerStyle} h={overlay ? undefined : (h ?? '100vh')}>
+    <Center style={containerStyle} h={overlay ? undefined : (h ?? DEFAULT_HEIGHT)}>
       <Transition mounted={visible} transition="fade" duration={300}>
         {(styles) => (
           <Stack align="center" gap="xl" style={{ ...styles, maxWidth: 320 }}>

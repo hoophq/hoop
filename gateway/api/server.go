@@ -628,6 +628,13 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.CloseConnectionCredentials,
 	)
+	// Self-scoped collection: every active credential owned by the caller,
+	// without secrets. Registered as a top-level path (like /connection-tags)
+	// so it never shadows a connection literally named "credentials".
+	r.GET("/connection-credentials",
+		r.AuthMiddleware,
+		apiconnections.ListActiveConnectionCredentials,
+	)
 
 	r.GET("/connection-tags",
 		apiroutes.ReadOnlyAccessRole,

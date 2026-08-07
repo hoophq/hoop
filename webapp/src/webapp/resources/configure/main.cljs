@@ -76,7 +76,7 @@
 
         [page-wrapper/main
          {:children
-          [:> Box {:class "h-[calc(100vh-65px)] bg-[--gray-1] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
+          [:> Box {:class "h-[calc(100vh-var(--app-shell-header-offset,0rem)-65px)] bg-[--gray-1] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
            (if (or loading? (nil? resource))
              [loading-view]
              [:> Box
