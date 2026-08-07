@@ -222,6 +222,14 @@
 (def toaster-offset
   #js {:top "calc(var(--app-shell-header-offset, 0rem) + 1.5rem)"})
 
+;; The CLJS flow used to persist whole credential responses — plaintext secrets
+;; included — under this key, and cleaned them up on boot. Under the shell that
+;; boot path no longer runs and React never writes the key, so anything a user
+;; accumulated before the cutover would sit in localStorage forever. Purge it
+;; unconditionally, once, on every load.
+(defonce ^:private purge-legacy-native-access
+  (.removeItem js/localStorage "hoop-native-client-access"))
+
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])
         react-shell? (boolean (.getItem js/localStorage "react-shell"))]
@@ -844,10 +852,13 @@
 
         :else
         [theme-provider
-         ;; Keyed on the path, not just the panel. Panels read their route
-         ;; params from window.location at render time, so /sessions/A →
-         ;; /sessions/B keeps the same :active-panel and would otherwise never
-         ;; re-render. A panel change already remounted this subtree (different
-         ;; component type), so the only behaviour this adds is for the
-         ;; param-only case, which is currently a no-op.
-         ^{:key @route-path} [routes/panels @active-panel @gateway-public-info]]))))
+         ;; route-path is passed as an argument, not used as a :key. Panels read
+         ;; their params from window.location when they render, so /sessions/A →
+         ;; /sessions/B keeps the same :active-panel and Reagent, comparing
+         ;; arguments, would skip the re-render entirely. Passing the path makes
+         ;; the arguments differ so the multimethod body runs again and re-reads
+         ;; the URL. A :key here would have worked too but by REMOUNTING the
+         ;; whole layout on every navigation — most panels return the same
+         ;; `layout` component, so today they reconcile in place rather than
+         ;; remount. The panel methods ignore the extra argument.
+         [routes/panels @active-panel @gateway-public-info @route-path]]))))

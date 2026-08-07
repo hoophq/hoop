@@ -127,26 +127,40 @@ type ActiveConnectionCredential struct {
 // listed even if their group access is later revoked. That mirrors the proxy,
 // where revocation is an explicit action on the credential.
 func ListActiveCredentialsByUser(db *gorm.DB, orgID, userSubject string) ([]ActiveConnectionCredential, error) {
+	// DISTINCT ON collapses the row to one per connection. Several can be live
+	// at once — Create reuses the existing credential but Resume mints a
+	// parallel one — and callers key this by connection name, so without a rule
+	// here the winner was whichever the client's reducer happened to keep. The
+	// order inside the group is the same rule the rest of the code resolves by:
+	// the credential still attached to a session first, then the newest.
+	//
+	// expire_at is compared against a bound instant rather than SQL NOW(): the
+	// column is timestamp WITHOUT time zone holding UTC, so NOW() would compare
+	// it against the server's local wall clock and answer a different question
+	// than every Go-side expiry check.
 	var rows []ActiveConnectionCredential
 	err := db.Raw(`
-		SELECT
-			cc.id                       AS id,
-			c.id                        AS connection_id,
-			cc.connection_name          AS connection_name,
-			c.type                      AS connection_type,
-			COALESCE(c.subtype, '')     AS connection_subtype,
-			COALESCE(cc.session_id, '') AS session_id,
-			cc.created_at               AS created_at,
-			cc.expire_at                AS expire_at
-		FROM private.connection_credentials cc
-		INNER JOIN private.connections c
-			ON c.org_id = cc.org_id AND c.name = cc.connection_name
-		WHERE cc.org_id = ?
-			AND cc.user_subject = ?
-			AND cc.revoked_at IS NULL
-			AND cc.expire_at > NOW()
-		ORDER BY cc.created_at DESC
-	`, orgID, userSubject).Scan(&rows).Error
+		SELECT * FROM (
+			SELECT DISTINCT ON (cc.connection_name)
+				cc.id                       AS id,
+				c.id                        AS connection_id,
+				cc.connection_name          AS connection_name,
+				c.type                      AS connection_type,
+				COALESCE(c.subtype, '')     AS connection_subtype,
+				COALESCE(cc.session_id, '') AS session_id,
+				cc.created_at               AS created_at,
+				cc.expire_at                AS expire_at
+			FROM private.connection_credentials cc
+			INNER JOIN private.connections c
+				ON c.org_id = cc.org_id AND c.name = cc.connection_name
+			WHERE cc.org_id = ?
+				AND cc.user_subject = ?
+				AND cc.revoked_at IS NULL
+				AND cc.expire_at > ?
+			ORDER BY cc.connection_name, (cc.session_id IS NOT NULL) DESC, cc.created_at DESC
+		) t
+		ORDER BY t.created_at DESC
+	`, orgID, userSubject, time.Now().UTC()).Scan(&rows).Error
 	return rows, err
 }
 

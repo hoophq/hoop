@@ -41,6 +41,9 @@ var validConnectionTypes = []string{
 // gateway/services/credentials.go.
 const noExpirySentinel = "9999-12-31T00:00:00Z"
 
+// Ceiling for any credential window, review-gated or not.
+const maxAccessDurationSec = 48 * 60 * 60
+
 func noExpiryTime() time.Time {
 	t, _ := time.Parse(time.RFC3339, noExpirySentinel)
 	return t
@@ -116,6 +119,31 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// Check if connection requires review/JIT approval
 	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
 
+	// Validate the requested window BEFORE anything is persisted. This used to
+	// live inside each branch, below the session insert, so a rejected request
+	// still left an Open session row (and a session-start event) behind with
+	// nothing that would ever close it. Both branches answer to the same rules:
+	// a review-required connection must name a window, no window may exceed the
+	// 48-hour ceiling, and none may exceed the access rule's own maximum — the
+	// last of which the review branch was not checking at all, so a JIT rule
+	// capped at 30 minutes happily accepted a 48-hour request.
+	if requiresReview && req.AccessDurationSec <= 0 {
+		c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
+		return
+	}
+	if req.AccessDurationSec > 0 {
+		if req.AccessDurationSec > maxAccessDurationSec {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
+			return
+		}
+		if accessRule != nil && accessRule.AccessMaxDuration != nil &&
+			req.AccessDurationSec > *accessRule.AccessMaxDuration {
+			c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf(
+				"access duration cannot exceed %d seconds for this connection", *accessRule.AccessMaxDuration)})
+			return
+		}
+	}
+
 	// Determine the audit status of the credential-issuance session.
 	// Persistent credentials (no review, no access_duration_seconds) mint a
 	// Done bookkeeping row immediately: this session is not bound to any TCP
@@ -165,10 +193,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// Review-required connections always need a bounded access window — the
 	// configure-session step in the UI is responsible for supplying it.
 	if requiresReview {
-		if req.AccessDurationSec <= 0 {
-			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
-			return
-		}
 		reviewID, err := createConnectionCredentialsReview(ctx, conn, accessRule, sid, req.AccessDurationSec)
 		if err != nil {
 			log.Errorf("failed creating review, err=%v", err)
@@ -196,10 +220,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 	var expireAt time.Time
 	if req.AccessDurationSec > 0 {
 		expireAt = time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
-		if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
-			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
-			return
-		}
 	} else {
 		expireAt = noExpiryTime()
 	}

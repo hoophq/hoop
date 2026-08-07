@@ -350,7 +350,11 @@
                                           :detail {:connectionName connection-name
                                                    :sessionId session-id
                                                    :accessDurationSec access-duration-sec}
-                                          :on-done on-error-cb}}
+                                          :on-done on-error-cb}
+        ;; The old success path closed the session-details modal before showing
+        ;; credentials. The drawer is the surface now, so close it here or the
+        ;; modal stays open on top of the drawer it just handed off to.
+        :fx [[:dispatch [:modal->close]]]}
        {:fx [[:dispatch [:fetch {:method "POST"
                                  :uri (str "/connections/" connection-name "/credentials/" session-id)
                                  :body {:access_duration_seconds access-duration-sec}
