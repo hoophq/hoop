@@ -32,13 +32,7 @@
      ["/roles/" :connection-name "/configure"] :configure-role
      "/client" :editor-plugin
      "/runbooks" :runbooks
-     "/features" [["/access-control" :access-control]
-                  ["/access-control/new" :access-control-new]
-                  ["/access-control/edit" :access-control-edit]
-                  ["/access-request" :access-request]
-                  ["/access-request/new" :access-request-new]
-                  [["/access-request/edit/" :rule-name] :access-request-edit]
-                  ["/machine-identities" :machine-identities]
+     "/features" [["/machine-identities" :machine-identities]
                   ["/machine-identities/new" :machine-identities-new]
                   [["/machine-identities/edit/" :identity-name] :machine-identities-edit]
                   [["/machine-identities/" :identity-name "/roles"] :machine-identities-roles]
