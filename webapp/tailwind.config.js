@@ -167,18 +167,6 @@ module.exports = {
       // Layout (/onboarding/*, auth) and in standalone CLJS.
       height: {
         screen: 'calc(100vh - var(--app-shell-header-offset, 0rem))',
-        'sessions-list': 'calc(100vh - 160px)',
-        'audit-sessions-list': 'calc(100vh - 245px)',
-        'connections-list': 'calc(100vh - 160px)',
-        'plugins-list': 'calc(100vh - 160px)',
-        'new-task__screen-container': 'calc(100vh - 68px)',
-        'templates__screen-container': 'calc(100vh - 140px)',
-        'reviews__screen-container': 'calc(100vh - 68px)',
-        'reviews-plugin__screen-container': 'calc(100vh - 140px)',
-        'new-task__tree-container': 'calc(100vh - 140px)',
-        'screen-90vh': '90vh',
-        'logs-container': 'calc(100% - 38px)',
-        'connection-selector': 'calc(100vh - 56px)',
       },
       minHeight: {
         screen: 'calc(100vh - var(--app-shell-header-offset, 0rem))'
@@ -186,7 +174,6 @@ module.exports = {
       width: {
         'side-menu': '308px',
         'side-menu-sm': '72px', // Width for collapsed sidebar
-        'floating-search-webclient': 'calc(100% - 50px)'
       },
       minWidth: {
         64: '16rem',

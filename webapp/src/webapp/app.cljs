@@ -280,7 +280,7 @@
               ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
               [:section
                {:class "antialiased h-screen"}
-               [:> Toaster {:position "top-right" :offset toaster-offset}]
+               [:> Toaster {:position "top-right" :offset toaster-offset :mobileOffset toaster-offset}]
                [modals/modal]
                [modals/modal-radix]
                [dialog/dialog]
@@ -295,7 +295,7 @@
               ;; Normal mode: full layout with sidebar and cmdk
               [:section
                {:class "antialiased h-screen"}
-               [:> Toaster {:position "top-right" :offset toaster-offset}]
+               [:> Toaster {:position "top-right" :offset toaster-offset :mobileOffset toaster-offset}]
                [modals/modal]
                [modals/modal-radix]
                [dialog/dialog]
@@ -313,7 +313,7 @@
 
 (defmethod layout :auth [_ panels]
   [:<>
-   [:> Toaster {:position "top-right" :offset toaster-offset}]
+   [:> Toaster {:position "top-right" :offset toaster-offset :mobileOffset toaster-offset}]
    (snackbar/snackbar)
    [modals/modal]
    [modals/modal-radix]
