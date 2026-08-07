@@ -41,6 +41,8 @@ function RequestAccessForm({ connectionName, connection, onCancel }) {
         </Alert>
       ) : (
         <Stack gap="xs">
+          {/* The dropdown is portalled and Mantine gives a combobox z-index
+              300, so inside this 400 modal it opened BEHIND the dialog. */}
           <Select
             label="Access duration"
             placeholder="Select duration"
@@ -48,6 +50,7 @@ function RequestAccessForm({ connectionName, connection, onCancel }) {
             value={duration}
             onChange={setDuration}
             allowDeselect={false}
+            comboboxProps={{ zIndex: DRAWER_MODAL_Z_INDEX + 1 }}
           />
           <Text fz="sm" c="dimmed">
             Your access will automatically expire after this period

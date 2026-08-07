@@ -5,11 +5,12 @@ import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
 import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
+import classes from './NativeConnections.module.css'
 
 /** Agent offline, or the connection lookup / credential request failed. */
 export function UnavailablePanel({ message }) {
   return (
-    <Alert color="amber" icon={<TriangleAlert size={16} />} title="Connection method not available">
+    <Alert color="amber" icon={<TriangleAlert size={16} />} title="Connection method not available" classNames={{ title: classes.amberText, icon: classes.amberText }}>
       {message}
     </Alert>
   )
@@ -44,7 +45,13 @@ export function RequestingPanel({ connectionName }) {
  * "Check approval" is the same call on demand, for anyone who does not want to
  * wait out the interval.
  */
-export function PendingReviewPanel({ connectionName, sessionId, accessDurationSec }) {
+export function PendingReviewPanel({
+  connectionName,
+  sessionId,
+  accessDurationSec,
+  checking,
+  hint,
+}) {
   const navigate = useNavigate()
   const resumeAfterReview = useNativeAccessStore((s) => s.resumeAfterReview)
   const closeDrawer = useNativeConnectionsStore((s) => s.close)
@@ -61,10 +68,18 @@ export function PendingReviewPanel({ connectionName, sessionId, accessDurationSe
 
   return (
     <Stack gap="sm">
-      <Alert color="amber" icon={<Clock size={16} />} title="Waiting for review approval">
+      <Alert color="amber" icon={<Clock size={16} />} title="Waiting for review approval" classNames={{ title: classes.amberText, icon: classes.amberText }}>
         A reviewer has to approve this request before the credentials are issued. This row picks
         them up on its own once that happens.
       </Alert>
+      {/* A failed check does not end the wait — the review is still open — so
+          the message is a hint here rather than an error panel that would take
+          the actions away with it. */}
+      {hint && (
+        <Text fz="xs" c="dimmed">
+          {`Last check failed: ${hint}`}
+        </Text>
+      )}
       {sessionId && (
         <Group justify="flex-end" gap="sm">
           <Button variant="default" size="sm" onClick={viewReview}>
@@ -72,6 +87,7 @@ export function PendingReviewPanel({ connectionName, sessionId, accessDurationSe
           </Button>
           <Button
             size="sm"
+            loading={checking}
             onClick={() => resumeAfterReview(connectionName, sessionId, accessDurationSec)}
           >
             Check approval

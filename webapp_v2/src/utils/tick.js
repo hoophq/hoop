@@ -12,6 +12,10 @@ const subscribers = new Set()
 export function subscribeTick(callback) {
   subscribers.add(callback)
   if (intervalId === null) {
+    // Refresh on (re)start: the cache is only advanced by the interval, so
+    // after an idle period the first snapshot a new subscriber reads would
+    // otherwise be however stale the last teardown left it.
+    now = Date.now()
     intervalId = setInterval(() => {
       now = Date.now()
       subscribers.forEach((fn) => fn())

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Box, Group, Image, Stack, Text } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
 import Accordion from '@/components/Accordion'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { useNativeAccessStore, FLOW_STATUS } from '@/stores/useNativeAccessStore'
@@ -22,40 +21,51 @@ const PANEL_STATES = new Set([
   ROW_STATE.PENDING_REVIEW,
 ])
 
-function RowBody({ role }) {
+function RowBody({ role, state }) {
   const status = useNativeAccessStore((s) => s.statusByName[role.name])
   const credentials = useNativeAccessStore((s) => s.credentialsByName[role.name])
   const review = useNativeAccessStore((s) => s.reviewByName[role.name])
   const error = useNativeAccessStore((s) => s.errorByName[role.name])
   const disconnect = useNativeAccessStore((s) => s.disconnect)
+  const confirmOpened = useNativeAccessStore((s) => s.confirmFor === role.name)
+  const openConfirm = useNativeAccessStore((s) => s.openDisconnectConfirm)
+  const closeConfirm = useNativeAccessStore((s) => s.closeDisconnectConfirm)
 
-  const [confirmOpened, { open: openConfirm, close: closeConfirm }] = useDisclosure(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
   const confirmDisconnect = async () => {
     setDisconnecting(true)
+    // Close first: disconnect collapses the row, which unmounts this modal, and
+    // a modal torn down while open never returns focus anywhere.
+    closeConfirm()
     await disconnect(role.name, credentials?.id)
     setDisconnecting(false)
-    closeConfirm()
   }
 
+  const inFlight = status === FLOW_STATUS.CHECKING || status === FLOW_STATUS.REQUESTING
+
   let body
-  if (status === FLOW_STATUS.UNAVAILABLE) {
-    body = <UnavailablePanel message={error} />
-  } else if (status === FLOW_STATUS.PENDING_REVIEW) {
+  if (state === ROW_STATE.PENDING_REVIEW) {
+    // Driven by the derived state, not the raw status, and checked FIRST. A
+    // transient failure mid-poll writes an error but the review is still open,
+    // so the panel has to keep its actions instead of collapsing to a dead end.
     body = (
       <PendingReviewPanel
         connectionName={role.name}
         sessionId={review?.sessionId}
         accessDurationSec={review?.accessDurationSec}
+        checking={inFlight}
+        hint={error}
       />
     )
+  } else if (status === FLOW_STATUS.UNAVAILABLE) {
+    body = <UnavailablePanel message={error} />
   } else if (credentials) {
-    body = <SessionPanel credentials={credentials} onDisconnect={openConfirm} />
-  } else {
-    // A session exists but its secret is still loading — resumeIfActive is in
-    // flight, or a fresh credential is being issued.
+    body = <SessionPanel credentials={credentials} onDisconnect={() => openConfirm(role.name)} />
+  } else if (inFlight) {
     body = <RequestingPanel connectionName={role.name} />
+  } else {
+    body = null
   }
 
   return (
@@ -119,6 +129,7 @@ export function RoleRow({ role, active, expanded }) {
     PANEL_STATES.has(state) ||
     hasCredentials ||
     flowStatus === FLOW_STATUS.UNAVAILABLE ||
+    flowStatus === FLOW_STATUS.CHECKING ||
     flowStatus === FLOW_STATUS.REQUESTING
 
   const header = <RowHeader role={role} state={state} active={active} iconSrc={iconSrc} />
@@ -142,7 +153,7 @@ export function RoleRow({ role, active, expanded }) {
         <RoleRowAction role={role} state={state} />
       </Box>
       <Accordion.Panel classNames={{ content: classes.accordionPanelContent }}>
-        {expanded && <RowBody role={role} />}
+        {expanded && <RowBody role={role} state={state} />}
       </Accordion.Panel>
     </Accordion.Item>
   )

@@ -12,10 +12,10 @@ import classes from './Header.module.css'
  * session cue lives on the rows themselves (countdown badge and open
  * indicator), which is where it can say which connection it refers to.
  *
- * aria-controls is emitted even while the drawer is unmounted. Making the id
- * always resolvable would mean keepMounted, i.e. mounting a hidden drawer on
- * every route including every CLJS one — a worse trade than an axe
- * aria-valid-attr-value note. Do not "fix" this by adding keepMounted.
+ * aria-controls resolves to Drawer.Content, which is the node that carries
+ * role="dialog" — the drawer uses Mantine's compound API for exactly that
+ * reason. It is still absent while the drawer is closed (no keepMounted, so no
+ * hidden drawer on every CLJS route), which is the accepted trade.
  */
 export function NativeConnectionsButton() {
   const opened = useNativeConnectionsStore((s) => s.opened)

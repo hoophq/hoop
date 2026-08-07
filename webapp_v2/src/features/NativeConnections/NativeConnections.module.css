@@ -100,6 +100,14 @@
   margin-inline-end: 6px;
 }
 
+/* Mantine's `light` variant paints amber text with --mantine-color-amber-light-color,
+   which lands around 2:1 on the tint — a WCAG 1.4.3 failure. amber-8 (#926c00)
+   is ~5.5:1 on the same surface and is the step Toast.module.css already uses
+   for amber foregrounds. */
+.amberText {
+  color: var(--mantine-color-amber-8);
+}
+
 /* Connected indicator: 24px circle, green-1 on green-6. */
 .activeIndicator {
   background-color: var(--mantine-color-green-1);
@@ -131,7 +139,6 @@
 }
 
 .accordionPanelContent {
-  padding-inline: var(--mantine-spacing-md);
   padding: var(--mantine-spacing-md);
 }
 

@@ -49,7 +49,7 @@ export function RoleRowStatus({ state, active }) {
     // theme palette at all — it was silently falling back to Mantine's stock
     // blue and sitting outside the product's colour identity.
     case ROW_STATE.PENDING_REVIEW:
-      return <Badge variant="light" color="amber" radius="xl">Pending review</Badge>
+      return <Badge variant="light" color="amber" radius="xl" classNames={{ root: classes.amberText }}>Pending review</Badge>
 
     case ROW_STATE.OFFLINE:
       return (

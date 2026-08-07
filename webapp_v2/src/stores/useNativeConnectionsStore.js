@@ -26,6 +26,24 @@ export const useNativeConnectionsStore = create((set, get) => ({
   close: () => set({ opened: false }),
   toggle: () => set((s) => ({ opened: !s.opened })),
 
+  /**
+   * Wipes every trace of the signed-in user. Called on logout.
+   *
+   * `loaded` matters as much as `roles`: load() short-circuits on it, so
+   * without this the next user in the same tab would keep browsing the previous
+   * one's connection names.
+   */
+  reset: () =>
+    set({
+      opened: false,
+      expanded: null,
+      query: '',
+      roles: [],
+      loading: false,
+      loaded: false,
+      error: null,
+    }),
+
   setQuery: (query) => set({ query }),
   clearQuery: () => set({ query: '' }),
   setExpanded: (expanded) => set({ expanded }),

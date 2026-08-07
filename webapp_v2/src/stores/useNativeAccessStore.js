@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { connectionCredentialsService } from '@/services/connectionCredentials'
 import { connectionsService } from '@/services/connections'
+import { useAuthStore } from '@/stores/useAuthStore'
 import { useNativeConnectionsStore } from '@/stores/useNativeConnectionsStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { subscribeTick } from '@/utils/tick'
@@ -53,9 +54,28 @@ const removeFrom = (map, key) => {
   return next
 }
 
+/**
+ * THE question "is this connection waiting on a review", asked one way.
+ *
+ * The review pointer is durable — it survives a failed poll, a manual re-check
+ * and any transient status — while statusByName is overwritten by every step of
+ * every flow. Deriving this from the status is what let a single 400 or dropped
+ * request stop the poller, hide the panel's actions and re-arm "Ask access",
+ * which then opened a SECOND review server-side. Every consumer (the row state,
+ * the poller and the panel) has to call this and nothing else.
+ */
+export const isPendingReview = (state, name) =>
+  Boolean(state.reviewByName[name]?.sessionId) && !hasLiveSession(state.activeByName[name])
+
+const pendingReviewNames = (state) =>
+  Object.keys(state.reviewByName).filter((name) => isPendingReview(state, name))
+
 let unsubscribeTick = null
 let reviewPollId = null
-let reviewPollInFlight = false
+// Per connection, not a single boolean: the manual "Check approval" and the
+// poller must never resume the same session concurrently (the second call
+// rotates the key and 404s the first), but they may run for different rows.
+const resumeInFlight = new Set()
 
 export const useNativeAccessStore = create((set, get) => ({
   // connectionName -> ConnectionCredentialsListItem (no secrets)
@@ -77,29 +97,64 @@ export const useNativeAccessStore = create((set, get) => ({
   // whatever state it already had.
   requestFor: null,
 
-  activeLoading: false,
-  activeLoaded: false,
+  // The connection whose Disconnect confirmation is open, or null. Lifted out
+  // of the row so the drawer can tell whether a dialog is stacked over it —
+  // and so the confirmation is not unmounted by the very row it is confirming.
+  confirmFor: null,
 
-  statusOf: (name) => get().statusByName[name] || FLOW_STATUS.IDLE,
+  /** Wipes every trace of the signed-in user. Called on logout. */
+  reset: () => {
+    if (unsubscribeTick) {
+      unsubscribeTick()
+      unsubscribeTick = null
+    }
+    if (reviewPollId) {
+      clearInterval(reviewPollId)
+      reviewPollId = null
+    }
+    resumeInFlight.clear()
+    set({
+      activeByName: {},
+      credentialsByName: {},
+      connectionByName: {},
+      reviewByName: {},
+      statusByName: {},
+      errorByName: {},
+      requestFor: null,
+      confirmFor: null,
+    })
+  },
 
   // ── active credentials ────────────────────────────────────────────────
 
   loadActive: async () => {
-    set({ activeLoading: true })
     try {
       const { items = [] } = await connectionCredentialsService.listActive()
+      // One row per connection, chosen deterministically. The endpoint can
+      // return several — Create reuses the existing credential but Resume mints
+      // a parallel one — and a plain last-write-wins over a created_at DESC list
+      // would keep the OLDEST, which is the opposite of what every other
+      // endpoint resolves to. Prefer the one still attached to a session, then
+      // the newest.
       const activeByName = {}
       items.forEach((item) => {
-        activeByName[item.connection_name] = item
+        const held = activeByName[item.connection_name]
+        if (!held) {
+          activeByName[item.connection_name] = item
+          return
+        }
+        const better =
+          (Boolean(item.session_id) && !held.session_id) ||
+          (Boolean(item.session_id) === Boolean(held.session_id) &&
+            new Date(item.created_at).getTime() > new Date(held.created_at).getTime())
+        if (better) activeByName[item.connection_name] = item
       })
-      set({ activeByName, activeLoaded: true })
+      set({ activeByName })
       get().syncExpiryWatcher()
     } catch (error) {
       // Non-fatal: the drawer still lists roles, just without live-session
       // decoration. Surfacing a toast on every drawer open would be noise.
       console.error('Failed to load active native credentials', error)
-    } finally {
-      set({ activeLoading: false })
     }
   },
 
@@ -135,8 +190,10 @@ export const useNativeAccessStore = create((set, get) => ({
 
   // ── the flow ──────────────────────────────────────────────────────────
 
-  openRequestDialog: (connectionName) => set({ requestFor: connectionName }),
   closeRequestDialog: () => set({ requestFor: null }),
+
+  openDisconnectConfirm: (connectionName) => set({ confirmFor: connectionName }),
+  closeDisconnectConfirm: () => set({ confirmFor: null }),
 
   /**
    * The row's action button — "Connect", or "Ask access" when the role is
@@ -167,6 +224,16 @@ export const useNativeAccessStore = create((set, get) => ({
       )
     }
 
+    // Already open — show it, and do it BEFORE looking the connection up. This
+    // has to be the same question the row asks (hasLiveSession, not merely "not
+    // expired"), and it has to come first: an agent that went offline under a
+    // live session would otherwise send the row to the unavailable panel and
+    // take its only Disconnect with it.
+    if (hasLiveSession(get().activeByName[connectionName])) {
+      await get().fetchCredentials(connectionName)
+      return
+    }
+
     set((s) => ({
       statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.CHECKING),
       errorByName: removeFrom(s.errorByName, connectionName),
@@ -185,8 +252,8 @@ export const useNativeAccessStore = create((set, get) => ({
     let connection
     try {
       connection = await connectionsService.getConnection(connectionName)
-    } catch {
-      unavailable(ERROR_MESSAGES.agentOffline)
+    } catch (error) {
+      unavailable(errorMessage(error, ERROR_MESSAGES.generic))
       return
     }
 
@@ -194,18 +261,6 @@ export const useNativeAccessStore = create((set, get) => ({
 
     if (connection.status !== 'online') {
       unavailable(ERROR_MESSAGES.agentOffline)
-      return
-    }
-
-    // A connection that is actually OPEN — go straight to showing it. Must be
-    // the same question the row asks, or the two disagree: after a Disconnect
-    // the credential survives with its expiry intact but no session, so a plain
-    // "not expired" check sent this down the fetch path while the row was
-    // offering Connect. The fetch then 404s (no active session), which is the
-    // flicker, and only the click after it reached the dialog.
-    const active = get().activeByName[connectionName]
-    if (hasLiveSession(active)) {
-      await get().fetchCredentials(connectionName)
       return
     }
 
@@ -247,7 +302,11 @@ export const useNativeAccessStore = create((set, get) => ({
    * runs the same flow the row button runs.
    */
   openAndConnect: (connectionName) => {
-    useNativeConnectionsStore.getState().open()
+    // Clear the search too: the query persists across opens, and a stale filter
+    // would hide the very row this was asked to act on.
+    const { open, clearQuery } = useNativeConnectionsStore.getState()
+    clearQuery()
+    open()
     return get().beginConnect(connectionName)
   },
 
@@ -314,6 +373,12 @@ export const useNativeAccessStore = create((set, get) => ({
    * flicker or nag once every interval. Success and failure always speak up.
    */
   resumeAfterReview: async (connectionName, sessionId, accessDurationSec, { silent } = {}) => {
+    // Two resumes for one session are actively harmful: the second takes the
+    // "credential already exists" branch, which rotates the key and leaves the
+    // first caller holding a secret the gateway will no longer honour.
+    if (resumeInFlight.has(connectionName)) return
+    resumeInFlight.add(connectionName)
+
     if (!silent) {
       set((s) => ({
         statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.REQUESTING),
@@ -351,19 +416,31 @@ export const useNativeAccessStore = create((set, get) => ({
     } catch (error) {
       const message = errorMessage(error, 'Failed to obtain credentials')
       // 403 rejected, 404 gone, 410 expired — the review will never produce
-      // credentials, so drop the pointer. Leaving it would pin the row on
-      // "Pending review" with no way out, because the pointer is what the row
-      // now derives that state from.
+      // credentials, so drop the pointer and let the row go back to offering a
+      // fresh request.
       const terminal = [403, 404, 410].includes(error?.response?.status)
-      set((s) => ({
-        statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
-        errorByName: setIn(s.errorByName, connectionName, message),
-        reviewByName: terminal
-          ? removeFrom(s.reviewByName, connectionName)
-          : s.reviewByName,
-      }))
-      showSnackbar({ level: 'error', text: message })
+      if (terminal) {
+        set((s) => ({
+          statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),
+          errorByName: setIn(s.errorByName, connectionName, message),
+          reviewByName: removeFrom(s.reviewByName, connectionName),
+        }))
+        showSnackbar({ level: 'error', text: message })
+      } else {
+        // Anything else — a 400, a 500, a dropped connection (which has no
+        // `response` at all) — means the review is still pending and the
+        // network merely hiccuped. Stay on PENDING_REVIEW so the panel keeps
+        // its actions and the poller keeps running; record the message as a
+        // hint rather than a dead end, and stay quiet when polling so a closed
+        // drawer does not pop a toast every ten seconds.
+        set((s) => ({
+          statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.PENDING_REVIEW),
+          errorByName: setIn(s.errorByName, connectionName, message),
+        }))
+        if (!silent) showSnackbar({ level: 'error', text: message })
+      }
     } finally {
+      resumeInFlight.delete(connectionName)
       get().syncReviewWatcher()
     }
   },
@@ -385,9 +462,7 @@ export const useNativeAccessStore = create((set, get) => ({
    * quietly inflate into a meaningless number.
    */
   syncReviewWatcher: () => {
-    const pending = Object.values(get().statusByName).some(
-      (status) => status === FLOW_STATUS.PENDING_REVIEW
-    )
+    const pending = pendingReviewNames(get()).length > 0
     if (pending && !reviewPollId) {
       reviewPollId = setInterval(() => get().checkPendingReviews(), REVIEW_POLL_MS)
     } else if (!pending && reviewPollId) {
@@ -397,23 +472,15 @@ export const useNativeAccessStore = create((set, get) => ({
   },
 
   checkPendingReviews: async () => {
-    // A slow round trip must not stack up behind the interval.
-    if (reviewPollInFlight) return
-    reviewPollInFlight = true
-    try {
-      const { statusByName, reviewByName } = get()
-      const pending = Object.keys(statusByName).filter(
-        (name) => statusByName[name] === FLOW_STATUS.PENDING_REVIEW
-      )
-      for (const name of pending) {
-        const review = reviewByName[name]
-        if (!review?.sessionId) continue
-        await get().resumeAfterReview(name, review.sessionId, review.accessDurationSec, {
-          silent: true,
-        })
-      }
-    } finally {
-      reviewPollInFlight = false
+    const state = get()
+    for (const name of pendingReviewNames(state)) {
+      const review = state.reviewByName[name]
+      // resumeAfterReview owns the per-connection lock, so a slow round trip
+      // cannot stack up behind the interval and cannot collide with the manual
+      // "Check approval".
+      await get().resumeAfterReview(name, review.sessionId, review.accessDurationSec, {
+        silent: true,
+      })
     }
   },
 
@@ -427,10 +494,12 @@ export const useNativeAccessStore = create((set, get) => ({
       get().storeCredentials(data, { expand })
     } catch (error) {
       // 404 means the credential was revoked or expired server-side while we
-      // were showing it as active. Drop it locally and fall back to idle so the
-      // user can just connect again. Deliberately not clearSession: that also
-      // collapses the row, which would slam shut the row the user just opened.
+      // were showing it as active. Drop it locally and collapse the row: with
+      // no session and no status it has nothing to render, and leaving it open
+      // stranded it on a "Connecting…" panel it could never leave.
       if (error?.response?.status === 404) {
+        const { expanded, setExpanded } = useNativeConnectionsStore.getState()
+        if (expanded === connectionName) setExpanded(null)
         set((s) => ({
           activeByName: removeFrom(s.activeByName, connectionName),
           credentialsByName: removeFrom(s.credentialsByName, connectionName),
@@ -531,3 +600,22 @@ export const useNativeAccessStore = create((set, get) => ({
     get().syncReviewWatcher()
   },
 }))
+
+/**
+ * Drop everything the moment the session ends.
+ *
+ * credentialsByName holds plaintext secrets and this is module state, so it
+ * outlives a logout: nothing on that path reloads the tab (the header menu just
+ * calls logout() and navigates), which left the next user in the same tab
+ * looking at the previous one's roles and, on an expanded row, their credentials.
+ *
+ * Subscribing from this side rather than calling reset() from useAuthStore keeps
+ * the dependency pointing the right way and avoids the cycle a direct call would
+ * create: useAuthStore -> this store -> services/api -> useAuthStore.
+ */
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useNativeAccessStore.getState().reset()
+    useNativeConnectionsStore.getState().reset()
+  }
+})

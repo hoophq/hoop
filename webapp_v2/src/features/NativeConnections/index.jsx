@@ -7,7 +7,7 @@ import { SearchBar } from './SearchBar'
 import { RoleList } from './RoleList'
 import { RequestAccessModal } from './RequestAccessModal'
 import { useCljsBridge } from './useCljsBridge'
-import { matchesQuery } from './helpers'
+import { hasLiveSession, matchesQuery } from './helpers'
 import {
   DRAWER_ID,
   DRAWER_OFFSET,
@@ -55,6 +55,7 @@ export default function NativeConnectionsDrawer() {
 
   const activeByName = useNativeAccessStore((s) => s.activeByName)
   const loadActive = useNativeAccessStore((s) => s.loadActive)
+  const dialogOverDrawer = useNativeAccessStore((s) => Boolean(s.requestFor || s.confirmFor))
 
   useCljsBridge()
 
@@ -72,9 +73,10 @@ export default function NativeConnectionsDrawer() {
 
   const { visible, total, matched, shown, truncated } = useMemo(() => {
     // A role whose native access was switched off is kept only while it still
-    // has a live credential, so the user can still disconnect it.
+    // has something to disconnect — the same question the row asks, so the
+    // list and the row cannot disagree about what a leftover credential means.
     const listable = roles.filter(
-      (role) => role.accessModeConnect === 'enabled' || activeByName[role.name]
+      (role) => role.accessModeConnect === 'enabled' || hasLiveSession(activeByName[role.name])
     )
     const filtered = listable.filter((role) => matchesQuery(role, query))
     const capped = filtered.slice(0, MAX_RENDERED_ROWS)
@@ -92,51 +94,62 @@ export default function NativeConnectionsDrawer() {
 
   return (
     <>
-    <Drawer
-      id={DRAWER_ID}
-      opened={opened}
-      onClose={close}
-      position="right"
-      size={DRAWER_WIDTH}
-      offset={DRAWER_OFFSET}
-      radius="lg"
-      padding={0}
-      withCloseButton={false}
-      overlayProps={{ backgroundOpacity: 0.5 }}
-      zIndex={DRAWER_Z_INDEX}
-      aria-labelledby={DRAWER_TITLE_ID}
-      transitionProps={{ duration: 250, timingFunction: 'ease' }}
-      styles={{ content: DRAWER_CONTENT_STYLES, body: DRAWER_BODY_STYLES }}
-    >
-      <Stack gap={0} h="100%">
-        <DrawerHeader onClose={close} />
-        <SearchBar
-          query={query}
-          onQueryChange={setQuery}
-          onClearQuery={clearQuery}
-          total={total}
-          matched={matched}
-          shown={shown}
-          truncated={truncated}
-        />
-        <ScrollArea flex={1} type="auto">
-          <RoleList
-            roles={visible}
-            activeByName={activeByName}
-            loading={loading && !roles.length}
-            error={error}
-            query={query}
-            expanded={expanded}
-            onExpandedChange={setExpanded}
-            onRetry={refresh}
-          />
-        </ScrollArea>
-      </Stack>
-    </Drawer>
+      {/* Compound API rather than the <Drawer> shorthand: the shorthand spreads
+          extra props onto the ROOT, while role="dialog" lives on the content, so
+          aria-labelledby and the id the header button points at both landed on
+          the wrong element — the dialog had no accessible name at all. Passing
+          `title` instead would have given us Mantine's own header on top of the
+          one the design specifies. */}
+      <Drawer.Root
+        opened={opened}
+        onClose={close}
+        position="right"
+        size={DRAWER_WIDTH}
+        offset={DRAWER_OFFSET}
+        radius="lg"
+        padding={0}
+        zIndex={DRAWER_Z_INDEX}
+        // A dialog stacked over the drawer owns Escape. Both listen on the
+        // document, so without this one keypress dismissed the dialog AND the
+        // drawer underneath it.
+        closeOnEscape={!dialogOverDrawer}
+        transitionProps={{ duration: 250, timingFunction: 'ease' }}
+        styles={{ content: DRAWER_CONTENT_STYLES, body: DRAWER_BODY_STYLES }}
+      >
+        <Drawer.Overlay backgroundOpacity={0.5} />
+        <Drawer.Content id={DRAWER_ID} aria-labelledby={DRAWER_TITLE_ID}>
+          <Drawer.Body>
+            <Stack gap={0} h="100%">
+              <DrawerHeader onClose={close} />
+              <SearchBar
+                query={query}
+                onQueryChange={setQuery}
+                onClearQuery={clearQuery}
+                total={total}
+                matched={matched}
+                shown={shown}
+                truncated={truncated}
+              />
+              <ScrollArea flex={1} type="auto">
+                <RoleList
+                  roles={visible}
+                  activeByName={activeByName}
+                  loading={loading && !roles.length}
+                  error={error}
+                  query={query}
+                  expanded={expanded}
+                  onExpandedChange={setExpanded}
+                  onRetry={refresh}
+                />
+              </ScrollArea>
+            </Stack>
+          </Drawer.Body>
+        </Drawer.Content>
+      </Drawer.Root>
 
-    {/* Outside the Drawer so it is not clipped by it, and mounted once rather
-        than per row — the drawer stays visible behind it by design. */}
-    <RequestAccessModal />
+      {/* Outside the Drawer so it is not clipped by it, and mounted once rather
+          than per row — the drawer stays visible behind it by design. */}
+      <RequestAccessModal />
     </>
   )
 }

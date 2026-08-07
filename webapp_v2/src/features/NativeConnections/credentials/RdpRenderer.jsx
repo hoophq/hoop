@@ -6,7 +6,7 @@ import Alert from '@/components/Alert'
 // action in SessionPanel).
 export function RdpCredentials() {
   return (
-    <Alert color="blue" icon={<Info size={16} />}>
+    <Alert color="sky" icon={<Info size={16} />}>
       Works only with Web Client
     </Alert>
   )
