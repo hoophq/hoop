@@ -19,13 +19,15 @@ import {
 
 // Structural shell slots: Mantine's own Drawer CSS outranks classNames here, so
 // these go through `styles` with constants — the exception CLAUDE.md sanctions.
-const DRAWER_CONTENT_STYLES = { display: 'flex', flexDirection: 'column' }
-const DRAWER_BODY_STYLES = {
-  padding: 0,
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  minHeight: 0,
+const DRAWER_STYLES = {
+  content: { display: 'flex', flexDirection: 'column' },
+  body: {
+    padding: 0,
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+  },
 }
 
 /**
@@ -51,7 +53,6 @@ export default function NativeConnectionsDrawer() {
   const loading = useNativeConnectionsStore((s) => s.loading)
   const error = useNativeConnectionsStore((s) => s.error)
   const load = useNativeConnectionsStore((s) => s.load)
-  const refresh = useNativeConnectionsStore((s) => s.refresh)
 
   const activeByName = useNativeAccessStore((s) => s.activeByName)
   const loadActive = useNativeAccessStore((s) => s.loadActive)
@@ -65,6 +66,10 @@ export default function NativeConnectionsDrawer() {
     loadActive()
   }, [loadActive])
 
+  // Both refetch on every open. A resource created since the last open — on a
+  // CLJS route, in another tab, or by an admin granting access — has to show up
+  // without a page reload, and the drawer opening is the only moment we can
+  // know the list is about to be read.
   useEffect(() => {
     if (!opened) return
     load()
@@ -114,7 +119,7 @@ export default function NativeConnectionsDrawer() {
         // drawer underneath it.
         closeOnEscape={!dialogOverDrawer}
         transitionProps={{ duration: 250, timingFunction: 'ease' }}
-        styles={{ content: DRAWER_CONTENT_STYLES, body: DRAWER_BODY_STYLES }}
+        styles={DRAWER_STYLES}
       >
         <Drawer.Overlay backgroundOpacity={0.5} />
         <Drawer.Content id={DRAWER_ID} aria-labelledby={DRAWER_TITLE_ID}>
@@ -139,7 +144,7 @@ export default function NativeConnectionsDrawer() {
                   query={query}
                   expanded={expanded}
                   onExpandedChange={setExpanded}
-                  onRetry={refresh}
+                  onRetry={load}
                 />
               </ScrollArea>
             </Stack>

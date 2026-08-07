@@ -757,7 +757,7 @@ func GetConnectionCredentials(c *gin.Context) {
 // ListActiveConnectionCredentials
 //
 //	@Summary		List Active Connection Credentials
-//	@Description	Returns every active (non-revoked, non-expired) credential owned by the authenticated user, across all connections. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens). Use GET /connections/{nameOrID}/credentials to obtain the secret for a single connection.
+//	@Description	Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).
 //	@Tags			Connections
 //	@Produce		json
 //	@Success		200	{object}	openapi.ConnectionCredentialsList
@@ -768,7 +768,11 @@ func ListActiveConnectionCredentials(c *gin.Context) {
 
 	rows, err := models.ListActiveCredentialsByUser(models.DB, ctx.OrgID, ctx.UserID)
 	if err != nil {
-		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed listing connection credentials: %v", err)})
+		// Logged, not returned: the driver error can name tables, columns and
+		// the query itself, and this is an unauthenticated-shaped surface in the
+		// sense that any signed-in user can reach it.
+		log.Errorf("failed listing connection credentials for user %s, err=%v", ctx.UserID, err)
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed listing connection credentials"})
 		return
 	}
 

@@ -20,6 +20,28 @@ const HEADER_BG = 'var(--mantine-color-body)';
 // shows (header #fcfcfd meeting the toolbar #e5e5e5, no rule between them).
 const HEADER_BORDER = 'var(--mantine-color-gray-1)';
 
+// AppShell paints its own slots from CSS variables at a specificity a CSS Module
+// cannot reach, so `styles` is the sanctioned escape hatch for shell slots (see
+// webapp_v2/CLAUDE.md, "Accepted exceptions"). Hoisted out of the render so the
+// object identity is stable and every value stays a named token.
+const SHELL_STYLES = {
+  navbar: {
+    backgroundColor: SIDEBAR_BG,
+    borderRight: `1px solid ${SIDEBAR_BORDER}`,
+    overflow: 'hidden',
+  },
+  header: {
+    backgroundColor: HEADER_BG,
+    borderBottom: `1px solid ${HEADER_BORDER}`,
+  },
+};
+
+// Same rationale, for the mobile navigation Drawer.
+const MOBILE_DRAWER_STYLES = {
+  content: { backgroundColor: SIDEBAR_BG },
+  body: { padding: 0, height: '100%' },
+};
+
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
 
@@ -47,10 +69,7 @@ function Layout({ children }) {
           breakpoint: 'sm',
           collapsed: { mobile: true }, // desktop only — mobile uses Drawer below
         }}
-        styles={{
-          navbar: { backgroundColor: SIDEBAR_BG, borderRight: `1px solid ${SIDEBAR_BORDER}`, overflow: 'hidden' },
-          header: { backgroundColor: HEADER_BG, borderBottom: `1px solid ${HEADER_BORDER}` },
-        }}
+        styles={SHELL_STYLES}
       >
         <AppShell.Header>
           <AppHeader
@@ -84,7 +103,7 @@ function Layout({ children }) {
         padding={0}
         withCloseButton={false}
         overlayProps={{ backgroundOpacity: 0.5 }}
-        styles={{ content: { backgroundColor: SIDEBAR_BG }, body: { padding: 0, height: '100%' } }}
+        styles={MOBILE_DRAWER_STYLES}
         transitionProps={{ duration: 250, timingFunction: 'ease' }}
       >
         <Sidebar />

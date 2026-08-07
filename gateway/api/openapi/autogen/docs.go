@@ -1785,7 +1785,7 @@ const docTemplate = `{
         },
         "/connection-credentials": {
             "get": {
-                "description": "Returns every active (non-revoked, non-expired) credential owned by the authenticated user, across all connections. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens). Use GET /connections/{nameOrID}/credentials to obtain the secret for a single connection.",
+                "description": "Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).",
                 "produces": [
                     "application/json"
                 ],

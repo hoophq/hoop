@@ -19,20 +19,13 @@ export const useNativeConnectionsStore = create((set, get) => ({
 
   roles: [],
   loading: false,
-  loaded: false,
   error: null,
 
   open: () => set({ opened: true }),
   close: () => set({ opened: false }),
   toggle: () => set((s) => ({ opened: !s.opened })),
 
-  /**
-   * Wipes every trace of the signed-in user. Called on logout.
-   *
-   * `loaded` matters as much as `roles`: load() short-circuits on it, so
-   * without this the next user in the same tab would keep browsing the previous
-   * one's connection names.
-   */
+  /** Wipes every trace of the signed-in user. Called on logout. */
   reset: () =>
     set({
       opened: false,
@@ -40,7 +33,6 @@ export const useNativeConnectionsStore = create((set, get) => ({
       query: '',
       roles: [],
       loading: false,
-      loaded: false,
       error: null,
     }),
 
@@ -54,15 +46,23 @@ export const useNativeConnectionsStore = create((set, get) => ({
   /**
    * Loads the full connection list and keeps the natively-connectable subset.
    *
+   * Revalidates on every call — the drawer calls it each time it opens. There
+   * is no cache to invalidate because there is nothing to invalidate it FROM:
+   * resources are still created on the ClojureScript side, and a role can also
+   * appear because an admin granted it in another tab or another session. A
+   * fetched-once list answered all of those with a stale answer until the user
+   * reloaded the page. The previous rows stay on screen while the request is in
+   * flight (RoleList only shows skeletons when there is nothing to show), so
+   * revalidating costs a request, not a flicker.
+   *
    * Deliberately the non-paginated endpoint: the paginated one applies an
    * access-control-group join that can hide a connection the user can actually
    * see (see services/connections.js), and neither endpoint can filter on
    * access_mode_connect or on a set of subtypes, so the client has to see
    * everything to apply the policy and report an honest total.
    */
-  load: async ({ force = false } = {}) => {
+  load: async () => {
     if (get().loading) return
-    if (get().loaded && !force) return
     set({ loading: true, error: null })
     try {
       const connections = await connectionsService.getConnections()
@@ -85,13 +85,11 @@ export const useNativeConnectionsStore = create((set, get) => ({
           searchIndex: buildSearchIndex(c),
         }))
         .sort((a, b) => a.name.localeCompare(b.name))
-      set({ roles, loaded: true })
+      set({ roles })
     } catch (error) {
       set({ error: error?.message || 'Failed to load resource roles' })
     } finally {
       set({ loading: false })
     }
   },
-
-  refresh: () => get().load({ force: true }),
 }))

@@ -27,7 +27,11 @@
                               " focus:w-64 "
                               " cursor-pointer "
                               " focus:cursor-text "
-                              " focus:pl-3 focus:pr-8 "
+                              ;; Keep the clear button's 24px clear of the text
+                              ;; whenever the field is expanded, not only while
+                              ;; it has focus — a filled-but-blurred field runs
+                              ;; its own value underneath the X otherwise.
+                              (if @has-text? " pr-8 " " focus:pr-8 ")
                               " dark:text-gray-12 ")
                   :id input-id
                   :placeholder "Search runbooks"
@@ -41,13 +45,20 @@
                                  (if (= @active-panel :runbooks)
                                    (rf/dispatch [:search/filter-runbooks value])
                                    (rf/dispatch [:primary-connection/set-filter value]))))}]
+         ;; `soft`, not `ghost`, even though every other control on this bar is
+         ;; ghost. Radix gives a ghost IconButton a negative margin equal to its
+         ;; own padding (-4px at size 1) so it optically aligns with text in
+         ;; normal flow; this one is absolutely positioned, so that margin just
+         ;; shifts it 4px up and 4px right, off the input it is supposed to sit
+         ;; on. Soft also keeps the collapsed state readable as a button.
          (if @has-text?
            [:> IconButton
-            {:class " absolute top-0 right-0 w-6 h-6 "
+            {:class " absolute top-0 right-0 w-6 h-6 bg-gray-3 hover:bg-gray-4 "
              :size "1"
-             :variant "ghost"
+             :variant "soft"
              :color "gray"
              :highContrast true
+             :aria-label "Clear search"
              :onClick (fn [e]
                         (.stopPropagation e)
 
@@ -60,10 +71,11 @@
             [:> X {:size 16}]]
 
            [:> IconButton
-            {:class " absolute top-0 right-0 w-6 h-6 "
+            {:class " absolute top-0 right-0 w-6 h-6 bg-gray-3 hover:bg-gray-4 "
              :size "1"
-             :variant "ghost"
+             :variant "soft"
              :color "gray"
              :highContrast true
+             :aria-label "Search runbooks"
              :onClick #(.focus (.getElementById js/document input-id))}
             [:> Search {:size 16}]])]))))
