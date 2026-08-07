@@ -439,7 +439,21 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		createdAt = existingCred.CreatedAt
 		log.With("session_id", sessionID).Infof("reusing existing credential expiration: %v", expireAt.Format(time.RFC3339))
 	} else {
-		expireAt = time.Now().UTC().Add(time.Duration(review.AccessDurationSec) * time.Second)
+		// Check if session is from CLI connect
+		// CLI connect sessions have BlobStream, which means the session is from CLI connect and we should use the RevokedAt time as the expiration time
+		blobStream, err := session.GetBlobStream()
+		if err != nil {
+			log.Errorf("failed getting blob stream, err=%v", err)
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed getting blob stream"})
+			return
+		}
+
+		if blobStream != nil {
+			expireAt = *review.RevokedAt
+		} else {
+			expireAt = time.Now().UTC().Add(time.Duration(review.AccessDurationSec) * time.Second)
+		}
+
 		createdAt = time.Now().UTC()
 	}
 
@@ -1088,23 +1102,26 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	reviewID := uuid.NewString()
 
 	newRev := &models.Review{
-		ID:                reviewID,
-		OrgID:             ctx.OrgID,
-		Type:              models.ReviewTypeJit,
-		SessionID:         sessionID,
-		ConnectionName:    conn.Name,
-		ConnectionID:      sql.NullString{String: conn.ID, Valid: true},
-		AccessDurationSec: int64(accessDuration.Seconds()),
-		InputEnvVars:      nil, // Credentials don't have env vars
-		InputClientArgs:   nil, // Credentials don't have client args
-		OwnerID:           ctx.UserID,
-		OwnerEmail:        ctx.UserEmail,
-		OwnerName:         &ctx.UserName,
-		OwnerSlackID:      &user.SlackID,
-		Status:            models.ReviewStatusPending,
-		ReviewGroups:      reviewGroups,
-		CreatedAt:         time.Now().UTC(),
-		RevokedAt:         nil,
+		ID:                    reviewID,
+		OrgID:                 ctx.OrgID,
+		Type:                  models.ReviewTypeJit,
+		SessionID:             sessionID,
+		ConnectionName:        conn.Name,
+		ConnectionID:          sql.NullString{String: conn.ID, Valid: true},
+		AccessDurationSec:     int64(accessDuration.Seconds()),
+		InputEnvVars:          nil, // Credentials don't have env vars
+		InputClientArgs:       nil, // Credentials don't have client args
+		OwnerID:               ctx.UserID,
+		OwnerEmail:            ctx.UserEmail,
+		OwnerName:             &ctx.UserName,
+		OwnerSlackID:          &user.SlackID,
+		Status:                models.ReviewStatusPending,
+		ReviewGroups:          reviewGroups,
+		AccessRequestRuleName: &accessRule.Name,
+		MinApprovals:          accessRule.MinApprovals,
+		ForceApprovalGroups:   accessRule.ForceApprovalGroups,
+		CreatedAt:             time.Now().UTC(),
+		RevokedAt:             nil,
 	}
 
 	log.With("sid", sessionID, "id", newRev.ID, "user", ctx.UserID, "org", ctx.OrgID,
