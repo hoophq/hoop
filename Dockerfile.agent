@@ -114,7 +114,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # CA, Go verifies the server against the system trust store — which the ubuntu
 # base rootfs does not include. Nothing else is installed.
 RUN groupadd --gid 10001 hoop && \
-    useradd --uid 10001 --gid 10001 --no-create-home --shell /sbin/nologin hoop && \
+    useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
