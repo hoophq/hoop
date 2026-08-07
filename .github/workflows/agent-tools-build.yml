@@ -317,6 +317,8 @@ jobs:
         run: |
           set -euo pipefail
           branch="ci/agent-tools-bump-${TAG}"
+          # Dockerfile.agent is intentionally absent: hoophq/hoopagent is a
+          # clean-only repository and derives from no agent-tools base.
           sed -i "s|^ARG AGENT_TOOLS_TAG=.*|ARG AGENT_TOOLS_TAG=${TAG}|" Dockerfile.dev
           sed -i "s|^FROM hoophq/agent-tools:.*|FROM hoophq/agent-tools:${TAG}|" scripts/dev/Dockerfile
 
