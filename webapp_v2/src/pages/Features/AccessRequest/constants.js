@@ -11,6 +11,7 @@ export const PROMOTION_SEEN_STORAGE_KEY = 'access-request-promotion-seen'
 export const ACCESS_TYPE = {
   JIT: 'jit',
   COMMAND: 'command',
+  JIT_COMMAND: 'jit_command',
 }
 
 // How long a just-in-time access request stays valid, in seconds. Values are

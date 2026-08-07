@@ -30,3 +30,43 @@
   font-size: var(--mantine-font-size-sm);
   font-weight: 700;
 }
+
+/* Access-type Checkbox.Cards: same visual language as SelectionCard, driven
+   by Mantine's data-checked attribute. The card keeps Mantine's default
+   border (withBorder) and paints it navy when checked. */
+.typeCard {
+  width: 100%;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.typeCard:hover {
+  background-color: var(--mantine-color-gray-1);
+}
+
+.typeCard[data-checked] {
+  background-color: var(--brand-navy);
+  border-color: var(--brand-navy);
+}
+
+.typeCard[data-checked]:hover {
+  background-color: var(--brand-navy);
+}
+
+.typeCard:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.typeCard:disabled:hover {
+  background-color: transparent;
+}
+
+.typeCard[data-checked]:disabled:hover {
+  background-color: var(--brand-navy);
+}
+
+.typeCard[data-checked] .typeCardIcon {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: transparent;
+}

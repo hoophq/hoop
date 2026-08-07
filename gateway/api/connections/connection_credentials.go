@@ -27,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 var validConnectionTypes = []string{
@@ -118,6 +119,20 @@ func CreateConnectionCredentials(c *gin.Context) {
 		log.Errorf("failed checking review requirement for connection %s, err=%v", conn.Name, err)
 		c.AbortWithStatusJSON(500, gin.H{"message": "failed checking review requirements"})
 		return
+	}
+
+	// A matching rule where the user skips the approval review still bounds
+	// credential lifetime: skipping the review must not grant persistent
+	// access nor exceed the rule's max duration.
+	if !requiresReview && accessRule != nil {
+		if req.AccessDurationSec <= 0 {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for connections with an access request rule"})
+			return
+		}
+		if accessRule.AccessMaxDuration != nil && req.AccessDurationSec > *accessRule.AccessMaxDuration {
+			c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf("access duration cannot exceed the rule's max duration of %d seconds", *accessRule.AccessMaxDuration)})
+			return
+		}
 	}
 
 	// Determine the audit status of the credential-issuance session.
@@ -424,7 +439,21 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		createdAt = existingCred.CreatedAt
 		log.With("session_id", sessionID).Infof("reusing existing credential expiration: %v", expireAt.Format(time.RFC3339))
 	} else {
-		expireAt = time.Now().UTC().Add(time.Duration(review.AccessDurationSec) * time.Second)
+		// Check if session is from CLI connect
+		// CLI connect sessions have BlobStream, which means the session is from CLI connect and we should use the RevokedAt time as the expiration time
+		blobStream, err := session.GetBlobStream()
+		if err != nil {
+			log.Errorf("failed getting blob stream, err=%v", err)
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed getting blob stream"})
+			return
+		}
+
+		if blobStream != nil {
+			expireAt = *review.RevokedAt
+		} else {
+			expireAt = time.Now().UTC().Add(time.Duration(review.AccessDurationSec) * time.Second)
+		}
+
 		createdAt = time.Now().UTC()
 	}
 
@@ -747,7 +776,7 @@ func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialI
 // terminateActiveCredentialSessions tears down any in-flight proxy sessions for
 // the given credential. Shared by Revoke (with DB invalidation) and Close
 // (without DB invalidation).
-func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _conn *models.Connection) {
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _ *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
@@ -1073,23 +1102,26 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	reviewID := uuid.NewString()
 
 	newRev := &models.Review{
-		ID:                reviewID,
-		OrgID:             ctx.OrgID,
-		Type:              models.ReviewTypeJit,
-		SessionID:         sessionID,
-		ConnectionName:    conn.Name,
-		ConnectionID:      sql.NullString{String: conn.ID, Valid: true},
-		AccessDurationSec: int64(accessDuration.Seconds()),
-		InputEnvVars:      nil, // Credentials don't have env vars
-		InputClientArgs:   nil, // Credentials don't have client args
-		OwnerID:           ctx.UserID,
-		OwnerEmail:        ctx.UserEmail,
-		OwnerName:         &ctx.UserName,
-		OwnerSlackID:      &user.SlackID,
-		Status:            models.ReviewStatusPending,
-		ReviewGroups:      reviewGroups,
-		CreatedAt:         time.Now().UTC(),
-		RevokedAt:         nil,
+		ID:                    reviewID,
+		OrgID:                 ctx.OrgID,
+		Type:                  models.ReviewTypeJit,
+		SessionID:             sessionID,
+		ConnectionName:        conn.Name,
+		ConnectionID:          sql.NullString{String: conn.ID, Valid: true},
+		AccessDurationSec:     int64(accessDuration.Seconds()),
+		InputEnvVars:          nil, // Credentials don't have env vars
+		InputClientArgs:       nil, // Credentials don't have client args
+		OwnerID:               ctx.UserID,
+		OwnerEmail:            ctx.UserEmail,
+		OwnerName:             &ctx.UserName,
+		OwnerSlackID:          &user.SlackID,
+		Status:                models.ReviewStatusPending,
+		ReviewGroups:          reviewGroups,
+		AccessRequestRuleName: &accessRule.Name,
+		MinApprovals:          accessRule.MinApprovals,
+		ForceApprovalGroups:   accessRule.ForceApprovalGroups,
+		CreatedAt:             time.Now().UTC(),
+		RevokedAt:             nil,
 	}
 
 	log.With("sid", sessionID, "id", newRev.ID, "user", ctx.UserID, "org", ctx.OrgID,
@@ -1125,6 +1157,12 @@ func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connecti
 		return false, nil, fmt.Errorf("failed checking access request rules for connection %s: %w", conn.Name, err)
 	}
 
+	// Users in the skip groups bypass the review, but the matched rule is
+	// still returned so the caller keeps enforcing its duration bounds.
+	if accessRule != nil && len(accessRule.ApprovalRequiredGroups) == 0 &&
+		utils.SlicesHasIntersection([]string(accessRule.SkipReviewGroups), ctx.GetUserGroups()) {
+		return false, accessRule, nil
+	}
 	return accessRule != nil, accessRule, nil
 }
 

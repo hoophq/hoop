@@ -11350,7 +11350,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "jit",
-                        "command"
+                        "command",
+                        "jit_command"
                     ],
                     "example": "command"
                 },
@@ -11447,6 +11448,16 @@ const docTemplate = `{
                         "dba"
                     ]
                 },
+                "skip_review_groups": {
+                    "description": "Groups whose members skip the approval review. Only honored when\napproval_required_groups is empty",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre"
+                    ]
+                },
                 "updated_at": {
                     "description": "The time the resource was updated",
                     "type": "string",
@@ -11476,7 +11487,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "jit",
-                        "command"
+                        "command",
+                        "jit_command"
                     ],
                     "example": "command"
                 },
@@ -11552,6 +11564,16 @@ const docTemplate = `{
                     "example": [
                         "sre",
                         "dba"
+                    ]
+                },
+                "skip_review_groups": {
+                    "description": "Groups whose members skip the approval review. Only allowed when\napproval_required_groups is empty",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre"
                     ]
                 }
             }

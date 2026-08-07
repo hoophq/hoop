@@ -61,7 +61,7 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 			"status", otrev.Status).Info("one time review")
 
 		if !(otrev.Status == models.ReviewStatusApproved || otrev.Status == models.ReviewStatusProcessing) {
-			reviewURL := fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), otrev.ID)
+			reviewURL := fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), otrev.SessionID)
 			return false, &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
@@ -237,6 +237,13 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 		}
 	}
 
+	if len(accessRule.ApprovalRequiredGroups) == 0 && len(accessRule.SkipReviewGroups) > 0 &&
+		utils.SlicesHasIntersection(accessRule.SkipReviewGroups, pctx.UserGroups) {
+		log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID,
+			"access-rule-id", accessRule.ID).Infof("user is part of access rule skip review groups, skipping review")
+		return nil, nil
+	}
+
 	// these values are only used for ad-hoc executions
 	var sessionInput string
 	var inputEnvVars map[string]string
@@ -264,7 +271,7 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), newRev.ID),
+		Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), newRev.SessionID),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }

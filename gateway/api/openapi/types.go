@@ -539,6 +539,7 @@ type ConnectionEffectiveFeatures struct {
 // The two types are not interchangeable: "command" gates exec verbs (the web Terminal,
 // runbooks, the CLI) and "jit" gates connect verbs (the native client). A caller must
 // pick the one matching how it will run, not assume either implies the other.
+// A rule of type jit_command sets both flags.
 type ConnectionAccessRequestFeatures struct {
 	// Command is true when an access request rule of type "command" resolves.
 	Command bool `json:"command" example:"true"`
@@ -3333,7 +3334,7 @@ type AccessRequestRule struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access control rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" enums:"jit,command,jit_command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3346,6 +3347,9 @@ type AccessRequestRule struct {
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	// Groups whose members skip the approval review. Only honored when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
@@ -3366,7 +3370,7 @@ type AccessRequestRuleRequest struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access request rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3380,6 +3384,9 @@ type AccessRequestRuleRequest struct {
 	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
+	// Groups whose members skip the approval review. Only allowed when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups,omitempty" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
