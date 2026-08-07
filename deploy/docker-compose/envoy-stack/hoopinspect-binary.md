@@ -383,27 +383,55 @@ FATAL:  unbounded delete against the customer ledger
 
 ### The credential
 
-The config names a **path**, never the material, and the file must not be
-readable by group or other. A `0644` key file is refused at startup with its
-mode in the message. `/config` reports the endpoint host and whether a custom
-prompt is set, never the credential or the prompt text.
+The config holds a **path**, never the key. There is no environment-variable
+option and no `${VAR}` interpolation, on purpose: `/proc/<pid>/environ`,
+`docker inspect` and a core dump all expose a process's environment, while a
+`0400` file exposes it to none of them.
 
-Prefer a mounted file or Workload Identity over an environment variable:
-`/proc/<pid>/environ`, `docker inspect` and core dumps all read the
-environment.
+**On GKE, GCE or Cloud Run, use no credential at all.** Omit
+`credentials_file` and Vertex resolves Application Default Credentials, so the
+pod's identity is the credential and nothing sits on disk to leak or rotate:
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  hoop-inspect@$PROJECT.iam.gserviceaccount.com \
+  --role roles/iam.workloadIdentityUser \
+  --member "serviceAccount:$PROJECT.svc.id.goog[default/hoop-inspect]"
+```
+
+**Anywhere else, mount a file.** Keep it in its own volume so the ConfigMap
+stays safe to read and diff:
 
 ```yaml
-# Kubernetes: mount the key beside the config.
   - name: hoop-inspect
     volumeMounts:
-      - {name: inspect-config, mountPath: /etc/hoop-inspect, readOnly: true}
-      - {name: llm-key, mountPath: /run/secrets, readOnly: true}
+      - {name: inspect-config, mountPath: /etc/hoop-inspect,  readOnly: true}
+      - {name: llm-key,        mountPath: /run/secrets/vertex, readOnly: true}
 volumes:
   - name: llm-key
     secret:
       secretName: hoop-inspect-llm
-      defaultMode: 0400
+      defaultMode: 0400        # required, see below
 ```
+
+`defaultMode: 0400` is not optional. Kubernetes mounts secret files `0644` by
+default and the relay refuses that, naming the mode:
+
+```
+credential file is readable by group or other:
+/run/secrets/vertex/key.json is 0644, want 0600 or stricter
+```
+
+Writing the file by hand, use `printf` rather than `echo`, which appends a
+newline:
+
+```bash
+printf '%s' "$KEY" > /run/secrets/anthropic-key && chmod 600 $_
+```
+
+Once loaded, the key is held in a type that renders `[REDACTED]` through
+`%v`, JSON marshalling and structured logs alike, and `/config` reports the
+endpoint host and whether a custom prompt is set, never the credential.
 
 ### The fail-open default
 
