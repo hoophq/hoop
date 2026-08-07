@@ -889,6 +889,95 @@ jobs:
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoopdev:latest
 
+  # hoophq/hoopagent — the consolidated agent image. Four flavours built from
+  # the four targets of Dockerfile.agent (see that file for what each ships):
+  #
+  #   :<version>              CLI + bundled tooling, no hoop_rs; also :latest
+  #   :<version>-full         the above plus hoop_rs (required for RDP)
+  #   :<version>-minimal      Ubuntu 24.04 LTS + the binary only
+  #   :<version>-distroless   distroless static + the binary only
+  #
+  # One job, one multiarch build per flavour. Each build is a tar extraction
+  # plus (for minimal) a single apt package, so emulating the non-native arch is
+  # cheap and does not justify the per-arch runner + manifest dance that the
+  # hoopdev image uses. Keeping the flavours in one job also means the
+  # agent-tools base and the release artifacts are pulled once, and `-full`
+  # reuses the layers of the default flavour it builds on.
+  docker-publish-hoopagent:
+    runs-on: ubuntu-latest
+    name: Publish Agent Image (hoopagent)
+    environment: production
+    needs:
+      - build-tar-files
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (standard)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: standard
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}
+            hoophq/hoopagent:latest
+      - name: Build and push (full)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: full
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-full
+      - name: Build and push (minimal)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
+      - name: Build and push (distroless)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+
   # --- Clean image line (DEP-66): hoophq/hoop-ng + hoophq/hoopdev-ng ----------
   # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart
   # points at. Every job here is continue-on-error and NOT a dependency of

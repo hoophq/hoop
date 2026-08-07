@@ -1,0 +1,158 @@
+# hoophq/hoopagent — the hoop agent image, in four flavours.
+#
+# One Dockerfile, four final stages selected with `docker build --target`.
+# They share the `unpack` stage so the release-tarball handling exists in
+# exactly one place:
+#
+#   --target standard    -> hoophq/hoopagent:<version>              (and :latest)
+#   --target full        -> hoophq/hoopagent:<version>-full
+#   --target minimal     -> hoophq/hoopagent:<version>-minimal
+#   --target distroless  -> hoophq/hoopagent:<version>-distroless
+#
+# `standard` is declared LAST on purpose: a bare `docker build -f Dockerfile.agent`
+# with no --target builds the last stage, which must be the default flavour.
+#
+# ---------------------------------------------------------------------------
+# Choosing a flavour
+#
+#   standard     The default. The `hoop` CLI plus the bundled client tooling
+#                from hoophq/agent-tools (psql, mysql, mongosh, sqlcmd, sqlplus,
+#                kubectl, aws, gcloud, node, python, tini). Serves every
+#                connection type including custom / command-line ones, which
+#                exec a command inside the container. Runs as root.
+#
+#   full         `standard` plus `hoop_rs`, the Rust agent. This is the only
+#                flavour that supports RDP, and the one that matches the
+#                contents of hoophq/hoopdev.
+#
+#   minimal      Ubuntu 24.04 LTS rootfs + the `hoop` binary and nothing else.
+#   distroless   Distroless static rootfs + the `hoop` binary and nothing else.
+#
+# Both slim flavours serve every connection type the agent handles in-process
+# (tcp, postgres, mysql, mssql, mongodb, httpproxy, ssh, ssm) and run as
+# uid 10001. Neither supports custom / command-line connections (no shell or
+# client tooling to exec).
+#
+# RDP needs `hoop_rs`, so it works only on `full`. The realtime RDP PII guard
+# additionally needs the OCR engine from Dockerfile.agent-ocr.
+#
+# distroless carries no OS package manager and no shell, so it reports zero
+# OS-package CVEs and is roughly half the size of minimal — at the cost of
+# `kubectl exec <pod> -- sh` being impossible. Use minimal when that
+# debuggability matters, distroless when the smallest possible surface does.
+#
+# ---------------------------------------------------------------------------
+# Invocation contract — IDENTICAL across all four flavours, so a deployment
+# can switch tags without touching its manifest:
+#
+#   - no ENTRYPOINT of our own; the command is `CMD ["hoop", "start", "agent"]`
+#     resolved through /app on PATH. (`standard` and `full` inherit `tini --` as
+#     ENTRYPOINT from agent-tools, which only prepends an init shim and does not
+#     change how CMD is formed.)
+#   - override with `command: ["hoop", "start", "agent", ...]`, never with a
+#     bare `args:` — the latter replaces CMD entirely on every flavour.
+#
+# ---------------------------------------------------------------------------
+# Build (from the repo root, with release tarballs in dist/binaries/):
+#   GOOS=linux GOARCH=arm64 make build-go build-tar-files
+#   docker build -f Dockerfile.agent --target minimal -t hoophq/hoopagent:dev-minimal .
+
+# Base of the `full` flavour. The pinned tag is the legacy (default) train;
+# the clean (AGPL/SSPL-free) train is the same tag suffixed with "-clean".
+# Kept in sync by the agent-tools workflow's bump-consumers job — that job
+# rewrites this line by matching "^ARG AGENT_TOOLS_TAG=", so keep it anchored
+# at column 0 and in this exact form.
+ARG AGENT_TOOLS_TAG=noble-20260709-6890906
+# Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile,
+# so builds are reproducible; bump it in a dedicated PR.
+ARG UBUNTU_IMAGE=ubuntu:noble-20260730.1
+ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+
+# --- Stage: unpack the release tarball ---------------------------------------
+# A separate stage so the ~200MB of release tarballs in dist/binaries/ never
+# reaches a layer of any published flavour (a `rm -rf` in a later RUN would not
+# shrink it — the COPY layer keeps the bytes forever).
+#
+# Pinned to BUILDPLATFORM and keyed off TARGETARCH rather than `uname -m`:
+# these images are built as single multiarch jobs, and only the runtime stages
+# should be emulated. `make build-tar-files` publishes both the Go-style
+# (amd64/arm64) and uname-style (x86_64/aarch64) archive names, so TARGETARCH
+# matches directly.
+#
+# The whole tarball is extracted (`hoop` plus the `hoop_rs` Rust agent); each
+# flavour then copies only what it ships. The explicit test guards against a
+# tarball layout change silently producing an image with no agent in it.
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS unpack
+ARG TARGETARCH
+COPY dist/binaries/ /tmp/binaries/
+RUN mkdir -p /out && \
+    tar -xf /tmp/binaries/hoop_*_Linux_${TARGETARCH}.tar.gz -C /out/ && \
+    test -f /out/hoop || { echo "FATAL: 'hoop' not found in release tarball"; exit 1; } && \
+    chown -R root:root /out && \
+    chmod 755 /out/hoop*
+
+# --- Flavour: distroless -----------------------------------------------------
+# The static rootfs already ships the CA bundle the agent needs for grpcs://,
+# so nothing is installed here. uid 10001 is set numerically: distroless has no
+# useradd, and the agent never resolves a passwd entry (config comes from the
+# environment, see agent/config.Load).
+FROM ${DISTROLESS_IMAGE} AS distroless
+COPY --from=unpack /out/hoop /app/hoop
+ENV PATH="/app:${PATH}"
+USER 10001:10001
+# No init shim: the agent is PID 1 and handles SIGINT/SIGTERM itself
+# (agent.handleOsInterrupt). It forks no children in this flavour.
+CMD ["hoop", "start", "agent"]
+
+# --- Flavour: minimal (Ubuntu 24.04 LTS) -------------------------------------
+FROM ${UBUNTU_IMAGE} AS minimal
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ca-certificates is the one runtime dependency the binary cannot carry itself:
+# the agent dials the gateway over TLS (grpcs://) and, unless HOOP_TLSCA pins a
+# CA, Go verifies the server against the system trust store — which the ubuntu
+# base rootfs does not include. Nothing else is installed.
+RUN groupadd --gid 10001 hoop && \
+    useradd --uid 10001 --gid 10001 --no-create-home --shell /sbin/nologin hoop && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
+# Ownership and mode are already root:root 0755 from the unpack stage.
+COPY --from=unpack /out/hoop /app/hoop
+ENV PATH="/app:${PATH}"
+USER hoop
+# No init shim (tini is not installed) — see the distroless note above.
+CMD ["hoop", "start", "agent"]
+
+# --- Shared base for the two tooling flavours --------------------------------
+# Not a published flavour on its own — `standard` and `full` both build on it so
+# the tooling layout is defined exactly once and the two cannot drift apart.
+#
+# agent-tools already provides `ENTRYPOINT ["tini", "--"]` and puts /app on
+# PATH. Runs as root, matching hoophq/hoopdev: the bundled tooling and the
+# rootfs wrapper scripts are what command-line connections exec, and dropping
+# privileges here would be a behaviour change for existing agent deployments.
+#
+# Note neither flavour ships gateway/migrations/ (hoopdev does): those are read
+# only by the gateway via MIGRATION_PATH_FILES and are dead weight in an agent
+# image.
+FROM hoophq/agent-tools:${AGENT_TOOLS_TAG} AS tools
+COPY rootfs /
+COPY --from=unpack /out/hoop /app/hoop
+ENV PATH="/opt/hoop/bin:${PATH}"
+CMD ["hoop", "start", "agent"]
+
+# --- Flavour: full -----------------------------------------------------------
+# The tooling flavour plus `hoop_rs`, the Rust agent that serves RDP. Shipping
+# it separately keeps the Rust binary — and the RDP attack surface — out of the
+# default tag, which is what the vast majority of deployments run.
+FROM tools AS full
+COPY --from=unpack /out/hoop_rs /app/hoop_rs
+
+# --- Flavour: standard (default) ---------------------------------------------
+# Intentionally empty: `standard` IS `tools`. It exists as its own stage so the
+# default flavour has a name of its own, and it is declared LAST so a bare
+# `docker build` with no --target produces the image behind the default tag.
+FROM tools AS standard
