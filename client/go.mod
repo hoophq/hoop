@@ -266,6 +266,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/hoophq/hoopinspect v0.0.0
+	github.com/hoophq/hoopinspect/analyzer/vertex v0.0.0
 	github.com/hoophq/hoopinspect/config/yaml v0.0.0
 	github.com/hoophq/hoopinspect/pii/alcatraz v0.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -297,3 +298,5 @@ replace github.com/hoophq/hoopinspect => ../hoopinspect
 replace github.com/hoophq/hoopinspect/config/yaml => ../hoopinspect/config/yaml
 
 replace github.com/hoophq/hoopinspect/pii/alcatraz => ../hoopinspect/pii/alcatraz
+
+replace github.com/hoophq/hoopinspect/analyzer/vertex => ../hoopinspect/analyzer/vertex

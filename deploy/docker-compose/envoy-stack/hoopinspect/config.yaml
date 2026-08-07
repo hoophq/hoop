@@ -34,6 +34,46 @@ pii:
     - BR_CPF
     - IBAN_CODE
 
+# ------------------------------------------------------------------ analyzer
+# Commented out because it needs a credential and spends money per statement.
+# Uncomment, add an ai_analysis rule to a lane below, and the relay classifies
+# what the trigger names.
+#
+# Three things bound the cost, and all three matter on a database lane where
+# an ORM repeats one statement shape thousands of times: the trigger decides
+# what is worth asking about, the cache keys on the statement SHAPE (literals
+# stripped, so `WHERE id = 1` and `WHERE id = 2` are one verdict), and the
+# rule runs last in the chain, after the free local rules and OPA.
+#
+# analyzer:
+#   provider: vertex            # vertex | anthropic | openai
+#   model: claude-sonnet-4-5@20250929
+#   extra: {project: my-gcp-project, region: global}
+#   # credentials_file omitted -> Application Default Credentials. Under GKE
+#   # Workload Identity there is then NO credential on disk to leak or rotate.
+#   # Elsewhere: credentials_file: /run/secrets/vertex-sa.json, mode 0600.
+#   timeout_sec: 10
+#   # true is the default here and the opposite of every other evaluator: a
+#   # classifier that denies during a provider outage takes appdb down with it.
+#   fail_open: true
+#   # The detector above already runs in this process. A relay whose job is
+#   # keeping taxpayer ids out of the database's query log must not post them
+#   # to a model vendor, so entity VALUES are withheld and only their names go.
+#   send: redacted
+#   max_input_bytes: 8192
+#   cache: {size: 4096, ttl_sec: 900}
+#   max_calls: 500
+#   # PROCESS-WIDE: this reaches every ai_analysis rule on every lane, the
+#   # http one included, so keep it protocol-neutral. Protocol-specific
+#   # wording belongs on a rule's own `prompt:`, which beats this. Neither can
+#   # remove the output contract (call one tool, never quote a literal value
+#   # from the statement) -- the second keeps an identifier the model objected
+#   # to out of the audit trail.
+#   prompt: |
+#     You are classifying traffic to a production environment holding
+#     customer records. Anything reading or modifying customer data is at
+#     least medium risk.
+
 # ---------------------------------------------------------------- defaults
 # Applies to every lane. Lane rules are evaluated BEFORE these, so a lane's
 # specific message wins over a generic one for the same statement.
@@ -87,6 +127,17 @@ listeners:
           type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
           operations: [drop, delete, truncate]
           message: destructive statements are not permitted on appdb
+        # Uncomment with the analyzer block above. The trigger excludes
+        # select, so an ORM's read traffic costs nothing; delete is already
+        # refused by the rule above, and Chain short-circuits on the first
+        # denial, so only an UPDATE actually reaches the model.
+        # - name: risky-writes
+        #   type: ai_analysis
+        #   trigger: {operations: [update]}
+        #   high: block
+        #   medium: warn
+        #   low: allow
+        #   message: refused by risk analysis
     mask:
       rules:
         # Column rules are only possible where the protocol names its values,
@@ -122,3 +173,18 @@ listeners:
           # this is a question Envoy structurally cannot ask.
           statuses: ["5xx"]
           message: upstream failure suppressed by policy
+        # Needs the http block below: without capture_body the analyzer sees
+        # "POST /anything" and no payload, which tells a model nothing.
+        # - name: risky-payloads
+        #   type: ai_analysis
+        #   trigger: {resources: ["/anything"]}
+        #   high: block
+        #   medium: warn
+    # Off by default: everything captured reaches policy, the audit trail and,
+    # with an analyzer configured, a third party. authorization, cookie and
+    # proxy-authorization cannot be allowlisted, and no header ever reaches
+    # the model.
+    # http:
+    #   capture_body: true
+    #   max_body_bytes: 8192
+    #   headers: [Content-Type]
