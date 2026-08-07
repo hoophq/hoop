@@ -100,7 +100,7 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	}
 	defer resp.Body.Close()
 
-	return ParseResponse(resp)
+	return ParseResponse("analyzer/"+Name, resp)
 }
 
 // --- wire format, shared with Vertex ---------------------------------------
@@ -209,7 +209,12 @@ func BuildRequest(model string, maxTokens int, systemPrompt, content string, for
 // response is the Messages API reply.
 type response struct {
 	Content []contentBlock `json:"content"`
-	Error   *struct {
+
+	// StopReason distinguishes a safety refusal from a model that answered
+	// in prose. A refusal returns no content blocks at all, so without this
+	// the two are indistinguishable and both report "called no risk tool".
+	StopReason string `json:"stop_reason"`
+	Error      *struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
@@ -228,24 +233,28 @@ const maxErrorBytes = 4 << 10
 //
 // Exported so analyzer/vertex reuses it: Vertex returns the same document.
 //
+// provider names the caller in every error. Without it a Vertex user reading
+// "analyzer/anthropic: provider returned 403" goes looking for an anthropic
+// block in a config that has none.
+//
 // A non-2xx never surfaces the provider's body. An LLM 4xx frequently echoes
 // the request that caused it, so propagating that body would copy the
 // statement — and whatever it contained — into the relay's logs and into the
 // error an operator pastes into a ticket.
-func ParseResponse(resp *http.Response) (*analyzer.Result, error) {
+func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		// Drain a bounded amount so the connection can be reused, and
 		// discard it.
 		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("analyzer/anthropic: provider returned %s", resp.Status)
+		return nil, fmt.Errorf("%s: provider returned %s", provider, resp.Status)
 	}
 
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("analyzer/anthropic: decoding response: %w", err)
+		return nil, fmt.Errorf("%s: decoding response: %w", provider, err)
 	}
 	if out.Error != nil {
-		return nil, fmt.Errorf("analyzer/anthropic: provider error: %s", out.Error.Type)
+		return nil, fmt.Errorf("%s: provider error: %s", provider, out.Error.Type)
 	}
 
 	for _, block := range out.Content {
@@ -271,5 +280,18 @@ func ParseResponse(resp *http.Response) (*analyzer.Result, error) {
 			Explanation: args.Explanation,
 		}, nil
 	}
-	return nil, fmt.Errorf("analyzer/anthropic: model called no risk tool")
+	// A safety-tuned model can decline to engage with the very payload most
+	// worth classifying: "delete every customer" reads as a request for help
+	// destroying data. The reply carries stop_reason "refusal" and no content.
+	//
+	// Reported separately because the operator response differs. "Called no
+	// risk tool" points at the prompt or the tool schema; a refusal points at
+	// nothing the operator can fix, and means this statement went unscored.
+	// Under fail_open that is an ALLOW, which is why it must be legible in
+	// the audit trail rather than folded into a generic parse failure.
+	if out.StopReason == "refusal" {
+		return nil, fmt.Errorf("%s: model refused to classify this statement", provider)
+	}
+	return nil, fmt.Errorf("%s: model called no risk tool (stop_reason %q)",
+		provider, out.StopReason)
 }

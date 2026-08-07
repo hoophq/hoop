@@ -217,5 +217,5 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	// Vertex returns the same document as the Messages API, so the
 	// Anthropic parser handles it, including the bounded-drain rule that
 	// keeps a provider's error body out of the relay's logs.
-	return anthropic.ParseResponse(resp)
+	return anthropic.ParseResponse("analyzer/"+Name, resp)
 }

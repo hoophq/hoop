@@ -1170,6 +1170,20 @@ every lane.
   Envoy's.
 - **Statements are not transactions.** Each one gets its own verdict, and no
   cross-statement session state exists.
+- **A slow classification can outlive the upstream's idle budget.**
+  `proxy.handle` dials the upstream on accept and then holds the request while
+  the gate classifies. An upstream with a short keep-alive, gunicorn defaults
+  to two seconds, hangs up before a three-second model call returns, and the
+  client reads an empty reply. Raise the upstream's idle timeout above the
+  analyzer's p99. The cache hides this after the first call for a given
+  statement shape, so it presents as a rare first-request failure.
+- **A model can refuse to classify.** The reply carries
+  `stop_reason: refusal` and no content, the relay reports
+  "model refused to classify this statement", and under `fail_open: true` the
+  statement is allowed. Refusals observed so far are deterministic per input:
+  one phrasing refuses every time while another expressing the same risk
+  classifies fine. Watch the audit trail for them during an observe-only
+  rollout before trusting a model.
 - **A risk verdict is a model's opinion, sampled once.** The same statement can
   classify differently on two runs, and the cache freezes whichever answer came
   first for its TTL. Use `ai_analysis` for the statements no rule can describe;
