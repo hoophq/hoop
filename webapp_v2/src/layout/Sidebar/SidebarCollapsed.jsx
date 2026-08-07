@@ -22,9 +22,13 @@ export function SidebarCollapsed() {
       className={classes.collapsedNav}
     >
       <Box mb="xl" mt="xl" className={classes.logoCollapsed}>
+        {/* The symbol SVG carries a viewBox but no width/height, so both axes
+            are given here — with only a height it has no layout width to fall
+            back on if the asset fails to load. viewBox is square. */}
         <img
           src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
           alt="Hoop"
+          width={24}
           height={24}
           style={{ display: 'block' }}
         />
@@ -34,7 +38,7 @@ export function SidebarCollapsed() {
         scrollbars="y"
         type="hover"
         scrollbarSize={10}
-        classNames={{ root: classes.collapsedScrollArea }}
+        classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
           {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (

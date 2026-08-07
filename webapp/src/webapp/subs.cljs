@@ -272,31 +272,6 @@
    (:reports->session db)))
 
 (re-frame/reg-sub
- :reports->redacted-data-by-date
- (fn [db _]
-   (:reports->redacted-data-by-date db)))
-
-(re-frame/reg-sub
- :reports->review-data-by-date
- (fn [db _]
-   (:reports->review-data-by-date db)))
-
-(re-frame/reg-sub
- :reports->today-redacted-data
- (fn [db _]
-   (:reports->today-redacted-data db)))
-
-(re-frame/reg-sub
- :reports->today-review-data
- (fn [db _]
-   (:reports->today-review-data db)))
-
-(re-frame/reg-sub
- :reports->today-session-data
- (fn [db _]
-   (:reports->today-session-data db)))
-
-(re-frame/reg-sub
  :modal-radix
  (fn [db _]
    (:modal-radix db)))

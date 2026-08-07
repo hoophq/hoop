@@ -2,7 +2,7 @@
 // bottom of envvars / HTTP headers / config files. buildSecretsPatch
 // drops them before save.
 export const PLACEHOLDER_KEY_RE =
-  /^(envvar:NEW_KEY_|envvar:HEADER_NEW_HEADER_|filesystem:NEW_FILE_)\d+$/
+  /^(envvar:NEW_KEY_|envvar:HEADER_NEW_HEADER_|envvar:MCPENV_NEW_HEADER_|filesystem:NEW_FILE_)\d+$/
 
 // POSIX env-var name validator. Mirrors CLJS configuration_inputs.cljs.
 // Empty is accepted so the user can clear the field.

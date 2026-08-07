@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import PageLoader from '@/components/PageLoader'
 import Layout from '@/layout/Layout'
 import PageLayout from '@/layout/PageLayout'
 import ClojureApp from '@/components/ClojureApp'
@@ -24,6 +26,7 @@ import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
+import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import OrganizationUsers from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
@@ -33,6 +36,12 @@ import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import AccessControl from '@/pages/Features/AccessControl'
+import AccessControlForm from '@/pages/Features/AccessControl/Create'
+import AccessRequest from '@/pages/Features/AccessRequest'
+import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
+import Guardrails from '@/pages/Guardrails'
+import GuardrailForm from '@/pages/Guardrails/Create'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -40,6 +49,11 @@ import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
+
+// The only lazily-loaded page. Every other route is imported eagerly, but the
+// Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
+// only — no reason to put that in the bundle every user downloads.
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
 /**
  * Routing strategy:
@@ -71,6 +85,20 @@ function Router() {
       <Route path="/signup/callback" element={<SignupCallback />} />
 
       {/* React pages — fully migrated */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <Suspense fallback={<PageLoader h={400} />}>
+                  <Dashboard />
+                </Suspense>
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/agents"
         element={
@@ -253,6 +281,20 @@ function Router() {
         }
       />
 
+      {/* Server Logs */}
+      <Route
+        path="/settings/server-logs"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <SettingsServerLogs />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Organization */}
       <Route
         path="/organization/users"
@@ -388,6 +430,124 @@ function Router() {
             <Layout>
               <PageLayout>
                 <DataMaskingForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Access Control. The edit route carries the group name as a query
+          parameter (`?group=<name>`) to match the legacy CLJS route: a path
+          segment would leave the old URL shape unclaimed by React Router and
+          it would fall through to the ClojureScript catch-all. */}
+      <Route
+        path="/features/access-control"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControl />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-control/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-control/edit"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-control">
+            <Layout>
+              <PageLayout>
+                <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Access Request. The edit route keeps the legacy CLJS shape, with the
+          rule name as a path segment, so existing links still resolve. */}
+      <Route
+        path="/features/access-request"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-requests">
+            <Layout>
+              <PageLayout>
+                <AccessRequest />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-request/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-requests">
+            <Layout>
+              <PageLayout>
+                <AccessRequestForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-request/edit/:ruleName"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-requests">
+            <Layout>
+              <PageLayout>
+                <AccessRequestForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Guardrails */}
+      <Route
+        path="/guardrails"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <Guardrails />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guardrails/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <GuardrailForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guardrails/edit/:id"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="guardrails">
+            <Layout>
+              <PageLayout>
+                <GuardrailForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

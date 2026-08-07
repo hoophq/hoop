@@ -115,7 +115,7 @@ func ApplyAIAnalysisDecision(
 
 		return AIDecisionReview, &clientexec.Response{
 			HasReview:  true,
-			Output:     fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), review.ID),
+			Output:     fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), review.SessionID),
 			SessionID:  session.ID,
 			AIAnalysis: ToOpenApiSessionAIAnalysis(analysis),
 		}, nil

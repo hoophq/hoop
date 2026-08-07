@@ -8,7 +8,7 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 
 ## Toolchain & Prerequisites
 
-- Go >= 1.24, Rust + `cross` (for cross-compiled `agentrs`), Docker, Node/npm, Clojure/Java.
+- Go >= 1.26, Rust + `cross` (for cross-compiled `agentrs`), Docker, Node/npm, Clojure/Java.
 - PostgreSQL is **mandatory** for the gateway (`POSTGRES_DB_URI`).
 - `golang-migrate` CLI for creating new SQL migration files.
 - `swag` (v1.16.3) for regenerating OpenAPI docs.

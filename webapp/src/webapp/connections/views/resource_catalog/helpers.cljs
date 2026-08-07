@@ -5,6 +5,26 @@
 ;; Denylist - connections that will NOT appear in the catalog
 (def denied-connections #{})
 
+;; Resource types gated behind a feature flag: id -> flag name. The card is
+;; hidden until the org enables the flag in Settings > Experimental.
+;;
+;; Creation only. An org that turns a flag back off keeps every connection it
+;; already created: the role form, edit view and Connect modal are not gated,
+;; so a live connection never becomes unreachable because of a toggle.
+(def feature-flagged-connections
+  {"mcpproxy" "experimental.mcp_gateway"})
+
+;; Resource types SUPERSEDED by a flagged one: id -> flag name. The inverse of
+;; the map above — the card is hidden once the org enables the flag.
+;;
+;; MCP Gateway does everything the legacy `mcp` subtype does and controls the
+;; tool call rather than the byte stream, so with the flag on the two cards
+;; are the same product decision made twice, one of them worse, under names
+;; that do not say which. Creation only, for the same reason: an existing
+;; `mcp` connection keeps working and stays editable either way.
+(def superseded-connections
+  {"mcp" "experimental.mcp_gateway"})
+
 ;; Custom connections that are not in metadata.json
 (def custom-connections
   [{:id "linux-vm"
@@ -59,11 +79,28 @@
   []
   (cs/includes? (.. js/window -location -pathname) "/onboarding"))
 
+(defn flag-hidden?
+  "True when a connection is gated behind a feature flag the org has not
+  enabled. An unflagged connection is never hidden."
+  [connection]
+  (if-let [flag (feature-flagged-connections (:id connection))]
+    (not @(rf/subscribe [:feature-flag/enabled? flag]))
+    false))
+
+(defn superseded-hidden?
+  "True when a connection is replaced by one the org has already enabled."
+  [connection]
+  (if-let [flag (superseded-connections (:id connection))]
+    @(rf/subscribe [:feature-flag/enabled? flag])
+    false))
+
 (defn compose-connections
   "Compose all connections: metadata + custom + specials (if onboarding)"
   [metadata-connections is-onboarding?]
   (let [filtered-metadata-connections (->> metadata-connections
-                                           (remove #(denied-connections (:id %))))]
+                                           (remove #(denied-connections (:id %)))
+                                           (remove flag-hidden?)
+                                           (remove superseded-hidden?))]
     (concat filtered-metadata-connections
             custom-connections
             (when is-onboarding? onboarding-connections))))

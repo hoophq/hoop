@@ -81,6 +81,62 @@ type httpProxySession struct {
 	responseStore  sync.Map    // stores response channels per connectionID
 	closed         atomic.Bool // fast-fail flag to avoid mutex contention on session close
 	connCounter    atomic.Int64
+
+	// Packet types for this session's protocol. The wire framing is identical
+	// for httpproxy and the protocol-aware MCP type (ADR-0004) — raw HTTP
+	// bytes both ways — so the only difference is which packet type the agent
+	// dispatches on. Set once at session creation; zero values mean httpproxy.
+	agentWritePacketType  pb.PacketType
+	clientWritePacketType pb.PacketType
+}
+
+// agentWriteType is the packet type for gateway->agent writes, defaulting to
+// the httpproxy relay when unset.
+func (sess *httpProxySession) agentWriteType() pb.PacketType {
+	if sess.agentWritePacketType != "" {
+		return sess.agentWritePacketType
+	}
+	return pbagent.HttpProxyConnectionWrite
+}
+
+// clientWriteType is the packet type this session expects on agent->client
+// responses.
+func (sess *httpProxySession) clientWriteType() pb.PacketType {
+	if sess.clientWritePacketType != "" {
+		return sess.clientWritePacketType
+	}
+	return pbclient.HttpProxyConnectionWrite
+}
+
+// httpProxyResponseWait bounds how long a plain httpproxy relay waits for the
+// agent's first response packet. Generous because a non-streaming LLM
+// completion produces no headers until it is finished, but still a machine
+// timeout: nothing on this path parks on a human.
+const httpProxyResponseWait = 5 * time.Minute
+
+// mcpHeldCallGrace is the slack the gateway keeps on top of the agent's
+// held-call budget. Both ends arm their own clock from the same instant, but
+// the agent's starts fractionally later (the request still has to cross the
+// tunnel) and its rejection is the useful one: it answers the MCP client with
+// a JSON-RPC error, whereas the gateway timing out first yields a bare 504
+// and orphans a call the agent is still holding.
+const mcpHeldCallGrace = time.Minute
+
+// responseWaitTimeout is how long this session waits for the agent's first
+// response packet.
+//
+// A protocol-aware MCP session can park a tool call on a human reviewer, so
+// its wait must outlast the agent's held-call budget (pb.MCPHeldCallBudget,
+// armed as the mcpgateway RequestTimeout in agent/controller/mcpproxy.go)
+// rather than the machine timeout the byte relay uses. Deriving it from that
+// shared constant is what keeps the two ends from desyncing: raise the budget
+// and this window follows, instead of the gateway silently cutting reviews
+// short at five minutes.
+func (sess *httpProxySession) responseWaitTimeout() time.Duration {
+	if sess.clientWriteType() == pbclient.MCPProxyConnectionWrite {
+		return pb.MCPHeldCallBudget + mcpHeldCallGrace
+	}
+	return httpProxyResponseWait
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -191,10 +247,12 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var proxyToken string
 
 	// Check if token is in URL path: /<proxy-token> or /<proxy-token>/...
-	// This is the initial browser request to set the cookie
+	// This is the initial browser request to set the cookie. Tokens are minted
+	// with a per-type prefix (keys.GenerateSecureRandomKey), so the bootstrap
+	// must recognise every type served by this listener — mcpproxy included,
+	// or its "/<token>" URL is treated as a request path and 404s upstream.
 	pathParts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
-	if len(pathParts) > 0 && strings.HasPrefix(pathParts[0], "httpproxy") {
-		// Token found in path (tokens start with "httpproxy")
+	if len(pathParts) > 0 && (strings.HasPrefix(pathParts[0], "httpproxy-") || strings.HasPrefix(pathParts[0], "mcpproxy-")) {
 		proxyToken = pathParts[0]
 
 		// Detect if request is over HTTPS (directly or via reverse proxy)
@@ -298,6 +356,9 @@ func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCred
 		[]string{
 			pb.ConnectionTypeHttpProxy.String(), pb.ConnectionTypeKubernetes.String(),
 			pb.ConnectionTypeCommandLine.String(),
+			// Protocol-aware MCP shares this listener and its proxy-token
+			// auth; only the packet type downstream differs (ADR-0004).
+			pb.ConnectionTypeMcpProxy.String(),
 		},
 		secretKeyHash)
 
@@ -481,7 +542,16 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 	}
 
 	connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
-	if connectionType != pb.ConnectionTypeHttpProxy && connectionType != pb.ConnectionTypeKubernetes {
+	switch connectionType {
+	case pb.ConnectionTypeHttpProxy, pb.ConnectionTypeKubernetes:
+		// Opaque byte relay: the agent forwards the request upstream as-is.
+	case pb.ConnectionTypeMcpProxy:
+		// Protocol-aware MCP (ADR-0004). Identical framing — raw HTTP bytes
+		// both ways — but a distinct packet type routes the payload to the
+		// agent's MCP adapter instead of the byte relay.
+		session.agentWritePacketType = pbagent.MCPProxyConnectionWrite
+		session.clientWritePacketType = pbclient.MCPProxyConnectionWrite
+	default:
 		session.cancelFn("unsupported connection type: %v", connectionType)
 		return nil, fmt.Errorf("unsupported connection type: %v", connectionType)
 	}
@@ -529,6 +599,43 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 	return session, nil
 }
 
+// buildRawRequest serializes an inbound request back into the raw HTTP bytes
+// the agent replays upstream.
+//
+// The Host line has to be re-synthesized. net/http's *server* strips Host out
+// of Request.Header and exposes it only as Request.Host, so ranging over the
+// header map alone produces a request with no Host at all. The byte relay
+// (libhoop/agent/httpproxy) never noticed: it parses with http.ReadRequest,
+// which tolerates a missing Host, and then overwrites req.Host with the
+// upstream hostname anyway. The protocol-aware MCP adapter feeds the bytes to
+// a real http.Server, which enforces RFC 7230 section 5.4 and answers
+// "400 Bad Request: missing required Host header" before the handler runs —
+// so every MCP `initialize` died at the front door.
+//
+// host is the caller-resolved authority (X-Forwarded-Host when present,
+// r.Host otherwise), the same value proxyBaseURL is built from. It is empty
+// only for an HTTP/1.0 client that sent no Host, which is also the one case
+// the strict check exempts, so the line is skipped rather than emitted blank.
+func buildRawRequest(r *http.Request, host string, body []byte) string {
+	var buf strings.Builder
+	buf.Grow(len(body) + 512)
+	fmt.Fprintf(&buf, "%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
+	if host != "" {
+		fmt.Fprintf(&buf, "Host: %s\r\n", host)
+	}
+	for key, values := range r.Header {
+		if key == proxyTokenHeader || key == "X-Api-Key" || key == "Host" {
+			continue
+		}
+		for _, value := range values {
+			fmt.Fprintf(&buf, "%s: %s\r\n", key, value)
+		}
+	}
+	buf.WriteString("\r\n")
+	buf.Write(body)
+	return buf.String()
+}
+
 func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Early exit if session is already cancelled/closed to avoid spawning goroutines
 	if sess.closed.Load() || sess.ctx.Err() != nil {
@@ -570,19 +677,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 	proxyBaseURL := fmt.Sprintf("%s://%s", scheme, host)
 
-	// Build raw HTTP request to forward
-	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
-	for key, values := range r.Header {
-		if key == proxyTokenHeader || key == "X-Api-Key" || key == "Host" {
-			continue
-		}
-
-		for _, value := range values {
-			rawRequest += fmt.Sprintf("%s: %s\r\n", key, value)
-		}
-	}
-	rawRequest += "\r\n"
-	rawRequest += string(body)
+	rawRequest := buildRawRequest(r, host, body)
 
 	// Send through gRPC with timeout context tied to the session
 	ctx, cancel := context.WithTimeout(sess.ctx, 30*time.Second)
@@ -603,7 +698,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		// in-flight requests interleave their own packets on the shared
 		// stream. The chunked writer is deliberately not Closed: closing it
 		// would close the session's underlying gRPC stream.
-		streamWriter := pb.NewStreamWriter(sess.streamClient, pbagent.HttpProxyConnectionWrite, map[string][]byte{
+		streamWriter := pb.NewStreamWriter(sess.streamClient, sess.agentWriteType(), map[string][]byte{
 			pb.SpecGatewaySessionID:   []byte(sess.sid),
 			pb.SpecClientConnectionID: []byte(connectionID),
 			pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
@@ -644,7 +739,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// notification below never reaches it. An upstream failure on the agent
 	// side unblocks this wait immediately: the agent sends TCPConnectionClose,
 	// which closes responseChan.
-	const responseWaitTimeout = 5 * time.Minute
+	responseWaitTimeout := sess.responseWaitTimeout()
 
 	// The wait can outlast the server's absolute WriteTimeout (armed when the
 	// request was read), which would fail every write below with an i/o
@@ -654,7 +749,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		log.Debugf("could not extend write deadline for response wait, sid=%s, conn=%s: %v", sess.sid, connectionID, err)
 	}
 
-	// Explicit timer instead of time.After so the 5-minute timer is released
+	// Explicit timer instead of time.After so the timer is released
 	// deterministically when another case wins instead of lingering in the
 	// runtime timer heap until GC. No drain after Stop: timer channels are
 	// unbuffered since Go 1.23.
@@ -1015,7 +1110,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 			}
 			if n > 0 {
 				if err := sess.streamClient.Send(&pb.Packet{
-					Type:    pbagent.HttpProxyConnectionWrite,
+					Type:    sess.agentWriteType().String(),
 					Payload: buf[:n],
 					Spec: map[string][]byte{
 						pb.SpecGatewaySessionID:   []byte(sess.sid),
@@ -1053,7 +1148,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 					return
 				}
 				if err := sess.streamClient.Send(&pb.Packet{
-					Type:    pbagent.HttpProxyConnectionWrite,
+					Type:    sess.agentWriteType().String(),
 					Payload: buf[:n],
 					Spec: map[string][]byte{
 						pb.SpecGatewaySessionID:   []byte(sess.sid),
@@ -1160,8 +1255,22 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			continue
 		}
 
+		// Defense in depth. The authoritative drop for MCP protocol events is
+		// in the transport's agent->client forward path
+		// (gateway/transport/agent.go: listenAgentMessages), immediately
+		// after the audit plugin records the event and before any proxy
+		// consumer sees the packet — one place, so every listener is covered
+		// rather than the ones someone remembered. This check stays because
+		// injecting an event record into the response stream corrupts the MCP
+		// client's HTTP framing, and a listener-local guard against that
+		// costs one map lookup.
+		if len(pkt.Spec[pb.SpecMCPEventKey]) > 0 {
+			log.Debugf("recorded mcp protocol event, sid=%s, size=%d", sess.sid, len(pkt.Payload))
+			continue
+		}
+
 		switch pb.PacketType(pkt.Type) {
-		case pbclient.HttpProxyConnectionWrite:
+		case sess.clientWriteType():
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 			log.Debugf("received response packet, connectionID=%s, payload size=%d, sid=%s", connectionID, len(pkt.Payload), sess.sid)
 

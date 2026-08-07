@@ -1,6 +1,8 @@
 (ns webapp.resources.events
   (:require
    [re-frame.core :as rf]
+   ;; Registers :mcp-oauth/report-save-outcome, dispatched on every role save.
+   [webapp.resources.setup.events.mcp-oauth]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 ;; Paginated resources events
@@ -90,11 +92,11 @@
                        {:method "PUT"
                         :uri (str "/connections/" name)
                         :body body
-                        :on-success (fn []
+                        :on-success (fn [response]
                                       (rf/dispatch [:modal->close])
-                                      (rf/dispatch [:show-snackbar
-                                                    {:level :success
-                                                     :text (str "Role " name " updated!")}])
+                                      (rf/dispatch [:mcp-oauth/report-save-outcome
+                                                    response
+                                                    (str "Role " name " updated!")])
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       ;; Redirect back to resource configure using resource_name

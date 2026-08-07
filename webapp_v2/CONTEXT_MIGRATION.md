@@ -66,6 +66,7 @@ Gateway backend (port 8009)
 | `/setup` | React | Done |
 | `/auth/callback` | React | Done |
 | `/signup/callback` | React | Done (IDP signup callback) |
+| `/dashboard` | React | Done (admin-only; lazily loaded — it owns the recharts chunk) |
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
@@ -102,6 +103,15 @@ Gateway backend (port 8009)
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
 | `/integrations/slack` | React | Done |
 | `/integrations/webhooks` | React | Done |
+| `/guardrails` | React | Done |
+| `/guardrails/new` | React | Done |
+| `/guardrails/edit/:id` | React | Done |
+| `/features/access-control` | React | Done |
+| `/features/access-control/new` | React | Done |
+| `/features/access-control/edit` | React | Done — group name comes from `?group=<name>`, the legacy URL shape |
+| `/features/access-request` | React | Done |
+| `/features/access-request/new` | React | Done |
+| `/features/access-request/edit/:ruleName` | React | Done — rule name stays a path segment, the legacy URL shape |
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
@@ -123,19 +133,14 @@ Gateway backend (port 8009)
 ```
 /                             home (redirects to onboarding)
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
-/dashboard
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
-/guardrails/*
-/features/access-control/*
-/features/access-request/*
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
 /features/ai-session-analyzer/*
-/guardrails/*
 /plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
@@ -150,6 +155,21 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `MIGRATION_ROADMAP.md` Track A): `/404`, `/hoop-app`, `/plugins/manage/jira`
 (hangs on an infinite spinner today), `/plugins/reviews/:review-id`,
 `/features/runbooks/edit/:connection-id`.
+
+Shadowed bidi entries (route + panel still exist but React matches first, so
+the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`,
+`/features/access-request/*`.
+`events/guardrails.cljs` stays regardless — resource setup/configure and the
+activation journey still subscribe to it. The `features/access_control/` tree
+has no consumer outside itself (its `events.cljs` also registers
+`:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
+so it can go whole, together with the `access-control-promotion` block in
+`features/promotion.cljs`. `features/access_request/` is only partly removable:
+`main.cljs` and `views/` have no outside consumer, but `events.cljs` and
+`subs.cljs` do — `features/ai_session_analyzer/views/rule_form.cljs` dispatches
+`:access-request/list-rules` and subscribes to `:access-request/rules` to fill
+its approval-rule picker, so those two files must survive until B3.2 lands.
+Removal belongs to a Track A cleanup PR.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
@@ -210,6 +230,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
+- Dashboard (`/dashboard`, admin-only) — three charts + today's overview. First chart consumer: introduced `@mantine/charts`, the `BarChart`/`DonutChart`/`SegmentedControl` wrappers and `CHART_SERIES_COLORS` in `theme.js`
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)

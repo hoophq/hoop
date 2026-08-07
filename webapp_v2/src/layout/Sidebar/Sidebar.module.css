@@ -207,6 +207,29 @@
   padding-top: var(--mantine-spacing-sm);
 }
 
+/* Mantine's ScrollArea viewport wraps its children in a display:table div,
+   which cannot stretch a child to the bottom. Turning it into a full-height
+   flex column lets .profileFooter push itself down with margin-top:auto —
+   bottom-docked while the nav list is short, scrolling normally once it is
+   long enough to overflow. */
+.scrollFill > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.scrollContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.profileFooter {
+  margin-top: auto;
+  flex-shrink: 0;
+  width: 100%;
+}
+
 .collapsedFooter {
   flex-shrink: 0;
   border-top: 1px solid var(--mantine-color-gray-2);
@@ -241,6 +264,21 @@
 
 .listItem {
   list-style: none;
+}
+
+/* Section heading ("Discover", "Organization").
+ *
+ * Mantine's NavLink pads its root by --mantine-spacing-sm, and its left
+ * section has no width of its own, so an item icon's *box* starts exactly at
+ * that padding. Matching the padding alone still reads misaligned, because
+ * neither shape paints at the edge of its box: measured at 18px, the lucide
+ * icons ink 1.5px in from theirs, and the bold 12px heading inks ~1.0px in
+ * from its own. The 1px pull-back lands the glyph on the NavLink's content
+ * edge instead of 1px past it — an optical correction, not a layout value,
+ * which is why it is a literal and not a spacing token.
+ */
+.sectionLabel {
+  padding-left: calc(var(--mantine-spacing-sm) - 1px);
 }
 
 /* Keeps vertical rhythm in the collapsed view while hiding section text */

@@ -36,10 +36,17 @@ export default function ValueFilter({
       width={320}
       withinPortal
     >
+      {/* The trigger reads one step below the app-wide button scale: a 14px
+          dimmed label instead of 16px near-black, matching the legacy Radix
+          filter chip (text size "2" on gray-11). Only the type is toned down —
+          the chip keeps the md height so it lines up with the other controls
+          in the filter bar. */}
       <Popover.Target>
         <Button
           variant={hasSelected ? 'light' : 'default'}
           color="gray"
+          fz="sm"
+          c="dimmed"
           onClick={() => setOpen((value) => !value)}
           leftSection={<Icon size={16} />}
           rightSection={

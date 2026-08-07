@@ -61,19 +61,28 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 ```
 
 ### `EmptyState` (`src/layout/EmptyState/`)
-Empty list / zero-data state with icon, title, description, and optional CTA.
+Empty list / zero-data state: illustration, title, description, and optional CTA.
 ```jsx
 import EmptyState from '@/layout/EmptyState'
-import { Zap } from 'lucide-react'
 
 <EmptyState
-  icon={Zap}
   title="No agents yet"
   description="Set up your first agent to connect resources."
   action={{ label: 'Setup new Agent', onClick: () => navigate('/agents/new') }}
 />
+
+// Empty result inside a page that already renders its own header and filters
+<EmptyState
+  compact
+  title="No Guardrails match your filters"
+  description="Try clearing the filter above."
+/>
 ```
 `action` is optional — omit when the user has no permission to create.
+`compact` tightens the vertical space (drops the 50vh floor, smaller padding
+and gap; the illustration is unchanged) for an empty result rendered below a
+page header, callout or filter bar rather than as the whole screen.
+Optional `docsUrl` + `docsLabel` append a documentation line.
 
 ### `CodeSnippet`
 Scrollable code block with copy-to-clipboard button. `variant` accepts `'black'` (default, terminal look) or `'gray'` (light surface).
@@ -156,7 +165,7 @@ import { BarChart3 } from 'lucide-react'
   onClick={() => setMode('identified')}
 />
 ```
-Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`.
+Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
 ### `RingProgress`
 Compact progress ring with a built-in percentage label, sized for inline/sidebar use (e.g. the Config Status checklist). `value` is 0–100. Arc color defaults to `indigo.5` (the Figma main accent), track to `gray.2`.
@@ -166,6 +175,63 @@ import RingProgress from '@/components/RingProgress'
 <RingProgress value={33} />                    // 32px ring, "33%" label
 <RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
 ```
+
+### `BarChart`
+Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
+```jsx
+import BarChart from '@/components/BarChart'
+
+// Grouped bars, no axes (identification via tooltip):
+<BarChart
+  h={300}
+  data={buckets}
+  dataKey="label"
+  withXAxis={false}
+  withYAxis={false}
+  barProps={{ radius: 4 }}
+  series={[
+    { name: 'approved', label: 'Approved', color: 'green.5' },
+    { name: 'rejected', label: 'Rejected', color: 'red.5' },
+  ]}
+/>
+```
+Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
+
+### `DonutChart`
+Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
+```jsx
+import DonutChart from '@/components/DonutChart'
+
+<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
+```
+Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
+
+### `CHART_SERIES_COLORS` (theme export, not a component)
+The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
+```jsx
+import { CHART_SERIES_COLORS } from '@/theme'
+
+const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
+```
+**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
+
+### `SegmentedControl`
+Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
+```jsx
+import SegmentedControl from '@/components/SegmentedControl'
+
+<SegmentedControl
+  size="xs"
+  value={range}
+  onChange={setRange}
+  lockedTooltip="Available on Enterprise plan only."
+  data={[
+    { value: '1', label: '24h', locked: isFreeLicense },
+    { value: '7', label: '7d' },
+  ]}
+/>
+```
+Locked items render dimmed, show `lockedTooltip` on hover, and are dropped in `onChange`. Do **not** reach for Mantine's `disabled` instead: it sets `pointer-events: none`, which kills hover, so the tooltip would never open and the user would see a greyed-out option with no explanation.
 
 ### `StepAccordion`
 Multi-step accordion that mirrors the CLJS wizard pattern.
@@ -465,16 +531,16 @@ import TagsInput from '@/components/TagsInput'
 ---
 
 ### `AsyncValueFilter`
-Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the chosen option's **label** (so it plugs into name-based row filtering).
+Async counterpart of `ValueFilter` for **paginated, server-searched** option sources (e.g. orgs with thousands of connections). Same trigger/skeleton, but the option list is fed page-by-page and infinite-scrolls (Mantine `useIntersection` sentinel). Presentational/controlled — pair it with a data hook like `usePaginatedConnections`. `onSelect` receives the full option object. An option may carry an optional `iconUrl`, rendered as a 16px image before its label — that is how the Resource Role filter shows connection-type icons.
 ```jsx
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
-import { Shapes } from 'lucide-react'
+import { Rotate3d } from 'lucide-react'
 
 const roles = usePaginatedConnections({ pageSize: 50 })
 
 <AsyncValueFilter
-  icon={Shapes}
+  icon={Rotate3d}
   label="Resource Role"
   placeholder="Search resource roles"
   selected={selectedRole}
@@ -489,7 +555,7 @@ const roles = usePaginatedConnections({ pageSize: 50 })
   onOpen={roles.ensureLoaded}
 />
 ```
-Props: `icon`, `label`, `placeholder`, `selected` (label | null), `onSelect(label)`, `onClear()`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
+Props: `icon`, `label`, `placeholder`, `selected` (option | null), `onSelect(option)`, `onClear()`, `options` (`[{value,label,iconUrl?}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onOpen()`.
 
 ---
 
@@ -514,7 +580,7 @@ Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `pl
 ---
 
 ### `FeaturePromotion`
-Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, and future Access Control / Guardrails / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
+Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, Guardrails, and future Access Control / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
 ```jsx
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { FolderLock } from 'lucide-react'
@@ -532,6 +598,25 @@ import { FolderLock } from 'lucide-react'
 />
 ```
 Props: `featureName`, `mode` ('empty-state' | 'upgrade-plan'), `image` (file under `/images/illustrations/`), `description`, `featureItems` (`[{icon, title, description}]`), `onPrimaryClick`, `primaryText`, `extraInformation`, `docsHref`, `docsText`.
+
+---
+
+### `RuleTableControls`
+Toolbar under an editable rule table: New / Select / Select all / Delete. Port of the CLJS `rule_buttons`, shared by Jira Templates and Guardrails. Pair it with `makeRowOps` (see Utils below) — `ops.allSelected`, `ops.toggleAll`, `ops.deleteSelected` and `ops.addRow` map 1:1 onto its props. On the free plan pass `disableNew` so a second rule can't be added; selection and deletion stay available (the button is disabled, never hidden).
+```jsx
+import RuleTableControls from '@/components/RuleTableControls'
+
+<RuleTableControls
+  onAdd={() => ops.addRow()}
+  selectMode={selectMode}
+  onToggleSelectMode={() => setSelectMode((v) => !v)}
+  allSelected={ops.allSelected}
+  onToggleAll={ops.toggleAll}
+  onDelete={ops.deleteSelected}
+  disableNew={freeLicense && rows.length >= 1}
+/>
+```
+Props: `onAdd()`, `selectMode`, `onToggleSelectMode()`, `allSelected`, `onToggleAll()`, `onDelete()`, `disableNew`.
 
 ---
 
@@ -619,10 +704,10 @@ const { label } = useCountdown(credential.expire_at)
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
 ```jsx
 const roles = usePaginatedConnections({ pageSize: 50 })
-// roles.options, roles.loading, roles.hasMore, roles.searchValue
+// roles.options, roles.items, roles.loading, roles.hasMore, roles.searchValue
 // roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
 ```
-Returns `{ options ([{value,label}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+Returns `{ options ([{value,label,iconUrl}]), items, loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `items` is the raw connection rows behind `options`, for call sites that need more than an id and a name — filtering the picker by access mode or subtype, for instance (`pages/Features/AccessRequest/components/ResourceRolesSelect.jsx`). Only the pages loaded so far are in it. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
 
 ---
 
@@ -674,6 +759,14 @@ Non-obvious notes only:
 - `analytics.js` — Segment (`identify()` only today), not a gateway API
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
+- `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no
+  `page_size`: the handler defaults it to 0 and reads 0 as "no pagination", so
+  every rule comes back (still inside the `{ pages, data }` envelope). Rule names
+  are user-defined and travel in the path — every interpolated one is encoded.
+- `attributes.js` — `list(params)` is paginated (`page`, `page_size`); the
+  gateway caps `page_size` at 100. `listAll()` walks the pages and returns the
+  complete array — use it for pickers that drive a full-replace write, where a
+  truncated list would silently drop associations the admin never saw.
 - `connections.js` — both `getConnections()` (full list — only for resolving
   every `connection_ids → name`, e.g. list displays) and
   `getConnectionsPaginated({page,pageSize,search,connectionIds})` for
@@ -682,6 +775,46 @@ Non-obvious notes only:
   the service boundary.
 - `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
   existence/total probe.
+- `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
+  is **exclusive** (the gateway compares against midnight *starting* that day, so
+  send tomorrow to include today). Never send `group_by`.
+- `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
+  is unbounded; fetch it once and filter client-side.
+- `userGroups.js` — `list()` returns a bare string array, and `null` (not
+  `[]`) when the organization has no groups; callers must coalesce.
+
+---
+
+## Utils (`src/utils/`)
+
+Pure helpers with no React or Mantine dependency. `snackbar.jsx` is documented under Notifications below.
+
+### `makeRowOps({ rows, setRows, factory, filterFn })`
+Row operations for editable rule tables (Jira Templates, Guardrails). Rows are plain objects with a stable `id` and a `selected` flag; the table owns the array through a `setRows` state setter. Deleting the last row reseeds a blank one via `factory`, so a table is never left with nothing to type into. Pass `filterFn` only when several tables render disjoint subsets of one shared rows array — select/delete then touch only the rows that table actually shows. Pairs with `RuleTableControls`.
+```jsx
+import { makeRowOps } from '@/utils/rowOps'
+
+const ops = makeRowOps({ rows, setRows, factory: createEmptyRow })
+// ops.visible, ops.allSelected
+// ops.patchRow(id, patch), ops.toggleSelect(id), ops.toggleAll()
+// ops.deleteSelected(), ops.addRow(transform?)
+<Table.Tr key={row.id}>…</Table.Tr>
+```
+Returns `{ visible, allSelected, patchRow, toggleSelect, toggleAll, deleteSelected, addRow }`. `addRow(transform)` applies `transform` to the fresh row before appending (used to pre-fill a type/value).
+
+### `connectionPolicy.js`
+Connection-shape rules the gateway doesn't express in `connections-metadata.json`, kept in one file so they don't scatter across pages. Each predicate takes a connection object (or `{ type, subtype }`) and mirrors a CLJS predicate — the source is cited inline next to each set.
+```js
+import { canOpenWebTerminal, canHoopCli, canAccessNativeClient } from '@/utils/connectionPolicy'
+
+canOpenWebTerminal(connection) // browser terminal — what an access request of type "command" runs against
+canHoopCli(connection)         // reachable with `hoop connect` (everything but custom RDP)
+canAccessNativeClient(connection) // command-palette native-client flow
+canTestConnection({ type, subtype }) // Test Connection action
+supportsAwsIam(subtype)        // AWS IAM Role auth (postgres/mysql only)
+isFreeFormCustomSubtype(subtype) // free-form credentials editor
+```
+`canAccessNativeClient` uses a deliberately narrower HTTP-proxy set than `canOpenWebTerminal` — the command palette has never offered the native-client flow for `mcp`/`mcpproxy`. Don't unify the two sets without deciding what that menu should show.
 
 - `connectionCredentials.js` — native-access credentials, kept separate from
   `connections.js` (connection CRUD). `listActive()` hits

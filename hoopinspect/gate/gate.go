@@ -107,6 +107,21 @@ type Config struct {
 	// MaxBuffer bounds per-connection reassembly. Zero uses the inspector
 	// default.
 	MaxBuffer int
+
+	// CodecFactory overrides how this Gate builds its two codecs, one per
+	// direction. Nil uses the registry, which is what every lane did before
+	// this field existed.
+	//
+	// It exists because a codec's capture options are a per-lane decision
+	// the registry cannot express: Register takes a factory with no
+	// arguments, so codec/http registers New(Options{}) and every lane in
+	// the process shares those defaults. An HTTP lane that must expose
+	// request bodies to policy has to supply its own factory.
+	//
+	// It MUST return a fresh codec per call. Two connections sharing one
+	// stateful codec corrupt each other's reassembly buffer, which is the
+	// same reason Register takes a factory rather than an instance.
+	CodecFactory func() hoopinspect.Codec
 }
 
 // Decision is the answer for one chunk of bytes.
@@ -197,11 +212,26 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		return nil, errors.New("hoopinspect/gate: no protocol configured")
 	}
 
-	client, err := hoopinspect.New(cfg.Protocol)
+	newInspector := func() (*hoopinspect.Inspector, error) {
+		if cfg.CodecFactory == nil {
+			return hoopinspect.New(cfg.Protocol)
+		}
+		c := cfg.CodecFactory()
+		if c == nil {
+			return nil, errors.New("hoopinspect/gate: CodecFactory returned nil")
+		}
+		if got := c.Protocol(); got != cfg.Protocol {
+			return nil, fmt.Errorf("hoopinspect/gate: CodecFactory returned a %q codec for a %q lane",
+				got, cfg.Protocol)
+		}
+		return hoopinspect.NewWithCodec(c), nil
+	}
+
+	client, err := newInspector()
 	if err != nil {
 		return nil, fmt.Errorf("hoopinspect/gate: %w", err)
 	}
-	server, err := hoopinspect.New(cfg.Protocol)
+	server, err := newInspector()
 	if err != nil {
 		return nil, fmt.Errorf("hoopinspect/gate: %w", err)
 	}
@@ -334,8 +364,21 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 
 		// Audit BEFORE the caller forwards. A crash between the write and
 		// the forward must not lose the record of the statement that ran.
-		auditErr := g.writeAudit(ctx, audit.StatementEvent(
-			g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message))
+		ev := audit.StatementEvent(
+			g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
+		// An evaluator's annotations (the AI analyzer's risk level) ride
+		// onto the event here rather than through StatementEvent, because
+		// they belong to the VERDICT and not to the statement: the same
+		// statement classified twice can carry different risk.
+		if len(verdict.Annotations) > 0 {
+			if ev.Metadata == nil {
+				ev.Metadata = make(map[string]string, len(verdict.Annotations))
+			}
+			for k, v := range verdict.Annotations {
+				ev.Metadata[k] = v
+			}
+		}
+		auditErr := g.writeAudit(ctx, ev)
 
 		if auditErr != nil && g.cfg.FailOnAuditError {
 			return Decision{

@@ -3,9 +3,12 @@
 package integration
 
 import (
+	"bufio"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
@@ -463,6 +466,81 @@ func TestHealthzDegraded(t *testing.T) {
 	testutil.DecodeJSON(t, resp, &body)
 	if body["liveness"] != "ERR" {
 		t.Errorf("healthz (no gRPC): expected liveness=ERR, got %v", body["liveness"])
+	}
+}
+
+// T13 — server-logs tail requires auth and returns buffered gateway entries.
+func TestServerLogsTail(t *testing.T) {
+	// No token → 401.
+	noAuth := testServer.Get(t, "/server-logs", "")
+	defer noAuth.Body.Close()
+	if noAuth.StatusCode != http.StatusUnauthorized {
+		t.Errorf("server-logs without token: expected 401, got %d", noAuth.StatusCode)
+	}
+
+	token := adminToken(t)
+	resp := testServer.Get(t, "/server-logs", token)
+	defer resp.Body.Close()
+	testutil.RequireStatus(t, resp, http.StatusOK)
+	var entries []map[string]any
+	testutil.DecodeJSON(t, resp, &entries)
+	if len(entries) == 0 {
+		t.Fatal("server-logs: expected non-empty tail, the gateway has logged at info level by now")
+	}
+	for i, entry := range entries {
+		for _, key := range []string{"timestamp", "level", "message"} {
+			if v, _ := entry[key].(string); v == "" {
+				t.Fatalf("server-logs: entry %d missing %q, got keys %v", i, key, keysOf(entry))
+			}
+		}
+		if entry["source"] != "gateway" {
+			t.Fatalf("server-logs: entry %d expected source=gateway, got %v", i, entry["source"])
+		}
+	}
+}
+
+// T14 — server-logs SSE stream requires auth and replays a backlog on connect.
+func TestServerLogsStream(t *testing.T) {
+	// No token → 401.
+	noAuth := testServer.Get(t, "/server-logs/stream", "")
+	defer noAuth.Body.Close()
+	if noAuth.StatusCode != http.StatusUnauthorized {
+		t.Errorf("server-logs/stream without token: expected 401, got %d", noAuth.StatusCode)
+	}
+
+	token := adminToken(t)
+	resp := testServer.Get(t, "/server-logs/stream", token)
+	defer resp.Body.Close()
+	testutil.RequireStatus(t, resp, http.StatusOK)
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("server-logs/stream: expected text/event-stream content type, got %q", ct)
+	}
+
+	// Backlog replay guarantees a data frame right after ": connected".
+	dataCh := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			if line := scanner.Text(); strings.HasPrefix(line, "data: ") {
+				dataCh <- strings.TrimPrefix(line, "data: ")
+				return
+			}
+		}
+	}()
+	select {
+	case data := <-dataCh:
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(data), &entry); err != nil {
+			t.Fatalf("server-logs/stream: invalid event payload %q: %v", data, err)
+		}
+		if entry["source"] != "gateway" {
+			t.Errorf("server-logs/stream: expected source=gateway, got %v", entry["source"])
+		}
+		if msg, _ := entry["message"].(string); msg == "" {
+			t.Errorf("server-logs/stream: expected non-empty message, got %v", entry["message"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server-logs/stream: no data frame within 5s, backlog replay should be immediate")
 	}
 }
 

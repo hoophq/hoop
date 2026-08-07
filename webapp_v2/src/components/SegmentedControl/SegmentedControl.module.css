@@ -1,0 +1,14 @@
+/* Locked (Enterprise-gated) item. A 1:1 port of the legacy CLJS
+   `opacity-50 cursor-not-allowed` treatment.
+
+   Note the deliberate omission of `pointer-events: none`: the legacy markup
+   could afford it because the Radix Tooltip wrapped the item from the outside,
+   whereas Mantine renders the label *inside* the control. Keeping pointer
+   events live is what lets the tooltip explain why the option is unavailable;
+   the click itself is dropped in the component's onChange guard. */
+.locked {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+  cursor: not-allowed;
+}

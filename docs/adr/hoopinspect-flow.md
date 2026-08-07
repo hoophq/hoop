@@ -1,6 +1,6 @@
 # How a request flows through hoop-inspect
 
-- **Status:** Current as of 2026-07-30
+- **Status:** Current as of 2026-08-04
 - **Version:** hoop-inspect 0.1.0
 - **Code:** [`hoopinspect/`](../../hoopinspect), [`deploy/docker-compose/envoy-stack/`](../../deploy/docker-compose/envoy-stack)
 - **Run it:** [Running the whole thing](#running-the-whole-thing), below
@@ -8,7 +8,8 @@
 This traces one connection from the client through Envoy, through the
 hoop-inspect sidecar, to the upstream and back. Read it to find out where a
 policy denial happens, why postgres masking takes a different path from HTTP
-masking, and which knob in `config.yaml` controls which line of code.
+masking, what an AI risk verdict costs and how it is kept from costing more,
+and which knob in `config.yaml` controls which line of code.
 
 Every command below runs against the compose stack in
 [`deploy/docker-compose/envoy-stack/`](../../deploy/docker-compose/envoy-stack), and
@@ -477,11 +478,15 @@ over `deny_words_list` for that reason: the word list denies the harmless one.
 
 ## Policy
 
-Two evaluators compose through `policy.Chain`, local rules first, so a
-statement the local set already forbids never costs a network round trip.
+Three evaluators compose through `policy.Chain`, in ascending order of cost, so
+a statement an earlier one already forbids never pays for a later one.
 
 ```
-Statement ──> policy.Chain{ Rules, OPAClient }
+Statement ──> policy.Chain{ Rules, OPAClient, analyzer.Evaluator }
+                   │           │              │
+                   │           │              └─> POST to an LLM provider
+                   │           │                   ~100ms-2s, costs money
+                   │           │                   fails OPEN by default
                    │           │
                    │           └─> POST /v1/data/…
                    │                {"input":{protocol, operation, tables,
@@ -499,8 +504,281 @@ the wrong protocol.
 The `pii` rule type dispatches at the rule-set level rather than per rule,
 because the Scanner belongs to `Rules` and not to any single `Rule`.
 
-Both evaluators fail closed. An unreachable OPA, a 500, or an undefined decision
-denies. Set `fail_open: true` where availability outranks enforcement.
+`Chain` short-circuits on the first denial, which is the whole reason the
+ordering is written down: the free local rules run first, then OPA at roughly
+two milliseconds, then the analyzer at hundreds. A `DELETE` a local
+`type: operation` rule already refuses never reaches a model.
+
+The first two evaluators fail closed. An unreachable OPA, a 500, or an
+undefined decision denies. Set `fail_open: true` where availability outranks
+enforcement. The analyzer inverts that default, and
+[Risk analysis](#risk-analysis-the-ai-session-analyzer) explains why.
+
+## Risk analysis: the AI session analyzer
+
+A `type: ai_analysis` rule sends a statement to a language model and denies on
+the risk it reports. It is the only evaluator that leaves the process, costs
+money per statement and can take a second, so most of its design is about not
+doing that.
+
+```mermaid
+flowchart TB
+    S(["Statement, FromClient"]) --> D{"direction?"}
+    D -->|FromServer| SKIP(["skip: the write already happened"])
+    D -->|FromClient| T{"trigger matches?<br/>operations · tables · resources"}
+    T -->|no| FREE(["allow, zero cost"])
+    T -->|yes| B{"content to send?"}
+    B -->|no body| FREE
+    B -->|yes| C{"cache hit?<br/>key = prompt + shape"}
+    C -->|hit| V["Result"]
+    C -->|miss| BUD{"budget left?"}
+    BUD -->|spent| FREE
+    BUD -->|yes| R["redact / refuse"]
+    R --> P["provider.Classify"]
+    P -->|error| F{"fail_open?"}
+    F -->|true| ERR(["allow, Err on the verdict"])
+    F -->|false| DENYE(["deny: analysis unavailable"])
+    P -->|ok| V
+    V --> A{"action for this risk"}
+    A -->|block| DENY(["Deny(rule, title)"])
+    A -->|warn / allow| FWD(["forward"])
+    V -.->|"risk_level"| MD["Verdict.Annotations<br/>→ audit Event.Metadata"]
+
+    style P fill:#7a2929,color:#fff
+    style FREE fill:#1f6f43,color:#fff
+    style MD fill:#3d3d5c,color:#fff
+```
+
+Every green path is one that never opened a socket. On a lane fronting an ORM
+those are the overwhelming majority.
+
+### The three cost controls
+
+| Control | What it does | Why it is not optional |
+|---|---|---|
+| `trigger` | Only statements naming these operations, tables or resources are classified | An empty trigger classifies NOTHING and is a startup error. The failure mode of the opposite default is an invoice, not an exception. |
+| cache | Keys on the statement SHAPE, not its bytes | `WHERE id = 1` and `WHERE id = 2` are one verdict. Also more correct: the shape is what is risky, not the parameter. |
+| `max_calls` | Process-lifetime budget, then fall through | A backstop against a pathological workload. Falling through allows, because the local rules and OPA already ran. |
+
+The cache key is `fingerprint(system_prompt) + ":" + shape`. Including the
+prompt matters: without it a reworded prompt keeps serving verdicts the old
+one produced until the TTL expires, and an operator watching for their change
+to take effect sees nothing for fifteen minutes.
+
+`sqlCacheKey` strips string and numeric literals from the already-lowercased,
+whitespace-normalized text. `httpCacheKey` uses `HTTPDetail.Resource`, which
+the codec has already collapsed, so `/users/12345/orders` and
+`/users/67890/orders` are one entry.
+
+### Requests only
+
+`classify` returns immediately on `FromServer`. By the time a response comes
+back a write has already executed, so a verdict cannot prevent anything, and
+read-side exposure is masking's job, which is cheaper and already runs.
+
+### Why this one fails open
+
+`policy`'s package doc says both evaluators fail closed and there is no third
+mode. The analyzer is the third, and it defaults the other way.
+
+`OPAClient` depends on a service you run, usually on the same host. The
+analyzer depends on a third-party API over the public internet. Fail closed
+there and a vendor's outage refuses every `UPDATE` on the lane: you have
+turned "we could not score this statement" into "the database is down", which
+is a larger incident than the one the classifier was guarding against.
+
+Failing open still reports. The verdict keeps `OPAClient.failure`'s exact
+shape, `Denied: false` with `Err` set, so `policy.Chain` accumulates the error
+rather than discarding it, and the audit record shows the analyzer could not
+answer:
+
+```go
+func (e *Evaluator) failure(err error) policy.Verdict {
+	if e.cfg.FailOpen {
+		return policy.Verdict{Err: err}          // forwards, but Err travels
+	}
+	return policy.Verdict{Denied: true, Message: "risk analysis unavailable; denying", ...}
+}
+```
+
+Set `fail_open: false` where the classification is a compliance requirement.
+
+### What leaves the process
+
+`send` decides, and the detector that already runs for masking does the work:
+
+| `send` | Behavior |
+|---|---|
+| `raw` | the statement as written |
+| `redacted` | detected entities are named, their values withheld |
+| `refuse` | a statement containing a detected entity is denied locally, no call |
+
+`redacted` and `refuse` are refused at startup without a `pii` section,
+because a mode that cannot do what its name says is worse than one that is
+off. A relay whose pitch is keeping taxpayer ids out of the database's own
+query log must not post them to a model vendor.
+
+HTTP headers never reach the model, even ones a lane allowlisted for policy.
+An allowlist that is safe for a local rule is not safe to hand a third party,
+and the header anyone would want here is the one that must never leave.
+
+### The prompt, and the half of it you cannot change
+
+The system prompt is two parts with different owners:
+
+```
+BuildSystemPrompt(guidance) = guidance-or-default  +  promptContract
+                              ─────────────────────    ──────────────
+                              yours, replaceable       ours, always appended
+```
+
+`analyzer.prompt` sets the guidance process-wide; a rule's own `prompt:` beats
+it. Precedence is rule → analyzer → built-in.
+
+`analyzer.prompt` reaches **every lane**, HTTP included, so protocol-specific
+wording belongs on a rule. Guidance reading "you are classifying SQL against a
+customer database" follows an HTTP statement to the model and has it reasoning
+about `DROP` while it looks at a JSON body. The built-in guidance carries
+separate high-risk examples for SQL and for HTTP for this reason.
+
+The contract is unexported and appended after whatever you write. It carries
+two instructions, and both are load-bearing:
+
+- **Call exactly one of the three risk tools.** The risk level IS which tool
+the model chose, which is what makes it an enum rather than a parsing problem.
+Lose this and the model answers in prose, nothing maps, and every statement
+fails classification, which under `fail_open: true` allows everything.
+- **Never quote a literal value from the statement.** The verdict reaches an
+audit record, and `audit.SinkOptions` redaction fingerprints `Statement` and
+`HTTP.Body` but never touches `Event.Metadata`. A title repeating the
+identifier it objected to has published that identifier, through a channel
+that bypasses the operator's `redact_statements` setting.
+
+Neither can be removed by configuration. Both failures raise no error: the
+classifier keeps answering, worse and leakier, so neither belongs in a config
+file.
+
+### Where the verdict goes
+
+`policy.Verdict` has nowhere to put a risk level, and widening `Denied` into a
+severity would touch every evaluator to serve one. So there are two channels:
+
+```
+Denied      ──> proxy.pump          forward or deny. The decision.
+Annotations ──> gate copies onto    risk_level, risk_action. Facts about it.
+                audit.Event.Metadata
+```
+
+`Chain` merges annotations on every hop, denial or not, and that "or not" is
+the point: a high-risk statement running under `high: warn` forwards, and its
+risk still has to reach the record. Otherwise observe-only mode, the whole
+reason `warn` exists, reports clean until something gets blocked.
+
+A lane may carry several `ai_analysis` rules, each its own evaluator emitting
+the same two keys, so the merge is **highest-wins rather than last-wins**. The
+audit record carries one `risk_level` and the session rollup keeps the maximum
+across statements, so letting a rule that rated a statement low overwrite one
+that rated it high would understate the whole session.
+
+The level and its action move as a **pair**. Merging the two keys
+independently produces `{high, allow}` out of a `high: warn` rule and a `low:
+allow` one, a mapping no rule configured. `policy.mergeAnnotations` owns both
+rules, and the keys live in `policy` rather than `analyzer` because `Chain`
+has to merge them and cannot import its own callers.
+
+`Metadata["risk_level"]` is read by `store.MemoryStore.applyEvent` and the
+SQLite store, which keep a session's HIGHEST risk (`riskRank`, a severity
+comparison rather than a lexical one) and surface it as
+`SessionRecord.RiskLevel` and `Stats.ByRisk`. That rollup shipped before any
+producer existed; its doc comment predicted a plugin would write the key.
+
+The vocabulary is two keys. Model prose does not go there.
+
+### The HTTP lane needs `capture_body`
+
+`codec/http` exposes nothing by default, no bodies and no headers, and the
+registry factory takes no arguments, so every lane in the process shared one
+zero-value `Options` and no lane could see a request body.
+`gate.Config.CodecFactory` is the seam that fixes it, nil meaning the
+registry, and a lane opts in:
+
+```yaml
+  - name: api
+    protocol: http
+    http:
+      capture_body: true
+      max_body_bytes: 8192
+      headers: [Content-Type]      # authorization is refused at startup
+```
+
+Without it the analyzer sees `POST /anything` and no payload. A request with
+no body is skipped rather than classified, so a forgotten flag shows up as an
+analyzer that never fires rather than as an error.
+
+### Providers
+
+Providers register themselves the way codecs do, and for the same reason: the
+root module has zero dependencies, and one provider needs one.
+
+```
+analyzer            (0 deps)  contract + registry, declares Provider
+  ├─ anthropic      (0 deps)  net/http + encoding/json
+  ├─ openai         (0 deps)  net/http + encoding/json, also Azure and compatibles
+  └─ vertex         (nested)  golang.org/x/oauth2
+```
+
+Claude on Vertex is the Anthropic Messages API with two transport changes: the
+model moves into the URL and auth becomes an OAuth bearer, with
+`anthropic_version: vertex-2023-10-16` in the body. So `analyzer/vertex`
+imports `anthropic.BuildRequest` and `anthropic.ParseResponse` rather than
+carrying a second copy of the encoder to drift.
+
+Vertex mints its bearer from a service account and refreshes it before expiry.
+The `oauth2.TokenSource` is built once under a `sync.Once`, because it caches
+internally: building one per request would mint one per request. `-validate`
+mints a single token so a bad key, a missing `roles/aiplatform.user` binding
+or a skewed clock fails the config check rather than the first risky
+statement.
+
+Prefer Application Default Credentials and omit `credentials_file`. Under GKE
+Workload Identity there is then no credential on disk at all, which is a
+stronger answer than any file-permission check.
+
+### The credential
+
+The config names a path, never material. `analyzer.ReadSecretFile` refuses a
+file readable by group or other, the way `ssh` refuses a private key, and
+reports the mode because the usual cause is an unreviewed ConfigMap default.
+
+It returns an `analyzer.Secret`, whose `String`, `GoString`, `MarshalJSON` and
+`LogValue` all return `[REDACTED]`. One type closes `%v`, `%+v`, a debug
+endpoint's `json.Marshal` and a structured log line at once, so a field added
+beside it later cannot leak by forgetting a tag.
+
+`/config` reports the endpoint HOST and `custom_prompt: true`, never the path,
+the query string or the prompt text. An endpoint URL carrying userinfo or a
+query string is refused at startup: that view sits beside a read interface to
+the audit trail, and `laneView.OPA` already publishes a full URL, so the leak
+shape is real rather than hypothetical.
+
+### Actions, including the one that is refused
+
+| Action | Effect |
+|---|---|
+| `allow` | forward; the verdict is still recorded |
+| `warn` | forward and record the risk. Observe-only for one tier of one rule |
+| `block` | deny, with the model's title in the protocol's error frame |
+| `require_review` | **refused at startup** |
+
+An unset level defaults to `allow`, so an operator opts into blocking a tier
+by naming it.
+
+`require_review` is declared in the enum and refused by name. Declaring it
+keeps the schema stable for when a review backend lands. Refusing it stops an
+operator from shipping a config that reads as a human-approval gate and
+forwards every statement. The gateway's inline path degrades the equivalent
+action to `warn` with no error, which is the failure this refusal exists to
+avoid.
 
 ## Masking, and why postgres needed a second mechanism
 
@@ -622,7 +900,8 @@ leave lookalike ids alone.
 
 ## What the config refuses at startup
 
-Four checks, all reported together rather than one per restart:
+Every check reports together rather than one per restart. They share a shape:
+each one refuses a config that would LOAD, evaluate and do nothing.
 
 | Config | Result |
 |---|---|
@@ -630,12 +909,29 @@ Four checks, all reported together rather than one per restart:
 | A `pii` rule naming an entity absent from `pii.entities` | refused, naming the entity |
 | A key typo, in YAML or JSON | refused by `DisallowUnknownFields` |
 | A bad regex in any lane's rules | refused, naming the lane |
+| An `ai_analysis` rule with no `analyzer` section | refused, naming the lane |
+| An `ai_analysis` rule with no `trigger` | refused: it would classify nothing |
+| An `ai_analysis` rule naming no action for any risk level | refused: every verdict would allow |
+| `require_review` as an action | refused: this build cannot hold a statement |
+| `analyzer.provider` the binary does not link | refused, listing what it does link |
+| A credential file readable by group or other | refused, reporting the mode |
+| `send: redacted` or `refuse` with no `pii` section | refused: nothing to detect with |
+| An analyzer endpoint with userinfo or a query string | refused: `/config` would publish it |
+| An `ai_analysis` rule on an HTTP lane without `http.capture_body` | refused: every request would be skipped |
+| A negative `max_calls`, `cache.size`, `cache.ttl_sec` or `max_output_tokens` | refused: a negative silently reads as "off" |
+| An `http` block on a non-HTTP lane | refused, naming the lane |
+| `authorization`, `cookie` or `proxy-authorization` in an HTTP header allowlist | refused, naming the header |
+| A Vertex credential that cannot mint a token | refused, distinguishing parse, mint and IAM failures |
 
 The `pii` check matters more than it looks. `matchesPII` intersects what the
 scanner reported with what the rule listed, so a rule naming an entity the
 engine never looks for loads without error, evaluates without error, and
 matches nothing. An operator then believes a guardrail is running when it
 allows through everything they wrote it to stop.
+
+Every analyzer check above is the same argument applied to a control that also
+costs money. A rule with no trigger, a tier with no action and an unlinked
+provider all produce a lane that looks classified and is not.
 
 ## Config syntax
 
@@ -750,6 +1046,11 @@ session_end
 | `masked` | response data rewritten | entity names and a count, never values |
 | `error` | transport or upstream failure | the error text |
 | `session_end` | connection closed | duration, statement and denial totals |
+
+A classified statement additionally carries
+`metadata.risk_level` and `metadata.risk_action`, on `statement` and
+`violation` alike, because a high-risk statement running under `warn` is
+forwarded and still has to appear in the record.
 
 A denial writes `violation` instead of `statement`, and the duplication is
 deliberate: a security team selects `kind=violation` without scanning every
@@ -869,6 +1170,31 @@ every lane.
   Envoy's.
 - **Statements are not transactions.** Each one gets its own verdict, and no
   cross-statement session state exists.
+- **A slow classification can outlive the upstream's idle budget.**
+  `proxy.handle` dials the upstream on accept and then holds the request while
+  the gate classifies. An upstream with a short keep-alive, gunicorn defaults
+  to two seconds, hangs up before a three-second model call returns, and the
+  client reads an empty reply. Raise the upstream's idle timeout above the
+  analyzer's p99. The cache hides this after the first call for a given
+  statement shape, so it presents as a rare first-request failure.
+- **A model can refuse to classify.** The reply carries
+  `stop_reason: refusal` and no content, the relay reports
+  "model refused to classify this statement", and under `fail_open: true` the
+  statement is allowed. Refusals observed so far are deterministic per input:
+  one phrasing refuses every time while another expressing the same risk
+  classifies fine. Watch the audit trail for them during an observe-only
+  rollout before trusting a model.
+- **A risk verdict is a model's opinion, sampled once.** The same statement can
+  classify differently on two runs, and the cache freezes whichever answer came
+  first for its TTL. Use `ai_analysis` for the statements no rule can describe;
+  keep the ones you can describe in a `type: operation` or `type: table` rule,
+  which is free, deterministic and immune to a vendor outage.
+- **The analyzer classifies requests only.** A response verdict cannot prevent
+  a write that already ran, so read-side exposure stays masking's job.
+- **No human-review action.** `require_review` is declared and refused at
+  startup. Holding a statement for approval needs a review backend, a notice
+  channel so psql explains why it is hanging, and cancellation the
+  `policy.Evaluator` interface cannot carry today.
 - **No SSH lane.** hoopinspect ships no SSH codec. The argument that lane made
   still holds: Envoy ships no SSH filter at any fidelity, so every service
   reached over SSH sits unpoliced by the Envoy and OPA layer.

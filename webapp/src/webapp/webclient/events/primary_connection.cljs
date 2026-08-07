@@ -45,6 +45,14 @@
            [:dispatch [:primary-connection/update-url-with-role (:name new-primary)]]
            [:dispatch [:database-schema->clear-schema]]
            [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]
+           ;; The dialog hands us a row from the paginated list, which carries
+           ;; only the stored columns. Fetch the detail so the selection ends up
+           ;; being the same enriched object the URL and persistence paths
+           ;; produce — effective_features only exists on the detail endpoint,
+           ;; and anything reading it off a list row would silently see nothing.
+           [:dispatch [:connections->get-connection-details
+                       (:name new-primary)
+                       [:primary-connection/set-from-details]]]
            ;; BigQuery is the only federation-capable subtype today; fetch the
            ;; user's per-user OAuth status so the editor can prompt them to
            ;; connect their Google account before running (gcp_oauth).

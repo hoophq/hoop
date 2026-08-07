@@ -352,6 +352,21 @@ export const useNativeAccessStore = create((set, get) => ({
       get().storeCredentials(data)
       showSnackbar({ level: 'success', text: 'Native client access granted successfully!' })
     } catch (error) {
+      // We asked for a persistent credential and the gateway refused. The only
+      // 400 on that path is "this connection needs a bounded window", and the
+      // client cannot always predict it: an access request rule now makes a
+      // duration mandatory even when the user is in skip_review_groups and no
+      // review is raised, and a JIT rule with a null access_max_duration does
+      // not surface as jit_access_duration_sec at all. So ask for the window
+      // instead of dead-ending on an error the user can actually answer.
+      if (accessDurationSec == null && error?.response?.status === 400) {
+        set((s) => ({
+          statusByName: removeFrom(s.statusByName, connectionName),
+          requestFor: connectionName,
+        }))
+        return
+      }
+
       const message = errorMessage(error, REQUEST_FAILED_FALLBACK)
       set((s) => ({
         statusByName: setIn(s.statusByName, connectionName, FLOW_STATUS.UNAVAILABLE),

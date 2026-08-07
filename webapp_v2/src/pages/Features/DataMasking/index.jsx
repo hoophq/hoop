@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Card, Group, Stack, Text, Title } from '@mantine/core'
-import { Shapes, Tag } from 'lucide-react'
+import { Box, Group, Stack, Text, Title } from '@mantine/core'
+import { ListVideo, Rotate3d } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
 import PageLoader from '@/components/PageLoader'
 import Button from '@/components/Button'
@@ -67,12 +68,20 @@ export default function DataMasking() {
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
-  const hasFilters = Boolean(selectedRole || selectedAttribute)
+  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
 
   const goCreate = () => navigate('/features/data-masking/new')
 
   if (showLoader) {
     return <PageLoader h={300} />
+  }
+
+  // A failed load leaves the list empty, which would otherwise fall through to
+  // the empty state and tell an admin they have no rules configured.
+  if (listStatus === 'error') {
+    return (
+      <PageLoader error h={300} message="Failed to load Live Data Masking rules." />
+    )
   }
 
   if (list.length === 0) {
@@ -106,7 +115,7 @@ export default function DataMasking() {
 
       <Group gap="sm">
         <AsyncValueFilter
-          icon={Shapes}
+          icon={Rotate3d}
           label="Resource Role"
           placeholder="Search resource roles"
           selected={selectedRole}
@@ -121,7 +130,7 @@ export default function DataMasking() {
           onOpen={roleFilter.ensureLoaded}
         />
         <ValueFilter
-          icon={Tag}
+          icon={ListVideo}
           label="Attribute"
           values={attributeFilterValues}
           selected={selectedAttribute}
@@ -131,14 +140,11 @@ export default function DataMasking() {
       </Group>
 
       {filteredRules.length === 0 ? (
-        <Card padding="xl" withBorder>
-          <Stack gap={4} align="center" ta="center">
-            <Text fw={600}>No Live Data Masking rules match your filters</Text>
-            <Text size="sm" c="dimmed">
-              Try clearing the {hasFilters ? 'filters' : 'filter'} above.
-            </Text>
-          </Stack>
-        </Card>
+        <EmptyState
+          compact
+          title="No Live Data Masking rules match your filters"
+          description={`Try clearing the ${activeFilterCount > 1 ? 'filters' : 'filter'} above.`}
+        />
       ) : (
         <Box>
           {filteredRules.map((rule, idx) => (

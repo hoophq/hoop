@@ -105,17 +105,21 @@
      {:fx [[:dispatch [:mcp-oauth/edit-authorize-failure {:message "Missing flow id"}]]]}
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri (str "/mcp-oauth/token/" flow-id)
-                               :on-success #(rf/dispatch [:mcp-oauth/edit-fetch-token-success %])
+                               :on-success #(rf/dispatch [:mcp-oauth/edit-fetch-token-success % flow-id])
                                :on-failure #(rf/dispatch [:mcp-oauth/edit-authorize-failure %])}]]]})))
 
 (rf/reg-event-fx
  :mcp-oauth/edit-fetch-token-success
- (fn [{:keys [db]} [_ response]]
+ (fn [{:keys [db]} [_ response flow-id]]
    (let [auth-header (:authorization_header response)]
      (if (str/blank? auth-header)
        {:fx [[:dispatch [:mcp-oauth/edit-authorize-failure {:message "No token returned"}]]]}
        {:db (assoc-in db mcp-edit-path (merge (get-in db mcp-edit-path {})
-                                              {:status :success :error nil}))
+                                              ;; flow-id lets the save adopt
+                                              ;; this login into a durable
+                                              ;; grant, so the credential is
+                                              ;; renewed instead of expiring.
+                                              {:status :success :error nil :flow-id flow-id}))
         :fx [[:dispatch [:connection-setup/update-network-credentials "HEADER_AUTHORIZATION" auth-header]]
              [:dispatch [:show-snackbar {:level :success
                                          :text "MCP connection authorized"}]]]}))))

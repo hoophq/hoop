@@ -2,13 +2,13 @@ import { Checkbox, Stack } from '@mantine/core'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import Table from '@/components/Table'
+import RuleTableControls from '@/components/RuleTableControls'
+import { makeRowOps } from '@/utils/rowOps'
 import {
   CONNECTION_TAG_PREFIX,
   createEmptyMappingRow,
   isConnectionTagRule,
-  makeRowOps,
 } from '../../helpers'
-import RuleTableControls from '../components/RuleTableControls'
 
 // Renders only the mapping rules bound to resource-role tags; the remaining
 // rules of the same shared array are rendered by AutomatedMappingTable.
