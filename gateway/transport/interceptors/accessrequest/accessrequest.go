@@ -61,7 +61,7 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 			"status", otrev.Status).Info("one time review")
 
 		if !(otrev.Status == models.ReviewStatusApproved || otrev.Status == models.ReviewStatusProcessing) {
-			reviewURL := fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), otrev.ID)
+			reviewURL := fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), otrev.SessionID)
 			return false, &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
@@ -271,7 +271,7 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), newRev.ID),
+		Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), newRev.SessionID),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }
