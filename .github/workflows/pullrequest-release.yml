@@ -729,8 +729,9 @@ jobs:
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
 
-  # Preview build of hoophq/hoopagent, all four flavours (see Dockerfile.agent).
-  # Mirrors the release workflow, minus the floating :latest tag.
+  # Preview build of hoophq/hoopagent, both slim flavours (see Dockerfile.agent).
+  # Mirrors the release workflow. hoophq/hoopagent is a clean-only repository —
+  # see the bright-line note in Dockerfile.agent before adding a tag here.
   docker-publish-hoopagent:
     runs-on: ubuntu-latest
     name: Publish Agent Image (hoopagent)
@@ -755,30 +756,6 @@ jobs:
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-      - name: Build and push (standard)
-        uses: docker/build-push-action@v4
-        with:
-          file: ./Dockerfile.agent
-          context: '.'
-          target: standard
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
-          push: true
-          tags: |
-            hoophq/hoopagent:${{ env.GIT_TAG }}
-      - name: Build and push (full)
-        uses: docker/build-push-action@v4
-        with:
-          file: ./Dockerfile.agent
-          context: '.'
-          target: full
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
-          push: true
-          tags: |
-            hoophq/hoopagent:${{ env.GIT_TAG }}-full
       - name: Build and push (minimal)
         uses: docker/build-push-action@v4
         with:

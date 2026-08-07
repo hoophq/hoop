@@ -22,23 +22,13 @@ image: {}
   #   repository: hoophq/hoop-agent-ocr
   #   tag: <release>-gpu
   #
-  # hoophq/hoopagent is the consolidated agent image, published in four
-  # flavours. The default carries the hoop CLI and all bundled client tooling
-  # (psql, mysql, mongosh, sqlcmd, sqlplus, kubectl, aws, gcloud), which is what
-  # custom/command-line connections exec:
-  #   repository: hoophq/hoopagent
-  #   tag: <release>
-  #
-  # RDP is served by the hoop_rs Rust agent, which ships only on the -full
-  # flavour. Use it if any connection on this agent is RDP:
-  #   repository: hoophq/hoopagent
-  #   tag: <release>-full
-  #
-  # The two slim flavours ship only the `hoop` binary — no database clients, no
-  # shell tooling, no Rust agent — and run as uid 10001. Use one when the agent
-  # only serves connection types it handles in-process (tcp, postgres, mysql,
-  # mssql, mongodb, httpproxy, ssh, ssm). Custom/command-line connections and
-  # RDP are NOT supported by them; keep the default flavour for those.
+  # hoophq/hoopagent ships the `hoop` binary and nothing else — no database
+  # clients, no shell tooling, no Rust agent — and runs as uid 10001. It carries
+  # no AGPL/SSPL component. Use it when the agent only serves connection types it
+  # handles in-process (tcp, postgres, mysql, mssql, mongodb, httpproxy, ssh,
+  # ssm). Custom/command-line connections and RDP are NOT supported; those need
+  # hoophq/hoopdev above. There is no unsuffixed tag and no `latest` — always
+  # name a flavour and a release:
   #   # Ubuntu 24.04 LTS base; keeps a shell for `kubectl exec` debugging:
   #   repository: hoophq/hoopagent
   #   tag: <release>-minimal
