@@ -308,10 +308,110 @@ func TestPromptPrecedence(t *testing.T) {
 	}
 }
 
+// Config.Validate now refuses a provider the binary does not link, so the
+// positive-path tests need one registered. Registering from a _test.go file
+// keeps it out of the shipped binary.
+func init() {
+	analyzer.Register("stub", func(analyzer.Options) (analyzer.Provider, error) {
+		return stubAnalyzerProvider{}, nil
+	})
+}
+
 type stubAnalyzerProvider struct{}
 
 func (stubAnalyzerProvider) Name() string { return "stub" }
 
 func (stubAnalyzerProvider) Classify(context.Context, string, string) (*analyzer.Result, error) {
 	return &analyzer.Result{RiskLevel: analyzer.RiskLow}, nil
+}
+
+// An ai_analysis rule on an HTTP lane with no body capture classifies nothing:
+// the codec leaves Body empty, and the builder skips a bodiless request. The
+// rule would load, evaluate and never fire.
+func TestHTTPAIRuleWithoutCaptureBodyIsRefused(t *testing.T) {
+	mk := func(h *HTTPCodecConfig) *Config {
+		return &Config{
+			Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
+			Policy:   PolicyConfig{Enforce: ptr(true)},
+			Listeners: []ListenerConfig{{
+				Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1",
+				HTTP:   h,
+				Policy: &PolicyConfig{Rules: []policy.Rule{aiRule("risky")}},
+			}},
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		http *HTTPCodecConfig
+	}{
+		{"no http block at all", nil},
+		{"http block with capture off", &HTTPCodecConfig{Headers: []string{"Content-Type"}}},
+		{"capture explicitly false", &HTTPCodecConfig{CaptureBody: false}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := mk(tc.http).Validate()
+			if err == nil {
+				t.Fatal("an http ai_analysis rule without body capture was accepted")
+			}
+			if !strings.Contains(err.Error(), "capture_body") {
+				t.Errorf("the error does not name the missing setting: %v", err)
+			}
+		})
+	}
+
+	if err := mk(&HTTPCodecConfig{CaptureBody: true}).Validate(); err != nil {
+		t.Errorf("capture_body: true was still refused: %v", err)
+	}
+}
+
+// The same rule on a postgres lane needs nothing extra: statement text is
+// always there.
+func TestPostgresAIRuleNeedsNoCaptureBody(t *testing.T) {
+	cfg := pgLane(aiRule("risky"))
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("a postgres ai_analysis rule was refused: %v", err)
+	}
+}
+
+// Every one of these is a cost or safety bound whose zero value means "off".
+// A negative reads as off too, so a typo silently removes the ceiling the
+// operator wrote down. max_calls is the sharp one: it is the last line
+// against a runaway workload.
+func TestNegativeNumericsAreRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  string
+		cfg  AnalyzerConfig
+	}{
+		{"max_calls", "max_calls", AnalyzerConfig{MaxCalls: -1}},
+		{"max_output_tokens", "max_output_tokens", AnalyzerConfig{MaxOutputTokens: -1}},
+		{"cache size", "cache.size", AnalyzerConfig{Cache: AnalyzerCacheConfig{Size: -1}}},
+		{"cache ttl", "cache.ttl_sec", AnalyzerConfig{Cache: AnalyzerCacheConfig{TTLSec: -1}}},
+		{"timeout", "timeout_sec", AnalyzerConfig{TimeoutSec: -1}},
+		{"max_input_bytes", "max_input_bytes", AnalyzerConfig{MaxInputBytes: -1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := tc.cfg
+			c.Provider, c.Model = "stub", "m"
+			problems := c.validate(false)
+			if len(problems) == 0 {
+				t.Fatalf("a negative %s was accepted", tc.key)
+			}
+			if !strings.Contains(strings.Join(problems, " "), tc.key) {
+				t.Errorf("the error does not name %s: %v", tc.key, problems)
+			}
+		})
+	}
+}
+
+// Zero stays legal: it is how each of these is turned off.
+func TestZeroNumericsAreAccepted(t *testing.T) {
+	c := AnalyzerConfig{Provider: "stub", Model: "m"}
+	for _, p := range c.validate(false) {
+		if strings.Contains(p, "negative") {
+			t.Errorf("a zero value was refused as negative: %v", p)
+		}
+	}
 }

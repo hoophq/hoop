@@ -676,6 +676,18 @@ the point: a high-risk statement running under `high: warn` forwards, and its
 risk still has to reach the record. Otherwise observe-only mode — the whole
 reason `warn` exists — reports clean until something gets blocked.
 
+A lane may carry several `ai_analysis` rules, each its own evaluator emitting
+the same two keys, so the merge is **highest-wins rather than last-wins**. The
+audit record carries one `risk_level` and the session rollup keeps the maximum
+across statements, so letting a rule that rated a statement low overwrite one
+that rated it high would understate the whole session.
+
+The level and its action move as a **pair**. Merging the two keys
+independently produces `{high, allow}` out of a `high: warn` rule and a
+`low: allow` one — a mapping no rule configured. `policy.mergeAnnotations`
+owns both rules, and the keys live in `policy` rather than `analyzer` because
+`Chain` has to merge them and cannot import its own callers.
+
 `Metadata["risk_level"]` is read by `store.MemoryStore.applyEvent` and the
 SQLite store, which keep a session's HIGHEST risk (`riskRank`, a severity
 comparison rather than a lexical one) and surface it as
@@ -905,6 +917,8 @@ each one refuses a config that would LOAD, evaluate and do nothing.
 | A credential file readable by group or other | refused, reporting the mode |
 | `send: redacted` or `refuse` with no `pii` section | refused: nothing to detect with |
 | An analyzer endpoint with userinfo or a query string | refused: `/config` would publish it |
+| An `ai_analysis` rule on an HTTP lane without `http.capture_body` | refused: every request would be skipped |
+| A negative `max_calls`, `cache.size`, `cache.ttl_sec` or `max_output_tokens` | refused: a negative silently reads as "off" |
 | An `http` block on a non-HTTP lane | refused, naming the lane |
 | `authorization`, `cookie` or `proxy-authorization` in an HTTP header allowlist | refused, naming the header |
 | A Vertex credential that cannot mint a token | refused, distinguishing parse, mint and IAM failures |

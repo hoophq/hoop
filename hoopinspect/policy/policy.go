@@ -417,6 +417,91 @@ func (r Rule) matches(stmt hoopinspect.Statement) (bool, error) {
 // one denied anyway.
 type Chain []Evaluator
 
+// Annotation keys with defined merge semantics.
+//
+// They live here rather than in the analyzer package because Chain has to
+// merge them and cannot import its own callers. The analyzer aliases these,
+// so the strings are defined once.
+const (
+	// AnnotationRiskLevel is one of low, medium or high.
+	AnnotationRiskLevel = "risk_level"
+
+	// AnnotationRiskAction is what that level mapped to. It is meaningful
+	// only beside the level it came from, which is why the two merge as a
+	// pair.
+	AnnotationRiskAction = "risk_action"
+)
+
+// riskRank orders risk levels for a highest-wins merge. An unrecognized
+// level ranks zero so it never displaces a real one.
+func riskRank(level string) int {
+	switch level {
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	}
+	return 0
+}
+
+// mergeAnnotations folds src into dst and returns the result.
+//
+// Risk is highest-wins, and the level travels with its action as a PAIR.
+// A lane may carry several ai_analysis rules, each its own evaluator emitting
+// the same two keys, so last-write-wins would let a rule that rated a
+// statement low erase one that rated it high. The audit record carries a
+// single risk_level and the session rollup keeps the highest across
+// statements, so a downgrade here silently understates the session.
+//
+// The pair moves together because an action is only meaningful beside the
+// level that produced it. Merging the two keys independently can yield
+// {high, allow} out of a high→warn rule and a low→allow one, describing a
+// mapping no rule configured.
+func mergeAnnotations(dst, src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]string, len(src))
+	}
+
+	for k, v := range src {
+		switch k {
+		case AnnotationRiskLevel, AnnotationRiskAction:
+			// Handled below, as a unit.
+		default:
+			dst[k] = v
+		}
+	}
+
+	incoming, hasLevel := src[AnnotationRiskLevel]
+	if !hasLevel {
+		// An action with no level of its own: the refuse path, which
+		// denies without ever classifying. A denial short-circuits the
+		// chain, so this is the last word on what happened to the
+		// statement and it keeps any level an earlier rule established.
+		if action, ok := src[AnnotationRiskAction]; ok {
+			dst[AnnotationRiskAction] = action
+		}
+		return dst
+	}
+	if riskRank(incoming) <= riskRank(dst[AnnotationRiskLevel]) {
+		// Strictly lower, or a tie the incumbent already answered.
+		return dst
+	}
+	dst[AnnotationRiskLevel] = incoming
+	if action, ok := src[AnnotationRiskAction]; ok {
+		dst[AnnotationRiskAction] = action
+	} else {
+		// A level with no action would otherwise sit beside the
+		// previous rule's action and misreport what was done.
+		delete(dst, AnnotationRiskAction)
+	}
+	return dst
+}
+
 // Evaluate implements Evaluator.
 func (c Chain) Evaluate(stmt hoopinspect.Statement) Verdict {
 	var errs error
@@ -426,12 +511,7 @@ func (c Chain) Evaluate(stmt hoopinspect.Statement) Verdict {
 		// Annotations survive an allow, which is the point of them: the
 		// analyzer's risk level belongs in the audit record whether or
 		// not anything denied.
-		for k, val := range v.Annotations {
-			if notes == nil {
-				notes = make(map[string]string, len(v.Annotations))
-			}
-			notes[k] = val
-		}
+		notes = mergeAnnotations(notes, v.Annotations)
 		if v.Denied {
 			v.Err = errors.Join(errs, v.Err)
 			v.Annotations = notes

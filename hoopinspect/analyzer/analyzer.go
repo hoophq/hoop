@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoopinspect/policy"
 )
 
 // RiskLevel is the model's classification of one statement.
@@ -59,12 +60,16 @@ const (
 	// MetadataRiskLevel is read by store.MemoryStore and the SQLite store
 	// to roll a session's highest risk up onto its record. The key name is
 	// theirs, not ours: changing it silently disables the rollup.
-	MetadataRiskLevel = "risk_level"
+	//
+	// Defined in policy because policy.Chain has to merge these keys and
+	// cannot import this package. One definition, two readers.
+	MetadataRiskLevel = policy.AnnotationRiskLevel
 
 	// MetadataAction records what the risk mapped to, so a reviewer can
 	// tell a high-risk statement that was allowed under a warn policy from
-	// one that was blocked.
-	MetadataAction = "risk_action"
+	// one that was blocked. It merges as a PAIR with MetadataRiskLevel; see
+	// policy.mergeAnnotations.
+	MetadataAction = policy.AnnotationRiskAction
 )
 
 // rank orders risk for "keep the highest seen" rollups. An unknown level

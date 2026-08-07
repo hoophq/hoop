@@ -226,6 +226,24 @@ func (a *AnalyzerConfig) validate(hasScanner bool) []string {
 	if a.MaxInputBytes < 0 {
 		problems = append(problems, "analyzer: max_input_bytes is negative")
 	}
+
+	// Negative is refused rather than clamped. Every one of these is a cost
+	// or safety bound whose zero value means "off", and a negative reads as
+	// off too — so a typo silently removes the ceiling the operator wrote
+	// down. max_calls is the sharp one: it is the last line against a
+	// runaway workload, and -1 would disable it while looking set.
+	if a.MaxCalls < 0 {
+		problems = append(problems, "analyzer: max_calls is negative")
+	}
+	if a.MaxOutputTokens < 0 {
+		problems = append(problems, "analyzer: max_output_tokens is negative")
+	}
+	if a.Cache.Size < 0 {
+		problems = append(problems, "analyzer: cache.size is negative")
+	}
+	if a.Cache.TTLSec < 0 {
+		problems = append(problems, "analyzer: cache.ttl_sec is negative")
+	}
 	return problems
 }
 

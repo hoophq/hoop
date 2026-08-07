@@ -3,7 +3,9 @@ package analyzer_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -629,4 +631,99 @@ func TestDefaultGuidanceCoversBothProtocols(t *testing.T) {
 	if !strings.Contains(g, "high, on HTTP") {
 		t.Error("the default guidance gives HTTP no high-risk examples of its own")
 	}
+}
+
+// --- budget under concurrency -----------------------------------------------
+
+// One Evaluator is shared by every connection on the lane, so the budget has
+// to hold when many goroutines reach it at once. Reading the counter and then
+// incrementing it in two steps lets every goroutine in flight observe the same
+// under-budget value and call anyway, which is exactly the runaway the budget
+// exists to bound.
+func TestBudgetHoldsUnderConcurrency(t *testing.T) {
+	const (
+		budget     = 1
+		goroutines = 64
+	)
+
+	p := &stubProvider{level: analyzer.RiskLow}
+	// Redact runs between the budget gate and the provider call, so a slow
+	// one holds every goroutine inside the window where a check-then-act
+	// budget has already been read but not yet incremented. This is the
+	// shape of the real path: config resolution, a PII scan and context
+	// setup all sit in that gap.
+	release := make(chan struct{})
+	ev := mustNew(t, analyzer.Config{
+		Provider: p,
+		Trigger:  deleteTrigger(),
+		Actions:  analyzer.ActionMap{},
+		MaxCalls: budget,
+		Redact: func(s string) string {
+			<-release
+			return s
+		},
+		// No cache: a hit would serve most statements without ever
+		// reaching the reservation and mask the race.
+	})
+
+	var ready, done sync.WaitGroup
+	ready.Add(goroutines)
+	done.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func(g int) {
+			defer done.Done()
+			ready.Done()
+			// A distinct shape per goroutine, so nothing is deduplicated.
+			ev.Evaluate(sqlStmt(
+				fmt.Sprintf("DELETE FROM t%d WHERE k = 'x'", g),
+				hoopinspect.OpDelete, fmt.Sprintf("t%d", g)))
+		}(g)
+	}
+
+	ready.Wait()
+	time.Sleep(50 * time.Millisecond) // let every goroutine reach Redact
+	close(release)
+	done.Wait()
+
+	if got := p.calls.Load(); got > budget {
+		t.Errorf("provider called %d times under a budget of %d", got, budget)
+	}
+	if got := p.calls.Load(); got != budget {
+		t.Errorf("provider called %d times, want the budget fully spent (%d)", got, budget)
+	}
+	// Stats.Calls counts provider calls actually made, which is the number
+	// that tracks the bill: an over-budget reservation is handed back.
+	if st := ev.Stats(); st.Calls != int64(budget) {
+		t.Errorf("Stats.Calls = %d, want %d", st.Calls, budget)
+	}
+}
+
+// The Evaluator is documented as safe to share across connections, so the
+// whole path has to be race-free, not just the counter. Run with -race.
+func TestConcurrentEvaluateIsRaceFree(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskHigh}
+	ev := mustNew(t, analyzer.Config{
+		Provider:  p,
+		Trigger:   deleteTrigger(),
+		Actions:   analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
+		CacheSize: 32,
+		CacheTTL:  time.Minute,
+	})
+
+	var wg sync.WaitGroup
+	for g := 0; g < 32; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 16; i++ {
+				// Half the statements share a shape, so readers and
+				// writers hit the cache concurrently.
+				ev.Evaluate(sqlStmt(
+					fmt.Sprintf("DELETE FROM t%d WHERE k = 'x'", i%4),
+					hoopinspect.OpDelete, "t"))
+				_ = ev.Stats()
+			}
+		}(g)
+	}
+	wg.Wait()
 }

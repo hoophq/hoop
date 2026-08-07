@@ -343,6 +343,13 @@ func (c *Config) Validate() error {
 	if len(c.Listeners) == 0 {
 		problems = append(problems, "no listeners configured")
 	}
+
+	// The analyzer section is checked here as well as in setupAnalyzer, so a
+	// config with a bad lane AND a bad analyzer reports both in one run.
+	// Splitting them across phases is the "one error per restart" this
+	// package refuses everywhere else. setupAnalyzer keeps its own call for
+	// a caller that builds a Config by hand and never passes through here.
+	problems = append(problems, c.Analyzer.validate(len(c.PII) > 0)...)
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
@@ -408,6 +415,23 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.HTTP.validate(name)...)
+	}
+
+	// An ai_analysis rule on an HTTP lane with no body capture classifies
+	// nothing: HTTPBuilder.Build returns ok=false on an empty body, and the
+	// codec leaves Body empty unless the lane asked for it. The rule would
+	// load, evaluate and never fire — the same silent failure the pii-entity
+	// check refuses, on a control that also costs money when it does work.
+	//
+	// This asserts only that the proxy COULD capture a body. A genuinely
+	// bodiless request is still skipped at runtime, deliberately: paying for
+	// a verdict on "POST /orders" with no payload is what that skip avoids.
+	if len(aiRules) > 0 && hoopinspect.Protocol(lc.Protocol) == hoopinspect.HTTP &&
+		(lc.HTTP == nil || !lc.HTTP.CaptureBody) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: has ai_analysis rule(s) on an http listener but http.capture_body "+
+				"is not set, so every request would be skipped; add an \"http\" "+
+				"block with capture_body: true", name))
 	}
 
 	// Mask rule SHAPE belongs to the plugin, which checks it when building

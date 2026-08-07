@@ -295,19 +295,6 @@ func (e *Evaluator) classify(ctx context.Context, stmt hoopinspect.Statement) (R
 		return cached, policy.Verdict{}, true
 	}
 
-	if e.cfg.MaxCalls > 0 && e.calls.Load() >= int64(e.cfg.MaxCalls) {
-		e.budgetLogged.Do(func() {
-			if e.onBudget != nil {
-				e.onBudget()
-			}
-		})
-		// Budget exhaustion is not a provider failure: the local rules
-		// and OPA still ran and allowed this statement. Falling through
-		// to allow is the same outcome as a lane with no analyzer, which
-		// is what a spent budget means.
-		return Result{}, policy.Verdict{}, false
-	}
-
 	text := content.Text
 	if e.cfg.Redact != nil {
 		text = e.cfg.Redact(text)
@@ -327,10 +314,36 @@ func (e *Evaluator) classify(ctx context.Context, stmt hoopinspect.Statement) (R
 			return Result{}, v, false
 		}
 	}
+	// Reserve a slot atomically.
+	//
+	// One Evaluator is shared by every connection on the lane, so reading a
+	// counter and incrementing it in two steps leaves a window where every
+	// goroutine in flight reads the same under-budget value and every one of
+	// them calls the provider. A budget of 100 becomes 100 plus however many
+	// connections were concurrent, which is exactly the runaway the budget
+	// exists to bound.
+	//
+	// Add returns the post-increment value, so exactly one goroutine can
+	// observe each slot. An over-budget reservation is handed back, keeping
+	// Stats.Calls a count of provider calls actually made rather than of
+	// attempts, which is the number that tracks the bill.
+	if n := e.calls.Add(1); e.cfg.MaxCalls > 0 && n > int64(e.cfg.MaxCalls) {
+		e.calls.Add(-1)
+		e.budgetLogged.Do(func() {
+			if e.onBudget != nil {
+				e.onBudget()
+			}
+		})
+		// Budget exhaustion is not a provider failure: the local rules
+		// and OPA still ran and allowed this statement. Falling through
+		// to allow is the same outcome as a lane with no analyzer, which
+		// is what a spent budget means.
+		return Result{}, policy.Verdict{}, false
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	defer cancel()
 
-	e.calls.Add(1)
 	res, err := e.cfg.Provider.Classify(callCtx, e.prompt, text)
 	if err != nil {
 		e.errs.Add(1)

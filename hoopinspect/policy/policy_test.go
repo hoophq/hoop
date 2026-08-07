@@ -509,3 +509,142 @@ func TestChainStopsOnAFailClosedError(t *testing.T) {
 		t.Error("the denial dropped its cause")
 	}
 }
+
+// --- annotation merge -------------------------------------------------------
+
+// annotator is an evaluator that only contributes annotations.
+type annotator struct {
+	notes  map[string]string
+	denied bool
+}
+
+func (a annotator) Evaluate(hoopinspect.Statement) policy.Verdict {
+	v := policy.Verdict{Denied: a.denied}
+	if a.denied {
+		v.Rule, v.Message = "annotator", "denied"
+	}
+	v.Annotations = a.notes
+	return v
+}
+
+func risk(level, action string) map[string]string {
+	return map[string]string{
+		policy.AnnotationRiskLevel:  level,
+		policy.AnnotationRiskAction: action,
+	}
+}
+
+// A lane may carry several ai_analysis rules, each its own evaluator emitting
+// the same two keys. Last-write-wins would let a rule that rated a statement
+// low erase one that rated it high, and the audit record carries a single
+// risk_level that the session rollup keeps the maximum of — so the downgrade
+// would understate the whole session.
+func TestChainKeepsHighestRisk(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		first      map[string]string
+		second     map[string]string
+		wantLevel  string
+		wantAction string
+	}{
+		{"high then low", risk("high", "block"), risk("low", "allow"), "high", "block"},
+		{"low then high", risk("low", "allow"), risk("high", "block"), "high", "block"},
+		{"medium then low", risk("medium", "warn"), risk("low", "allow"), "medium", "warn"},
+		{"low then medium", risk("low", "allow"), risk("medium", "warn"), "medium", "warn"},
+		{"equal keeps the first", risk("high", "block"), risk("high", "warn"), "high", "block"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chain := policy.Chain{
+				annotator{notes: tc.first},
+				annotator{notes: tc.second},
+			}
+			v := chain.Evaluate(hoopinspect.Statement{})
+			if got := v.Annotations[policy.AnnotationRiskLevel]; got != tc.wantLevel {
+				t.Errorf("risk_level = %q, want %q", got, tc.wantLevel)
+			}
+			if got := v.Annotations[policy.AnnotationRiskAction]; got != tc.wantAction {
+				t.Errorf("risk_action = %q, want %q", got, tc.wantAction)
+			}
+		})
+	}
+}
+
+// The level and its action travel together. Merging the two keys
+// independently yields {high, allow} from a high->warn rule and a low->allow
+// one, describing a mapping no rule configured.
+func TestChainKeepsRiskPairConsistent(t *testing.T) {
+	chain := policy.Chain{
+		annotator{notes: risk("high", "warn")},
+		annotator{notes: risk("low", "allow")},
+	}
+	v := chain.Evaluate(hoopinspect.Statement{})
+
+	if got := v.Annotations[policy.AnnotationRiskAction]; got != "warn" {
+		t.Errorf("risk_action = %q, want warn: the low rule's action was paired "+
+			"with the high rule's level", got)
+	}
+}
+
+// A denial short-circuits, so the annotations gathered before it must still
+// reach the record: that is how a blocked statement keeps the risk an earlier
+// rule established.
+func TestChainCarriesAnnotationsThroughDenial(t *testing.T) {
+	chain := policy.Chain{
+		annotator{notes: risk("high", "warn")},
+		annotator{notes: map[string]string{policy.AnnotationRiskAction: "block"}, denied: true},
+	}
+	v := chain.Evaluate(hoopinspect.Statement{})
+
+	if !v.Denied {
+		t.Fatal("the chain did not deny")
+	}
+	if got := v.Annotations[policy.AnnotationRiskLevel]; got != "high" {
+		t.Errorf("risk_level = %q, want high preserved through the denial", got)
+	}
+	// The refuse path denies without classifying, so its action is the last
+	// word on what happened.
+	if got := v.Annotations[policy.AnnotationRiskAction]; got != "block" {
+		t.Errorf("risk_action = %q, want block", got)
+	}
+}
+
+// A level arriving with no action must not sit beside a previous rule's
+// action, which would misreport what was done.
+func TestChainDropsStaleActionWhenLevelWins(t *testing.T) {
+	chain := policy.Chain{
+		annotator{notes: risk("low", "allow")},
+		annotator{notes: map[string]string{policy.AnnotationRiskLevel: "high"}},
+	}
+	v := chain.Evaluate(hoopinspect.Statement{})
+
+	if got := v.Annotations[policy.AnnotationRiskLevel]; got != "high" {
+		t.Errorf("risk_level = %q, want high", got)
+	}
+	if got, ok := v.Annotations[policy.AnnotationRiskAction]; ok {
+		t.Errorf("risk_action = %q, want it dropped: it belonged to the low verdict", got)
+	}
+}
+
+// Keys outside the risk pair keep last-write-wins.
+func TestChainMergesOtherKeysLastWins(t *testing.T) {
+	chain := policy.Chain{
+		annotator{notes: map[string]string{"other": "first"}},
+		annotator{notes: map[string]string{"other": "second"}},
+	}
+	v := chain.Evaluate(hoopinspect.Statement{})
+	if got := v.Annotations["other"]; got != "second" {
+		t.Errorf("other = %q, want second", got)
+	}
+}
+
+// An unrecognized level must not displace a real one.
+func TestChainIgnoresUnknownRiskLevel(t *testing.T) {
+	chain := policy.Chain{
+		annotator{notes: risk("high", "block")},
+		annotator{notes: risk("catastrophic", "allow")},
+	}
+	v := chain.Evaluate(hoopinspect.Statement{})
+	if got := v.Annotations[policy.AnnotationRiskLevel]; got != "high" {
+		t.Errorf("risk_level = %q, want high", got)
+	}
+}
