@@ -1,5 +1,5 @@
 import { FLOW_STATUS } from '@/stores/useNativeAccessStore'
-import { isSessionValid } from './helpers'
+import { hasLiveSession } from './helpers'
 
 export const ROW_STATE = {
   IDLE: 'idle',
@@ -23,7 +23,7 @@ export const ROW_STATE = {
  * when the row fetches the connection — same as the CLJS flow.
  */
 export function deriveRowState(role, active, flowStatus, review) {
-  const hasSession = isSessionValid(active) && Boolean(active?.session_id)
+  const hasSession = hasLiveSession(active)
 
   // `review` — the {sessionId, reviewId, accessDurationSec} pointer — is the
   // durable half of this state; flowStatus is volatile and gets overwritten by

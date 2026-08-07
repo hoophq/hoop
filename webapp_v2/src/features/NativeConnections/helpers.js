@@ -82,6 +82,24 @@ export function isSessionValid(session) {
 }
 
 /**
+ * Whether a listed credential represents a connection that is actually OPEN.
+ *
+ * A credential outliving its session is the normal state after Disconnect:
+ * CloseConnectionCredentials ends the audit session and calls
+ * ClearCredentialSession, which nulls session_id, but deliberately keeps the
+ * credential row — including its secret and its expiry — so reconnecting
+ * returns the same key. GET /connection-credentials still lists it, because it
+ * filters on revoked_at and expire_at only.
+ *
+ * So "not expired" is not the same question as "open", and everything that asks
+ * has to ask it the same way — a row that renders a Connect button while the
+ * flow thinks a session is live is how you end up clicking twice.
+ */
+export function hasLiveSession(session) {
+  return isSessionValid(session) && Boolean(session?.session_id)
+}
+
+/**
  * Flat lowercase haystack backing the drawer's search box, whose placeholder
  * promises "type, attributes, tag or names".
  *

@@ -9,7 +9,11 @@ import {
   REQUEST_FAILED_FALLBACK,
   REVIEW_POLL_MS,
 } from '@/features/NativeConnections/constants'
-import { errorMessage, isSessionValid } from '@/features/NativeConnections/helpers'
+import {
+  errorMessage,
+  hasLiveSession,
+  isSessionValid,
+} from '@/features/NativeConnections/helpers'
 
 /**
  * Native client access — the React port of
@@ -193,9 +197,14 @@ export const useNativeAccessStore = create((set, get) => ({
       return
     }
 
-    // A live credential already exists — go straight to showing it.
+    // A connection that is actually OPEN — go straight to showing it. Must be
+    // the same question the row asks, or the two disagree: after a Disconnect
+    // the credential survives with its expiry intact but no session, so a plain
+    // "not expired" check sent this down the fetch path while the row was
+    // offering Connect. The fetch then 404s (no active session), which is the
+    // flicker, and only the click after it reached the dialog.
     const active = get().activeByName[connectionName]
-    if (isSessionValid(active)) {
+    if (hasLiveSession(active)) {
       await get().fetchCredentials(connectionName)
       return
     }
@@ -225,7 +234,7 @@ export const useNativeAccessStore = create((set, get) => ({
    */
   resumeIfActive: async (connectionName) => {
     if (get().credentialsByName[connectionName]) return
-    if (!isSessionValid(get().activeByName[connectionName])) return
+    if (!hasLiveSession(get().activeByName[connectionName])) return
     // expand:false — the user opened this row themselves and may well have
     // closed it again while the secret was in flight. Re-opening it under them
     // when the response lands is the row popping back open on its own.
