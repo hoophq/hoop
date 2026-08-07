@@ -51,7 +51,6 @@
     "genversion": "^3.1.1",
     "gsap": "^3.11.5",
     "is-url-http": "^2.3.9",
-    "launchdarkly-js-client-sdk": "^2.20.0",
     "lucide-react": "^0.429.0",
     "markdown-it": "^14.1.0",
     "next-themes": "^0.3.0",
@@ -81,7 +80,7 @@
     "postcss": "^8.4.39",
     "postcss-cli": "^9.1.0",
     "postcss-import": "^15.1.0",
-    "shadow-cljs": "2.28.14",
+    "shadow-cljs": "3.4.12",
     "tailwindcss": "^3.4.4"
   }
 }
