@@ -100,6 +100,18 @@ export function hasLiveSession(session) {
 }
 
 /**
+ * "Is this connection waiting on a review?" — the one definition.
+ *
+ * Keyed on the durable review pointer, never on the volatile flow status: a
+ * failed poll or a manual re-check overwrites the status while the review is
+ * still open. Two copies of this question is the bug that bit this feature
+ * twice, so the row state and the poller both call this and nothing else.
+ */
+export function isPendingReviewFor(review, active) {
+  return Boolean(review?.sessionId) && !hasLiveSession(active)
+}
+
+/**
  * Flat lowercase haystack backing the drawer's search box, whose placeholder
  * promises "type, attributes, tag or names".
  *

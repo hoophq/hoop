@@ -112,7 +112,7 @@ export function RoleRow({ role, active, expanded }) {
   const review = useNativeAccessStore((s) => s.reviewByName[role.name])
   const hasCredentials = useNativeAccessStore((s) => Boolean(s.credentialsByName[role.name]))
   const resumeIfActive = useNativeAccessStore((s) => s.resumeIfActive)
-  const state = deriveRowState(role, active, flowStatus, review)
+  const state = deriveRowState(role, active, review)
 
   // Expanding only loads the secret for a session that already exists. It never
   // creates one — that is the action button's job.

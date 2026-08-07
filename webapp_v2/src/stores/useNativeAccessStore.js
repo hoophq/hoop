@@ -13,6 +13,7 @@ import {
 import {
   errorMessage,
   hasLiveSession,
+  isPendingReviewFor,
   isSessionValid,
 } from '@/features/NativeConnections/helpers'
 
@@ -65,7 +66,7 @@ const removeFrom = (map, key) => {
  * the poller and the panel) has to call this and nothing else.
  */
 export const isPendingReview = (state, name) =>
-  Boolean(state.reviewByName[name]?.sessionId) && !hasLiveSession(state.activeByName[name])
+  isPendingReviewFor(state.reviewByName[name], state.activeByName[name])
 
 const pendingReviewNames = (state) =>
   Object.keys(state.reviewByName).filter((name) => isPendingReview(state, name))
