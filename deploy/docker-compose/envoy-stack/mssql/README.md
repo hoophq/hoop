@@ -91,6 +91,9 @@ docker compose "${CF[@]}" exec sqlclient sqlcmd \
 - The relay opens a session for that login and forwards the `0x10` and `0x11`
   packets to SQL Server.
 - The relay refuses a routing ENVCHANGE.
+- Responses are masked: the entity rule redacts the email, the column rule
+  catches the SSN that detection refuses as a fixture, and an `NVARCHAR(MAX)`
+  column is masked through its PLP encoding.
 
 ## The gap: SQL Server refuses the AD login
 

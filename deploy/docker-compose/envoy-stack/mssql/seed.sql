@@ -20,13 +20,21 @@ CREATE TABLE dbo.customers (
     id    INT IDENTITY(1,1) PRIMARY KEY,
     name  NVARCHAR(100) NOT NULL,
     email NVARCHAR(200) NOT NULL,
-    ssn   CHAR(11)      NOT NULL
+    ssn   CHAR(11)      NOT NULL,
+    -- NVARCHAR(MAX) is a different wire encoding from NVARCHAR(200), not a
+    -- bigger one. TDS sends a MAX column as PLP: an 8-byte total length, then
+    -- chunks, then a zero-length terminator. A rewriter that handles only the
+    -- USHORT form masks the first three columns and quietly leaks this one,
+    -- so the demo data carries one on purpose.
+    notes NVARCHAR(MAX) NULL
 );
 GO
 
-INSERT INTO dbo.customers (name, email, ssn) VALUES
-    (N'Ada Lovelace', N'ada@example.com',   '123-45-6789'),
-    (N'Grace Hopper', N'grace@example.com', '987-65-4321');
+INSERT INTO dbo.customers (name, email, ssn, notes) VALUES
+    (N'Ada Lovelace', N'ada@example.com',   '123-45-6789',
+     N'preferred contact ada.personal@example.com, do not share'),
+    (N'Grace Hopper', N'grace@example.com', '987-65-4321',
+     N'escalations to grace.oncall@example.com only');
 GO
 
 -- A SQL login, so the policy and audit half of the lane can be exercised

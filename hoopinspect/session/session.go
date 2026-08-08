@@ -77,9 +77,17 @@ func (i Identity) IsAnonymous() bool {
 	return i.Subject == "" && i.Email == ""
 }
 
+// AnonymousPrincipal is what Principal returns when no identity is known.
+//
+// Exported because consumers have to distinguish "nobody has authenticated"
+// from a real name, and comparing against the empty string does not do it:
+// Principal never returns "". A store folding events into a session row uses
+// this to let a principal learned mid-session replace the placeholder.
+const AnonymousPrincipal = "anonymous"
+
 // Principal returns the best available name for the identity, preferring
-// Subject. Returns "anonymous" when neither is set, so audit output always
-// has something in the actor column.
+// Subject. Returns AnonymousPrincipal when neither is set, so audit output
+// always has something in the actor column.
 func (i Identity) Principal() string {
 	switch {
 	case i.Subject != "":
@@ -87,7 +95,7 @@ func (i Identity) Principal() string {
 	case i.Email != "":
 		return i.Email
 	}
-	return "anonymous"
+	return AnonymousPrincipal
 }
 
 // Session is one inspected connection.

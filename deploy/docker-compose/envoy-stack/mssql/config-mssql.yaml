@@ -106,12 +106,14 @@ listeners:
   # Envoy terminates the client's TDS 8.0 TLS and forwards plaintext here, so
   # this relay reads every statement without holding a key or a credential.
   #
-  # No `mask:` block, and that omission is deliberate rather than an
-  # oversight. Masking needs a codec that can rebuild its own response
-  # frames; the MSSQL codec decodes the REQUEST direction only, so
-  # gate.MaskSupported reports false and the sidecar would REFUSE a mask
-  # block at startup instead of accepting it and silently never masking.
-  # Adding one here turns `-validate` red, on purpose.
+  # Masking works here now. The codec re-frames TDS response tokens the way
+  # the postgres one re-frames DataRow: it reassembles the token stream across
+  # packets, rewrites ROW and NBCROW values, and lays fresh packets over the
+  # result. See codec/mssql/rewrite.go.
+  #
+  # A column type it cannot measure (SQL_VARIANT, XML, UDT) stops the
+  # rewriting for that connection rather than guessing a length. Statements
+  # and policy carry on; only masking steps aside.
   #
   # Kerberos needs nothing configured. The SSPI packets (TDS type 0x11) are
   # forwarded verbatim by the codec, so the client's ticket reaches SQL
@@ -142,13 +144,13 @@ listeners:
           type: operation
           operations: [drop, delete, truncate]
           message: destructive statements are not permitted on mssqldb
-    # REQUIRED, not decorative. `mask` at the top level is a default every
-    # lane inherits, and inheriting `enabled: true` onto a protocol whose
-    # codec cannot re-frame is a startup error. The sidecar refuses it rather
-    # than accepting a masking rule it would never apply — so this line is
-    # what keeps `-validate` green, and deleting it is how you find out.
     mask:
-      enabled: false
+      rules:
+        # Column rules beat detection wherever the protocol names its values.
+        # alcatraz refuses 123-45-6789 as an obvious fixture, so the entity
+        # rule alone would leave the seeded SSNs in the clear.
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
 
   - name: appdb
     protocol: postgres

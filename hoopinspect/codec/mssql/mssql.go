@@ -119,6 +119,19 @@ type Codec struct {
 	// It also keeps the scan off the hot path entirely once a session is
 	// doing work.
 	authDone bool
+
+	// Response-rewriting state, independent of the decode state above: the
+	// gate drives Decode and Rewrite over separate copies of the stream.
+	//
+	// cols is the layout the most recent COLMETADATA described, held is the
+	// tail of a packet that has not arrived whole, and noRewrite latches once
+	// a type appears whose length this codec cannot compute.
+	cols        []column
+	held        []byte
+	tokenBuf    []byte
+	rawBuf      []byte
+	seenColMeta bool
+	noRewrite   bool
 }
 
 func (c *Codec) Protocol() hoopinspect.Protocol { return hoopinspect.MSSQL }

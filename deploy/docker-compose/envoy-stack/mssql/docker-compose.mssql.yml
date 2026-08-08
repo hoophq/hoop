@@ -22,6 +22,43 @@
 # wraps its handshake inside 0x12 PRELOGIN packets, which Envoy cannot speak.
 
 services:
+
+  # ------------------------------------------------------- postgres + Kerberos
+  # The same trick as the MSSQL lane on a protocol that makes it easier.
+  # appdb.hoop.test resolves to Envoy, libpq asks for postgres/appdb.hoop.test,
+  # and only this server holds the key that decrypts the ticket.
+  #
+  # Postgres needs no domain controller for the AUTHORIZATION half: it compares
+  # the authenticated principal against pg_authid, a local table. Contrast SQL
+  # Server, which resolves DOMAIN\user to a SID over LDAP before it will even
+  # store the login.
+  appdb:
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgresql/certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgresql/certs/server.key
+      - -c
+      - krb_server_keyfile=/keytabs/postgres.keytab
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      # Mounted as zz- so it runs AFTER seed.sql: initdb scripts execute in
+      # filename order, and this one grants on tables seed.sql creates.
+      # Running it here rather than by hand is what keeps the Kerberos role
+      # alive across a `down -v`, which wipes the data volume.
+      - ./mssql/pg-seed-kerberos.sql:/docker-entrypoint-initdb.d/zz-kerberos.sql:ro
+      - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
+      - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
+      - ./mssql/krb5.conf:/etc/krb5.conf:ro
+      - ./mssql/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - krb-keytabs:/keytabs:ro
+    depends_on:
+      samba: { condition: service_healthy }
+
   # --------------------------------------------------- Active Directory
   # A real DC rather than a bare KDC, and the reason is worth stating: an MIT
   # KDC issues perfectly valid tickets and SQL Server still refuses every one
@@ -45,6 +82,12 @@ services:
     volumes:
       - krb-keytabs:/keytabs
       - samba-state:/var/lib/samba
+      # /etc/samba persists too, and it has to. `samba-tool domain provision`
+      # writes the DC's smb.conf here, but the directory ships in the image
+      # with a stock standalone-server config. Persist only /var/lib/samba and
+      # a RESTART finds the provisioned database beside a non-DC smb.conf,
+      # then dies with "Samba detected misconfigured 'server role'".
+      - samba-conf:/etc/samba
     healthcheck:
       # The keytab is the artifact everything downstream waits for, so its
       # existence is a truer readiness signal than an open port.
@@ -186,7 +229,7 @@ services:
   envoy:
     networks:
       inspect:
-        aliases: [mssql.hoop.test]
+        aliases: [mssql.hoop.test, appdb.hoop.test]
     volumes:
       - ./mssql/envoy-mssql.yaml:/etc/envoy/envoy.yaml:ro
       - ./envoy/certs:/etc/envoy/certs:ro
@@ -210,9 +253,13 @@ services:
     volumes:
       - ./mssql/krb5.conf:/etc/krb5.conf:ro
       - ./mssql/certs/ca.crt:/usr/local/share/ca-certificates/hoop-demo-ca.crt:ro
+      - ./mssql/pg-seed-kerberos.sql:/pg-seed-kerberos.sql:ro
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq >/dev/null 2>&1 || true
+        apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null 2>&1 || true
         # Encrypt=strict FORBIDS TrustServerCertificate, so the CA has to be
         # trusted for real. Same thing a laptop does with a corporate root.
         update-ca-certificates >/dev/null 2>&1 || true
@@ -238,4 +285,5 @@ networks:
 volumes:
   krb-keytabs:
   samba-state:
+  samba-conf:
   mssql-tls:

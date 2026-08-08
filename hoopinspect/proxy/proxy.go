@@ -388,11 +388,24 @@ func (s *Server) handle(ctx context.Context, client net.Conn) {
 	// A negotiation failure is neither a policy denial nor a protocol error
 	// worth an audit event: it is a connection that never became a session.
 	// It closes quietly, the same as a client hanging up mid-handshake.
-	client, negErr := negotiateDownstream(
+	client, claimedUser, negErr := negotiateDownstream(
 		client, s.cfg.Protocol, s.cfg.DownstreamTLS, s.cfg.DialTimeout)
 	if negErr != nil {
 		log.Debug("downstream negotiation failed", "error", negErr)
 		return
+	}
+
+	// pgwire names its user in cleartext in the StartupMessage, so this lane
+	// can fill the actor column that every other one leaves anonymous. MSSQL
+	// cannot: under integrated auth the name lives inside the encrypted
+	// ticket, and reading it would mean implementing Kerberos.
+	//
+	// Written here, before the pumps start, so the two pump goroutines only
+	// ever read it. An IdentityFn the operator supplied wins, because it saw
+	// a verified subject from the fronting proxy and this is a client claim.
+	if claimedUser != "" && sess.Identity.Subject == "" {
+		sess.Identity.Subject = claimedUser
+		log = log.With("principal", claimedUser)
 	}
 
 	log.Info("session opened", "upstream", s.cfg.Upstream)

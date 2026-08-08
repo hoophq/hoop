@@ -23,6 +23,11 @@ SQL_SPN="MSSQLSvc/mssql.hoop.test:1433"
 # only works if the KDC will issue a ticket for the direct name too.
 DIRECT_SPN="MSSQLSvc/sqlhost.hoop.test:1433"
 
+# Postgres. Note the shape difference from MSSQLSvc: no port, because libpq
+# builds krbsrvname/<host> and stops there.
+PG_SPN="postgres/appdb.hoop.test"
+PG_KEYTAB=/keytabs/postgres.keytab
+
 log() { printf '\033[35m[samba]\033[0m %s\n' "$*"; }
 
 if [[ ! -f /var/lib/samba/private/sam.ldb ]]; then
@@ -73,6 +78,24 @@ fi
 samba-tool spn add "$DIRECT_SPN" mssqlsvc >/dev/null 2>&1 \
     && log "registered $DIRECT_SPN" \
     || true
+
+# The Postgres service. libpq builds its SPN as krbsrvname/<host it dialled>,
+# with krbsrvname defaulting to "postgres" and NO port component — unlike
+# MSSQLSvc/host:port. appdb.hoop.test resolves to Envoy, exactly as
+# mssql.hoop.test does, and the ticket stays decryptable only by the database.
+samba-tool user create pgsvc 'Pg!Passw0rd' >/dev/null 2>&1 || true
+samba-tool user setexpiry pgsvc --noexpiry >/dev/null 2>&1 || true
+samba-tool spn add "$PG_SPN" pgsvc >/dev/null 2>&1 \
+    && log "registered $PG_SPN" \
+    || true
+
+log "exporting keytab for $PG_SPN"
+rm -f "$PG_KEYTAB"
+samba-tool domain exportkeytab "$PG_KEYTAB" --principal="$PG_SPN" >/dev/null
+# The postgres image runs as uid 999, and the server refuses a keytab that
+# other accounts can read.
+chown 999:0 "$PG_KEYTAB"
+chmod 400 "$PG_KEYTAB"
 
 log "exporting keytab for $SQL_SPN"
 mkdir -p "$(dirname "$KEYTAB")"

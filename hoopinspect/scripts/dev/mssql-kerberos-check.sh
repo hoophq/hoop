@@ -76,6 +76,59 @@ else
     note "$(head -5 <<<"$OUT")"
 fi
 
+# ------------------------------------------------------------- 3b. masking
+c_step "3b. Response masking rewrites the TDS row frames"
+MASKED="$(relay_sql -h-1 -W -Q "SET NOCOUNT ON; SELECT email, ssn, notes FROM customers")"
+
+# The entity detector catches the address.
+if grep -q "REDACTED:EMAIL_ADDRESS" <<<"$MASKED"; then
+    ok "email redacted by the entity rule"
+else
+    bad "email was not redacted"
+    note "$(head -3 <<<"$MASKED")"
+fi
+
+# The column rule catches what the detector refuses: alcatraz rejects
+# 123-45-6789 as an obvious fixture, so only `columns: [ssn]` masks it.
+if grep -q '\*\*\*-\*\*-6789' <<<"$MASKED"; then
+    ok "ssn masked by the column rule, which detection alone would miss"
+else
+    bad "ssn was not masked"
+    note "$(head -3 <<<"$MASKED")"
+fi
+
+# NVARCHAR(MAX) travels as PLP: an 8-byte total length, chunks, terminator.
+# A rewriter that handles only the USHORT form masks the columns above and
+# leaks this one, which looks like success until someone reads a long field.
+if grep -q "ada.personal@example.com" <<<"$MASKED"; then
+    bad "the NVARCHAR(MAX) column leaked an address (PLP path not masking)"
+    note "$(grep -m1 'ada.personal' <<<"$MASKED" | cut -c1-90)"
+else
+    ok "NVARCHAR(MAX) masked too, so the PLP encoding is covered"
+fi
+
+# THE REGRESSION GUARD. An unmeasurable token at the tail of a response once
+# made the codec discard the whole rewrite and emit the ORIGINAL bytes, while
+# still reporting the cells as masked. The audit trail claimed masking the
+# client never received. Checking the count alone would have passed.
+if grep -qE 'ada@example\.com|grace@example\.com' <<<"$MASKED"; then
+    bad "a raw address reached the client despite masking being reported"
+    note "this is the failure mode where the audit trail lies:"
+    note "$(grep -m1 -E 'ada@|grace@' <<<"$MASKED" | cut -c1-90)"
+else
+    ok "no raw address reached the client"
+fi
+
+# And the trail agrees with what the client got.
+sleep 1
+MC="$(curl -s 'http://localhost:19000/api/sessions?limit=1' 2>/dev/null \
+      | python3 -c "import sys,json;print(json.load(sys.stdin)['sessions'][0]['masked_count'])" 2>/dev/null)"
+if [[ "${MC:-0}" -gt 0 ]]; then
+    ok "audit recorded masked_count=$MC for that session"
+else
+    bad "masking happened but the audit trail recorded none"
+fi
+
 # ----------------------------------------------------------- 4. audit trail
 c_step "4. The audit trail recorded the statement and the verdict"
 AUDIT="$(curl -s 'http://localhost:19000/api/sessions?limit=25' 2>/dev/null)"

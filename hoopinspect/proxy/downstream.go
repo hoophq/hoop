@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
@@ -61,22 +62,25 @@ const maxNegotiationRounds = 4
 // pgwire has no server greeting: the backend sends nothing until it has read a
 // startup packet. Blocking for the client's first bytes is therefore the
 // protocol's own ordering, not an assumption imposed on it.
+// It also returns the `user` the client named in its StartupMessage, which the
+// caller records as the session principal. See startupUser for what that name
+// is worth.
 func negotiateDownstream(
 	conn net.Conn,
 	proto hoopinspect.Protocol,
 	tlsCfg *tls.Config,
 	timeout time.Duration,
-) (net.Conn, error) {
+) (net.Conn, string, error) {
 	if proto != hoopinspect.Postgres {
 		// Only pgwire negotiates in-band. TDS 8.0 is TLS-on-connect, which is
 		// for whatever fronts this relay to terminate, and HTTP has no
 		// equivalent exchange.
-		return conn, nil
+		return conn, "", nil
 	}
 
 	if timeout > 0 {
 		if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
@@ -92,9 +96,9 @@ func negotiateDownstream(
 		hdr, err := br.Peek(pgNegotiateLen)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil, fmt.Errorf("client closed during negotiation: %w", err)
+				return nil, "", fmt.Errorf("client closed during negotiation: %w", err)
 			}
-			return nil, fmt.Errorf("reading the client's first packet: %w", err)
+			return nil, "", fmt.Errorf("reading the client's first packet: %w", err)
 		}
 
 		length := binary.BigEndian.Uint32(hdr[0:4])
@@ -104,40 +108,40 @@ func negotiateDownstream(
 		// Anything else is the StartupMessage, so it belongs to the caller and
 		// stays in the buffer unread.
 		if length != pgNegotiateLen {
-			return finishNegotiation(conn, br, timeout)
+			return finishNegotiation(conn, br, timeout, startupUser(br, length))
 		}
 
 		switch code {
 		case pgGSSEncRequestCode:
 			if _, err := br.Discard(pgNegotiateLen); err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			if _, err := conn.Write([]byte{'N'}); err != nil {
-				return nil, fmt.Errorf("refusing GSS encryption: %w", err)
+				return nil, "", fmt.Errorf("refusing GSS encryption: %w", err)
 			}
 
 		case pgSSLRequestCode:
 			if _, err := br.Discard(pgNegotiateLen); err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			if tlsCfg == nil {
 				if _, err := conn.Write([]byte{'N'}); err != nil {
-					return nil, fmt.Errorf("refusing SSL: %w", err)
+					return nil, "", fmt.Errorf("refusing SSL: %w", err)
 				}
 				continue
 			}
 			if _, err := conn.Write([]byte{'S'}); err != nil {
-				return nil, fmt.Errorf("accepting SSL: %w", err)
+				return nil, "", fmt.Errorf("accepting SSL: %w", err)
 			}
 			// Anything still buffered here would be a client that spoke
 			// before our 'S' reached it, which no client does and a hostile
 			// one could use to smuggle plaintext into the TLS session.
 			if br.Buffered() > 0 {
-				return nil, errors.New("client sent data before the TLS handshake")
+				return nil, "", errors.New("client sent data before the TLS handshake")
 			}
 			tc := tls.Server(conn, tlsCfg)
 			if err := tc.Handshake(); err != nil {
-				return nil, fmt.Errorf("downstream TLS handshake: %w", err)
+				return nil, "", fmt.Errorf("downstream TLS handshake: %w", err)
 			}
 			// The exchange restarts inside TLS: the client sends its startup
 			// packet, and may legitimately negotiate again first.
@@ -147,27 +151,82 @@ func negotiateDownstream(
 		case pgCancelRequestCode:
 			// A cancel carries no session. Hand it through; the upstream
 			// answers it and closes.
-			return finishNegotiation(conn, br, timeout)
+			return finishNegotiation(conn, br, timeout, "")
 
 		default:
-			return finishNegotiation(conn, br, timeout)
+			return finishNegotiation(conn, br, timeout, "")
 		}
 	}
 
-	return nil, errors.New("client kept renegotiating without sending a startup packet")
+	return nil, "", errors.New("client kept renegotiating without sending a startup packet")
+}
+
+// maxStartupPacket bounds how much of a StartupMessage is inspected for the
+// user parameter. Postgres itself refuses a startup packet above 10000 bytes.
+const maxStartupPacket = 10000
+
+// startupUser reads the `user` parameter out of the StartupMessage waiting in
+// br, WITHOUT consuming it: the gate still needs the packet whole.
+//
+// # What this name is worth
+//
+// At this instant it is a CLAIM. The client has asserted who it wants to be
+// and has proved nothing. It becomes true when the backend answers
+// AuthenticationOk, because Postgres validated the credential against this
+// exact name, and under `gss` that means a Kerberos ticket for this principal.
+//
+// The audit trail resolves the difference on its own: statements only flow
+// after authentication succeeds, so every statement attributed to a principal
+// carries a verified one. A session that shows a principal and no statements
+// is a login that failed, and the name on it is what the client wanted rather
+// than what it proved.
+//
+// Returns "" when the packet is not a v3 StartupMessage (a cancel request, or
+// a protocol version this relay does not recognize) or carries no user.
+func startupUser(br *bufio.Reader, length uint32) string {
+	if length < 9 || length > maxStartupPacket {
+		return ""
+	}
+	pkt, err := br.Peek(int(length))
+	if err != nil {
+		return ""
+	}
+	// Only protocol 3.x lays out parameters this way.
+	if binary.BigEndian.Uint32(pkt[4:8])>>16 != 3 {
+		return ""
+	}
+
+	// NUL-terminated key/value pairs, ending with an empty key.
+	params := pkt[8:]
+	for {
+		k, rest, ok := bytes.Cut(params, []byte{0})
+		if !ok || len(k) == 0 {
+			return ""
+		}
+		v, rest, ok := bytes.Cut(rest, []byte{0})
+		if !ok {
+			return ""
+		}
+		if string(k) == "user" {
+			return string(v)
+		}
+		params = rest
+	}
 }
 
 // finishNegotiation clears the handshake deadline and hands back a connection
 // that reads through the buffer the negotiation filled.
-func finishNegotiation(conn net.Conn, br *bufio.Reader, timeout time.Duration) (net.Conn, error) {
+func finishNegotiation(
+	conn net.Conn, br *bufio.Reader, timeout time.Duration, user string,
+) (net.Conn, string, error) {
 	if timeout > 0 {
 		// The relay's own IdleTimeout governs from here; leaving the
 		// handshake deadline set would kill a long-running query.
 		if err := conn.SetDeadline(time.Time{}); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
-	return &bufferedConn{Conn: conn, r: br}, nil
+	return &bufferedConn{Conn: conn, r: br}, user, nil
 }
 
 // bufferedConn reads through a bufio.Reader while keeping the underlying

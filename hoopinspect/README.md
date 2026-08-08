@@ -561,7 +561,7 @@ gaps named above are the narrow ones. Envoy is not blind here.
 | Protocol | Request messages | Response messages | Stateful |
 |---|---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
-| `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | none decoded; login replies scanned for a routing redirect | yes |
+| `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 
 The Postgres codec is stateful because one `RowDescription` describes every
@@ -594,10 +594,20 @@ leaving no trace that it stopped being watched. The codec returns
 the connection ends with a message naming the redirect target. No rule enables
 this behaviour and none can switch it off.
 
-**MSSQL responses stay undecoded**, so the sidecar refuses `mask` on an mssql
-lane at startup. Accepting it would apply no masking at all. Masking TDS means
-parsing COLMETADATA (`0x81`) and ROW/NBCROW (`0xD1`/`0xD2`) with per-type
-length rules, which is separate work from this codec.
+**MSSQL masks its responses**, by the same re-framing mechanism Postgres uses
+and against a harder framing. TDS nests two: an 8-byte packet header wrapping
+a token stream, where one `ROW` spans packets and one packet holds several
+tokens. Changing a value changes the token's length, which changes how the
+tokens repack, so the codec strips the headers, rewrites the token stream, and
+lays fresh packets over the result. Patching bytes in place cannot work,
+because a longer value has nowhere to go.
+
+A column type it cannot measure (SQL_VARIANT, XML, UDT) stops the rewriting
+for that connection. Guessing a length would desynchronize the client, which
+turns a privacy gap into a lost session. Statements and policy carry on; only
+masking steps aside. Whatever was already rewritten is kept and emitted, so a
+value masked earlier in a response stays masked when an unmeasurable token
+turns up later in the same one.
 
 A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
 AD domain controller, lives in

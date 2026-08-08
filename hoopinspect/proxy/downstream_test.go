@@ -75,7 +75,7 @@ func negotiate(t *testing.T, send []byte, tlsCfg *tls.Config) (reply []byte, gat
 	var out []byte
 	go func() {
 		defer close(done)
-		conn, err := negotiateDownstream(srv, hoopinspect.Postgres, tlsCfg, 2*time.Second)
+		conn, _, err := negotiateDownstream(srv, hoopinspect.Postgres, tlsCfg, 2*time.Second)
 		if err != nil {
 			return
 		}
@@ -195,7 +195,7 @@ func TestSSLRequestIsTerminatedWhenConfigured(t *testing.T) {
 	}
 	res := make(chan result, 1)
 	go func() {
-		c, err := negotiateDownstream(srv, hoopinspect.Postgres, cfg, 5*time.Second)
+		c, _, err := negotiateDownstream(srv, hoopinspect.Postgres, cfg, 5*time.Second)
 		res <- result{c, err}
 	}()
 
@@ -250,11 +250,99 @@ func TestOtherProtocolsAreNotIntercepted(t *testing.T) {
 	cli, srv := net.Pipe()
 	t.Cleanup(func() { cli.Close(); srv.Close() })
 
-	got, err := negotiateDownstream(srv, hoopinspect.MSSQL, nil, time.Second)
+	got, _, err := negotiateDownstream(srv, hoopinspect.MSSQL, nil, time.Second)
 	if err != nil {
 		t.Fatalf("mssql negotiation errored: %v", err)
 	}
 	if got != srv {
 		t.Error("the connection was wrapped for a protocol that does not negotiate in-band")
 	}
+}
+
+// pgStartupWithUser builds a v3 StartupMessage carrying the parameters libpq
+// actually sends.
+func pgStartupWithUser(user string) []byte {
+	var params []byte
+	for _, kv := range [][2]string{{"user", user}, {"database", "appdb"}, {"application_name", "psql"}} {
+		params = append(params, kv[0]...)
+		params = append(params, 0)
+		params = append(params, kv[1]...)
+		params = append(params, 0)
+	}
+	params = append(params, 0) // end of parameters
+
+	out := make([]byte, 8, 8+len(params))
+	binary.BigEndian.PutUint32(out[0:4], uint32(8+len(params)))
+	binary.BigEndian.PutUint32(out[4:8], 3<<16)
+	return append(out, params...)
+}
+
+// pgwire names its user in cleartext, so this lane can fill the actor column
+// that every other one leaves anonymous.
+func TestStartupUserIsRecovered(t *testing.T) {
+	_, user, _ := negotiateTwo(t, pgStartupWithUser("alice@HOOP.TEST"))
+	if user != "alice@HOOP.TEST" {
+		t.Fatalf("user = %q, want alice@HOOP.TEST", user)
+	}
+}
+
+// The client falls back to a plain startup after the refusal, and the name has
+// to survive that. This is the real Kerberos sequence.
+func TestStartupUserSurvivesAGSSRefusal(t *testing.T) {
+	stream := append(pgPacket(pgGSSEncRequestCode), pgStartupWithUser("alice@HOOP.TEST")...)
+	_, user, _ := negotiateTwo(t, stream)
+	if user != "alice@HOOP.TEST" {
+		t.Fatalf("user = %q after a GSS refusal, want alice@HOOP.TEST", user)
+	}
+}
+
+// Reading the parameters must not consume them: the gate needs the packet.
+func TestReadingTheUserLeavesTheStartupIntact(t *testing.T) {
+	want := pgStartupWithUser("alice@HOOP.TEST")
+	gateSaw, _, _ := negotiateTwo(t, want)
+	if !bytes.Equal(gateSaw, want) {
+		t.Fatalf("gate saw %d bytes, want the whole %d-byte startup packet",
+			len(gateSaw), len(want))
+	}
+}
+
+// A cancel request carries no session, so it must not invent a principal.
+func TestCancelRequestYieldsNoPrincipal(t *testing.T) {
+	_, user, _ := negotiateTwo(t, pgPacket(pgCancelRequestCode))
+	if user != "" {
+		t.Fatalf("user = %q, want empty for a cancel request", user)
+	}
+}
+
+// negotiateTwo returns what the gate would read and the user recovered.
+func negotiateTwo(t *testing.T, send []byte) (gateSaw []byte, user string, reply []byte) {
+	t.Helper()
+	cli, srv := tcpPair(t)
+
+	done := make(chan struct{})
+	var out []byte
+	var got string
+	go func() {
+		defer close(done)
+		conn, u, err := negotiateDownstream(srv, hoopinspect.Postgres, nil, 2*time.Second)
+		got = u
+		if err != nil {
+			return
+		}
+		buf := make([]byte, 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		n, _ := conn.Read(buf)
+		out = append([]byte(nil), buf[:n]...)
+	}()
+
+	_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := cli.Write(send); err != nil {
+		t.Fatal(err)
+	}
+	ack := make([]byte, 1)
+	_ = cli.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	cli.Read(ack)
+
+	<-done
+	return out, got, ack
 }
