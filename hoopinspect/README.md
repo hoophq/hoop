@@ -561,6 +561,7 @@ gaps named above are the narrow ones. Envoy is not blind here.
 | Protocol | Request messages | Response messages | Stateful |
 |---|---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
+| `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | none decoded; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 
 The Postgres codec is stateful because one `RowDescription` describes every
@@ -569,17 +570,49 @@ registry hands out a factory rather than an instance: two connections sharing
 one codec would corrupt each other's reassembly, and one tenant's SQL would
 surface in another tenant's audit trail. Give every connection its own.
 
-MySQL, MSSQL and MongoDB codecs are **not shipped**. The `Codec` interface
-and the shared SQL classifier are protocol-agnostic, so adding one means a new
-`codec/<name>` package and nothing else. We removed the earlier
-implementations to keep the surface to what is exercised end to end.
+### MSSQL, and the Kerberos login
+
+TDS gives the SSPI exchange its own packet type, and that fact alone lets
+integrated authentication cross the relay with **no Kerberos code in this
+library**. LOGIN7 (`0x10`) and each SSPI continuation (`0x11`) carry no SQL, so
+the relay forwards them verbatim. Inspection begins at the first SQLBatch
+(`0x01`) or RPC (`0x03`). The protocol's own message typing draws that
+boundary, so no heuristic guesses where the ciphertext stops.
+
+A relay could do no more here. The SSPI blob is a service ticket bound to the
+server's SPN: relayable, and beyond minting, reading or editing.
+`mssql.DetectSSPI` reports that a login is integrated, which serves the audit
+trail and a clear error message. It cannot report who. Under integrated auth
+the username field sits empty, because the name lives inside the ticket.
+
+**The codec refuses one thing outright.** A login response carrying a routing
+ENVCHANGE tells the driver to reconnect elsewhere, and drivers obey without
+telling the user. Forward it and the client lands on a socket the relay does
+not hold, where the session continues with no policy, no masking and no audit,
+leaving no trace that it stopped being watched. The codec returns
+`ErrStreamUnsafe`, the gate turns that into a denial regardless of policy, and
+the connection ends with a message naming the redirect target. No rule enables
+this behaviour and none can switch it off.
+
+**MSSQL responses stay undecoded**, so the sidecar refuses `mask` on an mssql
+lane at startup. Accepting it would apply no masking at all. Masking TDS means
+parsing COLMETADATA (`0x81`) and ROW/NBCROW (`0xD1`/`0xD2`) with per-type
+length rules, which is separate work from this codec.
+
+A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
+AD domain controller, lives in
+[`deploy/docker-compose/envoy-stack/mssql`](../deploy/docker-compose/envoy-stack/mssql).
+
+MySQL and MongoDB codecs are **not shipped**. The `Codec` interface and the
+shared SQL classifier are protocol-agnostic, so adding one takes a new
+`codec/<name>` package and no other change.
 
 Import only what you need. A listener that speaks Postgres imports
 `codec/postgres` and never links the HTTP machinery:
 
 ```go
 import _ "github.com/hoophq/hoopinspect/codec/postgres" // postgres only
-import _ "github.com/hoophq/hoopinspect/codec/all"      // postgres + http
+import _ "github.com/hoophq/hoopinspect/codec/all"      // postgres + mssql + http
 ```
 
 ## The Statement
@@ -898,6 +931,65 @@ The relay reclaims it: at startup it dials the path, and a socket nothing
 answers on gets unlinked with a warning. One that DOES answer is left alone and
 the bind fails, naming the conflict, because two relays sharing a socket would
 split a client's connections between them at random.
+
+## Downstream TLS, and the GSS refusal
+
+The relay terminates no client TLS by default: whatever fronts it owns that
+leg. Postgres is the exception, because pgwire leaves no one else able to.
+
+### The pgwire problem
+
+pgwire negotiates TLS **in-band**. The client sends an 8-byte `SSLRequest`,
+waits for a one-byte `S`/`N`, then handshakes. A plain TLS listener in front
+sees a sentinel where it expects a ClientHello, and fails. Envoy's
+`postgres_proxy` filter handles it, at a price: the filter ships contrib-only,
+Envoy marks it work-in-progress and documents it as "not hardened", and it
+gives up for the rest of the connection once a client asks for GSS encryption.
+
+Compare MSSQL. TDS 8.0 is TLS-on-connect, so an ordinary
+`DownstreamTlsContext` terminates it with no protocol awareness, and that lane
+needs none of this.
+
+```yaml
+listeners:
+  - name: appdb
+    protocol: postgres            # the only protocol that accepts this
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/relay.crt
+      key_file:  /etc/hoop-inspect/certs/relay.key
+```
+
+The sidecar refuses this on any other protocol at startup, and loads the
+keypair there too. Finding a bad path on the first client connection would cost
+one failed login per restart and leave the startup log silent.
+
+### GSS encryption draws a refusal
+
+Each postgres lane refuses it, configured or not. That refusal separates a lane
+that enforces something from one that appears to.
+
+`GSSENCRequest` asks to wrap the session in GSSAPI. Accept it and each later
+byte becomes ciphertext: no statements, no masking, no audit trail, and **no
+error** saying inspection stopped. libpq defaults `gssencmode=prefer`, so a
+developer holding a Kerberos ticket asks for this before anything else, ahead
+of TLS.
+
+The relay answers `N`, and the client loses no capability. It falls back and
+**keeps its Kerberos authentication**, carried as ordinary tagged messages that
+the codec forwards untouched. Kerberos works; the wrapper alone gets declined.
+
+Use `N`, not `E`. Both refuse, and pgjdbc closes and REOPENS the TCP connection
+on `E`, which doubles each login in the audit trail.
+
+The codec carries the same refusal as a backstop. Should a GSS request reach it
+anyway, because something else fronts the relay and let it through, the codec
+returns `ErrStreamUnsafe` and the lane fails closed.
+
+| Client | Behaviour |
+|---|---|
+| psql / libpq | defaults to `prefer`, so it asks; gets `N`, falls back, Kerberos intact |
+| DBeaver / pgjdbc | defaults to `allow`, which skips the request |
+| either, `gssencmode=require` | fails with a clear error instead of bypassing inspection |
 
 ## Upstream TLS
 

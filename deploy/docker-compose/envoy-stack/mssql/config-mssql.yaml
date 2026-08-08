@@ -1,0 +1,238 @@
+# hoop-inspect: one process, one lane per Envoy cluster.
+#
+#   envoy :8443 --cluster hoop_inspect_http--> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg----> :15432  lane "appdb"
+#
+# Each lane resolves its own rules, its own masking and its own OPA endpoint.
+# The top-level policy/mask blocks are DEFAULTS every lane inherits unless it
+# overrides them; the resolved result is served at :19000/config.
+#
+# Validate without starting anything:
+#   cd hoopinspect/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-" # stdout, for the container log pipeline
+  memory_buffer: 256
+  async_queue_size: 1024 # a slow disk must not block a user's query
+  query_sessions: 500 # backs /api/sessions
+
+# One detector engine for the process: the union of every entity any lane
+# references below. Required — there is no all-entities default, because
+# enabling all 45 recognizers rewrites ordinary numeric columns (US_SSN fires
+# on roughly a third of random nine-digit business ids).
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+# ------------------------------------------------------------------ analyzer
+# Commented out because it needs a credential and spends money per statement.
+# Uncomment, add an ai_analysis rule to a lane below, and the relay classifies
+# what the trigger names.
+#
+# Three things bound the cost, and all three matter on a database lane where
+# an ORM repeats one statement shape thousands of times: the trigger decides
+# what is worth asking about, the cache keys on the statement SHAPE (literals
+# stripped, so `WHERE id = 1` and `WHERE id = 2` are one verdict), and the
+# rule runs last in the chain, after the free local rules and OPA.
+#
+# analyzer:
+#   provider: vertex            # vertex | anthropic | openai
+#   model: claude-sonnet-4-5@20250929
+#   extra: {project: my-gcp-project, region: global}
+#   # credentials_file omitted -> Application Default Credentials. Under GKE
+#   # Workload Identity there is then NO credential on disk to leak or rotate.
+#   # Elsewhere: credentials_file: /run/secrets/vertex-sa.json, mode 0600.
+#   timeout_sec: 10
+#   # true is the default here and the opposite of every other evaluator: a
+#   # classifier that denies during a provider outage takes appdb down with it.
+#   fail_open: true
+#   # The detector above already runs in this process. A relay whose job is
+#   # keeping taxpayer ids out of the database's query log must not post them
+#   # to a model vendor, so entity VALUES are withheld and only their names go.
+#   send: redacted
+#   max_input_bytes: 8192
+#   cache: {size: 4096, ttl_sec: 900}
+#   max_calls: 500
+#   # PROCESS-WIDE: this reaches every ai_analysis rule on every lane, the
+#   # http one included, so keep it protocol-neutral. Protocol-specific
+#   # wording belongs on a rule's own `prompt:`, which beats this. Neither can
+#   # remove the output contract (call one tool, never quote a literal value
+#   # from the statement) -- the second keeps an identifier the model objected
+#   # to out of the audit trail.
+#   prompt: |
+#     You are classifying traffic to a production environment holding
+#     customer records. Anything reading or modifying customer data is at
+#     least medium risk.
+
+# ---------------------------------------------------------------- defaults
+# Applies to every lane. Lane rules are evaluated BEFORE these, so a lane's
+# specific message wins over a generic one for the same statement.
+policy:
+  enforce: true
+  rules:
+    # Cross-protocol: a taxpayer id in a statement lands in the database's own
+    # query log, slow-query log and EXPLAIN output. Masking the response does
+    # not undo that, which is why this is a guardrail and not a mask rule.
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+# Masking is response-side, and both lanes get it by two different mechanisms:
+# HTTP by substituting bytes and correcting Content-Length, postgres by
+# rebuilding its length-prefixed row frames around the new values.
+mask:
+  enabled: true
+  rules:
+    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
+    - {name: cards, entity: CREDIT_CARD, strategy: partial, keep_last: 4}
+    - {name: cpf, entity: BR_CPF, strategy: redact}
+    - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+
+# ------------------------------------------------------------------- lanes
+listeners:
+  # ------------------------------------------------------------ mssql lane
+  # Envoy terminates the client's TDS 8.0 TLS and forwards plaintext here, so
+  # this relay reads every statement without holding a key or a credential.
+  #
+  # No `mask:` block, and that omission is deliberate rather than an
+  # oversight. Masking needs a codec that can rebuild its own response
+  # frames; the MSSQL codec decodes the REQUEST direction only, so
+  # gate.MaskSupported reports false and the sidecar would REFUSE a mask
+  # block at startup instead of accepting it and silently never masking.
+  # Adding one here turns `-validate` red, on purpose.
+  #
+  # Kerberos needs nothing configured. The SSPI packets (TDS type 0x11) are
+  # forwarded verbatim by the codec, so the client's ticket reaches SQL
+  # Server untouched and this relay never holds a credential.
+  - name: mssqldb
+    protocol: mssql
+    listen: 0.0.0.0:11433
+    upstream: mssql:1433
+    connection: mssqldb
+    # NO upstream_tls, unlike the appdb lane above, and the reason is a
+    # product limit rather than a shortcut.
+    #
+    # `upstream_tls` on a non-postgres lane performs a plain TLS-on-connect
+    # handshake, which is exactly TDS 8.0 — and TDS 8.0 is the ONLY TLS shape
+    # this relay can originate. SQL Server on LINUX cannot accept it: strict
+    # encryption is a Windows feature, and `mssql-conf list` on the Linux
+    # build offers `network.forceencryption` with no stricter setting. Its
+    # TLS is the TDS 7.x kind, negotiated inside 0x12 PRELOGIN packets, which
+    # proxy/starttls.go does not speak.
+    #
+    # So this hop is plaintext inside the compose network. Encrypting it
+    # means teaching starttls.go the 0x12-wrapped handshake (libhoop's
+    # agent/mssql/net.go already implements exactly that and is the obvious
+    # source), not flipping a config key.
+    policy:
+      rules:
+        - name: no-destructive-tsql
+          type: operation
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on mssqldb
+    # REQUIRED, not decorative. `mask` at the top level is a default every
+    # lane inherits, and inheriting `enabled: true` onto a protocol whose
+    # codec cannot re-frame is a startup error. The sidecar refuses it rather
+    # than accepting a masking rule it would never apply — so this line is
+    # what keeps `-validate` green, and deleting it is how you find out.
+    mask:
+      enabled: false
+
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    connection: appdb
+    # The hop to the database is encrypted. hoop-inspect speaks the pgwire
+    # SSLRequest handshake, then wraps the connection: it is the TLS CLIENT,
+    # so it decrypts on read and the gate below still inspects and masks
+    # plaintext. Envoy covers the client's leg; this covers ours.
+    #
+    # The cert is the self-signed one ./run.sh mints for appdb, so the CA is
+    # the certificate itself. ca_file rather than insecure_skip_verify: a
+    # relay that accepts any certificate on the path it exists to protect is
+    # the wrong default to demonstrate.
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+    policy:
+      rules:
+        # Envoy cannot see this: there is no pgwire parser in its filter
+        # chain, so OPA is never consulted and never sees the statement.
+        - name: no-destructive-sql
+          type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on appdb
+        # Uncomment with the analyzer block above. The trigger excludes
+        # select, so an ORM's read traffic costs nothing; delete is already
+        # refused by the rule above, and Chain short-circuits on the first
+        # denial, so only an UPDATE actually reaches the model.
+        # - name: risky-writes
+        #   type: ai_analysis
+        #   trigger: {operations: [update]}
+        #   high: block
+        #   medium: warn
+        #   low: allow
+        #   message: refused by risk analysis
+    mask:
+      rules:
+        # Column rules are only possible where the protocol names its values,
+        # and there they beat detection outright. alcatraz REFUSES
+        # 123-45-6789 as an obvious fixture (sequential digits), so the
+        # detector-based ssn rule leaves it in the clear. The column does not
+        # care what the value looks like.
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+        - {name: cpf, entity: BR_CPF, strategy: redact}
+        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+    connection: httpbin
+    policy:
+      rules:
+        - name: no-admin-api
+          type: http_resource
+          resources: ["/admin/**"]
+          message: the admin API is not reachable through this proxy
+        - name: no-internal-ids
+          type: http_resource
+          # Matched against the NORMALIZED resource, so one rule covers every
+          # id: /anything/users/12345/orders/98765 collapses to this shape.
+          resources: ["/anything/users/*/orders/*"]
+          message: direct id access is not permitted; use the search endpoint
+        - name: no-upstream-5xx
+          type: http_status
+          # Response-side. ext_authz decides before the upstream is called, so
+          # this is a question Envoy structurally cannot ask.
+          statuses: ["5xx"]
+          message: upstream failure suppressed by policy
+        # Needs the http block below: without capture_body the analyzer sees
+        # "POST /anything" and no payload, which tells a model nothing.
+        # - name: risky-payloads
+        #   type: ai_analysis
+        #   trigger: {resources: ["/anything"]}
+        #   high: block
+        #   medium: warn
+    # Off by default: everything captured reaches policy, the audit trail and,
+    # with an analyzer configured, a third party. authorization, cookie and
+    # proxy-authorization cannot be allowlisted, and no header ever reaches
+    # the model.
+    # http:
+    #   capture_body: true
+    #   max_body_bytes: 8192
+    #   headers: [Content-Type]

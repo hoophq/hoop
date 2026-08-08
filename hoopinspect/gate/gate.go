@@ -350,6 +350,22 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 		// upstream's own parser is the authority on its protocol.
 		d.Err = fmt.Errorf("inspect: %w", err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
+
+		// ErrStreamUnsafe is the exception to that default, and it inverts
+		// it. The codec is not saying "I could not parse this"; it is saying
+		// "I parsed this, and forwarding it ends my ability to see anything
+		// further". Honest-default forwarding would hand the client a
+		// redirect and lose the session, so this denies REGARDLESS of
+		// policy: no rule configured it, and none can switch it off.
+		if errors.Is(err, hoopinspect.ErrStreamUnsafe) {
+			d.Allowed = false
+			d.Rule = "stream-unsafe"
+			d.Message = err.Error()
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			return d
+		}
 	}
 
 	for _, stmt := range stmts {

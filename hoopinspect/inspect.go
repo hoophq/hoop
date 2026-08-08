@@ -58,6 +58,7 @@ type Protocol string
 
 const (
 	Postgres Protocol = "postgres"
+	MSSQL    Protocol = "mssql"
 	HTTP     Protocol = "http"
 )
 
@@ -299,6 +300,25 @@ type Codec interface {
 
 // ErrUnsupportedProtocol is returned by New for a protocol with no codec.
 var ErrUnsupportedProtocol = errors.New("hoopinspect: unsupported protocol")
+
+// ErrStreamUnsafe means the codec recognized bytes that would take the
+// connection OUTSIDE the relay's control if forwarded.
+//
+// This is not "malformed" and not "denied by a rule". It is a third thing: a
+// well-formed instruction from the upstream that, honored, moves the client
+// to a socket the relay does not hold. MSSQL's routing ENVCHANGE is the
+// motivating case — SQL Server answers a login with "reconnect to this other
+// host", every driver obeys silently, and the next statement never crosses
+// the gate. Policy, masking and the audit trail all end there.
+//
+// A relay MUST treat this as a denial rather than a warning. Forwarding it
+// is a policy BYPASS that leaves no trace of having happened, which is worse
+// than a refused connection: the operator sees a working session and no
+// statements.
+//
+// Wrap it so the cause survives errors.Is while the message names the lane
+// and what it saw.
+var ErrStreamUnsafe = errors.New("hoopinspect: forwarding these bytes would bypass the relay")
 
 // Inspector decodes a byte stream for one connection.
 //

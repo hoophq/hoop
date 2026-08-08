@@ -535,6 +535,16 @@ func buildServer(
 			"listener", ln.name, "upstream", lc.Upstream)
 	}
 
+	downstreamTLS, err := lc.DownstreamTLS.BuildDownstreamTLS()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
+	if downstreamTLS != nil {
+		log.Info("terminating the client's TLS on this lane",
+			"listener", ln.name,
+			"reason", "pgwire negotiates TLS in-band, so nothing in front can")
+	}
+
 	var identityFn func(net.Conn) session.Identity
 	if lc.IdentityHeader != "" {
 		identityFn = headerIdentity(lc.IdentityHeader)
@@ -545,6 +555,7 @@ func buildServer(
 		Network:          lc.Network,
 		Upstream:         lc.Upstream,
 		UpstreamTLS:      upstreamTLS,
+		DownstreamTLS:    downstreamTLS,
 		Protocol:         hoopinspect.Protocol(lc.Protocol),
 		Connection:       lc.Connection,
 		Policy:           ln.policy,

@@ -67,6 +67,19 @@ type Config struct {
 	// UpstreamTLS, when non-nil, wraps the upstream connection.
 	UpstreamTLS *tls.Config
 
+	// DownstreamTLS, when non-nil, lets the relay terminate the CLIENT's TLS.
+	//
+	// Only pgwire uses it today, and only because pgwire leaves no one else
+	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
+	// plain TLS listener in front cannot terminate it, and Envoy's own
+	// postgres filter is contrib-only, marked work-in-progress, and gives up
+	// permanently the moment a client asks for GSS encryption.
+	//
+	// Leaving it nil keeps the documented posture — the relay terminates no
+	// downstream TLS and something in front owns that leg. Setting it moves
+	// that boundary here for one lane.
+	DownstreamTLS *tls.Config
+
 	// Protocol selects the codec.
 	Protocol hoopinspect.Protocol
 
@@ -362,6 +375,25 @@ func (s *Server) handle(ctx context.Context, client net.Conn) {
 		return
 	}
 	defer upstream.Close()
+
+	// Answer the pgwire pre-startup exchange before the gate sees a byte. It
+	// decides whether this session is inspectable at all: a client asking for
+	// GSS encryption is refused here, or the gate would spend the connection
+	// reading ciphertext and reporting no statements.
+	//
+	// AFTER the upstream dial, deliberately. pgwire has no server greeting, so
+	// this blocks until the client speaks — and an upstream that is down
+	// should be discovered and recorded even when the client never does.
+	//
+	// A negotiation failure is neither a policy denial nor a protocol error
+	// worth an audit event: it is a connection that never became a session.
+	// It closes quietly, the same as a client hanging up mid-handshake.
+	client, negErr := negotiateDownstream(
+		client, s.cfg.Protocol, s.cfg.DownstreamTLS, s.cfg.DialTimeout)
+	if negErr != nil {
+		log.Debug("downstream negotiation failed", "error", negErr)
+		return
+	}
 
 	log.Info("session opened", "upstream", s.cfg.Upstream)
 
