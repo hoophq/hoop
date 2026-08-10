@@ -62,12 +62,16 @@ jobs:
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
-          # DEP-91: clean-train tool versions live here, in one place. Legacy
-          # keeps the Dockerfile.tools ARG defaults (backward compat); the clean
-          # train (-ng, future default) builds with these latest releases.
+          # DEP-91: clean-train build parameters live here, in one place.
+          # Legacy keeps the Dockerfile.tools ARG defaults (backward compat);
+          # the clean train (published as the `-clean` tag suffix, and the base
+          # the hoop-ng/hoopdev-ng consumer repos build on) takes these latest
+          # releases and drops the kernel/build headers, which no clean-train
+          # consumer depends on yet.
           {
             echo "clean_build_args<<CLEAN_ARGS_EOF"
             echo "INCLUDE_LEGACY_MONGO=false"
+            echo "INCLUDE_BUILD_HEADERS=false"
             echo "KUBECTL_VERSION=v1.36.3"
             echo "SQLCMD_VERSION=v1.10.0"
             echo "NODE_VERSION=24.18.1"
@@ -128,18 +132,36 @@ jobs:
           tags: hoophq/agent-tools:${{ steps.p.outputs.tag }}
 
       # Regression guard for the train split: legacy must contain the legacy
-      # shell; clean must not, and must still ship mongosh.
+      # shell and the build headers downstream images compile against; clean
+      # must contain neither, and must still ship mongosh.
       - name: Assert train contents
         run: |
           img="hoophq/agent-tools:${{ steps.p.outputs.tag }}"
           if [ "${{ matrix.train }}" = "legacy" ]; then
             docker run --rm --entrypoint sh "$img" -c 'test -x /usr/local/bin/mongo' \
               || { echo "::error::legacy train is missing the legacy mongo shell"; exit 1; }
+            # DEP-91: downstream images (hoophq/hoopdev -> customer agent images)
+            # pip-install pyodbc/pymssql, which compile from source when no wheel
+            # matches their interpreter/arch. Dropping these headers from the
+            # default train is a breaking change for them, so assert they stay.
+            docker run --rm --entrypoint sh "$img" -c 'test -e /usr/include/python3.12/Python.h' \
+              || { echo "::error::legacy train is missing the Python headers downstream builds need"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c 'test -e /usr/include/sql.h' \
+              || { echo "::error::legacy train is missing the unixODBC headers downstream builds need"; exit 1; }
           else
             docker run --rm --entrypoint sh "$img" -c '! test -e /usr/local/bin/mongo' \
               || { echo "::error::clean train unexpectedly contains the legacy SSPL mongo shell"; exit 1; }
             docker run --rm --entrypoint sh "$img" -c 'command -v mongosh >/dev/null' \
               || { echo "::error::clean train is missing mongosh"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c '! dpkg -s linux-libc-dev >/dev/null 2>&1' \
+              || { echo "::error::clean train unexpectedly carries linux-libc-dev (kernel headers)"; exit 1; }
+            # Assert the headers themselves are gone, not only the kernel-header
+            # package they usually drag in: re-adding unixodbc-dev alone would
+            # restore sql.h while leaving the linux-libc-dev check green.
+            docker run --rm --entrypoint sh "$img" -c '! dpkg -s python3-dev >/dev/null 2>&1 && ! test -e /usr/include/python3.12/Python.h' \
+              || { echo "::error::clean train unexpectedly carries the Python build headers"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c '! dpkg -s unixodbc-dev >/dev/null 2>&1 && ! test -e /usr/include/sql.h' \
+              || { echo "::error::clean train unexpectedly carries the unixODBC build headers"; exit 1; }
           fi
 
       # License gate BEFORE anything is pushed: agent-tools is the base of
@@ -236,11 +258,28 @@ jobs:
           if [ "${{ matrix.train }}" = "legacy" ]; then
             docker run --rm --entrypoint sh "$img" -c 'test -x /usr/local/bin/mongo' \
               || { echo "::error::legacy train is missing the legacy mongo shell"; exit 1; }
+            # DEP-91: downstream images (hoophq/hoopdev -> customer agent images)
+            # pip-install pyodbc/pymssql, which compile from source when no wheel
+            # matches their interpreter/arch. Dropping these headers from the
+            # default train is a breaking change for them, so assert they stay.
+            docker run --rm --entrypoint sh "$img" -c 'test -e /usr/include/python3.12/Python.h' \
+              || { echo "::error::legacy train is missing the Python headers downstream builds need"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c 'test -e /usr/include/sql.h' \
+              || { echo "::error::legacy train is missing the unixODBC headers downstream builds need"; exit 1; }
           else
             docker run --rm --entrypoint sh "$img" -c '! test -e /usr/local/bin/mongo' \
               || { echo "::error::clean train unexpectedly contains the legacy SSPL mongo shell"; exit 1; }
             docker run --rm --entrypoint sh "$img" -c 'command -v mongosh >/dev/null' \
               || { echo "::error::clean train is missing mongosh"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c '! dpkg -s linux-libc-dev >/dev/null 2>&1' \
+              || { echo "::error::clean train unexpectedly carries linux-libc-dev (kernel headers)"; exit 1; }
+            # Assert the headers themselves are gone, not only the kernel-header
+            # package they usually drag in: re-adding unixodbc-dev alone would
+            # restore sql.h while leaving the linux-libc-dev check green.
+            docker run --rm --entrypoint sh "$img" -c '! dpkg -s python3-dev >/dev/null 2>&1 && ! test -e /usr/include/python3.12/Python.h' \
+              || { echo "::error::clean train unexpectedly carries the Python build headers"; exit 1; }
+            docker run --rm --entrypoint sh "$img" -c '! dpkg -s unixodbc-dev >/dev/null 2>&1 && ! test -e /usr/include/sql.h' \
+              || { echo "::error::clean train unexpectedly carries the unixODBC build headers"; exit 1; }
           fi
 
       # Same gates as amd64: package sets can differ per-arch, so scan both.
