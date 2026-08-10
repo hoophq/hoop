@@ -5,9 +5,10 @@
 # Dockerfile.agent is built, and only after the release binaries exist. That
 # leaves a gap where a broken Dockerfile.agent reaches main and fails
 # post-merge. This workflow closes it: on PRs touching the image inputs it
-# builds BOTH targets for both release platforms without pushing, asserts the
+# builds every target/architecture combination without pushing, asserts the
 # runtime user is unprivileged, and gates the OS layer on fixable
-# CRITICAL/HIGH vulnerabilities.
+# CRITICAL/HIGH vulnerabilities — per architecture, because the package set
+# differs between them.
 #
 # hoophq/hoopagent is the low-CVE agent image, so unlike the fat
 # hoophq/agent-tools image (report-only: its bundled upstream CLIs carry CVEs
@@ -26,6 +27,10 @@ on:
     paths:
       - 'Dockerfile.agent'
       - '.github/workflows/hoopagent-image-build.yml'
+      # The fixture below imitates the release archive layout that
+      # `make build-tar-files` produces; if that recipe changes its member
+      # naming, this is the workflow that catches the mismatch.
+      - 'Makefile'
 
 jobs:
   build-hoopagent:
@@ -36,6 +41,10 @@ jobs:
       fail-fast: false
       matrix:
         target: [minimal, distroless]
+        # Both released architectures are gated, not just the native one: apt
+        # resolves a different package set per arch, so an arm64-only fixable
+        # CVE would otherwise pass here and ship.
+        arch: [amd64, arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -48,40 +57,45 @@ jobs:
 
       # Dockerfile.agent globs hoop_*_Linux_${TARGETARCH}.tar.gz, so the tars
       # are named for Go's GOARCH values (amd64/arm64), not `uname -m`.
+      #
+      # The archive LAYOUT has to match the release one too, not just the file
+      # name: `make build-tar-files` runs `tar -czf ... -C <dir> .`, so every
+      # member is stored with a `./` prefix and Dockerfile.agent extracts the
+      # member `./hoop` by name. Archiving `hoop` instead stores the member as
+      # `hoop`, and GNU tar does not treat the two spellings as interchangeable
+      # — extraction fails with "./hoop: Not found in archive". Stage `.` for
+      # the same reason the release does, and carry the `hoop_rs` sibling so the
+      # fixture exercises the real "extract one member, leave the rest" path.
       - name: Stage placeholder release tars
         run: |
           mkdir -p dist/binaries stage
           printf '#!/bin/sh\necho "hoop (pr-smoke placeholder)"\n' > stage/hoop
-          chmod +x stage/hoop
+          printf '#!/bin/sh\necho "hoop_rs (pr-smoke placeholder)"\n' > stage/hoop_rs
+          chmod +x stage/hoop stage/hoop_rs
           for arch in amd64 arm64; do
-            tar -C stage -czf "dist/binaries/hoop_pr-smoke_Linux_${arch}.tar.gz" hoop
+            tar -czf "dist/binaries/hoop_pr-smoke_Linux_${arch}.tar.gz" -C stage .
           done
+          # Fail loudly here rather than inside the build if the layout drifts
+          # from what Dockerfile.agent extracts.
+          tar -tzf dist/binaries/hoop_pr-smoke_Linux_amd64.tar.gz | grep -qx './hoop' \
+            || { echo "::error::staged fixture does not contain the './hoop' member the Dockerfile extracts"; exit 1; }
 
-      - name: Build (multiarch, no push)
+      # One single-platform build per matrix cell, loaded so the assertions
+      # below run against the very image that was built. A multiarch build
+      # cannot be --load'ed, which is why the platforms are a matrix dimension
+      # rather than one combined build.
+      - name: Build (load for checks)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: ./Dockerfile.agent
           context: '.'
           target: ${{ matrix.target }}
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
-          push: false
-
-      # Multiarch builds cannot be --load'ed; rebuild amd64 from the warm
-      # buildx cache to run the assertions below.
-      - name: Build (amd64, load for checks)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          file: ./Dockerfile.agent
-          context: '.'
-          target: ${{ matrix.target }}
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           provenance: false
           sbom: false
           load: true
           push: false
-          tags: hoopagent:pr-smoke-${{ matrix.target }}
+          tags: hoopagent:pr-smoke-${{ matrix.target }}-${{ matrix.arch }}
 
       # Both flavours must run as the unprivileged uid 10001, but they declare
       # it differently: distroless sets `USER 10001:10001` numerically, while
@@ -90,7 +104,7 @@ jobs:
       # as a real uid rather than trusting the string.
       - name: Assert unprivileged runtime user
         run: |
-          img="hoopagent:pr-smoke-${{ matrix.target }}"
+          img="hoopagent:pr-smoke-${{ matrix.target }}-${{ matrix.arch }}"
           user="$(docker image inspect --format '{{.Config.User}}' "$img")"
           echo "configured user: ${user}"
           uid="${user%%:*}"
@@ -111,4 +125,4 @@ jobs:
             aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --exit-code 1 --no-progress \
-            "hoopagent:pr-smoke-${{ matrix.target }}"
+            "hoopagent:pr-smoke-${{ matrix.target }}-${{ matrix.arch }}"
