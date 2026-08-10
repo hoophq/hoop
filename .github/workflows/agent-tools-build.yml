@@ -29,6 +29,7 @@ on:
       - licenses/manual-binaries.toml
       - licenses/agent-tools-checksums.sha256
       - scripts/ci/verify-manual-download.py
+      - scripts/ci/check-download-verification.py
       - scripts/ci/check-manual-binaries.py
       - scripts/ci/check-forbidden-licenses.py
       - .github/workflows/agent-tools-build.yml
@@ -39,6 +40,7 @@ on:
       - licenses/manual-binaries.toml
       - licenses/agent-tools-checksums.sha256
       - scripts/ci/verify-manual-download.py
+      - scripts/ci/check-download-verification.py
       - scripts/ci/check-manual-binaries.py
       - scripts/ci/check-forbidden-licenses.py
       - .github/workflows/agent-tools-build.yml
@@ -100,6 +102,18 @@ jobs:
             echo "::error::secrets.GH_TOKEN (PAT) is required so the FROM-bump PR can be created after publishing. Add it in repo settings."
             exit 1
           fi
+
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # Static gate on the recipe itself, before any build: every hand-installed
+      # download must be checksum-verified in the same RUN that fetches it, and
+      # none may come from a mutable "latest" path. Cheap, and it fails the PR
+      # that introduces the gap rather than the image scan weeks later.
+      - name: Gate on unverified downloads
+        run: python3 scripts/ci/check-download-verification.py Dockerfile.tools
 
   build-amd64:
     runs-on: ubuntu-latest

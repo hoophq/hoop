@@ -11,7 +11,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Test CI helpers
-        run: python3 -m unittest scripts/ci/test_generate_sbom_manifest.py
+        # Discovery keeps every scripts/ci test in the gate, so adding one does
+        # not require touching this workflow.
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
       - name: Setup Go
         uses: actions/setup-go@v6
         with:

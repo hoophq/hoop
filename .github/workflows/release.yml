@@ -908,10 +908,16 @@ jobs:
   #
   # No unsuffixed tag and no :latest — every deployment names its flavour.
   #
-  # DEP-91: each flavour is built and loaded locally, then blocked on the
-  # enforcing fixable-CRITICAL/HIGH Trivy gate BEFORE registry login or push, so
-  # a vulnerable candidate can never reach the registry. This is the low-CVE
-  # image line, so unlike the fat agent the gate here is enforcing.
+  # DEP-91: every flavour/architecture is built ONCE, loaded, and blocked on the
+  # enforcing fixable-CRITICAL/HIGH Trivy gate before registry login. The
+  # release tags are then assembled with `imagetools create` from those exact
+  # gated images, so what customers pull is byte-for-byte what was scanned.
+  #
+  # Do not "simplify" this into a scan-then-rebuild-and-push: a second build
+  # resolves the base tag and runs apt again, so it can produce different bytes
+  # than the ones the gate approved, and it would leave arm64 published without
+  # ever being scanned. This is the low-CVE image line, so unlike the fat agent
+  # the gate here is enforcing.
   docker-publish-hoopagent:
     runs-on: ubuntu-latest
     name: Publish Agent Image (hoopagent)
@@ -935,9 +941,10 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> "$GITHUB_ENV"
 
-      # Build both flavours for amd64 first and gate them locally. The multiarch
-      # push below reuses the warm buildx cache, so this costs a cache hit, not a
-      # second full build.
+      # One build per flavour/arch, loaded locally. `load: true` is
+      # single-platform only, which is why these are four separate builds
+      # rather than two multiarch ones — and it is what makes the gate below
+      # able to scan the very images that get published.
       - name: Build candidate (minimal, amd64)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -949,7 +956,19 @@ jobs:
           sbom: false
           load: true
           push: false
-          tags: hoophq/hoopagent:cand-minimal
+          tags: hoophq/hoopagent:cand-minimal-amd64
+      - name: Build candidate (minimal, arm64)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          load: true
+          push: false
+          tags: hoophq/hoopagent:cand-minimal-arm64
       - name: Build candidate (distroless, amd64)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -961,50 +980,87 @@ jobs:
           sbom: false
           load: true
           push: false
-          tags: hoophq/hoopagent:cand-distroless
-      - name: Gate candidates on fixable CRITICAL/HIGH vulnerabilities
-        run: |
-          for flavour in minimal distroless; do
-            echo "::group::trivy hoopagent:cand-${flavour}"
-            docker run --rm \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
-              --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
-              --exit-code 1 --no-progress \
-              "hoophq/hoopagent:cand-${flavour}"
-            echo "::endgroup::"
-          done
-
-      # Only after both flavours pass the gate do we authenticate and publish.
-      - name: Login to Docker Hub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          username: ${{ secrets.DOCKER_LOGIN }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Build and push (minimal)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          file: ./Dockerfile.agent
-          context: '.'
-          target: minimal
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
-          push: true
-          tags: |
-            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
-      - name: Build and push (distroless)
+          tags: hoophq/hoopagent:cand-distroless-amd64
+      - name: Build candidate (distroless, arm64)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: ./Dockerfile.agent
           context: '.'
           target: distroless
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           provenance: false
           sbom: false
-          push: true
-          tags: |
-            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+          load: true
+          push: false
+          tags: hoophq/hoopagent:cand-distroless-arm64
+
+      # Both flavours must run as the unprivileged uid 10001. The USER
+      # directive is arch-independent, so assert it on the amd64 candidates,
+      # which run natively.
+      - name: Verify runtime user is unprivileged
+        run: |
+          set -euo pipefail
+          for flavour in minimal distroless; do
+            img="hoophq/hoopagent:cand-${flavour}-amd64"
+            user="$(docker image inspect --format '{{.Config.User}}' "$img")"
+            uid="${user%%:*}"
+            if ! printf '%s' "$uid" | grep -qE '^[0-9]+$'; then
+              uid="$(docker run --rm --entrypoint sh "$img" -c "id -u ${uid}")"
+            fi
+            echo "${flavour}: configured user '${user}' -> uid ${uid}"
+            test "${uid}" = "10001" \
+              || { echo "::error::${flavour} must run as uid 10001, got '${uid}'"; exit 1; }
+          done
+
+      # EVERY published architecture is gated, not just the native one: an
+      # arm64-only vulnerable package must not be able to ride out on a
+      # manifest whose amd64 sibling happened to be clean.
+      - name: Gate candidates on fixable CRITICAL/HIGH vulnerabilities
+        run: |
+          set -euo pipefail
+          for flavour in minimal distroless; do
+            for arch in amd64 arm64; do
+              echo "::group::trivy hoopagent:cand-${flavour}-${arch}"
+              docker run --rm \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
+                --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+                --exit-code 1 --no-progress \
+                "hoophq/hoopagent:cand-${flavour}-${arch}"
+              echo "::endgroup::"
+            done
+          done
+
+      # Only after every flavour/arch passes the gate do we authenticate.
+      - name: Login to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Push the gated images under per-run staging tags, then assemble each
+      # release tag from those exact images. `imagetools create` copies the
+      # manifests it is given, so no rebuild happens between the gate and the
+      # tag customers pull.
+      - name: Publish gated candidates
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          set -euo pipefail
+          repo="hoophq/hoopagent"
+          staging="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          for flavour in minimal distroless; do
+            amd64_ref="${repo}:staging-${staging}-${flavour}-amd64"
+            arm64_ref="${repo}:staging-${staging}-${flavour}-arm64"
+            docker tag "${repo}:cand-${flavour}-amd64" "${amd64_ref}"
+            docker tag "${repo}:cand-${flavour}-arm64" "${arm64_ref}"
+            docker push "${amd64_ref}"
+            docker push "${arm64_ref}"
+            docker buildx imagetools create \
+              -t "${repo}:${GIT_TAG}-${flavour}" "${amd64_ref}" "${arm64_ref}"
+            echo "published ${repo}:${GIT_TAG}-${flavour}"
+            docker buildx imagetools inspect "${repo}:${GIT_TAG}-${flavour}"
+          done
 
   # --- Clean image line (DEP-66): hoophq/hoop-ng + hoophq/hoopdev-ng ----------
   # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart
@@ -1209,6 +1265,8 @@ jobs:
     needs:
       - docker-publish-hoopgateway-multiarch
       - docker-publish-hoopagent-multiarch
+      # The release is not created until its supply-chain evidence exists.
+      - sbom-and-manifest
     permissions:
       # gh release create / upload needs write access. The job already
       # uses secrets.GH_TOKEN (a PAT) for cross-repo work; this permission
@@ -1228,6 +1286,11 @@ jobs:
           pattern: dist-artifacts-*
           merge-multiple: true
           path: dist/
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-sbom
+          path: dist/sbom/
 
       - uses: matbour/setup-sentry-cli@v2
         id: sentry-cli
@@ -1266,11 +1329,14 @@ jobs:
           make release-s3-latest
           make release-s3-cf-templates-latest
 
-      # Publish both release-binary families as GitHub Release assets:
+      # Publish the release-binary families and the supply-chain evidence as
+      # GitHub Release assets:
       # - hsh-tunneld for the hoophq/hsh build pipeline (with SHA256SUMS);
       # - the two Linux Hoop archives consumed by the authenticated weekly
       #   minimal-image rebuild. GitHub records an immutable SHA-256 digest for
-      #   every uploaded asset, used there as the independent trust anchor.
+      #   every uploaded asset, which is the trust anchor
+      #   scripts/ci/fetch-release-binaries.py verifies against there;
+      # - the SBOMs and release manifest generated before this job ran.
       #
       # Idempotency: if a release already exists for this tag (e.g. workflow
       # re-run), upload the assets to it instead of failing the run.
@@ -1289,7 +1355,12 @@ jobs:
           for asset in "${linux_assets[@]}"; do
             test -s "$asset"
           done
-          release_assets=(dist/release-binaries/* "${linux_assets[@]}")
+          # The SBOMs + release manifest come from the sbom-and-manifest job,
+          # which is a hard dependency, so a release can never be created
+          # without the evidence it advertises.
+          sbom_assets=(dist/sbom/*)
+          test "${#sbom_assets[@]}" -gt 0 && test -s "${sbom_assets[0]}"
+          release_assets=(dist/release-binaries/* "${linux_assets[@]}" "${sbom_assets[@]}")
           if gh release view "$GIT_TAG" >/dev/null 2>&1; then
             echo "Release $GIT_TAG already exists; uploading assets with --clobber."
             gh release upload "$GIT_TAG" "${release_assets[@]}" --clobber
@@ -1337,18 +1408,24 @@ jobs:
   # the vulnerability posture without re-pulling and re-scanning every image.
   # The established gateway and fat-agent images are required. The additive
   # minimal image remains optional and is included only when both gated
-  # architectures published. Artifact generation/upload is fail-closed and
-  # retried so a successful run cannot silently omit the required evidence.
+  # architectures published. Artifact generation is fail-closed and retried so
+  # a successful run cannot silently omit the required evidence.
+  #
+  # This runs BEFORE publish-release, not after: the SBOMs describe images that
+  # are already in the registry, and publish-release attaches them to the
+  # GitHub Release it creates. Running it afterwards made the evidence
+  # optional in practice — a failure there left the release and its image tags
+  # public with nothing attached, which is exactly the claim downstream users
+  # rely on. Ordering it first means a release either carries its supply-chain
+  # evidence or is never created.
   sbom-and-manifest:
     runs-on: ubuntu-latest
     name: SBOM + Release Manifest
     environment: production
     needs:
-      - publish-release
+      - docker-publish-hoopgateway-multiarch
+      - docker-publish-hoopagent-multiarch
       - docker-publish-hoopagent
-    if: always() && needs.publish-release.result == 'success'
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -1372,20 +1449,14 @@ jobs:
             fi
             sleep $((attempt * 10))
           done
-      - name: Attach to GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GIT_TAG: ${{ github.ref_name }}
-        run: |
-          for attempt in 1 2 3; do
-            if gh release upload "$GIT_TAG" dist/sbom/* --clobber; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
+      # Handed to publish-release, which uploads them with the rest of the
+      # release assets in a single `gh release create`.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-sbom
+          path: dist/sbom/
+          if-no-files-found: error
+          retention-days: 7
   publish-linear-release:
     runs-on: ubuntu-latest
     name: Publish Linear Release

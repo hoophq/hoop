@@ -20,7 +20,7 @@ CRITICAL/HIGH counts, SBOM filenames).
 Trivy scans exact child digests with an immutable, digest-pinned scanner image.
 The SBOM job intentionally has no Docker Hub credentials: all release images
 are public, so a scanner compromise cannot expose a production push token.
-The established gateway and fat-agent images are required; visibility or
+Every documented image is required; visibility or
 platform gaps fail the job. The additive hoophq/hoopagent image may lag
 or be absent and is skipped with a warning after bounded visibility retries.
 
@@ -52,10 +52,12 @@ IMAGE_REPOS = [
     ("hoophq/hoopagent", "-distroless"),
 ]
 
-# The established gateway and fat-agent images are release requirements. The
-# additive minimal image remains optional until its independent publish line
-# succeeds.
-REQUIRED_IMAGE_REPOS = {"hoophq/hoop", "hoophq/hoopdev"}
+# Every image in IMAGE_REPOS is a release requirement, on both platforms. The
+# slim agent used to be optional here because it published on an independent
+# line that could lag; the SBOM job now depends on that publish job, so an
+# absent slim image means the publish genuinely failed and the release must not
+# claim evidence it does not have.
+REQUIRED_IMAGE_REPOS = {repo for repo, _ in IMAGE_REPOS}
 REQUIRED_PLATFORMS = {"linux/amd64", "linux/arm64"}
 
 # Bundled CLI versions are OCI labels on each exact hoophq/hoopdev child image.

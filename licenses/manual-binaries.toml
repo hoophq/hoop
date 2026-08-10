@@ -6,7 +6,9 @@
 # blind spot: it is the declared source of truth for hand-installed artifacts,
 # enforced in CI by scripts/ci/check-manual-binaries.py.
 # Versioned archive bytes are independently pinned in
-# licenses/agent-tools-checksums.sha256 and verified during the image build.
+# licenses/agent-tools-checksums.sha256 and verified during the image build;
+# scripts/ci/check-download-verification.py statically enforces that every
+# hand-installed download in Dockerfile.tools actually runs that verification.
 #
 # Rules enforced against a built image, for a given train:
 #   1. Every file/symlink under `scan_dirs` that is not in the dpkg package file
@@ -140,6 +142,6 @@ trains = ["legacy", "clean"]
 [[binaries]]
 path = "/opt/oracle/instantclient/"
 name = "Oracle Instant Client + SQL*Plus"
-version = "23.9"
+version = "23.9.0.25.07 (amd64), 23.26.1.0.0 (arm64)"
 license = "LicenseRef-Oracle-OTN"
 trains = ["legacy", "clean"]

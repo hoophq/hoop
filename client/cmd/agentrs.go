@@ -41,17 +41,28 @@ func RunAgentrs() {
 	// if the user has set HOOP_RS_BIN_PATH we will use that instead this is useful for development
 	// and testing and make run-dev
 	path := os.Getenv("HOOP_RS_BIN_PATH")
-	log.Infof("Checking hoop_rs binary at path: %s\n", path)
 	binaryPath := defaultPath
 
 	if path != "" {
 		binaryPath = path
 	}
 
-	log.Infof("Starting hoop_rs from: %s", binaryPath)
+	// DEP-91: hoop_rs serves RDP and only ships in the images that support it.
+	// The slim hoopagent flavours carry the hoop binary alone, so on those an
+	// absent hoop_rs is the expected configuration, not a failure — report it
+	// once at info level and leave the Go agent to run every other connection
+	// type. A binary that exists but will not start is still an error below.
+	resolvedPath, err := exec.LookPath(binaryPath)
+	if err != nil {
+		log.Infof("hoop_rs not found (%v); starting the agent without Remote Desktop support. "+
+			"Use an image that bundles hoop_rs, or set HOOP_RS_BIN_PATH, if you need RDP connections.", binaryPath)
+		return
+	}
+
+	log.Infof("Starting hoop_rs from: %s", resolvedPath)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, binaryPath)
+	cmd := exec.CommandContext(ctx, resolvedPath)
 
 	// Set environment variables for the Rust agent
 	cmd.Env = os.Environ()
