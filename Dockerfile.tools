@@ -8,8 +8,9 @@ ARG GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0
 ARG NODE_VERSION=22.18.0
 # DEP-91: tool versions are ARG-driven so the two trains can diverge. The
 # defaults here are the LEGACY (hoophq/hoopdev) pins, kept stable for backward
-# compatibility. The CLEAN train (-ng, future default) overrides them to the
-# latest releases via build-args in the clean matrix leg of
+# compatibility. The CLEAN train — published as the `-clean` tag suffix, and
+# the base the hoop-ng/hoopdev-ng repos build on — overrides them to the latest
+# releases via build-args in the clean matrix leg of
 # .github/workflows/agent-tools-build.yml.
 ARG KUBECTL_VERSION=v1.29.15
 ARG SQLCMD_VERSION=v1.8.2
@@ -43,10 +44,12 @@ RUN mkdir -p /app && \
     gettext-base \
     lsb-release \
     libaio1t64 \
-    # DEP-91: alien, elfutils, libelf-dev and python3-dev removed; they pull
-    # linux-libc-dev (kernel headers, ~891 CVEs) + libc6-dev via dpkg-dev/build
-    # deps, and nothing here uses them at runtime (all CLIs are prebuilt; Oracle
-    # ships a zip, not an rpm). python3-pip moved below to skip its dev recommend.
+    # DEP-91: alien, elfutils, libelf-dev and python3-dev are not in the base
+    # package set; they pull linux-libc-dev (kernel headers, ~891 CVEs) and
+    # libc6-dev, and nothing in this image needs them at runtime (every CLI is
+    # prebuilt; Oracle ships a zip, not an rpm). The legacy train reinstates
+    # them below - see INCLUDE_BUILD_HEADERS. python3-pip moved below to skip
+    # its python3-dev recommend.
     bc \
     bzip2 \
     # xz-utils: required to extract the Node.js .tar.xz below. Previously pulled
@@ -62,6 +65,29 @@ RUN mkdir -p /app && \
     # so pip needs no headers.
     apt install -y --no-install-recommends groff python3-pip && \
     ln -s /usr/bin/python3 /usr/bin/python
+
+# DEP-91 / downstream compatibility. The build headers are the single largest
+# CVE contributor in this image, but hoophq/agent-tools is the base of
+# hoophq/hoopdev, and downstream images built FROM hoophq/hoopdev pip-install
+# native extensions (pyodbc, pymssql, ...) that compile from source whenever no
+# wheel matches their interpreter/architecture. Dropping the headers from the
+# default train would break those builds on their next base bump, so they stay
+# on LEGACY and are dropped only from the opt-in CLEAN train, which has no
+# installed base to protect.
+#
+# Retiring them from the legacy train is a separate, announced change: every
+# consumer must first install its own build deps or pin wheel-only installs.
+ARG INCLUDE_BUILD_HEADERS=true
+RUN if [ "$INCLUDE_BUILD_HEADERS" = "true" ]; then \
+      apt install -y \
+        python3-dev \
+        unixodbc-dev=2.3.12-1ubuntu0.24.04.1 \
+        alien \
+        elfutils \
+        libelf-dev; \
+    else \
+      echo "INCLUDE_BUILD_HEADERS=false: skipping build/kernel headers (clean train)"; \
+    fi
 
 # https://github.com/nodejs/release-keys
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
@@ -164,8 +190,9 @@ RUN apt update -y && apt install -y \
     mongodb-mongosh=${MONGOSH_VERSION} \
     mongodb-org-tools=${MONGODB_TOOLS_VERSION} \
     default-mysql-client=1.1.0build1 \
-    # DEP-91: runtime unixodbc (libodbc2 + isql), not the -dev headers which
-    # pull linux-libc-dev. Same source version; ODBC runtime preserved.
+    # DEP-91: the ODBC runtime (libodbc2 + isql) is all this image uses. The
+    # -dev headers pull linux-libc-dev, so they ship only where a downstream
+    # build may need them - reinstated with the other build headers above.
     unixodbc=2.3.12-1ubuntu0.24.04.1 \
     postgresql-client-16=16.14-0ubuntu0.24.04.1 \
     google-cloud-cli=$GCLOUD_VERSION \
