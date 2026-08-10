@@ -57,6 +57,9 @@ REPOSITORY = "hoophq/hoop"
 ARCHITECTURES = (("amd64", "x86_64"), ("arm64", "aarch64"))
 
 VERSION_RE = re.compile(r"\A[0-9]+(?:\.[0-9]+)*\Z")
+# GitHub serves releases newest-first and refuses to page past 1000 items, so
+# this bound is a stop, not a filter on which releases are reachable.
+MAX_RELEASE_PAGES = 10
 SHA256_RE = re.compile(r"\A[0-9a-f]{64}\Z")
 DIGEST_PREFIX = "sha256:"
 CHUNK = 1024 * 1024
@@ -80,24 +83,44 @@ def version_key(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
+def paginate(url: str, *, max_pages: int = MAX_RELEASE_PAGES):
+    """Yield each page of a GitHub list endpoint, following Link: rel=next.
+
+    Paging matters here: /releases is ordered by creation date, not by
+    version, so the highest version can sit on any page. Reading only the
+    first one would silently start picking a non-latest release as soon as the
+    repository outgrows a single page.
+
+    Bounded because GitHub refuses to page beyond its 1000-item window (HTTP
+    422) and because releases are returned newest-first: the current release
+    is always near the front, so this is a safety limit rather than a real
+    constraint on which version can be found.
+    """
+    for _ in range(max_pages):
+        if not url:
+            return
+        with http_get(url, accept="application/vnd.github+json") as response:
+            yield json.load(response)
+            link = response.headers.get("Link", "")
+        match = re.search(r'<([^>]+)>;\s*rel="next"', link)
+        url = match.group(1) if match else ""
+
+
 def resolve_latest_version() -> str:
     """Newest published release according to GitHub, not the endpoint.
 
-    GitHub orders /releases by creation date and includes drafts and
-    prereleases, so filter those out and pick the highest version among what
-    remains rather than trusting position alone.
+    Drafts and prereleases are excluded; the highest remaining version wins,
+    rather than whichever release was created most recently.
     """
-    url = f"{GITHUB_API}/repos/{REPOSITORY}/releases?per_page=50"
-    with http_get(url, accept="application/vnd.github+json") as response:
-        releases = json.load(response)
-
-    versions = [
-        release["tag_name"]
-        for release in releases
-        if not release.get("draft")
-        and not release.get("prerelease")
-        and VERSION_RE.match(release.get("tag_name", ""))
-    ]
+    versions: list[str] = []
+    for page in paginate(f"{GITHUB_API}/repos/{REPOSITORY}/releases?per_page=100"):
+        versions.extend(
+            release["tag_name"]
+            for release in page
+            if not release.get("draft")
+            and not release.get("prerelease")
+            and VERSION_RE.match(release.get("tag_name", ""))
+        )
     if not versions:
         raise VerificationError(
             f"no published release found for {REPOSITORY}; refusing to guess a version"

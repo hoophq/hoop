@@ -92,6 +92,74 @@ class ReleaseFetchTests(unittest.TestCase):
         with self.assertRaises(fetch.VerificationError):
             fetch.load_pins(path)
 
+    def test_partial_download_leaves_nothing_behind(self):
+        """A stream that dies mid-transfer must not leave a usable archive."""
+
+        class DyingResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self, _size):
+                raise OSError("connection reset")
+
+        destination = self.directory / "hoop_9.9.9_Linux_amd64.tar.gz"
+        with mock.patch.object(fetch, "http_get", lambda *a, **k: DyingResponse()):
+            with self.assertRaises(OSError):
+                fetch.download("https://example.invalid/a.tar.gz", destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(self.directory.glob("*.part")), [])
+
+    def test_download_writes_to_staging_until_verified(self):
+        """download() must not create the final path itself."""
+        payload = self.payload
+
+        class Response:
+            def __init__(self):
+                self.chunks = [payload, b""]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self, _size):
+                return self.chunks.pop(0)
+
+        destination = self.directory / "hoop_9.9.9_Linux_amd64.tar.gz"
+        with mock.patch.object(fetch, "http_get", lambda *a, **k: Response()):
+            digest = fetch.download("https://example.invalid/a.tar.gz", destination)
+        self.assertEqual(digest, self.digest)
+        self.assertFalse(destination.exists())
+        staging = destination.with_suffix(destination.suffix + ".part")
+        self.assertTrue(staging.exists())
+
+    def test_latest_version_spans_pages(self):
+        """The highest version can sit on a later page; creation order differs."""
+        pages = [
+            [{"tag_name": "1.135.0", "draft": False, "prerelease": False}],
+            [
+                {"tag_name": "1.200.0", "draft": False, "prerelease": False},
+                {"tag_name": "9.9.9", "draft": True, "prerelease": False},
+                {"tag_name": "8.8.8", "draft": False, "prerelease": True},
+                {"tag_name": "nightly", "draft": False, "prerelease": False},
+            ],
+        ]
+        with mock.patch.object(fetch, "paginate", lambda *a, **k: iter(pages)):
+            self.assertEqual(fetch.resolve_latest_version(), "1.200.0")
+
+    def test_no_published_release_is_an_error(self):
+        with mock.patch.object(fetch, "paginate", lambda *a, **k: iter([[]])):
+            with self.assertRaises(fetch.VerificationError):
+                fetch.resolve_latest_version()
+
+    def test_version_ordering_is_numeric_not_lexicographic(self):
+        self.assertGreater(fetch.version_key("1.136.0"), fetch.version_key("1.9.0"))
+        self.assertGreater(fetch.version_key("1.136.10"), fetch.version_key("1.136.9"))
+
     def test_shipped_pins_file_parses(self):
         pins = fetch.load_pins(SCRIPTS / "legacy-release-checksums.sha256")
         self.assertIn("hoop_1.136.0_Linux_x86_64.tar.gz", pins)
