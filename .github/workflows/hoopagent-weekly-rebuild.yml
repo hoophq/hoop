@@ -19,7 +19,13 @@
 #
 # The release binaries are not in the repo, so the job downloads the latest
 # published release tarballs and stages them under dist/binaries/ exactly as
-# the release build does.
+# the release build does. Those archives are a release input to a
+# customer-facing image, so they are authenticated before they are unpacked:
+# scripts/ci/fetch-release-binaries.py verifies each one against the SHA-256
+# GitHub records for the release asset, or against a reviewed pin for releases
+# that predate those uploads, and fails the run when a release has neither. The
+# CVE gates below cannot substitute for this — they detect known-vulnerable
+# packages, not a substituted binary.
 #
 # Published tags:
 #   hoophq/hoopagent:latest-minimal              — moving, always the latest patches
@@ -58,23 +64,66 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      # Dockerfile.agent globs hoop_*_Linux_${TARGETARCH}.tar.gz from
-      # dist/binaries/, so stage the published release tars under those names.
-      - name: Resolve latest release and stage binaries
-        id: rel
+      # Resolve the release to rebuild, download its archives and verify them
+      # against an independent digest before anything unpacks them. The helper
+      # writes them under the hoop_*_Linux_${TARGETARCH}.tar.gz names
+      # Dockerfile.agent globs, and exits non-zero — before the build, and long
+      # before the Docker Hub login below — on any mismatch or missing anchor.
+      # The version currently behind latest-minimal. Passed as a floor below so
+      # a rebuild can only ever move that tag forward: an image whose release
+      # label cannot be read (or does not exist yet) simply imposes no floor.
+      - name: Read currently published release
+        id: published
         run: |
           set -euo pipefail
-          version="$(curl -fsSL https://releases.hoop.dev/release/latest.txt)"
-          case "$version" in
-            ''|*[!0-9.]*) echo "::error::unexpected release version '$version'"; exit 1 ;;
-          esac
+          current="$(docker buildx imagetools inspect \
+            --format '{{ json .Image }}' hoophq/hoopagent:latest-minimal 2>/dev/null \
+            | jq -r 'if type == "object" and has("config") then .config.Labels["dev.hoop.release.version"]
+                     else (to_entries | map(.value.config.Labels["dev.hoop.release.version"]) | map(select(. != null)) | first)
+                     end // empty' 2>/dev/null || true)"
+          if [ -n "${current:-}" ] && [ "${current}" != "null" ]; then
+            echo "current published release: ${current}"
+            echo "version=${current}" >> "$GITHUB_OUTPUT"
+          else
+            echo "no readable release label on latest-minimal; no rollback floor applied"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve, verify and stage release binaries
+        id: rel
+        env:
+          # Reads public release metadata only; the token just lifts the
+          # unauthenticated API rate limit on busy runners.
+          GH_TOKEN: ${{ github.token }}
+          FLOOR: ${{ steps.published.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fetch-release-binaries.py \
+            --dest dist/binaries \
+            --provenance-out dist/release-provenance.json \
+            ${FLOOR:+--not-older-than "$FLOOR"}
+          version="$(jq -r '.version' dist/release-provenance.json)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          mkdir -p dist/binaries
           for arch in amd64 arm64; do
-            curl -fsSL -o "dist/binaries/hoop_${version}_Linux_${arch}.tar.gz" \
-              "https://releases.hoop.dev/release/${version}/hoop_${version}_Linux_${arch}.tar.gz"
+            sha="$(jq -r --arg a "$arch" \
+              '.archives[] | select(.path | endswith("_" + $a + ".tar.gz")) | .sha256' \
+              dist/release-provenance.json)"
+            test -n "$sha" && test "$sha" != "null"
+            echo "${arch}_sha256=${sha}" >> "$GITHUB_OUTPUT"
           done
           ls -la dist/binaries/
+
+      # Record what was verified alongside the images this run publishes, so a
+      # published tag can be traced back to the exact release bytes it carries.
+      - name: Summarize verified release inputs
+        run: |
+          {
+            echo "### Verified release inputs"
+            echo ""
+            echo '```json'
+            cat dist/release-provenance.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Resolve the current noble tag so the rebuild actually picks up new OS
       # packages instead of reproducing the pinned base byte for byte.
@@ -100,6 +149,11 @@ jobs:
           push: false
           build-args: |
             UBUNTU_IMAGE=${{ steps.base.outputs.image }}
+          # The verified release the image carries, recorded on the image so a
+          # published weekly tag can be traced back to the authenticated bytes.
+          labels: |
+            dev.hoop.release.version=${{ steps.rel.outputs.version }}
+            dev.hoop.release.archive.sha256=${{ steps.rel.outputs.amd64_sha256 }}
           tags: hoophq/hoopagent:cand-amd64
 
       # The image must run as the unprivileged 'hoop' user (uid 10001). The USER
@@ -132,6 +186,9 @@ jobs:
           push: false
           build-args: |
             UBUNTU_IMAGE=${{ steps.base.outputs.image }}
+          labels: |
+            dev.hoop.release.version=${{ steps.rel.outputs.version }}
+            dev.hoop.release.archive.sha256=${{ steps.rel.outputs.arm64_sha256 }}
           tags: hoophq/hoopagent:cand-arm64
 
       - name: Gate on fixable CRITICAL/HIGH (arm64 OS layer, enforcing)

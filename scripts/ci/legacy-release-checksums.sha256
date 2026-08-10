@@ -1,0 +1,30 @@
+# Reviewed pins for release archives published before the release workflow
+# started uploading them as GitHub Release assets.
+#
+# scripts/ci/fetch-release-binaries.py prefers the GitHub-recorded asset digest
+# for a release and only consults this file when the tag carries no assets. A
+# release with neither is refused, so this file is what keeps the weekly
+# rebuild able to run against the releases that predate that change.
+#
+# Adding an entry means asserting the bytes are the ones that shipped. Verify
+# through a channel other than the distribution endpoint before adding one; the
+# entries below were each confirmed by extracting ./hoop from the archive and
+# comparing it byte-for-byte with /app/hoop in the already-published
+# hoophq/hoopagent image of the same release, for both architectures.
+#
+# 1.126.3: pre-dates GitHub asset uploads.
+deee3ee414356dafc029e4fb8b85f3060fa98be5697d989e6f702a19fbdb1539  hoop_1.126.3_Linux_x86_64.tar.gz
+3bbe1fca336537ff310f44aae73c8b4c3d5cfd2caefa1f5c76feb836f53cf10e  hoop_1.126.3_Linux_aarch64.tar.gz
+# 1.136.0: the release current when the weekly rebuild landed; its tag was cut
+# before the asset upload existed, so the first weekly runs need it pinned here.
+# Cross-checked against hoophq/hoopagent:1.136.0-minimal:
+#   amd64 ./hoop = fc0f964b7061fe5dbbb01fb22c619fb88cb746b0ba267ed642395271f720e2d7
+#   arm64 ./hoop = d7ff33a33c2224475d6b7a4353d55f6c725d228ea50a602e1533ccb704d8137b
+654b71e6cf8945777f6a8a3b812e616b35b40c1e7fdd5581541db2073722c5d0  hoop_1.136.0_Linux_x86_64.tar.gz
+598c9dc2bceaeeda14bf5e13d6e97346c38483f646f9e0502456ed95d67aec3b  hoop_1.136.0_Linux_aarch64.tar.gz
+# 1.136.1: current release; its tag was cut before the asset upload existed.
+# Cross-checked against hoophq/hoopagent:1.136.1-minimal:
+#   amd64 ./hoop = bea24e2947ba63b6910547c460459deaf971add2e0370b55e1c79fc64779a004
+#   arm64 ./hoop = fd77aa5f42787fd23b7acca77e49fa7ee2140b94baccb108bec3b7fa78b3656b
+3004dade95699080c536d7133116c2ae8483ad29ff0e1c42a3117b613047e169  hoop_1.136.1_Linux_x86_64.tar.gz
+46133fdb6a9749c0bc4d67a03d1ae5f38ed69a2f4da7682bba07a84dca98b6eb  hoop_1.136.1_Linux_aarch64.tar.gz
