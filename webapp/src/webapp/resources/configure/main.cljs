@@ -76,7 +76,11 @@
 
         [page-wrapper/main
          {:children
-          [:> Box {:class "h-[calc(100vh-var(--app-shell-header-offset,0rem)-65px)] bg-[--gray-1] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
+          ;; No viewport height here: the shared setup page-wrapper owns height and
+          ;; scrolling, and its footer now flows after the content. Sizing this box
+          ;; to the viewport (minus a hardcoded footer height) made content + footer
+          ;; exceed the wrapper and pushed the footer below the fold.
+          [:> Box {:class "bg-[--gray-1] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
            (if (or loading? (nil? resource))
              [loading-view]
              [:> Box
