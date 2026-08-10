@@ -90,7 +90,30 @@ static_resources:
       address:
         socket_address: { address: 0.0.0.0, port_value: 5432 }
       filter_chains:
-        - filters:
+        # starttls, NOT DownstreamTlsContext. pgwire negotiates in-band: the
+        # client sends an 8-byte SSLRequest and waits for one byte before any
+        # handshake, so a plain TLS socket reads a sentinel where it expects a
+        # ClientHello. This socket starts in the clear and upgrades when the
+        # filter below tells it to.
+        - transport_socket:
+            name: envoy.transport_sockets.starttls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.starttls.v3.StartTlsConfig
+              tls_socket_config:
+                common_tls_context:
+                  tls_certificates:
+                    - certificate_chain: { filename: /etc/envoy/certs/server.crt }
+                      private_key: { filename: /etc/envoy/certs/server.key }
+          filters:
+            # Contrib only, and Envoy says so on load: "work-in-progress ...
+            # not covered by the threat model, not supported by the security
+            # team". It also carries a pgwire parser, which is the capability
+            # the base stack's postgres lane exists to argue Envoy lacks.
+            - name: envoy.filters.network.postgres_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.postgres_proxy.v3alpha.PostgresProxy
+                stat_prefix: ingress_pg
+                terminate_ssl: true
             - name: envoy.filters.network.tcp_proxy
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
@@ -102,6 +125,7 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
                       log_format:
                         text_format: "[envoy] tcp pg bytes_in=%BYTES_RECEIVED% bytes_out=%BYTES_SENT% flags=%RESPONSE_FLAGS% %DURATION%ms\n"
+
 
     # -------------------------------------------------------- L4 lane, MSSQL
     # TDS 8.0. Envoy terminates the client's TLS here and hands plaintext TDS

@@ -227,6 +227,24 @@ services:
   # MSSQLSvc/mssql.hoop.test:1433 — a ticket only SQL Server can decrypt.
   # Envoy carries it without being able to read it.
   envoy:
+    # envoy-contrib, not the standard image. The postgres lane's TLS is
+    # terminated by `envoy.filters.network.postgres_proxy`, which ships only
+    # in contrib: pgwire negotiates TLS in-band, so no ordinary TLS listener
+    # can terminate it.
+    #
+    # This costs the base stack's claim of "zero Envoy extensions", which is
+    # why it lives in THIS overlay and not in the parent. The parent keeps a
+    # plain tcp_proxy on 5432 and a client that speaks plaintext.
+    #
+    # Two client parameters become mandatory on this lane as a result, both
+    # failing loudly rather than silently when omitted:
+    #   channel_binding=disable  the relay strips SCRAM-SHA-256-PLUS because
+    #                            it terminated the UPSTREAM TLS, and a client
+    #                            on TLS notices the missing mechanism
+    #   gssencmode=disable       a GSSENCRequest puts Envoy's postgres filter
+    #                            into a terminal state where it stops
+    #                            terminating anything, TLS included
+    image: envoyproxy/envoy-contrib:v1.33-latest
     networks:
       inspect:
         aliases: [mssql.hoop.test, appdb.hoop.test]

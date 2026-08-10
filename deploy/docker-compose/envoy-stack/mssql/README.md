@@ -8,12 +8,18 @@ hoop-inspect inspects each statement without holding a credential, reading the
 ticket, or carrying a line of Kerberos code.
 
 ```
-sqlclient ──TLS (TDS 8.0)──> envoy ──plaintext TDS──> hoop-inspect ──> mssql
- kinit alice                terminates TLS           inspects, denies    keytab
-                                                          │
-                                                       samba (AD DC)
-                                                     KDC + LDAP directory
+sqlclient ──TLS──> envoy ──plaintext──> hoop-inspect ──> mssql / appdb
+ kinit alice      terminates all       inspects, denies      keytabs
+                  three lanes          masks, audits
+                                            │
+                                        samba (AD DC)
+                                      KDC + LDAP directory
 ```
+
+Envoy terminates TLS on all three lanes here, so the relay reads plaintext.
+That costs the parent stack's "zero Envoy extensions" claim, which is why the
+contrib image lives in this overlay and not in the parent: pgwire negotiates
+TLS in-band, and only `envoy.filters.network.postgres_proxy` can terminate it.
 
 ## The idea
 
@@ -49,6 +55,32 @@ TDS 7.x wraps its TLS handshake inside `0x12` PRELOGIN packets, which Envoy
 cannot speak. Its "encrypt the login only" mode then reverts to plaintext at a
 point no observer can locate without decrypting, which leaves a relay guessing.
 TDS 8.0 removes the guess.
+
+## Connecting to the postgres lane
+
+Two parameters are mandatory. Omit either one and the connection fails with
+a message naming the cause.
+
+```bash
+psql "host=envoy port=5432 dbname=appdb user=appuser \
+      sslmode=require channel_binding=disable gssencmode=disable"
+```
+
+`channel_binding=disable`. The relay strips `SCRAM-SHA-256-PLUS` from the
+server's offer, because it terminated the UPSTREAM TLS and the client cannot
+bind to a channel it did not see. While the client leg was plaintext that
+strip was invisible. Put the client on TLS and SCRAM's own downgrade detection fires:
+*"The client supports SCRAM channel binding but thinks the server does not."*
+
+`gssencmode=disable`. libpq asks for GSS encryption first whenever a ticket is
+in the cache. Envoy's postgres filter treats that request as "this session is
+encrypted", enters a state it does not leave, and stops terminating anything,
+the later `SSLRequest` included. Envoy's own counters show it:
+`sessions_terminated_ssl: 4` beside `sessions_encrypted: 1`.
+
+Neither is avoidable through configuration. Both are the price of Envoy owning
+this lane's TLS; a relay that answered the handshake itself would need neither
+the second one nor the contrib image.
 
 ## Run it
 

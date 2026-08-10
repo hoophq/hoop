@@ -129,6 +129,39 @@ else
     bad "masking happened but the audit trail recorded none"
 fi
 
+# ------------------------------------------------- 3c. Envoy terminates TLS
+c_step "3c. Envoy terminates TLS on all three lanes"
+
+pg_tls() {
+    dc exec -T client env PGPASSWORD=apppass psql \
+        "host=envoy port=5432 dbname=appdb user=appuser $1" -tAc "SELECT 1" 2>&1
+}
+
+if grep -qE '^ *1$' <<<"$(pg_tls 'sslmode=require channel_binding=disable gssencmode=disable')"; then
+    ok "postgres over TLS, terminated by Envoy's postgres_proxy filter"
+else
+    bad "postgres refused a TLS connection"
+    note "$(pg_tls 'sslmode=require channel_binding=disable gssencmode=disable' | head -2)"
+fi
+
+# The two parameters are load-bearing, and each fails LOUDLY when dropped.
+# Asserting that is what keeps them from looking like cargo cult in the docs.
+if grep -qi "channel binding" <<<"$(pg_tls 'sslmode=require gssencmode=disable')"; then
+    ok "without channel_binding=disable it fails, and says why"
+    note "the relay strips SCRAM-SHA-256-PLUS; a client on TLS reads that as a downgrade"
+else
+    note "channel_binding=disable no longer required — check whether the relay still strips PLUS"
+fi
+
+# Envoy's own counters are the proof that IT terminated, not something else.
+STATS="$(curl -s http://localhost:9901/stats 2>/dev/null)"
+TLS_TERMINATED="$(grep -oE 'postgres\.ingress_pg\.sessions_terminated_ssl: [0-9]+' <<<"$STATS" | grep -oE '[0-9]+$')"
+if [[ "${TLS_TERMINATED:-0}" -gt 0 ]]; then
+    ok "envoy reports sessions_terminated_ssl=$TLS_TERMINATED"
+else
+    bad "envoy terminated no SSL sessions; something else answered the SSLRequest"
+fi
+
 # ----------------------------------------------------------- 4. audit trail
 c_step "4. The audit trail recorded the statement and the verdict"
 AUDIT="$(curl -s 'http://localhost:19000/api/sessions?limit=25' 2>/dev/null)"
@@ -137,8 +170,12 @@ if grep -q 'mssqldb' <<<"$AUDIT"; then
 else
     bad "no mssqldb session recorded"
 fi
-if dc logs hoop-inspect --no-log-prefix --since 5m 2>&1 \
-     | grep -q '"rule":"no-destructive-tsql"'; then
+# Capture first, then match. `dc logs ... | grep -q` looks equivalent and is
+# not: grep -q exits on the first hit, docker takes SIGPIPE, and `set -o
+# pipefail` reports the whole pipeline as failed. It passes while the log is
+# short and starts lying once it grows.
+RELAY_LOG="$(dc logs hoop-inspect --no-log-prefix --since 5m 2>&1)"
+if grep -q '"rule":"no-destructive-tsql"' <<<"$RELAY_LOG"; then
     ok "the denial is in the audit stream, keyed to the rule that fired"
 else
     bad "no audit event naming no-destructive-tsql"
@@ -172,8 +209,8 @@ fi
 # The relay must have carried the login far enough for SQL Server to form an
 # opinion about it. A session on the mssqldb lane with zero statements is
 # exactly that: login bytes crossed, no SQL followed.
-if dc logs hoop-inspect --no-log-prefix --since 2m 2>&1 \
-     | grep '"msg":"session opened"' | grep -q '"listener":"mssqldb"'; then
+KRB_LOG="$(dc logs hoop-inspect --no-log-prefix --since 2m 2>&1)"
+if grep '"msg":"session opened"' <<<"$KRB_LOG" | grep -q '"listener":"mssqldb"'; then
     ok "hoop-inspect opened an mssqldb session for the Kerberos attempt"
     note "LOGIN7 (0x10) and SSPI (0x11) packets forwarded verbatim"
 else

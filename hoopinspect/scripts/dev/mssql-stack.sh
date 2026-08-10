@@ -45,9 +45,23 @@ case "${1:-up}" in
         exec docker compose "${COMPOSE[@]}" logs -f "$@"
         ;;
     psql)
-        exec docker compose "${COMPOSE[@]}" exec -T client \
-            env PGPASSWORD=apppass PGSSLMODE=disable \
-            psql -h envoy -p 5432 -U appuser -d appdb
+        # Envoy terminates this lane's TLS, so sslmode=require works. The two
+        # extra parameters are not optional here:
+        #
+        #   channel_binding=disable  the relay strips SCRAM-SHA-256-PLUS
+        #     (it terminated the UPSTREAM TLS, so the client cannot bind to a
+        #     channel it never saw). A client on TLS expects that mechanism to
+        #     be offered and treats its absence as a downgrade attack.
+        #
+        #   gssencmode=disable  libpq asks for GSS encryption first whenever a
+        #     ticket is in the cache. Envoy's postgres filter reacts to that
+        #     request by entering a terminal state where it stops terminating
+        #     anything, so the TLS handshake that follows never happens.
+        #
+        # Both fail loudly when omitted, which is the right direction.
+        shift
+        exec docker compose "${COMPOSE[@]}" exec -T client env PGPASSWORD=apppass \
+            psql "host=envoy port=5432 dbname=appdb user=appuser sslmode=require channel_binding=disable gssencmode=disable" "$@"
         ;;
     up|--rebuild) ;;
     *) die "unknown command: $1" ;;
