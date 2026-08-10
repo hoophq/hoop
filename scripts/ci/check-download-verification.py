@@ -73,42 +73,71 @@ EXEMPT: dict[str, tuple[str, str]] = {
 
 
 def instructions(dockerfile: str) -> list[tuple[int, str]]:
-    """Yield (starting line number, full text) per instruction, joining
-    backslash continuations so a multi-line RUN is evaluated as a unit."""
+    """Yield (starting line number, flattened text) per instruction.
+
+    Backslash continuations are joined into ONE logical line so a command
+    whose URL sits on a different physical line than its `curl` is still seen
+    as a single command. Comments are dropped rather than treated as the end
+    of an instruction: inside a continued RUN a comment line carries no
+    trailing backslash, and ending the instruction there would hide every
+    command after it from the checks below.
+    """
     out: list[tuple[int, str]] = []
     current: list[str] = []
     start = 0
+    continued = False
     for number, raw in enumerate(dockerfile.splitlines(), 1):
-        line = raw.rstrip("\n")
-        if not current:
-            if not line.strip() or line.lstrip().startswith("#"):
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not continued:
+            if not stripped or stripped.startswith("#"):
                 continue
             start = number
-        current.append(line)
-        if not line.rstrip().endswith("\\"):
-            out.append((start, "\n".join(current)))
+        elif stripped.startswith("#"):
+            # A comment inside a continuation: skip it without closing the
+            # instruction. It cannot itself continue the line.
+            continue
+        continues = line.endswith("\\")
+        current.append(line[:-1].strip() if continues else stripped)
+        continued = continues
+        if not continued:
+            out.append((start, " ".join(part for part in current if part)))
             current = []
     if current:
-        out.append((start, "\n".join(current)))
+        out.append((start, " ".join(part for part in current if part)))
     return out
+
+
+URL = re.compile(r"https?://[^\s\"']+")
+
+# `deb [...] https://... suite component` lines declare an apt repository; they
+# are configuration, not a fetch. Everything apt then pulls from them is
+# authenticated by the repository's signing key, which is fingerprint-pinned
+# above. Dropping these keeps a source-list entry from looking like a download.
+APT_SOURCE = re.compile(r"\bdeb(?:-src)?\s+(?:\[[^\]]*\]\s*)?(https?://\S+)")
 
 
 def unexempted_downloads(text: str) -> bool:
     """True if the instruction fetches anything not covered by an exemption.
 
-    An exemption only holds while its alternative check is present, and only
-    for its own URL: any other download in the same instruction still needs the
-    checksum verifier. That keeps an exempt instruction from becoming a place
-    to hide an unverified fetch.
+    Judged over every URL the instruction names, because a fetch can reach its
+    URL indirectly — the signing-key block passes URLs as shell-function
+    arguments, so the `curl` itself carries only a variable. An instruction is
+    exempt only when EVERY URL in it is an exempt one whose alternative check
+    is also present; a single extra URL, or a missing fingerprint assertion,
+    puts the whole instruction back under the checksum requirement.
     """
-    for line in text.splitlines():
-        if not DOWNLOAD.search(line):
-            continue
-        match = next(
-            ((marker, proof) for marker, (proof, _) in EXEMPT.items() if marker in line),
+    sources = set(APT_SOURCE.findall(text))
+    urls = [url for url in URL.findall(text) if url not in sources]
+    if not urls:
+        # A download whose URL never appears literally cannot be reviewed here.
+        return True
+    for url in urls:
+        proof = next(
+            (proof for marker, (proof, _) in EXEMPT.items() if marker in url),
             None,
         )
-        if match is None or match[1] not in text:
+        if proof is None or proof not in text:
             return True
     return False
 

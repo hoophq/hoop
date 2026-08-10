@@ -71,10 +71,58 @@ class DownloadGuardTests(unittest.TestCase):
             [],
         )
 
-    def test_multiline_run_is_evaluated_as_one_instruction(self):
-        """The verifier on a continuation line still counts as same-instruction."""
-        self.assertEqual(guard.check.__module__, guard.__name__)
-        self.assertEqual(self.check(VERIFIED_RUN), [])
+    def test_curl_and_its_url_on_separate_physical_lines(self):
+        """The real Dockerfile wraps long curls; the URL is on its own line."""
+        problems = self.check(
+            "RUN curl --fail --location --silent \\\n"
+            "    https://example.com/v1/t.deb \\\n"
+            "    --output t.deb \\\n"
+            "    && dpkg -i t.deb\n"
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("never calls", problems[0])
+
+    def test_comment_inside_a_continued_run_does_not_end_it(self):
+        """A comment carries no backslash; it must not hide what follows."""
+        problems = self.check(
+            "RUN echo start \\\n"
+            "    # an explanatory comment\n"
+            "    && curl -sL https://example.com/v1/x.deb -o x.deb \\\n"
+            "    && dpkg -i x.deb\n"
+        )
+        self.assertTrue(problems)
+
+    def test_apt_source_declaration_is_not_a_download(self):
+        """`deb <url>` configures a repository; apt authenticates what it pulls."""
+        self.assertEqual(
+            self.check(
+                'RUN echo "deb [signed-by=/k.gpg] https://repo.example.com/apt noble main" '
+                "> /etc/apt/sources.list.d/x.list\n"
+            ),
+            [],
+        )
+
+    def test_every_download_in_the_real_dockerfile_is_seen(self):
+        """Guard against a parser that silently inspects almost nothing."""
+        dockerfile = SCRIPTS.parent.parent / "Dockerfile.tools"
+        seen = [
+            number
+            for number, text in guard.instructions(dockerfile.read_text())
+            if text.lstrip().startswith("RUN") and guard.DOWNLOAD.search(text)
+        ]
+        self.assertGreaterEqual(len(seen), 7)
+
+    def test_removing_a_verifier_from_the_real_dockerfile_is_caught(self):
+        """The check must fail on the mutation it exists to prevent."""
+        dockerfile = SCRIPTS.parent.parent / "Dockerfile.tools"
+        broken = dockerfile.read_text().replace(
+            "  && python3 /opt/hoop/build-integrity/verify-manual-download.py \\\n"
+            '    /opt/hoop/build-integrity/agent-tools-checksums.sha256 "$artifact" \\\n'
+            '  && dpkg -i "$artifact" \\\n',
+            '  && dpkg -i "$artifact" \\\n',
+        )
+        self.assertNotEqual(broken, dockerfile.read_text(), "mutation did not apply")
+        self.assertTrue(self.check(broken))
 
     def test_variable_url_is_still_a_download(self):
         problems = self.check('RUN curl -sL "$TOOL_URL" -o t.deb && dpkg -i t.deb\n')

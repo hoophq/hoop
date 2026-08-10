@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -51,11 +53,20 @@ func RunAgentrs() {
 	// The slim hoopagent flavours carry the hoop binary alone, so on those an
 	// absent hoop_rs is the expected configuration, not a failure — report it
 	// once at info level and leave the Go agent to run every other connection
-	// type. A binary that exists but will not start is still an error below.
+	// type.
+	//
+	// Only a genuinely missing binary is treated that way. Anything else the
+	// lookup can report — most usefully a file that is present but not
+	// executable — stays an error: it means RDP was meant to work and will
+	// not, which is exactly what an operator needs told. A binary that starts
+	// and then fails is likewise still an error below.
 	resolvedPath, err := exec.LookPath(binaryPath)
-	if err != nil {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
 		log.Infof("hoop_rs not found (%v); starting the agent without Remote Desktop support. "+
 			"Use an image that bundles hoop_rs, or set HOOP_RS_BIN_PATH, if you need RDP connections.", binaryPath)
+		return
+	} else if err != nil {
+		log.Errorf("Failed to resolve hoop_rs at %q: %v", binaryPath, err)
 		return
 	}
 
