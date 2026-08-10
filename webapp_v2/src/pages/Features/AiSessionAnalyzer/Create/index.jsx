@@ -151,7 +151,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
         </Box>
       )}
 
-      <Stack gap="xxlAlt" className={classes.form}>
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Define details"
           description="Used to identify your AI Session Analyzer rule in your resources."

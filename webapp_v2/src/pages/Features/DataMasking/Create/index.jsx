@@ -176,7 +176,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
         </Box>
       )}
 
-      <Stack gap="xxlAlt" className={classes.form}>
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Set rule information"
           description="Used to identify the rule in your resource roles."

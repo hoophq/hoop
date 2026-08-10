@@ -172,7 +172,7 @@ function GroupFormFields({ groupName, isEdit }) {
           </Group>
         </Group>
 
-        <Stack gap="xxlAlt" className={classes.form}>
+        <Stack gap="xxlAlt">
           <SectionRow
             title="Set group information"
             description="Used to identify your access control group."

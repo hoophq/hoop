@@ -1,6 +1,4 @@
-/* An opaque surface, not a transparent cut-out: the CLJS original is a Radix
-   `Card variant="surface"`, so the card keeps its own background regardless of
-   what it is placed on. */
+/* Opaque surface, like the Radix `Card variant="surface"` this ports. */
 .card {
   width: 100%;
   border: 1px solid var(--mantine-color-default-border);
@@ -23,17 +21,14 @@
   background-color: var(--brand-navy);
 }
 
-/* Dark-on-dark exception: the unselected wrapper is a light gray fill
-   (ThemeIcon variant="light"), which disappears on the navy selected surface.
-   Mantine's gray palette is calibrated for light backgrounds, so we paint the
-   icon contrast with rgba white instead. */
+/* The gray palette is calibrated for light backgrounds, so contrast on the
+   navy selected surface is painted with rgba white instead. */
 .card[data-selected] .icon {
   background-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);
 }
 
-/* Same exception for `image`: provider logos are full-colour artwork, so on the
-   dark selected surface they are flattened to white. */
+/* Logos are full-colour artwork — flatten them to white when selected. */
 .card[data-selected] .logo {
   filter: brightness(0) invert(1);
 }

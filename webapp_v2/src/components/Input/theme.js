@@ -75,15 +75,16 @@ export const MultiSelectTheme = MultiSelect.extend({ defaultProps: SIZE_DEFAULT 
 export const TagsInputTheme = TagsInput.extend({ defaultProps: SIZE_DEFAULT })
 export const PillsInputTheme = PillsInput.extend({ defaultProps: SIZE_DEFAULT })
 
-// Labels, descriptions, and errors are rendered by InputWrapper. Pin them
-// to the same font scale as the input text so they track the field's size
-// consistently (16px labels at the md default).
+// Descriptions and errors track the field size; labels are pinned to 14px/700
+// to match the section headings they sit under. Four Create forms each carried
+// a private CSS-module copy of this rule before it moved here.
 export const InputWrapperTheme = Input.Wrapper.extend({
+  styles: { label: { fontWeight: 700 } },
   vars: (_theme, props) => {
     const fz = FONT_SIZES[props.size]
     if (!fz) return { label: {}, error: {}, description: {} }
     return {
-      label: { '--input-label-size': fz },
+      label: { '--input-label-size': 'var(--mantine-font-size-sm)' },
       error: { '--input-error-size': `calc(${fz} - ${rem(2)})` },
       description: { '--input-description-size': `calc(${fz} - ${rem(2)})` },
     }

@@ -10,22 +10,3 @@
 .stickyHeader[data-scrolled] {
   border-bottom-color: var(--mantine-color-default-border);
 }
-
-/* Field labels match the section headings (14px/700) instead of tracking the
-   md field size, which components/Input/theme.js pins them to (16px/500).
-
-   Scoped to this form on purpose: label typography is a theme-level decision
-   that hasn't been made yet, so this stays one rule to delete once it is.
-   Same rule as pages/Guardrails/Create/Create.module.css — the two forms will
-   share it once that decision lands.
-
-   Targets Mantine's static InputWrapper class — a documented part of its
-   styling API — so every field in the form is covered, including the ones
-   rendered by shared wrappers such as ConnectionNamesMultiSelect, which don't
-   expose a label className. Declared outside @layer mantine, so it wins over
-   Mantine's own label rules (whose font-size reads an --input-label-size that
-   Mantine sets inline on this element, out of reach of a variable override). */
-.form :global(.mantine-InputWrapper-label) {
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 700;
-}
