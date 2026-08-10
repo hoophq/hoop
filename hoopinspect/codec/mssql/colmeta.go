@@ -111,9 +111,15 @@ type column struct {
 // parseColMetaData reads a COLMETADATA token body starting at b[0], returning
 // the columns and the number of bytes consumed.
 //
-// ok=false means a type this decoder cannot measure appeared. The caller then
-// stops rewriting rather than guessing a length: forwarding the result set
-// unmasked loses a control, and mis-framing it corrupts the client's stream.
+// A nil cols with parseOK means the token declared count 0xFFFF, "no metadata
+// change": the previous layout stays in force and the caller keeps whatever it
+// already has. That is distinct from a real zero-column result, which returns
+// an empty but non-nil slice.
+//
+// parseCannot means a type this decoder cannot measure appeared. The caller
+// then stops rewriting rather than guessing a length: forwarding the result
+// set unmasked loses a control, and mis-framing it corrupts the client's
+// stream.
 func parseColMetaData(b []byte) (cols []column, n int, st parseStatus) {
 	if len(b) < 2 {
 		return nil, 0, parseNeedMore
@@ -121,8 +127,13 @@ func parseColMetaData(b []byte) (cols []column, n int, st parseStatus) {
 	count := int(binary.LittleEndian.Uint16(b[0:2]))
 	p := 2
 	// 0xFFFF means "no metadata change"; the previous layout still applies.
+	//
+	// Treating this as unmeasurable would latch noRewrite and drop masking
+	// for the rest of the connection, which is the one outcome worth
+	// preventing: the token is not a decoding failure, it is the server
+	// saying nothing changed.
 	if count == 0xffff {
-		return nil, p, parseCannot
+		return nil, p, parseOK
 	}
 
 	cols = make([]column, 0, count)

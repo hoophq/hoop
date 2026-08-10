@@ -8,14 +8,31 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math/big"
 	"net"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/hoophq/hoopinspect"
 )
+
+// readOnce reads a single chunk, treating a deadline expiry or a clean EOF as
+// a result rather than a fault.
+//
+// Both are outcomes these tests assert on: a relay that answers nothing and a
+// relay that closes are the two negative cases. Every other error means the
+// harness broke, and reporting it as zero bytes read would surface as a
+// puzzling assertion failure somewhere downstream instead of here.
+func readOnce(c net.Conn, buf []byte) (int, error) {
+	n, err := c.Read(buf)
+	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return n, nil
+	}
+	return n, err
+}
 
 func pgPacket(code uint32) []byte {
 	b := make([]byte, 8)
@@ -73,6 +90,7 @@ func negotiate(t *testing.T, send []byte, tlsCfg *tls.Config) (reply []byte, gat
 
 	done := make(chan struct{})
 	var out []byte
+	var gateErr error
 	go func() {
 		defer close(done)
 		conn, _, err := negotiateDownstream(srv, hoopinspect.Postgres, tlsCfg, 2*time.Second)
@@ -80,19 +98,32 @@ func negotiate(t *testing.T, send []byte, tlsCfg *tls.Config) (reply []byte, gat
 			return
 		}
 		buf := make([]byte, 512)
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, _ := conn.Read(buf)
+		if gateErr = conn.SetReadDeadline(time.Now().Add(2 * time.Second)); gateErr != nil {
+			return
+		}
+		var n int
+		if n, gateErr = readOnce(conn, buf); gateErr != nil {
+			return
+		}
 		out = append([]byte(nil), buf[:n]...)
 	}()
 
-	_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := cli.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("client SetDeadline: %v", err)
+	}
 	if _, err := cli.Write(send); err != nil {
 		t.Fatal(err)
 	}
 	got := make([]byte, 8)
-	n, _ := cli.Read(got)
+	n, err := readOnce(cli, got)
+	if err != nil {
+		t.Fatalf("reading the relay's reply: %v", err)
+	}
 
 	<-done
+	if gateErr != nil {
+		t.Fatalf("gate side: %v", gateErr)
+	}
 	return got[:n], out
 }
 
@@ -199,7 +230,9 @@ func TestSSLRequestIsTerminatedWhenConfigured(t *testing.T) {
 		res <- result{c, err}
 	}()
 
-	_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := cli.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("client SetDeadline: %v", err)
+	}
 	if _, err := cli.Write(pgPacket(pgSSLRequestCode)); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +268,9 @@ func TestSSLRequestIsTerminatedWhenConfigured(t *testing.T) {
 		t.Fatalf("relay side failed: %v", r.err)
 	}
 	buf := make([]byte, 8)
-	_ = r.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := r.conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("relay SetReadDeadline: %v", err)
+	}
 	if _, err := io.ReadFull(r.conn, buf); err != nil {
 		t.Fatalf("reading the startup packet through the terminated TLS: %v", err)
 	}
@@ -322,6 +357,7 @@ func negotiateTwo(t *testing.T, send []byte) (gateSaw []byte, user string, reply
 	done := make(chan struct{})
 	var out []byte
 	var got string
+	var gateErr error
 	go func() {
 		defer close(done)
 		conn, u, err := negotiateDownstream(srv, hoopinspect.Postgres, nil, 2*time.Second)
@@ -330,19 +366,36 @@ func negotiateTwo(t *testing.T, send []byte) (gateSaw []byte, user string, reply
 			return
 		}
 		buf := make([]byte, 1024)
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, _ := conn.Read(buf)
+		if gateErr = conn.SetReadDeadline(time.Now().Add(2 * time.Second)); gateErr != nil {
+			return
+		}
+		var n int
+		if n, gateErr = readOnce(conn, buf); gateErr != nil {
+			return
+		}
 		out = append([]byte(nil), buf[:n]...)
 	}()
 
-	_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := cli.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("client SetDeadline: %v", err)
+	}
 	if _, err := cli.Write(send); err != nil {
 		t.Fatal(err)
 	}
+	// Most of these lanes answer nothing at all, so the short deadline
+	// expiring IS the expected result rather than a failure.
 	ack := make([]byte, 1)
-	_ = cli.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	cli.Read(ack)
+	if err := cli.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		t.Fatalf("client SetReadDeadline: %v", err)
+	}
+	n, err := readOnce(cli, ack)
+	if err != nil {
+		t.Fatalf("reading the relay's reply: %v", err)
+	}
 
 	<-done
-	return out, got, ack
+	if gateErr != nil {
+		t.Fatalf("gate side: %v", gateErr)
+	}
+	return out, got, ack[:n]
 }

@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"github.com/hoophq/hoopinspect"
@@ -192,7 +193,12 @@ func (c *Codec) rewriteTokens(
 			if st != parseOK {
 				return out, p, res, st
 			}
-			c.cols = cols
+			// Nil means count 0xFFFF, "no metadata change", so the layout
+			// already held stays in force. A real zero-column result arrives
+			// as an empty non-nil slice and does replace it.
+			if cols != nil {
+				c.cols = cols
+			}
 			c.seenColMeta = true
 			out = append(out, stream[p:p+1+n]...)
 			p += 1 + n
@@ -260,7 +266,7 @@ func (c *Codec) rewriteRow(
 		}
 
 		masked := mask(col.name, val)
-		if string(masked) == string(val) {
+		if bytes.Equal(masked, val) {
 			out = append(out, b[p:p+adv]...)
 			p += adv
 			continue

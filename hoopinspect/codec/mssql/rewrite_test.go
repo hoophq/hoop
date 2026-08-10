@@ -233,6 +233,82 @@ func TestUnchangedValuesKeepTheirOriginalBytes(t *testing.T) {
 	}
 }
 
+// colMetaNoChange is COLMETADATA declaring count 0xFFFF: "no metadata
+// change", the server saying the previous layout still describes the rows
+// that follow. SQL Server emits it for later result sets of a batch whose
+// shape did not move.
+func colMetaNoChange() []byte {
+	return []byte{0x81, 0xff, 0xff}
+}
+
+// The sentinel is not a decoding failure, and treating it as one used to
+// latch noRewrite and drop masking for the rest of the CONNECTION. A second
+// result set then reached the client in the clear, which is the failure this
+// whole path exists to prevent.
+func TestNoMetadataChangeKeepsMasking(t *testing.T) {
+	c := &mssql.Codec{}
+
+	stream := append(colMetaNVarChar("name", "email"), rowNVarChar("Ada", "ada@example.com")...)
+	stream = append(stream, colMetaNoChange()...)
+	stream = append(stream, rowNVarChar("Grace", "grace@example.com")...)
+	stream = append(stream, doneToken()...)
+
+	out, res, err := c.Rewrite(wrap(stream, 0), redactEmail)
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	if res.Rows != 2 || res.Cells != 2 {
+		t.Fatalf("res = %+v, want 2 cells in 2 rows", res)
+	}
+
+	got := tokens(t, out)
+	for _, leaked := range []string{"ada@example.com", "grace@example.com"} {
+		if bytes.Contains(got, ucs2(leaked)) {
+			t.Errorf("%s reached the client unmasked", leaked)
+		}
+	}
+	if n := bytes.Count(got, ucs2("[REDACTED]")); n != 2 {
+		t.Errorf("masked %d cells, want 2", n)
+	}
+	if !bytes.Contains(got, colMetaNoChange()) {
+		t.Error("the no-change token was not forwarded")
+	}
+	if !bytes.Contains(got, ucs2("Grace")) {
+		t.Error("an unmasked column was lost after the no-change token")
+	}
+}
+
+// The distinction the fix turns on: 0xFFFF keeps the layout, while a real
+// count REPLACES it, zero included. Measuring a row against a layout it no
+// longer matches consumes the wrong number of bytes and strands everything
+// after it in the reassembly buffer.
+func TestRealColumnCountReplacesTheLayout(t *testing.T) {
+	c := &mssql.Codec{}
+
+	stream := append(colMetaNVarChar("email"), rowNVarChar("ada@example.com")...)
+	stream = append(stream, colMetaNVarChar()...) // a real count of zero
+	stream = append(stream, 0xd1)                 // a row with no cells
+	stream = append(stream, doneToken()...)
+
+	out, res, err := c.Rewrite(wrap(stream, 0), redactEmail)
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	if res.Rows != 1 || res.Cells != 1 {
+		t.Fatalf("res = %+v, want only the first row rewritten", res)
+	}
+
+	got := tokens(t, out)
+	if bytes.Contains(got, ucs2("ada@example.com")) {
+		t.Error("the original value survived")
+	}
+	// A stale one-column layout would look for a cell inside the empty row,
+	// find nothing, and hold that row and the DONE behind it forever.
+	if !bytes.Contains(got, doneToken()) {
+		t.Error("the stream never completed: the empty row was measured against a stale layout")
+	}
+}
+
 // A nil masker is the "masking disabled" path and must be a passthrough.
 func TestNilMaskerPassesThrough(t *testing.T) {
 	c := &mssql.Codec{}
