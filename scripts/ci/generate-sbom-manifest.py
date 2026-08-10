@@ -56,7 +56,8 @@ IMAGE_REPOS = [
 # slim agent used to be optional here because it published on an independent
 # line that could lag; the SBOM job now depends on that publish job, so an
 # absent slim image means the publish genuinely failed and the release must not
-# claim evidence it does not have.
+# claim evidence it does not have. There is no optional entry any more: every
+# image in IMAGE_REPOS must resolve, on both platforms, or the run fails.
 REQUIRED_IMAGE_REPOS = {repo for repo, _ in IMAGE_REPOS}
 REQUIRED_PLATFORMS = {"linux/amd64", "linux/arm64"}
 
@@ -276,20 +277,16 @@ def main() -> int:
         short = repo.split("/")[-1] + suffix
         resolved = resolve_image(ref)
         if resolved is None:
-            if repo in REQUIRED_IMAGE_REPOS:
-                print(f"::error::{ref} not visible after retries; required release SBOM is incomplete")
-                missing_required.append(ref)
-            else:
-                print(f"::warning::{ref} not visible after retries; skipping optional SBOM/manifest entry")
+            print(f"::error::{ref} not visible after retries; required release SBOM is incomplete")
+            missing_required.append(ref)
             continue
         index_digest, children = resolved
-        if repo in REQUIRED_IMAGE_REPOS:
-            available = {platform for platform, digest in children.items() if digest}
-            missing_platforms = sorted(REQUIRED_PLATFORMS - available)
-            if missing_platforms:
-                print(f"::error::{ref} is missing required platforms: {', '.join(missing_platforms)}")
-                missing_required.append(ref)
-                continue
+        available = {platform for platform, digest in children.items() if digest}
+        missing_platforms = sorted(REQUIRED_PLATFORMS - available)
+        if missing_platforms:
+            print(f"::error::{ref} is missing required platforms: {', '.join(missing_platforms)}")
+            missing_required.append(ref)
+            continue
         # A published tag is normally a multi-arch index. If it is instead a
         # single manifest, resolve its real platform (never assume one) and scan
         # it by its own digest (== index_digest); skip if the platform is unknown.
@@ -298,7 +295,8 @@ def main() -> int:
         else:
             plat = single_platform(f"{repo}@{index_digest}")
             if not plat:
-                print(f"::warning::{ref} is a single manifest of unknown platform; skipping optional SBOM/manifest entry")
+                print(f"::error::{ref} is a single manifest of unknown platform; cannot record which platform it covers")
+                missing_required.append(ref)
                 continue
             platforms = {plat: index_digest}
 

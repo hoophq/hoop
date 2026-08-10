@@ -1406,18 +1406,22 @@ jobs:
   # manifest (base OS, component count, Trivy CRITICAL/HIGH summary) so
   # downstream users building custom agents can verify shipped components and
   # the vulnerability posture without re-pulling and re-scanning every image.
-  # The established gateway and fat-agent images are required. The additive
-  # minimal image remains optional and is included only when both gated
-  # architectures published. Artifact generation is fail-closed and retried so
-  # a successful run cannot silently omit the required evidence.
+  # Every documented image is required, on both platforms: the slim-agent
+  # publish job is a dependency below, so an absent image means that publish
+  # genuinely failed. Artifact generation is fail-closed and retried so a
+  # successful run cannot silently omit the required evidence.
   #
-  # This runs BEFORE publish-release, not after: the SBOMs describe images that
-  # are already in the registry, and publish-release attaches them to the
-  # GitHub Release it creates. Running it afterwards made the evidence
-  # optional in practice — a failure there left the release and its image tags
-  # public with nothing attached, which is exactly the claim downstream users
-  # rely on. Ordering it first means a release either carries its supply-chain
-  # evidence or is never created.
+  # This runs BEFORE publish-release, not after. Running it afterwards made the
+  # evidence optional in practice: a failure left a published GitHub Release
+  # with nothing attached, which is exactly the claim downstream users rely on.
+  #
+  # Scope, precisely: this gates the GITHUB RELEASE OBJECT, not the registry.
+  # The image tags are pushed by the docker-publish-* jobs above, so if SBOM
+  # generation fails the images are already pullable and only the release is
+  # withheld. Closing that gap too means publishing images under staging tags
+  # and promoting them after the SBOM succeeds — a larger change to every
+  # publish job, tracked separately. Do not describe this as "no image ships
+  # without an SBOM"; it is not that yet.
   sbom-and-manifest:
     runs-on: ubuntu-latest
     name: SBOM + Release Manifest

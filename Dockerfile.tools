@@ -216,7 +216,10 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
 
 # Third-party apt repositories and their signing keys.
 #
-# DEP-91: each key's full OpenPGP fingerprint is asserted before it is trusted.
+# DEP-91: each key file must carry exactly one primary key, whose full OpenPGP
+# fingerprint is asserted, before it is trusted. Checking only the first
+# fingerprint would let a response that appends an attacker key pass, since apt
+# trusts every key in the keyring it is given.
 # A downloaded key IS the trust root for everything apt then installs from that
 # repository — and maintainer scripts run as root during the build — so
 # accepting whatever bytes the key URL happens to return would make every
@@ -241,6 +244,11 @@ RUN set -eu; \
       curl --fail --location --silent --show-error \
         --proto '=https' --tlsv1.2 "$url" --output "$tmp/$name"; \
       gpg --dearmor < "$tmp/$name" > "$tmp/$name.gpg"; \
+      primaries="$(gpg --show-keys --with-colons "$tmp/$name.gpg" | grep -c '^pub:' || true)"; \
+      if [ "$primaries" != "1" ]; then \
+        echo "::error::$name key file carries $primaries primary keys; expected exactly 1. Trusting it would trust every key in the file, not just the pinned one."; \
+        exit 1; \
+      fi; \
       actual="$(gpg --show-keys --with-colons --with-fingerprint "$tmp/$name.gpg" \
         | awk -F: '/^fpr:/{print $10; exit}')"; \
       if [ "$actual" != "$expected" ]; then \

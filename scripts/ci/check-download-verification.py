@@ -27,6 +27,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 # A download is a curl/wget invocation that names a URL, literal or through a
 # variable. Matching the bare command name would also hit `apt install curl`,
@@ -48,22 +49,24 @@ PIPE_TO_SHELL = re.compile(
 # pointers are resolved to a concrete version before download elsewhere.
 MUTABLE = re.compile(r"https?://\S*/latest/", re.IGNORECASE)
 
-# Downloads verified by something other than the SHA-256 manifest. Each entry
-# names the ALTERNATIVE check that must also appear in the instruction, so an
-# exemption cannot be claimed by merely mentioning the URL: an instruction that
-# fetches an exempt URL but drops its verification stops being exempt.
-EXEMPT: dict[str, tuple[str, str]] = {
-    "packages.cloud.google.com/apt/doc/apt-key.gpg": (
+# Downloads verified by something other than the SHA-256 manifest, keyed by
+# (host, path prefix) so a URL cannot claim an exemption by carrying the
+# trusted string somewhere in its path — https://evil.example/nodejs.org/dist/…
+# is not nodejs.org. Each entry names the ALTERNATIVE check that must also
+# appear in the instruction, so an exemption lapses the moment its real
+# verification is dropped.
+EXEMPT: dict[tuple[str, str], tuple[str, str]] = {
+    ("packages.cloud.google.com", "/apt/doc/apt-key.gpg"): (
         "GOOGLE_CLOUD_KEY_FPR",
         "apt repository signing key, pinned by full OpenPGP fingerprint and "
         "installed into a per-repository signed-by keyring.",
     ),
-    "mongodb.org/static/pgp": (
+    ("www.mongodb.org", "/static/pgp"): (
         "MONGODB_KEY_FPR",
         "apt repository signing key, pinned by full OpenPGP fingerprint and "
         "installed into a per-repository signed-by keyring.",
     ),
-    "nodejs.org/dist": (
+    ("nodejs.org", "/dist"): (
         "SHASUMS256.txt.asc",
         "Node.js tarball, verified against upstream's GPG-signed SHASUMS256.txt "
         "using the release keyring listed above it — a stronger check than a "
@@ -117,29 +120,115 @@ URL = re.compile(r"https?://[^\s\"']+")
 APT_SOURCE = re.compile(r"\bdeb(?:-src)?\s+(?:\[[^\]]*\]\s*)?(https?://\S+)")
 
 
-def unexempted_downloads(text: str) -> bool:
-    """True if the instruction fetches anything not covered by an exemption.
+def exempt_proof(url: str) -> str | None:
+    """The alternative check a URL's exemption requires, if it has one.
 
-    Judged over every URL the instruction names, because a fetch can reach its
-    URL indirectly — the signing-key block passes URLs as shell-function
-    arguments, so the `curl` itself carries only a variable. An instruction is
-    exempt only when EVERY URL in it is an exempt one whose alternative check
-    is also present; a single extra URL, or a missing fingerprint assertion,
-    puts the whole instruction back under the checksum requirement.
+    Matched on parsed host and path prefix, never on a substring of the whole
+    URL: an attacker-controlled host is not made trustworthy by mentioning a
+    trusted one in its path.
+    """
+    parsed = urlparse(url)
+    for (host, prefix), (proof, _) in EXEMPT.items():
+        if parsed.hostname == host and parsed.path.startswith(prefix):
+            return proof
+    return None
+
+
+def unexempted_urls(text: str) -> list[str]:
+    """URLs the instruction fetches that still need checksum verification.
+
+    A URL is dropped when it declares an apt repository (configuration, not a
+    fetch) or when it carries an exemption whose alternative check is present.
     """
     sources = set(APT_SOURCE.findall(text))
-    urls = [url for url in URL.findall(text) if url not in sources]
-    if not urls:
-        # A download whose URL never appears literally cannot be reviewed here.
-        return True
-    for url in urls:
-        proof = next(
-            (proof for marker, (proof, _) in EXEMPT.items() if marker in url),
-            None,
+    remaining = []
+    for url in URL.findall(text):
+        if url in sources:
+            continue
+        proof = exempt_proof(url)
+        if proof is not None and proof in text:
+            continue
+        remaining.append(url)
+    if not remaining and not URL.search(text) and DOWNLOAD.search(text):
+        # Fetches a URL held in a variable. Nothing here can review those
+        # bytes, so it cannot be waved through as "no unexempted URLs".
+        return ["<variable>"]
+    return remaining
+
+
+# Commands that consume a downloaded artifact: once one of these runs, an
+# unverified file has already been installed or executed and a later check is
+# too late to matter.
+CONSUMER = re.compile(
+    r"\b(?:dpkg\s+-i|apt-key\s+add|install\b|tar\s|unzip\b|gpg\b|bash\b|sh\b|python3?\b|\./)"
+)
+
+# `verify-manual-download.py <manifest> <artifact>` — capture what it verifies
+# so the artifact can be matched against what was downloaded.
+VERIFY_CALL = re.compile(
+    re.escape(VERIFIER) + r"\s+(?P<manifest>\S+)\s+(?P<artifact>\S+)"
+)
+
+# The file a fetch writes: `-o x`, `--output x`, or `-O`/`--remote-name` (which
+# derives the name from the URL).
+FETCH_TARGET = re.compile(r"(?:-o|--output)\s+(?P<target>\S+)")
+
+
+def shell_words(command: str) -> str:
+    """Normalise a token for comparison: strip quotes and any $-expansion."""
+    return command.strip().strip("\"'")
+
+
+def split_commands(text: str) -> list[str]:
+    """Split a flattened instruction into commands, in execution order."""
+    return [part for part in re.split(r"&&|\|\||;", text) if part.strip()]
+
+
+def verification_order_problem(text: str) -> str | None:
+    """Report a verifier that runs too late, or verifies the wrong file.
+
+    Substring presence is not enough. `curl x && dpkg -i x && verify x` and
+    `curl x && verify y && dpkg -i x` both mention the verifier while leaving
+    unauthenticated bytes installed, which is exactly what this gate exists to
+    prevent.
+    """
+    downloaded: set[str] = set()
+    verified: set[str] = set()
+    for command in split_commands(text):
+        if DOWNLOAD.search(command):
+            target = FETCH_TARGET.search(command)
+            if target:
+                downloaded.add(shell_words(target.group("target")))
+            elif re.search(r"\s(?:-O|--remote-name|-OL|-LO)\b", command):
+                url = URL.search(command)
+                if url:
+                    downloaded.add(url.group(0).rsplit("/", 1)[-1])
+
+        verify = VERIFY_CALL.search(command)
+        if verify:
+            verified.add(shell_words(verify.group("artifact")))
+            continue
+
+        if CONSUMER.search(command):
+            pending = {
+                name
+                for name in downloaded - verified
+                # Only complain when this command actually touches the file.
+                if name and name in command
+            }
+            if pending:
+                return (
+                    f"installs or executes {sorted(pending)[0]} before "
+                    f"{VERIFIER} has verified it"
+                )
+
+    unverified = downloaded - verified
+    if unverified:
+        return (
+            f"downloads {sorted(unverified)[0]} but never passes it to "
+            f"{VERIFIER}"
         )
-        if proof is None or proof not in text:
-            return True
-    return False
+    return None
 
 
 def check(path: Path) -> list[str]:
@@ -167,7 +256,7 @@ def check(path: Path) -> list[str]:
                 f"which executes it before it can be verified. Download to a file, "
                 f"verify it with {VERIFIER}, then run it."
             )
-        if not unexempted_downloads(code):
+        if not unexempted_urls(code):
             continue
         if VERIFIER not in code:
             problems.append(
@@ -176,6 +265,14 @@ def check(path: Path) -> list[str]:
                 f"licenses/agent-tools-checksums.sha256 and verify it in this "
                 f"same RUN, before the artifact is installed or executed."
             )
+        else:
+            ordering = verification_order_problem(code)
+            if ordering:
+                problems.append(
+                    f"{path}:{number}: RUN {ordering}. The verifier has to run "
+                    f"on the downloaded file, before anything installs or "
+                    f"executes it — otherwise the check proves nothing."
+                )
         mutable = MUTABLE.search(code)
         if mutable:
             problems.append(
