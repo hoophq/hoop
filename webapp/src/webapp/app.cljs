@@ -111,8 +111,6 @@
    [webapp.features.users.main :as users]
    [webapp.features.users.subs]
    [webapp.features.users.views.org-migration-dialog :as org-migration-dialog]
-   [webapp.guardrails.create-update-form :as guardrail-create-update]
-   [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
    [webapp.integrations.authentication.events]
    [webapp.integrations.authentication.main :as integrations-authentication]
@@ -468,37 +466,6 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [add-role/main resource-id]]]))
-
-(defmethod routes/panels :guardrails-panel []
-  [layout :application-hoop
-   [routes/wrap-license-feature "guardrails"
-    [routes/wrap-admin-only
-     [guardrails/panel]]]])
-
-(defmethod routes/panels :create-guardrail-panel []
-  (let [params (js/URLSearchParams. (.. js/window -location -search))
-        template-id (.get params "template")]
-    (if template-id
-      (rf/dispatch [:activation-journey/seed-guardrail-template
-                    template-id (.get params "connections")])
-      (rf/dispatch [:guardrails->clear-active-guardrail])))
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-license-feature "guardrails"
-     [routes/wrap-admin-only
-      [guardrail-create-update/main :create]]]]])
-
-(defmethod routes/panels :edit-guardrail-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        guardrail-id (:guardrail-id (:route-params current-route))]
-    (rf/dispatch [:guardrails->get-by-id guardrail-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-license-feature "guardrails"
-       [routes/wrap-admin-only
-        [guardrail-create-update/main :edit]]]]]))
-
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])

@@ -157,11 +157,9 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/guardrails/*`, `/features/access-control/*`,
-`/features/access-request/*`.
-`events/guardrails.cljs` stays regardless — resource setup/configure and the
-activation journey still subscribe to it. The `features/access_control/` tree
-has no consumer outside itself (its `events.cljs` also registers
+the CLJS page is unreachable): `/features/access-control/*`,
+`/features/access-request/*`. The `features/access_control/` tree has no
+consumer outside itself (its `events.cljs` also registers
 `:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
 so it can go whole, together with the `access-control-promotion` block in
 `features/promotion.cljs`. `features/access_request/` is only partly removable:
@@ -170,6 +168,14 @@ so it can go whole, together with the `access-control-promotion` block in
 `:access-request/list-rules` and subscribes to `:access-request/rules` to fill
 its approval-rule picker, so those two files must survive until B3.2 lands.
 Removal belongs to a Track A cleanup PR.
+
+Kept bidi entries whose panel was deleted because CLJS code still navigates to
+them: `/guardrails` (`:guardrails`) and `/guardrails/new` (`:create-guardrail`)
+— React renders both, but the sidebar constants, the configure-role terminal
+tab and the activation-journey feature cards still `url-for`/`:navigate` them.
+`events/guardrails.cljs` also stays, trimmed to `:guardrails->get-all` /
+`:guardrails->set-all` / the `:guardrails->list` sub, which resource
+setup/configure and the activation journey still consume.
 
 ### Global Components in CLJS (need React equivalents before removal)
 
