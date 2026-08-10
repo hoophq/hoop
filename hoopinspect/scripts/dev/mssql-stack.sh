@@ -145,7 +145,7 @@ c_warn "SQL Server has no arm64 image; on Apple Silicon first boot takes a few m
 # container, and `--wait` reads "exited 0" as a failed dependency; mssql's own
 # depends_on already gates on it having succeeded.
 docker compose "${COMPOSE[@]}" up -d --wait --wait-timeout 600 \
-    samba hoop-inspect opa envoy sqlclient
+    samba hoop-inspect opa envoy sqlclient client httpbin
 
 c_step "Seeding SQL Server and creating the Kerberos login"
 c_warn "first boot of an emulated SQL Server can take several minutes"

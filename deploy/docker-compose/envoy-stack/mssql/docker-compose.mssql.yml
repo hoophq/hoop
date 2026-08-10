@@ -50,11 +50,11 @@ services:
       # filename order, and this one grants on tables seed.sql creates.
       # Running it here rather than by hand is what keeps the Kerberos role
       # alive across a `down -v`, which wipes the data volume.
-      - ./mssql/pg-seed-kerberos.sql:/docker-entrypoint-initdb.d/zz-kerberos.sql:ro
+      - ./postgres/pg-seed-kerberos.sql:/docker-entrypoint-initdb.d/zz-kerberos.sql:ro
       - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
       - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
-      - ./mssql/krb5.conf:/etc/krb5.conf:ro
-      - ./mssql/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - krb-keytabs:/keytabs:ro
     depends_on:
       samba: { condition: service_healthy }
@@ -68,7 +68,7 @@ services:
   samba:
     image: hoop-samba-dc:local
     build:
-      context: ./mssql/samba
+      context: ./kerberos/samba
     hostname: dc
     # SQL Server finds the directory through DNS SRV records (_ldap._tcp,
     # _kerberos._tcp), so it must query THIS container's resolver. A fixed
@@ -140,7 +140,7 @@ services:
       MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
       MSSQL_PID: Developer
     volumes:
-      - ./mssql/krb5.conf:/etc/krb5.conf:ro
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
       - ./mssql/mssql.conf:/var/opt/mssql/mssql.conf:ro
       - krb-keytabs:/keytabs:ro
       - mssql-tls:/var/opt/mssql/certs:ro
@@ -269,9 +269,9 @@ services:
     dns: [172.31.7.10]
     dns_search: [hoop.test]
     volumes:
-      - ./mssql/krb5.conf:/etc/krb5.conf:ro
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
       - ./mssql/certs/ca.crt:/usr/local/share/ca-certificates/hoop-demo-ca.crt:ro
-      - ./mssql/pg-seed-kerberos.sql:/pg-seed-kerberos.sql:ro
+      - ./postgres/pg-seed-kerberos.sql:/pg-seed-kerberos.sql:ro
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
