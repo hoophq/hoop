@@ -269,6 +269,27 @@ func TestSessionUsageProperties(t *testing.T) {
 		}
 	})
 
+	t.Run("combined jit_command rule keys by resolution slot", func(t *testing.T) {
+		combined := &models.AccessRequestRule{
+			ID:                   uuid.New(),
+			AccessType:           "jit_command",
+			ForceApprovalGroups:  pq.StringArray{},
+			AllGroupsMustApprove: false,
+		}
+
+		props := sessionUsageProperties(usageData(func(d *sessionUsageData) {
+			d.jitAccessRequest = combined
+			d.commandAccessRequest = combined
+		}))
+
+		assertProp(t, props, "jit-access-request-activated", true)
+		assertProp(t, props, "command-access-request-activated", true)
+
+		if _, ok := props["jit_command-access-request-activated"]; ok {
+			t.Error("jit_command-access-request-activated should not be emitted; keys must come from the resolution slot")
+		}
+	})
+
 	t.Run("access request rules with nil entries are skipped", func(t *testing.T) {
 		props := sessionUsageProperties(usageData())
 

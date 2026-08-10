@@ -278,7 +278,7 @@ All follow the same list/new/edit pattern with ConfirmDialog from B1.3:
 | ~~B3.1 Guardrails~~ | ✅ **Done** — `/guardrails(+new,edit)` in `pages/Guardrails/`; `rules_table.cljs` ported to `Create/components/RulesTable.jsx`, activation-journey catalog ported to `pages/Guardrails/templates.js` (72 templates, `?template=&connections=` deep link). CLJS files left in place, shadowed by React | M+ | B3.2 unblocked. Old URL kept even though React `/rulepacks` is the conceptual successor |
 | B3.2 AI Session Analyzer | `/features/ai-session-analyzer(+rules)`: provider config, rules, system prompt. Free-license gate (1 rule) | M | Template seeding to copy from `pages/Guardrails/templates.js` (B3.1) |
 | ~~B3.3 Access Control~~ | ✅ **Done — EVL-149.** `/features/access-control(+new,edit)` in `pages/Features/AccessControl/`, backed by the `access_control` plugin (GET/PUT `/plugins/:name`); the edit route keeps the legacy `?group=<name>` shape. CLJS files left in place, shadowed by React | M | No OSS count limit on this feature — license gating only |
-| B3.4 Access Request | `/features/access-request(+new,edit)`. Free-license gate (1 rule) | M | Independent |
+| ~~B3.4 Access Request~~ | ✅ **Done — EVL-150.** `/features/access-request(+new,edit/:ruleName)` in `pages/Features/AccessRequest/`, backed by `/access-requests/rules`; the edit route keeps the legacy path-segment shape. Both limits ported: the client-side free-license gate (1 rule) and the gateway's OSS 403, surfaced on save. CLJS files left in place, shadowed by React | M | Independent |
 | B3.5 Runbooks Setup | `/features/runbooks/setup` + rules new/edit (git repo config + path rules) | M | Independent of the runbooks *runner* (Wave 5) |
 | B3.6 Machine Identities | **Decision gate — see below** | S or M | |
 | B3.7 Integrations Authentication | `/integrations/authentication` (~324 LOC but **sensitive**: switches gateway auth method, rotates API key; admin + selfhosted only). EVL-101 merged — unblocked; requires a dedicated manual test pass on a selfhosted instance — CI green is not enough. Only afterwards may `:integrations-authentication` be pruned from CLJS sidebar/routes | M | |
@@ -302,7 +302,7 @@ decision must close before the Endgame.
 
 | Ticket | Scope | Size | Unblocks |
 |---|---|---|---|
-| B4.0 Native-client-access port | Port the native-client-access flow + draggable countdown card (~1,100 LOC) to React; switch CommandPalette from `clojureDispatch('native-client-access->start-flow')` to the native implementation | L | **Hard Endgame blocker** (React's own palette depends on the CLJS flow); needed by B4.2 and Wave 7 |
+| ~~B4.0 Native-client-access port~~ | ✅ **Done** — shipped early with EVL-171, because the Native Connections drawer had to live in the React shell to work on CLJS routes. `features/NativeConnections/` + `stores/useNativeAccessStore`; CommandPalette and Config Status now call the store directly. CLJS stands down via `react-shell?`; namespace deletion is a follow-up | L | — |
 | B4.1 Resources list + wizard core | `/resources` list (537 LOC) + multi-step wizard skeleton (state machine, step chrome); port `events/connections.cljs`; reuse the kept `agents/deployment` logic as a React service | XL pt.1 | Everything below |
 | B4.2 Resources new/configure/add-role | `/resources/new`, `/resources/configure/:id`, `/resources/:id/add-role`: federation OAuth, MCP OAuth popup + polling, terminal/native access tabs (needs B4.0). Reuse patterns from the already-React `/roles/:name/configure` — don't duplicate | XL pt.2 | Onboarding reuse |
 | B4.3 Resource catalog + onboarding | `/resource-catalog` (562 LOC, no API — seeds wizard state) + `/onboarding(+setup, setup/resource, setup/agent, resource-providers)` chrome (~700 LOC) on a no-sidebar layout, reusing the B4.1/B4.2 wizard | L | Kills the `/onboarding/*` ClojureApp route in `Router.jsx` |
@@ -359,14 +359,16 @@ dies silently).
 | Clipboard copy/cut blocking | Wave 2 (own S ticket) | Gap **today** on React-only routes: CLJS installs document-level copy/cut listeners when `disable_clipboard_copy_cut` is on; React only hides copy buttons. Install/remove the listeners in the React shell keyed on the flag |
 | MS Clarity port | Wave 2–3 (own S ticket) | Port the script injection (`events/tracking.cljs`) + environment start/stop gating (`events/clarity.cljs`) |
 | org-migration dialog | Wave 3 (own S ticket) | Port `features/users/views/org_migration_dialog.cljs` into the React Layout so it fires on React routes too (source kept alive by PR A3 for this purpose) |
-| native-client-access | Wave 4 (B4.0) | Hard blocker; first ticket of Wave 4 |
+| native-client-access | ✅ Done (EVL-171) | Ported ahead of Wave 4; see B4.0 |
 
 **Bridge teardown inventory** (deleted in the Endgame): `utils/clojureDispatch.js`,
 `stores/useBridgeStore.js`, `components/ClojureApp.jsx`, the CLJS branch in
 `features/CommandPalette/spotlight.js`, `window.__hoopReactShellPresent` /
 `__hoopReactShellCljsVisible`, `localStorage react-shell`. Remaining bridge events
 after EVL-104: `users->get-user` (refreshLegacyUser), `command-palette->toggle`
-(spotlight CLJS branch), `native-client-access->start-flow` (blocked on B4.0).
+(spotlight CLJS branch). `native-client-access->start-flow` is gone from the React side —
+the traffic now runs the other way, over the `hoop:native-access-*` CustomEvents, which
+outlive the flag because `/resources` and `/sessions/:id` stay CLJS.
 
 ---
 

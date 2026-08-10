@@ -27,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 var validConnectionTypes = []string{
@@ -39,6 +40,9 @@ var validConnectionTypes = []string{
 // caller omits access_duration_seconds, matching the machine-identity flow in
 // gateway/services/credentials.go.
 const noExpirySentinel = "9999-12-31T00:00:00Z"
+
+// Ceiling for any credential window, review-gated or not.
+const maxAccessDurationSec = 48 * 60 * 60
 
 func noExpiryTime() time.Time {
 	t, _ := time.Parse(time.RFC3339, noExpirySentinel)
@@ -120,6 +124,45 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	// A matching rule where the user skips the approval review still bounds
+	// credential lifetime: skipping the review must not grant persistent
+	// access nor exceed the rule's max duration.
+	if !requiresReview && accessRule != nil {
+		if req.AccessDurationSec <= 0 {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for connections with an access request rule"})
+			return
+		}
+		if accessRule.AccessMaxDuration != nil && req.AccessDurationSec > *accessRule.AccessMaxDuration {
+			c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf("access duration cannot exceed the rule's max duration of %d seconds", *accessRule.AccessMaxDuration)})
+			return
+		}
+	}
+
+	// Validate the requested window BEFORE anything is persisted. This used to
+	// live inside each branch, below the session insert, so a rejected request
+	// still left an Open session row (and a session-start event) behind with
+	// nothing that would ever close it. Both branches answer to the same rules:
+	// a review-required connection must name a window, no window may exceed the
+	// 48-hour ceiling, and none may exceed the access rule's own maximum — the
+	// last of which the review branch was not checking at all, so a JIT rule
+	// capped at 30 minutes happily accepted a 48-hour request.
+	if requiresReview && req.AccessDurationSec <= 0 {
+		c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
+		return
+	}
+	if req.AccessDurationSec > 0 {
+		if req.AccessDurationSec > maxAccessDurationSec {
+			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
+			return
+		}
+		if accessRule != nil && accessRule.AccessMaxDuration != nil &&
+			req.AccessDurationSec > *accessRule.AccessMaxDuration {
+			c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf(
+				"access duration cannot exceed %d seconds for this connection", *accessRule.AccessMaxDuration)})
+			return
+		}
+	}
+
 	// Determine the audit status of the credential-issuance session.
 	// Persistent credentials (no review, no access_duration_seconds) mint a
 	// Done bookkeeping row immediately: this session is not bound to any TCP
@@ -169,10 +212,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// Review-required connections always need a bounded access window — the
 	// configure-session step in the UI is responsible for supplying it.
 	if requiresReview {
-		if req.AccessDurationSec <= 0 {
-			c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
-			return
-		}
 		reviewID, err := createConnectionCredentialsReview(ctx, conn, accessRule, sid, req.AccessDurationSec)
 		if err != nil {
 			log.Errorf("failed creating review, err=%v", err)
@@ -200,10 +239,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 	var expireAt time.Time
 	if req.AccessDurationSec > 0 {
 		expireAt = time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
-		if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
-			c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
-			return
-		}
 	} else {
 		expireAt = noExpiryTime()
 	}
@@ -424,7 +459,21 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		createdAt = existingCred.CreatedAt
 		log.With("session_id", sessionID).Infof("reusing existing credential expiration: %v", expireAt.Format(time.RFC3339))
 	} else {
-		expireAt = time.Now().UTC().Add(time.Duration(review.AccessDurationSec) * time.Second)
+		// Check if session is from CLI connect
+		// CLI connect sessions have BlobStream, which means the session is from CLI connect and we should use the RevokedAt time as the expiration time
+		blobStream, err := session.GetBlobStream()
+		if err != nil {
+			log.Errorf("failed getting blob stream, err=%v", err)
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed getting blob stream"})
+			return
+		}
+
+		if blobStream != nil {
+			expireAt = *review.RevokedAt
+		} else {
+			expireAt = time.Now().UTC().Add(time.Duration(review.AccessDurationSec) * time.Second)
+		}
+
 		createdAt = time.Now().UTC()
 	}
 
@@ -705,6 +754,50 @@ func GetConnectionCredentials(c *gin.Context) {
 	c.JSON(200, resp)
 }
 
+// ListActiveConnectionCredentials
+//
+//	@Summary		List Active Connection Credentials
+//	@Description	Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).
+//	@Tags			Connections
+//	@Produce		json
+//	@Success		200	{object}	openapi.ConnectionCredentialsList
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/connection-credentials [get]
+func ListActiveConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	rows, err := models.ListActiveCredentialsByUser(models.DB, ctx.OrgID, ctx.UserID)
+	if err != nil {
+		// Logged, not returned: the driver error can name tables, columns and
+		// the query itself, and this is an unauthenticated-shaped surface in the
+		// sense that any signed-in user can reach it.
+		log.Errorf("failed listing connection credentials for user %s, err=%v", ctx.UserID, err)
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed listing connection credentials"})
+		return
+	}
+
+	// Initialised so an empty result serialises as {"items":[]} instead of null.
+	result := openapi.ConnectionCredentialsList{Items: []openapi.ConnectionCredentialsListItem{}}
+	for _, row := range rows {
+		var expireAt *time.Time
+		if !isPersistentExpireAt(row.ExpireAt) {
+			t := row.ExpireAt
+			expireAt = &t
+		}
+		result.Items = append(result.Items, openapi.ConnectionCredentialsListItem{
+			ID:                row.ID,
+			ConnectionID:      row.ConnectionID,
+			ConnectionName:    row.ConnectionName,
+			ConnectionType:    row.ConnectionType,
+			ConnectionSubType: row.ConnectionSubType,
+			SessionID:         row.SessionID,
+			ExpireAt:          expireAt,
+			CreatedAt:         row.CreatedAt,
+		})
+	}
+	c.JSON(200, result)
+}
+
 type handlerError struct {
 	status  int
 	message string
@@ -747,7 +840,7 @@ func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialI
 // terminateActiveCredentialSessions tears down any in-flight proxy sessions for
 // the given credential. Shared by Revoke (with DB invalidation) and Close
 // (without DB invalidation).
-func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _conn *models.Connection) {
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, _ *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
@@ -1073,23 +1166,26 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	reviewID := uuid.NewString()
 
 	newRev := &models.Review{
-		ID:                reviewID,
-		OrgID:             ctx.OrgID,
-		Type:              models.ReviewTypeJit,
-		SessionID:         sessionID,
-		ConnectionName:    conn.Name,
-		ConnectionID:      sql.NullString{String: conn.ID, Valid: true},
-		AccessDurationSec: int64(accessDuration.Seconds()),
-		InputEnvVars:      nil, // Credentials don't have env vars
-		InputClientArgs:   nil, // Credentials don't have client args
-		OwnerID:           ctx.UserID,
-		OwnerEmail:        ctx.UserEmail,
-		OwnerName:         &ctx.UserName,
-		OwnerSlackID:      &user.SlackID,
-		Status:            models.ReviewStatusPending,
-		ReviewGroups:      reviewGroups,
-		CreatedAt:         time.Now().UTC(),
-		RevokedAt:         nil,
+		ID:                    reviewID,
+		OrgID:                 ctx.OrgID,
+		Type:                  models.ReviewTypeJit,
+		SessionID:             sessionID,
+		ConnectionName:        conn.Name,
+		ConnectionID:          sql.NullString{String: conn.ID, Valid: true},
+		AccessDurationSec:     int64(accessDuration.Seconds()),
+		InputEnvVars:          nil, // Credentials don't have env vars
+		InputClientArgs:       nil, // Credentials don't have client args
+		OwnerID:               ctx.UserID,
+		OwnerEmail:            ctx.UserEmail,
+		OwnerName:             &ctx.UserName,
+		OwnerSlackID:          &user.SlackID,
+		Status:                models.ReviewStatusPending,
+		ReviewGroups:          reviewGroups,
+		AccessRequestRuleName: &accessRule.Name,
+		MinApprovals:          accessRule.MinApprovals,
+		ForceApprovalGroups:   accessRule.ForceApprovalGroups,
+		CreatedAt:             time.Now().UTC(),
+		RevokedAt:             nil,
 	}
 
 	log.With("sid", sessionID, "id", newRev.ID, "user", ctx.UserID, "org", ctx.OrgID,
@@ -1125,6 +1221,12 @@ func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connecti
 		return false, nil, fmt.Errorf("failed checking access request rules for connection %s: %w", conn.Name, err)
 	}
 
+	// Users in the skip groups bypass the review, but the matched rule is
+	// still returned so the caller keeps enforcing its duration bounds.
+	if accessRule != nil && len(accessRule.ApprovalRequiredGroups) == 0 &&
+		utils.SlicesHasIntersection([]string(accessRule.SkipReviewGroups), ctx.GetUserGroups()) {
+		return false, accessRule, nil
+	}
 	return accessRule != nil, accessRule, nil
 }
 

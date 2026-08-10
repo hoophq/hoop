@@ -26,6 +26,16 @@
      (js/window.Intercom "update"))
    {:db (-> db
             (assoc :active-panel active-panel)
+            ;; Panels read their route params straight off window.location when
+            ;; they render, so the panel keyword alone cannot express a
+            ;; param-only move like /sessions/A → /sessions/B: :active-panel
+            ;; comes out identical, nothing re-renders, and the old resource
+            ;; stays on screen. Recording the path gives main-panel something
+            ;; that actually changes to key off. Read here rather than passed in
+            ;; so both callers — pushy's routes/dispatch and the React shell's
+            ;; window.hoopSetRoute — get it for free; both run after the URL has
+            ;; already been updated.
+            (assoc :route-path (.. js/window -location -pathname))
             (assoc :navigation-status :completed))}))
 
 (rf/reg-event-fx

@@ -8,6 +8,22 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	AccessTypeJit        = "jit"
+	AccessTypeCommand    = "command"
+	AccessTypeJitCommand = "jit_command"
+)
+
+// expandAccessTypes returns every access_type value that overlaps the given
+// type. A jit_command rule gates both connect and exec verbs, so it matches
+// plain jit and command lookups; a jit_command lookup overlaps all types.
+func expandAccessTypes(accessType string) []string {
+	if accessType == AccessTypeJitCommand {
+		return []string{AccessTypeJit, AccessTypeCommand, AccessTypeJitCommand}
+	}
+	return []string{accessType, AccessTypeJitCommand}
+}
+
 type AccessRequestRule struct {
 	ID    uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	OrgID uuid.UUID `gorm:"column:org_id;index:idx_access_request_rules_org_name,unique"`
@@ -22,6 +38,7 @@ type AccessRequestRule struct {
 	AllGroupsMustApprove   bool           `gorm:"column:all_groups_must_approve;default:false"`
 	ReviewersGroups        pq.StringArray `gorm:"column:reviewers_groups;type:text[]"`
 	ForceApprovalGroups    pq.StringArray `gorm:"column:force_approval_groups;type:text[]"`
+	SkipReviewGroups       pq.StringArray `gorm:"column:skip_review_groups;type:text[]"`
 
 	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 	MinApprovals      *int `gorm:"column:min_approvals"`
@@ -39,7 +56,7 @@ func (m AccessRequestRule) TableName() string {
 func GetAccessRequestRuleByResourceNameAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName, accessType string) (*AccessRequestRule, error) {
 	var accessRequestRule AccessRequestRule
 	result := db.
-		Where("org_id = ? AND connection_names @> ? AND access_type = ?", orgID, pq.Array([]string{resourceName}), accessType).
+		Where("org_id = ? AND connection_names @> ? AND access_type IN ?", orgID, pq.Array([]string{resourceName}), expandAccessTypes(accessType)).
 		First(&accessRequestRule)
 	if result.Error != nil {
 		return nil, result.Error
@@ -51,7 +68,7 @@ func GetAccessRequestRuleByResourceNameAndAccessType(db *gorm.DB, orgID uuid.UUI
 func GetAccessRequestRuleByResourceNamesAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName []string, accessType string) (*AccessRequestRule, error) {
 	var accessRequestRule AccessRequestRule
 	result := db.
-		Where("org_id = ? AND connection_names && ? AND access_type = ?", orgID, pq.StringArray(resourceName), accessType).
+		Where("org_id = ? AND connection_names && ? AND access_type IN ?", orgID, pq.StringArray(resourceName), expandAccessTypes(accessType)).
 		First(&accessRequestRule)
 	if result.Error != nil {
 		return nil, result.Error
@@ -142,7 +159,7 @@ func GetRequestRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributes []stri
 		Where("org_id = ? AND attribute_name IN (?)", orgID, attributes)
 
 	result := db.Model(&AccessRequestRule{}).
-		Where("org_id = ? AND access_type = ?", orgID, accessType).
+		Where("org_id = ? AND access_type IN ?", orgID, expandAccessTypes(accessType)).
 		Where("name IN (?)", ruleNamesSubQuery).
 		First(&accessRequestRule)
 	if result.Error != nil {

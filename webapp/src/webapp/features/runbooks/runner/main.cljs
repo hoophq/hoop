@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.main
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton
+   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton
                                ScrollArea Text Tooltip]]
    ["allotment" :refer [Allotment]]
    ["lucide-react" :refer [ChevronDown ChevronsLeft ChevronsRight LibraryBig
@@ -56,34 +56,44 @@
                                         (when-let [form (.getElementById js/document "runbook-form")]
                                           (.requestSubmit form))))
                      _ (.addEventListener js/document "keydown" handle-keydown)]
-          [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
+          ;; Same 40px bar as the web terminal (webclient/components/header.cljs)
+          ;; so the two screens stay compatible.
+          [:> Box {:class "h-10 shrink-0 border-b-2 border-gray-9 bg-gray-4"}
            [:> Flex {:class "h-full px-4 items-center justify-between"}
-            [:> Flex {:class "items-center gap-2"}
-             [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+            [:> Flex {:class "items-center gap-4"}
+             [:> Heading {:as "h1" :size "3" :weight "bold" :class "text-gray-12"}
               "Runbooks"]
-             [:> Badge
+             ;; A Button, not a Badge: the terminal uses the same pill here, and
+             ;; a Badge with an onClick is not focusable or keyboard-operable.
+             [:> Button
               {:radius "full"
+               :size "1"
+               :variant (if @runbooks-connection "solid" "soft")
                :color (if @runbooks-connection "indigo" "gray")
-               :class "cursor-pointer"
+               :class "gap-1"
+               :aria-label (if @runbooks-connection
+                             (str "Selected a resource role: " (:name @runbooks-connection)
+                                  ". Click to change")
+                             "Select a resource role")
                :onClick (fn []
                           (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
                           (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
               (if @runbooks-connection
                 (:name @runbooks-connection)
                 "Resource Role")
-              [:> ChevronDown {:size 12}]]]
+              [:> ChevronDown {:size 12 :aria-hidden "true"}]]]
 
             [:> Flex {:class "items-center gap-4"}
              [:> Tooltip {:content "Search"}
-              [search/main :runbooks]]
+              [search/main]]
 
              [:> Tooltip {:content "Theme"}
               [:> IconButton
                {:class (when @dark-mode?
                          "bg-gray-8 text-gray-12")
-                :size "2"
+                :size "1"
                 :color "gray"
-                :variant "soft"
+                :variant "ghost"
                 :highContrast true
                 :onClick (fn []
                            (swap! dark-mode? not)
@@ -93,20 +103,29 @@
                  [:> Moon {:size 16}])]]
 
              [:> Tooltip {:content "Metadata"}
-              [notification-badge
-               {:icon [:> PackagePlus {:size 16}]
-                :on-click toggle-metadata-open
-                :active? metadata-open?
-                :has-notification? has-metadata?
-                :disabled? false}]]
+              ;; inline-flex wrapper for the same reason as the terminal: the
+              ;; ghost variant has no fixed box, so a block wrapper keeps its
+              ;; own larger one and the icon drifts out of line.
+              [:div {:class "inline-flex"}
+               [notification-badge
+                {:size "1"
+                 :variant "ghost"
+                 :icon [:> PackagePlus {:size 16}]
+                 :on-click toggle-metadata-open
+                 :active? metadata-open?
+                 :has-notification? has-metadata?
+                 :disabled? false
+                 :aria-label "Toggle metadata panel"
+                 :aria-expanded metadata-open?}]]]
 
              ;; Parallel Mode Button
-             [parallel-mode-button/parallel-mode-button]
+             [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost"}]
 
              [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
               [:> Button
                {:form "runbook-form"
                 :type "submit"
+                :size "1"
                 :disabled disabled-run-button?
                 :loading runbook-loading?
                 :class (when disabled-run-button? "cursor-not-allowed")}
@@ -120,15 +139,16 @@
         filtered-templates (rf/subscribe [:runbooks->filtered-runbooks])]
     (fn [{:keys [collapsed? on-toggle-collapse]}]
       [:> Box {:as "aside"
-               :class (str "h-full flex flex-col transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
+               :class (str "h-full flex flex-col transition-all duration-300 border-r border-gray-3 bg-gray-2 "
                            (if collapsed? "w-16" "w-full"))}
        [:> Flex {:align "center"
                  :justify "between"
                  :class "w-full h-10 p-2 border-b border-gray-3"}
         [:> Flex {:align "center" :gap "2"}
-         [:> LibraryBig {:size 16 :class "text-[--gray-12]"}]
+         ;; 14px, in step with the terminal's Database schema panel.
+         [:> LibraryBig {:size 14 :class "text-[--gray-12]"}]
          [:> Box {:class (when collapsed? "hidden")}
-          [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Library"]]]
+          [:> Heading {:size "2" :weight "bold" :class "text-gray-12"} "Library"]]]
         [:> IconButton {:variant "ghost"
                         :color "gray"
                         :onClick on-toggle-collapse}
@@ -180,7 +200,12 @@
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/parallel-mode-promotion {:mode :empty-state}]]
 
-          [:> Box {:class (str "h-full bg-gray-2 overflow-hidden " (when @dark-mode? "dark"))}
+          ;; Flex column, like the web terminal: the header is intrinsic and the
+          ;; splitter takes the rest. Replaces the h-[calc(100%-4rem)] below,
+          ;; whose 4rem was the old 64px header height — the same desync that
+          ;; pushed the terminal's log-area footer off screen when its toolbar
+          ;; shrank. See webclient/components/side_panel.cljs.
+          [:> Box {:class (str "h-full bg-gray-2 overflow-hidden flex flex-col " (when @dark-mode? "dark"))}
            [parallel-mode-modal/parallel-mode-modal]
            [execution-summary/execution-summary-modal]
 
@@ -188,9 +213,10 @@
                     :metadata-open? @metadata-open?
                     :toggle-metadata-open #(swap! metadata-open? not)}]
            [:> Allotment {:key "outer-allotment"
+                          :className "flex-1 min-h-0"
                           :horizontal true
                           :separator false}
-            [:> Flex {:class "h-[calc(100%-4rem)]"}
+            [:> Flex {:class "h-full"}
              [:> Allotment {:key (str "main-allotment-" @collapsed?)
                             :defaultSizes (if @collapsed? [64 950] x-panel-sizes)
                             :onDragEnd #(.setItem js/localStorage "runbook-x-panel-sizes" (str %))
@@ -228,7 +254,7 @@
                  @dark-mode?]]]]]
             (when @metadata-open?
               [:> (.-Pane Allotment) {:minSize 250 :maxSize 370}
-               [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"}
+               [:> Box {:class "h-full w-full bg-gray-2 border-l border-gray-3 overflow-y-auto"}
                 [:> Flex {:justify "between"
                           :align "center"
                           :class "px-4 py-3 border-b border-gray-3"}

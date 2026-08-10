@@ -89,17 +89,6 @@
                     :completed? false
                     :active? (= current-step :roles)}]]))
 
-(def ^:private viewport-height
-  "Height of the visible area available to the page.
-
-  Inside the React shell (webapp_v2) the CLJS app renders in Mantine's
-  AppShell.Main, which is offset by a header on viewports below the desktop
-  breakpoint. Subtracting Mantine's own offset variable keeps the wrapper within
-  the visible area, so the in-flow footer is never pushed below the fold. The
-  0px fallback applies when the shell is absent (standalone shadow-cljs), where
-  the full viewport is available."
-  "calc(100vh - var(--app-shell-header-offset, 0px))")
-
 (defn footer-nav
   "Wizard navigation footer. Flows at the end of the scrollable content instead of
   being pinned to the viewport, so the primary action (Next / Save and Finish) only
@@ -131,8 +120,11 @@
       ;; Onboarding layout: stepper on the left + form on the right. The whole
       ;; area scrolls as one document so the full-width footer flows at the true
       ;; end — spanning edge-to-edge, not confined to the content column.
+      ;; The height mirrors the shell-viewport convention (see tailwind.config.js
+      ;; `height.screen`) minus this layout's own 72px top bar; the offset
+      ;; variable self-neutralises outside the React shell.
       [:> Box {:class "relative bg-gray-1 overflow-y-auto"
-               :style {:height (str "calc(" viewport-height " - 72px)")}}
+               :style {:height "calc(100vh - var(--app-shell-header-offset, 0rem) - 72px)"}}
        [:> Flex {:direction "column" :class "min-h-full"}
         ;; grow => the row fills the viewport on short steps;
         ;; shrink-0 => tall content is never clipped, the whole area scrolls.
@@ -144,16 +136,18 @@
           children]]
         [footer-nav footer-props]]]
 
-      ;; Normal layout: full-width without stepper. The whole page scrolls and the
-      ;; footer flows at the end.
+      ;; Normal layout: full-width without stepper. The area scrolls and the
+      ;; footer flows at the end. `h-screen` already discounts the React shell's
+      ;; global header (see tailwind.config.js `height.screen`), so the footer is
+      ;; never pushed below the fold.
       ;; `relative` is required, not cosmetic: it makes this box the containing
       ;; block for absolutely positioned descendants (e.g. react-select's
       ;; off-screen a11y text in the Attributes field). Without it they resolve
-      ;; against an ancestor, escape this scroll container and extend the
+      ;; against the Radix root, escape this scroll container and extend the
       ;; document, producing a second scrollbar that drags the in-flow footer
       ;; into the middle of the viewport. The Radix ScrollArea this replaced gave
       ;; the same guarantee via its relatively positioned viewport.
-      [:> Box {:class "relative overflow-y-auto bg-gray-1" :style {:height viewport-height}}
+      [:> Box {:class "relative h-screen overflow-y-auto bg-gray-1"}
        [:> Flex {:direction "column" :class "min-h-full"}
         [:> Box {:class "grow shrink-0"}
          children]

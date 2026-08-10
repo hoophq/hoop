@@ -206,7 +206,7 @@
          [:> Flex {:p "5" :gap "2"}
           [button/HeaderBack]]
 
-         [:> Box {:class "sticky top-0 z-50 bg-gray-1 px-7 py-7"}
+         [:> Box {:class "sticky top-app-header z-50 bg-gray-1 px-7 py-7"}
           [:> Flex {:justify "between" :align "start" :gap "4" :wrap "wrap"}
            [:> Box {:class "space-y-1 min-w-0"}
             [:> Heading {:as "h2" :size "8"}

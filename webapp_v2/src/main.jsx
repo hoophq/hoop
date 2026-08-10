@@ -5,11 +5,17 @@ import { MantineProvider } from '@mantine/core';
 import { theme, cssVariablesResolver } from '@/theme';
 import App from './App';
 
+// layers.css MUST come first. A cascade layer takes its position from where the
+// name is FIRST seen, and `@mantine/core/styles.layer.css` opens with
+// `@layer mantine {`. Imported after it, the `@layer legacy-reset, mantine, app;`
+// statement cannot move `mantine` — it only appends the unseen names after it,
+// which puts legacy-reset ABOVE mantine and silently inverts the whole point of
+// the ordering (a filled Button renders transparent on CLJS routes).
+import './layers.css';
 import '@mantine/core/styles.layer.css';
 import '@mantine/spotlight/styles.layer.css';
 import '@mantine/dates/styles.layer.css';
 import '@mantine/charts/styles.layer.css';
-import './layers.css';
 
 // Signal to the parked ClojureScript bundle (which keeps a document-level
 // keydown listener alive for its own command palette) that the React shell

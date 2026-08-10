@@ -24,11 +24,12 @@ type accessRequestRulesGetInput struct {
 type accessRequestRulesCreateInput struct {
 	Name                   string   `json:"name" jsonschema:"unique rule name"`
 	Description            *string  `json:"description,omitempty" jsonschema:"human-readable description"`
-	AccessType             string   `json:"access_type" jsonschema:"access type: jit or command"`
+	AccessType             string   `json:"access_type" jsonschema:"access type: jit (connect verbs), command (exec verbs), or jit_command (both)"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
+	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval review; only allowed when approval_required_groups is empty"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
 	MinApprovals           *int     `json:"min_approvals,omitempty" jsonschema:"minimum number of approvals required"`
 	AccessMaxDuration      *int     `json:"access_max_duration,omitempty" jsonschema:"maximum access duration in seconds"`
@@ -38,11 +39,12 @@ type accessRequestRulesCreateInput struct {
 type accessRequestRulesUpdateInput struct {
 	Name                   string   `json:"name" jsonschema:"access request rule name to update"`
 	Description            *string  `json:"description,omitempty" jsonschema:"human-readable description"`
-	AccessType             string   `json:"access_type" jsonschema:"access type: jit or command"`
+	AccessType             string   `json:"access_type" jsonschema:"access type: jit (connect verbs), command (exec verbs), or jit_command (both)"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
 	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
+	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval review; only allowed when approval_required_groups is empty"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
 	MinApprovals           *int     `json:"min_approvals,omitempty" jsonschema:"minimum number of approvals required"`
 	AccessMaxDuration      *int     `json:"access_max_duration,omitempty" jsonschema:"maximum access duration in seconds"`
@@ -218,6 +220,7 @@ func accessRequestRulesCreateHandler(ctx context.Context, _ *mcp.CallToolRequest
 		AllGroupsMustApprove:   args.AllGroupsMustApprove,
 		ReviewersGroups:        ensureStringArray(args.ReviewersGroups),
 		ForceApprovalGroups:    ensureStringArray(args.ForceApprovalGroups),
+		SkipReviewGroups:       ensureStringArray(args.SkipReviewGroups),
 		AccessMaxDuration:      args.AccessMaxDuration,
 		MinApprovals:           args.MinApprovals,
 	}
@@ -299,6 +302,7 @@ func accessRequestRulesUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest
 	existingRule.AllGroupsMustApprove = args.AllGroupsMustApprove
 	existingRule.ReviewersGroups = ensureStringArray(args.ReviewersGroups)
 	existingRule.ForceApprovalGroups = ensureStringArray(args.ForceApprovalGroups)
+	existingRule.SkipReviewGroups = ensureStringArray(args.SkipReviewGroups)
 	existingRule.AccessMaxDuration = args.AccessMaxDuration
 	existingRule.MinApprovals = args.MinApprovals
 
@@ -352,14 +356,19 @@ func validateAccessRequestRuleInput(args *accessRequestRulesCreateInput) error {
 	if len(args.ConnectionNames) == 0 && len(args.Attributes) == 0 {
 		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
-	if args.AccessType != "jit" && args.AccessType != "command" {
-		return fmt.Errorf("access_type must be either 'jit' or 'command'")
+	switch args.AccessType {
+	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
+	default:
+		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
 	}
 	if len(args.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
 	}
 	if !args.AllGroupsMustApprove && (args.MinApprovals == nil || *args.MinApprovals < 1) {
 		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
+	}
+	if len(args.SkipReviewGroups) > 0 && len(args.ApprovalRequiredGroups) > 0 {
+		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
 	}
 	return nil
 }
@@ -368,14 +377,19 @@ func validateAccessRequestRuleInputForUpdate(args *accessRequestRulesUpdateInput
 	if len(args.ConnectionNames) == 0 && len(args.Attributes) == 0 {
 		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
-	if args.AccessType != "jit" && args.AccessType != "command" {
-		return fmt.Errorf("access_type must be either 'jit' or 'command'")
+	switch args.AccessType {
+	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
+	default:
+		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
 	}
 	if len(args.ReviewersGroups) == 0 {
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
 	}
 	if !args.AllGroupsMustApprove && (args.MinApprovals == nil || *args.MinApprovals < 1) {
 		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
+	}
+	if len(args.SkipReviewGroups) > 0 && len(args.ApprovalRequiredGroups) > 0 {
+		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
 	}
 	return nil
 }
@@ -412,6 +426,9 @@ func accessRequestRuleToMap(rule *models.AccessRequestRule) map[string]any {
 	}
 	if len(rule.ForceApprovalGroups) > 0 {
 		m["force_approval_groups"] = []string(rule.ForceApprovalGroups)
+	}
+	if len(rule.SkipReviewGroups) > 0 {
+		m["skip_review_groups"] = []string(rule.SkipReviewGroups)
 	}
 	if rule.MinApprovals != nil {
 		m["min_approvals"] = *rule.MinApprovals

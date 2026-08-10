@@ -7,6 +7,38 @@
    [webapp.audit.views.session-details :as session-details]))
 
 
+;; ── React shell delegation ────────────────────────────────────────────────
+;;
+;; Under the React shell the Native Connections drawer owns native access, so
+;; the entry points below hand off instead of opening the CLJS modal. The
+;; handoff is a DOM CustomEvent on window — the same contract as
+;; `hoop:session-executed` (see events/editor_plugin.cljs) — because the
+;; existing hoopDispatch bridge only runs React → CLJS.
+;;
+;; This keeps every call site untouched: resources/main.cljs, session_details
+;; and the CLJS palette all keep dispatching the same events.
+;;
+;; __hoopReactShellPresent is set by webapp_v2/src/main.jsx before the CLJS
+;; bundle is injected, so it is reliably true here when the shell is the host,
+;; and false for standalone shadow-cljs — which keeps the legacy modal.
+
+(defn- react-shell? []
+  (boolean (.-__hoopReactShellPresent js/window)))
+
+(defn- emit-to-react! [event-name detail]
+  (.dispatchEvent js/window (js/CustomEvent. event-name #js {:detail (clj->js detail)})))
+
+(rf/reg-fx
+ :native-access->emit-react-event
+ (fn [{:keys [event detail on-done]}]
+   (emit-to-react! event detail)
+   ;; Handing off to the React drawer completes this side's work immediately —
+   ;; there is no request to wait on. Callers that put a button into a loading
+   ;; state for the old in-place flow pass their reset here, otherwise the
+   ;; button spins forever waiting for a response that will never come back
+   ;; through re-frame.
+   (when on-done (on-done))))
+
 (rf/reg-fx
  :open-rdp-web-client
  (fn [{:keys [username]}]
@@ -92,12 +124,15 @@
 (rf/reg-event-fx
  :native-client-access->start-flow
  (fn [{:keys [db]} [_ connection-name]]
-   ;; First check if agent is online before proceeding
-   {:db (assoc-in db [:native-client-access :checking-agent?] true)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/connections/" connection-name)
-                             :on-success #(rf/dispatch [:native-client-access->agent-status-check-success % connection-name])
-                             :on-failure #(rf/dispatch [:native-client-access->agent-status-check-failure % connection-name])}]]]}))
+   (if (react-shell?)
+     {:native-access->emit-react-event {:event "hoop:native-access-open"
+                                        :detail {:connectionName connection-name}}}
+     ;; First check if agent is online before proceeding
+     {:db (assoc-in db [:native-client-access :checking-agent?] true)
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/connections/" connection-name)
+                               :on-success #(rf/dispatch [:native-client-access->agent-status-check-success % connection-name])
+                               :on-failure #(rf/dispatch [:native-client-access->agent-status-check-failure % connection-name])}]]]})))
 
 ;; Handle agent status check success
 ;;
@@ -218,11 +253,15 @@
 (rf/reg-event-fx
  :native-client-access->reopen-connect-modal
  (fn [_ [_ connection-name]]
-   ;; Fetch connection data to get JIT info before opening modal
-   {:fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/connections/" connection-name)
-                             :on-success #(rf/dispatch [:native-client-access->reopen-modal-with-data % connection-name])
-                             :on-failure #(rf/dispatch [:native-client-access->reopen-modal-fallback connection-name %])}]]]}))
+   (if (react-shell?)
+     {:native-access->emit-react-event {:event "hoop:native-access-open"
+                                        :detail {:connectionName connection-name
+                                                 :reopen true}}}
+     ;; Fetch connection data to get JIT info before opening modal
+     {:fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/connections/" connection-name)
+                               :on-success #(rf/dispatch [:native-client-access->reopen-modal-with-data % connection-name])
+                               :on-failure #(rf/dispatch [:native-client-access->reopen-modal-fallback connection-name %])}]]]})))
 
 ;; Handle successful connection data fetch for reopen
 (rf/reg-event-fx
@@ -304,13 +343,25 @@
    ;; Get access duration from the session's review
    (let [session (get-in db [:audit->session-details :session])
          access-duration-sec (get-in session [:review :access_duration_sec])]
-     {:fx [[:dispatch [:fetch {:method "POST"
-                               :uri (str "/connections/" connection-name "/credentials/" session-id)
-                               :body {:access_duration_seconds access-duration-sec}
-                               :on-success #(rf/dispatch [:native-client-access->resume-success connection-name %])
-                               :on-failure (fn [error]
-                                             (when on-error-cb (on-error-cb))
-                                             (rf/dispatch [:native-client-access->resume-failure error]))}]]]})))
+     (if (react-shell?)
+       ;; The duration has to travel in the event: it comes from the CLJS
+       ;; session-details payload, which React has no access to.
+       {:native-access->emit-react-event {:event "hoop:native-access-resume"
+                                          :detail {:connectionName connection-name
+                                                   :sessionId session-id
+                                                   :accessDurationSec access-duration-sec}
+                                          :on-done on-error-cb}
+        ;; The old success path closed the session-details modal before showing
+        ;; credentials. The drawer is the surface now, so close it here or the
+        ;; modal stays open on top of the drawer it just handed off to.
+        :fx [[:dispatch [:modal->close]]]}
+       {:fx [[:dispatch [:fetch {:method "POST"
+                                 :uri (str "/connections/" connection-name "/credentials/" session-id)
+                                 :body {:access_duration_seconds access-duration-sec}
+                                 :on-success #(rf/dispatch [:native-client-access->resume-success connection-name %])
+                                 :on-failure (fn [error]
+                                               (when on-error-cb (on-error-cb))
+                                               (rf/dispatch [:native-client-access->resume-failure error]))}]]]}))))
 
 ;; Handle successful resume of credentials
 (rf/reg-event-fx

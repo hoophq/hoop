@@ -10,7 +10,7 @@
 #   docker build -f deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile \
 #     -t hoop-inspect:local hoopinspect/
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY . .
 # The nested cmd module declares the plugin dependencies; the root module and
