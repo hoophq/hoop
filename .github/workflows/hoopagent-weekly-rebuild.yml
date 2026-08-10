@@ -29,7 +29,9 @@
 #
 # Published tags:
 #   hoophq/hoopagent:latest-minimal              — moving, always the latest patches
-#   hoophq/hoopagent:<release>-minimal-<YYYYMMDD> — patched snapshot, one per run
+#   hoophq/hoopagent:<release>-minimal-<YYYYMMDD> — immutable patched snapshot.
+#     Never overwritten: a second run on the same UTC date appends its run id
+#     rather than repointing a tag a deployment may already be pinning.
 # The immutable release tag hoophq/hoopagent:<release>-minimal is left untouched
 # so a pinned deployment never changes underneath it. Pin by digest
 # (hoophq/hoopagent@sha256:...) whenever immutable bytes matter.
@@ -228,6 +230,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Push gated candidates and update manifests
+        id: publish
         run: |
           set -euo pipefail
           repo="hoophq/hoopagent"
@@ -242,7 +245,20 @@ jobs:
           docker push "${amd64_ref}"
           docker push "${arm64_ref}"
 
+          # The dated tag is published as an immutable snapshot, so it is only
+          # ever created once. A second run on the same UTC date — a retry, a
+          # manual dispatch after the scheduled run, a re-release — would
+          # otherwise silently repoint a tag customers were told they could pin.
+          # Suffix the run instead of overwriting, so both snapshots exist and
+          # each keeps the bytes it was gated with.
+          if docker buildx imagetools inspect "${repo}:${dated}" >/dev/null 2>&1; then
+            dated="${dated}.${GITHUB_RUN_ID}"
+            echo "::notice::a snapshot already exists for today; publishing ${dated} instead of overwriting it"
+          fi
+
+          # latest-minimal is the only tag that moves.
           for target in "${repo}:latest-minimal" "${repo}:${dated}"; do
             docker buildx imagetools create -t "${target}" "${amd64_ref}" "${arm64_ref}"
             echo "published ${target}"
           done
+          echo "snapshot=${dated}" >> "$GITHUB_OUTPUT"
