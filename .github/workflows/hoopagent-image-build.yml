@@ -1,0 +1,114 @@
+# Build-only smoke check and vulnerability gate for the slim agent image
+# (hoophq/hoopagent, both flavours).
+#
+# release.yml and pullrequest-release.yml are otherwise the only places
+# Dockerfile.agent is built, and only after the release binaries exist. That
+# leaves a gap where a broken Dockerfile.agent reaches main and fails
+# post-merge. This workflow closes it: on PRs touching the image inputs it
+# builds BOTH targets for both release platforms without pushing, asserts the
+# runtime user is unprivileged, and gates the OS layer on fixable
+# CRITICAL/HIGH vulnerabilities.
+#
+# hoophq/hoopagent is the low-CVE agent image, so unlike the fat
+# hoophq/agent-tools image (report-only: its bundled upstream CLIs carry CVEs
+# that cannot be rebuilt away) the gate here is ENFORCING — that property is
+# the reason the image exists.
+#
+# Dockerfile.agent extracts the release tar from dist/binaries/ using
+# hoop_*_Linux_${TARGETARCH}.tar.gz, which is produced by the release build and
+# absent at PR time. We stage throwaway placeholder tars under those exact
+# names so the extraction and layout steps exercise for real; this is a
+# Dockerfile-correctness and base-layer gate, not a functional agent build.
+name: Slim Agent Image Build
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile.agent'
+      - '.github/workflows/hoopagent-image-build.yml'
+
+jobs:
+  build-hoopagent:
+    name: Build Slim Agent Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [minimal, distroless]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # Dockerfile.agent globs hoop_*_Linux_${TARGETARCH}.tar.gz, so the tars
+      # are named for Go's GOARCH values (amd64/arm64), not `uname -m`.
+      - name: Stage placeholder release tars
+        run: |
+          mkdir -p dist/binaries stage
+          printf '#!/bin/sh\necho "hoop (pr-smoke placeholder)"\n' > stage/hoop
+          chmod +x stage/hoop
+          for arch in amd64 arm64; do
+            tar -C stage -czf "dist/binaries/hoop_pr-smoke_Linux_${arch}.tar.gz" hoop
+          done
+
+      - name: Build (multiarch, no push)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: false
+
+      # Multiarch builds cannot be --load'ed; rebuild amd64 from the warm
+      # buildx cache to run the assertions below.
+      - name: Build (amd64, load for checks)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          load: true
+          push: false
+          tags: hoopagent:pr-smoke-${{ matrix.target }}
+
+      # Both flavours must run as the unprivileged uid 10001, but they declare
+      # it differently: distroless sets `USER 10001:10001` numerically, while
+      # minimal sets `USER hoop` (uid 10001, created via useradd). Resolve a
+      # named user through the image's own passwd database so both are checked
+      # as a real uid rather than trusting the string.
+      - name: Assert unprivileged runtime user
+        run: |
+          img="hoopagent:pr-smoke-${{ matrix.target }}"
+          user="$(docker image inspect --format '{{.Config.User}}' "$img")"
+          echo "configured user: ${user}"
+          uid="${user%%:*}"
+          if ! printf '%s' "$uid" | grep -qE '^[0-9]+$'; then
+            uid="$(docker run --rm --entrypoint sh "$img" -c "id -u ${uid}")"
+            echo "resolved '${user}' to uid ${uid}"
+          fi
+          test "${uid}" = "10001" \
+            || { echo "::error::expected uid 10001, got '${uid}'"; exit 1; }
+
+      # ENFORCING: this is the low-CVE image, so a fixable CRITICAL/HIGH in its
+      # base layer fails the PR. --ignore-unfixed keeps it actionable: only
+      # vulnerabilities with an available upstream fix block.
+      - name: Gate on fixable CRITICAL/HIGH vulnerabilities (Trivy)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            "hoopagent:pr-smoke-${{ matrix.target }}"
