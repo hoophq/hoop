@@ -2,6 +2,7 @@ package mssql_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/hoophq/hoopinspect"
 	"github.com/hoophq/hoopinspect/codec/mssql"
+	"github.com/hoophq/hoopinspect/gate"
+	"github.com/hoophq/hoopinspect/session"
 )
 
 func ucs2(s string) []byte {
@@ -460,15 +463,50 @@ func TestOrdinaryLoginResponseIsAllowed(t *testing.T) {
 	}
 }
 
+// loginAck builds a LOGINACK token: Interface, TDSVersion, the server's name
+// as a B_VARCHAR, then four version bytes.
+func loginAck() []byte {
+	name := ucs2("Microsoft SQL Server")
+	var b bytes.Buffer
+	b.WriteByte(0xad)
+	binary.Write(&b, binary.LittleEndian, uint16(10+len(name)))
+	b.WriteByte(1)                          // Interface
+	b.Write([]byte{0x04, 0x00, 0x00, 0x74}) // TDSVersion 7.4
+	b.WriteByte(byte(len(name) / 2))        // ProgName length, in characters
+	b.Write(name)
+	b.Write([]byte{16, 0, 0x07, 0xd0}) // major, minor, build hi/lo
+	return b.Bytes()
+}
+
+// loginResponse builds the server's reply to LOGIN7: LOGINACK, whatever the
+// caller wants in between, and the terminating DONE.
+func loginResponse(between ...[]byte) []byte {
+	var body bytes.Buffer
+	body.Write(loginAck())
+	for _, b := range between {
+		body.Write(b)
+	}
+	body.Write(doneToken())
+	return tdsPacket(0x04, true, body.Bytes())
+}
+
 // Result-set bytes are attacker-influenced: a user can SELECT a string that
 // happens to contain 0xE3. Scanning those would let any user with query
-// access kill their own connection, so the guard retires once the login is
-// over — which is also the only place MS-TDS puts routing information.
-func TestRoutingScanRetiresAfterLogin(t *testing.T) {
+// access kill their own connection, so the guard retires once the login
+// response has been seen — which is also the only place MS-TDS puts routing
+// information.
+//
+// Retirement has to key off a SERVER-side observation. The gate builds one
+// codec per direction, so a flag set while decoding the client's stream is
+// written on an instance this one cannot reach.
+func TestRoutingScanRetiresAfterLoginResponse(t *testing.T) {
 	c := &mssql.Codec{}
 
-	if _, _, err := c.Decode(hoopinspect.FromClient, sqlBatch("SELECT payload FROM blobs")); err != nil {
-		t.Fatalf("query decode failed: %v", err)
+	login := loginResponse()
+	if _, n, err := c.Decode(hoopinspect.FromServer, login); err != nil {
+		t.Fatalf("clean login response was refused: %v", err)
+	} else if n != len(login) {
+		t.Errorf("consumed %d of %d login bytes", n, len(login))
 	}
 
 	// The exact bytes of a routing redirect, now appearing as row data.
@@ -477,6 +515,107 @@ func TestRoutingScanRetiresAfterLogin(t *testing.T) {
 		t.Fatalf("post-login response was refused: %v", err)
 	} else if n != len(rows) {
 		t.Errorf("consumed %d of %d response bytes", n, len(rows))
+	}
+}
+
+// Everything the server sends before the login response leaves the guard
+// live, because that response is the message a redirect rides in. Retiring
+// early is the one failure this control cannot survive: it is silent.
+func TestScanStaysLiveBeforeTheLoginResponse(t *testing.T) {
+	c := &mssql.Codec{}
+
+	// A PRELOGIN response, then an SSPI continuation carrying bytes that
+	// imitate a LOGINACK token. Neither may retire the scan.
+	prelogin := tdsPacket(0x04, true, []byte{0x00, 0x00, 0x1a, 0x00, 0x06, 0x01, 0xff})
+	sspi := tdsPacket(0x04, true, append([]byte{0xed, 0x20, 0x00}, bytes.Repeat([]byte{0xad}, 48)...))
+	for _, pkt := range [][]byte{prelogin, sspi} {
+		if _, _, err := c.Decode(hoopinspect.FromServer, pkt); err != nil {
+			t.Fatalf("pre-login packet errored: %v", err)
+		}
+	}
+
+	redirect := loginResponse(routingEnvChange("secondary.corp.example", 1433))
+	if _, _, err := c.Decode(hoopinspect.FromServer, redirect); !errors.Is(err, hoopinspect.ErrStreamUnsafe) {
+		t.Fatalf("redirect after a prelogin/SSPI exchange was not refused: %v", err)
+	}
+}
+
+// A login response spans packets when the negotiated packet size is small.
+// Scanning each packet on its own misses a token straddling the seam, so the
+// codec reassembles the message first.
+func TestRoutingRedirectSplitAcrossPacketsIsCaught(t *testing.T) {
+	c := &mssql.Codec{}
+
+	body := append(loginAck(), routingEnvChange("secondary.corp.example", 1433)...)
+	body = append(body, doneToken()...)
+
+	// Cut inside the ENVCHANGE token, which is where a per-packet scan goes
+	// blind.
+	cut := len(loginAck()) + 8
+	if _, _, err := c.Decode(hoopinspect.FromServer, tdsPacket(0x04, false, body[:cut])); err != nil {
+		t.Fatalf("first packet errored: %v", err)
+	}
+	if _, _, err := c.Decode(hoopinspect.FromServer, tdsPacket(0x04, true, body[cut:])); !errors.Is(err, hoopinspect.ErrStreamUnsafe) {
+		t.Fatalf("redirect split across packets was not refused: %v", err)
+	}
+}
+
+func mssqlGate(t *testing.T) *gate.Gate {
+	t.Helper()
+	g, err := gate.New(
+		session.New(hoopinspect.MSSQL, session.Identity{Subject: "alice@example.com"}),
+		gate.Config{Protocol: hoopinspect.MSSQL},
+	)
+	if err != nil {
+		t.Fatalf("gate.New: %v", err)
+	}
+	return g
+}
+
+// The regression test for the bug this guard shipped with.
+//
+// gate.New builds an Inspector per direction, so there are two Codec values
+// and neither sees the other's fields. The guard originally retired on a flag
+// set while decoding a CLIENT query, which the server-side codec never
+// observes: the flag stayed false for the life of every connection, the scan
+// never retired, and result rows were searched for redirect tokens forever.
+//
+// A codec-level test drove both directions through one Codec and passed,
+// which is exactly why this one goes through gate.New instead.
+func TestRoutingGuardRetiresAcrossDirectionCodecs(t *testing.T) {
+	g := mssqlGate(t)
+	ctx := context.Background()
+
+	if d := g.Response(ctx, loginResponse()); !d.Allowed {
+		t.Fatalf("clean login response denied: %s", d.Message)
+	}
+	if d := g.Request(ctx, sqlBatch("SELECT payload FROM blobs")); !d.Allowed {
+		t.Fatalf("query denied: %s", d.Message)
+	}
+
+	// Row data whose bytes spell a routing ENVCHANGE. A user can put these
+	// in a table and SELECT them.
+	rows := tdsPacket(0x04, true, routingEnvChange("secondary.corp.example", 1433))
+	if d := g.Response(ctx, rows); !d.Allowed {
+		t.Fatalf("post-login result data was refused as a redirect: %s", d.Message)
+	}
+}
+
+// And the guard still fires where it has to, down the same path.
+func TestRoutingRedirectIsDeniedThroughTheGate(t *testing.T) {
+	g := mssqlGate(t)
+
+	redirect := loginResponse(routingEnvChange("secondary.corp.example", 1433))
+	d := g.Response(context.Background(), redirect)
+
+	if d.Allowed {
+		t.Fatal("a routing redirect was forwarded to the client")
+	}
+	if d.Rule != "stream-unsafe" {
+		t.Errorf("rule = %q, want stream-unsafe", d.Rule)
+	}
+	if !strings.Contains(d.Message, "secondary.corp.example:1433") {
+		t.Errorf("message does not name the redirect target: %s", d.Message)
 	}
 }
 

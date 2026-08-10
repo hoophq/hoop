@@ -103,22 +103,32 @@ var ErrMalformed = errors.New("hoopinspect/mssql: malformed packet")
 // Codec implements hoopinspect.Codec for MSSQL.
 //
 // It is stateful in both directions: TDS messages span packets, so partial
-// messages accumulate in `pending`, and the routing guard needs to know
-// whether the login has finished. One Codec per connection; the registry
-// hands out a factory for exactly this reason.
+// messages accumulate in `pending` going one way and `srvPending` the other.
+// One Codec per connection PER DIRECTION; the gate builds two, so no field
+// here is visible to the other half of the stream.
 type Codec struct {
 	pending []byte
 	pendTyp byte
 
-	// authDone flips on the first client query packet.
+	// srvPending accumulates the current server message while the routing
+	// scan is live. A login response is small and the scan retires right
+	// after one, so this holds nothing once a session is doing work.
+	srvPending []byte
+
+	// routingRetired latches once the login response has been scanned.
 	//
-	// It scopes the routing scan below to the login phase, which is both
-	// where MS-TDS puts routing information and the only window where a
-	// false positive is implausible: before the first query there are no
-	// result rows on the wire whose bytes could imitate an ENVCHANGE token.
-	// It also keeps the scan off the hot path entirely once a session is
-	// doing work.
-	authDone bool
+	// It scopes the routing scan to the login phase, which is both where
+	// MS-TDS puts routing information and the only window where a false
+	// positive is implausible: before the first result set there are no row
+	// bytes on the wire that could imitate an ENVCHANGE token. It also keeps
+	// the scan off the hot path once a session is doing work.
+	//
+	// Server-side by necessity. An earlier version flipped this on the first
+	// client query, which reads correctly and never fires: the gate hands
+	// each direction its own codec, so the instance decoding server bytes
+	// never sees a client packet and the flag stayed false for the life of
+	// the connection.
+	routingRetired bool
 
 	// Response-rewriting state, independent of the decode state above: the
 	// gate drives Decode and Rewrite over separate copies of the stream.
@@ -179,10 +189,6 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 			continue
 		}
 
-		// A query packet means the login finished. Everything the server
-		// sends from here is data, so the routing scan retires.
-		c.authDone = true
-
 		if len(c.pending)+len(payload) > maxMessageLen {
 			c.pending, c.pendTyp = nil, 0
 			return stmts, pos, ErrMalformed
@@ -231,8 +237,12 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 // (COLMETADATA, ROW, NBCROW) is not implemented, so a result set travels
 // through unread. What it does do is refuse a routing ENVCHANGE, which is the
 // one server reply that ends the relay's visibility.
+//
+// The scan runs until one complete Reply message is recognized as the login
+// response, and retires immediately after scanning it. MS-TDS puts routing
+// information there and nowhere else, so nothing later needs reading.
 func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) {
-	if c.authDone {
+	if c.routingRetired {
 		return nil, len(data), nil
 	}
 
@@ -246,6 +256,7 @@ func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) 
 		}
 
 		typ := data[pos]
+		status := data[pos+1]
 		length := int(binary.BigEndian.Uint16(data[pos+2 : pos+4]))
 		if length < headerLen {
 			return nil, pos, ErrMalformed
@@ -258,9 +269,29 @@ func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) 
 		pos += length
 
 		if typ != pktReply {
+			c.srvPending = nil
 			continue
 		}
-		if srv, port, found := findRoutingEnvChange(payload); found {
+
+		// Reassemble before scanning. A login response under a small
+		// negotiated packet size spans packets, and a token straddling that
+		// seam is invisible to a per-packet scan. The ordinary case is one
+		// packet with EOM set, which never touches the buffer.
+		msg := payload
+		if len(c.srvPending) > 0 || status&statusEOM == 0 {
+			if len(c.srvPending)+len(payload) > maxMessageLen {
+				c.srvPending = nil
+				return nil, pos, ErrMalformed
+			}
+			c.srvPending = append(c.srvPending, payload...)
+			msg = c.srvPending
+		}
+		if status&statusEOM == 0 {
+			continue // more packets to come
+		}
+		c.srvPending = nil
+
+		if srv, port, found := findRoutingEnvChange(msg); found {
 			return nil, pos, fmt.Errorf(
 				"%w: the server answered login with a routing redirect to %s:%s, "+
 					"which every driver follows silently onto a socket this relay "+
@@ -268,15 +299,73 @@ func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) 
 					"masking and no audit trail",
 				hoopinspect.ErrStreamUnsafe, srv, port)
 		}
+
+		if isLoginResponse(msg) {
+			// Scanned clean, and no later message may carry a redirect.
+			// What follows is result data, whose bytes are the ones a
+			// long-running scan would eventually misread.
+			c.routingRetired = true
+			return nil, len(data), nil
+		}
 	}
 }
 
 // TDS token-stream constants for the login response.
 const (
 	tokenEnvChange = 0xe3
+	tokenLoginAck  = 0xad
+	tokenDone      = 0xfd
 	envTypeRouting = 20
 	routingTCP     = 0
+
+	// doneTokenLen is DONE's fixed width: the token byte, Status and CurCmd
+	// as USHORTs, and an 8-byte DoneRowCount. The count is 8 bytes on TDS
+	// 7.2+, which every supported SQL Server speaks.
+	doneTokenLen = 13
 )
+
+// isLoginResponse reports whether a complete server Reply message is the
+// login response, the last message that may legally carry a routing
+// ENVCHANGE.
+//
+// Both halves have to hold: a LOGINACK whose declared length agrees with its
+// own contents, and a DONE at the message's tail. Requiring both is what
+// makes an early retirement implausible, and early is the only dangerous
+// direction. Recognizing the login response too late costs a scan that keeps
+// running; recognizing it too soon would skip the message carrying a
+// redirect.
+//
+// A rejected login carries an ERROR and no LOGINACK, so this stays false.
+// The scan stays live over a connection that is about to close.
+func isLoginResponse(msg []byte) bool {
+	if len(msg) < doneTokenLen || msg[len(msg)-doneTokenLen] != tokenDone {
+		return false
+	}
+	return hasLoginAck(msg[:len(msg)-doneTokenLen])
+}
+
+// hasLoginAck reports whether b contains a structurally valid LOGINACK.
+//
+// Body layout after the USHORT length: Interface (1), TDSVersion (4),
+// ProgName as a B_VARCHAR (a count byte, then that many UCS-2 characters),
+// then four version bytes. A real token therefore declares a length of
+// exactly 10 + 2*ProgNameLen, which is the constraint a stray 0xAD has to
+// satisfy to be mistaken for one.
+func hasLoginAck(b []byte) bool {
+	for i := 0; i+3 <= len(b); i++ {
+		if b[i] != tokenLoginAck {
+			continue
+		}
+		n := int(binary.LittleEndian.Uint16(b[i+1 : i+3]))
+		if n < 10 || i+3+n > len(b) {
+			continue
+		}
+		if n == 10+2*int(b[i+8]) {
+			return true
+		}
+	}
+	return false
+}
 
 // findRoutingEnvChange reports whether a login response carries a routing
 // ENVCHANGE, and where it points.
