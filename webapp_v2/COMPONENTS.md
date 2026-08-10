@@ -165,7 +165,7 @@ import { BarChart3 } from 'lucide-react'
   onClick={() => setMode('identified')}
 />
 ```
-Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`.
+Differs from `MethodCard` by accepting a lucide icon component instead of image sources, and rendering the icon in a `ThemeIcon` rather than an `Avatar`. Pass `disabled` when the choice is locked (Hoop-managed access request rules cannot change their access type) — the card dims, stops responding to hover and no longer fires `onClick`, while a selected one keeps its accent fill so it still reads as the current choice.
 
 ### `RingProgress`
 Compact progress ring with a built-in percentage label, sized for inline/sidebar use (e.g. the Config Status checklist). `value` is 0–100. Arc color defaults to `indigo.5` (the Figma main accent), track to `gray.2`.
@@ -287,7 +287,17 @@ import ActionMenu from '@/components/ActionMenu'
   <ActionMenu.Item danger onClick={handleDelete}>Delete</ActionMenu.Item>
 </ActionMenu>
 ```
-Props on `ActionMenu.Item`: `onClick`, `disabled`, `danger` (red color).
+Props on `ActionMenu.Item`: `onClick`, `disabled`, `danger` (red color). Everything else
+(`leftSection`, `id`, ...) is forwarded to Mantine's `Menu.Item`.
+
+Props on `ActionMenu`: `target` (replaces the default kebab trigger — must forward a ref),
+`width` (default 180), `position` (default `bottom-end`), `disabled`. `ActionMenu.Label`
+and `ActionMenu.Divider` are re-exported. The header's user menu is the `target` use case.
+
+> No `Drawer` wrapper exists, deliberately. The two drawers in the app (the mobile sidebar
+> in `layout/Layout.jsx` and the Native Connections drawer) want opposite geometry on every
+> axis, so a shared wrapper would be a pass-through with two mutually exclusive prop
+> bundles. Revisit if a third drawer appears.
 
 ### `Modal`
 Application modal dialog wrapping Mantine `Modal` with centered + radius defaults.
@@ -680,14 +690,24 @@ const showLoader = useMinDelay(loading, 500)
 if (showLoader) return <PageLoader />
 ```
 
+### `useCountdown(expireAt)`
+Display-only countdown against a shared 1 Hz clock (`utils/tick.js`), which is reference-counted
+so N countdowns cost one interval. Returns `{ remainingMs, label, expired }`; `label` is
+`HH:MM:SS` above an hour and `MM:SS` below, or `null` when `expireAt` is null (persistent
+credential). Expiry side effects belong to the owning store, not to this hook — see
+`useNativeAccessStore`.
+```jsx
+const { label } = useCountdown(credential.expire_at)
+```
+
 ### `usePaginatedConnections({ pageSize = 50 })`
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
 ```jsx
 const roles = usePaginatedConnections({ pageSize: 50 })
-// roles.options, roles.loading, roles.hasMore, roles.searchValue
+// roles.options, roles.items, roles.loading, roles.hasMore, roles.searchValue
 // roles.setSearch(term), roles.loadMore(), roles.ensureLoaded(), roles.reset()
 ```
-Returns `{ options ([{value,label,iconUrl}]), loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
+Returns `{ options ([{value,label,iconUrl}]), items, loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded, reset }`. `items` is the raw connection rows behind `options`, for call sites that need more than an id and a name — filtering the picker by access mode or subtype, for instance (`pages/Features/AccessRequest/components/ResourceRolesSelect.jsx`). Only the pages loaded so far are in it. `iconUrl` is the connection-type icon (`useConnectionIconGetter`) for renderers that show it — `AsyncValueFilter` does, `PaginatedMultiSelect` ignores it. Search is debounced 300ms and only hits the server for an empty term or >2 chars.
 
 ---
 
@@ -706,9 +726,19 @@ Non-obvious notes only:
 
 - `useBridgeStore` — wraps `window.hoopDispatch` re-frame bridge calls; never
   call `hoopDispatch` from a component (rule in `CLAUDE.md` "Re-frame Interop").
-  Current methods: `refreshLegacyUser()`, `openNativeClientAccess()`,
-  `openNativeClientAccessWhenReady()`, `syncPrimaryConnectionFromUrl()`.
+  Current methods: `refreshLegacyUser()`, `syncPrimaryConnectionFromUrl()`.
   Snackbars are NOT bridged — use `showSnackbar` from `@/utils/snackbar`.
+- `useNativeAccessStore` — the native-access credential lifecycle (start flow,
+  request, resume after review, disconnect, revoke) plus `activeByName`, fed by
+  `GET /connection-credentials`. Owns session expiry: it subscribes to
+  `utils/tick.js` while any credential is bounded, so the "session expired"
+  toast fires exactly once and still fires with the drawer closed. Deliberately
+  does NOT persist to localStorage — the server is authoritative and the CLJS
+  key (`hoop-native-client-access`, EDN) must never be touched from React.
+- `useNativeConnectionsStore` — the drawer's own state: open/closed, search
+  query, expanded row, and the list of natively-connectable roles. Loads the
+  non-paginated `/connections` because the paginated one applies an RBAC join
+  that can hide visible rows, and neither can filter on `access_mode_connect`.
 - `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only;
   refreshes on the `hoop:session-executed` DOM event from the CLJS terminal.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
@@ -729,9 +759,14 @@ Non-obvious notes only:
 - `analytics.js` — Segment (`identify()` only today), not a gateway API
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
+- `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no
+  `page_size`: the handler defaults it to 0 and reads 0 as "no pagination", so
+  every rule comes back (still inside the `{ pages, data }` envelope). Rule names
+  are user-defined and travel in the path — every interpolated one is encoded.
 - `attributes.js` — `list(params)` is paginated (`page`, `page_size`); the
-  gateway caps `page_size` at 100, so reading them all means looping until a
-  short page comes back.
+  gateway caps `page_size` at 100. `listAll()` walks the pages and returns the
+  complete array — use it for pickers that drive a full-replace write, where a
+  truncated list would silently drop associations the admin never saw.
 - `connections.js` — both `getConnections()` (full list — only for resolving
   every `connection_ids → name`, e.g. list displays) and
   `getConnectionsPaginated({page,pageSize,search,connectionIds})` for
@@ -766,6 +801,25 @@ const ops = makeRowOps({ rows, setRows, factory: createEmptyRow })
 <Table.Tr key={row.id}>…</Table.Tr>
 ```
 Returns `{ visible, allSelected, patchRow, toggleSelect, toggleAll, deleteSelected, addRow }`. `addRow(transform)` applies `transform` to the fresh row before appending (used to pre-fill a type/value).
+
+### `connectionPolicy.js`
+Connection-shape rules the gateway doesn't express in `connections-metadata.json`, kept in one file so they don't scatter across pages. Each predicate takes a connection object (or `{ type, subtype }`) and mirrors a CLJS predicate — the source is cited inline next to each set.
+```js
+import { canOpenWebTerminal, canHoopCli, canAccessNativeClient } from '@/utils/connectionPolicy'
+
+canOpenWebTerminal(connection) // browser terminal — what an access request of type "command" runs against
+canHoopCli(connection)         // reachable with `hoop connect` (everything but custom RDP)
+canAccessNativeClient(connection) // command-palette native-client flow
+canTestConnection({ type, subtype }) // Test Connection action
+supportsAwsIam(subtype)        // AWS IAM Role auth (postgres/mysql only)
+isFreeFormCustomSubtype(subtype) // free-form credentials editor
+```
+`canAccessNativeClient` uses a deliberately narrower HTTP-proxy set than `canOpenWebTerminal` — the command palette has never offered the native-client flow for `mcp`/`mcpproxy`. Don't unify the two sets without deciding what that menu should show.
+
+- `connectionCredentials.js` — native-access credentials, kept separate from
+  `connections.js` (connection CRUD). `listActive()` hits
+  `GET /connection-credentials`, which is secret-less; `get()` is the only call
+  that returns a plaintext secret, so it runs on demand when a row is expanded.
 
 ---
 

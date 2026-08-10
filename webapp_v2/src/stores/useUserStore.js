@@ -34,6 +34,9 @@ export const useUserStore = create((set, get) => ({
   serverInfoLoaded: false,
   apiUrl: null,
   hasRedactCredentials: false,
+  // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
+  // listen address the gateway cannot serve a native postgres session.
+  postgresProxyEnabled: false,
   loading: false,
 
   setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
@@ -58,7 +61,8 @@ export const useUserStore = create((set, get) => ({
       apiUrl,
       licenseFeatures,
       serverInfoLoaded: true,
-      hasRedactCredentials: !!serverInfo?.has_redact_credentials
+      hasRedactCredentials: !!serverInfo?.has_redact_credentials,
+      postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
@@ -88,6 +92,7 @@ export const useUserStore = create((set, get) => ({
       redactProvider: null, 
       apiUrl: null,
       hasRedactCredentials: false,
+      postgresProxyEnabled: false,
     })
   },
 
@@ -102,6 +107,10 @@ export const useUserStore = create((set, get) => ({
       api_base: 'https://api-iam.intercom.io',
       app_id: INTERCOM_APP_ID,
       hide_default_launcher: true,
+      // The "Contact support" item in the header user menu carries this id.
+      // Without the selector the item is inert on React-only routes, where the
+      // CLJS boot (webapp/src/webapp/events.cljs) never runs to register it.
+      custom_launcher_selector: '#intercom-support-trigger',
     }
 
     if (window.location.hostname !== 'localhost' && user) {

@@ -31,7 +31,7 @@
           :else
           [:> Box {:class "min-h-screen bg-gray-1"}
            ;; Header with Save button
-           [:> Box {:class "sticky top-0 z-50 bg-gray-1 p-radix-7"}
+           [:> Box {:class "sticky top-app-header z-50 bg-gray-1 p-radix-7"}
             [:> Flex {:justify "between" :align "center"}
              [:> Heading {:as "h2" :size "8"} "Authentication"]
              [:> Button {:size "3"

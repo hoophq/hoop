@@ -1,6 +1,6 @@
-go 1.26.2
+go 1.26.5
 
-toolchain go1.26.2
+toolchain go1.26.5
 
 use (
 	./agent
@@ -8,6 +8,7 @@ use (
 	./common
 	./gateway
 	./hoopinspect
+	./hoopinspect/analyzer/vertex
 	./hoopinspect/cmd
 	./hoopinspect/config/yaml
 	./hoopinspect/pii/alcatraz

@@ -29,6 +29,17 @@ function enableCLJSCSS(href) {
   link.rel = 'stylesheet'
   link.href = withVersion(href)
   link.setAttribute('data-cljs-css', 'true')
+  // A failed stylesheet is silent: the page renders, unstyled, and nothing
+  // retries. In dev that means a cold start where the file has not been built
+  // yet looks like the app is broken rather than like an asset is missing; in
+  // production it is the difference between a visible incident and a mystery.
+  link.onerror = () => {
+    console.error(
+      `[ClojureApp] Failed to load ${href}. ClojureScript routes will render unstyled. ` +
+        'In dev this usually means webapp/resources/public/css/site.css has not been ' +
+        'built yet — run `npm run postcss:build` in webapp/.'
+    )
+  }
   document.head.appendChild(link)
 }
 

@@ -53,6 +53,20 @@ type Verdict struct {
 	// bad regex). Denied reflects the fail-open/fail-closed choice; Err
 	// records the cause.
 	Err error
+
+	// Annotations carry evaluator-specific facts for the audit record.
+	// They never affect the decision: Denied is the whole of that.
+	//
+	// The field exists because the AI analyzer produces something no other
+	// evaluator does — a risk level that is worth recording on an ALLOWED
+	// statement. Widening Denied into a severity would change every
+	// evaluator; a side channel the gate copies onto the event does not.
+	//
+	// Keys must be a small fixed vocabulary, because audit.SinkOptions
+	// redaction does not reach Event.Metadata: anything put here bypasses
+	// redact_statements and lands in the trail verbatim. Never put a value
+	// the statement contained here.
+	Annotations map[string]string
 }
 
 // Allow is the zero verdict.
@@ -93,7 +107,43 @@ const (
 	// this type also denies when RequireTableMatch is set and no tables could
 	// be extracted: "we could not tell" reads as unsafe.
 	MatchTable MatchType = "table"
+
+	// MatchAIAnalysis sends the statement to a language model and denies
+	// according to the risk it reports.
+	//
+	// It is the only rule type Rules does NOT evaluate. The sidecar lifts
+	// rules of this type out of the set before building Rules and turns
+	// each one into an analyzer.Evaluator appended after the local rules
+	// and OPA, so a statement a free rule already denies never reaches a
+	// paid classifier. Rules rejects one that reaches it, because a rule
+	// that parses and never fires is the failure this package refuses
+	// everywhere else.
+	MatchAIAnalysis MatchType = "ai_analysis"
 )
+
+// AITrigger narrows which statements an ai_analysis rule sends to a model.
+//
+// It is declared here rather than in the analyzer package so the config
+// schema has one home: a Rule is what the YAML decodes into, and a trigger
+// living elsewhere would mean two packages owning one config block.
+type AITrigger struct {
+	// Operations matches the statement's normalized verb.
+	Operations []hoopinspect.Operation `json:"operations,omitempty"`
+
+	// Tables matches any referenced table. Because Tables is best effort, a
+	// statement whose tables could not be determined does NOT match; key a
+	// load-bearing trigger on operations.
+	Tables []string `json:"tables,omitempty"`
+
+	// Resources matches an HTTP resource glob, using the same matcher an
+	// http_resource rule uses.
+	Resources []string `json:"resources,omitempty"`
+}
+
+// IsZero reports whether the trigger names nothing.
+func (t *AITrigger) IsZero() bool {
+	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0)
+}
 
 // Rule is one local matcher.
 type Rule struct {
@@ -128,6 +178,37 @@ type Rule struct {
 
 	// Entities for MatchPII, naming the classes a Scanner must not find.
 	Entities []string `json:"entities,omitempty"`
+
+	// Trigger narrows which statements a MatchAIAnalysis rule classifies.
+	// A rule with an empty trigger classifies nothing, because the failure
+	// mode of "matches everything by accident" is a bill rather than an
+	// error.
+	Trigger *AITrigger `json:"trigger,omitempty"`
+
+	// HighRisk, MediumRisk and LowRisk map a MatchAIAnalysis verdict onto
+	// an action: allow, warn or block. An unset level defaults to allow, so
+	// an operator opts into blocking a tier by naming it.
+	HighRisk   string `json:"high,omitempty"`
+	MediumRisk string `json:"medium,omitempty"`
+	LowRisk    string `json:"low,omitempty"`
+
+	// Prompt replaces the analyzer's default risk guidance for this rule.
+	//
+	// Per rule rather than per process, because what counts as risky is a
+	// property of what a rule protects: a customer ledger and an orders API
+	// want different wording, and both can sit in one config. This is also
+	// the only place protocol-specific wording belongs — analyzer.prompt
+	// reaches every lane, so SQL advice written there follows an HTTP
+	// statement to the model. Empty inherits analyzer.prompt, and an empty
+	// analyzer.prompt uses the built-in guidance, which covers both
+	// protocols.
+	//
+	// It replaces the GUIDANCE only. The output contract — call exactly one
+	// tool, never quote a literal value from the statement — is appended
+	// after it and cannot be removed, because a title repeating the
+	// identifier it objected to has published that identifier into the
+	// audit trail.
+	Prompt string `json:"prompt,omitempty"`
 
 	// HTTP-specific fields (Resources, Statuses, Fields, MaxDepth, ...).
 	// Embedded so one ordered rule set can mix SQL and HTTP matchers; a
@@ -197,6 +278,16 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 			if err := r.validatePII(hasScanner); err != nil {
 				problems = append(problems, err.Error())
 			}
+		case MatchAIAnalysis:
+			// Rules cannot evaluate this type: it needs a provider, a
+			// deadline and a cache, none of which belong to a local
+			// matcher. The sidecar lifts these rules out before
+			// building a Rules, so one arriving here means it was
+			// constructed by a caller that does not know to do that,
+			// and silently accepting it would leave a guardrail that
+			// loads, evaluates and matches nothing.
+			problems = append(problems, r.Name+
+				": ai_analysis rules are evaluated by the analyzer, not by the local rule set")
 		case MatchHTTPResource, MatchHTTPStatus:
 			if err := r.validateHTTP(); err != nil {
 				problems = append(problems, err.Error())
@@ -326,16 +417,107 @@ func (r Rule) matches(stmt hoopinspect.Statement) (bool, error) {
 // one denied anyway.
 type Chain []Evaluator
 
+// Annotation keys with defined merge semantics.
+//
+// They live here rather than in the analyzer package because Chain has to
+// merge them and cannot import its own callers. The analyzer aliases these,
+// so the strings are defined once.
+const (
+	// AnnotationRiskLevel is one of low, medium or high.
+	AnnotationRiskLevel = "risk_level"
+
+	// AnnotationRiskAction is what that level mapped to. It is meaningful
+	// only beside the level it came from, which is why the two merge as a
+	// pair.
+	AnnotationRiskAction = "risk_action"
+)
+
+// riskRank orders risk levels for a highest-wins merge. An unrecognized
+// level ranks zero so it never displaces a real one.
+func riskRank(level string) int {
+	switch level {
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	}
+	return 0
+}
+
+// mergeAnnotations folds src into dst and returns the result.
+//
+// Risk is highest-wins, and the level travels with its action as a PAIR.
+// A lane may carry several ai_analysis rules, each its own evaluator emitting
+// the same two keys, so last-write-wins would let a rule that rated a
+// statement low erase one that rated it high. The audit record carries a
+// single risk_level and the session rollup keeps the highest across
+// statements, so a downgrade here silently understates the session.
+//
+// The pair moves together because an action is only meaningful beside the
+// level that produced it. Merging the two keys independently can yield
+// {high, allow} out of a high→warn rule and a low→allow one, describing a
+// mapping no rule configured.
+func mergeAnnotations(dst, src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]string, len(src))
+	}
+
+	for k, v := range src {
+		switch k {
+		case AnnotationRiskLevel, AnnotationRiskAction:
+			// Handled below, as a unit.
+		default:
+			dst[k] = v
+		}
+	}
+
+	incoming, hasLevel := src[AnnotationRiskLevel]
+	if !hasLevel {
+		// An action with no level of its own: the refuse path, which
+		// denies without ever classifying. A denial short-circuits the
+		// chain, so this is the last word on what happened to the
+		// statement and it keeps any level an earlier rule established.
+		if action, ok := src[AnnotationRiskAction]; ok {
+			dst[AnnotationRiskAction] = action
+		}
+		return dst
+	}
+	if riskRank(incoming) <= riskRank(dst[AnnotationRiskLevel]) {
+		// Strictly lower, or a tie the incumbent already answered.
+		return dst
+	}
+	dst[AnnotationRiskLevel] = incoming
+	if action, ok := src[AnnotationRiskAction]; ok {
+		dst[AnnotationRiskAction] = action
+	} else {
+		// A level with no action would otherwise sit beside the
+		// previous rule's action and misreport what was done.
+		delete(dst, AnnotationRiskAction)
+	}
+	return dst
+}
+
 // Evaluate implements Evaluator.
 func (c Chain) Evaluate(stmt hoopinspect.Statement) Verdict {
 	var errs error
+	var notes map[string]string
 	for _, e := range c {
 		v := e.Evaluate(stmt)
+		// Annotations survive an allow, which is the point of them: the
+		// analyzer's risk level belongs in the audit record whether or
+		// not anything denied.
+		notes = mergeAnnotations(notes, v.Annotations)
 		if v.Denied {
 			v.Err = errors.Join(errs, v.Err)
+			v.Annotations = notes
 			return v
 		}
 		errs = errors.Join(errs, v.Err)
 	}
-	return Verdict{Err: errs}
+	return Verdict{Err: errs, Annotations: notes}
 }

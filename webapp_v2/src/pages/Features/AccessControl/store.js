@@ -11,28 +11,12 @@ import {
   removeGroupFromConnections,
 } from './helpers'
 
-const ATTRIBUTES_PAGE_SIZE = 100 // gateway cap for /attributes
 const CONNECTIONS_CHUNK = 100 // /connections page_size cap
 
 function chunk(items, size) {
   const out = []
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
-}
-
-// The attribute picker drives a full-replace write, so a truncated list would
-// let an admin silently drop associations they never saw. Walk every page.
-async function fetchAllAttributes() {
-  const all = []
-  for (let page = 1; ; page += 1) {
-    const { data } = await attributesService.list({
-      page,
-      page_size: ATTRIBUTES_PAGE_SIZE,
-    })
-    const rows = data?.data ?? []
-    all.push(...rows)
-    if (rows.length === 0 || all.length >= (data?.pages?.total ?? all.length)) return all
-  }
 }
 
 // PUT /plugins/:name looks the plugin up by the name in the *body*, ignoring
@@ -108,7 +92,7 @@ export const useAccessControlStore = create((set, get) => ({
   fetchAttributes: async () => {
     set({ attributesStatus: 'loading' })
     try {
-      set({ attributes: await fetchAllAttributes(), attributesStatus: 'success' })
+      set({ attributes: await attributesService.listAll(), attributesStatus: 'success' })
     } catch {
       set({ attributesStatus: 'error' })
     }

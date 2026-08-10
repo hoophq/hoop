@@ -84,7 +84,7 @@
         sessions @(rf/subscribe [:workflows/sessions])]
     [:> Box {:class "min-h-screen bg-gray-1"}
      [:> Box {:class "px-radix-7 pb-radix-7"}
-      [:> Box {:class (str "sticky top-0 z-10 bg-[--gray-1] pb-radix-5 "
+      [:> Box {:class (str "sticky top-app-header z-10 bg-[--gray-1] pb-radix-5 "
                            "-mx-radix-7 px-radix-7 pt-radix-7")}
        [:> Box {:class "mb-radix-3"}
         [breadcrumb]]

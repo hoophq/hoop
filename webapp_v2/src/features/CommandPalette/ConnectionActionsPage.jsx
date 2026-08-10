@@ -1,6 +1,7 @@
 import { SpotlightAction, SpotlightActionsGroup } from '@mantine/spotlight'
 import { SquareCode, Settings } from 'lucide-react'
 import { canAccessNativeClient } from '@/utils/connectionPolicy'
+import { useUserStore } from '@/stores/useUserStore'
 
 const ACTION_TYPES = {
   WEB_TERMINAL: 'web-terminal',
@@ -10,6 +11,7 @@ const ACTION_TYPES = {
 }
 
 export default function ConnectionActionsPage({ connection, resource, isAdmin, onAction }) {
+  const postgresProxyEnabled = useUserStore((s) => s.postgresProxyEnabled)
   return (
     <>
       <SpotlightActionsGroup label={`Actions for ${connection?.name || 'connection'}`}>
@@ -19,7 +21,7 @@ export default function ConnectionActionsPage({ connection, resource, isAdmin, o
           leftSection={<SquareCode size={16} />}
           onClick={() => onAction(ACTION_TYPES.WEB_TERMINAL, connection, resource)}
         />
-        {canAccessNativeClient(connection) && (
+        {canAccessNativeClient(connection, { postgresProxyEnabled }) && (
           <SpotlightAction
             label="Open in Native Client"
             description="Connect with native client"

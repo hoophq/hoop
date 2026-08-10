@@ -22,10 +22,15 @@
        "option" (fn [style]
                   (clj->js (into (js->clj style)
                                  {"fontSize" "16px"})))
+       ;; 202 puts the portalled menu on the same tier as Radix poppers and
+       ;; tooltips (see webapp/src/css/tailwind.css), so it clears the React
+       ;; shell's header at 100 and any dialog it is opened from at 201. At the
+       ;; old 60 a menu that flipped upward near the top of the page rendered
+       ;; behind the header.
        "menuPortal" (fn [style]
                       (clj->js (into (js->clj style)
                                      {"pointerEvents" "auto"
-                                      "z-index" "60"})))
+                                      "z-index" "202"})))
        "control" (fn [style]
                    (clj->js (into (js->clj style)
                                   {"borderRadius" "9px"

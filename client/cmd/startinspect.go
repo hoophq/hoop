@@ -6,6 +6,13 @@ import (
 	"os"
 
 	"github.com/hoophq/hoop/common/version"
+	// Analyzer providers register themselves on import, matching the
+	// standalone hoop-inspect binary. Linking all three keeps the
+	// config-decides-everything rule: turning on Vertex must not require a
+	// different binary.
+	_ "github.com/hoophq/hoopinspect/analyzer/anthropic"
+	_ "github.com/hoophq/hoopinspect/analyzer/openai"
+	_ "github.com/hoophq/hoopinspect/analyzer/vertex"
 	configyaml "github.com/hoophq/hoopinspect/config/yaml"
 	"github.com/hoophq/hoopinspect/pii/alcatraz"
 	"github.com/hoophq/hoopinspect/sidecar"

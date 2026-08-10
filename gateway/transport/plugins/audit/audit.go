@@ -248,7 +248,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 					pkt.Spec[pb.SpecHasReviewKey] = []byte("true")
 					return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 						Type:    pbclient.SessionOpenWaitingApproval,
-						Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), review.ID),
+						Payload: fmt.Appendf(nil, "%s/sessions/%s", appconfig.Get().FullApiURL(), review.SessionID),
 						Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 					}}, nil
 				}

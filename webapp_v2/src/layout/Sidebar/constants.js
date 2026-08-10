@@ -15,14 +15,12 @@ import {
   BrainCog,
   Puzzle,
   Settings,
-  Search,
   WandSparkles,
   Layers,
   KeyRound,
   Webhook,
   Bot
 } from 'lucide-react';
-import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
@@ -31,15 +29,9 @@ export const MAIN_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
-  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false },
-  {
-    label: 'Search',
-    icon: Search,
-    action: () => openCommandPalette(),
-    adminOnly: false,
-    badge: { text: 'NEW', color: 'green' },
-    shortcut: '⌘K'
-  }
+  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false }
+  // No Search entry: the global header owns that affordance now (layout/Header/
+  // HeaderSearch.jsx), and it opens the very same command palette.
 ]
 
 // Alphabetical, mirroring the sidebar component in Figma (Components | Custom).

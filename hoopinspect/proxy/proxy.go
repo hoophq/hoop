@@ -93,6 +93,12 @@ type Config struct {
 	// cert, or a credential token, and this function extracts it.
 	IdentityFn func(net.Conn) session.Identity
 
+	// CodecFactory overrides how each connection's Gate builds its codecs.
+	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
+	// lane can turn on HTTP body capture, which the argument-free registry
+	// factory cannot express.
+	CodecFactory func() hoopinspect.Codec
+
 	// DialTimeout bounds the upstream connect. Default 10s.
 	DialTimeout time.Duration
 
@@ -328,6 +334,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn) {
 		Audit:            s.cfg.Audit,
 		Masker:           s.cfg.Masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
+		CodecFactory:     s.cfg.CodecFactory,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)

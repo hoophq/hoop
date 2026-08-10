@@ -53,6 +53,8 @@ Gateway backend (port 8009)
 | `window.hoopRemount()` | Called on remount to re-render Reagent without refetching user data |
 | `localStorage.jwt-token` | Shared auth token. Both apps read/write the same key |
 | `hoop:session-executed` (DOM CustomEvent on `window`) | Emitted by the CLJS web terminal on exec success (`editor_plugin.cljs`); the React Config Status widget listens and refreshes instantly |
+| `hoop:native-access-open` (DOM CustomEvent on `window`) | Emitted by `native_client_access/events.cljs` when `window.__hoopReactShellPresent` is set, so CLJS entry points (`/resources`, session details, the CLJS palette) open the React Native Connections drawer. Detail: `{connectionName, reopen?}`. Outlives the CLJS native-access code — those pages stay CLJS past B4.0 |
+| `hoop:native-access-resume` (DOM CustomEvent on `window`) | Same bridge for the post-review resume. Detail: `{connectionName, sessionId, accessDurationSec}` — the duration travels in the event because it comes from the CLJS session-details payload |
 
 ### Routing Split (Router.jsx)
 
@@ -107,6 +109,9 @@ Gateway backend (port 8009)
 | `/features/access-control` | React | Done |
 | `/features/access-control/new` | React | Done |
 | `/features/access-control/edit` | React | Done — group name comes from `?group=<name>`, the legacy URL shape |
+| `/features/access-request` | React | Done |
+| `/features/access-request/new` | React | Done |
+| `/features/access-request/edit/:ruleName` | React | Done — rule name stays a path segment, the legacy URL shape |
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
@@ -133,7 +138,6 @@ Gateway backend (port 8009)
 /resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
-/features/access-request/*
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
 /features/ai-session-analyzer/*
@@ -153,12 +157,17 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/features/access-control/*`. The
-`features/access_control/` tree has no consumer outside itself (its
-`events.cljs` also registers `:plugins->get-plugin-by-name-with-callback`,
-which nothing else dispatches), so it can go whole, together with the
-`access-control-promotion` block in `features/promotion.cljs`. Removal belongs
-to a Track A cleanup PR.
+the CLJS page is unreachable): `/features/access-control/*`,
+`/features/access-request/*`. The `features/access_control/` tree has no
+consumer outside itself (its `events.cljs` also registers
+`:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
+so it can go whole, together with the `access-control-promotion` block in
+`features/promotion.cljs`. `features/access_request/` is only partly removable:
+`main.cljs` and `views/` have no outside consumer, but `events.cljs` and
+`subs.cljs` do — `features/ai_session_analyzer/views/rule_form.cljs` dispatches
+`:access-request/list-rules` and subscribes to `:access-request/rules` to fill
+its approval-rule picker, so those two files must survive until B3.2 lands.
+Removal belongs to a Track A cleanup PR.
 
 Kept bidi entries whose panel was deleted because CLJS code still navigates to
 them: `/guardrails` (`:guardrails`) and `/guardrails/new` (`:create-guardrail`)
@@ -178,7 +187,7 @@ setup/configure and the activation journey still consume.
 | Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
 | Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — no shared ConfirmDialog yet; pages build ad-hoc confirmations (planned: roadmap Wave 1) |
 | Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` + `hooks/useMinDelay` |
-| Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ❌ Not yet — hard blocker; React CommandPalette dispatches into CLJS (roadmap Wave 4) |
+| Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ✅ Yes — `features/NativeConnections/` drawer + `stores/useNativeAccessStore`. The draggable card is replaced by the drawer plus an active-session badge on the header button. CLJS stands down via `react-shell?`; the namespaces are deleted in a follow-up once the drawer has baked |
 | org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
 | Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ❌ CLJS-only today — React has Segment `identify()` + Intercom only (roadmap Parity track) |
 | Clipboard copy/cut blocking | `events/clipboard.cljs` | 🔶 Partial — React hides copy buttons but has no document-level listeners (roadmap Parity track) |
@@ -215,6 +224,14 @@ blocks"); full props in `COMPONENTS.md`.
 
 ### Done ✅
 - React shell architecture (Layout, Sidebar, Header)
+- Global application header (EVL-171) — search that opens the command palette, the
+  Native Connections button with an active-session badge, and the user menu that moved
+  out of the sidebar footer. `AppShell` runs `layout="alt"`; the header renders on React
+  routes and on the ClojureApp catch-all alike
+- Native Connections drawer (EVL-171 / roadmap B4.0) — `features/NativeConnections/`,
+  the single surface for native access. Lists every natively-connectable role, runs the
+  duration → credentials → countdown → disconnect flow inline, and reads live sessions
+  from `GET /connection-credentials` instead of localStorage
 - CommandPalette (cmd+k / Spotlight) — fully functional with search and connection actions
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
@@ -234,7 +251,6 @@ blocks"); full props in `COMPONENTS.md`.
 
 ### In Progress / Known Gaps 🔄
 - No shared ConfirmDialog component yet (pages build ad-hoc confirmations)
-- Native-client-access flow still lives in CLJS and the React CommandPalette depends on it via the bridge
 - Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
 
 ### Migration order

@@ -1,6 +1,8 @@
 module github.com/hoophq/hoopinspect/pii/alcatraz
 
-go 1.24
+go 1.26.5
+
+toolchain go1.26.5
 
 require (
 	github.com/hoophq/alcatraz v0.7.0

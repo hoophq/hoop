@@ -539,6 +539,7 @@ type ConnectionEffectiveFeatures struct {
 // The two types are not interchangeable: "command" gates exec verbs (the web Terminal,
 // runbooks, the CLI) and "jit" gates connect verbs (the native client). A caller must
 // pick the one matching how it will run, not assume either implies the other.
+// A rule of type jit_command sets both flags.
 type ConnectionAccessRequestFeatures struct {
 	// Command is true when an access request rule of type "command" resolves.
 	Command bool `json:"command" example:"true"`
@@ -2688,6 +2689,38 @@ type ConnectionCredentialsResponse struct {
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 }
 
+// ConnectionCredentialsListItem is a secret-less summary of one active credential
+// owned by the caller. It deliberately omits the connection_credentials payload
+// returned by GET /connections/{nameOrID}/credentials (hostnames, usernames,
+// passwords, proxy tokens, connection strings): this list exists to render
+// active-session state in the UI, never to connect with. Fetch the per-connection
+// endpoint when the user actually needs the secret.
+type ConnectionCredentialsListItem struct {
+	// The unique identifier of the credential
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique ID of the connection this credential belongs to
+	ConnectionID string `json:"connection_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// The name of the connection
+	ConnectionName string `json:"connection_name" example:"pgdemo"`
+	// Connection type
+	ConnectionType string `json:"connection_type" example:"database"`
+	// The connection subtype
+	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
+	// The audit session currently linked to this credential. Empty when the user
+	// closed the session but kept the credential.
+	SessionID string `json:"session_id" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	// When the credential expires. Null when the credential is persistent
+	// (issued without access_duration_seconds).
+	ExpireAt *time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the credential was issued
+	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
+}
+
+// ConnectionCredentialsList is the envelope for the caller's active credentials.
+type ConnectionCredentialsList struct {
+	Items []ConnectionCredentialsListItem `json:"items"`
+}
+
 type RDPConnectionInfo struct {
 	// The hostname to access the rdp server pinstance
 	Hostname string `json:"hostname" example:"example.com/198.22.2.2"`
@@ -3333,7 +3366,7 @@ type AccessRequestRule struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access control rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" enums:"jit,command,jit_command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3346,6 +3379,9 @@ type AccessRequestRule struct {
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	// Groups whose members skip the approval review. Only honored when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
@@ -3366,7 +3402,7 @@ type AccessRequestRuleRequest struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access request rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3380,6 +3416,9 @@ type AccessRequestRuleRequest struct {
 	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
+	// Groups whose members skip the approval review. Only allowed when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups,omitempty" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
