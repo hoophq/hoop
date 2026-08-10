@@ -26,6 +26,7 @@ package postgres
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/hoophq/hoopinspect"
@@ -106,6 +107,18 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 	pos := 0
 
 	for pos < len(data) {
+		// A GSS-encryption request means everything after the server's 'G' is
+		// ciphertext. Refuse the stream rather than skip the packet and go
+		// quietly blind for the rest of the connection.
+		if isGSSEncRequest(data[pos:]) {
+			return stmts, pos, fmt.Errorf(
+				"%w: the client asked to wrap this session in GSSAPI encryption, "+
+					"which would make every later byte unreadable to policy, masking "+
+					"and the audit trail; refuse it during the handshake instead "+
+					"(libpq sends this by default whenever a Kerberos ticket is present)",
+				hoopinspect.ErrStreamUnsafe)
+		}
+
 		// Untagged handshake packets: int32 length, int32 code.
 		if n, handled := skipHandshake(data[pos:]); handled {
 			if n == 0 {
@@ -180,7 +193,18 @@ func skipHandshake(data []byte) (int, bool) {
 	}
 	code := binary.BigEndian.Uint32(data[4:8])
 	switch code {
-	case sslRequestCode, gssEncRequestCode, cancelRequestCode:
+	case gssEncRequestCode:
+		// A GSS-encrypted session is one this decoder cannot read: every byte
+		// after the server's 'G' is ciphertext, and skipping the request the
+		// way SSLRequest is skipped would mean reporting zero statements
+		// forever while the connection did real work.
+		//
+		// Reaching here means the relay's own negotiation did not refuse it
+		// (see proxy/negotiateDownstream), so something is fronting this
+		// codec that let the request through. Fail CLOSED and say why; the
+		// alternative is a lane that looks healthy and enforces nothing.
+		return 0, false
+	case sslRequestCode, cancelRequestCode:
 		return int(length), true
 	}
 	// Otherwise it is a StartupMessage: high 16 bits are the major protocol
@@ -342,4 +366,18 @@ func newStatement(text, msgType, stmtName string) hoopinspect.Statement {
 		Tables:    tables,
 		Metadata:  md,
 	}
+}
+
+// isGSSEncRequest reports whether data begins with a complete GSSENCRequest.
+//
+// Split out from skipHandshake because the two answer different questions:
+// skipHandshake asks "may I step over this?", and the answer for GSS is no at
+// any length. A partial packet returns false so the caller waits rather than
+// refusing a connection on four buffered bytes.
+func isGSSEncRequest(data []byte) bool {
+	if len(data) < 8 || data[0] != 0x00 {
+		return false
+	}
+	return binary.BigEndian.Uint32(data[0:4]) == 8 &&
+		binary.BigEndian.Uint32(data[4:8]) == gssEncRequestCode
 }

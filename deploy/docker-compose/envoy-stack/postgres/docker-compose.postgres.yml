@@ -1,0 +1,148 @@
+# Overlay: a Postgres lane where the client authenticates with Kerberos.
+#
+#   ../../../../hoopinspect/scripts/dev/pg-stack.sh
+#
+# The same realm and the same relay as the mssql overlay, without SQL Server.
+# That is the point of it: SQL Server publishes no arm64 image, so on Apple
+# Silicon it runs emulated and adds minutes to every iteration. This stack
+# comes up in seconds.
+#
+#   psql ──TLS──> envoy ──plaintext──> hoop-inspect ──TLS 1.3──> appdb
+#    kinit alice  terminates          inspects, masks, audits     keytab
+#                                            │
+#                                        samba (AD DC)
+#                                      KDC + LDAP directory
+#
+# WHAT THIS SHOWS THAT THE MSSQL LANE CANNOT:
+#
+#   * A Kerberos login that SUCCEEDS end to end. SQL Server needs a directory
+#     lookup to resolve DOMAIN\user before it will store a login and refuses
+#     with error 18452 here; Postgres compares the principal against pg_authid,
+#     a local table, so a keytab is enough.
+#   * The authenticated principal in the audit trail. pgwire names its user in
+#     cleartext in the StartupMessage, while MSSQL keeps it inside the
+#     encrypted ticket.
+#   * The GSS-encryption refusal. libpq asks to wrap the whole session in
+#     GSSAPI whenever a ticket is in the cache, which would leave the relay
+#     reading ciphertext. TDS has no equivalent request.
+
+services:
+  # --------------------------------------------------- Active Directory
+  # Shared with the mssql overlay, built from the same context, so the realm,
+  # the accounts and the SPNs stay defined in one place.
+  samba:
+    image: hoop-samba-dc:local
+    build:
+      context: ./kerberos/samba
+    hostname: dc
+    networks:
+      inspect:
+        ipv4_address: 172.31.7.10
+        aliases: [dc.hoop.test, hoop.test]
+    cap_add: [SYS_ADMIN]
+    volumes:
+      - krb-keytabs:/keytabs
+      - samba-state:/var/lib/samba
+      # /etc/samba persists too. `samba-tool domain provision` writes the DC's
+      # smb.conf here, and the image ships a stock standalone config; persist
+      # only /var/lib/samba and a restart finds the provisioned database beside
+      # a non-DC smb.conf, then dies with "misconfigured 'server role'".
+      - samba-conf:/etc/samba
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /keytabs/postgres.keytab && samba-tool user list >/dev/null 2>&1"]
+      interval: "5s"
+      timeout: "15s"
+      retries: 60
+      start_period: "20s"
+
+  # ------------------------------------------------------------- Postgres
+  appdb:
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgresql/certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgresql/certs/server.key
+      # The keytab decrypts an inbound service ticket. Nothing else about the
+      # server changes: authorization stays a pg_authid lookup.
+      - -c
+      - krb_server_keyfile=/keytabs/postgres.keytab
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      # zz- so it runs AFTER seed.sql: initdb scripts execute in filename
+      # order and this one grants on tables seed.sql creates. Running it here
+      # rather than by hand keeps the role alive across a `down -v`.
+      - ./postgres/pg-seed-kerberos.sql:/docker-entrypoint-initdb.d/zz-kerberos.sql:ro
+      - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
+      - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - krb-keytabs:/keytabs:ro
+    depends_on:
+      samba: { condition: service_healthy }
+
+  # ---------------------------------------------------------------- relay
+  hoop-inspect:
+    volumes:
+      - ./postgres/config-postgres.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+
+  # ----------------------------------------------------------------- Envoy
+  # envoy-contrib, because `envoy.filters.network.postgres_proxy` ships only
+  # there and nothing else can terminate pgwire's in-band TLS. That spends the
+  # parent stack's "zero Envoy extensions" claim, which is why it lives here.
+  #
+  # appdb.hoop.test resolves to ENVOY. The client asks the KDC for a ticket
+  # naming postgres/appdb.hoop.test, and the KDC encrypts it with the
+  # DATABASE's key: a service ticket names a service, not a machine, so the
+  # relay in the middle stays invisible to Kerberos.
+  envoy:
+    image: envoyproxy/envoy-contrib:v1.33-latest
+    networks:
+      inspect:
+        aliases: [appdb.hoop.test]
+    volumes:
+      - ./postgres/envoy-postgres.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+
+  # ---------------------------------------------------------------- client
+  # A workstation holding a ticket and no direct route to the database.
+  client:
+    # Debian, not the parent stack's Alpine. Alpine's postgresql16-client is
+    # built without GSSAPI, so `psql` there answers a Kerberos attempt with
+    # "GSSAPI authentication not supported" before any ticket is consulted.
+    image: debian:bookworm-slim
+    volumes:
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq >/dev/null
+        apt-get install -y -qq --no-install-recommends \
+          postgresql-client krb5-user curl ca-certificates >/dev/null
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql && command -v kinit"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "10s"
+    depends_on:
+      samba: { condition: service_healthy }
+
+networks:
+  # A fixed subnet so the DC can hold a known address, which is what lets a
+  # container point its resolver at it for the SRV records AD publishes.
+  inspect:
+    ipam:
+      config:
+        - subnet: 172.31.7.0/24
+
+volumes:
+  krb-keytabs:
+  samba-state:
+  samba-conf:

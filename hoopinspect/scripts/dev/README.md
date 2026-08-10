@@ -150,3 +150,59 @@ and then watch for refusals in the audit trail during an observe-only rollout.
 | `01` reports a mode | Credential file is group- or world-readable. `chmod 600` |
 | `03` says the HTTP lane did not block | `capture_body` is off, or the request carried no body |
 | Everything passes but nothing is classified | The trigger does not match. Compare the audit line's `operation` against the rule's `trigger` |
+
+---
+
+# Testing the MSSQL lane against SQL Server and Kerberos
+
+Two scripts, independent of the Vertex ones above. They drive the compose
+stack in `deploy/docker-compose/envoy-stack`, and none of it ships in an image.
+
+```bash
+cd hoopinspect/scripts/dev
+
+./mssql-stack.sh            # mint certs, build, start, seed
+./mssql-kerberos-check.sh   # verify: data path, guardrail, audit, Kerberos
+./mssql-stack.sh down       # tear down, including volumes and certs
+```
+
+Also `./mssql-stack.sh --rebuild` (no-cache build), `./mssql-stack.sh logs
+[service]`, and `./mssql-stack.sh psql` for the postgres lane.
+
+No cloud account and no API spend, since it runs locally. Microsoft publishes
+no arm64 image for SQL Server, so on Apple Silicon it runs emulated and first
+boot takes a few minutes.
+
+## The stack it brings up
+
+```
+sqlclient ──TLS (TDS 8.0)──> envoy ──plaintext TDS──> hoop-inspect ──> mssql
+ kinit alice                terminates TLS           inspects, denies    keytab
+                                                          │
+                                                       samba (AD DC)
+```
+
+`mssql-stack.sh` **always rebuilds** the sidecar image. The base `run.sh`
+reuses an existing one, which turns an edited codec into `unsupported protocol
+"mssql"` at startup, a message pointing at the config while a stale image
+causes it. Docker's layer cache keeps the rebuild cheap.
+
+## The check runs each Kerberos login twice
+
+`mssql.hoop.test` goes through Envoy and the relay. `sqlhost.hoop.test` reaches
+SQL Server directly, past both. The check runs the same login down each path
+and compares them:
+
+| Outcome | Reported as | Meaning |
+|---|---|---|
+| Login succeeds through the relay | `PASS` | end to end |
+| Both paths fail identically | `GAP` | the relay carried the ticket to a server that would have refused it anyway |
+| The two paths **disagree** | `FAIL` | a divergence is our bug, and the one result implicating hoop-inspect |
+
+Today it reports `GAP`, because SQL Server on Linux does not resolve
+`HOOP\alice` against the directory (error 18452). The comparison has already
+earned its keep: it caught a missing SPN in the domain controller's
+provisioning that a one-sided test would have scored green.
+
+See `deploy/docker-compose/envoy-stack/mssql/README.md` for the topology, the
+protocol reasoning, and the list of what works and what does not.

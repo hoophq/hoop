@@ -145,7 +145,14 @@ func applyEvent(rec *SessionRecord, ev audit.Event) {
 		rec.ErrorCount++
 	}
 
-	if rec.Principal == "" {
+	// "anonymous" is a placeholder, not a value: Identity.Principal() returns
+	// it whenever no subject is set, so it is never the empty string this
+	// check would otherwise look for. Treat it as unset, or a session whose
+	// actor becomes known only after session_start keeps reporting nobody.
+	//
+	// That is the ordinary case on a postgres lane, where the relay learns the
+	// user from the StartupMessage after the session has already opened.
+	if rec.Principal == "" || rec.Principal == session.AnonymousPrincipal {
 		rec.Principal = ev.Principal
 	}
 	if rec.Protocol == "" {

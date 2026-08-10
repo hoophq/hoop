@@ -1,0 +1,307 @@
+# Overlay: an MSSQL lane where the client authenticates with Kerberos.
+#
+# Bring it up with ../../../../hoopinspect/scripts/dev/mssql-stack.sh, which
+# mints the certificates this file expects and then runs:
+#
+#   docker compose -f docker-compose.yml -f mssql/docker-compose.mssql.yml up -d
+#
+#   sqlclient ──TLS(TDS 8.0)──> envoy ──plaintext TDS──> hoop-inspect ──> mssql
+#    kinit alice                 terminates TLS          inspects, denies    keytab
+#
+# WHAT MAKES THIS WORK, in one sentence: a Kerberos service ticket names a
+# SERVICE, not a machine, so `mssql.hoop.test` can resolve to Envoy while the
+# ticket inside stays valid for the SQL Server holding the matching keytab.
+#
+# hoop-inspect contains no Kerberos code and never will. TDS gives the SSPI
+# exchange its own packet type (0x11); the relay forwards those verbatim and
+# starts inspecting at the first SQLBatch (0x01) or RPC (0x03). The boundary
+# is the protocol's own message typing, not a guess about where login ended.
+#
+# WHY TDS 8.0 ON THE CLIENT LEG: 8.0 is TCP -> TLS -> everything, ordinary
+# TLS-on-connect, so Envoy terminates it with no TDS awareness at all. TDS 7.x
+# wraps its handshake inside 0x12 PRELOGIN packets, which Envoy cannot speak.
+
+services:
+
+  # ------------------------------------------------------- postgres + Kerberos
+  # The same trick as the MSSQL lane on a protocol that makes it easier.
+  # appdb.hoop.test resolves to Envoy, libpq asks for postgres/appdb.hoop.test,
+  # and only this server holds the key that decrypts the ticket.
+  #
+  # Postgres needs no domain controller for the AUTHORIZATION half: it compares
+  # the authenticated principal against pg_authid, a local table. Contrast SQL
+  # Server, which resolves DOMAIN\user to a SID over LDAP before it will even
+  # store the login.
+  appdb:
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgresql/certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgresql/certs/server.key
+      - -c
+      - krb_server_keyfile=/keytabs/postgres.keytab
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      # Mounted as zz- so it runs AFTER seed.sql: initdb scripts execute in
+      # filename order, and this one grants on tables seed.sql creates.
+      # Running it here rather than by hand is what keeps the Kerberos role
+      # alive across a `down -v`, which wipes the data volume.
+      - ./postgres/pg-seed-kerberos.sql:/docker-entrypoint-initdb.d/zz-kerberos.sql:ro
+      - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
+      - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - krb-keytabs:/keytabs:ro
+    depends_on:
+      samba: { condition: service_healthy }
+
+  # --------------------------------------------------- Active Directory
+  # A real DC rather than a bare KDC, and the reason is worth stating: an MIT
+  # KDC issues perfectly valid tickets and SQL Server still refuses every one
+  # of them with error 18452, "the login is from an untrusted domain". Before
+  # SQL Server accepts a principal it has to RESOLVE it to a SID over LDAP,
+  # and no KDC can answer that. Samba serves both roles.
+  samba:
+    image: hoop-samba-dc:local
+    build:
+      context: ./kerberos/samba
+    hostname: dc
+    # SQL Server finds the directory through DNS SRV records (_ldap._tcp,
+    # _kerberos._tcp), so it must query THIS container's resolver. A fixed
+    # address is the only way to name a DNS server in compose.
+    networks:
+      inspect:
+        ipv4_address: 172.31.7.10
+        aliases: [dc.hoop.test, hoop.test]
+    # Samba needs these to manage its own keyring and privileges.
+    cap_add: [SYS_ADMIN]
+    volumes:
+      - krb-keytabs:/keytabs
+      - samba-state:/var/lib/samba
+      # /etc/samba persists too, and it has to. `samba-tool domain provision`
+      # writes the DC's smb.conf here, but the directory ships in the image
+      # with a stock standalone-server config. Persist only /var/lib/samba and
+      # a RESTART finds the provisioned database beside a non-DC smb.conf,
+      # then dies with "Samba detected misconfigured 'server role'".
+      - samba-conf:/etc/samba
+    healthcheck:
+      # The keytab is the artifact everything downstream waits for, so its
+      # existence is a truer readiness signal than an open port.
+      test: ["CMD-SHELL", "test -f /keytabs/mssql.keytab && samba-tool user list >/dev/null 2>&1"]
+      interval: "5s"
+      timeout: "15s"
+      retries: 60
+      start_period: "20s"
+
+  # SQL Server refuses a certificate key any account but its own can read, and
+  # a bind mount arrives owned by whoever owns it on the host. Copying into a
+  # volume is the one place that ownership can be set to the uid the server
+  # actually runs as.
+  mssql-certs:
+    image: alpine:3.20
+    command:
+      - sh
+      - -c
+      - |
+        cp /src/mssql.crt /src/mssql.key /dst/
+        chown 10001:0 /dst/mssql.crt /dst/mssql.key
+        chmod 400 /dst/mssql.crt /dst/mssql.key
+    volumes:
+      - ./mssql/certs:/src:ro
+      - mssql-tls:/dst
+
+  # ----------------------------------------------------------------- MSSQL
+  # No arm64 image is published, so this runs emulated on Apple Silicon and
+  # first boot takes a few minutes. Drop the platform line on amd64.
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    hostname: mssql
+    networks:
+      inspect:
+        # sqlhost.hoop.test reaches SQL Server DIRECTLY, bypassing Envoy and
+        # the relay. It exists for the control test in mssql-kerberos-check.sh:
+        # running the same Kerberos login down both paths is what proves a
+        # failure belongs to SQL Server rather than to hoop-inspect.
+        aliases: [sqlhost.hoop.test]
+    # Point the resolver at the DC. Without this SQL Server cannot find the
+    # LDAP service and every integrated login fails at the lookup rather than
+    # at the ticket.
+    dns: [172.31.7.10]
+    dns_search: [hoop.test]
+    environment:
+      ACCEPT_EULA: "Y"
+      # Used only by the seed step. Kerberos is the point of this lane; SA
+      # exists so there is a way in when Kerberos breaks.
+      MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+      MSSQL_PID: Developer
+    volumes:
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
+      - ./mssql/mssql.conf:/var/opt/mssql/mssql.conf:ro
+      - krb-keytabs:/keytabs:ro
+      - mssql-tls:/var/opt/mssql/certs:ro
+    depends_on:
+      samba: { condition: service_healthy }
+      mssql-certs: { condition: service_completed_successfully }
+    healthcheck:
+      # Port-open rather than query-success: probing with a query needs
+      # credentials this healthcheck should not carry. mssql-init is the real
+      # readiness gate.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/1433' || exit 1"]
+      interval: "5s"
+      timeout: "10s"
+      retries: 90
+      start_period: "45s"
+
+  # Seeds the data and creates the LOGIN mapping the AD principal to a SQL
+  # identity. Without that login the Kerberos handshake succeeds and the
+  # session is still refused, which reads like a Kerberos failure and is not
+  # one — so this step runs with -b and fails loudly rather than logging an
+  # error and exiting 0.
+  mssql-init:
+    image: hoop-sqlclient:local
+    build:
+      context: ./mssql/sqlclient
+    networks: [inspect]
+    dns: [172.31.7.10]
+    volumes:
+      - ./mssql/seed.sql:/seed.sql:ro
+      - ./mssql/seed-ad.sql:/seed-ad.sql:ro
+      - ./mssql/certs/ca.crt:/usr/local/share/ca-certificates/hoop-demo-ca.crt:ro
+    environment:
+      MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        update-ca-certificates >/dev/null 2>&1 || true
+        # -Nm -C: sqlcmd takes the encrypt value CONCATENATED (-Ns/-Nm/-No),
+        # and strict is unavailable anyway because the Linux build of SQL
+        # Server has no forcestrictencryption. -C trusts the certificate
+        # because this hop dials `mssql` while the cert names mssql.hoop.test.
+        # It is an in-network admin path, not the lane under test.
+        for i in $$(seq 1 90); do
+          if sqlcmd -S mssql,1433 -U sa -P "$$MSSQL_SA_PASSWORD" -Nm -C \
+               -Q "SELECT 1" >/dev/null 2>&1; then
+            echo "[init] sql server is accepting connections"; break
+          fi
+          echo "[init] waiting for sql server ($$i)"; sleep 5
+        done
+        # -b makes sqlcmd exit non-zero on a SQL error. Without it a failed
+        # CREATE LOGIN prints and exits 0, and the stack comes up "green" with
+        # the objects the demo depends on missing.
+        sqlcmd -S mssql,1433 -U sa -P "$$MSSQL_SA_PASSWORD" -Nm -C -b -i /seed.sql
+        echo "[init] data + SQL login seeded"
+
+        # The AD login is attempted separately and is NOT fatal. It depends on
+        # SQL Server resolving HOOP\alice over LDAP, which this build does not
+        # currently manage; see mssql/README.md. Failing the whole bring-up
+        # over it would take the working lane down with it, and hiding the
+        # failure would be worse than either.
+        if sqlcmd -S mssql,1433 -U sa -P "$$MSSQL_SA_PASSWORD" -Nm -C -b -i /seed-ad.sql; then
+          echo "[init] AD login HOOP\alice created"
+        else
+          echo "[init] WARNING: could not create the AD login HOOP\alice."
+          echo "[init] Kerberos still reaches SQL Server through the relay;"
+          echo "[init] mssql-kerberos-check.sh proves that and shows this gap."
+        fi
+        echo "[init] seed complete"
+    depends_on:
+      mssql: { condition: service_healthy }
+
+  # -------------------------------------------------------------- the relay
+  # One extra lane. Everything else about the sidecar is unchanged, which is
+  # the point: a new protocol is a config entry plus a codec, not a redesign.
+  hoop-inspect:
+    volumes:
+      - ./mssql/config-mssql.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+
+  # ----------------------------------------------------------------- Envoy
+  # mssql.hoop.test resolves HERE, not to the database. The client dials this
+  # name, validates this certificate, and asks the KDC for a ticket naming
+  # MSSQLSvc/mssql.hoop.test:1433 — a ticket only SQL Server can decrypt.
+  # Envoy carries it without being able to read it.
+  envoy:
+    # envoy-contrib, not the standard image. The postgres lane's TLS is
+    # terminated by `envoy.filters.network.postgres_proxy`, which ships only
+    # in contrib: pgwire negotiates TLS in-band, so no ordinary TLS listener
+    # can terminate it.
+    #
+    # This costs the base stack's claim of "zero Envoy extensions", which is
+    # why it lives in THIS overlay and not in the parent. The parent keeps a
+    # plain tcp_proxy on 5432 and a client that speaks plaintext.
+    #
+    # Two client parameters become mandatory on this lane as a result, both
+    # failing loudly rather than silently when omitted:
+    #   channel_binding=disable  the relay strips SCRAM-SHA-256-PLUS because
+    #                            it terminated the UPSTREAM TLS, and a client
+    #                            on TLS notices the missing mechanism
+    #   gssencmode=disable       a GSSENCRequest puts Envoy's postgres filter
+    #                            into a terminal state where it stops
+    #                            terminating anything, TLS included
+    image: envoyproxy/envoy-contrib:v1.33-latest
+    networks:
+      inspect:
+        aliases: [mssql.hoop.test, appdb.hoop.test]
+    volumes:
+      - ./mssql/envoy-mssql.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+      - ./mssql/certs:/etc/envoy/mssql-certs:ro
+    ports:
+      - "8443:8443"
+      - "5433:5432"
+      - "1433:1433"
+      - "9901:9901"
+
+  # The developer's workstation: a Kerberos ticket and no direct route to
+  # anything. Separate from the Alpine `client` because Microsoft publishes
+  # ODBC packages for glibc only.
+  sqlclient:
+    image: hoop-sqlclient:local
+    build:
+      context: ./mssql/sqlclient
+    networks: [inspect]
+    dns: [172.31.7.10]
+    dns_search: [hoop.test]
+    volumes:
+      - ./kerberos/krb5.conf:/etc/krb5.conf:ro
+      - ./mssql/certs/ca.crt:/usr/local/share/ca-certificates/hoop-demo-ca.crt:ro
+      - ./postgres/pg-seed-kerberos.sql:/pg-seed-kerberos.sql:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq >/dev/null 2>&1 || true
+        apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null 2>&1 || true
+        # Encrypt=strict FORBIDS TrustServerCertificate, so the CA has to be
+        # trusted for real. Same thing a laptop does with a corporate root.
+        update-ca-certificates >/dev/null 2>&1 || true
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "command -v kinit && command -v sqlcmd"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "5s"
+    depends_on:
+      samba: { condition: service_healthy }
+
+networks:
+  # The base stack leaves this network's addressing to Docker. Fixing the
+  # subnet here is what lets the DC hold a known address, which is what lets
+  # SQL Server use it as a resolver.
+  inspect:
+    ipam:
+      config:
+        - subnet: 172.31.7.0/24
+
+volumes:
+  krb-keytabs:
+  samba-state:
+  samba-conf:
+  mssql-tls:

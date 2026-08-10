@@ -71,7 +71,7 @@ type ListenerConfig struct {
 	// Name identifies the listener in logs. Defaults to Connection.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres or http.
+	// Protocol selects the codec: postgres, mssql or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is
@@ -93,6 +93,21 @@ type ListenerConfig struct {
 
 	// UpstreamTLS enables TLS to the backend.
 	UpstreamTLS *TLSConfig `json:"upstream_tls"`
+
+	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
+	// Requires cert_file and key_file; the other TLSConfig fields describe an
+	// outbound connection and are ignored here.
+	//
+	// Only `postgres` supports it, and only because pgwire leaves nobody else
+	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
+	// plain TLS listener in front cannot terminate it. Envoy's own postgres
+	// filter can, but it is contrib-only, marked work-in-progress, and gives
+	// up permanently the moment a client asks for GSS encryption — which is
+	// what psql does by default whenever a Kerberos ticket is present.
+	//
+	// Omitting it keeps the documented posture: the relay terminates no
+	// downstream TLS and whatever fronts it owns that leg.
+	DownstreamTLS *TLSConfig `json:"downstream_tls"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http protocol behind an authenticating proxy.
@@ -373,6 +388,25 @@ func (c *Config) Validate() error {
 		}
 		seen[key] = true
 
+		// downstream_tls is refused at startup rather than accepted and
+		// ignored. On any other protocol the relay would never look at the
+		// SSLRequest that makes it work, so the lane would come up "green"
+		// presenting a certificate nothing ever offers.
+		if l.DownstreamTLS != nil {
+			if l.Protocol != string(hoopinspect.Postgres) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: downstream_tls is only supported on postgres, not %q "+
+						"(pgwire negotiates TLS in-band, which is the only reason "+
+						"the relay terminates it at all)", name, l.Protocol))
+			}
+			// Load the keypair now. Discovering a bad path on the first
+			// client connection means one failed login per restart and
+			// nothing in the startup log.
+			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			}
+		}
+
 		problems = append(problems, c.validateLane(l, name)...)
 	}
 
@@ -589,4 +623,29 @@ func (t *TLSConfig) BuildTLS() (*tls.Config, error) {
 		out.Certificates = []tls.Certificate{cert}
 	}
 	return out, nil
+}
+
+// BuildDownstreamTLS turns a TLSConfig into a server-side *tls.Config.
+//
+// Separate from BuildTLS because the two describe opposite ends of a
+// connection: BuildTLS produces a CLIENT config, where CAFile verifies a peer
+// and ServerName drives SNI. Here the certificate is what the relay PRESENTS,
+// so those fields are meaningless and a keypair is mandatory rather than
+// optional. Sharing one builder would silently accept a lane configured with
+// only a ca_file and then fail every handshake at runtime.
+func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
+	if t == nil {
+		return nil, nil
+	}
+	if t.CertFile == "" || t.KeyFile == "" {
+		return nil, fmt.Errorf("downstream_tls needs both cert_file and key_file")
+	}
+	cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("downstream_tls keypair: %w", err)
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}, nil
 }
