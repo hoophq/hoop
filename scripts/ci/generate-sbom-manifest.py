@@ -20,7 +20,7 @@ CRITICAL/HIGH counts, SBOM filenames).
 Trivy pulls the images from the registry directly (respecting --platform), so it
 authenticates via TRIVY_USERNAME/TRIVY_PASSWORD when set (forwarded from the
 job's Docker Hub credentials) to avoid anonymous rate limits. Images published
-by continue-on-error jobs (e.g. hoophq/hoopdev-minimal) may lag or be absent;
+by continue-on-error jobs (e.g. hoophq/hoopagent) may lag or be absent;
 visibility is retried, then the image is skipped with a warning rather than
 failing.
 
@@ -39,9 +39,19 @@ from datetime import datetime, timezone
 
 TRIVY_IMAGE = "aquasec/trivy:0.72.0"
 
-# Core published line documented per release. The -ng clean-line images are a
-# separate train / mirror and are intentionally out of scope here.
-IMAGE_REPOS = ["hoophq/hoop", "hoophq/hoopdev", "hoophq/hoopdev-minimal"]
+# Core published line documented per release, as (repo, tag suffix) pairs. The
+# -ng clean-line images are a separate train / mirror and are intentionally out
+# of scope here.
+#
+# hoophq/hoopagent deliberately publishes NO unsuffixed tag and no :latest —
+# every deployment names its flavour — so it contributes one entry per flavour
+# rather than a single bare release tag.
+IMAGE_REPOS = [
+    ("hoophq/hoop", ""),
+    ("hoophq/hoopdev", ""),
+    ("hoophq/hoopagent", "-minimal"),
+    ("hoophq/hoopagent", "-distroless"),
+]
 
 # Bundled CLI versions recorded in the manifest for the fat agent image, per
 # issue #1643 ("bundled tool versions"). Sourced from Dockerfile.tools' ARG
@@ -59,7 +69,7 @@ BUNDLED_TOOL_ARGS = {
     "GCLOUD_VERSION": "gcloud",
     "GCLOUD_GKE_AUTHN_PLUGIN_VERSION": "gke-gcloud-auth-plugin",
 }
-# Only the fat agent bundles those CLIs; the gateway and minimal agent do not.
+# Only the fat agent bundles those CLIs; the gateway and slim agent do not.
 BUNDLED_TOOL_IMAGES = {"hoophq/hoopdev"}
 
 # Docker Hub can lag before a just-pushed multi-arch manifest becomes visible;
@@ -182,7 +192,7 @@ def bundled_tools() -> dict:
         return {}
     out: dict[str, str] = {}
     for arg, name in BUNDLED_TOOL_ARGS.items():
-        m = re.search(rf"^ARG {arg}=(.+)$", text, re.M)
+        m = re.search(rf"^ARG {arg}=(.+)$", text, re.MULTILINE)
         if m:
             out[name] = m.group(1).strip()
     return out
@@ -246,9 +256,9 @@ def main() -> int:
 
     produced = False
     tools = bundled_tools()
-    for repo in IMAGE_REPOS:
-        ref = f"{repo}:{tag}"
-        short = repo.split("/")[-1]
+    for repo, suffix in IMAGE_REPOS:
+        ref = f"{repo}:{tag}{suffix}"
+        short = repo.split("/")[-1] + suffix
         resolved = resolve_image(ref)
         if resolved is None:
             print(f"::warning::{ref} not visible after retries; skipping SBOM/manifest entry")
