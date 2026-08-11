@@ -2,6 +2,7 @@ package aianalyzer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
@@ -52,9 +53,27 @@ func (c *anthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 		case RoleUser:
 			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case RoleAssistant:
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			if len(m.ToolCalls) > 0 {
+				var blocks []anthropic.ContentBlockParamUnion
+				if m.Content != "" {
+					blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+				}
+				for _, tc := range m.ToolCalls {
+					var input any
+					_ = json.Unmarshal([]byte(tc.Arguments), &input)
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+				}
+				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+			} else {
+				messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			}
 			// RoleSystem is not a valid turn role in the Anthropic API;
 			// use ChatRequest.SystemPrompt for system instructions instead.
+		case RoleTool:
+			if m.ToolResult != nil {
+				messages = append(messages, anthropic.NewUserMessage(
+					anthropic.NewToolResultBlock(m.ToolResult.ToolCallID, m.ToolResult.Content, m.ToolResult.IsError)))
+			}
 		}
 	}
 

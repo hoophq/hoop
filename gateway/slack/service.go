@@ -87,6 +87,9 @@ type MessageReviewRequest struct {
 	WebappURL      string
 	SessionID      string
 	SlackChannels  []string
+	AIRiskLevel    string
+	AITitle        string
+	AISummary      string // falls back to Explanation when Summary empty
 }
 
 type MessageReviewResponse struct {
@@ -153,6 +156,24 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 			Text: fmt.Sprintf("_script_\n```%s```", script),
 		}, nil, nil)
 		blocks = append(blocks, scriptBlock)
+	}
+
+	// AI analysis summary block
+	if msg.AIRiskLevel != "" {
+		emoji := map[string]string{
+			"low":    ":large_green_circle:",
+			"medium": ":large_orange_circle:",
+			"high":   ":red_circle:",
+		}[msg.AIRiskLevel]
+		summary := msg.AISummary
+		if len(summary) > maxLabelSize {
+			summary = summary[:maxLabelSize] + " ..."
+		}
+		txt := fmt.Sprintf("*AI Analysis* %s *%s Risk* — %s\n%s", emoji, strings.ToUpper(msg.AIRiskLevel), msg.AITitle, summary)
+		blocks = append(blocks, slack.NewSectionBlock(&slack.TextBlockObject{
+			Type: slack.MarkdownType,
+			Text: txt,
+		}, nil, nil))
 	}
 
 	// add groups button

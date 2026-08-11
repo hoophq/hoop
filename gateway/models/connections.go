@@ -619,6 +619,21 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	return &conn, nil
 }
 
+// ListConnectionNamesByType returns the names of all connections in the org that
+// share the given resource type and subtype. When subtype is empty, only the
+// type is matched. Used by the AI session analyzer to find sibling connections
+// of the same resource type.
+func ListConnectionNamesByType(db *gorm.DB, orgID, connType, subtype string) ([]string, error) {
+	var names []string
+	query := db.Table(tableConnections).
+		Where("org_id = ? AND type = ?", orgID, connType)
+	if subtype != "" {
+		query = query.Where("subtype = ?", subtype)
+	}
+	err := query.Order("name").Pluck("name", &names).Error
+	return names, err
+}
+
 // GetConnectionByOrgAndName retrieves a connection by org and name without
 // access-control enforcement. Returns ErrNotFound when no matching row exists.
 func GetConnectionByOrgAndName(orgID, name string) (*Connection, error) {

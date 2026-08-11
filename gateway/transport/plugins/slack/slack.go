@@ -238,6 +238,15 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			sreq.SessionTime = &ad
 		}
 		sreq.Script = reviewInput
+
+		if session, serr := models.GetSessionByID(pctx.OrgID, pctx.SID); serr == nil && session != nil && session.AIAnalysis != nil {
+			sreq.AIRiskLevel = session.AIAnalysis.RiskLevel
+			sreq.AITitle = session.AIAnalysis.Title
+			sreq.AISummary = session.AIAnalysis.Summary
+			if sreq.AISummary == "" {
+				sreq.AISummary = session.AIAnalysis.Explanation
+			}
+		}
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= SlackMaxButtons {

@@ -33,6 +33,12 @@ const (
 // SessionAnalysisResult re-exports the engine's classification result.
 type SessionAnalysisResult = laia.Result
 
+// AgenticResult re-exports the engine's agentic analysis result.
+type AgenticResult = laia.AgenticResult
+
+// AgenticStep re-exports a single step of the agentic investigation trace.
+type AgenticStep = laia.AgenticStep
+
 // SessionAnalyzerSystemPrompt is the default classifier prompt. It is surfaced
 // in the admin UI as the editable default and is owned by the engine.
 const SessionAnalyzerSystemPrompt = laia.SystemPrompt
@@ -77,4 +83,33 @@ func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string, custom
 		prompt = *customPrompt
 	}
 	return laia.Analyze(ctx, client, content, prompt)
+}
+
+// AnalyzeSessionAgentic loads the org's configured AI provider and runs the
+// agentic investigation loop: the model calls the supplied investigation tools
+// (executed via executor) before classifying the given command/query/script.
+//
+// Callers should wrap ctx with a deadline to bound the loop's latency.
+func AnalyzeSessionAgentic(ctx context.Context, orgID uuid.UUID, content, customPrompt string, executor laia.ToolExecutor, tools []laia.Tool) (*laia.AgenticResult, error) {
+	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
+	if err != nil || provider == nil {
+		return nil, fmt.Errorf("session analyzer: failed to load ai provider: %w", err)
+	}
+
+	client, err := laia.NewLLMClient(laia.ProviderConfig{
+		Provider: provider.Provider,
+		APIURL:   provider.ApiUrl,
+		APIKey:   provider.ApiKey,
+		Model:    provider.Model,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("session analyzer: failed to create ai client: %w", err)
+	}
+
+	return laia.AnalyzeAgentic(ctx, client, laia.AgenticRequest{
+		Content:      content,
+		CustomPrompt: customPrompt,
+		Tools:        tools,
+		Executor:     executor,
+	})
 }

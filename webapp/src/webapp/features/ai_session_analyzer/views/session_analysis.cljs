@@ -10,9 +10,27 @@
    "medium" "orange"
    "high"   "red"})
 
+(defn- render-step [idx {:keys [type thinking tool_name tool_input tool_output is_error]}]
+  ^{:key idx}
+  [:> Box {:class "py-1"}
+   (case type
+     "thinking"
+     [:> Text {:size "1" :class "italic text-[--gray-11]"} thinking]
+
+     "tool_call"
+     [:> Text {:size "1" :class "font-mono text-[--gray-12]"}
+      (str "\u25B8 " tool_name "(" tool_input ")")]
+
+     "tool_result"
+     [:> Text {:size "1" :class (str "font-mono whitespace-pre-wrap "
+                                     (if is_error "text-[--red-11]" "text-[--gray-11]"))}
+      tool_output]
+
+     nil)])
+
 (defn main [{:keys [ai-analysis]}]
   (when (and ai-analysis (seq ai-analysis))
-    (let [{:keys [risk_level title explanation action]} ai-analysis
+    (let [{:keys [risk_level title explanation action summary steps]} ai-analysis
           badge-color (get risk-badge-color risk_level "gray")]
       [:> (.-Root Accordion) {:type "single"
                               :collapsible true
@@ -41,7 +59,18 @@
            [:> Badge {:variant "soft" :color badge-color}
             (str (cs/upper-case risk_level) " RISK")]]
           [:> Text {:size "1" :class "text-[--gray-12]"} explanation]
-          
+
+          (when (and summary (seq summary))
+            [:> Box {:class "pt-3 border-t border-[--gray-3]"}
+             [:> Text {:size "1" :weight "medium" :class "text-[--gray-12]"} "Summary"]
+             [:> Text {:as "p" :size "1" :class "text-[--gray-11] mt-1"} summary]])
+
+          (when (seq steps)
+            [:> Box {:class "pt-3 border-t border-[--gray-3]"}
+             [:> Text {:size "1" :weight "medium" :class "text-[--gray-12]"} "Investigation trace"]
+             [:> Flex {:direction "column" :gap "1" :class "mt-2"}
+              (map-indexed render-step steps)]])
+
           (when action
             [:> Box {:class "pt-3 border-t border-[--gray-3]"}
              (case action

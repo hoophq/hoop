@@ -900,6 +900,30 @@ type SessionAIAnalysis struct {
 	// * `allow_execution` - allow the session to execute
 	// * `block_execution` - block the session from executing
 	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Summary is a reviewer-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.
+	Summary string `json:"summary,omitempty"`
+	// Model is the AI model that produced the analysis. Set by the agentic analyzer.
+	Model string `json:"model,omitempty"`
+	// Steps is the agentic investigation trace (thinking, tool calls, tool results). Empty for single-shot analysis.
+	Steps []SessionAIAnalysisStep `json:"steps,omitempty"`
+}
+
+// SessionAIAnalysisStep is one step of the agentic analyzer investigation trace.
+type SessionAIAnalysisStep struct {
+	// Type is one of "thinking", "tool_call", "tool_result".
+	Type string `json:"type" example:"tool_call"`
+	// Thinking is the model's reasoning text (set for type "thinking").
+	Thinking string `json:"thinking,omitempty"`
+	// ToolName is the investigation tool name (set for tool_call/tool_result).
+	ToolName string `json:"tool_name,omitempty"`
+	// ToolInput is the JSON arguments passed to the tool (set for tool_call).
+	ToolInput string `json:"tool_input,omitempty"`
+	// ToolOutput is the tool result content (set for tool_result).
+	ToolOutput string `json:"tool_output,omitempty"`
+	// IsError indicates the tool result was a failure (set for tool_result).
+	IsError bool `json:"is_error,omitempty"`
+	// Timestamp is when the step occurred.
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type Session struct {
@@ -3506,6 +3530,9 @@ type AISessionAnalyzerRuleRequest struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// When true, the analyzer runs an agentic tool-calling loop over past sessions
+	// and resource metadata before classifying.
+	Agentic bool `json:"agentic" example:"false"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3521,6 +3548,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// When true, the analyzer runs an agentic tool-calling loop over past sessions
+	// and resource metadata before classifying.
+	Agentic bool `json:"agentic" example:"false"`
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API
 	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
