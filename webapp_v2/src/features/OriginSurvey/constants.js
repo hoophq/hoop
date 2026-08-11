@@ -20,8 +20,3 @@ export const ORIGIN_OTHER = 'other'
 // Matches the users.signup_origin_other column width; the API rejects longer
 // values with a 400.
 export const ORIGIN_OTHER_MAX_LENGTH = 255
-
-// Dismissing with the X hides the survey for the current tab session only. It
-// comes back on the next visit while the user is still inside the 7 day window
-// the gateway enforces, so a dismissal never costs us the answer permanently.
-export const SNOOZE_STORAGE_KEY = 'hoop:origin-survey-snoozed'
