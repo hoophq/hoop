@@ -2,10 +2,7 @@ import { Stack, Box, Text, ScrollArea } from '@mantine/core'
 import { ChevronsLeft } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
-import { useAuthStore } from '@/stores/useAuthStore'
-import { useNavigate } from 'react-router-dom'
 import { NavItem } from './NavItem'
-import { ProfileDisclosure } from './ProfileDisclosure'
 import { ConfigStatus } from './ConfigStatus'
 import { shouldHide } from './helpers'
 import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
@@ -21,13 +18,11 @@ function SectionLabel({ label, id }) {
   )
 }
 
-export function SidebarExpanded({ skipLink, navKey }) {
-  const navigate = useNavigate()
+export function SidebarExpanded({ navKey }) {
   const { toggleSidebarCollapsed } = useUIStore()
-  const { user, isAdmin, isSelfHosted, gatewayVersion } = useUserStore()
+  const { isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const { logout } = useAuthStore()
 
   const navItemProps = { isAdmin, isSelfHosted }
 
@@ -38,11 +33,8 @@ export function SidebarExpanded({ skipLink, navKey }) {
   const visible = (items) =>
     items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
-
+  // No profile block here any more: the user menu lives in the global header
+  // (layout/Header/UserMenu.jsx), so user/gatewayVersion/logout moved with it.
   return (
     <Stack
       component="nav"
@@ -51,8 +43,6 @@ export function SidebarExpanded({ skipLink, navKey }) {
       h="100%"
       style={{ boxSizing: 'border-box', overflow: 'hidden' }}
     >
-      {skipLink}
-
       <Box mb="xl" mt="xl" className={classes.logoExpanded}>
         <img
           src="/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png"
@@ -113,12 +103,6 @@ export function SidebarExpanded({ skipLink, navKey }) {
               </Stack>
             </Box>
           )}
-
-          {/* margin-top:auto — drops to the bottom when the nav list is short
-              (non-admin), scrolls along with it when it is not (admin). */}
-          <Box pt="lg" pb="sm" className={classes.profileFooter}>
-            <ProfileDisclosure user={user} onLogout={handleLogout} gatewayVersion={gatewayVersion} />
-          </Box>
         </Box>
       </ScrollArea>
 

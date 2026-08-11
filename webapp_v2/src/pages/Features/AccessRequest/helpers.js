@@ -15,7 +15,16 @@ export function sanitizeRuleName(value) {
 }
 
 export function accessTypeLabel(accessType) {
-  return accessType === ACCESS_TYPE.JIT ? 'Just-in-Time' : 'by Command'
+  switch (accessType) {
+    case ACCESS_TYPE.JIT:
+      return 'Just-in-Time'
+    case ACCESS_TYPE.COMMAND:
+      return 'by Command'
+    case ACCESS_TYPE.JIT_COMMAND:
+      return 'Just-in-Time + Command'
+    default:
+      return accessType
+  }
 }
 
 // Which resource roles a rule of this type can actually govern. "command"
@@ -27,7 +36,28 @@ export function isEligibleForAccessType(accessType, connection) {
   if (accessType === ACCESS_TYPE.JIT) {
     return canAccessNativeClient(connection) || canHoopCli(connection)
   }
+  if (accessType === ACCESS_TYPE.JIT_COMMAND) {
+    return (
+      isEligibleForAccessType(ACCESS_TYPE.COMMAND, connection) ||
+      isEligibleForAccessType(ACCESS_TYPE.JIT, connection)
+    )
+  }
   return false
+}
+
+// Whether the given access type covers this half ("jit" | "command").
+export function accessTypeIncludes(accessType, half) {
+  return accessType === half || accessType === ACCESS_TYPE.JIT_COMMAND
+}
+
+// Next access type when the card for `half` is toggled. Returns null when the
+// click would deselect the only selected type — a rule always keeps at least one.
+export function toggledAccessType(current, half) {
+  if (current === half) return null
+  if (current === ACCESS_TYPE.JIT_COMMAND) {
+    return half === ACCESS_TYPE.JIT ? ACCESS_TYPE.COMMAND : ACCESS_TYPE.JIT
+  }
+  return ACCESS_TYPE.JIT_COMMAND
 }
 
 // The attribute owns the association, so its `access_request_rule_names` is

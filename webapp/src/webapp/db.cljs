@@ -67,11 +67,7 @@
    :editor {}
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
-   :guardrails->active-guardrail {:action nil
-                                  :name ""
-                                  :description ""
-                                  :input [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]
-                                  :output [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]}
+   :guardrails->list {:status :idle, :data []}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed

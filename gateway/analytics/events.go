@@ -71,6 +71,9 @@ const (
 	EventUpdateOrgAnalyticsMode    = "hoop-update-org-analytics-mode"
 	EventProtectionProfileSelected = "hoop-protection-profile-selected"
 
+	// onboarding
+	EventOnboardingOriginAnswered = "hoop-onboarding-origin-answered"
+
 	// search api
 	EventSearch = "hoop-search"
 

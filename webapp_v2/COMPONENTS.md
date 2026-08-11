@@ -287,7 +287,17 @@ import ActionMenu from '@/components/ActionMenu'
   <ActionMenu.Item danger onClick={handleDelete}>Delete</ActionMenu.Item>
 </ActionMenu>
 ```
-Props on `ActionMenu.Item`: `onClick`, `disabled`, `danger` (red color).
+Props on `ActionMenu.Item`: `onClick`, `disabled`, `danger` (red color). Everything else
+(`leftSection`, `id`, ...) is forwarded to Mantine's `Menu.Item`.
+
+Props on `ActionMenu`: `target` (replaces the default kebab trigger — must forward a ref),
+`width` (default 180), `position` (default `bottom-end`), `disabled`. `ActionMenu.Label`
+and `ActionMenu.Divider` are re-exported. The header's user menu is the `target` use case.
+
+> No `Drawer` wrapper exists, deliberately. The two drawers in the app (the mobile sidebar
+> in `layout/Layout.jsx` and the Native Connections drawer) want opposite geometry on every
+> axis, so a shared wrapper would be a pass-through with two mutually exclusive prop
+> bundles. Revisit if a third drawer appears.
 
 ### `Modal`
 Application modal dialog wrapping Mantine `Modal` with centered + radius defaults.
@@ -680,6 +690,16 @@ const showLoader = useMinDelay(loading, 500)
 if (showLoader) return <PageLoader />
 ```
 
+### `useCountdown(expireAt)`
+Display-only countdown against a shared 1 Hz clock (`utils/tick.js`), which is reference-counted
+so N countdowns cost one interval. Returns `{ remainingMs, label, expired }`; `label` is
+`HH:MM:SS` above an hour and `MM:SS` below, or `null` when `expireAt` is null (persistent
+credential). Expiry side effects belong to the owning store, not to this hook — see
+`useNativeAccessStore`.
+```jsx
+const { label } = useCountdown(credential.expire_at)
+```
+
 ### `usePaginatedConnections({ pageSize = 50 })`
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll — the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
 ```jsx
@@ -706,9 +726,19 @@ Non-obvious notes only:
 
 - `useBridgeStore` — wraps `window.hoopDispatch` re-frame bridge calls; never
   call `hoopDispatch` from a component (rule in `CLAUDE.md` "Re-frame Interop").
-  Current methods: `refreshLegacyUser()`, `openNativeClientAccess()`,
-  `openNativeClientAccessWhenReady()`, `syncPrimaryConnectionFromUrl()`.
+  Current methods: `refreshLegacyUser()`, `syncPrimaryConnectionFromUrl()`.
   Snackbars are NOT bridged — use `showSnackbar` from `@/utils/snackbar`.
+- `useNativeAccessStore` — the native-access credential lifecycle (start flow,
+  request, resume after review, disconnect, revoke) plus `activeByName`, fed by
+  `GET /connection-credentials`. Owns session expiry: it subscribes to
+  `utils/tick.js` while any credential is bounded, so the "session expired"
+  toast fires exactly once and still fires with the drawer closed. Deliberately
+  does NOT persist to localStorage — the server is authoritative and the CLJS
+  key (`hoop-native-client-access`, EDN) must never be touched from React.
+- `useNativeConnectionsStore` — the drawer's own state: open/closed, search
+  query, expanded row, and the list of natively-connectable roles. Loads the
+  non-paginated `/connections` because the paginated one applies an RBAC join
+  that can hide visible rows, and neither can filter on `access_mode_connect`.
 - `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only;
   refreshes on the `hoop:session-executed` DOM event from the CLJS terminal.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
@@ -785,6 +815,11 @@ supportsAwsIam(subtype)        // AWS IAM Role auth (postgres/mysql only)
 isFreeFormCustomSubtype(subtype) // free-form credentials editor
 ```
 `canAccessNativeClient` uses a deliberately narrower HTTP-proxy set than `canOpenWebTerminal` — the command palette has never offered the native-client flow for `mcp`/`mcpproxy`. Don't unify the two sets without deciding what that menu should show.
+
+- `connectionCredentials.js` — native-access credentials, kept separate from
+  `connections.js` (connection CRUD). `listActive()` hits
+  `GET /connection-credentials`, which is secret-less; `get()` is the only call
+  that returns a plaintext secret, so it runs on demand when a row is expanded.
 
 ---
 

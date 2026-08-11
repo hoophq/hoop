@@ -312,6 +312,19 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateUser),
 		userapi.PatchSlackID)
+	// Every role answers the onboarding origin survey, which is what
+	// ReadOnlyAccessRole grants: omitting the role middleware would deny
+	// auditors, since isGroupAllowed only lets that group through routes that
+	// name it. GET /userinfo above offers the survey under the same role, so
+	// both ends of the flow have to agree.
+	//
+	// It emits EventOnboardingOriginAnswered from the handler instead of
+	// TrackRequest, which runs before the body is validated and could not carry
+	// the chosen option.
+	r.POST("/users/self/signup-origin",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.PostSignupOrigin)
 	r.DELETE("/users/:emailOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -627,6 +640,13 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/connections/:nameOrID/credentials/:ID/close",
 		r.AuthMiddleware,
 		apiconnections.CloseConnectionCredentials,
+	)
+	// Self-scoped collection: every active credential owned by the caller,
+	// without secrets. Registered as a top-level path (like /connection-tags)
+	// so it never shadows a connection literally named "credentials".
+	r.GET("/connection-credentials",
+		r.AuthMiddleware,
+		apiconnections.ListActiveConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",

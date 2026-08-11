@@ -1783,6 +1783,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/connection-credentials": {
+            "get": {
+                "description": "Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List Active Connection Credentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsList"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections": {
             "get": {
                 "description": "List all connections.",
@@ -10229,6 +10255,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/self/signup-origin": {
+            "post": {
+                "description": "Record how the authenticated user heard about Hoop. Each user may answer only once; a second attempt returns 409.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Answer Signup Origin Survey",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserSignupOriginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Answer recorded"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/users/self/slack": {
             "patch": {
                 "description": "Patch own user's slack id",
@@ -11350,7 +11437,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "jit",
-                        "command"
+                        "command",
+                        "jit_command"
                     ],
                     "example": "command"
                 },
@@ -11447,6 +11535,16 @@ const docTemplate = `{
                         "dba"
                     ]
                 },
+                "skip_review_groups": {
+                    "description": "Groups whose members skip the approval review. Only honored when\napproval_required_groups is empty",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre"
+                    ]
+                },
                 "updated_at": {
                     "description": "The time the resource was updated",
                     "type": "string",
@@ -11476,7 +11574,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "jit",
-                        "command"
+                        "command",
+                        "jit_command"
                     ],
                     "example": "command"
                 },
@@ -11552,6 +11651,16 @@ const docTemplate = `{
                     "example": [
                         "sre",
                         "dba"
+                    ]
+                },
+                "skip_review_groups": {
+                    "description": "Groups whose members skip the approval review. Only allowed when\napproval_required_groups is empty",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre"
                     ]
                 }
             }
@@ -12238,6 +12347,65 @@ const docTemplate = `{
                 "type": {
                     "description": "The type of the column",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.ConnectionCredentialsList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionCredentialsListItem"
+                    }
+                }
+            }
+        },
+        "openapi.ConnectionCredentialsListItem": {
+            "type": "object",
+            "properties": {
+                "connection_id": {
+                    "description": "Unique ID of the connection this credential belongs to",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "connection_name": {
+                    "description": "The name of the connection",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "connection_subtype": {
+                    "description": "The connection subtype",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "connection_type": {
+                    "description": "Connection type",
+                    "type": "string",
+                    "example": "database"
+                },
+                "created_at": {
+                    "description": "When the credential was issued",
+                    "type": "string",
+                    "example": "2025-08-25T12:00:00Z"
+                },
+                "expire_at": {
+                    "description": "When the credential expires. Null when the credential is persistent\n(issued without access_duration_seconds).",
+                    "type": "string",
+                    "example": "2025-08-25T13:00:00Z"
+                },
+                "id": {
+                    "description": "The unique identifier of the credential",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "session_id": {
+                    "description": "The audit session currently linked to this credential. Empty when the user\nclosed the session but kept the credential.",
+                    "type": "string",
+                    "example": "2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 }
             }
         },
@@ -18444,6 +18612,10 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "standard"
                 },
+                "show_origin_survey": {
+                    "description": "Whether the \"How did you hear about Hoop?\" survey should still be offered.\nTrue only while the user has not answered it and is within 7 days of their\nuser record being created. Always false for anonymous users.",
+                    "type": "boolean"
+                },
                 "slack_id": {
                     "description": "The identifier of slack to send messages to users",
                     "type": "string",
@@ -18491,6 +18663,34 @@ const docTemplate = `{
                 "slack_id": {
                     "type": "string",
                     "example": "U053ELZHB53"
+                }
+            }
+        },
+        "openapi.UserSignupOriginRequest": {
+            "type": "object",
+            "required": [
+                "origin"
+            ],
+            "properties": {
+                "origin": {
+                    "description": "The acquisition channel the user picked",
+                    "type": "string",
+                    "enum": [
+                        "search-engine",
+                        "ai-discovery",
+                        "referral",
+                        "already-in-use-at-company",
+                        "tech-community",
+                        "social-media",
+                        "hoop-free-tools",
+                        "other"
+                    ],
+                    "example": "ai-discovery"
+                },
+                "origin_other": {
+                    "description": "Free text detail. Required when origin is \"other\", ignored and stored as\nnull for every other option.",
+                    "type": "string",
+                    "example": "Saw it in a conference talk"
                 }
             }
         },

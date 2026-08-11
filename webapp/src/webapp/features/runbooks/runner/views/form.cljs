@@ -186,8 +186,13 @@
                :on-submit (fn [e]
                             (.preventDefault e)
                             (handle-submit))
-               :class "flex flex-col h-full"}
-              [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-1 flex-shrink-0"}
+               ;; Same surface as the CodeMirror editor next door
+               ;; (webapp/src/css/codemirror-surface.css): gray-4 in light mode,
+               ;; and the literal #2e3235 in dark because Radix's dark gray-4
+               ;; (#2a2a2a) is not the tone the design uses — it has to match
+               ;; connection-state-indicator in webclient/panel.cljs.
+               :class "flex flex-col h-full bg-gray-4 dark:bg-[#2e3235]"}
+              [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-2 flex-shrink-0"}
                [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
                 (let [parts (cs/split (-> template :data :name) #"/")
                       file-name (last parts)

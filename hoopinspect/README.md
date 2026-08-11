@@ -20,6 +20,10 @@ plaintext over loopback or a unix socket.
 **Zero dependencies.** Standard library only, tests included, no `go.sum`. You
 vendor nothing and get no version skew with whatever links it.
 
+**Go 1.26.5.** Every module here — the root and the five nested ones — declares
+`go 1.26.5`, so an older toolchain refuses the build instead of miscompiling
+it. The repo's `go.work` and the sidecar image pin the same version.
+
 ```go
 insp, _ := hoopinspect.New(hoopinspect.Postgres)
 rules, _ := policy.NewRules([]policy.Rule{{
@@ -135,6 +139,12 @@ hoop start inspect --config config.yaml              # run
 `--config` also reads `HOOP_INSPECT_CONFIG`, which is the shape a Kubernetes
 deployment wants: mount the ConfigMap, set the variable, pass no arguments.
 
+That binary is already in the images you pull: `hoophq/hoopdev` (agent) and
+`hoophq/hoop` (gateway), from **1.126.0** onward. Running the relay out of one
+without building anything — `docker exec` into a live container, extending the
+image and swapping `CMD`, or adding a second container to the agent pod — is
+[QUICKSTART-AGENT-IMAGE.md](./QUICKSTART-AGENT-IMAGE.md).
+
 **As a standalone binary**, when a sidecar container should carry the relay and
 nothing else. It lives in the nested `cmd` module, which is where the optional
 plugins get linked (the YAML front end and alcatraz PII detection) so the root
@@ -148,6 +158,10 @@ go build -o hoop-inspect .
 ./hoop-inspect -config config.yaml
 ./hoop-inspect -version
 ```
+
+Go 1.26.5 or newer builds it. Below that the module's own `go` directive stops
+the build with `requires go >= 1.26.5`, and `GOTOOLCHAIN=auto` (the default)
+fetches the right one rather than failing.
 
 As a container, with the `hoopinspect` tree as the build context. From the repo
 root:
@@ -298,6 +312,12 @@ refuses outright:
   guardrail looks live while allowing everything it was written to stop.
 - A key typo, in YAML or JSON.
 - A bad regex in any lane's rules, naming the lane.
+- An `ai_analysis` rule with no `analyzer` section, no trigger, or no action
+  for any risk level. All three would load and classify nothing.
+- An `analyzer.provider` the binary does not link, naming what it does link.
+- A credential file readable by group or other, naming its mode.
+- An `http` block on a non-HTTP lane, or `authorization` in its header
+  allowlist.
 
 ### 4. Ask the running process what it resolved
 
@@ -348,6 +368,170 @@ listeners:
 on first deploy. A lane running observe-only says so in the startup log and in
 `/config`.
 
+### Analyzing statements with a model
+
+An `ai_analysis` rule sends a statement to a language model and denies on the
+risk it reports. It is the only rule type that leaves the process, costs money
+and can be slow, so three things bound it: a trigger decides what is worth
+asking about, a cache collapses repeated statement shapes onto one verdict,
+and the rule runs LAST in the chain, after the free local rules and OPA.
+
+```yaml
+pii:
+  entities: [EMAIL_ADDRESS, US_SSN, BR_CPF]
+
+analyzer:                      # one provider serves every lane
+  provider: vertex             # vertex | anthropic | openai
+  model: claude-sonnet-4-5@20250929
+  extra: {project: my-gcp-project, region: global}
+  # credentials_file omitted -> Application Default Credentials.
+  # Under GKE Workload Identity there is then no credential on disk at all.
+  timeout_sec: 10
+  fail_open: true              # the default, and see below
+  send: redacted               # raw | redacted | refuse
+  max_input_bytes: 8192
+  cache: {size: 4096, ttl_sec: 900}
+  max_calls: 500
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    policy:
+      rules:
+        - name: risky-writes
+          type: ai_analysis
+          trigger: {operations: [delete, update]}
+          high: block
+          medium: warn
+          low: allow
+          message: refused by risk analysis
+
+  - name: api
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+    http:                      # REQUIRED for HTTP analysis, see below
+      capture_body: true
+      max_body_bytes: 8192
+      headers: [Content-Type]
+    policy:
+      rules:
+        - name: risky-payloads
+          type: ai_analysis
+          trigger: {resources: ["/anything", "/users/*/orders"]}
+          high: block
+```
+
+**An HTTP lane needs `capture_body: true`.** The codec exposes nothing by
+default, so without it the analyzer sees `POST /anything` and no body, which
+tells a model nothing. A request with no body is skipped rather than
+classified, so an unset flag shows up as an analyzer that never fires.
+`authorization`, `cookie` and `proxy-authorization` cannot be allowlisted;
+headers never reach the model regardless.
+
+**Only requests are classified.** By the time a response comes back a write
+has already happened, and read-side exposure is masking's job.
+
+**`fail_open` defaults to true here**, the opposite of every other evaluator.
+A classifier that denies whenever its provider has an outage takes the
+database down with it. Set it false where the classification is a compliance
+requirement, and accept that a provider outage then stops traffic.
+
+**`send: redacted` uses the in-process detector** to name entities instead of
+transmitting their values. A relay whose job is keeping taxpayer ids out of a
+database's query log should not post them to a model vendor. `send: refuse`
+denies locally instead of transmitting, and both need a `pii` section.
+
+**Writing your own prompt.** What counts as risky depends on what you are
+protecting, so the risk guidance is replaceable at two levels.
+
+`analyzer.prompt` is **process-wide**: it applies to every `ai_analysis` rule
+on every lane, database and HTTP alike. Put deployment-wide facts there and
+nothing protocol-specific, because the same words reach the model judging a
+SQL statement and the model judging a JSON body. A rule's own `prompt:` is
+where protocol- and lane-specific wording belongs, and it wins:
+
+```yaml
+analyzer:
+  prompt: |
+    You are classifying traffic to a regulated production environment
+    holding customer financial records. Anything that reads or modifies
+    customer or payment data is at least medium risk.
+
+listeners:
+  - name: appdb
+    policy:
+      rules:
+        - name: risky-writes
+          type: ai_analysis
+          trigger: {operations: [update]}
+          high: block
+          prompt: |
+            You are classifying SQL against the customer ledger. An UPDATE
+            with no WHERE clause is always high risk, and so is any schema
+            change.
+
+  - name: api
+    policy:
+      rules:
+        - name: risky-payloads
+          type: ai_analysis
+          trigger: {resources: ["/orders/**"]}
+          high: block
+          prompt: |
+            You are classifying HTTP request bodies to the orders API. A
+            payload that cancels or refunds in bulk, or that edits another
+            tenant's records, is high risk.
+```
+
+Setting only `analyzer.prompt` is fine — the built-in guidance it replaces
+covers both protocols, with separate high-risk examples for SQL and for HTTP,
+for exactly this reason. Overriding it with database-only wording is the easy
+mistake: an HTTP lane then classifies JSON bodies against advice about `DROP`
+and `TRUNCATE`.
+
+A prompt replaces the **guidance** only. Two instructions are appended after
+whatever you write and cannot be removed:
+
+- Report the verdict by calling exactly one of the three risk tools. This is
+  what makes the risk level an enum rather than a parsing problem — the level
+  is which tool the model chose, so there is no free text to misread.
+- Never quote a literal value from the statement in the title or explanation.
+  That is a security property, not a style rule: the verdict reaches an audit
+  record, and a title repeating the identifier it objected to has published
+  that identifier.
+
+Changing a prompt invalidates cached verdicts for the rules it applies to, so
+a reworded prompt takes effect on the next statement rather than after the
+cache TTL. `/config` reports `custom_prompt: true` and never the text, for the
+same reason it reports rule names and not their `pattern_regex`.
+
+**Costs.** An ORM issues one statement shape thousands of times per session.
+The cache keys on the shape, with literals stripped and HTTP resources
+normalized, so `WHERE id = 1` and `WHERE id = 2` are one verdict. Watch the
+hit rate at `/stats` before enabling a blocking action:
+
+```bash
+curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
+```
+
+Verdicts land in the audit trail as `metadata.risk_level`, which rolls up to a
+session's highest risk in `GET /api/sessions` and `GET /api/stats`.
+
+**Credentials never appear in the config.** `credentials_file` is a path; the
+file must not be readable by group or other; the material is held in a type
+that refuses to print through `%v`, `%#v`, JSON or `slog`; and `/config`
+reports the endpoint host only. An endpoint URL carrying userinfo or a query
+string is refused at startup, because that view sits beside a read interface
+to the audit trail.
+
+**Vertex** authenticates with a GCP OAuth2 bearer minted from a service
+account and refreshed automatically, so `-validate` mints one token to prove
+the credential, the `roles/aiplatform.user` binding and the host clock before
+anything serves traffic. Prefer Workload Identity and omit `credentials_file`.
+
 ## Overlap with Envoy
 
 Envoy already parses some of this.
@@ -377,6 +561,7 @@ gaps named above are the narrow ones. Envoy is not blind here.
 | Protocol | Request messages | Response messages | Stateful |
 |---|---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
+| `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 
 The Postgres codec is stateful because one `RowDescription` describes every
@@ -385,17 +570,59 @@ registry hands out a factory rather than an instance: two connections sharing
 one codec would corrupt each other's reassembly, and one tenant's SQL would
 surface in another tenant's audit trail. Give every connection its own.
 
-MySQL, MSSQL and MongoDB codecs are **not shipped**. The `Codec` interface
-and the shared SQL classifier are protocol-agnostic, so adding one means a new
-`codec/<name>` package and nothing else. We removed the earlier
-implementations to keep the surface to what is exercised end to end.
+### MSSQL, and the Kerberos login
+
+TDS gives the SSPI exchange its own packet type, and that fact alone lets
+integrated authentication cross the relay with **no Kerberos code in this
+library**. LOGIN7 (`0x10`) and each SSPI continuation (`0x11`) carry no SQL, so
+the relay forwards them verbatim. Inspection begins at the first SQLBatch
+(`0x01`) or RPC (`0x03`). The protocol's own message typing draws that
+boundary, so no heuristic guesses where the ciphertext stops.
+
+A relay could do no more here. The SSPI blob is a service ticket bound to the
+server's SPN: relayable, and beyond minting, reading or editing.
+`mssql.DetectSSPI` reports that a login is integrated, which serves the audit
+trail and a clear error message. It cannot report who. Under integrated auth
+the username field sits empty, because the name lives inside the ticket.
+
+**The codec refuses one thing outright.** A login response carrying a routing
+ENVCHANGE tells the driver to reconnect elsewhere, and drivers obey without
+telling the user. Forward it and the client lands on a socket the relay does
+not hold, where the session continues with no policy, no masking and no audit,
+leaving no trace that it stopped being watched. The codec returns
+`ErrStreamUnsafe`, the gate turns that into a denial regardless of policy, and
+the connection ends with a message naming the redirect target. No rule enables
+this behaviour and none can switch it off.
+
+**MSSQL masks its responses**, by the same re-framing mechanism Postgres uses
+and against a harder framing. TDS nests two: an 8-byte packet header wrapping
+a token stream, where one `ROW` spans packets and one packet holds several
+tokens. Changing a value changes the token's length, which changes how the
+tokens repack, so the codec strips the headers, rewrites the token stream, and
+lays fresh packets over the result. Patching bytes in place cannot work,
+because a longer value has nowhere to go.
+
+A column type it cannot measure (SQL_VARIANT, XML, UDT) stops the rewriting
+for that connection. Guessing a length would desynchronize the client, which
+turns a privacy gap into a lost session. Statements and policy carry on; only
+masking steps aside. Whatever was already rewritten is kept and emitted, so a
+value masked earlier in a response stays masked when an unmeasurable token
+turns up later in the same one.
+
+A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
+AD domain controller, lives in
+[`deploy/docker-compose/envoy-stack/mssql`](../deploy/docker-compose/envoy-stack/mssql).
+
+MySQL and MongoDB codecs are **not shipped**. The `Codec` interface and the
+shared SQL classifier are protocol-agnostic, so adding one takes a new
+`codec/<name>` package and no other change.
 
 Import only what you need. A listener that speaks Postgres imports
 `codec/postgres` and never links the HTTP machinery:
 
 ```go
 import _ "github.com/hoophq/hoopinspect/codec/postgres" // postgres only
-import _ "github.com/hoophq/hoopinspect/codec/all"      // postgres + http
+import _ "github.com/hoophq/hoopinspect/codec/all"      // postgres + mssql + http
 ```
 
 ## The Statement
@@ -714,6 +941,65 @@ The relay reclaims it: at startup it dials the path, and a socket nothing
 answers on gets unlinked with a warning. One that DOES answer is left alone and
 the bind fails, naming the conflict, because two relays sharing a socket would
 split a client's connections between them at random.
+
+## Downstream TLS, and the GSS refusal
+
+The relay terminates no client TLS by default: whatever fronts it owns that
+leg. Postgres is the exception, because pgwire leaves no one else able to.
+
+### The pgwire problem
+
+pgwire negotiates TLS **in-band**. The client sends an 8-byte `SSLRequest`,
+waits for a one-byte `S`/`N`, then handshakes. A plain TLS listener in front
+sees a sentinel where it expects a ClientHello, and fails. Envoy's
+`postgres_proxy` filter handles it, at a price: the filter ships contrib-only,
+Envoy marks it work-in-progress and documents it as "not hardened", and it
+gives up for the rest of the connection once a client asks for GSS encryption.
+
+Compare MSSQL. TDS 8.0 is TLS-on-connect, so an ordinary
+`DownstreamTlsContext` terminates it with no protocol awareness, and that lane
+needs none of this.
+
+```yaml
+listeners:
+  - name: appdb
+    protocol: postgres            # the only protocol that accepts this
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/relay.crt
+      key_file:  /etc/hoop-inspect/certs/relay.key
+```
+
+The sidecar refuses this on any other protocol at startup, and loads the
+keypair there too. Finding a bad path on the first client connection would cost
+one failed login per restart and leave the startup log silent.
+
+### GSS encryption draws a refusal
+
+Each postgres lane refuses it, configured or not. That refusal separates a lane
+that enforces something from one that appears to.
+
+`GSSENCRequest` asks to wrap the session in GSSAPI. Accept it and each later
+byte becomes ciphertext: no statements, no masking, no audit trail, and **no
+error** saying inspection stopped. libpq defaults `gssencmode=prefer`, so a
+developer holding a Kerberos ticket asks for this before anything else, ahead
+of TLS.
+
+The relay answers `N`, and the client loses no capability. It falls back and
+**keeps its Kerberos authentication**, carried as ordinary tagged messages that
+the codec forwards untouched. Kerberos works; the wrapper alone gets declined.
+
+Use `N`, not `E`. Both refuse, and pgjdbc closes and REOPENS the TCP connection
+on `E`, which doubles each login in the audit trail.
+
+The codec carries the same refusal as a backstop. Should a GSS request reach it
+anyway, because something else fronts the relay and let it through, the codec
+returns `ErrStreamUnsafe` and the lane fails closed.
+
+| Client | Behaviour |
+|---|---|
+| psql / libpq | defaults to `prefer`, so it asks; gets `N`, falls back, Kerberos intact |
+| DBeaver / pgjdbc | defaults to `allow`, which skips the request |
+| either, `gssencmode=require` | fails with a clear error instead of bypassing inspection |
 
 ## Upstream TLS
 

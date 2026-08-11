@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoopinspect/analyzer"
 	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
 )
@@ -51,6 +52,15 @@ type Config struct {
 	// instead of "unknown field pii".
 	PII json.RawMessage `json:"pii,omitempty"`
 
+	// Analyzer configures the optional AI risk analyzer.
+	//
+	// Unlike PII this IS interpreted here, because the shape is small and
+	// provider-independent: the provider-specific parts live in Extra, and
+	// the credential is a path this package reads rather than material it
+	// holds. A provider needing a dependency (Vertex needs GCP OAuth2)
+	// stays out via the analyzer registry, not via an opaque section.
+	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
+
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
 }
@@ -61,7 +71,7 @@ type ListenerConfig struct {
 	// Name identifies the listener in logs. Defaults to Connection.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres or http.
+	// Protocol selects the codec: postgres, mssql or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is
@@ -83,6 +93,21 @@ type ListenerConfig struct {
 
 	// UpstreamTLS enables TLS to the backend.
 	UpstreamTLS *TLSConfig `json:"upstream_tls"`
+
+	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
+	// Requires cert_file and key_file; the other TLSConfig fields describe an
+	// outbound connection and are ignored here.
+	//
+	// Only `postgres` supports it, and only because pgwire leaves nobody else
+	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
+	// plain TLS listener in front cannot terminate it. Envoy's own postgres
+	// filter can, but it is contrib-only, marked work-in-progress, and gives
+	// up permanently the moment a client asks for GSS encryption — which is
+	// what psql does by default whenever a Kerberos ticket is present.
+	//
+	// Omitting it keeps the documented posture: the relay terminates no
+	// downstream TLS and whatever fronts it owns that leg.
+	DownstreamTLS *TLSConfig `json:"downstream_tls"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http protocol behind an authenticating proxy.
@@ -119,6 +144,10 @@ type ListenerConfig struct {
 	// concatenating two lists produces two rewrites competing for one entity
 	// with slice order picking the winner. Enabled replaces when set.
 	Mask *MaskConfig `json:"mask,omitempty"`
+
+	// HTTP configures what this lane's HTTP codec captures. Only valid on
+	// an http lane.
+	HTTP *HTTPCodecConfig `json:"http,omitempty"`
 }
 
 // TLSConfig configures an upstream TLS connection.
@@ -329,6 +358,13 @@ func (c *Config) Validate() error {
 	if len(c.Listeners) == 0 {
 		problems = append(problems, "no listeners configured")
 	}
+
+	// The analyzer section is checked here as well as in setupAnalyzer, so a
+	// config with a bad lane AND a bad analyzer reports both in one run.
+	// Splitting them across phases is the "one error per restart" this
+	// package refuses everywhere else. setupAnalyzer keeps its own call for
+	// a caller that builds a Config by hand and never passes through here.
+	problems = append(problems, c.Analyzer.validate(len(c.PII) > 0)...)
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
@@ -352,6 +388,25 @@ func (c *Config) Validate() error {
 		}
 		seen[key] = true
 
+		// downstream_tls is refused at startup rather than accepted and
+		// ignored. On any other protocol the relay would never look at the
+		// SSLRequest that makes it work, so the lane would come up "green"
+		// presenting a certificate nothing ever offers.
+		if l.DownstreamTLS != nil {
+			if l.Protocol != string(hoopinspect.Postgres) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: downstream_tls is only supported on postgres, not %q "+
+						"(pgwire negotiates TLS in-band, which is the only reason "+
+						"the relay terminates it at all)", name, l.Protocol))
+			}
+			// Load the keypair now. Discovering a bad path on the first
+			// client connection means one failed login per restart and
+			// nothing in the startup log.
+			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			}
+		}
+
 		problems = append(problems, c.validateLane(l, name)...)
 	}
 
@@ -374,13 +429,43 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// first request that hits it. With a pii section present, Main runs the
 	// real check against the detector; a pii rule has no scanner yet here and
 	// would fail for the wrong reason.
-	if len(pc.Rules) > 0 && len(c.PII) == 0 {
-		if _, err := policy.NewRules(pc.Rules); err != nil {
+	localRules, aiRules := splitAnalyzerRules(pc.Rules)
+	if len(localRules) > 0 && len(c.PII) == 0 {
+		if _, err := policy.NewRules(localRules); err != nil {
 			problems = append(problems, name+": "+err.Error())
 		}
 	}
+	problems = append(problems, validateAIRules(aiRules, c.Analyzer, name)...)
 	if pc.OPA != nil && pc.OPA.URL == "" {
 		problems = append(problems, name+": policy.opa set but url is empty")
+	}
+
+	// An http block on a lane with no HTTP codec would load and do nothing,
+	// which is the failure this package refuses everywhere else.
+	if lc.HTTP != nil {
+		if hoopinspect.Protocol(lc.Protocol) != hoopinspect.HTTP {
+			problems = append(problems, fmt.Sprintf(
+				"%s: an \"http\" block is only valid on an http listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.HTTP.validate(name)...)
+	}
+
+	// An ai_analysis rule on an HTTP lane with no body capture classifies
+	// nothing: HTTPBuilder.Build returns ok=false on an empty body, and the
+	// codec leaves Body empty unless the lane asked for it. The rule would
+	// load, evaluate and never fire — the same silent failure the pii-entity
+	// check refuses, on a control that also costs money when it does work.
+	//
+	// This asserts only that the proxy COULD capture a body. A genuinely
+	// bodiless request is still skipped at runtime, deliberately: paying for
+	// a verdict on "POST /orders" with no payload is what that skip avoids.
+	if len(aiRules) > 0 && hoopinspect.Protocol(lc.Protocol) == hoopinspect.HTTP &&
+		(lc.HTTP == nil || !lc.HTTP.CaptureBody) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: has ai_analysis rule(s) on an http listener but http.capture_body "+
+				"is not set, so every request would be skipped; add an \"http\" "+
+				"block with capture_body: true", name))
 	}
 
 	// Mask rule SHAPE belongs to the plugin, which checks it when building
@@ -437,19 +522,24 @@ type Plugin interface {
 // Returns nil in observe-only mode. det may be nil, and a lane with pii rules
 // then fails to build by design: a guardrail that cannot see must not
 // start.
-func buildPolicy(pc PolicyConfig, det Plugin) (policy.Evaluator, error) {
+func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
 	if !pc.enforcing() {
 		return nil, nil
 	}
 
+	// ai_analysis rules are lifted out before Rules sees them: they need a
+	// provider and a deadline, which a local matcher has no business
+	// holding, and Rules refuses one that reaches it.
+	localRules, aiRules := splitAnalyzerRules(pc.Rules)
+
 	var chain policy.Chain
-	if len(pc.Rules) > 0 {
+	if len(localRules) > 0 {
 		var rules *policy.Rules
 		var err error
 		if det != nil {
-			rules, err = policy.NewRulesWithScanner(pc.Rules, det)
+			rules, err = policy.NewRulesWithScanner(localRules, det)
 		} else {
-			rules, err = policy.NewRules(pc.Rules)
+			rules, err = policy.NewRules(localRules)
 		}
 		if err != nil {
 			return nil, err
@@ -467,10 +557,38 @@ func buildPolicy(pc PolicyConfig, det Plugin) (policy.Evaluator, error) {
 			FailOpen: pc.OPA.FailOpen,
 		})
 	}
+
+	// The analyzer goes LAST, and the ordering is the cost control: a
+	// statement a free local rule or OPA already denied never reaches a
+	// paid classifier, because Chain short-circuits on the first denial.
+	if len(aiRules) > 0 {
+		var cfg *AnalyzerConfig
+		var provider analyzer.Provider
+		var redact func(string) string
+		if ac != nil {
+			cfg, provider, redact = ac.cfg, ac.provider, ac.redact
+		}
+		evs, err := buildAnalyzerEvaluators(aiRules, cfg, provider, redact)
+		if err != nil {
+			return nil, err
+		}
+		for _, ev := range evs {
+			chain = append(chain, ev)
+		}
+	}
+
 	if len(chain) == 0 {
 		return nil, nil
 	}
 	return chain, nil
+}
+
+// analyzerDeps carries the process-wide analyzer to each lane's policy build.
+// One provider serves every lane, so the credential is read once.
+type analyzerDeps struct {
+	cfg      *AnalyzerConfig
+	provider analyzer.Provider
+	redact   func(string) string
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
@@ -505,4 +623,29 @@ func (t *TLSConfig) BuildTLS() (*tls.Config, error) {
 		out.Certificates = []tls.Certificate{cert}
 	}
 	return out, nil
+}
+
+// BuildDownstreamTLS turns a TLSConfig into a server-side *tls.Config.
+//
+// Separate from BuildTLS because the two describe opposite ends of a
+// connection: BuildTLS produces a CLIENT config, where CAFile verifies a peer
+// and ServerName drives SNI. Here the certificate is what the relay PRESENTS,
+// so those fields are meaningless and a keypair is mandatory rather than
+// optional. Sharing one builder would silently accept a lane configured with
+// only a ca_file and then fail every handshake at runtime.
+func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
+	if t == nil {
+		return nil, nil
+	}
+	if t.CertFile == "" || t.KeyFile == "" {
+		return nil, fmt.Errorf("downstream_tls needs both cert_file and key_file")
+	}
+	cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("downstream_tls keypair: %w", err)
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}, nil
 }

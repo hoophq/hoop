@@ -339,15 +339,18 @@ func sessionUsageProperties(d *sessionUsageData) map[string]any {
 		props["ai-session-analyzer-action"] = s.AIAnalysis.Action
 	}
 
-	for _, rule := range []*models.AccessRequestRule{d.jitAccessRequest, d.commandAccessRequest} {
+	for accessType, rule := range map[string]*models.AccessRequestRule{
+		models.AccessTypeJit:     d.jitAccessRequest,
+		models.AccessTypeCommand: d.commandAccessRequest,
+	} {
 		if rule == nil {
 			continue
 		}
-		props[fmt.Sprintf("%s-access-request-activated", rule.AccessType)] = true
-		props[fmt.Sprintf("%s-access-request-force-approval", rule.AccessType)] = len(rule.ForceApprovalGroups) > 0
-		props[fmt.Sprintf("%s-access-request-all-groups-must-approve", rule.AccessType)] = rule.AllGroupsMustApprove
+		props[fmt.Sprintf("%s-access-request-activated", accessType)] = true
+		props[fmt.Sprintf("%s-access-request-force-approval", accessType)] = len(rule.ForceApprovalGroups) > 0
+		props[fmt.Sprintf("%s-access-request-all-groups-must-approve", accessType)] = rule.AllGroupsMustApprove
 		if rule.MinApprovals != nil {
-			props[fmt.Sprintf("%s-access-request-minimum-approval", rule.AccessType)] = *rule.MinApprovals
+			props[fmt.Sprintf("%s-access-request-minimum-approval", accessType)] = *rule.MinApprovals
 		}
 	}
 

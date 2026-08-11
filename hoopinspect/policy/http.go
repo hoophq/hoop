@@ -123,6 +123,17 @@ func (r Rule) methodAllowed(method string) bool {
 	return false
 }
 
+// MatchResource compares a normalized resource against a glob pattern, using
+// the same rules an http_resource rule uses.
+//
+// It is exported so another evaluator (the AI analyzer's trigger) can select
+// statements by resource without a second, subtly different matcher. Two glob
+// implementations in one config file is how a lane ends up with a rule that
+// matches and a trigger that does not.
+func MatchResource(pattern, resource string) bool {
+	return matchResource(pattern, resource)
+}
+
 // matchResource compares a normalized resource against a pattern.
 //
 // "*" matches exactly one segment; a trailing "/**" matches one or more

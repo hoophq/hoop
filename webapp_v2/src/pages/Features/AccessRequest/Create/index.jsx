@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Grid, Group, Stack, Text, Title } from '@mantine/core'
+import {
+  Box,
+  Checkbox,
+  Grid,
+  Group,
+  SimpleGrid,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+} from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft, ClockArrowUp, CodeXml, Info } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -11,7 +21,6 @@ import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
 import PageLoader from '@/components/PageLoader'
 import Select from '@/components/Select'
-import SelectionCard from '@/components/SelectionCard'
 import Switch from '@/components/Switch'
 import TextInput from '@/components/TextInput'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
@@ -19,7 +28,13 @@ import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAccessRequestStore } from '../store'
-import { accessTypeLabel, isEligibleForAccessType, sanitizeRuleName } from '../helpers'
+import {
+  accessTypeIncludes,
+  accessTypeLabel,
+  isEligibleForAccessType,
+  sanitizeRuleName,
+  toggledAccessType,
+} from '../helpers'
 import {
   ACCESS_TYPE,
   FREE_LICENSE_MESSAGE,
@@ -48,6 +63,40 @@ function SectionRow({ title, description, children }) {
   )
 }
 
+function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onToggle }) {
+  return (
+    <Checkbox.Card
+      className={classes.typeCard}
+      radius="lg"
+      checked={checked}
+      disabled={disabled}
+      onChange={onToggle}
+    >
+      <Group gap="md" align="center" wrap="nowrap" p="md">
+        <Checkbox.Indicator
+          size="sm"
+          color="white"
+          iconColor="var(--brand-navy)"
+          disabled={disabled}
+        />
+        {Icon && (
+          <ThemeIcon size="lg" radius="md" variant="default" className={classes.typeCardIcon}>
+            <Icon size={20} aria-hidden="true" />
+          </ThemeIcon>
+        )}
+        <Stack gap={2} align="flex-start">
+          <Text size="sm" fw={500} c={checked ? 'white' : undefined}>
+            {title}
+          </Text>
+          <Text size="xs" ta="left" c={checked ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
+            {description}
+          </Text>
+        </Stack>
+      </Group>
+    </Checkbox.Card>
+  )
+}
+
 // Remounted via `key` when the edited rule changes, so state derives from the
 // loaded rule with lazy useState initializers instead of a prefill effect.
 function RuleFormFields({ rule, isEdit }) {
@@ -73,7 +122,7 @@ function RuleFormFields({ rule, isEdit }) {
   const [name, setName] = useState(() => rule?.name ?? '')
   const [description, setDescription] = useState(() => rule?.description ?? '')
   const [accessType, setAccessType] = useState(
-    () => rule?.access_type ?? ACCESS_TYPE.COMMAND,
+    () => rule?.access_type ?? ACCESS_TYPE.JIT_COMMAND,
   )
   // The Select carries strings; the payload parses it back to seconds.
   const [accessDuration, setAccessDuration] = useState(() =>
@@ -94,6 +143,9 @@ function RuleFormFields({ rule, isEdit }) {
   )
   const [forceApprovalGroups, setForceApprovalGroups] = useState(
     () => rule?.force_approval_groups ?? [],
+  )
+  const [skipReviewGroups, setSkipReviewGroups] = useState(
+    () => rule?.skip_review_groups ?? [],
   )
   const [minApprovals, setMinApprovals] = useState(() => rule?.min_approvals ?? '')
 
@@ -127,13 +179,14 @@ function RuleFormFields({ rule, isEdit }) {
     name.trim().length > 0 &&
     hasTarget &&
     reviewersGroups.length > 0 &&
-    (accessType !== ACCESS_TYPE.JIT || Boolean(accessDuration)) &&
+    (!accessTypeIncludes(accessType, ACCESS_TYPE.JIT) || Boolean(accessDuration)) &&
     (allGroupsMustApprove || Number(minApprovals) >= 1) &&
     !blockedByLicense &&
     !submitting
 
-  const requestAccessTypeSwitch = (target) => {
-    if (target === accessType) return
+  const requestAccessTypeToggle = (half) => {
+    const target = toggledAccessType(accessType, half)
+    if (target == null) return
     const byName = new Map(connections.items.map((c) => [c.name, c]))
     const invalid = connectionNames.filter((connectionName) => {
       const connection = byName.get(connectionName)
@@ -175,13 +228,14 @@ function RuleFormFields({ rule, isEdit }) {
       all_groups_must_approve: allGroupsMustApprove,
       reviewers_groups: reviewersGroups,
       force_approval_groups: forceApprovalGroups,
+      skip_review_groups: skipReviewGroups,
       min_approvals: minApprovals === '' ? null : Number(minApprovals),
     }
     // Managed rules must omit attributes — the API requires them absent or
     // byte-identical to what it already stores.
     if (!managed) payload.attributes = attributeNames
     if (description) payload.description = description
-    if (accessType === ACCESS_TYPE.JIT && accessDuration) {
+    if (accessTypeIncludes(accessType, ACCESS_TYPE.JIT) && accessDuration) {
       payload.access_max_duration = Number(accessDuration)
     }
 
@@ -247,12 +301,20 @@ function RuleFormFields({ rule, isEdit }) {
           </Button>
         </Box>
 
-        <div ref={sentinelRef} aria-hidden="true" />
+        {/* Pulled up by the shell header's height so it leaves the viewport at the
+            moment the sticky bar meets the header rather than 56px later —
+            useInViewport takes no rootMargin. Inert without the shell. */}
+        <Box
+          ref={sentinelRef}
+          aria-hidden="true"
+          pos="relative"
+          top="calc(-1 * var(--app-shell-header-offset, 0rem))"
+        />
         <Group
           justify="space-between"
           align="center"
           pos="sticky"
-          top={0}
+          top="var(--app-shell-header-offset, 0rem)"
           bg="var(--mantine-color-body)"
           py="md"
           mb="xl"
@@ -325,39 +387,41 @@ function RuleFormFields({ rule, isEdit }) {
 
           <SectionRow
             title="Access request type"
-            description="Define how to request to your resource roles."
+            description="Define how to request to your resource roles. Select one or both."
           >
             <Stack gap="md">
-              <SelectionCard
-                icon={ClockArrowUp}
-                title="Just-in-Time"
-                description="For temporary access expiring automatically after defined time range"
-                selected={accessType === ACCESS_TYPE.JIT}
-                disabled={managed}
-                onClick={() => requestAccessTypeSwitch(ACCESS_TYPE.JIT)}
-              />
-              <SelectionCard
-                icon={CodeXml}
-                title="by Command"
-                description="For execution-based with approval workflow"
-                selected={accessType === ACCESS_TYPE.COMMAND}
-                disabled={managed}
-                onClick={() => requestAccessTypeSwitch(ACCESS_TYPE.COMMAND)}
-              />
+              <SimpleGrid cols={2} spacing="md">
+                <AccessTypeCard
+                  icon={ClockArrowUp}
+                  title="Native Just-in-Time Access"
+                  description="Controls how much time someone can access your resources using Native Connection."
+                  checked={accessTypeIncludes(accessType, ACCESS_TYPE.JIT)}
+                  disabled={managed}
+                  onToggle={() => requestAccessTypeToggle(ACCESS_TYPE.JIT)}
+                />
+                <AccessTypeCard
+                  icon={CodeXml}
+                  title="Command"
+                  description="For execution-based within Web Terminal or hoop exec command line"
+                  checked={accessTypeIncludes(accessType, ACCESS_TYPE.COMMAND)}
+                  disabled={managed}
+                  onToggle={() => requestAccessTypeToggle(ACCESS_TYPE.COMMAND)}
+                />
+              </SimpleGrid>
               <Group gap="xs" wrap="nowrap" align="flex-start" c="dimmed">
                 <Info size={16} />
                 <Text size="sm">
-                  Only resource roles that support the selected access type will be
+                  Only resource roles that support the selected access types will be
                   available.
                 </Text>
               </Group>
             </Stack>
           </SectionRow>
 
-          {accessType === ACCESS_TYPE.JIT && (
+          {accessTypeIncludes(accessType, ACCESS_TYPE.JIT) && (
             <SectionRow
               title="Access time range"
-              description="Select for how long temporary access will be available for your resource roles."
+              description="Select for how long temporary access will be available for your resource roles. Rule applied for Native Just-in-Time only."
             >
               <Select
                 label="Time Range"
@@ -403,8 +467,8 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="User groups requiring review"
-            description="Users in these groups must go through an approval review when requesting access with this rule."
+            title="Who needs approval"
+            description="Requests from these groups go through review."
           >
             <Stack gap="xs">
               <MultiSelect
@@ -412,7 +476,10 @@ function RuleFormFields({ rule, isEdit }) {
                 placeholder="Select groups..."
                 data={userGroupOptions}
                 value={approvalRequiredGroups}
-                onChange={setApprovalRequiredGroups}
+                onChange={(groups) => {
+                  setApprovalRequiredGroups(groups)
+                  if (groups.length > 0) setSkipReviewGroups([])
+                }}
                 disabled={submitting}
                 searchable
                 clearable
@@ -423,9 +490,27 @@ function RuleFormFields({ rule, isEdit }) {
             </Stack>
           </SectionRow>
 
+          {approvalRequiredGroups.length === 0 && (
+            <SectionRow
+              title="Who can skip approval (optional)"
+              description="Users in these groups get access without going through an approval review when requesting access with this rule."
+            >
+              <MultiSelect
+                label="User Groups"
+                placeholder="Select groups..."
+                data={userGroupOptions}
+                value={skipReviewGroups}
+                onChange={setSkipReviewGroups}
+                disabled={submitting}
+                searchable
+                clearable
+              />
+            </SectionRow>
+          )}
+
           <SectionRow
-            title="Approver user groups"
-            description="Select which user groups can approve access requests in this rule. Each group counts as one approval."
+            title="Who can approve"
+            description="Members of these groups can approve requests. Each group counts as one approval."
           >
             <Stack gap="lg">
               <MultiSelect
@@ -455,8 +540,8 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="Approval amount"
-            description="Define the minimum number of groups that must approve each session."
+            title="Minimum Required approvals"
+            description="Define the minimum number of groups that must approve each request."
           >
             <NumberInput
               label="Minimum Approval Amount"
@@ -470,8 +555,8 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="Force approval groups (Optional)"
-            description="Select which user groups are allowed to bypass other approval rules."
+            title="Who can override (optional)"
+            description="One approval from these groups clears the request, whatever the other rules require."
           >
             <MultiSelect
               label="User Groups"

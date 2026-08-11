@@ -485,6 +485,20 @@ func GetUserInfo(c *gin.Context) {
 		userInfoData.Name = ctx.UserAnonProfile
 		userInfoData.Picture = ctx.UserAnonPicture
 		userInfoData.ID = ctx.UserAnonSubject
+	} else {
+		// Anonymous users have no record in the users table, so there is no
+		// creation date to measure the survey window from. Neither do API keys
+		// and service accounts, which authenticate with a subject that never
+		// reaches this table — not found is their normal state here, so it stays
+		// silent. Any other failure only means the survey is not offered on this
+		// request, it must not fail the whole response.
+		showOriginSurvey, err := models.ShouldShowOriginSurvey(models.DB, ctx.OrgID, ctx.UserID)
+		switch {
+		case err == nil:
+			userInfoData.ShowOriginSurvey = showOriginSurvey
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			log.Warnf("failed resolving the signup origin survey state, err=%v", err)
+		}
 	}
 
 	if isOrgMultiTenant && !ctx.IsAnonymous() {

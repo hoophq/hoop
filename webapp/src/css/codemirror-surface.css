@@ -1,0 +1,40 @@
+/* Editor surface colours, sampled off the Figma terminal frame: the body sits
+ * on slate-4 (#e8e8ec) with the active line on slate-5 (#e0e1e6). materialLight
+ * ships a near-white #FAFAFA, which under the grey toolbar reads as though the
+ * editor is not there.
+ *
+ * Done in CSS rather than through an EditorView.theme extension: precedence
+ * between two CodeMirror themes comes down to the order their StyleModules land
+ * in <head>, which extension order does not control — an override theme lost to
+ * materialLight silently.
+ *
+ * The class is doubled to raise specificity above the theme's generated rules,
+ * so this does not depend on document order either. Only surfaces are set; the
+ * theme keeps its syntax colours.
+ */
+.cm-editor.cm-editor {
+  background-color: var(--gray-4);
+}
+
+.cm-editor.cm-editor .cm-gutters {
+  background-color: var(--gray-4);
+  border-right: none;
+}
+
+.cm-editor.cm-editor .cm-activeLine,
+.cm-editor.cm-editor .cm-activeLineGutter {
+  background-color: var(--gray-5);
+}
+
+/* Dark mode uses literal values, not --gray-*: the terminal toggles a plain
+ * `dark` class for Tailwind, which does not switch Radix's palette — the same
+ * reason connection-state-indicator hardcodes #2e3235 in panel.cljs. */
+.dark .cm-editor.cm-editor,
+.dark .cm-editor.cm-editor .cm-gutters {
+  background-color: #2e3235;
+}
+
+.dark .cm-editor.cm-editor .cm-activeLine,
+.dark .cm-editor.cm-editor .cm-activeLineGutter {
+  background-color: #3a3f43;
+}

@@ -13,6 +13,13 @@
  (fn [db _]
    (:active-panel db)))
 
+;; Pathname of the current route. main-panel keys the rendered panel on it so a
+;; param-only navigation re-renders — see ::set-active-panel.
+(re-frame/reg-sub
+ ::route-path
+ (fn [db _]
+   (:route-path db)))
+
 (re-frame/reg-sub
  :users
  (fn [db _]

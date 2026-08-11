@@ -105,8 +105,6 @@
    [webapp.features.users.main :as users]
    [webapp.features.users.subs]
    [webapp.features.users.views.org-migration-dialog :as org-migration-dialog]
-   [webapp.guardrails.create-update-form :as guardrail-create-update]
-   [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
    [webapp.integrations.authentication.events]
    [webapp.integrations.authentication.main :as integrations-authentication]
@@ -210,6 +208,20 @@
 (defn loading-transition []
   [loaders/page-loading-screen {}])
 
+;; Clears the React shell's global header so toasts never cover the Native
+;; Connections button or the user menu. Resolves to sonner's default 24px gap
+;; when the shell is not mounted (standalone CLJS, auth layout).
+(def toaster-offset
+  #js {:top "calc(var(--app-shell-header-offset, 0rem) + 1.5rem)"})
+
+;; The CLJS flow used to persist whole credential responses — plaintext secrets
+;; included — under this key, and cleaned them up on boot. Under the shell that
+;; boot path no longer runs and React never writes the key, so anything a user
+;; accumulated before the cutover would sit in localStorage forever. Purge it
+;; unconditionally, once, on every load.
+(defonce ^:private purge-legacy-native-access
+  (.removeItem js/localStorage "hoop-native-client-access"))
+
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])
         react-shell? (boolean (.getItem js/localStorage "react-shell"))]
@@ -231,8 +243,13 @@
         (fn [panels]
           (rf/dispatch [:routes->get-route])
           (rf/dispatch [:clarity->verify-environment (:data @user)])
-          (rf/dispatch [:native-client-access->cleanup-all-expired])
-          (rf/dispatch [:native-client-access->check-active-sessions])
+          ;; Native access is owned by the React drawer under the shell. These
+          ;; restore the legacy sessions from localStorage and pop a draggable
+          ;; card for each, which would double up on the drawer — and they run
+          ;; on every layout re-render, not once per boot.
+          (when-not react-shell?
+            (rf/dispatch [:native-client-access->cleanup-all-expired])
+            (rf/dispatch [:native-client-access->check-active-sessions]))
 
           (cond
             (:loading @user)
@@ -255,13 +272,14 @@
               ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
               [:section
                {:class "antialiased h-screen"}
-               [:> Toaster {:position "top-right"}]
+               [:> Toaster {:position "top-right" :offset toaster-offset :mobileOffset toaster-offset}]
                [modals/modal]
                [modals/modal-radix]
                [dialog/dialog]
                [dialog/new-dialog]
                [snackbar/snackbar]
-               [draggable-card/main]
+               ;; No draggable-card here: under the shell, native access lives
+               ;; in the React Native Connections drawer.
                [command-palette/command-palette]
                [command-palette/keyboard-listener]
                [org-migration-dialog/main]
@@ -269,7 +287,7 @@
               ;; Normal mode: full layout with sidebar and cmdk
               [:section
                {:class "antialiased h-screen"}
-               [:> Toaster {:position "top-right"}]
+               [:> Toaster {:position "top-right" :offset toaster-offset :mobileOffset toaster-offset}]
                [modals/modal]
                [modals/modal-radix]
                [dialog/dialog]
@@ -287,7 +305,7 @@
 
 (defmethod layout :auth [_ panels]
   [:<>
-   [:> Toaster {:position "top-right"}]
+   [:> Toaster {:position "top-right" :offset toaster-offset :mobileOffset toaster-offset}]
    (snackbar/snackbar)
    [modals/modal]
    [modals/modal-radix]
@@ -442,37 +460,6 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [add-role/main resource-id]]]))
-
-(defmethod routes/panels :guardrails-panel []
-  [layout :application-hoop
-   [routes/wrap-license-feature "guardrails"
-    [routes/wrap-admin-only
-     [guardrails/panel]]]])
-
-(defmethod routes/panels :create-guardrail-panel []
-  (let [params (js/URLSearchParams. (.. js/window -location -search))
-        template-id (.get params "template")]
-    (if template-id
-      (rf/dispatch [:activation-journey/seed-guardrail-template
-                    template-id (.get params "connections")])
-      (rf/dispatch [:guardrails->clear-active-guardrail])))
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-license-feature "guardrails"
-     [routes/wrap-admin-only
-      [guardrail-create-update/main :create]]]]])
-
-(defmethod routes/panels :edit-guardrail-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        guardrail-id (:guardrail-id (:route-params current-route))]
-    (rf/dispatch [:guardrails->get-by-id guardrail-id])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-license-feature "guardrails"
-       [routes/wrap-admin-only
-        [guardrail-create-update/main :edit]]]]]))
-
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -751,6 +738,7 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
+        route-path (rf/subscribe [::subs/route-path])
         gateway-public-info (rf/subscribe [:gateway->public-info])
         react-shell? (boolean (.getItem js/localStorage "react-shell"))]
     ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
@@ -766,4 +754,13 @@
 
         :else
         [theme-provider
-         [routes/panels @active-panel @gateway-public-info]]))))
+         ;; route-path is passed as an argument, not used as a :key. Panels read
+         ;; their params from window.location when they render, so /sessions/A →
+         ;; /sessions/B keeps the same :active-panel and Reagent, comparing
+         ;; arguments, would skip the re-render entirely. Passing the path makes
+         ;; the arguments differ so the multimethod body runs again and re-reads
+         ;; the URL. A :key here would have worked too but by REMOUNTING the
+         ;; whole layout on every navigation — most panels return the same
+         ;; `layout` component, so today they reconcile in place rather than
+         ;; remount. The panel methods ignore the extra argument.
+         [routes/panels @active-panel @gateway-public-info @route-path]]))))
