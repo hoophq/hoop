@@ -10986,6 +10986,11 @@ const docTemplate = `{
         "openapi.AISessionAnalyzerRule": {
             "type": "object",
             "properties": {
+                "agentic": {
+                    "description": "When true, the analyzer runs an agentic tool-calling loop over past sessions\nand resource metadata before classifying.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "connection_names": {
                     "description": "Connection names this rule applies to",
                     "type": "array",
@@ -11055,6 +11060,11 @@ const docTemplate = `{
                 "risk_evaluation"
             ],
             "properties": {
+                "agentic": {
+                    "description": "When true, the analyzer runs an agentic tool-calling loop over past sessions\nand resource metadata before classifying.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "connection_names": {
                     "description": "Connection names this rule applies to",
                     "type": "array",
@@ -17955,15 +17965,64 @@ const docTemplate = `{
                     "type": "string",
                     "example": "The script contains queries that may expose sensitive data."
                 },
+                "model": {
+                    "description": "Model is the AI model that produced the analysis. Set by the agentic analyzer.",
+                    "type": "string"
+                },
                 "risk_level": {
                     "description": "RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:",
                     "type": "string",
                     "example": "high"
                 },
+                "steps": {
+                    "description": "Steps is the agentic investigation trace (thinking, tool calls, tool results). Empty for single-shot analysis.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionAIAnalysisStep"
+                    }
+                },
+                "summary": {
+                    "description": "Summary is a reviewer-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.",
+                    "type": "string"
+                },
                 "title": {
                     "description": "Title is a short description of the identified risk in the session",
                     "type": "string",
                     "example": "Potential Data Leakage"
+                }
+            }
+        },
+        "openapi.SessionAIAnalysisStep": {
+            "type": "object",
+            "properties": {
+                "is_error": {
+                    "description": "IsError indicates the tool result was a failure (set for tool_result).",
+                    "type": "boolean"
+                },
+                "thinking": {
+                    "description": "Thinking is the model's reasoning text (set for type \"thinking\").",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "Timestamp is when the step occurred.",
+                    "type": "string"
+                },
+                "tool_input": {
+                    "description": "ToolInput is the JSON arguments passed to the tool (set for tool_call).",
+                    "type": "string"
+                },
+                "tool_name": {
+                    "description": "ToolName is the investigation tool name (set for tool_call/tool_result).",
+                    "type": "string"
+                },
+                "tool_output": {
+                    "description": "ToolOutput is the tool result content (set for tool_result).",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "Type is one of \"thinking\", \"tool_call\", \"tool_result\".",
+                    "type": "string",
+                    "example": "tool_call"
                 }
             }
         },
