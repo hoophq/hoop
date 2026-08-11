@@ -31,7 +31,7 @@
   [total-chars]
   [:> Callout.Root {:color "amber"
                     :size "1"
-                    :class "mb-3 max-w-3xl whitespace-normal"}
+                    :class "mb-3 whitespace-normal"}
    [:> Callout.Icon
     [:> AlertTriangle {:size 16}]]
    [:> Callout.Text {:size "1"}
