@@ -12,10 +12,12 @@
   This panel renders output into one unvirtualized `whitespace-pre` node, and
   Chrome clamps layout at 2^25 px — which a single unwrapped line hits at ~3.8M
   characters, leaving the viewport blank behind a huge scrollbar (EVL-121).
-  Measured at 14px monospace: 1MB lays out in 29ms at 8.8M px, ~4x below the
-  clamp, where 4MB is already clamped. Full output stays reachable through the
-  output menu."
-  (* 1024 1024))
+  Measured at 14px monospace: 512KB lays out in 16ms at 4.4M px, ~8x below the
+  clamp, where 4MB is already clamped. Layout is only half the cost though —
+  scroll repaint of a very wide node degrades well before the clamp, so the
+  bound is set from what stays responsive in a real browser, not from the
+  headless numbers. Full output stays reachable through the output menu."
+  (* 512 1024))
 
 (defn- humanize-size
   "Formats a character count as a size; terminal output is effectively ASCII."
