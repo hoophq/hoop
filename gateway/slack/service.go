@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/slack-go/slack"
@@ -38,6 +39,9 @@ const (
 	// it's usually 2000, keep a more safe number
 	maxLabelSize  = 1800
 	maxGroupsSize = 50
+	// maxAITitleSize bounds the model-generated analysis title so it cannot
+	// push the analysis section past Slack's 3000-char text limit.
+	maxAITitleSize = 200
 )
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) (*SlackService, error) {
@@ -89,7 +93,10 @@ type MessageReviewRequest struct {
 	SlackChannels  []string
 	AIRiskLevel    string
 	AITitle        string
-	AISummary      string // falls back to Explanation when Summary empty
+	// AISummary is the reviewer-facing analysis. Callers may leave it empty and
+	// set AIExplanation instead; the builder falls back to it.
+	AISummary      string
+	AIExplanation  string
 }
 
 type MessageReviewResponse struct {
@@ -116,6 +123,39 @@ func (m *MessageReviewRequest) sessionTime() string {
 	}
 	return "-"
 }
+
+// truncateRunes cuts s so the result is at most max bytes, never splitting a
+// UTF-8 rune. Model-generated prose routinely contains multibyte characters,
+// and a byte slice through one yields invalid UTF-8 that renders as U+FFFD in
+// Slack. The " ..." marker is accounted for inside the budget, so the return
+// value never exceeds max.
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	const marker = " ..."
+	cut := max - len(marker)
+	if cut <= 0 {
+		return s[:0]
+	}
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + marker
+}
+
+// escapeSlackText escapes the three characters Slack's mrkdwn parser treats as
+// control sequences. Required for any text derived from user or model input:
+// unescaped "<!channel>", "<@U…>" or "<url|label>" would otherwise be rendered
+// as pings and links rather than literal text.
+func escapeSlackText(s string) string {
+	return slackTextEscaper.Replace(s)
+}
+
+var slackTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
 	title := "Hoop Review"
@@ -158,18 +198,34 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 		blocks = append(blocks, scriptBlock)
 	}
 
-	// AI analysis summary block
+	// AI analysis summary block.
+	//
+	// Title and summary are model output derived from the user-supplied script,
+	// so they are prompt-injectable: they MUST be escaped before landing in
+	// mrkdwn, or a crafted script could render <!channel> pings or spoofed
+	// links inside the very message reviewers use to approve. Escaping happens
+	// BEFORE truncation: entity expansion ("&" -> "&amp;") is up to 5x, so
+	// bounding the raw text would not bound the rendered text, and an oversized
+	// section is rejected by Slack (invalid_blocks), dropping the whole review
+	// notification. Truncating an escaped string can at worst clip an entity,
+	// which renders as harmless literal text.
 	if msg.AIRiskLevel != "" {
-		emoji := map[string]string{
+		emoji, ok := map[string]string{
 			"low":    ":large_green_circle:",
 			"medium": ":large_orange_circle:",
 			"high":   ":red_circle:",
-		}[msg.AIRiskLevel]
-		summary := msg.AISummary
-		if len(summary) > maxLabelSize {
-			summary = summary[:maxLabelSize] + " ..."
+		}[strings.ToLower(msg.AIRiskLevel)]
+		if !ok {
+			emoji = ":white_circle:"
 		}
-		txt := fmt.Sprintf("*AI Analysis* %s *%s Risk* — %s\n%s", emoji, strings.ToUpper(msg.AIRiskLevel), msg.AITitle, summary)
+		summaryText := msg.AISummary
+		if summaryText == "" {
+			summaryText = msg.AIExplanation
+		}
+		title := truncateRunes(escapeSlackText(msg.AITitle), maxAITitleSize)
+		summary := truncateRunes(escapeSlackText(summaryText), maxLabelSize)
+		riskLevel := escapeSlackText(strings.ToUpper(msg.AIRiskLevel))
+		txt := fmt.Sprintf("*AI Analysis* %s *%s Risk* — %s\n%s", emoji, riskLevel, title, summary)
 		blocks = append(blocks, slack.NewSectionBlock(&slack.TextBlockObject{
 			Type: slack.MarkdownType,
 			Text: txt,

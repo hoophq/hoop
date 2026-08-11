@@ -239,13 +239,18 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		sreq.Script = reviewInput
 
-		if session, serr := models.GetSessionByID(pctx.OrgID, pctx.SID); serr == nil && session != nil && session.AIAnalysis != nil {
+		session, serr := models.GetSessionByID(pctx.OrgID, pctx.SID)
+		switch {
+		case serr != nil:
+			// Best-effort: the review message must still go out without the
+			// analysis block, but a load failure is not the same as "no
+			// analysis" and should be visible when debugging a missing block.
+			log.With("sid", pctx.SID).Warnf("failed loading session for slack ai analysis block, reason=%v", serr)
+		case session != nil && session.AIAnalysis != nil:
 			sreq.AIRiskLevel = session.AIAnalysis.RiskLevel
 			sreq.AITitle = session.AIAnalysis.Title
 			sreq.AISummary = session.AIAnalysis.Summary
-			if sreq.AISummary == "" {
-				sreq.AISummary = session.AIAnalysis.Explanation
-			}
+			sreq.AIExplanation = session.AIAnalysis.Explanation
 		}
 	}
 

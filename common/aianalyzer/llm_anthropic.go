@@ -47,35 +47,7 @@ func (c *anthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 		maxTokens = defaultMaxTokens
 	}
 
-	messages := make([]anthropic.MessageParam, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		switch m.Role {
-		case RoleUser:
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
-		case RoleAssistant:
-			if len(m.ToolCalls) > 0 {
-				var blocks []anthropic.ContentBlockParamUnion
-				if m.Content != "" {
-					blocks = append(blocks, anthropic.NewTextBlock(m.Content))
-				}
-				for _, tc := range m.ToolCalls {
-					var input any
-					_ = json.Unmarshal([]byte(tc.Arguments), &input)
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
-				}
-				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
-			} else {
-				messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
-			}
-			// RoleSystem is not a valid turn role in the Anthropic API;
-			// use ChatRequest.SystemPrompt for system instructions instead.
-		case RoleTool:
-			if m.ToolResult != nil {
-				messages = append(messages, anthropic.NewUserMessage(
-					anthropic.NewToolResultBlock(m.ToolResult.ToolCallID, m.ToolResult.Content, m.ToolResult.IsError)))
-			}
-		}
-	}
+	messages := anthropicMessages(req.Messages)
 
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(model),
@@ -105,7 +77,10 @@ func (c *anthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 	if len(allTools) > 0 {
 		params.Tools = allTools
 	}
-	if effectiveToolChoice != "" {
+	// Mirrors the documented ChatRequest contract (and the OpenAI client): a
+	// tool choice is only meaningful alongside tools, and the API rejects one
+	// sent without them.
+	if effectiveToolChoice != "" && len(allTools) > 0 {
 		params.ToolChoice = anthropicToolChoice(effectiveToolChoice)
 	}
 
@@ -145,6 +120,56 @@ func (c *anthropicClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 		OutputTokens: int(msg.Usage.OutputTokens),
 		ToolCalls:    toolCalls,
 	}, nil
+}
+
+// anthropicMessages converts provider-agnostic turns to SDK message params.
+//
+// Consecutive tool results are folded into ONE user turn: that is the canonical
+// shape for the Messages API, and emitting one message per result would rely on
+// same-role merging, which strict-alternation intermediaries (Bedrock/Vertex
+// proxies reachable via ProviderConfig.APIURL) may reject.
+func anthropicMessages(in []Message) []anthropic.MessageParam {
+	messages := make([]anthropic.MessageParam, 0, len(in))
+	// lastWasToolResult tracks whether the open turn is a tool-result user turn
+	// that further consecutive results may join.
+	lastWasToolResult := false
+	for _, m := range in {
+		switch m.Role {
+		case RoleUser:
+			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+		case RoleAssistant:
+			if len(m.ToolCalls) > 0 {
+				var blocks []anthropic.ContentBlockParamUnion
+				if m.Content != "" {
+					blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+				}
+				for _, tc := range m.ToolCalls {
+					var input any
+					_ = json.Unmarshal([]byte(tc.Arguments), &input)
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+				}
+				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+			} else {
+				messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			}
+			// RoleSystem is not a valid turn role in the Anthropic API;
+			// use ChatRequest.SystemPrompt for system instructions instead.
+		case RoleTool:
+			if m.ToolResult == nil {
+				continue
+			}
+			block := anthropic.NewToolResultBlock(m.ToolResult.ToolCallID, m.ToolResult.Content, m.ToolResult.IsError)
+			if n := len(messages); n > 0 && lastWasToolResult {
+				messages[n-1].Content = append(messages[n-1].Content, block)
+				continue
+			}
+			messages = append(messages, anthropic.NewUserMessage(block))
+			lastWasToolResult = true
+			continue
+		}
+		lastWasToolResult = false
+	}
+	return messages
 }
 
 // anthropicTools converts the provider-agnostic Tool slice to the SDK type.

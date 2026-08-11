@@ -184,12 +184,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 
 			orgID := uuid.MustParse(pctx.OrgID)
 			analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(pctx.Context, sessionapi.AIAnalyzeInput{
-				OrgID:            orgID,
-				ConnectionName:   pctx.ConnectionName,
-				Script:           string(pkt.Payload),
-				UserID:           pctx.UserID,
-				IsAdminOrAuditor: false,
-				Exec:             aianalyzer.AnalyzerExecIdentity{ImpersonateUserSubject: pctx.UserID, UserAgent: "aianalyzer"},
+				OrgID:          orgID,
+				ConnectionName: pctx.ConnectionName,
+				Script:         string(pkt.Payload),
+				UserID:         pctx.UserID,
+				UserGroups:     pctx.UserGroups,
+				Exec:           aianalyzer.AnalyzerExecIdentity{ImpersonateUserSubject: pctx.UserID, UserAgent: "aianalyzer"},
 			})
 			if err != nil {
 				log.With("sid", pctx.SID, "org_id", pctx.OrgID).Errorf("failed analyzing session input with AI, err=%v", err)

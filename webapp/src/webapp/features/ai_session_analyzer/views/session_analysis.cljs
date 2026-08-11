@@ -11,22 +11,25 @@
    "high"   "red"})
 
 (defn- render-step [idx {:keys [type thinking tool_name tool_input tool_output is_error]}]
-  ^{:key idx}
-  [:> Box {:class "py-1"}
-   (case type
-     "thinking"
-     [:> Text {:size "1" :class "italic text-[--gray-11]"} thinking]
+  ;; `type` is an open string server-side: render nothing (not an empty padded
+  ;; row) for values this view does not know about.
+  (when-let [body (case type
+                    "thinking"
+                    [:> Text {:size "1" :class "italic text-[--gray-11]"} thinking]
 
-     "tool_call"
-     [:> Text {:size "1" :class "font-mono text-[--gray-12]"}
-      (str "\u25B8 " tool_name "(" tool_input ")")]
+                    "tool_call"
+                    [:> Text {:size "1" :class "font-mono text-[--gray-12]"}
+                     (str "\u25B8 " tool_name "(" tool_input ")")]
 
-     "tool_result"
-     [:> Text {:size "1" :class (str "font-mono whitespace-pre-wrap "
-                                     (if is_error "text-[--red-11]" "text-[--gray-11]"))}
-      tool_output]
+                    "tool_result"
+                    [:> Box {:class "max-h-64 overflow-y-auto"}
+                     [:> Text {:size "1" :class (str "font-mono whitespace-pre-wrap "
+                                                     (if is_error "text-[--red-11]" "text-[--gray-11]"))}
+                      tool_output]]
 
-     nil)])
+                    nil)]
+    ^{:key idx}
+    [:> Box {:class "py-1"} body]))
 
 (defn main [{:keys [ai-analysis]}]
   (when (and ai-analysis (seq ai-analysis))

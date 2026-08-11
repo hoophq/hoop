@@ -569,12 +569,12 @@ func RunbookExec(c *gin.Context) {
 
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(c, sessionapi.AIAnalyzeInput{
-		OrgID:            orgID,
-		ConnectionName:   connectionName,
-		Script:           string(runbook.InputFile),
-		UserID:           ctx.UserID,
-		IsAdminOrAuditor: ctx.IsAuditorOrAdminUser(),
-		Exec:             aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
+		OrgID:          orgID,
+		ConnectionName: connectionName,
+		Script:         string(runbook.InputFile),
+		UserID:         ctx.UserID,
+		UserGroups:     ctx.UserGroups,
+		Exec:           aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
 	})
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing runbook session")

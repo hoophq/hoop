@@ -11,6 +11,17 @@ import (
 // defaultMaxIterations bounds the agentic investigation loop.
 const defaultMaxIterations = 8
 
+// forcedClassifyGrace bounds the final forced-classification turn. It runs on a
+// context detached from the caller's deadline (see AnalyzeAgentic), so it needs
+// its own budget: enough for one round trip, short enough that a hung provider
+// cannot extend the analysis indefinitely past the caller's deadline.
+const forcedClassifyGrace = 20 * time.Second
+
+// forceClassifyNudge closes the history with a user turn before the forced
+// classification, both to instruct the model and to keep providers that reject
+// a trailing assistant message under forced tool choice (Anthropic) working.
+const forceClassifyNudge = "Investigation is over. Call exactly one risk tool now with your verdict."
+
 // AgenticSystemPrompt drives the agentic investigation loop. It reuses the risk
 // rubric from SystemPrompt but instructs the model to first investigate using
 // the provided tools before classifying.
@@ -165,7 +176,20 @@ func AnalyzeAgentic(ctx context.Context, client LLMClient, req AgenticRequest) (
 		}
 
 		if len(resp.ToolCalls) == 0 {
-			// Model stopped without calling a tool: force a final classification.
+			// Model stopped without calling a tool: keep its closing analysis in
+			// history (it is usually the most decision-relevant text) and force a
+			// final classification.
+			//
+			// The nudge is not cosmetic: Anthropic treats a trailing assistant
+			// message as a prefill and rejects it when tool choice is forced, so
+			// the history must end on a user turn or the fallback verdict this
+			// path exists to produce would fail outright.
+			if resp.Content != "" {
+				messages = append(messages,
+					Message{Role: RoleAssistant, Content: resp.Content},
+					Message{Role: RoleUser, Content: forceClassifyNudge},
+				)
+			}
 			break
 		}
 
@@ -207,7 +231,14 @@ func AnalyzeAgentic(ctx context.Context, client LLMClient, req AgenticRequest) (
 	}
 
 	// Final forced classification: model must call a risk tool now.
-	resp, err := client.Chat(ctx, ChatRequest{
+	//
+	// This turn runs on a fresh grace budget detached from ctx: the loop above
+	// breaks precisely when ctx expires, and reusing the dead context would fail
+	// the call immediately — discarding the whole investigation instead of
+	// delivering the fallback verdict this turn exists to produce.
+	forceCtx, cancelForce := context.WithTimeout(context.WithoutCancel(ctx), forcedClassifyGrace)
+	defer cancelForce()
+	resp, err := client.Chat(forceCtx, ChatRequest{
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Tools:        sessionAnalyzerTools,
@@ -231,6 +262,10 @@ func AnalyzeAgentic(ctx context.Context, client LLMClient, req AgenticRequest) (
 }
 
 // buildResult parses a terminal risk tool call into an AgenticResult.
+//
+// The risk level comes from the tool name, so a malformed argument payload
+// (observed with OpenAI-compatible endpoints under truncation) degrades to a
+// verdict with placeholder text rather than discarding the whole investigation.
 func buildResult(tc ToolCall, steps []AgenticStep, model string) (*AgenticResult, error) {
 	level, ok := riskLevelForTool(tc.Name)
 	if !ok {
@@ -238,7 +273,10 @@ func buildResult(tc ToolCall, steps []AgenticStep, model string) (*AgenticResult
 	}
 	var args terminalArgs
 	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
-		return nil, fmt.Errorf("session analyzer: failed to parse tool arguments: %w", err)
+		args = terminalArgs{
+			Title:       string(level) + " risk",
+			Explanation: "The model returned a malformed argument payload; only the risk level could be recovered.",
+		}
 	}
 	steps = append(steps, AgenticStep{
 		Type:      "tool_call",

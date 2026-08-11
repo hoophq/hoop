@@ -1,8 +1,12 @@
 package aianalyzer
 
 import (
+	"context"
+	"database/sql"
 	"strings"
 	"testing"
+
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 func TestBuildMetadataScriptSchemaScoping(t *testing.T) {
@@ -167,5 +171,73 @@ func TestEmptyResultMessageNewDialects(t *testing.T) {
 	}
 	if msg := emptyResultMessage("mongodb", sizeArgs, ""); msg != "" {
 		t.Errorf("mongodb output must pass through: %q", msg)
+	}
+}
+
+// The explain builders only wrap the FIRST statement, and every client splits
+// the script on the separator — so a chained statement would be executed, not
+// planned. This is the guard that keeps "explain" read-only.
+func TestValidateSingleStatementRejectsChainedStatements(t *testing.T) {
+	chained := []struct{ subtype, query string }{
+		{"postgres", "SELECT 1; DELETE FROM users"},
+		{"mysql", "SELECT 1; DROP TABLE users"},
+		{"oracledb", "SELECT 1 FROM dual; DELETE FROM users"},
+		{"mssql", "SELECT 1\nGO\nDELETE FROM users"},
+	}
+	for _, c := range chained {
+		if msg := validateSingleStatement(c.subtype, c.query); msg == "" {
+			t.Errorf("%s: chained statement %q accepted; it would execute", c.subtype, c.query)
+		}
+	}
+
+	// Single statements, with and without a trailing semicolon, must pass.
+	for _, q := range []string{"SELECT * FROM t WHERE id = 1", "DELETE FROM t;", "  UPDATE t SET a = 1 ;  "} {
+		if msg := validateSingleStatement("postgres", q); msg != "" {
+			t.Errorf("single statement %q rejected: %s", q, msg)
+		}
+	}
+	// A bare GO is only a batch separator for mssql.
+	if msg := validateSingleStatement("postgres", "SELECT 1\nGO\n"); msg != "" {
+		t.Errorf("postgres query containing GO rejected: %s", msg)
+	}
+}
+
+// runMetadataQuery must apply the guard before building any script.
+func TestRunMetadataQueryRejectsChainedExplain(t *testing.T) {
+	e := &gatewayToolExecutor{
+		orgID: "org",
+		conn: &models.Connection{
+			Name:    "pg",
+			Type:    "database",
+			SubType: sql.NullString{String: "postgres", Valid: true},
+		},
+	}
+	out, isErr := e.runMetadataQuery(context.Background(), `{"operation":"explain","query":"SELECT 1; DELETE FROM users"}`)
+	if !isErr {
+		t.Fatalf("chained explain accepted (output=%q); the DELETE would run", out)
+	}
+	if !strings.Contains(out, "single statement") {
+		t.Errorf("unexpected rejection message: %q", out)
+	}
+}
+
+// The tool must never surface connection secrets to the model.
+func TestConnectionContextExcludesSecrets(t *testing.T) {
+	e := &gatewayToolExecutor{
+		conn: &models.Connection{
+			Name:    "pg",
+			Type:    "database",
+			SubType: sql.NullString{String: "postgres", Valid: true},
+			Envs:    map[string]string{"envvar:PASS": "cGFzc3dvcmQ="},
+		},
+	}
+	out, isErr := e.connectionContext()
+	if isErr {
+		t.Fatalf("unexpected error: %s", out)
+	}
+	for _, leaked := range []string{"cGFzc3dvcmQ=", "envvar:PASS", "PASS"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("connection context leaked secret material %q: %s", leaked, out)
+		}
 	}
 }

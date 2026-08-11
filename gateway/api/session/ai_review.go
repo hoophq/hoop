@@ -140,9 +140,7 @@ func sendSlackMessage(requester AIReviewRequester, connection *models.Connection
 		sreq.AIRiskLevel = analysis.RiskLevel
 		sreq.AITitle = analysis.Title
 		sreq.AISummary = analysis.Summary
-		if sreq.AISummary == "" {
-			sreq.AISummary = analysis.Explanation
-		}
+		sreq.AIExplanation = analysis.Explanation
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slack.SlackMaxButtons {

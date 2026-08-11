@@ -157,13 +157,18 @@ func (e *gatewayToolExecutor) Execute(ctx context.Context, name, arguments strin
 	case "search_past_sessions":
 		return e.searchPastSessions(arguments)
 	case "run_metadata_query":
-		return e.runMetadataQuery(arguments)
+		return e.runMetadataQuery(ctx, arguments)
 	case "get_connection_context":
 		return e.connectionContext()
 	default:
 		return fmt.Sprintf("unknown tool %q", name), true
 	}
 }
+
+// likeEscaper neutralizes the LIKE wildcards in a value used as an exact filter.
+// models.ListSessions applies opt.User with LIKE, so a subject containing '_'
+// (valid in OIDC sub claims) would otherwise match other users' sessions.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 type searchPastSessionsArgs struct {
 	Scope string `json:"scope"`
@@ -215,13 +220,15 @@ func (e *gatewayToolExecutor) searchPastSessions(arguments string) (string, bool
 	}
 
 	var rows []pastSessionRow
+	var failures int
 	for _, name := range connNames {
 		opt := models.NewSessionOption()
-		opt.User = e.userID // exact match on the current user
+		opt.User = likeEscaper.Replace(e.userID) // exact match on the current user
 		opt.ConnectionName = name
 		opt.Limit = perConn
 		list, err := models.ListSessions(e.orgID, e.userID, e.isAdminAuditor, opt)
 		if err != nil {
+			failures++
 			log.Warnf("aianalyzer: failed listing past sessions for connection %q: %v", name, err)
 			continue
 		}
@@ -235,6 +242,11 @@ func (e *gatewayToolExecutor) searchPastSessions(arguments string) (string, bool
 				CreatedAt:  s.CreatedAt.UTC().Format(time.RFC3339),
 			})
 		}
+	}
+	// Never present a total lookup failure as "this user has no history": that
+	// reads to the classifier as evidence of normality rather than missing data.
+	if len(rows) == 0 && failures == len(connNames) {
+		return "failed listing past sessions for every connection in scope", true
 	}
 
 	sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt > rows[j].CreatedAt })
@@ -259,7 +271,7 @@ type runMetadataQueryArgs struct {
 	Schema    string `json:"schema"`
 }
 
-func (e *gatewayToolExecutor) runMetadataQuery(arguments string) (string, bool) {
+func (e *gatewayToolExecutor) runMetadataQuery(ctx context.Context, arguments string) (string, bool) {
 	var args runMetadataQueryArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("invalid arguments: %v", err), true
@@ -270,20 +282,14 @@ func (e *gatewayToolExecutor) runMetadataQuery(arguments string) (string, bool) 
 		return "metadata queries are only supported for postgres, mysql, mssql, mongodb and oracledb connections", true
 	}
 
-	if args.Table != "" && !identifierRe.MatchString(args.Table) {
-		return fmt.Sprintf("invalid table identifier %q", args.Table), true
-	}
-	if args.Schema != "" && !identifierRe.MatchString(args.Schema) {
-		return fmt.Sprintf("invalid schema identifier %q", args.Schema), true
-	}
-
+	// Argument validation lives in buildMetadataScript, beside the interpolation.
 	script, buildErr := buildMetadataScript(subtype, args)
 	if buildErr != "" {
 		return buildErr, true
 	}
 	script = prependDatabaseDirective(subtype, e.database, script)
 
-	output, execErr := e.runExec(script)
+	output, execErr := e.runExec(ctx, script)
 	if execErr != nil {
 		return fmt.Sprintf("metadata query failed: %v", execErr), true
 	}
@@ -294,6 +300,31 @@ func (e *gatewayToolExecutor) runMetadataQuery(arguments string) (string, bool) 
 		output = output[:metadataOutputMaxChars] + "\n... (truncated)"
 	}
 	return output, false
+}
+
+// goBatchRe matches a sqlcmd batch separator on its own line.
+var goBatchRe = regexp.MustCompile(`(?mi)^\s*GO\s*;?\s*$`)
+
+// validateSingleStatement rejects an explain query that carries more than one
+// statement. This is what makes "explain" read-only: the builders only wrap the
+// FIRST statement (EXPLAIN … / SHOWPLAN batch / EXPLAIN PLAN FOR …), and every
+// client splits the script on the statement separator, so a chained
+// "SELECT 1; DELETE FROM t" would plan the SELECT and then EXECUTE the DELETE.
+// The query is model-authored and the model reads the user's script, so it must
+// be treated as untrusted.
+//
+// A single trailing semicolon is allowed. A semicolon inside a string literal
+// is rejected too — a false positive the model recovers from by rewriting the
+// query, which is the safe direction to err.
+func validateSingleStatement(subtype, query string) string {
+	trimmed := strings.TrimSpace(query)
+	if body := strings.TrimSuffix(trimmed, ";"); strings.Contains(body, ";") {
+		return "operation=explain accepts a single statement; remove the extra ';' and explain one statement at a time"
+	}
+	if subtype == "mssql" && goBatchRe.MatchString(trimmed) {
+		return "operation=explain accepts a single statement; remove the GO batch separator"
+	}
+	return ""
 }
 
 // dbNameRe matches the same charset the extraction regexes accept.
@@ -331,17 +362,32 @@ func supportedMetadataSubtype(subtype string) bool {
 }
 
 // buildMetadataScript returns the dialect script for the requested operation, or
-// a non-empty error string when the arguments are invalid. Every script is
-// read-only by construction: plans are produced without executing the statement
-// and size/index lookups only touch catalog/stat views.
+// a non-empty error string when the arguments are invalid.
+//
+// Validation lives here, next to the interpolation it protects, so no caller can
+// reach a script builder with an unchecked identifier. Every script is read-only
+// by construction: plans are produced without executing the statement (which is
+// why explain is restricted to a single statement) and size/index lookups only
+// read catalog/stat views.
 func buildMetadataScript(subtype string, args runMetadataQueryArgs) (script string, errMsg string) {
 	switch args.Operation {
 	case "explain", "table_size", "table_indexes":
 	default:
 		return "", fmt.Sprintf("invalid operation %q; expected explain, table_size or table_indexes", args.Operation)
 	}
-	if args.Operation == "explain" && strings.TrimSpace(args.Query) == "" {
-		return "", "operation=explain requires a non-empty query"
+	if args.Table != "" && !identifierRe.MatchString(args.Table) {
+		return "", fmt.Sprintf("invalid table identifier %q", args.Table)
+	}
+	if args.Schema != "" && !identifierRe.MatchString(args.Schema) {
+		return "", fmt.Sprintf("invalid schema identifier %q", args.Schema)
+	}
+	if args.Operation == "explain" {
+		if strings.TrimSpace(args.Query) == "" {
+			return "", "operation=explain requires a non-empty query"
+		}
+		if msg := validateSingleStatement(subtype, args.Query); msg != "" {
+			return "", msg
+		}
 	}
 	if args.Operation != "explain" && args.Table == "" {
 		return "", fmt.Sprintf("operation=%s requires a table", args.Operation)
@@ -536,11 +582,13 @@ func (e *gatewayToolExecutor) connectionContext() (string, bool) {
 
 // runExec runs a read-only metadata script as an auditable plain-exec session,
 // mirroring the schema explorer pattern.
-func (e *gatewayToolExecutor) runExec(script string) (string, error) {
+func (e *gatewayToolExecutor) runExec(ctx context.Context, script string) (string, error) {
 	sessionID := uuid.NewString()
-	userAgent := e.exec.UserAgent
-	if userAgent == "" {
-		userAgent = "aianalyzer.metadata"
+	// Metadata execs are always suffixed so they stay filterable in the audit
+	// trail regardless of which ingress path set the base user-agent.
+	userAgent := "aianalyzer.metadata"
+	if e.exec.UserAgent != "" {
+		userAgent = e.exec.UserAgent + ".metadata"
 	}
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:                  e.orgID,
@@ -559,16 +607,21 @@ func (e *gatewayToolExecutor) runExec(script string) (string, error) {
 		defer func() { close(respCh); client.Close() }()
 		respCh <- client.Run([]byte(script), nil)
 	}()
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), metadataExecTimeout)
+	// Bound by BOTH the per-exec timeout and the caller's remaining budget, so a
+	// tool call cannot run past the agentic loop's deadline.
+	timeoutCtx, cancelFn := context.WithTimeout(ctx, metadataExecTimeout)
 	defer cancelFn()
 	select {
 	case resp := <-respCh:
-		if resp.ExitCode != 0 && resp.ExitCode != -2 {
+		// clientexec reports transport/system failures as ExitCode -2 with the
+		// error text in Output; only OutputStatus distinguishes those from a
+		// successful run whose exit code could not be parsed.
+		if resp.OutputStatus == "failed" || (resp.ExitCode != 0 && resp.ExitCode != -2) {
 			return "", fmt.Errorf("exit_code=%d output=%s", resp.ExitCode, resp.Output)
 		}
 		return resp.Output, nil
 	case <-timeoutCtx.Done():
 		client.Close()
-		return "", fmt.Errorf("metadata query timed out after %s", metadataExecTimeout)
+		return "", fmt.Errorf("metadata query aborted: %w", timeoutCtx.Err())
 	}
 }

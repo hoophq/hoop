@@ -62,12 +62,18 @@ type SessionPostBody struct {
 // resolve the resulting access-request rule. Exec carries the identity used to
 // run investigation metadata queries on the agentic path.
 type AIAnalyzeInput struct {
-	OrgID            uuid.UUID
-	ConnectionName   string
-	Script           string
-	UserID           string
-	IsAdminOrAuditor bool
-	Exec             aianalyzer.AnalyzerExecIdentity
+	OrgID          uuid.UUID
+	ConnectionName string
+	Script         string
+	UserID         string
+	// UserGroups are the requester's groups. They are load-bearing, not
+	// diagnostic: GetBareConnectionByNameOrID gates the connection lookup on
+	// them (both the access-control list match and the admin/auditor bypass are
+	// derived from group membership), and the past-sessions tool uses the same
+	// derived admin/auditor flag for reviewer visibility. Omitting them makes
+	// group-gated connections invisible even to admins.
+	UserGroups []string
+	Exec       aianalyzer.AnalyzerExecIdentity
 }
 
 func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysis, *models.AccessRequestRule, error) {
@@ -117,13 +123,21 @@ func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysi
 // analyzeAgentic runs the agentic investigation loop and maps its result into a
 // SessionAIAnalysis, including the persisted step trace.
 func analyzeAgentic(ctx context.Context, in AIAnalyzeInput, rule *models.AISessionAnalyzerRules) (*models.SessionAIAnalysis, error) {
-	conn, err := models.GetBareConnectionByNameOrID(storagev2.NewContext(in.UserID, in.OrgID.String()), in.ConnectionName, models.DB)
+	connCtx := storagev2.NewContext(in.UserID, in.OrgID.String()).
+		WithUserInfo("", "", "active", "", in.UserGroups)
+	conn, err := models.GetBareConnectionByNameOrID(connCtx, in.ConnectionName, models.DB)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading connection %q for agentic analysis: %w", in.ConnectionName, err)
 	}
+	// GetBareConnectionByNameOrID reports "not found" as (nil, nil).
+	if conn == nil {
+		return nil, fmt.Errorf("connection %q not found or not accessible for agentic analysis", in.ConnectionName)
+	}
 
+	// Admin/auditor status is a pure function of the groups; deriving it here
+	// keeps callers from passing a flag that disagrees with them.
 	sessionDB := aianalyzer.SessionDatabaseFromScript(conn.SubType.String, in.Script)
-	executor := aianalyzer.NewToolExecutor(in.OrgID.String(), conn, in.UserID, in.IsAdminOrAuditor, in.Exec, sessionDB)
+	executor := aianalyzer.NewToolExecutor(in.OrgID.String(), conn, in.UserID, connCtx.IsAuditorOrAdminUser(), in.Exec, sessionDB)
 	tools := aianalyzer.InvestigationTools()
 
 	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -268,12 +282,12 @@ func Post(c *gin.Context) {
 
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	analyzeRes, aiAccessRule, err := AIAnalyze(c, AIAnalyzeInput{
-		OrgID:            orgID,
-		ConnectionName:   conn.Name,
-		Script:           req.Script,
-		UserID:           ctx.UserID,
-		IsAdminOrAuditor: ctx.IsAuditorOrAdminUser(),
-		Exec:             aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
+		OrgID:          orgID,
+		ConnectionName: conn.Name,
+		Script:         req.Script,
+		UserID:         ctx.UserID,
+		UserGroups:     ctx.UserGroups,
+		Exec:           aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
 	})
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
