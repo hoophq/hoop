@@ -247,3 +247,25 @@ func TestUnknownLocalActionIsRefused(t *testing.T) {
 		t.Errorf("the error does not name the bad action and its rule: %v", err)
 	}
 }
+
+// An `action:` on an ai_analysis rule is read by nobody: splitAnalyzerRules
+// lifts these out before policy.newRules sees them, so the refusal there is
+// unreachable from a config file. Accepting the field leaves an operator
+// believing they deferred a rule that is still deciding for itself.
+func TestActionOnAIRuleIsRefused(t *testing.T) {
+	r := aiRule("risky")
+	r.Action = policy.ActionDefer
+	cfg := pgLane(r)
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	cfg.Listeners[0].Policy.OPA = &OPAConfig{URL: "http://opa:8181/v1/data/x"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("action: defer on an ai_analysis rule was accepted and ignored")
+	}
+	for _, want := range []string{"risky", "high"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not mention %q: %v", want, err)
+		}
+	}
+}

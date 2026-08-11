@@ -573,6 +573,19 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, 
 					"and let the policy decide", lane, r.Name))
 		}
 
+		if r.Action != "" {
+			// policy.newRules refuses this, but an ai_analysis rule
+			// never reaches it: splitAnalyzerRules lifts these out
+			// first, so the check there is unreachable from a config
+			// file and the field is read by nobody. Accepting it
+			// leaves an operator believing they deferred a rule that
+			// is still deciding for itself.
+			problems = append(problems, fmt.Sprintf(
+				"%s: ai_analysis rule %q sets action %q, which this rule type ignores; "+
+					"it defers per risk level through high, medium and low",
+				lane, r.Name, r.Action))
+		}
+
 		named := false
 		for level, raw := range map[string]string{
 			"high": r.HighRisk, "medium": r.MediumRisk, "low": r.LowRisk,
