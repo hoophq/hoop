@@ -122,7 +122,8 @@ func analyzeAgentic(ctx context.Context, in AIAnalyzeInput, rule *models.AISessi
 		return nil, fmt.Errorf("failed loading connection %q for agentic analysis: %w", in.ConnectionName, err)
 	}
 
-	executor := aianalyzer.NewToolExecutor(in.OrgID.String(), conn, in.UserID, in.IsAdminOrAuditor, in.Exec)
+	sessionDB := aianalyzer.SessionDatabaseFromScript(conn.SubType.String, in.Script)
+	executor := aianalyzer.NewToolExecutor(in.OrgID.String(), conn, in.UserID, in.IsAdminOrAuditor, in.Exec, sessionDB)
 	tools := aianalyzer.InvestigationTools()
 
 	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)

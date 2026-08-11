@@ -29,6 +29,32 @@ const (
 // Only alphanumerics, underscore and dot are allowed (no quoting/injection surface).
 var identifierRe = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
 
+// Database-selection directives the webapp/CLI prepend to session scripts when
+// the user picks a database: psql "\c <db>" and mysql "use <db>;".
+var (
+	psqlConnectRe = regexp.MustCompile(`(?m)^\s*\\c(?:onnect)?\s+([A-Za-z0-9_$-]+)\s*$`)
+	mysqlUseRe    = regexp.MustCompile(`(?mi)^\s*use\s+` + "`?" + `([A-Za-z0-9_$-]+)` + "`?" + `\s*;`)
+)
+
+// SessionDatabaseFromScript extracts the database the session script targets,
+// when the script carries an explicit selection directive (the webapp prepends
+// "\c <db>" for postgres and "use <db>;" for mysql when a database is picked).
+// Returns "" when the script has no such directive, meaning the connection's
+// default database applies.
+func SessionDatabaseFromScript(subtype, script string) string {
+	var m []string
+	switch strings.ToLower(subtype) {
+	case "postgres":
+		m = psqlConnectRe.FindStringSubmatch(script)
+	case "mysql":
+		m = mysqlUseRe.FindStringSubmatch(script)
+	}
+	if len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
 // AnalyzerExecIdentity carries the credentials used to run metadata queries as
 // auditable plain-exec sessions on behalf of the requesting user. Exactly one of
 // BearerToken or ImpersonateUserSubject is set depending on the ingress path.
@@ -46,16 +72,22 @@ type gatewayToolExecutor struct {
 	userID         string
 	isAdminAuditor bool
 	exec           AnalyzerExecIdentity
+	// database is the database the analyzed session targets when its script
+	// carries an explicit selection directive; metadata queries follow it.
+	database string
 }
 
 // NewToolExecutor builds the gateway-side investigation tool executor.
-func NewToolExecutor(orgID string, conn *models.Connection, userID string, isAdminAuditor bool, exec AnalyzerExecIdentity) laia.ToolExecutor {
+// database, when non-empty, scopes metadata queries to the same database the
+// analyzed session targets (see SessionDatabaseFromScript).
+func NewToolExecutor(orgID string, conn *models.Connection, userID string, isAdminAuditor bool, exec AnalyzerExecIdentity, database string) laia.ToolExecutor {
 	return &gatewayToolExecutor{
 		orgID:          orgID,
 		conn:           conn,
 		userID:         userID,
 		isAdminAuditor: isAdminAuditor,
 		exec:           exec,
+		database:       database,
 	}
 }
 
@@ -103,7 +135,7 @@ func InvestigationTools() []laia.Tool {
 					},
 					"schema": {
 						Type:        "string",
-						Description: "Schema name. Optional; defaults to public (postgres) or the connection default.",
+						Description: "Schema name. Optional; when omitted, postgres searches all user schemas and mysql all databases.",
 					},
 				},
 				Required: []string{"operation"},
@@ -240,15 +272,36 @@ func (e *gatewayToolExecutor) runMetadataQuery(arguments string) (string, bool) 
 	if buildErr != "" {
 		return buildErr, true
 	}
+	script = prependDatabaseDirective(subtype, e.database, script)
 
 	output, execErr := e.runExec(script)
 	if execErr != nil {
 		return fmt.Sprintf("metadata query failed: %v", execErr), true
 	}
+	if msg := emptyResultMessage(subtype, args, output); msg != "" {
+		return msg, true
+	}
 	if len(output) > metadataOutputMaxChars {
 		output = output[:metadataOutputMaxChars] + "\n... (truncated)"
 	}
 	return output, false
+}
+
+// dbNameRe matches the same charset the extraction regexes accept.
+var dbNameRe = regexp.MustCompile(`^[A-Za-z0-9_$-]+$`)
+
+// prependDatabaseDirective scopes a metadata script to the database the analyzed
+// session targets, mirroring the directive the webapp prepends to the session
+// script ("\c <db>" for psql, "use <db>;" for mysql). No-op when the session
+// uses the connection's default database.
+func prependDatabaseDirective(subtype, database, script string) string {
+	if database == "" || !dbNameRe.MatchString(database) {
+		return script
+	}
+	if subtype == "postgres" {
+		return "\\set QUIET on\n\\c " + database + "\n\\set QUIET off\n" + script
+	}
+	return "use " + database + ";\n" + script
 }
 
 // buildMetadataScript returns the dialect SQL for the requested operation, or a
@@ -269,30 +322,77 @@ func buildMetadataScript(subtype string, args runMetadataQueryArgs) (script stri
 			return "", "operation=table_size requires a table"
 		}
 		if subtype == "postgres" {
-			schema := args.Schema
-			if schema == "" {
-				schema = "public"
+			schemaFilter := `n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_%'`
+			if args.Schema != "" {
+				schemaFilter = fmt.Sprintf("n.nspname = '%s'", args.Schema)
 			}
-			return fmt.Sprintf(`SELECT c.relname, COALESCE(s.n_live_tup, 0) AS n_live_tup, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
+			return fmt.Sprintf(`SELECT n.nspname AS schema, c.relname, COALESCE(s.n_live_tup, 0) AS n_live_tup, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
-WHERE c.relname = '%s' AND n.nspname = '%s';`, args.Table, schema), ""
+WHERE c.relname = '%s' AND c.relkind IN ('r', 'p', 'm') AND %s;`, args.Table, schemaFilter), ""
 		}
-		return fmt.Sprintf(`SELECT table_name, table_rows, ROUND(data_length/1024/1024, 2) AS data_mb, ROUND(index_length/1024/1024, 2) AS index_mb
-FROM information_schema.tables WHERE table_name = '%s';`, args.Table), ""
+		schemaFilter := ""
+		if args.Schema != "" {
+			schemaFilter = fmt.Sprintf(" AND table_schema = '%s'", args.Schema)
+		}
+		return fmt.Sprintf(`SELECT table_schema, table_name, table_rows, ROUND(data_length/1024/1024, 2) AS data_mb, ROUND(index_length/1024/1024, 2) AS index_mb
+FROM information_schema.tables WHERE table_name = '%s'%s;`, args.Table, schemaFilter), ""
 	case "table_indexes":
 		if args.Table == "" {
 			return "", "operation=table_indexes requires a table"
 		}
 		if subtype == "postgres" {
-			return fmt.Sprintf(`SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes WHERE relname = '%s';
-SELECT indexname, indexdef FROM pg_indexes WHERE tablename = '%s';`, args.Table, args.Table), ""
+			statFilter, idxFilter := "", ""
+			if args.Schema != "" {
+				statFilter = fmt.Sprintf(" AND schemaname = '%s'", args.Schema)
+				idxFilter = statFilter
+			}
+			return fmt.Sprintf(`SELECT schemaname, indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes WHERE relname = '%s'%s;
+SELECT schemaname, indexname, indexdef FROM pg_indexes WHERE tablename = '%s'%s;`, args.Table, statFilter, args.Table, idxFilter), ""
 		}
-		return fmt.Sprintf(`SELECT index_name, column_name, cardinality FROM information_schema.statistics WHERE table_name = '%s';`, args.Table), ""
+		schemaFilter := ""
+		if args.Schema != "" {
+			schemaFilter = fmt.Sprintf(" AND table_schema = '%s'", args.Schema)
+		}
+		return fmt.Sprintf(`SELECT table_schema, index_name, column_name, cardinality FROM information_schema.statistics WHERE table_name = '%s'%s;`, args.Table, schemaFilter), ""
 	default:
 		return "", fmt.Sprintf("invalid operation %q; expected explain, table_size or table_indexes", args.Operation)
 	}
+}
+
+// emptyResultMessage converts an empty table_size/table_indexes result into an
+// explicit tool error so the model (and reviewers reading the trace) see why the
+// lookup found nothing instead of a bare "(0 rows)" header. Metadata queries run
+// against the single database this connection targets; tables in other databases
+// on the same server are intentionally out of scope.
+func emptyResultMessage(subtype string, args runMetadataQueryArgs, output string) string {
+	if args.Operation != "table_size" && args.Operation != "table_indexes" {
+		return ""
+	}
+	var empty bool
+	if subtype == "postgres" {
+		// psql prints a "(0 rows)" footer per statement; table_indexes runs two.
+		stmts := 1
+		if args.Operation == "table_indexes" {
+			stmts = 2
+		}
+		empty = strings.Count(output, "(0 rows)") >= stmts
+	} else {
+		// mysql CLI prints nothing when no rows match.
+		empty = strings.TrimSpace(output) == ""
+	}
+	if !empty {
+		return ""
+	}
+	scope := "any schema of the connection's database"
+	if args.Schema != "" {
+		scope = fmt.Sprintf("schema %q of the connection's database", args.Schema)
+	}
+	if args.Operation == "table_indexes" {
+		return fmt.Sprintf("no indexes found for table %q in %s (the table may not exist; this tool only sees the database this connection targets)", args.Table, scope)
+	}
+	return fmt.Sprintf("table %q not found in %s (this tool only sees the database this connection targets)", args.Table, scope)
 }
 
 // runExec runs a read-only metadata script as an auditable plain-exec session,
