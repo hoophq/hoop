@@ -1428,10 +1428,10 @@ that function, a Rego policy keyed on `input.context.principal` reads
 - **Three codecs ship: postgres, http and mssql.** MySQL and MongoDB came out
   to keep the surface small. The compose stack exercises postgres and http end
   to end; the TDS codec ships because Envoy has no TDS filter of any kind, so
-  that protocol is otherwise unpoliced by an Envoy and OPA layer. It inspects
-  and denies but implements no `Reframer`, so `mask.enabled` on an mssql lane
-  is refused at startup. Adding a fourth means a new `codec/<name>` package and
-  nothing else.
+  that protocol is otherwise unpoliced by an Envoy and OPA layer. It implements
+  `Reframer` the way the postgres codec does (`codec/mssql/rewrite.go`), so an
+  mssql lane inspects, denies and masks. Adding a fourth means a new
+  `codec/<name>` package and nothing else.
 - **`Relations` is best effort, and it says so.** A one-pass scanner over a
   labelled region stack, not a SQL grammar, which is the ceiling Envoy's own
   docs acknowledge for `postgres_proxy`. Each entry carries `access: read` or
