@@ -58,19 +58,22 @@ function OriginSurvey() {
     try {
       await originSurveyService.answer({ origin, originOther: otherText.trim() })
     } catch (err) {
-      // 409 means this user already answered from another tab or device. The
+      // 409 means the answer is already recorded — from another tab or device,
+      // or from an earlier attempt whose response never made it back. The
       // desired state is reached either way, so acknowledge instead of asking
-      // again — any other failure keeps the form open so the answer is not lost.
+      // again. Any other failure re-enables the form so the answer is not lost;
+      // a timeout carries no response, hence the fallback to the axios message.
       if (err.response?.status !== 409) {
         showSnackbar({
           level: 'error',
           text: 'Failed to send your answer',
-          description: err.response?.data?.message,
+          description: err.response?.data?.message ?? err.message,
         })
         setSubmitting(false)
         return
       }
     }
+    setSubmitting(false)
     setPhase('ack')
   }
 
