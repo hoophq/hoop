@@ -50,12 +50,12 @@
 // natively.
 //
 // TDS 7.x splits by what PRELOGIN negotiated. ENCRYPT_OFF encrypts the login
-// packet alone and leaves every statement in the clear, so this codec reads
-// the session after passing the encrypted login through; encrypted.go has the
-// mechanism and the reasoning. ENCRYPT_ON encrypts everything, which no
-// amount of parsing recovers: that lane needs a terminator in front, and
-// reaching this codec without one fails closed rather than forwarding a
-// session nothing can see.
+// packet alone and leaves every statement in the clear, so this codec passes
+// the encrypted login through and reads the session after it; encrypted.go
+// holds the mechanism and the reasoning. ENCRYPT_ON encrypts everything, and
+// no amount of parsing recovers that: the lane needs a terminator in front,
+// and a session that reaches this codec without one fails closed, because
+// forwarding bytes nobody can read hides the gap from the operator.
 package mssql
 
 import (

@@ -9,7 +9,7 @@ import (
 
 // Login-only encryption, and how this codec survives it.
 //
-// # What the wire does
+// # On the wire
 //
 // PRELOGIN's ENCRYPTION option has four values, and only one of them means
 // "no TLS":
@@ -19,18 +19,18 @@ import (
 //	0x02 ENCRYPT_NOT_SUP  no encryption anywhere
 //	0x03 ENCRYPT_REQ      the server requires encryption
 //
-// ENCRYPT_OFF is the trap. It reads as "encryption off" and means "encrypt
+// ENCRYPT_OFF is the trap. You read it as "encryption off"; it means "encrypt
 // the login only". A SQL Server with TLS administratively disabled still
 // negotiates it: with no certificate installed the server mints a self-signed
 // one at startup and encrypts credentials with that, so an operator who
-// turned encryption off is still handed an encrypted login. The protocol
-// behaving as specified, not a misconfiguration to chase.
+// turned encryption off still gets an encrypted login. Microsoft specified
+// this, so anyone hunting a misconfiguration here finds none.
 //
-// It is also the common case rather than an exotic one. go-mssqldb defaults
-// to ENCRYPT_OFF (msdsn/conn_str.go:297, `var encryption Encryption =
-// EncryptionOff`), so every Go client that does not set `encrypt=` takes this
-// path. Only the modern Microsoft drivers avoid it, by defaulting to
-// Mandatory and encrypting everything instead.
+// Every Go client hits it. go-mssqldb defaults to ENCRYPT_OFF
+// (msdsn/conn_str.go:297, `var encryption Encryption = EncryptionOff`), so
+// any caller that leaves `encrypt=` unset takes this path. Only the modern
+// Microsoft drivers skip it, by defaulting to Mandatory and encrypting
+// everything.
 //
 // # Exactly one PACKET is encrypted, not one message
 //
@@ -38,83 +38,81 @@ import (
 // encrypted using TLS/SSL and encapsulated in a TLS/SSL message. All other
 // TDS packets sent or received MUST be in plaintext."
 //
-// Packet, not message. A LOGIN7 larger than the negotiated packet size (4096
-// by default) is split, and only the first fragment is inside TLS; the rest,
-// credentials included, is plaintext on the wire. A decoder that assumed "TLS
-// until the LOGIN7 message is covered" would run straight past the boundary,
-// which is why this walks records and stops at the first byte that is not
-// one.
+// Packet, not message. A client splits a LOGIN7 larger than the negotiated
+// packet size (4096 by default) and encrypts only the first fragment; it puts
+// the rest, credentials included, in the clear. A decoder that waited for the
+// whole LOGIN7 message would run straight past the boundary, so this one
+// walks records and stops at the first byte that is not one.
 //
-// The driver's side of the switch is a single field assignment covering both
-// directions (go-mssqldb tds.go:1262, `outbuf.afterFirst = func() {
-// outbuf.transport = toconn }`, fired by buf.go:99 after the first packet
-// flushes), so nothing can keep sending ciphertext after it.
+// go-mssqldb throws the switch in one field assignment covering both
+// directions (tds.go:1262, `outbuf.afterFirst = func() { outbuf.transport =
+// toconn }`, fired by buf.go:99 after the first packet flushes), so neither
+// side can keep sending ciphertext past it.
 //
 // # Where the ciphertext sits
 //
 // The handshake rides inside 0x12 PRELOGIN packets, which the decoder already
-// forwards untouched. What breaks it is what comes next: once the handshake
-// completes the nesting inverts from TLS-inside-TDS to TDS-inside-TLS, and
-// records go on the wire RAW with no TDS header. libhoop's own client does
-// exactly this (agent/mssql/net.go, where tlsHandshakeConn stops wrapping
-// once `upgraded` is set).
+// forwards untouched. The bytes after it break the walk: having finished the
+// handshake, the client inverts the nesting from TLS-inside-TDS to
+// TDS-inside-TLS and writes records to the socket raw, with no TDS header.
+// libhoop's own client does exactly this (agent/mssql/net.go, where
+// tlsHandshakeConn stops wrapping once `upgraded` is set).
 //
-// A packet walk reads such a record as a header and misparses it. For an
-// application-data record `17 03 03 04 00`, the type byte is 0x17 and
-// BigEndian.Uint16(b[2:4]) is 0x0304 = 772, so the walk resumes 772 bytes
-// into ciphertext and every offset after that is wrong. The connection does
-// not fail; it goes quiet. Statements stop being decoded, the gate's
-// honest-default forwards bytes it could not parse, and policy, masking and
-// the audit trail all end with no signal beyond one error per read.
+// The decoder then reads a record as a packet header and misparses it. Given
+// the application-data record `17 03 03 04 00` it takes 0x17 for the type and
+// BigEndian.Uint16(b[2:4]) = 0x0304 = 772 for the length, resumes 772 bytes
+// into ciphertext, and gets every offset after that wrong. The socket keeps
+// carrying traffic while the relay stops understanding it: no statements
+// decoded, the gate forwarding bytes it could not parse, policy, masking and
+// the audit trail all ending, and one error per read as the only signal.
 //
 // The two directions are asymmetric. A client emits one raw region, the
-// encrypted login packet. A server under ENCRYPT_OFF emits none: its whole
-// handshake stays inside 0x12 (MS-TDS 3.3.5.2, or 0x04 from older endpoints)
-// and its login response is already plaintext, so the routing-ENVCHANGE guard
+// encrypted login packet. A server under ENCRYPT_OFF emits none: it keeps its
+// whole handshake inside 0x12 (MS-TDS 3.3.5.2, or 0x04 from older endpoints)
+// and sends its login response in the clear, so the routing-ENVCHANGE guard
 // in decodeServer keeps working through an encrypted login. decodeServer runs
-// the same walk anyway, as a safety net rather than a path with known
-// traffic on it.
+// the same walk anyway, as a safety net over a path that carries no known
+// traffic.
 //
-// # Why walking the region is exact rather than a guess
+// # The walk lands on the exact byte
 //
-// TLS frames itself: a 5-byte header whose last two bytes are the payload
-// length, big-endian. Following that framing consumes the encrypted region
-// record by record and lands on precisely the byte where plaintext resumes.
-// Nothing is decrypted and nothing is scanned for; the length is read from a
-// field the sender wrote.
+// A TLS record declares its own length: 5-byte header, payload length in the
+// last two bytes, big-endian. Following that framing consumes the region
+// record by record and finishes on the byte where plaintext resumes. This
+// codec decrypts nothing and searches for nothing; it reads the length the
+// sender wrote.
 //
-// The two framings cannot be confused. TDS packet types are 0x01-0x12 and TLS
-// content types are 0x14-0x17, disjoint sets, and a record header is further
-// required to carry a 0x03 version major and a plausible length. So the entry
-// test is a structural check, not a heuristic.
+// Nothing can confuse the two framings. TDS packet types run 0x01-0x12 and
+// TLS content types 0x14-0x17, disjoint sets, and a record header must also
+// carry a 0x03 version major and a plausible length. The entry test is a
+// structural check.
 //
-// One record per packet is usual but not guaranteed: go-mssqldb forces
+// One record per packet is usual, not guaranteed: go-mssqldb forces
 // DynamicRecordSizingDisabled, giving 16384-byte records, and a negotiated
 // TDS packet size above that (TDS permits 32767) splits one packet across
 // two. The walk handles any number of records, so this costs nothing.
 //
-// # Why this is not a general "forward what I cannot parse" path
+// # Not a general "forward what I cannot parse" path
 //
-// That would be a bypass with extra steps: anything unparseable becomes
-// invisible and allowed. Four constraints keep this narrow, and three of the
-// four fail closed rather than forwarding.
+// That shape is a bypass with extra steps: the relay hides and allows
+// whatever it fails to parse. Four constraints keep this narrow, and on three
+// of them the codec refuses instead of forwarding.
 //
-//   - It opens only during the login phase, and only on bytes that are a
-//     well-formed TLS record. Ciphertext before any PRELOGIN means nothing on
-//     the connection is readable, which is refused.
+//   - It opens only during the login phase, and only on bytes that form a
+//     well-formed TLS record. Ciphertext before any PRELOGIN means the codec
+//     can read nothing on the connection, so it refuses.
 //   - It closes at the first byte that is not one, and LATCHES closed. A
-//     connection gets one encrypted region; ciphertext after it would be an
-//     uninspectable channel reopened mid-session, which is refused.
-//   - It is bounded. Past maxEncryptedLogin the region is not a login.
-//   - Running past that bound is refused too. A session that never returns to
-//     plaintext is ENCRYPT_ON, where inspection is impossible for the life of
-//     the connection. Allowing it would be the worse half of this bug rather
-//     than the fix: today the lane is visibly broken, and silently forwarding
-//     forever would make it invisibly bypassed.
+//     connection gets one encrypted region; ciphertext after it would reopen
+//     an uninspectable channel mid-session, so the codec refuses.
+//   - It is bounded. Past maxEncryptedLogin the region is no longer a login.
+//   - The codec refuses past that bound too. A session that never returns to
+//     plaintext is ENCRYPT_ON, where nobody can inspect anything for the life
+//     of the connection. Today an operator watches the lane break; forwarding
+//     it forever would hide the bypass from them, which is worse.
 //
-// Statements decoded after a pass-through carry metaEncryptedLogin, so the
-// audit trail states that the login was not observable instead of implying a
-// fully inspected session.
+// Statements decoded after a pass-through carry metaEncryptedLogin. An
+// operator reading the trail then sees that this session's login crossed
+// unobserved.
 
 // metaEncryptedLogin is the Statement metadata key marking a session whose
 // login crossed the relay as ciphertext.

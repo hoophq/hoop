@@ -1467,15 +1467,16 @@ that function, a Rego policy keyed on `input.context.principal` reads
   and go-mssqldb negotiates it by default. `codec/mssql/encrypted.go` walks
   that region by TLS record framing and inspects the plaintext after it.
   Statements from such a session carry `mssql.login_encrypted`.
-- **A fully encrypted MSSQL session is now refused rather than forwarded.**
-  The pass-through above is bounded and opens only during login. Ciphertext
-  before the login, after plaintext resumed, or past the bound returns
-  `ErrStreamUnsafe` and the gate denies. This is the second behavior change an
-  existing deployment can notice: an `ENCRYPT_ON` lane reaching the relay with
-  nothing terminating in front used to connect and run uninspected, and now
-  fails with a message naming the missing terminator. Silently forwarding a
-  session no statement of which can be classified, masked or audited is the
-  worse outcome, so this is deliberate.
+- **The relay now refuses a fully encrypted MSSQL session.** The pass-through
+  above stays bounded and opens only during login. For ciphertext before the
+  login, after plaintext resumed, or past the bound, the codec returns
+  `ErrStreamUnsafe` and the gate denies. Call this the second behavior change
+  an existing deployment can notice: an `ENCRYPT_ON` lane reaching the relay
+  with nothing terminating in front used to connect and run uninspected, and
+  now fails with a message naming the missing terminator. We chose that on
+  purpose. Forwarding a session whose every statement escapes classification,
+  masking and audit hides the gap from the operator. Breaking the lane tells
+  them.
 - **Statements are not transactions.** Each one gets its own verdict, and no
   cross-statement session state exists.
 - **A slow classification can outlive the upstream's idle budget.**
