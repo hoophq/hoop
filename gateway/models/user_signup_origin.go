@@ -25,11 +25,16 @@ const originSurveyWindowDays = 7
 // gateway's own clock would drift by the database's UTC offset. Both sides of
 // this comparison come from the same clock instead.
 //
+// COALESCE keeps the result a plain boolean: created_at carries a default but
+// no NOT NULL constraint, and a row holding NULL there would make the whole
+// predicate NULL, which fails to scan into a bool. An unknown creation time
+// reads as outside the window rather than as a broken /userinfo response.
+//
 // Propagates gorm.ErrRecordNotFound when no such user exists.
 func ShouldShowOriginSurvey(db *gorm.DB, orgID, subject string) (bool, error) {
 	var showSurvey bool
 	res := db.Raw(`
-		SELECT signup_origin IS NULL AND created_at > NOW() - make_interval(days => ?)
+		SELECT COALESCE(signup_origin IS NULL AND created_at > NOW() - make_interval(days => ?), false)
 		FROM private.users
 		WHERE org_id = ? AND subject = ?`,
 		originSurveyWindowDays, orgID, subject,

@@ -73,6 +73,19 @@ func TestShouldShowOriginSurvey(t *testing.T) {
 	seedUser(t, "user-inside-window", 6.95)
 	seedUser(t, "user-outside-window", 7.05)
 
+	// created_at has a default but no NOT NULL constraint, so a row can hold
+	// NULL there. Without a guard the window predicate evaluates to NULL and
+	// fails to scan into a bool, breaking /userinfo for that user.
+	noCreationTime := "user-without-created-at"
+	err := models.DB.Exec(`
+		INSERT INTO private.users (org_id, subject, email, name, status, created_at)
+		VALUES (?, ?, ?, ?, 'active', NULL)`,
+		testOrgID, noCreationTime, noCreationTime+"@hoop.dev", noCreationTime,
+	).Error
+	if err != nil {
+		t.Fatalf("seed user without created_at: %v", err)
+	}
+
 	tests := []struct {
 		subject string
 		expect  bool
@@ -81,6 +94,7 @@ func TestShouldShowOriginSurvey(t *testing.T) {
 		{subject: "user-inside-window", expect: true},
 		{subject: "user-outside-window", expect: false},
 		{subject: answered, expect: false},
+		{subject: noCreationTime, expect: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.subject, func(t *testing.T) {

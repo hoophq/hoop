@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/analytics"
@@ -34,8 +35,9 @@ var validSignupOrigins = []string{
 	signupOriginOther,
 }
 
-// maxSignupOriginOtherLength matches the users.signup_origin_other column width
-// so an oversized payload fails with a 400 instead of a database error.
+// maxSignupOriginOtherLength matches the users.signup_origin_other column
+// width, in characters, so an oversized payload fails with a 400 instead of a
+// database error.
 const maxSignupOriginOtherLength = 255
 
 // PostSignupOrigin
@@ -80,7 +82,10 @@ func PostSignupOrigin(c *gin.Context) {
 		case detail == "":
 			c.JSON(http.StatusBadRequest, gin.H{"message": "origin_other is required when origin is 'other'"})
 			return
-		case len(detail) > maxSignupOriginOtherLength:
+		// Counted in characters, not bytes: the column is a VARCHAR(255) and
+		// Postgres measures it in characters, so len() would turn a perfectly
+		// storable non-ASCII answer into a 400.
+		case utf8.RuneCountInString(detail) > maxSignupOriginOtherLength:
 			c.JSON(http.StatusBadRequest, gin.H{"message": "origin_other must not exceed 255 characters"})
 			return
 		}
