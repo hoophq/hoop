@@ -62,11 +62,15 @@
                           :classes "h-full"}
             tabular-status (:status @script-response)
             tabular-loading? (= tabular-status :loading)
-            results-transformed (transform-results->matrix response connection-type)
-            results-heads (first results-transformed)
-            results-body (next results-transformed)
             connection-type-database? (some (partial = connection-type)
                                             ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+            ;; papaparse + js->clj walk the whole payload on every render, and
+            ;; only database connections consume the matrix (Tabular tab,
+            ;; CSV/JSON downloads). Everything else paid the scan for nothing.
+            results-transformed (when connection-type-database?
+                                  (transform-results->matrix response connection-type))
+            results-heads (first results-transformed)
+            results-body (next results-transformed)
             available-tabs (merge
                             {:logs "Logs"}
                             (when (and connection-type-database?
