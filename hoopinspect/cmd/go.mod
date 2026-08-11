@@ -9,8 +9,6 @@ module github.com/hoophq/hoopinspect/cmd
 
 go 1.26.5
 
-toolchain go1.26.5
-
 require (
 	github.com/hoophq/hoopinspect v0.0.0
 	github.com/hoophq/hoopinspect/config/yaml v0.0.0
@@ -24,7 +22,7 @@ require (
 )
 
 require (
-	github.com/hoophq/alcatraz v0.7.0 // indirect
+	github.com/hoophq/alcatraz v0.16.0 // indirect
 	github.com/hoophq/hoopinspect/analyzer/vertex v0.0.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

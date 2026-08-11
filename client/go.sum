@@ -295,8 +295,8 @@ github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 h1:x0DndAGP+m1rk9JrlPL
 github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0/go.mod h1:2DZt7DdTnnd1o7biwC9Ab0Z3OAGXId56gYVPR7LsLQs=
 github.com/honeycombio/otel-config-go v1.17.0 h1:3/zig0L3IGnfgiCrEfAwBsM0rF57+TKTyJ/a8yqW2eM=
 github.com/honeycombio/otel-config-go v1.17.0/go.mod h1:g2mMdfih4sYKfXBtz2mNGvo3HiQYqX4Up4pdA8JOF2s=
-github.com/hoophq/alcatraz v0.7.0 h1:qn71feGi++3QaAFsVi7Y/AvXTSxGrQ1OUCMrtlJleWY=
-github.com/hoophq/alcatraz v0.7.0/go.mod h1:B5ZNcwna5qCRZpVN6MMjmUbzEDpk5Q04jnKxqfZucdM=
+github.com/hoophq/alcatraz v0.16.0 h1:WJzaKH6fGcfUKfFrI+FR8RkCxUPVZeT5Ne30KGdFhUc=
+github.com/hoophq/alcatraz v0.16.0/go.mod h1:B5ZNcwna5qCRZpVN6MMjmUbzEDpk5Q04jnKxqfZucdM=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
