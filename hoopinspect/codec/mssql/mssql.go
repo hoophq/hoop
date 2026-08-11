@@ -21,13 +21,13 @@
 // A single logical message may span multiple packets; the last one has the
 // EOM status bit set. This decoder reassembles them before parsing, because a
 // statement split across two packets would otherwise be classified from a
-// fragment — the exact failure mode a policy cannot tolerate.
+// fragment: the exact failure mode a policy cannot tolerate.
 //
 // Two message types carry SQL:
 //
-//	0x01 SQLBatch   — ALL_HEADERS block, then the statement as UCS-2LE.
-//	0x03 RPCRequest — a proc call; when the proc is sp_executesql the first
-//	                  NVARCHAR parameter holds the statement text.
+//	0x01 SQLBatch:   ALL_HEADERS block, then the statement as UCS-2LE.
+//	0x03 RPCRequest: a proc call; when the proc is sp_executesql the first
+//	                 NVARCHAR parameter holds the statement text.
 //
 // # Integrated authentication passes through untouched
 //
@@ -150,8 +150,8 @@ func (c *Codec) Protocol() hoopinspect.Protocol { return hoopinspect.MSSQL }
 //
 // Metadata keys:
 //
-//	"mssql.message" — "SQLBatch" or "RPCRequest"
-//	"mssql.proc"    — "sp_executesql", only for a decoded RPC
+//	"mssql.message": "SQLBatch" or "RPCRequest"
+//	"mssql.proc":    "sp_executesql", only for a decoded RPC
 func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.Statement, int, error) {
 	if dir == hoopinspect.FromServer {
 		return c.decodeServer(data)
@@ -215,17 +215,26 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 			continue
 		}
 
-		op, tables := hoopinspect.ClassifySQL(text)
+		a := hoopinspect.AnalyzeSQL(text, hoopinspect.MSSQL)
 		md := map[string]string{"mssql.message": msgName(typ)}
 		if proc != "" {
 			md["mssql.proc"] = proc
+		}
+		if !a.Complete {
+			// No credible T-SQL parser exists for Go, so this lane runs
+			// the scanner permanently and the honest signal matters more
+			// here than anywhere: Operation is already OpUnknown, and
+			// the reason says which construct defeated it.
+			md[hoopinspect.MetadataSQLIncomplete] = a.Reason
 		}
 		stmts = append(stmts, hoopinspect.Statement{
 			Protocol:  hoopinspect.MSSQL,
 			Direction: hoopinspect.FromClient,
 			Text:      text,
-			Operation: op,
-			Tables:    tables,
+			Operation: a.Operation,
+			Effects:   a.Effects,
+			Relations: a.Relations,
+			Tables:    a.Tables,
 			Metadata:  md,
 		})
 	}
@@ -235,8 +244,8 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 //
 // It yields no statements: response-side decoding of TDS token streams
 // (COLMETADATA, ROW, NBCROW) is not implemented, so a result set travels
-// through unread. What it does do is refuse a routing ENVCHANGE, which is the
-// one server reply that ends the relay's visibility.
+// through unread. It does refuse a routing ENVCHANGE, the one server reply
+// that ends the relay's visibility.
 //
 // The scan runs until one complete Reply message is recognized as the login
 // response, and retires immediately after scanning it. MS-TDS puts routing
@@ -302,7 +311,7 @@ func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) 
 
 		if isLoginResponse(msg) {
 			// Scanned clean, and no later message may carry a redirect.
-			// What follows is result data, whose bytes are the ones a
+			// Result data follows, and its bytes are the ones a
 			// long-running scan would eventually misread.
 			c.routingRetired = true
 			return nil, len(data), nil
@@ -376,7 +385,7 @@ func hasLoginAck(b []byte) bool {
 // every token that can precede this one (LOGINACK, INFO, ERROR, FEATUREEXTACK,
 // SSPI, DONE), each with its own encoding. That is a lot of surface for a
 // guard, and getting any one of them wrong desynchronizes the walk and MISSES
-// the redirect — a silent bypass, the failure this exists to prevent.
+// the redirect: a silent bypass, the failure this exists to prevent.
 //
 // So it scans for the token byte and then validates the full structure at
 // that offset. A false positive costs a refused connection an operator can
@@ -464,7 +473,7 @@ func msgName(typ byte) string {
 //
 // ALL_HEADERS is only present in the FIRST packet of a message. Since we
 // reassemble before parsing, it is present exactly once at the front, and a
-// length that overruns the body means it was absent (some drivers omit it) —
+// length that overruns the body means it was absent (some drivers omit it),
 // in which case the whole body is the statement.
 func decodeSQLBatch(body []byte) string {
 	if len(body) < 4 {
@@ -590,8 +599,8 @@ type LoginInfo struct {
 // # What a relay can and cannot do with the answer
 //
 // UsesSSPI true means the credential on the wire is a service ticket bound to
-// the server's SPN. It can be RELAYED — the 0x11 packets carrying it are
-// forwarded verbatim by Decode — but never minted, edited or read. So this
+// the server's SPN. It can be RELAYED (the 0x11 packets carrying it are
+// forwarded verbatim by Decode) but never minted, edited or read. So this
 // reports a fact for the audit trail and for a clear error message; it is not
 // a decision point, and a relay that refuses integrated auth on seeing it
 // would be refusing the case that works.
