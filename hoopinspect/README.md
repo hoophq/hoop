@@ -644,6 +644,28 @@ server's SPN: relayable, and beyond minting, reading or editing.
 trail and a clear error message. It cannot report who: under integrated auth
 the username field sits empty, because the name lives inside the ticket.
 
+**The encrypted login is passed through, not given up on.** PRELOGIN's
+`ENCRYPT_OFF` reads as "encryption off" and means "encrypt the login only":
+MS-TDS 3.2.5.3 puts the first LOGIN7 packet inside TLS and every other packet
+in the clear. A SQL Server with TLS administratively disabled still negotiates
+it, minting a self-signed certificate at startup for the credentials, and
+go-mssqldb defaults to it. So this is the ordinary 7.x case, not an exotic one.
+
+The handshake rides inside `0x12` packets, which the codec already forwards.
+What follows does not: the nesting inverts and TLS records go on the wire raw,
+with no TDS header. Walked as packets they desynchronize the parse, and the
+lane goes quiet — statements undecoded, bytes forwarded, no policy, no
+masking, no audit trail.
+
+The codec walks that region by TLS's own record framing, which lands exactly
+on the byte where plaintext resumes, and inspects everything after it.
+Statements from such a session carry `mssql.login_encrypted`, so the trail
+records the window nobody could see. The pass-through opens once, during the
+login, and is bounded; ciphertext before the login, after it, or past the
+bound is refused with `ErrStreamUnsafe` rather than forwarded, because a
+session that never returns to plaintext is one where inspection is impossible
+for its whole life.
+
 **The codec refuses one thing outright.** A login response carrying a routing
 ENVCHANGE tells the driver to reconnect elsewhere, and drivers obey without
 telling the user. Forward it and the client lands on a socket the relay does

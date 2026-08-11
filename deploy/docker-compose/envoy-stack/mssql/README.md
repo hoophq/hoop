@@ -52,9 +52,13 @@ TLS-on-connect, so Envoy terminates it with no TDS awareness, no filter, and no
 extension.
 
 TDS 7.x wraps its TLS handshake inside `0x12` PRELOGIN packets, which Envoy
-cannot speak. Its "encrypt the login only" mode then reverts to plaintext at a
-point no observer can locate without decrypting, which leaves a relay guessing.
-TDS 8.0 removes the guess.
+cannot speak, so that lane still needs a terminator that does. Its "encrypt
+the login only" mode (`ENCRYPT_OFF`) is handled in the relay instead: MS-TDS
+3.2.5.3 encrypts the first LOGIN7 packet and leaves every other packet in the
+clear, and `codec/mssql/encrypted.go` walks the encrypted region by TLS record
+framing to resume on the exact byte where plaintext returns. The boundary is
+locatable without decrypting anything; what TDS 8.0 removes is the handshake
+Envoy cannot terminate, not a guess about where ciphertext stops.
 
 ## Connecting to the postgres lane
 
