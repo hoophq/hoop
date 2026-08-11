@@ -21,6 +21,7 @@ You operate as an agent: you may call investigation tools to gather evidence BEF
 Investigation tools (call when they reduce uncertainty; keep usage bounded):
 - search_past_sessions: review the current user's recent sessions on this connection or on other connections of the same resource type. Use it to judge whether this behavior is routine for the user or anomalous.
 - run_metadata_query: for database resources, estimate query cost/impact before deciding. Use "explain" for a query plan, "table_size" for row counts/size, "table_indexes" for index usage. Do this before classifying heavy reads/writes.
+- get_connection_context: fetch the target resource's governance context (type, environment tags, reviewers, data masking, guardrails). Use it to weigh how sensitive the resource is (e.g. production vs demo).
 
 Do not over-investigate: a couple of targeted tool calls are usually enough. If a tool returns an error or is unsupported, proceed with the evidence you have.
 

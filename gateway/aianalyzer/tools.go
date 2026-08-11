@@ -30,24 +30,25 @@ const (
 var identifierRe = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
 
 // Database-selection directives the webapp/CLI prepend to session scripts when
-// the user picks a database: psql "\c <db>" and mysql "use <db>;".
+// the user picks a database: psql "\c <db>", mysql/mongodb "use <db>;", and
+// mssql "USE [<db>];".
 var (
 	psqlConnectRe = regexp.MustCompile(`(?m)^\s*\\c(?:onnect)?\s+([A-Za-z0-9_$-]+)\s*$`)
-	mysqlUseRe    = regexp.MustCompile(`(?mi)^\s*use\s+` + "`?" + `([A-Za-z0-9_$-]+)` + "`?" + `\s*;`)
+	useDatabaseRe = regexp.MustCompile(`(?mi)^\s*use\s+[\[` + "`" + `]?([A-Za-z0-9_$-]+)[\]` + "`" + `]?\s*;`)
 )
 
 // SessionDatabaseFromScript extracts the database the session script targets,
 // when the script carries an explicit selection directive (the webapp prepends
-// "\c <db>" for postgres and "use <db>;" for mysql when a database is picked).
-// Returns "" when the script has no such directive, meaning the connection's
-// default database applies.
+// "\c <db>" for postgres, "use <db>;" for mysql/mongodb and "USE [<db>];" for
+// mssql when a database is picked). Returns "" when the script has no such
+// directive, meaning the connection's default database applies.
 func SessionDatabaseFromScript(subtype, script string) string {
 	var m []string
 	switch strings.ToLower(subtype) {
 	case "postgres":
 		m = psqlConnectRe.FindStringSubmatch(script)
-	case "mysql":
-		m = mysqlUseRe.FindStringSubmatch(script)
+	case "mysql", "mssql", "mongodb":
+		m = useDatabaseRe.FindStringSubmatch(script)
 	}
 	if len(m) == 2 {
 		return m[1]
@@ -117,12 +118,12 @@ func InvestigationTools() []laia.Tool {
 		{
 			Name: "run_metadata_query",
 			Description: "Run a read-only metadata query against the target database resource to estimate query cost/impact before classifying. " +
-				"Supported only for postgres and mysql connections.",
+				"Supported for postgres, mysql, mssql, mongodb (collections; explain unavailable) and oracledb connections.",
 			InputSchema: laia.ToolInputSchema{
 				Properties: map[string]laia.ToolProperty{
 					"operation": {
 						Type:        "string",
-						Description: "explain = query plan (does not execute the query); table_size = row count and size; table_indexes = index usage.",
+						Description: "explain = query/execution plan (never executes the statement); table_size = row count and size; table_indexes = index usage. For mongodb, table = collection.",
 						Enum:        []string{"explain", "table_size", "table_indexes"},
 					},
 					"query": {
@@ -131,7 +132,7 @@ func InvestigationTools() []laia.Tool {
 					},
 					"table": {
 						Type:        "string",
-						Description: "Table name. Required for operation=table_size and table_indexes.",
+						Description: "Table (or mongodb collection) name. Required for operation=table_size and table_indexes.",
 					},
 					"schema": {
 						Type:        "string",
@@ -140,6 +141,12 @@ func InvestigationTools() []laia.Tool {
 				},
 				Required: []string{"operation"},
 			},
+		},
+		{
+			Name: "get_connection_context",
+			Description: "Fetch governance context for the target connection: resource type/subtype, environment tags, reviewer groups, data masking, guardrails, and access modes. " +
+				"Works for any connection type. Use it to judge resource sensitivity (e.g. production vs demo) when classifying.",
+			InputSchema: laia.ToolInputSchema{Properties: map[string]laia.ToolProperty{}},
 		},
 	}
 }
@@ -151,6 +158,8 @@ func (e *gatewayToolExecutor) Execute(ctx context.Context, name, arguments strin
 		return e.searchPastSessions(arguments)
 	case "run_metadata_query":
 		return e.runMetadataQuery(arguments)
+	case "get_connection_context":
+		return e.connectionContext()
 	default:
 		return fmt.Sprintf("unknown tool %q", name), true
 	}
@@ -257,8 +266,8 @@ func (e *gatewayToolExecutor) runMetadataQuery(arguments string) (string, bool) 
 	}
 
 	subtype := strings.ToLower(e.conn.SubType.String)
-	if e.conn.Type != "database" || (subtype != "postgres" && subtype != "mysql") {
-		return "metadata queries are only supported for postgres and mysql connections", true
+	if e.conn.Type != "database" || !supportedMetadataSubtype(subtype) {
+		return "metadata queries are only supported for postgres, mysql, mssql, mongodb and oracledb connections", true
 	}
 
 	if args.Table != "" && !identifierRe.MatchString(args.Table) {
@@ -292,72 +301,167 @@ var dbNameRe = regexp.MustCompile(`^[A-Za-z0-9_$-]+$`)
 
 // prependDatabaseDirective scopes a metadata script to the database the analyzed
 // session targets, mirroring the directive the webapp prepends to the session
-// script ("\c <db>" for psql, "use <db>;" for mysql). No-op when the session
-// uses the connection's default database.
+// script ("\c <db>" for psql, "use <db>;" for mysql, "USE [<db>];" for mssql).
+// No-op when the session uses the connection's default database or when the
+// dialect has no database directive (oracledb).
 func prependDatabaseDirective(subtype, database, script string) string {
 	if database == "" || !dbNameRe.MatchString(database) {
 		return script
 	}
-	if subtype == "postgres" {
+	switch subtype {
+	case "postgres":
 		return "\\set QUIET on\n\\c " + database + "\n\\set QUIET off\n" + script
+	case "mysql":
+		return "use " + database + ";\n" + script
+	case "mssql":
+		return "USE [" + database + "];\n" + script
+	case "mongodb":
+		return "db = db.getSiblingDB('" + database + "');\n" + script
+	default:
+		return script
 	}
-	return "use " + database + ";\n" + script
 }
 
-// buildMetadataScript returns the dialect SQL for the requested operation, or a
-// non-empty error string when the arguments are invalid.
+func supportedMetadataSubtype(subtype string) bool {
+	switch subtype {
+	case "postgres", "mysql", "mssql", "mongodb", "oracledb":
+		return true
+	}
+	return false
+}
+
+// buildMetadataScript returns the dialect script for the requested operation, or
+// a non-empty error string when the arguments are invalid. Every script is
+// read-only by construction: plans are produced without executing the statement
+// and size/index lookups only touch catalog/stat views.
 func buildMetadataScript(subtype string, args runMetadataQueryArgs) (script string, errMsg string) {
 	switch args.Operation {
+	case "explain", "table_size", "table_indexes":
+	default:
+		return "", fmt.Sprintf("invalid operation %q; expected explain, table_size or table_indexes", args.Operation)
+	}
+	if args.Operation == "explain" && strings.TrimSpace(args.Query) == "" {
+		return "", "operation=explain requires a non-empty query"
+	}
+	if args.Operation != "explain" && args.Table == "" {
+		return "", fmt.Sprintf("operation=%s requires a table", args.Operation)
+	}
+	switch subtype {
+	case "postgres":
+		return pgMetadataScript(args), ""
+	case "mysql":
+		return mysqlMetadataScript(args), ""
+	case "mssql":
+		return mssqlMetadataScript(args), ""
+	case "mongodb":
+		if args.Operation == "explain" {
+			return "", "explain is not supported for mongodb connections; use table_size or table_indexes on the referenced collections"
+		}
+		return mongoMetadataScript(args), ""
+	case "oracledb":
+		return oracleMetadataScript(args), ""
+	default:
+		return "", fmt.Sprintf("unsupported subtype %q", subtype)
+	}
+}
+
+func pgMetadataScript(args runMetadataQueryArgs) string {
+	switch args.Operation {
 	case "explain":
-		if strings.TrimSpace(args.Query) == "" {
-			return "", "operation=explain requires a non-empty query"
-		}
-		if subtype == "postgres" {
-			// Plain EXPLAIN never executes the statement (no ANALYZE).
-			return "EXPLAIN " + args.Query, ""
-		}
-		return "EXPLAIN FORMAT=JSON " + args.Query, ""
+		// Plain EXPLAIN never executes the statement (no ANALYZE).
+		return "EXPLAIN " + args.Query
 	case "table_size":
-		if args.Table == "" {
-			return "", "operation=table_size requires a table"
+		schemaFilter := `n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_%'`
+		if args.Schema != "" {
+			schemaFilter = fmt.Sprintf("n.nspname = '%s'", args.Schema)
 		}
-		if subtype == "postgres" {
-			schemaFilter := `n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_%'`
-			if args.Schema != "" {
-				schemaFilter = fmt.Sprintf("n.nspname = '%s'", args.Schema)
-			}
-			return fmt.Sprintf(`SELECT n.nspname AS schema, c.relname, COALESCE(s.n_live_tup, 0) AS n_live_tup, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
+		return fmt.Sprintf(`SELECT n.nspname AS schema, c.relname, COALESCE(s.n_live_tup, 0) AS n_live_tup, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
-WHERE c.relname = '%s' AND c.relkind IN ('r', 'p', 'm') AND %s;`, args.Table, schemaFilter), ""
-		}
+WHERE c.relname = '%s' AND c.relkind IN ('r', 'p', 'm') AND %s;`, args.Table, schemaFilter)
+	default: // table_indexes
 		schemaFilter := ""
 		if args.Schema != "" {
-			schemaFilter = fmt.Sprintf(" AND table_schema = '%s'", args.Schema)
+			schemaFilter = fmt.Sprintf(" AND schemaname = '%s'", args.Schema)
 		}
+		return fmt.Sprintf(`SELECT schemaname, indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes WHERE relname = '%s'%s;
+SELECT schemaname, indexname, indexdef FROM pg_indexes WHERE tablename = '%s'%s;`, args.Table, schemaFilter, args.Table, schemaFilter)
+	}
+}
+
+func mysqlMetadataScript(args runMetadataQueryArgs) string {
+	schemaFilter := ""
+	if args.Schema != "" {
+		schemaFilter = fmt.Sprintf(" AND table_schema = '%s'", args.Schema)
+	}
+	switch args.Operation {
+	case "explain":
+		return "EXPLAIN FORMAT=JSON " + args.Query
+	case "table_size":
 		return fmt.Sprintf(`SELECT table_schema, table_name, table_rows, ROUND(data_length/1024/1024, 2) AS data_mb, ROUND(index_length/1024/1024, 2) AS index_mb
-FROM information_schema.tables WHERE table_name = '%s'%s;`, args.Table, schemaFilter), ""
-	case "table_indexes":
-		if args.Table == "" {
-			return "", "operation=table_indexes requires a table"
-		}
-		if subtype == "postgres" {
-			statFilter, idxFilter := "", ""
-			if args.Schema != "" {
-				statFilter = fmt.Sprintf(" AND schemaname = '%s'", args.Schema)
-				idxFilter = statFilter
-			}
-			return fmt.Sprintf(`SELECT schemaname, indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes WHERE relname = '%s'%s;
-SELECT schemaname, indexname, indexdef FROM pg_indexes WHERE tablename = '%s'%s;`, args.Table, statFilter, args.Table, idxFilter), ""
-		}
-		schemaFilter := ""
+FROM information_schema.tables WHERE table_name = '%s'%s;`, args.Table, schemaFilter)
+	default: // table_indexes
+		return fmt.Sprintf(`SELECT table_schema, index_name, column_name, cardinality FROM information_schema.statistics WHERE table_name = '%s'%s;`, args.Table, schemaFilter)
+	}
+}
+
+// mssqlMetadataScript builds sqlcmd batches. SHOWPLAN_ALL must be alone in its
+// batch, hence the GO separators; it returns the estimated plan without
+// executing the statement.
+func mssqlMetadataScript(args runMetadataQueryArgs) string {
+	object := args.Table
+	if args.Schema != "" {
+		object = args.Schema + "." + args.Table
+	}
+	switch args.Operation {
+	case "explain":
+		return "SET SHOWPLAN_ALL ON\nGO\n" + args.Query + "\nGO\nSET SHOWPLAN_ALL OFF\nGO"
+	case "table_size":
+		return fmt.Sprintf(`SET NOCOUNT ON;
+IF OBJECT_ID(N'%s') IS NULL
+  PRINT 'table not found in the connection database'
+ELSE
+  EXEC sp_spaceused N'%s';`, object, object)
+	default: // table_indexes
+		return fmt.Sprintf(`SET NOCOUNT ON;
+IF OBJECT_ID(N'%s') IS NULL
+  PRINT 'table not found in the connection database'
+ELSE
+  SELECT i.name AS index_name, i.type_desc, i.is_unique, c.name AS column_name
+  FROM sys.indexes i
+  JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+  JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+  WHERE i.object_id = OBJECT_ID(N'%s');`, object, object)
+	}
+}
+
+// mongoMetadataScript builds mongo shell JS; table names a collection.
+func mongoMetadataScript(args runMetadataQueryArgs) string {
+	if args.Operation == "table_size" {
+		return fmt.Sprintf(`var s = db.getCollection('%s').stats();
+print(JSON.stringify({ns: s.ns, count: s.count, avgObjSize: s.avgObjSize, size: s.size, storageSize: s.storageSize, totalIndexSize: s.totalIndexSize}));`, args.Table)
+	}
+	// table_indexes
+	return fmt.Sprintf(`print(JSON.stringify(db.getCollection('%s').getIndexes()));`, args.Table)
+}
+
+func oracleMetadataScript(args runMetadataQueryArgs) string {
+	switch args.Operation {
+	case "explain":
+		return "EXPLAIN PLAN FOR " + strings.TrimSuffix(strings.TrimSpace(args.Query), ";") + ";\nSELECT plan_table_output FROM table(dbms_xplan.display());"
+	case "table_size":
+		ownerFilter := "user_segments"
 		if args.Schema != "" {
-			schemaFilter = fmt.Sprintf(" AND table_schema = '%s'", args.Schema)
+			return fmt.Sprintf(`SELECT owner, segment_name, segment_type, ROUND(bytes/1024/1024, 2) AS size_mb FROM dba_segments WHERE segment_name = UPPER('%s') AND owner = UPPER('%s');`, args.Table, args.Schema)
 		}
-		return fmt.Sprintf(`SELECT table_schema, index_name, column_name, cardinality FROM information_schema.statistics WHERE table_name = '%s'%s;`, args.Table, schemaFilter), ""
-	default:
-		return "", fmt.Sprintf("invalid operation %q; expected explain, table_size or table_indexes", args.Operation)
+		return fmt.Sprintf(`SELECT segment_name, segment_type, ROUND(bytes/1024/1024, 2) AS size_mb FROM %s WHERE segment_name = UPPER('%s');`, ownerFilter, args.Table)
+	default: // table_indexes
+		ownerFilter := ""
+		if args.Schema != "" {
+			ownerFilter = fmt.Sprintf(" AND owner = UPPER('%s')", args.Schema)
+		}
+		return fmt.Sprintf(`SELECT index_name, index_type, uniqueness, status FROM all_indexes WHERE table_name = UPPER('%s')%s;`, args.Table, ownerFilter)
 	}
 }
 
@@ -371,16 +475,23 @@ func emptyResultMessage(subtype string, args runMetadataQueryArgs, output string
 		return ""
 	}
 	var empty bool
-	if subtype == "postgres" {
+	switch subtype {
+	case "postgres":
 		// psql prints a "(0 rows)" footer per statement; table_indexes runs two.
 		stmts := 1
 		if args.Operation == "table_indexes" {
 			stmts = 2
 		}
 		empty = strings.Count(output, "(0 rows)") >= stmts
-	} else {
+	case "mysql":
 		// mysql CLI prints nothing when no rows match.
 		empty = strings.TrimSpace(output) == ""
+	case "oracledb":
+		empty = strings.Contains(strings.ToLower(output), "no rows selected")
+	default:
+		// mssql scripts print an explicit not-found message themselves and
+		// mongodb errors on missing collections; pass the output through.
+		return ""
 	}
 	if !empty {
 		return ""
@@ -393,6 +504,34 @@ func emptyResultMessage(subtype string, args runMetadataQueryArgs, output string
 		return fmt.Sprintf("no indexes found for table %q in %s (the table may not exist; this tool only sees the database this connection targets)", args.Table, scope)
 	}
 	return fmt.Sprintf("table %q not found in %s (this tool only sees the database this connection targets)", args.Table, scope)
+}
+
+// connectionContext returns governance metadata of the target connection so the
+// model can factor resource sensitivity into the verdict. Works for every
+// connection type; read from the already-loaded connection row (no exec).
+func (e *gatewayToolExecutor) connectionContext() (string, bool) {
+	ctx := map[string]any{
+		"name":                 e.conn.Name,
+		"type":                 e.conn.Type,
+		"subtype":              e.conn.SubType.String,
+		"tags":                 e.conn.ConnectionTags,
+		"legacy_tags":          []string(e.conn.Tags),
+		"reviewer_groups":      []string(e.conn.Reviewers),
+		"redact_enabled":       e.conn.RedactEnabled,
+		"redact_types":         []string(e.conn.RedactTypes),
+		"guardrail_rule_count": len(e.conn.GuardRailRules),
+		"access_mode": map[string]string{
+			"exec":     e.conn.AccessModeExec,
+			"connect":  e.conn.AccessModeConnect,
+			"runbooks": e.conn.AccessModeRunbooks,
+		},
+		"agent_mode": e.conn.AgentMode,
+	}
+	out, err := json.Marshal(ctx)
+	if err != nil {
+		return fmt.Sprintf("failed encoding connection context: %v", err), true
+	}
+	return string(out), false
 }
 
 // runExec runs a read-only metadata script as an auditable plain-exec session,

@@ -77,9 +77,9 @@ func TestSessionDatabaseFromScript(t *testing.T) {
 	if got := SessionDatabaseFromScript("postgres", "SELECT 1;"); got != "" {
 		t.Errorf("no-directive extraction = %q, want empty", got)
 	}
-	// Unsupported subtype -> empty.
-	if got := SessionDatabaseFromScript("mongodb", "use shop;\ndb.find()"); got != "" {
-		t.Errorf("mongodb extraction = %q, want empty", got)
+	// Subtype without a database directive -> empty.
+	if got := SessionDatabaseFromScript("dynamodb", "use shop;\nscan"); got != "" {
+		t.Errorf("dynamodb extraction = %q, want empty", got)
 	}
 }
 
@@ -97,5 +97,75 @@ func TestPrependDatabaseDirective(t *testing.T) {
 	}
 	if out := prependDatabaseDirective("postgres", "bad;db", "SELECT 1;"); out != "SELECT 1;" {
 		t.Errorf("unsafe db must be no-op, got:\n%s", out)
+	}
+}
+
+func TestBuildMetadataScriptNewDialects(t *testing.T) {
+	// mssql explain: SHOWPLAN batches, never executes the statement.
+	script, errMsg := buildMetadataScript("mssql", runMetadataQueryArgs{Operation: "explain", Query: "DELETE FROM orders"})
+	if errMsg != "" || !strings.HasPrefix(script, "SET SHOWPLAN_ALL ON\nGO\n") || !strings.Contains(script, "SET SHOWPLAN_ALL OFF") {
+		t.Errorf("mssql explain script wrong (err=%q):\n%s", errMsg, script)
+	}
+	// mssql table_size: schema-qualified object + explicit not-found guard.
+	script, _ = buildMetadataScript("mssql", runMetadataQueryArgs{Operation: "table_size", Table: "orders", Schema: "sales"})
+	if !strings.Contains(script, "OBJECT_ID(N'sales.orders')") || !strings.Contains(script, "sp_spaceused") {
+		t.Errorf("mssql table_size script wrong:\n%s", script)
+	}
+	// mongodb: explain rejected, stats/index scripts use getCollection.
+	if _, errMsg = buildMetadataScript("mongodb", runMetadataQueryArgs{Operation: "explain", Query: "db.a.find()"}); !strings.Contains(errMsg, "not supported for mongodb") {
+		t.Errorf("mongodb explain not rejected: %q", errMsg)
+	}
+	script, _ = buildMetadataScript("mongodb", runMetadataQueryArgs{Operation: "table_size", Table: "users"})
+	if !strings.Contains(script, "db.getCollection('users').stats()") {
+		t.Errorf("mongodb stats script wrong:\n%s", script)
+	}
+	script, _ = buildMetadataScript("mongodb", runMetadataQueryArgs{Operation: "table_indexes", Table: "users"})
+	if !strings.Contains(script, "getIndexes()") {
+		t.Errorf("mongodb indexes script wrong:\n%s", script)
+	}
+	// oracledb: explain uses dbms_xplan; size honors owner.
+	script, _ = buildMetadataScript("oracledb", runMetadataQueryArgs{Operation: "explain", Query: "SELECT * FROM t;"})
+	if !strings.HasPrefix(script, "EXPLAIN PLAN FOR SELECT * FROM t;") || !strings.Contains(script, "dbms_xplan.display()") {
+		t.Errorf("oracle explain script wrong:\n%s", script)
+	}
+	script, _ = buildMetadataScript("oracledb", runMetadataQueryArgs{Operation: "table_size", Table: "t", Schema: "hr"})
+	if !strings.Contains(script, "dba_segments") || !strings.Contains(script, "UPPER('hr')") {
+		t.Errorf("oracle table_size script wrong:\n%s", script)
+	}
+}
+
+func TestPrependDatabaseDirectiveNewDialects(t *testing.T) {
+	if out := prependDatabaseDirective("mssql", "sales", "SELECT 1;"); !strings.HasPrefix(out, "USE [sales];\n") {
+		t.Errorf("mssql directive missing:\n%s", out)
+	}
+	if out := prependDatabaseDirective("mongodb", "shop", "db.a.stats()"); !strings.HasPrefix(out, "db = db.getSiblingDB('shop');\n") {
+		t.Errorf("mongodb directive missing:\n%s", out)
+	}
+	// oracledb has no database directive.
+	if out := prependDatabaseDirective("oracledb", "orcl", "SELECT 1;"); out != "SELECT 1;" {
+		t.Errorf("oracledb must be no-op:\n%s", out)
+	}
+}
+
+func TestSessionDatabaseFromScriptNewDialects(t *testing.T) {
+	if got := SessionDatabaseFromScript("mssql", "SET NOCOUNT ON;\nUSE [sales];\nSELECT 1;"); got != "sales" {
+		t.Errorf("mssql extraction = %q, want sales", got)
+	}
+	if got := SessionDatabaseFromScript("mongodb", "use shop;\ndb.users.find()"); got != "shop" {
+		t.Errorf("mongodb extraction = %q, want shop", got)
+	}
+}
+
+func TestEmptyResultMessageNewDialects(t *testing.T) {
+	sizeArgs := runMetadataQueryArgs{Operation: "table_size", Table: "t"}
+	if msg := emptyResultMessage("oracledb", sizeArgs, "no rows selected\n"); !strings.Contains(msg, "not found") {
+		t.Errorf("oracle empty not flagged: %q", msg)
+	}
+	// mssql/mongodb outputs pass through (they carry their own signals).
+	if msg := emptyResultMessage("mssql", sizeArgs, "table not found in the connection database\n"); msg != "" {
+		t.Errorf("mssql output must pass through: %q", msg)
+	}
+	if msg := emptyResultMessage("mongodb", sizeArgs, ""); msg != "" {
+		t.Errorf("mongodb output must pass through: %q", msg)
 	}
 }
