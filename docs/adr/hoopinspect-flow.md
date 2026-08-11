@@ -1449,7 +1449,7 @@ that function, a Rego policy keyed on `input.context.principal` reads
   something critical and accept the false positives.
 - **`CALL` and `EXECUTE` no longer classify as `call`.** They report `unknown`
   with a reason, so a rule written `operations: [call]` stops matching and needs
-  `unknown` instead. It is the one behavior change an existing config can
+  `unknown` instead. It is one of two behavior changes an existing config can
   notice; `ClassifySQL` keeps its signature and no exported symbol was removed.
 - **PII detection is neither sound nor complete.** A checksum-verified
   identifier holds up. Everything else is a pattern. Detecting a name column
@@ -1459,9 +1459,23 @@ that function, a Rego policy keyed on `input.context.principal` reads
 - **HTTP/1.x only for stream decoding.** HTTP/2 and HTTP/3 framing belongs to
   whatever terminated the connection, and by then it holds a `*http.Request`, so
   call `InspectRequest`.
-- **Plaintext only.** A client negotiating TLS to the server leaves nothing to
-  parse. Termination stays the caller's problem, which in this topology means
-  Envoy's.
+- **Plaintext only, with one exception.** A client negotiating TLS to the
+  server leaves nothing to parse, and termination stays the caller's problem,
+  which in this topology means Envoy's. TDS is the exception, because it has a
+  mode where the caller cannot help: PRELOGIN's `ENCRYPT_OFF` encrypts the
+  first LOGIN7 packet and leaves every statement in the clear (MS-TDS 3.2.5.3),
+  and go-mssqldb negotiates it by default. `codec/mssql/encrypted.go` walks
+  that region by TLS record framing and inspects the plaintext after it.
+  Statements from such a session carry `mssql.login_encrypted`.
+- **A fully encrypted MSSQL session is now refused rather than forwarded.**
+  The pass-through above is bounded and opens only during login. Ciphertext
+  before the login, after plaintext resumed, or past the bound returns
+  `ErrStreamUnsafe` and the gate denies. This is the second behavior change an
+  existing deployment can notice: an `ENCRYPT_ON` lane reaching the relay with
+  nothing terminating in front used to connect and run uninspected, and now
+  fails with a message naming the missing terminator. Silently forwarding a
+  session no statement of which can be classified, masked or audited is the
+  worse outcome, so this is deliberate.
 - **Statements are not transactions.** Each one gets its own verdict, and no
   cross-statement session state exists.
 - **A slow classification can outlive the upstream's idle budget.**
