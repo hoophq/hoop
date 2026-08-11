@@ -89,6 +89,16 @@ type UserPatchSlackID struct {
 	SlackID string `json:"slack_id" binding:"required" example:"U053ELZHB53"`
 }
 
+// UserSignupOriginRequest carries the answer to the onboarding
+// "How did you hear about Hoop?" survey. A user may answer only once.
+type UserSignupOriginRequest struct {
+	// The acquisition channel the user picked
+	Origin string `json:"origin" binding:"required" enums:"search-engine,ai-discovery,referral,already-in-use-at-company,tech-community,social-media,hoop-free-tools,other" example:"ai-discovery"`
+	// Free text detail. Required when origin is "other", ignored and stored as
+	// null for every other option.
+	OriginOther string `json:"origin_other" example:"Saw it in a conference talk"`
+}
+
 type UserGroup struct {
 	// Name of the user group
 	Name string `json:"name" binding:"required" example:"engineering"`
@@ -133,6 +143,10 @@ type UserInfo struct {
 	// Pending organization invitations for this user. When non-empty, the user can migrate
 	// to one of these organizations. Only populated in multi-tenant environments.
 	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
+	// Whether the "How did you hear about Hoop?" survey should still be offered.
+	// True only while the user has not answered it and is within 7 days of their
+	// user record being created. Always false for anonymous users.
+	ShowOriginSurvey bool `json:"show_origin_survey"`
 }
 
 type ServiceAccountStatusType string

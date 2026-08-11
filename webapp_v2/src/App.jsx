@@ -1,6 +1,7 @@
 import { Toaster } from 'sonner'
 import { useEffect } from 'react'
 import Router from './Router'
+import OriginSurvey from '@/features/OriginSurvey'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 
 // Clears the global header so toasts never cover the Native Connections button
@@ -20,6 +21,10 @@ function App() {
   return (
     <>
       <Router />
+      {/* Mounted outside the Router so it also reaches the onboarding routes,
+          which render without the app Layout. Renders nothing until /userinfo
+          reports the survey is still due. */}
+      <OriginSurvey />
       <Toaster position="top-right" offset={TOAST_OFFSET} mobileOffset={TOAST_OFFSET} />
     </>
   )

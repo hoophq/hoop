@@ -10255,6 +10255,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/self/signup-origin": {
+            "post": {
+                "description": "Record how the authenticated user heard about Hoop. Each user may answer only once; a second attempt returns 409.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Answer Signup Origin Survey",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserSignupOriginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Answer recorded"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/users/self/slack": {
             "patch": {
                 "description": "Patch own user's slack id",
@@ -18551,6 +18612,10 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "standard"
                 },
+                "show_origin_survey": {
+                    "description": "Whether the \"How did you hear about Hoop?\" survey should still be offered.\nTrue only while the user has not answered it and is within 7 days of their\nuser record being created. Always false for anonymous users.",
+                    "type": "boolean"
+                },
                 "slack_id": {
                     "description": "The identifier of slack to send messages to users",
                     "type": "string",
@@ -18598,6 +18663,34 @@ const docTemplate = `{
                 "slack_id": {
                     "type": "string",
                     "example": "U053ELZHB53"
+                }
+            }
+        },
+        "openapi.UserSignupOriginRequest": {
+            "type": "object",
+            "required": [
+                "origin"
+            ],
+            "properties": {
+                "origin": {
+                    "description": "The acquisition channel the user picked",
+                    "type": "string",
+                    "enum": [
+                        "search-engine",
+                        "ai-discovery",
+                        "referral",
+                        "already-in-use-at-company",
+                        "tech-community",
+                        "social-media",
+                        "hoop-free-tools",
+                        "other"
+                    ],
+                    "example": "ai-discovery"
+                },
+                "origin_other": {
+                    "description": "Free text detail. Required when origin is \"other\", ignored and stored as\nnull for every other option.",
+                    "type": "string",
+                    "example": "Saw it in a conference talk"
                 }
             }
         },

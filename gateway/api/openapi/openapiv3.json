@@ -8076,6 +8076,10 @@
             "readOnly": true,
             "type": "string"
           },
+          "show_origin_survey": {
+            "description": "Whether the \"How did you hear about Hoop?\" survey should still be offered.\nTrue only while the user has not answered it and is within 7 days of their\nuser record being created. Always false for anonymous users.",
+            "type": "boolean"
+          },
           "slack_id": {
             "description": "The identifier of slack to send messages to users",
             "example": "U053ELZHB53",
@@ -8127,6 +8131,34 @@
         },
         "required": [
           "slack_id"
+        ],
+        "type": "object"
+      },
+      "openapi.UserSignupOriginRequest": {
+        "properties": {
+          "origin": {
+            "description": "The acquisition channel the user picked",
+            "enum": [
+              "search-engine",
+              "ai-discovery",
+              "referral",
+              "already-in-use-at-company",
+              "tech-community",
+              "social-media",
+              "hoop-free-tools",
+              "other"
+            ],
+            "example": "ai-discovery",
+            "type": "string"
+          },
+          "origin_other": {
+            "description": "Free text detail. Required when origin is \"other\", ignored and stored as\nnull for every other option.",
+            "example": "Saw it in a conference talk",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin"
         ],
         "type": "object"
       },
@@ -21282,6 +21314,82 @@
           }
         },
         "summary": "Delete User Group",
+        "tags": [
+          "User Management"
+        ]
+      }
+    },
+    "/users/self/signup-origin": {
+      "post": {
+        "description": "Record how the authenticated user heard about Hoop. Each user may answer only once; a second attempt returns 409.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.UserSignupOriginRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "204": {
+            "description": "Answer recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Answer Signup Origin Survey",
         "tags": [
           "User Management"
         ]
