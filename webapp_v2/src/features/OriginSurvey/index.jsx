@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Box, Group, Indicator, Paper, Stack, Text } from '@mantine/core'
 import { X } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
@@ -7,15 +7,10 @@ import Radio from '@/components/Radio'
 import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
 import { originSurveyService } from '@/services/originSurvey'
-import { showSnackbar } from '@/utils/snackbar'
 import { ORIGIN_OPTIONS, ORIGIN_OTHER, ORIGIN_OTHER_MAX_LENGTH } from './constants'
 import classes from './OriginSurvey.module.css'
 
 const CARD_WIDTH = 340
-
-// How long the "Answer received" acknowledgement stays on screen before the
-// widget removes itself.
-const ACK_DURATION_MS = 2500
 
 /**
  * Onboarding "How did you hear about Hoop?" survey — a floating launcher on the
@@ -31,56 +26,31 @@ const ACK_DURATION_MS = 2500
 function OriginSurvey() {
   const user = useUserStore((state) => state.user)
 
-  // 'collapsed' → launcher only, 'open' → collecting the answer, 'ack' →
-  // showing the acknowledgement, 'closed' → answered, gone for this page load.
-  // The local phase outranks the server flag so the acknowledgement survives on
-  // screen after the answer is recorded.
+  // 'collapsed' → launcher only, 'open' → collecting the answer, 'closed' →
+  // answered, gone for this page load. The local phase outranks the server
+  // flag, which is only re-read on the next load.
   const [phase, setPhase] = useState('collapsed')
   const [origin, setOrigin] = useState(null)
   const [otherText, setOtherText] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    if (phase !== 'ack') return
-    const timer = setTimeout(() => setPhase('closed'), ACK_DURATION_MS)
-    return () => clearTimeout(timer)
-  }, [phase])
+  function handleSubmit() {
+    // Fire and forget: the widget closes on the click without waiting for the
+    // gateway, so a slow or lost response can never hold the UI. If the write
+    // does not land, /userinfo keeps reporting show_origin_survey on the next
+    // load and the user is simply asked again — there is nothing for them to
+    // act on in the meantime, so a failure toast would be pure noise. It still
+    // reaches the console for anyone debugging the flow.
+    originSurveyService
+      .answer({ origin, originOther: otherText.trim() })
+      .catch((err) => console.warn('[origin-survey] failed recording the answer:', err))
 
-  function handleToggle() {
-    // Inert while acknowledging: the answer is already recorded, reopening the
-    // form would only invite a second submission the gateway would reject.
-    if (phase === 'ack') return
-    setPhase(phase === 'open' ? 'collapsed' : 'open')
-  }
-
-  async function handleSubmit() {
-    setSubmitting(true)
-    try {
-      await originSurveyService.answer({ origin, originOther: otherText.trim() })
-    } catch (err) {
-      // 409 means the answer is already recorded — from another tab or device,
-      // or from an earlier attempt whose response never made it back. The
-      // desired state is reached either way, so acknowledge instead of asking
-      // again. Any other failure re-enables the form so the answer is not lost;
-      // a timeout carries no response, hence the fallback to the axios message.
-      if (err.response?.status !== 409) {
-        showSnackbar({
-          level: 'error',
-          text: 'Failed to send your answer',
-          description: err.response?.data?.message ?? err.message,
-        })
-        setSubmitting(false)
-        return
-      }
-    }
-    setSubmitting(false)
-    setPhase('ack')
+    setPhase('closed')
   }
 
   if (phase === 'closed') return null
   if (phase === 'collapsed' && !user?.show_origin_survey) return null
 
-  const expanded = phase !== 'collapsed'
+  const expanded = phase === 'open'
   const otherSelected = origin === ORIGIN_OTHER
   const canSubmit = origin !== null && (!otherSelected || otherText.trim() !== '')
 
@@ -109,40 +79,34 @@ function OriginSurvey() {
               </ActionIcon>
             </Group>
 
-            {phase === 'ack' ? (
-              <Text size="sm">Answer received</Text>
-            ) : (
-              <>
-                <Radio.Group
-                  value={origin}
-                  onChange={setOrigin}
-                  label="How did you hear about Hoop?"
-                  labelProps={{ fw: 400 }}
-                >
-                  <Stack gap="sm" mt="sm">
-                    {ORIGIN_OPTIONS.map((option) => (
-                      <Radio key={option.value} value={option.value} label={option.label} size="xs" />
-                    ))}
-                  </Stack>
-                </Radio.Group>
+            <Radio.Group
+              value={origin}
+              onChange={setOrigin}
+              label="How did you hear about Hoop?"
+              labelProps={{ fw: 400 }}
+            >
+              <Stack gap="sm" mt="sm">
+                {ORIGIN_OPTIONS.map((option) => (
+                  <Radio key={option.value} value={option.value} label={option.label} size="xs" />
+                ))}
+              </Stack>
+            </Radio.Group>
 
-                {otherSelected && (
-                  <TextInput
-                    placeholder="Specify"
-                    value={otherText}
-                    onChange={(event) => setOtherText(event.currentTarget.value)}
-                    maxLength={ORIGIN_OTHER_MAX_LENGTH}
-                    aria-label="Specify how you heard about Hoop"
-                  />
-                )}
-
-                <Group justify="flex-end">
-                  <Button size="xs" disabled={!canSubmit} loading={submitting} onClick={handleSubmit}>
-                    Submit
-                  </Button>
-                </Group>
-              </>
+            {otherSelected && (
+              <TextInput
+                placeholder="Specify"
+                value={otherText}
+                onChange={(event) => setOtherText(event.currentTarget.value)}
+                maxLength={ORIGIN_OTHER_MAX_LENGTH}
+                aria-label="Specify how you heard about Hoop"
+              />
             )}
+
+            <Group justify="flex-end">
+              <Button size="xs" disabled={!canSubmit} onClick={handleSubmit}>
+                Submit
+              </Button>
+            </Group>
           </Stack>
         </Paper>
       )}
@@ -155,7 +119,7 @@ function OriginSurvey() {
           radius="xl"
           size="lg"
           className={classes.launcher}
-          onClick={handleToggle}
+          onClick={() => setPhase(expanded ? 'collapsed' : 'open')}
           aria-expanded={expanded}
           aria-label="How did you hear about Hoop?"
         >
