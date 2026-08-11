@@ -1,0 +1,6 @@
+/* Sits above page content but below PageLoader (200), the Native Connections
+   drawer (300) and its modals (400), so the survey never covers a dialog the
+   user opened. Mantine has no style prop for z-index. */
+.card {
+  z-index: 100;
+}
