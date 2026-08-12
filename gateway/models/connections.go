@@ -768,40 +768,47 @@ func (o ConnectionFilterOption) GetSearchPattern() string {
 	return fmt.Sprintf("%%%s%%", term)
 }
 
+// tagSelectorCondition is a single tag selector constraint. The query ANDs every
+// condition, so the JSON field names must match the json_to_recordset columns.
+type tagSelectorCondition struct {
+	Key string `json:"key"`
+	Op  string `json:"op"`
+	Val string `json:"val"`
+}
+
+// ParseTagSelectorQuery encodes the comma separated tag selector expression as a
+// JSON array of conditions. Every segment yields one condition, repeated keys
+// included: 'env=prod,env!=prod' keeps both constraints and matches nothing,
+// instead of collapsing into the last one and widening the result set.
+// Blank segments are formatting noise ('env=prod,') and are skipped; a segment
+// with no operator or an empty key is rejected.
 func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string, err error) {
-	if o.TagSelector == "" {
-		return "[]", nil
-	}
-	tagSelector := map[string]map[string]string{}
-	for _, keyVal := range strings.Split(o.TagSelector, ",") {
-		condition, key, val := map[string]string{}, "", ""
-		switch {
-		case strings.Contains(keyVal, "!="):
-			key, val, _ = strings.Cut(keyVal, "!=")
-			condition["op"] = "!="
-		case strings.Contains(keyVal, "="):
-			condition["op"] = "="
-			key, val, _ = strings.Cut(keyVal, "=")
-		default:
-			return "", fmt.Errorf("could not find any valid operator, accepted values are '=', '!='")
+	conditions := []tagSelectorCondition{}
+	for _, segment := range strings.Split(o.TagSelector, ",") {
+		if strings.TrimSpace(segment) == "" {
+			continue
 		}
-		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
-		condition["key"] = key
-		condition["val"] = val
-		tagSelector[key] = condition
+		var cond tagSelectorCondition
+		switch {
+		case strings.Contains(segment, "!="):
+			cond.Key, cond.Val, _ = strings.Cut(segment, "!=")
+			cond.Op = "!="
+		case strings.Contains(segment, "="):
+			cond.Key, cond.Val, _ = strings.Cut(segment, "=")
+			cond.Op = "="
+		default:
+			return "", fmt.Errorf("invalid tag selector %q, could not find any valid operator, accepted values are '=', '!='", strings.TrimSpace(segment))
+		}
+		cond.Key, cond.Val = strings.TrimSpace(cond.Key), strings.TrimSpace(cond.Val)
+		if cond.Key == "" {
+			return "", fmt.Errorf("invalid tag selector %q, the key must not be empty", strings.TrimSpace(segment))
+		}
+		conditions = append(conditions, cond)
 	}
 
-	var result []map[string]string
-	for _, conditionMap := range tagSelector {
-		result = append(result, conditionMap)
-	}
-
-	jsonData, err := json.Marshal(&result)
+	jsonData, err := json.Marshal(conditions)
 	if err != nil {
 		return "", fmt.Errorf("unable to encode tag selector, reason=%v", err)
-	}
-	if len(tagSelector) == 0 {
-		return "[]", nil
 	}
 	return string(jsonData), nil
 }
