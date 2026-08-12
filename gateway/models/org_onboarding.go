@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"gorm.io/gorm"
 )
 
-// Setup checklist step keys. The same strings are the JSON field names in the
-// API response, the `checkKey` values in the webapp's STEP_DEFS, and the keys
-// stored in orgs.onboarding_steps — renaming one means renaming all three.
+// These strings are also the API response field names, the webapp's checkKey
+// values and the keys in orgs.onboarding_steps — renaming one means all three.
 const (
 	StepAgentDeployed       = "agent_deployed"
 	StepResourceCreated     = "resource_created"
@@ -24,9 +24,6 @@ const (
 	StepProtectionLevelSet  = "protection_level_set"
 )
 
-// OnboardingStepKeys is every step the checklist tracks. Iterating this instead
-// of listing fields keeps the latch, the completion test and the response in
-// sync when a step is added.
 var OnboardingStepKeys = []string{
 	StepAgentDeployed,
 	StepResourceCreated,
@@ -39,26 +36,18 @@ var OnboardingStepKeys = []string{
 	StepProtectionLevelSet,
 }
 
-// OrgOnboardingStatus is the server-computed state of the sidebar setup
-// checklist.
 type OrgOnboardingStatus struct {
-	// Checks is the effective state of each step in OnboardingStepKeys: a step
-	// that has ever been satisfied stays satisfied. Nothing here regresses.
+	// Effective state per step: satisfied once, satisfied forever.
 	Checks map[string]bool
 
-	// Targets for the "Run your first session" shortcut: the first
-	// web-terminal-capable connection, then any connection as a fallback.
+	// Targets for the "Run your first session" shortcut.
 	ExecConnectionName  *string
 	FirstConnectionName *string
 
-	// Whether orgs.onboarding_completed_at is already stamped.
-	PreviouslyCompleted bool
-
-	// Steps satisfied right now but not yet in orgs.onboarding_steps.
-	newlySatisfied []string
+	completedLatched bool
+	newlySatisfied   []string
 }
 
-// AllChecksPass reports whether every step has been satisfied at some point.
 func (s *OrgOnboardingStatus) AllChecksPass() bool {
 	for _, key := range OnboardingStepKeys {
 		if !s.Checks[key] {
@@ -68,13 +57,39 @@ func (s *OrgOnboardingStatus) AllChecksPass() bool {
 	return true
 }
 
-// Completed reports whether onboarding is done.
+// Completed reflects the persisted latch, not AllChecksPass, so it can never
+// disagree with show_setup_checklist on /userinfo. It is also why an org that
+// finished under an older, shorter checklist stays finished when a step ships.
 func (s *OrgOnboardingStatus) Completed() bool {
-	return s.PreviouslyCompleted || s.AllChecksPass()
+	return s.completedLatched
 }
 
-// NewlySatisfiedSteps is what MarkOrgOnboardingSteps still has to record.
-func (s *OrgOnboardingStatus) NewlySatisfiedSteps() []string { return s.newlySatisfied }
+// SyncOrgOnboardingStatus reads the checklist and latches whatever is newly
+// satisfied. Reading is what advances onboarding — the checks span features
+// that have no reason to know a checklist exists.
+//
+// A failed latch is logged, not returned: the status is already correct and the
+// next call retries. Steady state is zero writes.
+func SyncOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnboardingStatus, error) {
+	status, err := readOrgOnboardingStatus(db, orgID, adminGroupName)
+	if err != nil {
+		return nil, err
+	}
+	if len(status.newlySatisfied) > 0 {
+		if err := latchOnboardingSteps(db, orgID, status.newlySatisfied); err != nil {
+			log.Warnf("failed latching onboarding steps for org %s, err=%v", orgID, err)
+		}
+	}
+	if status.AllChecksPass() && !status.completedLatched {
+		if err := latchOnboardingCompleted(db, orgID); err != nil {
+			// Stay incomplete so the client keeps calling and retries the stamp.
+			log.Warnf("failed latching onboarding completion for org %s, err=%v", orgID, err)
+		} else {
+			status.completedLatched = true
+		}
+	}
+	return status, nil
+}
 
 type onboardingRow struct {
 	LiveChecks          []byte  `gorm:"column:live_checks"`
@@ -84,49 +99,48 @@ type onboardingRow struct {
 	FirstConnectionName *string `gorm:"column:first_connection_name"`
 }
 
-// GetOrgOnboardingStatus computes the setup checklist in a single round trip.
-// Every item is an EXISTS subquery so it stops at the first matching row; the
-// webapp used to answer them by listing and counting each resource, which made
-// "has this org ever run a session?" an unbounded COUNT over private.sessions.
-// adminGroupName is types.GroupAdmin, so the group steps only count groups
-// created on top of the built-in one.
+// Every check is an EXISTS so it stops at the first row. Never COUNT here.
 //
-// The live checks are then OR'd with orgs.onboarding_steps, so a step the org
-// has already ticked stays ticked even if the underlying resource is deleted.
-func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnboardingStatus, error) {
+// Subqueries must filter on @org_id, not the correlated o.id: with o.id the
+// planner can't see the value and seq scans private.sessions (~97ms at 2M rows
+// vs ~0.1ms).
+//
+// Live checks are OR'd with orgs.onboarding_steps so a ticked step stays ticked
+// after the underlying resource is deleted.
+func readOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnboardingStatus, error) {
 	var row onboardingRow
 	err := db.Raw(`
 	SELECT
 		jsonb_build_object(
 			'agent_deployed', EXISTS (
 				SELECT 1 FROM private.agents
-				WHERE org_id = o.id AND status = @connected_status AND mode <> @multi_connection_mode
+				WHERE org_id = @org_id AND status = @connected_status AND mode <> @multi_connection_mode
 			),
 			'resource_created', EXISTS (
-				SELECT 1 FROM private.connections WHERE org_id = o.id
+				SELECT 1 FROM private.connections WHERE org_id = @org_id
 			),
 			'session_ran', EXISTS (
-				SELECT 1 FROM private.sessions WHERE org_id = o.id
+				SELECT 1 FROM private.sessions WHERE org_id = @org_id
 			),
 			'groups_created', EXISTS (
 				SELECT 1 FROM private.user_groups
-				WHERE org_id = o.id AND name <> @admin_group
+				WHERE org_id = @org_id AND name <> @admin_group
 			),
 			'people_assigned', EXISTS (
 				SELECT 1 FROM private.user_groups
-				WHERE org_id = o.id AND name <> @admin_group AND user_id IS NOT NULL
+				WHERE org_id = @org_id AND name <> @admin_group AND user_id IS NOT NULL
 			),
 			'guardrails_explored', EXISTS (
 				SELECT 1 FROM private.guardrail_rules
-				WHERE org_id = o.id AND managed_by IS NULL
+				WHERE org_id = @org_id AND managed_by IS NULL
 			),
 			'data_masking_explored', EXISTS (
 				SELECT 1 FROM private.datamasking_rules
-				WHERE org_id = o.id AND managed_by IS NULL
+				WHERE org_id = @org_id AND managed_by IS NULL
 			),
 			'ai_analyzer_enabled', EXISTS (
 				SELECT 1 FROM private.ai_providers
-				WHERE org_id = o.id AND feature = @analyzer_feature
+				WHERE org_id = @org_id AND feature = @analyzer_feature
 			),
 			'protection_level_set', o.default_protection_profile IS NOT NULL
 		) AS live_checks,
@@ -134,12 +148,12 @@ func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnbo
 		o.onboarding_completed_at IS NOT NULL AS previously_completed,
 		(
 			SELECT c.name FROM private.connections c
-			WHERE c.org_id = o.id AND c.access_mode_exec IS DISTINCT FROM 'disabled'
+			WHERE c.org_id = @org_id AND c.access_mode_exec IS DISTINCT FROM 'disabled'
 			ORDER BY c.name ASC LIMIT 1
 		) AS exec_connection_name,
 		(
 			SELECT c.name FROM private.connections c
-			WHERE c.org_id = o.id
+			WHERE c.org_id = @org_id
 			ORDER BY c.name ASC LIMIT 1
 		) AS first_connection_name
 	FROM private.orgs o
@@ -148,8 +162,9 @@ func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnbo
 			"org_id":                orgID,
 			"connected_status":      string(AgentStatusConnected),
 			"multi_connection_mode": proto.AgentModeMultiConnectionType,
-			"admin_group":           adminGroupName,
-			"analyzer_feature":      string(AISessionAnalyzerFeature),
+			// Only groups created on top of the built-in admin one count.
+			"admin_group":      adminGroupName,
+			"analyzer_feature": string(AISessionAnalyzerFeature),
 		}).
 		First(&row).
 		Error
@@ -172,7 +187,7 @@ func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnbo
 		Checks:              make(map[string]bool, len(OnboardingStepKeys)),
 		ExecConnectionName:  row.ExecConnectionName,
 		FirstConnectionName: row.FirstConnectionName,
-		PreviouslyCompleted: row.PreviouslyCompleted,
+		completedLatched:    row.PreviouslyCompleted,
 	}
 	for _, key := range OnboardingStepKeys {
 		_, isLatched := latched[key]
@@ -184,33 +199,30 @@ func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnbo
 	return status, nil
 }
 
-// MarkOrgOnboardingSteps records the first time each step was satisfied. Keys
-// already present are left alone, so a step keeps its original timestamp.
-// Unknown keys are ignored rather than written.
-func MarkOrgOnboardingSteps(db *gorm.DB, orgID string, steps []string) error {
-	known := map[string]bool{}
-	for _, key := range OnboardingStepKeys {
-		known[key] = true
-	}
-	stamps := map[string]string{}
+func latchOnboardingSteps(db *gorm.DB, orgID string, steps []string) error {
+	stamps := make(map[string]string, len(steps))
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, step := range steps {
-		if known[step] {
-			stamps[step] = now
-		}
-	}
-	if len(stamps) == 0 {
-		return nil
+		stamps[step] = now
 	}
 	payload, err := json.Marshal(stamps)
 	if err != nil {
 		return err
 	}
-	// The stored object goes on the right so its keys win the merge.
+	// Stored object on the right so its keys win the merge: a step keeps the
+	// timestamp of the first time it was satisfied, even under concurrent reads.
 	return db.Exec(`
 		UPDATE private.orgs
 		SET onboarding_steps = CAST(@payload AS jsonb) || onboarding_steps
 		WHERE id = @org_id`,
 		map[string]any{"payload": string(payload), "org_id": orgID}).
+		Error
+}
+
+// First write wins; zero rows affected just means it was already stamped.
+func latchOnboardingCompleted(db *gorm.DB, orgID string) error {
+	return db.Table("private.orgs").
+		Where("id = ? AND onboarding_completed_at IS NULL", orgID).
+		Update("onboarding_completed_at", time.Now().UTC()).
 		Error
 }

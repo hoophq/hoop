@@ -5,12 +5,10 @@ import { useUserStore } from '@/stores/useUserStore'
 
 // EVL-98 / DEP-136: backs the sidebar Config Status checklist.
 //
-// The gateway owns it: GET /orgs/onboarding answers every item in a single
-// query, and /userinfo's `show_setup_checklist` decides whether the widget
-// exists at all. The first version derived the checklist in the browser from
-// eight endpoints on every route change, on focus and on two timers — one of
-// them GET /sessions, whose unbounded COUNT took ~2min at 1.5M sessions and
-// took a customer database down. Do not reintroduce client-side derivation.
+// The gateway owns it: GET /orgs/onboarding answers every item in one query.
+// This used to derive the checklist from eight endpoints on every route change,
+// on focus and on two timers — one of them GET /sessions, whose unbounded COUNT
+// took ~2min at 1.5M sessions. Do not reintroduce client-side derivation.
 
 // Dedupes the navigation and focus triggers.
 const TTL_MS = 15_000
@@ -48,19 +46,17 @@ export const useConfigStatusStore = create((set, get) => ({
     if (!isAdmin || !user?.show_setup_checklist) return
     const userId = user?.id ?? null
 
-    // A stale snapshot from a previous login (same tab) must never satisfy the
-    // TTL or the completion short-circuit — refetch whenever the user changed.
+    // A snapshot from a previous login must not satisfy the TTL or the
+    // completion short-circuit, so both are gated on the user matching.
     const { lastFetchedAt, forUserId, completed } = get()
     const sameUser = forUserId === userId
-    // Completion is terminal server side: nothing left to poll for, and the
-    // widget hides without waiting for the next /userinfo.
+    // Completion is terminal server side: nothing left to fetch.
     if (sameUser && completed) return
     if (!force && sameUser && lastFetchedAt && Date.now() - lastFetchedAt < TTL_MS) return
 
     if (inFlight) {
       if (inFlightUserId === userId) return inFlight
-      // A different user's fetch is in flight — wait it out, then re-evaluate
-      // from scratch (TTL, user match, and any fetch started meanwhile).
+      // Another user's fetch is in flight — wait it out, then re-evaluate.
       await inFlight.catch(() => {})
       return get().fetchStatus({ force })
     }
@@ -104,13 +100,10 @@ export const useConfigStatusStore = create((set, get) => ({
   },
 }))
 
-// This is module state, so it outlives a logout: nothing on that path reloads
-// the tab (the header menu just calls logout() and navigates). Without this the
-// next user in the same tab inherits the previous org's `completed`, and since
-// the widget is gated on it, it never mounts to correct itself.
-//
-// Subscribing from this side rather than calling reset() from useAuthStore keeps
-// the dependency pointing the right way, same as useNativeAccessStore.
+// Module state outlives a logout — nothing on that path reloads the tab. The
+// next user would inherit the previous org's `completed`, and the widget is
+// gated on it, so it would never mount to correct itself. Subscribing from this
+// side keeps the dependency pointing the right way, like useNativeAccessStore.
 useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
     useConfigStatusStore.getState().reset()

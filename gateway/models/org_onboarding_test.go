@@ -10,21 +10,9 @@ const testAdminGroup = "admin"
 
 func onboardingStatus(t *testing.T) *models.OrgOnboardingStatus {
 	t.Helper()
-	status, err := models.GetOrgOnboardingStatus(models.DB, testOrgID, testAdminGroup)
+	status, err := models.SyncOrgOnboardingStatus(models.DB, testOrgID, testAdminGroup)
 	if err != nil {
-		t.Fatalf("get onboarding status: %v", err)
-	}
-	return status
-}
-
-// latchStatus mirrors what the API handler does: read, then record whatever is
-// newly satisfied. Latching only happens on the read path, so a test that never
-// calls this only ever sees live checks.
-func latchStatus(t *testing.T) *models.OrgOnboardingStatus {
-	t.Helper()
-	status := onboardingStatus(t)
-	if err := models.MarkOrgOnboardingSteps(models.DB, testOrgID, status.NewlySatisfiedSteps()); err != nil {
-		t.Fatalf("mark onboarding steps: %v", err)
+		t.Fatalf("sync onboarding status: %v", err)
 	}
 	return status
 }
@@ -36,6 +24,15 @@ func execSQL(t *testing.T, query string, args ...any) {
 	}
 }
 
+func queryString(t *testing.T, query string, args ...any) string {
+	t.Helper()
+	var out string
+	if err := models.DB.Raw(query, args...).Scan(&out).Error; err != nil {
+		t.Fatalf("query %q: %v", query, err)
+	}
+	return out
+}
+
 // connections.resource_name is NOT NULL and FKs into resources(org_id, name).
 func seedConnection(t *testing.T, name, accessModeExec string) {
 	t.Helper()
@@ -45,10 +42,9 @@ func seedConnection(t *testing.T, name, accessModeExec string) {
 		VALUES (?, ?, 'postgres', ?, ?::enum_access_status)`, testOrgID, name, name, accessModeExec)
 }
 
-// Each step is seeded one at a time so a mistyped column or a subquery wired to
-// the wrong table shows up as the wrong boolean flipping, not as a blanket
-// failure. Ordering matches the checklist.
-func TestGetOrgOnboardingStatus(t *testing.T) {
+// Each step is seeded one at a time so a subquery wired to the wrong table
+// shows up as the wrong boolean flipping, not as a blanket failure.
+func TestOrgOnboardingStatus(t *testing.T) {
 	startTestDB(t)
 
 	status := onboardingStatus(t)
@@ -159,121 +155,69 @@ func TestGetOrgOnboardingStatus(t *testing.T) {
 	if status.ExecConnectionName == nil || *status.ExecConnectionName != "conn-exec" {
 		t.Fatalf("unexpected exec connection name: %+v", status.ExecConnectionName)
 	}
+
+	if queryString(t, `SELECT COALESCE(onboarding_completed_at::text, '')
+		FROM private.orgs WHERE id = ?`, testOrgID) == "" {
+		t.Fatal("expected onboarding_completed_at to be stamped once every check passed")
+	}
+	// Completed must track the stamp, not the live checks, or it would disagree
+	// with show_setup_checklist on /userinfo.
+	if !status.Completed() {
+		t.Fatal("expected completed once the latch was stamped")
+	}
 }
 
-// A step is a milestone, not live status: undoing the thing that satisfied it
-// must not untick it, otherwise the progress ring runs backwards.
+// Undoing the thing that satisfied a step must not untick it, otherwise the
+// progress ring runs backwards.
 func TestOrgOnboardingStepsLatch(t *testing.T) {
 	startTestDB(t)
 
-	if latchStatus(t).Checks[models.StepDataMaskingExplored] {
+	if onboardingStatus(t).Checks[models.StepDataMaskingExplored] {
 		t.Fatal("fresh org must not have the data masking step satisfied")
 	}
 
 	execSQL(t, `INSERT INTO private.datamasking_rules (org_id, name) VALUES (?, 'mask-pii')`, testOrgID)
-	status := latchStatus(t)
-	if !status.Checks[models.StepDataMaskingExplored] {
+	if !onboardingStatus(t).Checks[models.StepDataMaskingExplored] {
 		t.Fatal("expected the data masking step to be satisfied after adding a rule")
 	}
-	if len(status.NewlySatisfiedSteps()) == 0 {
-		t.Fatal("expected the step to be reported as newly satisfied")
-	}
 
-	execSQL(t, `DELETE FROM private.datamasking_rules WHERE org_id = ?`, testOrgID)
-	status = onboardingStatus(t)
-	if !status.Checks[models.StepDataMaskingExplored] {
-		t.Fatalf("deleting the rule must not untick the step: %+v", status.Checks)
-	}
-	// Already recorded, so there is nothing left to write on later reads.
-	if steps := status.NewlySatisfiedSteps(); len(steps) != 0 {
-		t.Fatalf("a latched step must not be re-stamped, got %v", steps)
-	}
-
-	var stampedAt string
-	if err := models.DB.Raw(
-		`SELECT onboarding_steps ->> ? FROM private.orgs WHERE id = ?`,
-		models.StepDataMaskingExplored, testOrgID).Scan(&stampedAt).Error; err != nil {
-		t.Fatalf("read onboarding_steps: %v", err)
-	}
+	stampedAt := queryString(t, `SELECT COALESCE(onboarding_steps ->> ?, '')
+		FROM private.orgs WHERE id = ?`, models.StepDataMaskingExplored, testOrgID)
 	if stampedAt == "" {
 		t.Fatal("expected the step to be stamped in orgs.onboarding_steps")
 	}
 
-	// A later write for the same step must not move the original timestamp.
-	if err := models.MarkOrgOnboardingSteps(models.DB, testOrgID,
-		[]string{models.StepDataMaskingExplored}); err != nil {
-		t.Fatalf("mark onboarding steps twice: %v", err)
+	execSQL(t, `DELETE FROM private.datamasking_rules WHERE org_id = ?`, testOrgID)
+	status := onboardingStatus(t)
+	if !status.Checks[models.StepDataMaskingExplored] {
+		t.Fatalf("deleting the rule must not untick the step: %+v", status.Checks)
 	}
-	var secondStampedAt string
-	if err := models.DB.Raw(
-		`SELECT onboarding_steps ->> ? FROM private.orgs WHERE id = ?`,
-		models.StepDataMaskingExplored, testOrgID).Scan(&secondStampedAt).Error; err != nil {
-		t.Fatalf("read onboarding_steps again: %v", err)
-	}
+
+	// Re-satisfying it later must not move the original timestamp.
+	execSQL(t, `INSERT INTO private.datamasking_rules (org_id, name) VALUES (?, 'mask-pii-again')`, testOrgID)
+	onboardingStatus(t)
+	secondStampedAt := queryString(t, `SELECT COALESCE(onboarding_steps ->> ?, '')
+		FROM private.orgs WHERE id = ?`, models.StepDataMaskingExplored, testOrgID)
 	if secondStampedAt != stampedAt {
 		t.Fatalf("first write must win, got %q then %q", stampedAt, secondStampedAt)
 	}
 }
 
-// Unknown keys must never reach the column: it is read back as the checklist.
-func TestMarkOrgOnboardingStepsIgnoresUnknownKeys(t *testing.T) {
+// The completion latch is what keeps an org done when the checklist grows a new
+// step it never satisfied. Simulates that: stamped completion, no steps latched.
+func TestOrgOnboardingCompletionIsTerminal(t *testing.T) {
 	startTestDB(t)
 
-	if err := models.MarkOrgOnboardingSteps(models.DB, testOrgID, []string{"not_a_step"}); err != nil {
-		t.Fatalf("mark unknown step: %v", err)
-	}
-	var stored string
-	if err := models.DB.Raw(
-		`SELECT onboarding_steps::text FROM private.orgs WHERE id = ?`, testOrgID).
-		Scan(&stored).Error; err != nil {
-		t.Fatalf("read onboarding_steps: %v", err)
-	}
-	if stored != "{}" {
-		t.Fatalf("unknown keys must not be stored, got %q", stored)
-	}
-}
-
-func TestMarkOrgOnboardingCompleted(t *testing.T) {
-	startTestDB(t)
-
-	if onboardingStatus(t).PreviouslyCompleted {
-		t.Fatal("fresh org must not be latched")
+	if onboardingStatus(t).Completed() {
+		t.Fatal("fresh org must not be complete")
 	}
 
-	if err := models.MarkOrgOnboardingCompleted(models.DB, testOrgID); err != nil {
-		t.Fatalf("mark completed: %v", err)
-	}
+	execSQL(t, `UPDATE private.orgs SET onboarding_completed_at = now() WHERE id = ?`, testOrgID)
 	status := onboardingStatus(t)
-	if !status.PreviouslyCompleted {
-		t.Fatal("expected the org to be latched")
-	}
-	// No live check passes and no step was ever stamped, yet the org stays
-	// complete — the latch is what makes onboarding terminal.
 	if status.AllChecksPass() {
 		t.Fatalf("no step was seeded, checks must not pass: %+v", status.Checks)
 	}
 	if !status.Completed() {
 		t.Fatal("a latched org must report completed")
-	}
-
-	org, err := models.GetOrganizationByNameOrID(testOrgID)
-	if err != nil {
-		t.Fatalf("get org: %v", err)
-	}
-	if org.OnboardingCompletedAt == nil {
-		t.Fatal("expected onboarding_completed_at to be stamped")
-	}
-
-	// A second call must not move the timestamp forward.
-	first := *org.OnboardingCompletedAt
-	if err := models.MarkOrgOnboardingCompleted(models.DB, testOrgID); err != nil {
-		t.Fatalf("mark completed twice: %v", err)
-	}
-	org, err = models.GetOrganizationByNameOrID(testOrgID)
-	if err != nil {
-		t.Fatalf("get org after second mark: %v", err)
-	}
-	if !org.OnboardingCompletedAt.Equal(first) {
-		t.Fatalf("first write must win, got %v then %v", first, *org.OnboardingCompletedAt)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
@@ -15,7 +14,7 @@ import (
 // GetOrgOnboarding
 //
 //	@Summary		Get Organization Onboarding Status
-//	@Description	Get the state of the setup checklist for the caller's organization. Each step latches the first time it is satisfied, so a check never reverts once ticked. Once every check passes the completion is latched permanently and `show_setup_checklist` on /userinfo turns false, which is the signal to stop calling this endpoint.
+//	@Description	Get the setup checklist state for the caller's organization. Each step latches the first time it is satisfied, so a check never reverts. Once every check passes, `show_setup_checklist` on /userinfo turns false — the signal to stop calling this endpoint.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200	{object}	openapi.OrgOnboardingResponse
@@ -23,24 +22,10 @@ import (
 //	@Router			/orgs/onboarding [get]
 func GetOrgOnboarding(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	status, err := models.GetOrgOnboardingStatus(models.DB, ctx.OrgID, types.GroupAdmin)
+	status, err := models.SyncOrgOnboardingStatus(models.DB, ctx.OrgID, types.GroupAdmin)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to load onboarding status: %v", err)
 		return
-	}
-
-	// Latch on the read path: the checks span features that have no reason to
-	// know a checklist exists, so this is the only place that observes a step
-	// being satisfied. A failed stamp is retried by the next call.
-	if steps := status.NewlySatisfiedSteps(); len(steps) > 0 {
-		if err := models.MarkOrgOnboardingSteps(models.DB, ctx.OrgID, steps); err != nil {
-			log.Warnf("failed stamping onboarding steps for org %s, err=%v", ctx.OrgID, err)
-		}
-	}
-	if status.AllChecksPass() && !status.PreviouslyCompleted {
-		if err := models.MarkOrgOnboardingCompleted(models.DB, ctx.OrgID); err != nil {
-			log.Warnf("failed stamping onboarding completion for org %s, err=%v", ctx.OrgID, err)
-		}
 	}
 
 	c.JSON(http.StatusOK, openapi.OrgOnboardingResponse{

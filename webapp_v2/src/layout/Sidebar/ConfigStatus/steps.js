@@ -1,10 +1,8 @@
 import { Database, Users, Sparkles, ShieldCogCorner, ShieldCheck } from 'lucide-react'
 
 // Setup checklist definition (Figma: EVAL Config status, node 14:2).
-// `checkKey` maps to a boolean in useConfigStatusStore.checks, which mirrors
-// the `checks` object from GET /orgs/onboarding verbatim — hence snake_case.
-// `to` navigates via router; `action` keys are resolved by the ConfigStatus
-// container (flows that need runtime data, e.g. picking a connection).
+// `checkKey` mirrors the `checks` object from GET /orgs/onboarding — hence
+// snake_case. `to` navigates; `action` is resolved by the ConfigStatus container.
 export const STEP_DEFS = [
   {
     id: 'connect-resource',

@@ -96,16 +96,6 @@ func UpdateOrgDefaultProtectionProfile(db *gorm.DB, orgID string, profile *strin
 	return nil
 }
 
-// MarkOrgOnboardingCompleted stamps the setup checklist completion latch.
-// First write wins: zero rows affected means the org already completed (or no
-// longer exists), which is not an error for advisory UI state.
-func MarkOrgOnboardingCompleted(db *gorm.DB, orgID string) error {
-	return db.Table("private.orgs").
-		Where("id = ? AND onboarding_completed_at IS NULL", orgID).
-		Update("onboarding_completed_at", time.Now().UTC()).
-		Error
-}
-
 func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organization, bool, error) {
 	org, err := GetOrganizationByNameOrID(name)
 	switch err {

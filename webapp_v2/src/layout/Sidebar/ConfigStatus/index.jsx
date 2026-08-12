@@ -13,22 +13,14 @@ import { computeProgress } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
 
-// EVL-98: admin setup checklist. Figma behavior annotations:
-// - only one step open at a time; opening another closes the rest
-// - opening the widget auto-opens the first incomplete step
-// - interacting with anything outside the widget collapses it
-//
-// DEP-136: the gate below is hook-free on purpose — a hidden checklist must
-// mount no effects. It used to register its listeners and timers before the
-// visibility early-return, so it kept polling even while invisible.
+// EVL-98: admin setup checklist.
+// DEP-136: this gate is hook-free on purpose — a hidden checklist must mount no
+// effects. It used to register its listeners before the early-return.
 export function ConfigStatus() {
   const isAdmin = useUserStore((s) => s.isAdmin)
-  // Server-owned visibility, same contract as show_origin_survey.
   const showSetupChecklist = useUserStore((s) => s.user?.show_setup_checklist)
   const userId = useUserStore((s) => s.user?.id ?? null)
-  // Scoped to the current user. The logout subscription in the store covers the
-  // usual path; this also catches a token swapped in without a logout first, and
-  // a fetch that resolves after one.
+  // forUserId guards a snapshot left behind by a previous login in the same tab.
   const completed = useConfigStatusStore((s) => s.completed && s.forUserId === userId)
 
   if (!isAdmin || !showSetupChecklist || completed) return null
@@ -51,33 +43,27 @@ function ConfigStatusWidget() {
   const [activeStepId, setActiveStepId] = useState(null)
   const cardRef = useClickOutside(() => setOpened(false))
 
-  // Initial fetch + TTL-respecting refresh when the admin navigates (returning
-  // from "Create a Resource" & friends should update the ring right away).
+  // Returning from "Create a Resource" & friends should update the ring.
   useEffect(() => {
     fetchStatus()
   }, [location.pathname, fetchStatus])
 
-  // Background reactivity for work done outside this tab (CLI, another tab).
-  // Focus only — the 30s and 10s timers this replaces were the background load.
+  // Picks up work done outside this tab. Replaces the old 30s and 10s timers.
   useEffect(() => {
     const onFocus = () => fetchStatus()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [fetchStatus])
 
-  // Instant reaction for the step-defining action: the CLJS web terminal
-  // emits this event right after a successful exec (POST /sessions success in
-  // webapp/src/webapp/events/editor_plugin.cljs), so "Run your first session"
-  // checks off the moment the query runs.
+  // Emitted by the CLJS web terminal after a successful exec, so "Run your
+  // first session" ticks the moment the query runs.
   useEffect(() => {
     const onSessionExecuted = () => fetchStatus({ force: true })
     window.addEventListener('hoop:session-executed', onSessionExecuted)
     return () => window.removeEventListener('hoop:session-executed', onSessionExecuted)
   }, [fetchStatus])
 
-  // Stay hidden until the first snapshot resolves (avoids flashing "3 steps
-  // from success" at an org that is nearly done) and while the snapshot belongs
-  // to a previously logged-in user.
+  // Avoids flashing "3 steps from success" at an org that is nearly done.
   if (status !== 'ready' || forUserId !== (user?.id ?? null)) return null
 
   const progress = computeProgress(checks)
@@ -103,16 +89,12 @@ function ConfigStatusWidget() {
 
     if (item.action === 'run-first-session') {
       if (execConnectionName) {
-        // The CLJS web terminal pre-selects the connection from ?role=. The
-        // editor only reads it on panel mount, so also nudge an already
-        // mounted/parked editor to re-read the URL.
+        // The editor only reads ?role= on panel mount, so nudge an already
+        // mounted one to re-read the URL.
         navigate(`/client?role=${encodeURIComponent(execConnectionName)}`)
         useBridgeStore.getState().syncPrimaryConnectionFromUrl()
       } else if (firstConnectionName) {
-        // No connection supports the web terminal — offer native access
-        // instead. The drawer is mounted by Layout on every route, so the
-        // detour through /resources (which only existed to give the CLJS modal
-        // a host to render in) is gone.
+        // No web-terminal-capable connection — offer native access instead.
         useNativeAccessStore.getState().openAndConnect(firstConnectionName)
       } else {
         navigate('/resource-catalog')
