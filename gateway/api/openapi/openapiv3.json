@@ -15621,7 +15621,7 @@
     },
     "/orgs/onboarding": {
       "get": {
-        "description": "Get the state of the setup checklist for the caller's organization. Once every check passes the completion is latched permanently and `show_setup_checklist` on /userinfo turns false, which is the signal to stop calling this endpoint.",
+        "description": "Get the state of the setup checklist for the caller's organization. Each step latches the first time it is satisfied, so a check never reverts once ticked. Once every check passes the completion is latched permanently and `show_setup_checklist` on /userinfo turns false, which is the signal to stop calling this endpoint.",
         "responses": {
           "200": {
             "content": {
