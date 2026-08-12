@@ -284,22 +284,12 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	return session, nil
 }
 
-func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt SessionOption) (*SessionList, error) {
-	sessionList := &SessionList{Items: []Session{}}
-	// Prepare lowercase jira issue keys array
-	var jiraIssueKeysLower pq.StringArray
-	if len(opt.JiraIssueKey) > 0 {
-		jiraIssueKeysLower = make(pq.StringArray, len(opt.JiraIssueKey))
-		for i, key := range opt.JiraIssueKey {
-			jiraIssueKeysLower[i] = strings.ToLower(key)
-		}
-	}
-	return sessionList, DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Raw(`
-		SELECT COUNT(s.id)
-		FROM private.sessions s
-		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
-		WHERE s.org_id = @org_id AND
+// sessionListFilterConditions is the WHERE clause shared by the count and the
+// page queries in ListSessions. It MUST stay identical in both so the reported
+// total always matches the returned rows. It references `s` (private.sessions)
+// and `rv` (private.reviews, LEFT JOINed on org_id + session_id).
+const sessionListFilterConditions = `
+		s.org_id = @org_id AND
 		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id
 				THEN
 					EXISTS (
@@ -341,26 +331,65 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
 			END
-		)`, map[string]any{
-			"org_id":                orgID,
-			"filter_user_id":        opt.User,
-			"connection":            opt.ConnectionName,
-			"connection_type":       opt.ConnectionType,
-			"review_status":         opt.ReviewStatus,
-			"review_approver_email": opt.ReviewApproverEmail,
-			"batch_id":              opt.BatchID,
-			"correlation_id":        opt.CorrelationID,
-			"jira_issue_keys":       jiraIssueKeysLower,
-			"start_date":            opt.StartDate,
-			"end_date":              opt.EndDate,
-			"is_auditor_or_admin":   isAuditorOrAdmin,
-			"user_id":               userId,
-		}).First(&sessionList.Total).Error
+		)`
+
+func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt SessionOption) (*SessionList, error) {
+	sessionList := &SessionList{Items: []Session{}}
+	// Prepare lowercase jira issue keys array
+	var jiraIssueKeysLower pq.StringArray
+	if len(opt.JiraIssueKey) > 0 {
+		jiraIssueKeysLower = make(pq.StringArray, len(opt.JiraIssueKey))
+		for i, key := range opt.JiraIssueKey {
+			jiraIssueKeysLower[i] = strings.ToLower(key)
+		}
+	}
+	queryAttrs := map[string]any{
+		"org_id":                orgID,
+		"filter_user_id":        opt.User,
+		"connection":            opt.ConnectionName,
+		"connection_type":       opt.ConnectionType,
+		"review_status":         opt.ReviewStatus,
+		"review_approver_email": opt.ReviewApproverEmail,
+		"batch_id":              opt.BatchID,
+		"correlation_id":        opt.CorrelationID,
+		"jira_issue_keys":       jiraIssueKeysLower,
+		"start_date":            opt.StartDate,
+		"end_date":              opt.EndDate,
+		"is_auditor_or_admin":   isAuditorOrAdmin,
+		"user_id":               userId,
+		"limit":                 opt.Limit,
+		"offset":                opt.Offset,
+	}
+	return sessionList, DB.Transaction(func(tx *gorm.DB) error {
+		err := tx.Raw(`
+		SELECT COUNT(s.id)
+		FROM private.sessions s
+		LEFT JOIN private.reviews AS rv ON rv.org_id = s.org_id AND rv.session_id = s.id
+		WHERE`+sessionListFilterConditions, queryAttrs).First(&sessionList.Total).Error
 		if err != nil {
 			return fmt.Errorf("unable to obtain total count of sessions, reason=%v", err)
 		}
 
+		// Resolve the page of session ids first over sessions + reviews only,
+		// then join the heavy parts (connections, blobs, review JSON) against
+		// that page. The expensive projections — detoasting the input blob for
+		// octet_length and building the review jsonb with its correlated
+		// review_groups aggregate — therefore run for at most @limit rows
+		// instead of every session matching the filter.
+		//
+		// The org_id predicates on the blobs/reviews joins are required for
+		// index use: neither table has an index on its id/session_id column
+		// alone, only UNIQUE(org_id, ...) composite ones.
 		err = tx.Raw(`
+		WITH page AS (
+			SELECT s.id
+			FROM private.sessions s
+			LEFT JOIN private.reviews AS rv ON rv.org_id = s.org_id AND rv.session_id = s.id
+			WHERE`+sessionListFilterConditions+`
+			ORDER BY s.created_at DESC, s.id DESC
+			LIMIT @limit
+			OFFSET @offset
+		)
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
@@ -398,73 +427,13 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				)
 			END AS review,
 			s.created_at, s.ended_at
-		FROM private.sessions s
+		FROM page
+		INNER JOIN private.sessions s ON s.id = page.id
 		LEFT JOIN private.connections c ON c.org_id = s.org_id AND c.name = s.connection
-		LEFT JOIN private.blobs b ON b.id = s.blob_input_id
-		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
-		WHERE s.org_id = @org_id AND
-		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id
-				THEN
-					EXISTS (
-						SELECT 1 FROM private.users u
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id
-						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.subject = @user_id
-					)
-				ELSE true
-		END AND
-		(
-			COALESCE(s.user_id::text, '') LIKE @filter_user_id AND
-			COALESCE(s.connection::text, '') LIKE @connection AND
-			COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type AND
-			COALESCE(rv.status::text, '')::TEXT LIKE @review_status AND
-			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
-				THEN
-					EXISTS (
-						SELECT 1 FROM private.users u
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id
-						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
-					)
-				ELSE true
-			END AND
-			CASE WHEN (@batch_id)::TEXT IS NOT NULL
-				THEN s.session_batch_id = @batch_id
-				ELSE true
-			END AND
-			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
-				THEN s.correlation_id = @correlation_id
-				ELSE true
-			END AND
-			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
-				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
-				ELSE true
-			END AND
-			CASE WHEN (@start_date)::text IS NOT NULL
-				THEN s.created_at BETWEEN @start_date AND @end_date
-				ELSE true
-			END
-		)
-		ORDER BY s.created_at DESC
-		LIMIT @limit
-		OFFSET @offset
-		`, map[string]any{
-			"org_id":                orgID,
-			"filter_user_id":        opt.User,
-			"connection":            opt.ConnectionName,
-			"connection_type":       opt.ConnectionType,
-			"review_status":         opt.ReviewStatus,
-			"review_approver_email": opt.ReviewApproverEmail,
-			"batch_id":              opt.BatchID,
-			"correlation_id":        opt.CorrelationID,
-			"jira_issue_keys":       jiraIssueKeysLower,
-			"start_date":            opt.StartDate,
-			"end_date":              opt.EndDate,
-			"limit":                 opt.Limit,
-			"offset":                opt.Offset,
-			"is_auditor_or_admin":   isAuditorOrAdmin,
-			"user_id":               userId,
-		}).Find(&sessionList.Items).Error
+		LEFT JOIN private.blobs b ON b.org_id = s.org_id AND b.id = s.blob_input_id
+		LEFT JOIN private.reviews AS rv ON rv.org_id = s.org_id AND rv.session_id = s.id
+		ORDER BY s.created_at DESC, s.id DESC
+		`, queryAttrs).Find(&sessionList.Items).Error
 		if err == nil {
 			sessionList.HasNextPage = len(sessionList.Items) == opt.Limit
 		}
