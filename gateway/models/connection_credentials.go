@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -221,36 +222,56 @@ func ClearCredentialSession(id string) error {
 		Update("session_id", nil).Error
 }
 
-// CloseExpiredCredentialSessions closes sessions for expired connection credentials
-// This is called lazily when accessing credentials or sessions
-func CloseExpiredCredentialSessions() error {
-	var expiredCreds []ConnectionCredentials
-	err := DB.Table("private.connection_credentials").
-		Where("expire_at < NOW() AND session_id IS NOT NULL AND session_id != ''").
-		Find(&expiredCreds).Error
-	if err != nil {
-		return err
-	}
-
-	for _, cred := range expiredCreds {
-		endTime := time.Now().UTC()
-
-		_ = DB.Table("private.sessions").
-			Where("id = ?", cred.SessionID).
-			Update("status", "done").
-			Update("ended_at", endTime).Error
-
-		// Clear session_id so this record is not reprocessed on the next lazy call.
-		// The credential row itself is preserved (with its stored secret key)
-		// so a subsequent CreateConnectionCredentials call can reuse the same
-		// token by re-arming expire_at and session_id via
-		// RefreshCredentialExpiration.
-		_ = DB.Table("private.connection_credentials").
-			Where("id = ?", cred.ID).
-			Update("session_id", nil).Error
-	}
-
-	return nil
+// CloseExpiredCredentialSessions finalises the audit session of every
+// credential whose access window has elapsed, and unlinks the credential from
+// it. The credential row itself is preserved (with its stored secret key) so a
+// subsequent CreateConnectionCredentials call can reuse the same token by
+// re-arming expire_at and session_id via RefreshCredentialExpiration.
+//
+// It returns the number of credentials swept. Callers are expected to be the
+// background sweeper (gateway/jobs/credentialsweeper) — this used to run inline
+// on GET /sessions and the credential endpoints, where a read scoped to one org
+// issued 1+2N serial statements closing sessions for every tenant on the
+// deployment.
+//
+// Everything happens in one statement:
+//
+//   - FOR UPDATE SKIP LOCKED so concurrent gateway replicas each take a
+//     disjoint slice instead of contending on the same rows.
+//   - LIMIT so a backlog drains over several ticks rather than in one long
+//     transaction that pins the xmin horizon.
+//   - `s.status <> 'done'` keeps it idempotent and stops it overwriting an
+//     ended_at written by a real close (e.g. the revoke path, which pushes
+//     expire_at into the past without clearing session_id).
+//   - session_id is text while sessions.id is uuid, so the join needs the
+//     explicit cast; casting the other way would forfeit the sessions primary
+//     key index and seq scan the largest table in the schema.
+//
+// expire_at is compared against a bound instant rather than SQL NOW(): the
+// column is timestamp WITHOUT time zone holding UTC, so NOW() would compare it
+// against the server's local wall clock and answer a different question than
+// every Go-side expiry check. Same reasoning as ListActiveCredentialsByUser.
+func CloseExpiredCredentialSessions(ctx context.Context, db *gorm.DB, limit int) (int64, error) {
+	res := db.WithContext(ctx).Exec(`
+	WITH expired AS (
+		SELECT id, org_id, session_id
+		FROM private.connection_credentials
+		WHERE expire_at < @now AND session_id IS NOT NULL AND session_id != ''
+		ORDER BY expire_at
+		LIMIT @limit
+		FOR UPDATE SKIP LOCKED
+	), closed AS (
+		UPDATE private.sessions s
+		SET status = 'done', ended_at = @now
+		FROM expired e
+		WHERE s.org_id = e.org_id AND s.id = e.session_id::uuid AND s.status <> 'done'
+	)
+	UPDATE private.connection_credentials cc
+	SET session_id = NULL
+	FROM expired e
+	WHERE cc.id = e.id`,
+		map[string]any{"now": time.Now().UTC(), "limit": limit})
+	return res.RowsAffected, res.Error
 }
 
 // RevokeConnectionCredentials marks a credential as revoked. Because the
