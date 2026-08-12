@@ -1,10 +1,10 @@
 //! Resolving the agent-side PII guard configuration for a session.
 //!
-//! Policy (enable decision, score threshold, denylist, band padding) is sent
-//! by the gateway in the SessionStarted metadata. Endpoints (Presidio
-//! analyzer, OCR sidecar) come from the agent's own environment — the
-//! sidecar and analyzer live in the customer network next to the agent, so
-//! their addresses are deliberately NOT carried on the wire or held in
+//! The enable decision, resource entity allowlist, score threshold, and band
+//! padding are sent by the gateway in SessionStarted metadata. Endpoints
+//! (Presidio analyzer, OCR sidecar) come from the agent's own environment —
+//! the sidecar and analyzer live in the customer network next to the agent,
+//! so their addresses are deliberately NOT carried on the wire or held in
 //! gateway state. This mirrors the Go agent's terminal-DLP precedent, where
 //! the agent reads MSPRESIDIO_ANALYZER_URL from its environment.
 
@@ -95,11 +95,16 @@ impl GuardConfig {
         if let Some(v) = metadata.get("pii_band_padding").and_then(|s| s.parse().ok()) {
             params.band_padding = v;
         }
-        if let Some(list) = metadata.get("pii_entity_denylist") {
-            // JSON array (entity names are an external vocabulary, not
-            // guaranteed comma-free). A malformed value keeps the default
-            // denylist rather than failing the session — the policy is
-            // advisory, the enforcement is the gate itself.
+        if let Some(list) = metadata.get("pii_entity_allowlist") {
+            // JSON array: entity names use Presidio's external vocabulary and
+            // must not rely on being comma-free.
+            match serde_json::from_str::<Vec<String>>(list) {
+                Ok(entities) => params.entity_allowlist = entities,
+                Err(e) => warn!(%sid, "piigate: ignoring malformed pii_entity_allowlist: {e}"),
+            }
+        } else if let Some(list) = metadata.get("pii_entity_denylist") {
+            // Compatibility with gateways predating connection-scoped
+            // allowlists. The v2 allowlist takes precedence when both exist.
             match serde_json::from_str::<Vec<String>>(list) {
                 Ok(entities) => params.entity_denylist = entities,
                 Err(e) => warn!(%sid, "piigate: ignoring malformed pii_entity_denylist: {e}"),
@@ -197,7 +202,7 @@ mod tests {
                     ("pii_guard", "enabled"),
                     ("pii_score_threshold", "0.75"),
                     ("pii_band_padding", "30"),
-                    ("pii_entity_denylist", r#"["DATE_TIME","NRP"]"#),
+                    ("pii_entity_allowlist", r#"["DATE_TIME","PERSON"]"#),
                 ]),
                 "sid",
             )
@@ -207,6 +212,24 @@ mod tests {
             assert_eq!(cfg.ocr_url, "http://ocr:8868");
             assert_eq!(cfg.params.score_threshold, 0.75);
             assert_eq!(cfg.params.band_padding, 30);
+            assert_eq!(cfg.params.entity_allowlist, vec!["DATE_TIME", "PERSON"]);
+            assert!(cfg.params.entity_denylist.is_empty());
+        });
+    }
+
+    #[test]
+    fn resolves_legacy_gateway_denylist_when_allowlist_is_absent() {
+        with_endpoints(Some("http://p"), Some("http://o"), || {
+            let cfg = GuardConfig::resolve(
+                &md(&[
+                    ("pii_guard", "enabled"),
+                    ("pii_entity_denylist", r#"["DATE_TIME","NRP"]"#),
+                ]),
+                "sid",
+            )
+            .unwrap()
+            .unwrap();
+            assert!(cfg.params.entity_allowlist.is_empty());
             assert_eq!(cfg.params.entity_denylist, vec!["DATE_TIME", "NRP"]);
         });
     }
@@ -240,6 +263,7 @@ mod tests {
             assert_eq!(cfg.params.score_threshold, d.score_threshold);
             assert_eq!(cfg.params.band_padding, d.band_padding);
             assert_eq!(cfg.params.entity_denylist, d.entity_denylist);
+            assert_eq!(cfg.params.entity_allowlist, d.entity_allowlist);
         });
     }
 

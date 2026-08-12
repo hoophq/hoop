@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/rdp/ocr"
 	"github.com/hoophq/hoop/gateway/rdp/parser"
 	"github.com/hoophq/hoop/gateway/rdp/rle"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 // PIIGateFlagName gates the realtime hold-and-release PII analysis on the
@@ -615,6 +616,79 @@ func (c *shadowCanvas) grow(width, height int) {
 	}
 	c.fb = newFB
 	c.w, c.h = width, height
+}
+
+type rdpDataMaskingRule struct {
+	Name                 string                             `json:"name"`
+	SupportedEntityTypes []models.SupportedEntityTypesEntry `json:"supported_entity_types"`
+	CustomEntityTypes    []models.CustomEntityTypesEntry    `json:"custom_entity_types"`
+	ScoreThreshold       *float64                           `json:"score_threshold"`
+}
+
+type rdpDataMaskingParams struct {
+	ScoreThreshold  float64
+	EntityAllowlist []string
+	BandPadding     int
+}
+
+func dataMaskingParamsForConnection(orgID, connectionName string) (*rdpDataMaskingParams, error) {
+	rules, err := services.GetDataMaskingRulesForConnection(orgID, connectionName)
+	if err != nil {
+		return nil, fmt.Errorf("get data masking rules for RDP connection: %w", err)
+	}
+	return parseRDPDataMaskingRules(rules)
+}
+
+func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
+	var rules []rdpDataMaskingRule
+	if err := json.Unmarshal(data, &rules); err != nil {
+		return nil, fmt.Errorf("decode data masking rules for RDP connection: %w", err)
+	}
+
+	entitySet := make(map[string]struct{})
+	scoreThreshold := 0.0
+	hasThreshold := false
+	for _, rule := range rules {
+		if len(rule.CustomEntityTypes) > 0 {
+			return nil, fmt.Errorf("RDP masking does not support custom entity types in rule %q", rule.Name)
+		}
+		hasEntities := false
+		for _, group := range rule.SupportedEntityTypes {
+			for _, entity := range group.EntityTypes {
+				if entity == "" {
+					continue
+				}
+				entitySet[entity] = struct{}{}
+				hasEntities = true
+			}
+		}
+		if !hasEntities {
+			continue
+		}
+
+		threshold := 0.5
+		if rule.ScoreThreshold != nil {
+			threshold = *rule.ScoreThreshold
+		}
+		if !hasThreshold || threshold < scoreThreshold {
+			scoreThreshold = threshold
+			hasThreshold = true
+		}
+	}
+	if len(entitySet) == 0 {
+		return nil, nil
+	}
+
+	params := &rdpDataMaskingParams{
+		ScoreThreshold:  scoreThreshold,
+		EntityAllowlist: make([]string, 0, len(entitySet)),
+		BandPadding:     analyzer.DefaultBandPadding,
+	}
+	for entity := range entitySet {
+		params.EntityAllowlist = append(params.EntityAllowlist, entity)
+	}
+	sort.Strings(params.EntityAllowlist)
+	return params, nil
 }
 
 // newSessionPIIGate builds a PIIGate wired to a live IronRDP session: it
