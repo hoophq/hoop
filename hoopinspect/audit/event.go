@@ -21,6 +21,7 @@ package audit
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/hoophq/hoopinspect"
@@ -170,7 +171,34 @@ func StatementEvent(s *session.Session, stmt hoopinspect.Statement, allowed bool
 		Rule:       rule,
 		Message:    message,
 		HTTP:       stmt.HTTP,
+		Metadata:   statementMetadata(s, stmt),
 	}
+}
+
+// statementMetadata merges the session's deployment fields with the codec's
+// per-statement fields.
+//
+// Both belong on a statement record. The session says which deployment
+// produced the statement; the codec says what it could and could not read.
+// `sql.incomplete` names the construct that defeated the scanner and
+// `mssql.login_encrypted` marks a session whose login crossed as ciphertext,
+// and without either one an operator reading the trail cannot tell a fully
+// inspected statement from one the relay only partly understood.
+//
+// The result is always a fresh map. Handing back s.Metadata would give every
+// event a reference to one shared map, and the gate writes analyzer
+// annotations onto the event's copy.
+func statementMetadata(s *session.Session, stmt hoopinspect.Statement) map[string]string {
+	if len(s.Metadata) == 0 && len(stmt.Metadata) == 0 {
+		return nil
+	}
+	md := make(map[string]string, len(s.Metadata)+len(stmt.Metadata))
+	maps.Copy(md, s.Metadata)
+	// Codec keys are namespaced (`mssql.`, `sql.`, `http.`), so a collision
+	// means a deployment chose a reserved name. The codec's reading of the
+	// statement in front of it is the more specific fact.
+	maps.Copy(md, stmt.Metadata)
+	return md
 }
 
 // SessionStartEvent builds the opening record.

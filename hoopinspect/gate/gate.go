@@ -352,11 +352,11 @@ func (g *Gate) inspect(ctx context.Context, dir hoopinspect.Direction, data []by
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
 
 		// ErrStreamUnsafe is the exception to that default, and it inverts
-		// it. The codec is not saying "I could not parse this"; it is saying
-		// "I parsed this, and forwarding it ends my ability to see anything
-		// further". Honest-default forwarding would hand the client a
-		// redirect and lose the session, so this denies REGARDLESS of
-		// policy: no rule configured it, and none can switch it off.
+		// it. The codec parsed these bytes and is reporting that forwarding
+		// them ends its ability to see anything further. Honest-default
+		// forwarding would hand the client a redirect and lose the session,
+		// so this denies REGARDLESS of policy: no rule configured it, and
+		// none can switch it off.
 		if errors.Is(err, hoopinspect.ErrStreamUnsafe) {
 			d.Allowed = false
 			d.Rule = "stream-unsafe"
@@ -565,13 +565,15 @@ func (g *Gate) evaluate(stmt hoopinspect.Statement) policy.Verdict {
 		return policy.Allow()
 	}
 	// Attach the session facts so a Rego policy can reference the actor.
-	// Done per statement rather than once because an OPAClient is shared
-	// across connections and must not carry one session's context into
-	// another's decision.
-	if c, ok := g.policy.(*policy.OPAClient); ok {
-		scoped := *c
-		scoped.Context = g.polCtx
-		return scoped.Evaluate(stmt)
+	//
+	// They ride on the evaluation context rather than on a copy of the
+	// client. An OPAClient is shared across connections and must not carry
+	// one session's context into another's decision, and a lane that
+	// consults OPA on both sides of the analyzer holds TWO of them inside a
+	// policy.Chain, which a type assertion for a bare client silently
+	// misses, leaving input.context empty on exactly the lanes that need it.
+	if ce, ok := g.policy.(policy.ContextualEvaluator); ok {
+		return ce.EvaluateWith(stmt, &policy.EvalContext{Context: g.polCtx})
 	}
 	return g.policy.Evaluate(stmt)
 }

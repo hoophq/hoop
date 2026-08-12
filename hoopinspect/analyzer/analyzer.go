@@ -70,7 +70,68 @@ const (
 	// one that was blocked. It merges as a PAIR with MetadataRiskLevel; see
 	// policy.mergeAnnotations.
 	MetadataAction = policy.AnnotationRiskAction
+
+	// MetadataAIRule names the rule that produced the level, so a lane
+	// carrying two ai_analysis rules can be told apart in the trail.
+	MetadataAIRule = "ai_rule"
+
+	// MetadataAIStatus records what the analyzer did. It is the key that
+	// separates "rated low" from "never asked", "provider down" and
+	// "budget spent". All four look like an absent risk_level to anything
+	// reading the trail.
+	//
+	// Defined here rather than in policy because nothing outside this
+	// package needs to understand it: the analyzer folds its own findings,
+	// so policy.Chain never has to rank a status it cannot interpret.
+	MetadataAIStatus = "ai_status"
 )
+
+// Source is the key this producer's findings appear under in a policy's
+// input document, as `input.findings.ai_analysis`.
+//
+// It matches the rule type an operator writes in YAML, so the thing they
+// configured and the thing their Rego addresses have one name.
+const Source = string(policy.MatchAIAnalysis)
+
+// Statuses this producer reports. They refine policy's generic set rather
+// than replacing it: Budget and Refused are both policy.FindingUnavailable
+// with a reason, and the trail keeps the specific word because an operator
+// tuning max_calls and an operator tuning send: refuse are chasing different
+// things.
+const (
+	StatusOK      = policy.FindingOK
+	StatusCached  = policy.FindingCached
+	StatusSkipped = policy.FindingSkipped
+	StatusError   = policy.FindingError
+
+	// StatusBudget means the process-wide call budget was spent.
+	StatusBudget = "budget_exhausted"
+
+	// StatusRefused means the content carried a detected entity and
+	// send=refuse forbade transmitting it.
+	StatusRefused = "refused"
+)
+
+// findingStatus maps a reported status onto policy's generic vocabulary, so a
+// Rego author can write `status == "unavailable"` without learning this
+// package's reasons, and read `reason` when they care which.
+func findingStatus(status string) string {
+	switch status {
+	case StatusBudget, StatusRefused:
+		return policy.FindingUnavailable
+	}
+	return status
+}
+
+// statusReason names a generic status's specific cause, or nothing when the
+// status already says everything.
+func statusReason(status string) string {
+	switch status {
+	case StatusBudget, StatusRefused:
+		return status
+	}
+	return ""
+}
 
 // rank orders risk for "keep the highest seen" rollups. An unknown level
 // ranks zero so it never displaces a real one.
@@ -101,6 +162,20 @@ const (
 	// ActionBlock refuses the statement.
 	ActionBlock Action = "block"
 
+	// ActionDefer forwards the statement and hands the decision to a later
+	// evaluator, which in practice means a decide-phase OPA reading
+	// input.findings.ai_analysis.values.risk_level.
+	//
+	// It moves "high risk means block" out of a line of YAML and into the
+	// Rego their InfoSec team already owns. The analyzer still classifies,
+	// still annotates and still audits; it stops being the thing that
+	// decides.
+	//
+	// A deferred level with nothing behind it to decide would allow
+	// everything, so the sidecar refuses the combination at startup rather
+	// than shipping a guardrail that quietly does nothing.
+	ActionDefer Action = "defer"
+
 	// ActionRequireReview holds the statement for human approval.
 	//
 	// Declared but not implemented. The config layer refuses it by name so
@@ -114,7 +189,7 @@ const (
 // Valid reports whether a is a known action.
 func (a Action) Valid() bool {
 	switch a {
-	case ActionAllow, ActionWarn, ActionBlock, ActionRequireReview:
+	case ActionAllow, ActionWarn, ActionBlock, ActionDefer, ActionRequireReview:
 		return true
 	}
 	return false

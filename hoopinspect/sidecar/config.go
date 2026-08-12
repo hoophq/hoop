@@ -102,7 +102,7 @@ type ListenerConfig struct {
 	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
 	// plain TLS listener in front cannot terminate it. Envoy's own postgres
 	// filter can, but it is contrib-only, marked work-in-progress, and gives
-	// up permanently the moment a client asks for GSS encryption — which is
+	// up permanently the moment a client asks for GSS encryption, which is
 	// what psql does by default whenever a Kerberos ticket is present.
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
@@ -199,7 +199,45 @@ type OPAConfig struct {
 	// so a policy engine outage stops traffic instead of silently disabling
 	// enforcement.
 	FailOpen bool `json:"fail_open"`
+
+	// Gate adds a decision BEFORE the AI analyzer runs, letting the policy
+	// answer "is this statement worth a model call" by returning
+	// `analyze: true|false` beside its allow/deny.
+	//
+	// It exists to keep the cost control where the policy is. Without it, a
+	// lane whose rules defer to OPA calls the model first and OPA second,
+	// so a statement Rego would have refused for free has already been
+	// paid for. With it, OPA is consulted twice: once to decide whether to
+	// spend, once to decide what the answer means.
+	//
+	// Both calls hit the same URL and carry `input.phase`, so a policy that
+	// ignores the field answers both identically and turning the gate on
+	// costs one round trip rather than a rewrite. An undefined gate
+	// decision means "no opinion" and allows, because a gate is an
+	// optimization over a policy someone already wrote.
+	//
+	// Only meaningful on a lane that has ai_analysis rules; the config is
+	// refused otherwise, since a gate over nothing is a round trip that
+	// buys nothing.
+	Gate bool `json:"gate"`
 }
+
+// client builds an OPA evaluator for one phase of this lane's chain.
+func (o *OPAConfig) client(phase policy.Phase) *policy.OPAClient {
+	timeout := time.Duration(o.TimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	return &policy.OPAClient{
+		URL:      o.URL,
+		Timeout:  timeout,
+		FailOpen: o.FailOpen,
+		Phase:    phase,
+	}
+}
+
+// enabled reports whether this lane consults OPA at all.
+func (o *OPAConfig) enabled() bool { return o != nil && o.URL != "" }
 
 // MaskConfig configures response rewriting.
 //
@@ -435,7 +473,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 			problems = append(problems, name+": "+err.Error())
 		}
 	}
-	problems = append(problems, validateAIRules(aiRules, c.Analyzer, name)...)
+	problems = append(problems, validateAIRules(aiRules, c.Analyzer, pc, name)...)
+	for _, r := range localRules {
+		if r.Action == policy.ActionDefer && !pc.OPA.enabled() {
+			// A finding nobody reads is a rule that matches and then
+			// allows, which looks like enforcement and is not.
+			problems = append(problems, fmt.Sprintf(
+				"%s: rule %q defers its match to a policy decision, and the lane has "+
+					"no policy.opa.url to defer to; set one or drop the action",
+				name, r.Name))
+		}
+	}
 	if pc.OPA != nil && pc.OPA.URL == "" {
 		problems = append(problems, name+": policy.opa set but url is empty")
 	}
@@ -454,11 +502,11 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// An ai_analysis rule on an HTTP lane with no body capture classifies
 	// nothing: HTTPBuilder.Build returns ok=false on an empty body, and the
 	// codec leaves Body empty unless the lane asked for it. The rule would
-	// load, evaluate and never fire — the same silent failure the pii-entity
+	// load, evaluate and never fire: the same silent failure the pii-entity
 	// check refuses, on a control that also costs money when it does work.
 	//
-	// This asserts only that the proxy COULD capture a body. A genuinely
-	// bodiless request is still skipped at runtime, deliberately: paying for
+	// This asserts only that the proxy COULD capture a body. A request that
+	// carries no body is still skipped at runtime, deliberately: paying for
 	// a verdict on "POST /orders" with no payload is what that skip avoids.
 	if len(aiRules) > 0 && hoopinspect.Protocol(lc.Protocol) == hoopinspect.HTTP &&
 		(lc.HTTP == nil || !lc.HTTP.CaptureBody) {
@@ -516,8 +564,18 @@ type Plugin interface {
 	BuildMasker(rawRules []byte) (gate.Masker, error)
 }
 
-// buildPolicy assembles one lane's evaluator chain: local rules first, OPA
-// second, so a statement the local rules forbid costs no round trip.
+// buildPolicy assembles one lane's evaluator chain.
+//
+// The default order is local rules, then OPA, then the AI analyzer, and the
+// order is the cost control: Chain short-circuits on the first denial, so a
+// statement a free local rule or a Rego rule already refused never reaches a
+// paid classifier.
+//
+// A lane whose rules DEFER to OPA inverts the last two, because a decision
+// that reads input.findings has to run after the producers that fill it.
+// Adding `opa.gate: true` buys the cost control back by consulting OPA on
+// both sides: once to decide whether to spend, once to decide what the
+// answer means.
 //
 // Returns nil in observe-only mode. det may be nil, and a lane with pii rules
 // then fails to build by design: a guardrail that cannot see must not
@@ -546,21 +604,25 @@ func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluato
 		}
 		chain = append(chain, rules)
 	}
-	if pc.OPA != nil && pc.OPA.URL != "" {
-		timeout := time.Duration(pc.OPA.TimeoutSec) * time.Second
-		if timeout <= 0 {
-			timeout = 2 * time.Second
-		}
-		chain = append(chain, &policy.OPAClient{
-			URL:      pc.OPA.URL,
-			Timeout:  timeout,
-			FailOpen: pc.OPA.FailOpen,
-		})
+
+	// A lane is two-phase when anything on it defers, whether that is an
+	// ai_analysis risk level or a local rule reporting a match. Both need a
+	// decision placed AFTER them, because a policy reading input.findings
+	// has to run after the thing that fills it.
+	twoPhase := pc.OPA.enabled() &&
+		(pc.OPA.Gate || anyDeferred(pc.Rules))
+
+	switch {
+	case !pc.OPA.enabled():
+	case !twoPhase:
+		// One decision, no input.findings, exactly as before producers
+		// reported. Phase is empty so the input document a single-call
+		// lane produces is byte-identical to the old one.
+		chain = append(chain, pc.OPA.client(""))
+	case pc.OPA.Gate:
+		chain = append(chain, pc.OPA.client(policy.PhaseGate))
 	}
 
-	// The analyzer goes LAST, and the ordering is the cost control: a
-	// statement a free local rule or OPA already denied never reaches a
-	// paid classifier, because Chain short-circuits on the first denial.
 	if len(aiRules) > 0 {
 		var cfg *AnalyzerConfig
 		var provider analyzer.Provider
@@ -577,10 +639,37 @@ func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluato
 		}
 	}
 
+	if twoPhase {
+		chain = append(chain, pc.OPA.client(policy.PhaseDecide))
+	}
+
 	if len(chain) == 0 {
 		return nil, nil
 	}
 	return chain, nil
+}
+
+// anyDeferred reports whether any rule hands its match to a later evaluator.
+//
+// One deferral is enough to make the lane two-phase: the finding has to reach
+// something that can act on it, and the only evaluator that can is an OPA
+// decision placed after every producer.
+//
+// It reads the WHOLE rule set, local and ai_analysis alike, because the two
+// spell the same request differently: a local rule says `action: defer`, an
+// ai_analysis rule says it per risk level.
+func anyDeferred(rules []policy.Rule) bool {
+	for _, r := range rules {
+		if r.Action == policy.ActionDefer {
+			return true
+		}
+		for _, raw := range [...]string{r.HighRisk, r.MediumRisk, r.LowRisk} {
+			if analyzer.Action(raw) == analyzer.ActionDefer {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // analyzerDeps carries the process-wide analyzer to each lane's policy build.
