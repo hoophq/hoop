@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"gorm.io/gorm"
 )
@@ -44,8 +43,11 @@ type OrgOnboardingStatus struct {
 	ExecConnectionName  *string
 	FirstConnectionName *string
 
-	completedLatched bool
-	newlySatisfied   []string
+	// The persisted latch, not AllChecksPass. Only a stamp that landed sets it.
+	Completed bool
+
+	// Satisfied live, not yet stamped.
+	NewlySatisfied []string
 }
 
 func (s *OrgOnboardingStatus) AllChecksPass() bool {
@@ -55,40 +57,6 @@ func (s *OrgOnboardingStatus) AllChecksPass() bool {
 		}
 	}
 	return true
-}
-
-// Completed reflects the persisted latch, not AllChecksPass, so it can never
-// disagree with show_setup_checklist on /userinfo. It is also why an org that
-// finished under an older, shorter checklist stays finished when a step ships.
-func (s *OrgOnboardingStatus) Completed() bool {
-	return s.completedLatched
-}
-
-// SyncOrgOnboardingStatus reads the checklist and latches whatever is newly
-// satisfied. Reading is what advances onboarding — the checks span features
-// that have no reason to know a checklist exists.
-//
-// A failed latch is logged, not returned: the status is already correct and the
-// next call retries. Steady state is zero writes.
-func SyncOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnboardingStatus, error) {
-	status, err := readOrgOnboardingStatus(db, orgID, adminGroupName)
-	if err != nil {
-		return nil, err
-	}
-	if len(status.newlySatisfied) > 0 {
-		if err := latchOnboardingSteps(db, orgID, status.newlySatisfied); err != nil {
-			log.Warnf("failed latching onboarding steps for org %s, err=%v", orgID, err)
-		}
-	}
-	if status.AllChecksPass() && !status.completedLatched {
-		if err := latchOnboardingCompleted(db, orgID); err != nil {
-			// Stay incomplete so the client keeps calling and retries the stamp.
-			log.Warnf("failed latching onboarding completion for org %s, err=%v", orgID, err)
-		} else {
-			status.completedLatched = true
-		}
-	}
-	return status, nil
 }
 
 type onboardingRow struct {
@@ -107,7 +75,7 @@ type onboardingRow struct {
 //
 // Live checks are OR'd with orgs.onboarding_steps so a ticked step stays ticked
 // after the underlying resource is deleted.
-func readOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnboardingStatus, error) {
+func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnboardingStatus, error) {
 	var row onboardingRow
 	err := db.Raw(`
 	SELECT
@@ -187,19 +155,19 @@ func readOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnb
 		Checks:              make(map[string]bool, len(OnboardingStepKeys)),
 		ExecConnectionName:  row.ExecConnectionName,
 		FirstConnectionName: row.FirstConnectionName,
-		completedLatched:    row.PreviouslyCompleted,
+		Completed:           row.PreviouslyCompleted,
 	}
 	for _, key := range OnboardingStepKeys {
 		_, isLatched := latched[key]
 		status.Checks[key] = isLatched || live[key]
 		if live[key] && !isLatched {
-			status.newlySatisfied = append(status.newlySatisfied, key)
+			status.NewlySatisfied = append(status.NewlySatisfied, key)
 		}
 	}
 	return status, nil
 }
 
-func latchOnboardingSteps(db *gorm.DB, orgID string, steps []string) error {
+func LatchOrgOnboardingSteps(db *gorm.DB, orgID string, steps []string) error {
 	stamps := make(map[string]string, len(steps))
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, step := range steps {
@@ -220,7 +188,7 @@ func latchOnboardingSteps(db *gorm.DB, orgID string, steps []string) error {
 }
 
 // First write wins; zero rows affected just means it was already stamped.
-func latchOnboardingCompleted(db *gorm.DB, orgID string) error {
+func LatchOrgOnboardingCompleted(db *gorm.DB, orgID string) error {
 	return db.Table("private.orgs").
 		Where("id = ? AND onboarding_completed_at IS NULL", orgID).
 		Update("onboarding_completed_at", time.Now().UTC()).

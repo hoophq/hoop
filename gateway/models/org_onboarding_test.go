@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 const testAdminGroup = "admin"
 
 func onboardingStatus(t *testing.T) *models.OrgOnboardingStatus {
 	t.Helper()
-	status, err := models.SyncOrgOnboardingStatus(models.DB, testOrgID, testAdminGroup)
+	status, err := services.SyncOrgOnboardingStatus(models.DB, testOrgID, testAdminGroup)
 	if err != nil {
 		t.Fatalf("sync onboarding status: %v", err)
 	}
@@ -48,7 +49,7 @@ func TestOrgOnboardingStatus(t *testing.T) {
 	startTestDB(t)
 
 	status := onboardingStatus(t)
-	if status.AllChecksPass() || status.Completed() {
+	if status.AllChecksPass() || status.Completed {
 		t.Fatalf("fresh org must not be complete: %+v", status.Checks)
 	}
 	if status.ExecConnectionName != nil || status.FirstConnectionName != nil {
@@ -162,7 +163,7 @@ func TestOrgOnboardingStatus(t *testing.T) {
 	}
 	// Completed must track the stamp, not the live checks, or it would disagree
 	// with show_setup_checklist on /userinfo.
-	if !status.Completed() {
+	if !status.Completed {
 		t.Fatal("expected completed once the latch was stamped")
 	}
 }
@@ -208,7 +209,7 @@ func TestOrgOnboardingStepsLatch(t *testing.T) {
 func TestOrgOnboardingCompletionIsTerminal(t *testing.T) {
 	startTestDB(t)
 
-	if onboardingStatus(t).Completed() {
+	if onboardingStatus(t).Completed {
 		t.Fatal("fresh org must not be complete")
 	}
 
@@ -217,7 +218,7 @@ func TestOrgOnboardingCompletionIsTerminal(t *testing.T) {
 	if status.AllChecksPass() {
 		t.Fatalf("no step was seeded, checks must not pass: %+v", status.Checks)
 	}
-	if !status.Completed() {
+	if !status.Completed {
 		t.Fatal("a latched org must report completed")
 	}
 }

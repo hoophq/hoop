@@ -7,6 +7,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -22,14 +23,14 @@ import (
 //	@Router			/orgs/onboarding [get]
 func GetOrgOnboarding(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	status, err := models.SyncOrgOnboardingStatus(models.DB, ctx.OrgID, types.GroupAdmin)
+	status, err := services.SyncOrgOnboardingStatus(models.DB, ctx.OrgID, types.GroupAdmin)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to load onboarding status: %v", err)
 		return
 	}
 
 	c.JSON(http.StatusOK, openapi.OrgOnboardingResponse{
-		Completed: status.Completed(),
+		Completed: status.Completed,
 		Checks: openapi.OrgOnboardingChecks{
 			AgentDeployed:       status.Checks[models.StepAgentDeployed],
 			ResourceCreated:     status.Checks[models.StepResourceCreated],
