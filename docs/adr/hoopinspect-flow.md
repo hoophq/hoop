@@ -1449,7 +1449,7 @@ that function, a Rego policy keyed on `input.context.principal` reads
   something critical and accept the false positives.
 - **`CALL` and `EXECUTE` no longer classify as `call`.** They report `unknown`
   with a reason, so a rule written `operations: [call]` stops matching and needs
-  `unknown` instead. It is the one behavior change an existing config can
+  `unknown` instead. It is one of two behavior changes an existing config can
   notice; `ClassifySQL` keeps its signature and no exported symbol was removed.
 - **PII detection is neither sound nor complete.** A checksum-verified
   identifier holds up. Everything else is a pattern. Detecting a name column
@@ -1459,9 +1459,40 @@ that function, a Rego policy keyed on `input.context.principal` reads
 - **HTTP/1.x only for stream decoding.** HTTP/2 and HTTP/3 framing belongs to
   whatever terminated the connection, and by then it holds a `*http.Request`, so
   call `InspectRequest`.
-- **Plaintext only.** A client negotiating TLS to the server leaves nothing to
-  parse. Termination stays the caller's problem, which in this topology means
-  Envoy's.
+- **Plaintext only, with one exception.** A client negotiating TLS to the
+  server leaves nothing to parse, and termination stays the caller's problem,
+  which in this topology means Envoy's. TDS is the exception, because it has a
+  mode where the caller cannot help: PRELOGIN's `ENCRYPT_OFF` encrypts the
+  first LOGIN7 packet and leaves every statement in the clear (MS-TDS 3.2.5.3),
+  and go-mssqldb negotiates it by default. `codec/mssql/encrypted.go` walks
+  that region by TLS record framing and inspects the plaintext after it.
+  Statements from such a session carry `mssql.login_encrypted`.
+- **The relay now refuses a fully encrypted MSSQL session.** A raw TLS record
+  from the upstream settles it: a server under `ENCRYPT_OFF` sends none, so
+  one arriving means PRELOGIN negotiated `ENCRYPT_ON` and every byte is
+  opaque. The codec returns `ErrStreamUnsafe` on the server's first reply and
+  the gate denies, alongside the same refusal for ciphertext before the login,
+  after plaintext resumed, or past the client-side bound.
+
+  Refusing on the server's reply rather than on a byte count is what makes the
+  case detectable at all. A client waiting for a login response sends nothing
+  further, so the bound never fires; an earlier revision stalled for eight
+  seconds and logged nothing, and the operator saw "Login timeout expired"
+  with no cause. Now the denial lands in milliseconds under `rule:
+  stream-unsafe`, verified against SQL Server 2019 in
+  `deploy/docker-compose/envoy-stack/mssql2019`.
+
+  Call this the second behavior change an existing deployment can notice: an
+  `ENCRYPT_ON` lane reaching the relay with nothing terminating in front used
+  to connect and run uninspected. We chose that on purpose. Forwarding a
+  session whose every statement escapes classification, masking and audit
+  hides the gap from the operator. Breaking the lane tells them.
+- **Statement metadata reaches the audit trail.** `audit.StatementEvent` used
+  to drop `Statement.Metadata` on the floor, so `sql.incomplete`,
+  `mssql.message` and `mssql.login_encrypted` were recorded nowhere. It now
+  merges session and statement metadata onto the event, statement keys
+  winning. An operator reading the trail can finally tell which construct
+  defeated the scanner and which sessions had an unreadable login.
 - **Statements are not transactions.** Each one gets its own verdict, and no
   cross-statement session state exists.
 - **A slow classification can outlive the upstream's idle budget.**

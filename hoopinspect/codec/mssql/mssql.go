@@ -47,8 +47,15 @@
 // This decoder reads plaintext TDS. Under TDS 8.0 (SQL Server 2022+,
 // Encrypt=strict) the whole session is inside TLS from the first byte, which
 // is ordinary TLS-on-connect and therefore something Envoy terminates
-// natively. Under TDS 7.x the handshake is wrapped in 0x12 PRELOGIN packets,
-// which Envoy cannot speak; that lane needs a terminator that does.
+// natively.
+//
+// TDS 7.x splits by what PRELOGIN negotiated. ENCRYPT_OFF encrypts the login
+// packet alone and leaves every statement in the clear, so this codec passes
+// the encrypted login through and reads the session after it; encrypted.go
+// holds the mechanism and the reasoning. ENCRYPT_ON encrypts everything, and
+// no amount of parsing recovers that: the lane needs a terminator in front,
+// and a session that reaches this codec without one fails closed, because
+// forwarding bytes nobody can read hides the gap from the operator.
 package mssql
 
 import (
@@ -142,6 +149,19 @@ type Codec struct {
 	rawBuf      []byte
 	seenColMeta bool
 	noRewrite   bool
+
+	// Encrypted-login pass-through state; see encrypted.go.
+	//
+	// seenPrelogin scopes the one chance a connection gets to open the
+	// region, inTLS says the walk is inside it, tlsResynced latches once
+	// plaintext resumed, tlsBytes bounds it, and loginEncrypted marks every
+	// later statement so the audit trail records the unobservable window
+	// rather than implying a fully inspected session.
+	seenPrelogin   bool
+	inTLS          bool
+	tlsResynced    bool
+	tlsBytes       int
+	loginEncrypted bool
 }
 
 func (c *Codec) Protocol() hoopinspect.Protocol { return hoopinspect.MSSQL }
@@ -161,6 +181,19 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 	pos := 0
 
 	for {
+		// A raw TLS record at a packet boundary is the encrypted login of
+		// an ENCRYPT_OFF session. Walk it by TLS's own framing instead of
+		// misparsing it as a packet header, and resume at the exact byte
+		// where plaintext returns.
+		if n, inside, err := c.encryptedRegion(data[pos:], c.seenPrelogin); err != nil {
+			return stmts, pos + n, err
+		} else if inside {
+			return stmts, pos + n, nil
+		} else if n > 0 {
+			pos += n
+			continue
+		}
+
 		if len(data)-pos < headerLen {
 			return stmts, pos, nil
 		}
@@ -185,6 +218,12 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 		// (0x10) and every SSPI continuation (0x11) land here, get no
 		// interpretation, and travel on untouched.
 		if typ != pktSQLBatch && typ != pktRPCRequest {
+			if typ == pktPrelogin {
+				// The login phase has started. This is what scopes the
+				// encrypted-login pass-through: with no PRELOGIN there is
+				// no handshake to follow and the region never opens.
+				c.seenPrelogin = true
+			}
 			c.pending, c.pendTyp = nil, 0
 			continue
 		}
@@ -219,6 +258,12 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 		md := map[string]string{"mssql.message": msgName(typ)}
 		if proc != "" {
 			md["mssql.proc"] = proc
+		}
+		if c.loginEncrypted {
+			// The login crossed as ciphertext. Say so on every statement:
+			// an operator reading the trail has to be able to tell this
+			// session's login was never observable.
+			md[metaEncryptedLogin] = "true"
 		}
 		if !a.Complete {
 			// No credible T-SQL parser exists for Go, so this lane runs
@@ -257,6 +302,14 @@ func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) 
 
 	pos := 0
 	for {
+		// A raw TLS record from the upstream means the whole session is
+		// encrypted, not just the login. Refuse it here, on the server's
+		// first post-handshake reply, rather than waiting for a client-side
+		// byte bound that a stalled login never reaches. See encrypted.go.
+		if err := c.serverCiphertext(data[pos:]); err != nil {
+			return nil, pos, err
+		}
+
 		if len(data)-pos < headerLen {
 			// Consume only whole packets, so a routing ENVCHANGE split
 			// across two reads is scanned once it is complete rather than

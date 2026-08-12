@@ -53,6 +53,14 @@ claim: hoop-inspect is an ordinary upstream. To close the last port and have
 Envoy reach it over a unix socket instead, add the overlay in
 [`uds/`](uds/README.md): same lanes, same policy, no data port open at all.
 
+Two more overlays add an MSSQL lane, and what separates them is who terminates
+the client's TLS. [`mssql/`](mssql/README.md) runs SQL Server 2022 over TDS
+8.0, an ordinary TLS-on-connect handshake Envoy terminates with no TDS
+awareness, and adds a Kerberos client and an AD domain controller.
+[`mssql2019/`](mssql2019/README.md) runs TDS 7.4, where the client wraps its
+handshake inside `0x12` PRELOGIN packets that Envoy cannot speak, so the relay
+takes the connection directly and reads through an encrypted login.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
@@ -336,9 +344,11 @@ on every request that reaches the sidecar.
   the gate corrects; postgres rebuilds its length-prefixed row frames around
   the new values. A codec offering neither gets its `mask` section refused at
   startup rather than accepted and silently never fired.
-- **Two codecs ship: postgres and http.** MySQL, MSSQL and MongoDB were
-  removed to keep the surface to what is exercised end to end. Adding one is a
-  new `codec/<name>` package and nothing else.
+- **Three codecs ship: postgres, http and mssql.** MySQL and MongoDB were
+  removed to keep the surface to what is exercised end to end. This base stack
+  runs the first two; the overlays in [`mssql/`](mssql/README.md) and
+  [`mssql2019/`](mssql2019/README.md) run the third. Adding one is a new
+  `codec/<name>` package and nothing else.
 - **`psql` must disable SSL** (`PGSSLMODE=disable`) on the CLIENT leg. Nothing
   terminates TLS between psql and the sidecar: Envoy passes that TCP stream
   through untouched. In production Envoy would terminate on that listener too.
