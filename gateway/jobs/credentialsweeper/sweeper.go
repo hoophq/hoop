@@ -34,6 +34,11 @@ const (
 	// does not subscribe to a stream that will never emit.
 	sweepInterval = 15 * time.Second
 
+	// sweepTimeout bounds a single tick. Set below sweepInterval so a wedged
+	// sweep is cut loose before the next one is due, keeping at most one in
+	// flight without needing a mutex.
+	sweepTimeout = 10 * time.Second
+
 	// sweepBatchSize caps the rows one tick may take. A backlog drains over
 	// several ticks instead of in a single long transaction, which is what
 	// pins the xmin horizon and starves autovacuum. At this interval the
@@ -64,6 +69,13 @@ func Run(ctx context.Context, db *gorm.DB) {
 }
 
 func sweep(ctx context.Context, db *gorm.DB) {
+	// One tick may not outlive its interval: a sweep wedged on a lock or a
+	// stalled connection would otherwise block the loop forever, silently
+	// stopping all cleanup. The batch is small enough that hitting this
+	// timeout means something is wrong, not that the work was too big.
+	ctx, cancel := context.WithTimeout(ctx, sweepTimeout)
+	defer cancel()
+
 	// Logged rather than swallowed: the previous implementation discarded
 	// every per-row error with `_ =`, so a row that could never be updated
 	// was retried forever with no signal. A permanently failing sweep now
