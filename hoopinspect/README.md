@@ -740,6 +740,14 @@ four views of the same fact:
 - **`Effects` carries the full set**, every operation performed anywhere in
   the statement. Read it to tell a statement that only deletes from one that
   deletes and selects.
+- **The vocabulary is closed**, and wider verbs fold into it. The scanner
+  models `MERGE`, `COPY` and `EXPLAIN`; `Operation` and `Effects` never report
+  them, because `MatchOperation` and the AI trigger compare for equality and a
+  config naming `update` cannot name `merge`. A `MERGE` is an `update`, its
+  `WHEN MATCHED THEN DELETE` branch still adds `delete`; `COPY ... FROM` is an
+  `insert` and `COPY ... TO` a `select`; a plain `EXPLAIN` is a `select`,
+  because it plans and does not execute. Nothing folds onto `other`, which
+  ranks below every real verb and would hide a bulk load.
 - **`Relations` carries `{name, access}`**, deduplicated and lowercased, with
   write dominating read for a relation that is both.
   `INSERT INTO staging SELECT * FROM customers` writes `staging` and reads
@@ -791,9 +799,10 @@ Those choices buy this, measured through the real Postgres path:
 | `WITH set AS (SELECT 1) SELECT * FROM set` | `set` | `select` |
 | `/* outer /* inner */ DELETE FROM customers */ SELECT 1` | `delete`, tables `[customers]` | `select`, no relations |
 | `MERGE INTO customers USING s ... WHEN MATCHED THEN DELETE` | `unknown` | `delete`, customers write + s read |
+| `COPY customers FROM STDIN` | `other` | `insert`, customers write |
 | `COPY (DELETE FROM customers RETURNING *) TO STDOUT` | `other` | `delete` |
 | `EXPLAIN ANALYZE DELETE FROM customers` | `other` | `delete` |
-| `EXPLAIN DELETE FROM customers` | `other` | `explain`, customers READ, because it plans and does not execute |
+| `EXPLAIN DELETE FROM customers` | `other` | `select`, customers READ, because it plans and does not execute |
 | `INSERT INTO staging SELECT * FROM customers` | `insert`, tables `[staging customers]` | staging write, customers read |
 | `DO $$ BEGIN DELETE FROM customers; END $$` | `unknown` by accident | `unknown`, reason "anonymous code block; body is interpreted at runtime" |
 | `CALL purge()` | `call` | `unknown`, reason "stored procedure; body is in the catalog" |

@@ -5,6 +5,7 @@ import (
 
 	"github.com/hoophq/hoopinspect"
 	_ "github.com/hoophq/hoopinspect/codec/all"
+	"github.com/hoophq/hoopinspect/policy"
 )
 
 // Every case here defeated the previous classifier through the REAL wire
@@ -191,6 +192,147 @@ func TestBypassCorpusInventsNoWrites(t *testing.T) {
 				t.Errorf("%s not reported as read: %+v", tc.wantRead, stmts)
 			}
 		})
+	}
+}
+
+// The scanner names three verbs the Operation vocabulary does not: merge,
+// copy and explain. They used to reach a rule verbatim, and because
+// MatchOperation and the AI trigger compare for equality, a read-only
+// credential naming insert/update/delete let all three through.
+//
+// These are the statements that got past it. Each must now be denied by the
+// rule that names its real consequence, through the real wire path.
+func TestFoldedVerbsReachTheRuleThatNamesThem(t *testing.T) {
+	readOnly := rulesFor(t, "no-writes",
+		hoopinspect.OpInsert, hoopinspect.OpUpdate, hoopinspect.OpDelete)
+	noExport := rulesFor(t, "no-bulk-read", hoopinspect.OpSelect)
+
+	for _, tc := range []struct {
+		name, sql  string
+		rules      *policy.Rules
+		wantDenied bool
+	}{
+		{
+			// MERGE's update branch reported `merge`, which nothing named.
+			name:       "MERGE with an update branch is a write",
+			sql:        `MERGE INTO customers c USING staging s ON c.id = s.id WHEN MATCHED THEN UPDATE SET name = s.name`,
+			rules:      readOnly,
+			wantDenied: true,
+		},
+		{
+			name:       "MERGE with an insert branch is a write",
+			sql:        `MERGE INTO customers c USING staging s ON c.id = s.id WHEN NOT MATCHED THEN INSERT VALUES (s.id, s.name)`,
+			rules:      readOnly,
+			wantDenied: true,
+		},
+		{
+			// A bulk load reported `copy`. It is an INSERT of every row
+			// the client can stream.
+			name:       "COPY FROM is a bulk insert",
+			sql:        `COPY customers FROM STDIN`,
+			rules:      readOnly,
+			wantDenied: true,
+		},
+		{
+			// The other direction is the exfiltration path, and it must
+			// not be mistaken for a write.
+			name:       "COPY TO is a bulk read",
+			sql:        `COPY customers TO STDOUT`,
+			rules:      noExport,
+			wantDenied: true,
+		},
+		{
+			name:       "COPY TO writes nothing",
+			sql:        `COPY customers TO STDOUT`,
+			rules:      readOnly,
+			wantDenied: false,
+		},
+		{
+			// A plan executes nothing, so a write rule must stay quiet.
+			name:       "EXPLAIN without ANALYZE writes nothing",
+			sql:        `EXPLAIN DELETE FROM customers`,
+			rules:      readOnly,
+			wantDenied: false,
+		},
+		{
+			// It still reads the relation, and Relations says so, so the
+			// operation it reports has to agree.
+			name:       "EXPLAIN reads the relations it names",
+			sql:        `EXPLAIN DELETE FROM customers`,
+			rules:      noExport,
+			wantDenied: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stmts := inspectOne(t, tc.sql)
+			if len(stmts) == 0 {
+				t.Fatalf("no statements for %q", tc.sql)
+			}
+			var denied bool
+			for _, s := range stmts {
+				if tc.rules.Evaluate(s).Denied {
+					denied = true
+				}
+			}
+			if denied != tc.wantDenied {
+				t.Errorf("denied = %v, want %v: %+v", denied, tc.wantDenied, stmts)
+			}
+		})
+	}
+}
+
+// rulesFor builds a single MatchOperation deny rule.
+func rulesFor(t *testing.T, name string, ops ...hoopinspect.Operation) *policy.Rules {
+	t.Helper()
+	rules, err := policy.NewRules([]policy.Rule{{
+		Name: name, Type: policy.MatchOperation, Operations: ops, Message: name,
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	return rules
+}
+
+// Nothing may leave AnalyzeSQL that a config cannot name. The previous code
+// passed the scanner's verb straight through, so widening the scanner's
+// vocabulary silently widened Operation's and every equality match went stale.
+func TestOperationVocabularyIsClosed(t *testing.T) {
+	known := map[hoopinspect.Operation]bool{}
+	for _, op := range []hoopinspect.Operation{
+		hoopinspect.OpSelect, hoopinspect.OpInsert, hoopinspect.OpUpdate,
+		hoopinspect.OpDelete, hoopinspect.OpCreate, hoopinspect.OpDrop,
+		hoopinspect.OpAlter, hoopinspect.OpTruncate, hoopinspect.OpGrant,
+		hoopinspect.OpRevoke, hoopinspect.OpCall, hoopinspect.OpShow,
+		hoopinspect.OpSet, hoopinspect.OpBegin, hoopinspect.OpCommit,
+		hoopinspect.OpRollback, hoopinspect.OpOther, hoopinspect.OpUnknown,
+	} {
+		known[op] = true
+	}
+
+	for _, sql := range []string{
+		`SELECT 1`, `TABLE customers`, `VALUES (1)`,
+		`INSERT INTO t VALUES (1)`, `UPDATE t SET a = 1`, `DELETE FROM t`,
+		`MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = 1`,
+		`CREATE TABLE t (a int)`, `DROP TABLE t`, `ALTER TABLE t ADD b int`,
+		`TRUNCATE t`, `GRANT SELECT ON t TO alice`, `REVOKE SELECT ON t FROM alice`,
+		`CALL purge()`, `DO $$ BEGIN END $$`, `EXECUTE p`,
+		`COPY t FROM STDIN`, `COPY t TO STDOUT`,
+		`SHOW search_path`, `SET work_mem = '1MB'`, `RESET work_mem`,
+		`BEGIN`, `START TRANSACTION`, `COMMIT`, `END`, `ROLLBACK`, `ABORT`,
+		`EXPLAIN SELECT 1`, `EXPLAIN ANALYZE DELETE FROM t`,
+		`SAVEPOINT a`, `VACUUM`, `ANALYZE t`, `LOCK TABLE t`, `DECLARE c CURSOR FOR SELECT 1`,
+		`WITH x AS (DELETE FROM t RETURNING *) SELECT count(*) FROM x`,
+		``, `not sql at all`,
+	} {
+		a := hoopinspect.AnalyzeSQL(sql, hoopinspect.Postgres)
+		if !known[a.Operation] {
+			t.Errorf("Operation = %q, outside the vocabulary: %s", a.Operation, sql)
+		}
+		for _, e := range a.Effects {
+			if !known[e] {
+				t.Errorf("effect = %q, outside the vocabulary: %s", e, sql)
+			}
+		}
 	}
 }
 

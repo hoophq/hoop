@@ -3,8 +3,11 @@ package lexer
 // Verb is a normalized SQL operation.
 //
 // The vocabulary is this package's rather than the caller's so that lexer
-// stays a leaf with no import back into the module root. The strings match
-// hoopinspect.Operation one for one, and inspect_test pins that they do.
+// stays a leaf with no import back into the module root. It is also WIDER:
+// merge, copy and explain are modelled here because the analysis needs them,
+// and they have no hoopinspect.Operation. The root package folds them onto
+// the operation carrying the same consequence; the rest share their string
+// with the matching Operation, and lexer_test pins that they do.
 type Verb string
 
 const (
