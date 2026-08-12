@@ -25,7 +25,11 @@ export function ConfigStatus() {
   const isAdmin = useUserStore((s) => s.isAdmin)
   // Server-owned visibility, same contract as show_origin_survey.
   const showSetupChecklist = useUserStore((s) => s.user?.show_setup_checklist)
-  const completed = useConfigStatusStore((s) => s.completed)
+  const userId = useUserStore((s) => s.user?.id ?? null)
+  // Scoped to the current user. The logout subscription in the store covers the
+  // usual path; this also catches a token swapped in without a logout first, and
+  // a fetch that resolves after one.
+  const completed = useConfigStatusStore((s) => s.completed && s.forUserId === userId)
 
   if (!isAdmin || !showSetupChecklist || completed) return null
   return <ConfigStatusWidget />

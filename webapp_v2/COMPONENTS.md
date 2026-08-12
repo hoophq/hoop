@@ -742,7 +742,8 @@ Non-obvious notes only:
 - `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only. One
   call to `GET /orgs/onboarding`; never derive the checks client-side. Refreshes
   on navigation, on window focus and on the `hoop:session-executed` DOM event
-  from the CLJS terminal — no timers.
+  from the CLJS terminal — no timers. Resets itself on logout (subscribes to
+  `useAuthStore`), and every read is scoped by `forUserId`.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 

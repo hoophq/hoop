@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { onboardingService } from '@/services/onboarding'
+import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 
 // EVL-98 / DEP-136: backs the sidebar Config Status checklist.
@@ -95,4 +96,23 @@ export const useConfigStatusStore = create((set, get) => ({
       inFlightUserId = null
     }
   },
+
+  reset: () => {
+    inFlight = null
+    inFlightUserId = null
+    set({ ...INITIAL_STATE, checks: { ...INITIAL_CHECKS } })
+  },
 }))
+
+// This is module state, so it outlives a logout: nothing on that path reloads
+// the tab (the header menu just calls logout() and navigates). Without this the
+// next user in the same tab inherits the previous org's `completed`, and since
+// the widget is gated on it, it never mounts to correct itself.
+//
+// Subscribing from this side rather than calling reset() from useAuthStore keeps
+// the dependency pointing the right way, same as useNativeAccessStore.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useConfigStatusStore.getState().reset()
+  }
+})
