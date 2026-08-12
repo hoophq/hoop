@@ -84,7 +84,15 @@ export default function NativeConnectionsDrawer() {
       (role) => role.accessModeConnect === 'enabled' || hasLiveSession(activeByName[role.name])
     )
     const filtered = listable.filter((role) => matchesQuery(role, query))
-    const capped = filtered.slice(0, MAX_RENDERED_ROWS)
+    // Open connections lead, always — a query narrows the set but never reshuffles
+    // this priority. Ordered before the render cap so a live session can never be
+    // truncated away, which would hide the only Disconnect it has. Both halves stay
+    // alphabetical: the store sorts by name and filter preserves order.
+    const ordered = [
+      ...filtered.filter((role) => hasLiveSession(activeByName[role.name])),
+      ...filtered.filter((role) => !hasLiveSession(activeByName[role.name])),
+    ]
+    const capped = ordered.slice(0, MAX_RENDERED_ROWS)
     return {
       visible: capped,
       // `total` is every listable role; `matched` is how many the query hit.
