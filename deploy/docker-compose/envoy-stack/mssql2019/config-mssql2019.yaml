@@ -1,0 +1,57 @@
+# hoop-inspect for the TDS 7.4 lane. One listener, one upstream, no Envoy.
+#
+# Validate without starting anything:
+#   cd hoopinspect/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/mssql2019/config-mssql2019.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-" # stdout, for the container log pipeline
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+
+listeners:
+  - name: mssql2019
+    protocol: mssql
+    # The client dials this directly. On the 2022 lane Envoy owns the client's
+    # TLS and hands over plaintext; here the client's TLS covers its login
+    # packet alone and travels inside the TDS stream, so no terminator can sit
+    # in front. The relay reads the PRELOGIN, forwards the 0x12-wrapped
+    # handshake and the encrypted login untouched, and inspects the plaintext
+    # statements that follow.
+    listen: 0.0.0.0:11433
+    upstream: mssql2019:1433
+    connection: mssql2019
+    # No upstream_tls. `upstream_tls` on a non-postgres lane originates a
+    # plain TLS-on-connect handshake, which is TDS 8.0, and a 2019 server
+    # cannot accept it at all. Encrypting this hop means teaching
+    # proxy/starttls.go the 0x12-wrapped handshake that
+    # libhoop/agent/mssql/net.go already implements.
+    policy:
+      enforce: true
+      rules:
+        # appuser holds db_owner, so the database would run this. The relay
+        # refuses it. A guardrail that only repeats what the database already
+        # enforces proves nothing.
+        - name: no-destructive-tsql
+          type: operation
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on mssql2019
+    mask:
+      enabled: true
+      rules:
+        # Column rules beat detection wherever the protocol names its values.
+        # alcatraz refuses 123-45-6789 as an obvious fixture, so the entity
+        # rule alone would leave the seeded SSNs in the clear.
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}

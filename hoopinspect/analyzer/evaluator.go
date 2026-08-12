@@ -227,12 +227,65 @@ func New(cfg Config) (*Evaluator, error) {
 // cancellation does not reach here, and the timeout is what bounds a stalled
 // provider's hold on the connection.
 func (e *Evaluator) Evaluate(stmt hoopinspect.Statement) policy.Verdict {
-	res, verdict, ok := e.classify(context.Background(), stmt)
-	if !ok {
-		return verdict
+	return e.EvaluateWith(stmt, nil)
+}
+
+// EvaluateWith implements policy.ContextualEvaluator.
+//
+// It reads one thing from the context and writes one. A gate-phase policy
+// that asked for this source replaces the rule's configured trigger, which is
+// what lets an operator move the "is this worth a model call" question out of
+// YAML and into the Rego their InfoSec team already owns.
+//
+// The facts it establishes travel the other way, as a policy.Finding the
+// Chain carries to whatever decides next. That hop is the entire connection
+// between the model and OPA: neither has any idea the other exists.
+func (e *Evaluator) EvaluateWith(stmt hoopinspect.Statement, ec *policy.EvalContext) policy.Verdict {
+	res, status, err := e.classify(context.Background(), stmt, ec)
+	if status == "" {
+		// Not eligible: a response frame, a protocol with no builder.
+		// Reporting would put a finding on rows where no analyzer could
+		// ever have run, which reads as a failure rather than as absence.
+		return policy.Verdict{}
 	}
 
-	action := e.cfg.Actions.actionFor(res.RiskLevel)
+	level, action := RiskLevel(""), Action("")
+	if status == StatusOK || status == StatusCached {
+		level = res.RiskLevel
+		action = e.cfg.Actions.actionFor(level)
+	}
+	e.report(ec, status, level)
+
+	switch status {
+	case StatusRefused:
+		// send=refuse: the statement carries a detected entity and must
+		// not be transmitted. Denying locally costs nothing and is the
+		// only outcome consistent with the setting; allowing would leak
+		// nothing but would also mean the operator's "refuse" did nothing.
+		e.denied.Add(1)
+		msg := e.cfg.Message
+		if msg == "" {
+			msg = "statement contains sensitive data and cannot be risk-analyzed"
+		}
+		v := policy.Deny(e.cfg.Rule, msg)
+		v.Annotations = e.notes(status, "", string(ActionBlock))
+		return v
+
+	case StatusError:
+		// failure() decides whether this denies. Either way the status
+		// travels, so a decide-phase policy can refuse a statement the
+		// model never saw instead of reading a missing level as low.
+		v := e.failure(err)
+		v.Annotations = e.notes(status, "", "")
+		return v
+
+	case StatusSkipped, StatusBudget:
+		// Neither is a provider failure: the local rules and OPA still
+		// ran and allowed this statement. Falling through to allow is
+		// the same outcome as a lane with no analyzer, which is what a
+		// spent budget and an unmatched trigger both mean.
+		return policy.Verdict{Annotations: e.notes(status, "", "")}
+	}
 
 	// The risk level rides on every classified statement, allowed or not.
 	// store.SessionRecord.RiskLevel folds these max-wins into a per-session
@@ -242,13 +295,12 @@ func (e *Evaluator) Evaluate(stmt hoopinspect.Statement) policy.Verdict {
 	// Title and explanation stay OUT of the trail: they are model prose,
 	// audit redaction does not reach Metadata, and a model that quotes the
 	// statement back would write the value into the record verbatim.
-	notes := map[string]string{
-		MetadataRiskLevel: string(res.RiskLevel),
-		MetadataAction:    string(action),
-	}
+	notes := e.notes(status, string(level), string(action))
 
 	if action != ActionBlock {
-		// Allow and warn both forward. They differ only in the record.
+		// Allow, warn and defer all forward. They differ in the record,
+		// and defer differs in who decides next: the level is in the
+		// finding, so a decide-phase policy sees it and answers.
 		return policy.Verdict{Annotations: notes}
 	}
 
@@ -265,53 +317,135 @@ func (e *Evaluator) Evaluate(stmt hoopinspect.Statement) policy.Verdict {
 	return v
 }
 
+// report writes this rule's outcome onto the shared context.
+//
+// The fold is the analyzer's own, not the Chain's, because only the analyzer
+// knows how two of its verdicts combine: the most degraded status wins so a
+// second rule that succeeded cannot hide the first one's outage, and among
+// equally answered ones the HIGHEST risk wins so a rule rating a statement
+// low cannot erase one that rated it high.
+//
+// A degraded fold carries NO level, whichever order the rules ran in. The
+// alternative was tempting (one rule errored, another did say "high", so
+// report both), but it makes the result depend on evaluation order and it
+// breaks the invariant a policy relies on: Answered() false means there is
+// nothing here to read. The level is not lost, because the risk_level
+// ANNOTATION is a separate channel that keeps the highest seen; the audit
+// record still shows the high while the policy is told that this source
+// could not finish.
+func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLevel) {
+	if ec == nil {
+		return
+	}
+	f := policy.Finding{
+		Source: Source,
+		Rule:   e.cfg.Rule,
+		Status: findingStatus(status),
+		Reason: statusReason(status),
+	}
+	if level != "" {
+		f.Values = map[string]any{"risk_level": string(level)}
+	}
+
+	if prev, ok := ec.Finding(Source); ok {
+		switch {
+		case policy.FindingRank(prev.Status) > policy.FindingRank(f.Status):
+			f = prev
+		case policy.FindingRank(prev.Status) == policy.FindingRank(f.Status):
+			if prevLevel(prev).rank() >= level.rank() {
+				f = prev
+			}
+		}
+		if !f.Answered() {
+			f.Values = nil
+		}
+	}
+	if ec.Findings == nil {
+		ec.Findings = make(map[string]policy.Finding, 1)
+	}
+	ec.Findings[Source] = f
+}
+
+func prevLevel(f policy.Finding) RiskLevel {
+	s, _ := f.Values["risk_level"].(string)
+	return RiskLevel(s)
+}
+
+// notes builds the annotation set for one evaluation.
+//
+// The rule name is always present so a lane with two ai_analysis rules can be
+// read; level and action are present only where they mean something, because
+// a risk_action beside no level describes a mapping nothing performed.
+func (e *Evaluator) notes(status, level, action string) map[string]string {
+	notes := map[string]string{
+		MetadataAIStatus: status,
+		MetadataAIRule:   e.cfg.Rule,
+	}
+	if level != "" {
+		notes[MetadataRiskLevel] = level
+	}
+	if action != "" {
+		notes[MetadataAction] = action
+	}
+	return notes
+}
+
+// wanted reports whether this statement should be classified.
+//
+// A gate-phase policy that named this source overrides the configured trigger
+// in BOTH directions. Widening only would make the gate a second trigger
+// ORed with the first, and an operator who moved the decision into Rego would
+// find their YAML still forcing calls they told Rego to skip.
+func (e *Evaluator) wanted(stmt hoopinspect.Statement, ec *policy.EvalContext) bool {
+	if want, stated := ec.WantsRun(Source); stated {
+		return want
+	}
+	return e.cfg.Trigger.matches(stmt)
+}
+
 // classify runs the trigger, cache, budget and provider for one statement.
 //
-// It returns ok=false with a ready-made verdict when the statement should not
-// be classified at all (no trigger match, nothing to send) or when
-// classification failed and the fail mode decided the outcome.
-func (e *Evaluator) classify(ctx context.Context, stmt hoopinspect.Statement) (Result, policy.Verdict, bool) {
+// It returns what happened as one of the policy.AIStatus values. Only ok and
+// cached come with a usable Result; only error comes with a non-nil error. An
+// empty status means the analyzer was never eligible to look at this
+// statement, which is different from having looked and declined.
+func (e *Evaluator) classify(
+	ctx context.Context,
+	stmt hoopinspect.Statement,
+	ec *policy.EvalContext,
+) (Result, string, error) {
 	// Requests only. A response verdict cannot prevent anything: for a
 	// write the damage is already done, and read-side exposure is masking's
 	// job, which is cheaper and already runs.
 	if stmt.Direction != hoopinspect.FromClient {
-		return Result{}, policy.Verdict{}, false
+		return Result{}, "", nil
 	}
-	if !e.cfg.Trigger.matches(stmt) {
-		return Result{}, policy.Verdict{}, false
-	}
-
 	builder, ok := BuilderFor(stmt.Protocol)
 	if !ok {
-		return Result{}, policy.Verdict{}, false
+		return Result{}, "", nil
+	}
+
+	// The trigger runs before the builder, because building content
+	// normalizes and truncates the whole statement and the common case on a
+	// database lane is a trigger that does not match.
+	if !e.wanted(stmt, ec) {
+		return Result{}, StatusSkipped, nil
 	}
 	content, ok := builder.Build(stmt, e.cfg.MaxInputBytes)
 	if !ok {
-		return Result{}, policy.Verdict{}, false
+		return Result{}, StatusSkipped, nil
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
 	if cached, hit := e.cache.get(cacheKey); hit {
-		return cached, policy.Verdict{}, true
+		return cached, StatusCached, nil
 	}
 
 	text := content.Text
 	if e.cfg.Redact != nil {
 		text = e.cfg.Redact(text)
 		if text == RefuseSentinel {
-			// send=refuse: the statement carries a detected entity and
-			// must not be transmitted. Denying locally costs nothing
-			// and is the only outcome consistent with the setting —
-			// allowing would leak nothing but would also mean the
-			// operator's "refuse" did nothing.
-			e.denied.Add(1)
-			msg := e.cfg.Message
-			if msg == "" {
-				msg = "statement contains sensitive data and cannot be risk-analyzed"
-			}
-			v := policy.Deny(e.cfg.Rule, msg)
-			v.Annotations = map[string]string{MetadataAction: string(ActionBlock)}
-			return Result{}, v, false
+			return Result{}, StatusRefused, nil
 		}
 	}
 	// Reserve a slot atomically.
@@ -325,8 +459,8 @@ func (e *Evaluator) classify(ctx context.Context, stmt hoopinspect.Statement) (R
 	//
 	// Add returns the post-increment value, so exactly one goroutine can
 	// observe each slot. An over-budget reservation is handed back, keeping
-	// Stats.Calls a count of provider calls actually made rather than of
-	// attempts, which is the number that tracks the bill.
+	// Stats.Calls a count of provider calls made rather than of attempts,
+	// which is the number that tracks the bill.
 	if n := e.calls.Add(1); e.cfg.MaxCalls > 0 && n > int64(e.cfg.MaxCalls) {
 		e.calls.Add(-1)
 		e.budgetLogged.Do(func() {
@@ -334,11 +468,7 @@ func (e *Evaluator) classify(ctx context.Context, stmt hoopinspect.Statement) (R
 				e.onBudget()
 			}
 		})
-		// Budget exhaustion is not a provider failure: the local rules
-		// and OPA still ran and allowed this statement. Falling through
-		// to allow is the same outcome as a lane with no analyzer, which
-		// is what a spent budget means.
-		return Result{}, policy.Verdict{}, false
+		return Result{}, StatusBudget, nil
 	}
 
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
@@ -347,16 +477,16 @@ func (e *Evaluator) classify(ctx context.Context, stmt hoopinspect.Statement) (R
 	res, err := e.cfg.Provider.Classify(callCtx, e.prompt, text)
 	if err != nil {
 		e.errs.Add(1)
-		return Result{}, e.failure(err), false
+		return Result{}, StatusError, err
 	}
 	if res == nil || !res.RiskLevel.Valid() {
 		e.errs.Add(1)
-		return Result{}, e.failure(fmt.Errorf(
-			"provider returned no usable risk level")), false
+		return Result{}, StatusError, fmt.Errorf(
+			"provider returned no usable risk level")
 	}
 
 	e.cache.put(cacheKey, *res)
-	return *res, policy.Verdict{}, true
+	return *res, StatusOK, nil
 }
 
 // failure renders a classification error according to the fail mode.

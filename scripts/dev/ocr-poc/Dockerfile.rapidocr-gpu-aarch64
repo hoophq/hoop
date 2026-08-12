@@ -1,0 +1,99 @@
+# RapidOCR OCR PoC — GPU flavor for aarch64 + CUDA 13 + Blackwell (sm_121).
+#
+# This is the DGX Spark / GB10 (Grace-Blackwell) counterpart of
+# Dockerfile.rapidocr-gpu. It exists as a SEPARATE file because that image is
+# fundamentally incompatible with this platform, not merely a base-image swap:
+#
+#   * No aarch64 + CUDA 13 onnxruntime-gpu wheel is published on PyPI (x86_64
+#     only, as of 2026). onnxruntime must be BUILT FROM SOURCE for this arch.
+#   * The ORT 1.20 line (what the x86 images pin) does not compile against
+#     CUDA 13 at all — CCCL removed thrust::unary_function. GB10 needs
+#     >= 1.24.4, so this image cannot simply reuse that pin.
+#   * GB10 is compute capability 12.1; the wheel must be compiled with
+#     CMAKE_CUDA_ARCHITECTURES=121 (a stock sm_80/86/90 wheel lacks the kernel
+#     images and silently falls back to CPU).
+#
+# The wheel is produced by build/ort-build.sh (run once on the box, ~15 min on
+# the 20-core Grace CPU; GPU stays free). Build context must contain it:
+#
+#   scripts/dev/ocr-poc/
+#     onnxruntime_gpu-1.24.4-cp312-cp312-linux_aarch64.whl  <- copied in from build/
+#
+# Build & run on the DGX (nvidia container runtime is the default there):
+#   docker build -f Dockerfile.rapidocr-gpu-aarch64 -t ocr-poc-rapid-gpu-arm .
+#   docker run -d --name ocr-poc-rapid-gpu-arm --gpus all -p 8870:8868 ocr-poc-rapid-gpu-arm
+#   curl http://localhost:8870/healthz  # -> {"status":"ok","device":"onnxruntime-cuda"}
+#
+# The CUDA 13 runtime + cuDNN 9 come from the -cudnn-runtime base image, so
+# (unlike the x86 image) there is no explicit nvidia-*-cu12 wheel pin: the ORT
+# wheel links the system CUDA 13 libraries the base provides. The device is
+# still detected at runtime and the server REFUSES TO START on CPU unless
+# OCR_ALLOW_CPU_FALLBACK=1 — a GPU image silently on CPU would miss targets.
+FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
+
+# libgl1/libxcb1/libsm6/libxext6: rapidocr depends on regular opencv-python
+# (not headless), whose native module links these even for imdecode-only use.
+# python3-venv: the fp16 model conversion below runs in a throwaway venv so
+# its numpy-1.x pin (onnxconverter-common needs it) never touches the runtime
+# numpy 2.x that rapidocr uses.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+    rm -rf /var/lib/apt/lists/*
+
+# The source-built onnxruntime-gpu wheel (CUDA 13, sm_121). rapidocr 3.8.4 does
+# not pin onnxruntime, so it uses whatever is importable — this wheel supplies
+# the CUDAExecutionProvider that device detection requires.
+COPY onnxruntime_gpu-1.24.4-cp312-cp312-linux_aarch64.whl /tmp/
+RUN pip3 install --no-cache-dir --break-system-packages \
+        /tmp/onnxruntime_gpu-1.24.4-cp312-cp312-linux_aarch64.whl \
+        "rapidocr==3.8.4" \
+        "numpy<3.0.0" \
+        "fastapi==0.138.0" \
+        "uvicorn==0.49.0" && \
+    rm -f /tmp/onnxruntime_gpu-1.24.4-cp312-cp312-linux_aarch64.whl
+
+# Produce the fp16 recognition models AT BUILD TIME (OCR_REC_PRECISION=fp16).
+# GB10 (Blackwell) has ~2x fp16 throughput over fp32, and the server's fp16
+# runtime runs recognition on an fp16-converted model through fixed-shape
+# bucket sessions. Detection deliberately stays fp32 (fp16 det shifts box
+# geometry — the product's redaction rectangles). This mirrors the production
+# Dockerfile.agent-ocr-gpu conversion exactly; convert_float_to_float16 is a
+# pure-CPU ONNX graph transform, so it is arch-independent. keep_io_types=True
+# keeps fp32 inputs/outputs so the fp16 models are drop-in for the same
+# pre/postprocessing paths. Both ch and en are produced so OCR_REC_LANG can be
+# switched without a rebuild.
+RUN python3 -c "\
+from rapidocr import RapidOCR; \
+from rapidocr.utils.typings import LangRec; \
+RapidOCR(params={'Rec.lang_type': LangRec.EN})" && \
+    python3 -m venv /tmp/convert-venv && \
+    /tmp/convert-venv/bin/pip install --no-cache-dir \
+        "onnx==1.17.0" "onnxconverter-common==1.14.0" "numpy==1.26.4" && \
+    mkdir -p /opt/ocr/models && \
+    MODELS_DIR=$(python3 -c "\
+import rapidocr, pathlib; \
+print(pathlib.Path(rapidocr.__file__).parent / 'models')") && \
+    test -s "$MODELS_DIR/ch_PP-OCRv4_rec_mobile.onnx" && \
+    test -s "$MODELS_DIR/en_PP-OCRv4_rec_mobile.onnx" && \
+    /tmp/convert-venv/bin/python -c "\
+import onnx, sys; \
+from onnxconverter_common import float16; \
+models_dir = sys.argv[1]; \
+[onnx.save( \
+    float16.convert_float_to_float16(onnx.load(f'{models_dir}/{src}'), keep_io_types=True), \
+    f'/opt/ocr/models/{dst}') \
+ for src, dst in ( \
+    ('ch_PP-OCRv4_rec_mobile.onnx', 'ch_rec_fp16.onnx'), \
+    ('en_PP-OCRv4_rec_mobile.onnx', 'en_rec_fp16.onnx'))]" "$MODELS_DIR" && \
+    rm -rf /tmp/convert-venv && \
+    test -s /opt/ocr/models/ch_rec_fp16.onnx && test -s /opt/ocr/models/en_rec_fp16.onnx
+
+COPY device_policy.py bucket_rec.py server_rapidocr.py /app/
+# Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes, each
+# with its own model instance on the GPU. GB10 has 128 GB unified memory, so it
+# is not VRAM-constrained the way the T4 was; keep 4 to match the benchmarked
+# baseline and tune with `docker run -e WEB_CONCURRENCY=N`.
+ENV WEB_CONCURRENCY=4
+EXPOSE 8868
+CMD ["python3", "-m", "uvicorn", "server_rapidocr:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8868"]

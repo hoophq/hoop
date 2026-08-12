@@ -3,6 +3,7 @@ package apigdatamasking
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -55,12 +56,67 @@ type RulePayload struct {
 	ConnectionIDs        []string
 }
 
+func rulePayloadFromRequest(req *openapi.DataMaskingRuleRequest) RulePayload {
+	supportedEntityTypes := make([]models.SupportedEntityTypesEntry, len(req.SupportedEntityTypes))
+	for i, entityType := range req.SupportedEntityTypes {
+		supportedEntityTypes[i] = models.SupportedEntityTypesEntry{
+			Name:        entityType.Name,
+			EntityTypes: entityType.EntityTypes,
+		}
+	}
+	customEntityTypes := make([]models.CustomEntityTypesEntry, len(req.CustomEntityTypesEntrys))
+	for i, entityType := range req.CustomEntityTypesEntrys {
+		customEntityTypes[i] = models.CustomEntityTypesEntry{
+			Name:     entityType.Name,
+			Regex:    entityType.Regex,
+			DenyList: entityType.DenyList,
+			Score:    entityType.Score,
+		}
+	}
+	return RulePayload{
+		SupportedEntityTypes: supportedEntityTypes,
+		CustomEntityTypes:    customEntityTypes,
+		ScoreThreshold:       req.ScoreThreshold,
+		ConnectionIDs:        req.ConnectionIDs,
+	}
+}
+
+func validateSupportedEntityTypes(name string, entityTypes []string) error {
+	if len(entityTypes) == 0 || name == "" {
+		return fmt.Errorf("missing entity types or name in supported entity types")
+	}
+	if name != strings.ToUpper(name) {
+		return fmt.Errorf("entity type name must be uppercase: %s", name)
+	}
+	for _, entityType := range entityTypes {
+		if !isCanonicalEntityType(entityType) {
+			return fmt.Errorf("entity type must contain only uppercase letters, digits, or underscores: %q", entityType)
+		}
+	}
+	return nil
+}
+
+func isCanonicalEntityType(entityType string) bool {
+	if entityType == "" {
+		return false
+	}
+	for i := 0; i < len(entityType); i++ {
+		c := entityType[i]
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateRulePayload runs the field-level checks the HTTP API enforces on data
 // masking rule create/update requests: score range, connection ID format, entity-type
 // name shape, and required regex/deny_list/name on custom entries. Independent of
 // license type — call ValidateOSSLimits separately for OSS gating.
 func ValidateRulePayload(p RulePayload) error {
-	if p.ScoreThreshold != nil && (*p.ScoreThreshold < 0 || *p.ScoreThreshold > 1) {
+	if p.ScoreThreshold != nil &&
+		(math.IsNaN(*p.ScoreThreshold) || math.IsInf(*p.ScoreThreshold, 0) ||
+			*p.ScoreThreshold < 0 || *p.ScoreThreshold > 1) {
 		return fmt.Errorf("score threshold must be between 0 and 1")
 	}
 	for _, connID := range p.ConnectionIDs {
@@ -69,11 +125,8 @@ func ValidateRulePayload(p RulePayload) error {
 		}
 	}
 	for _, e := range p.SupportedEntityTypes {
-		if len(e.EntityTypes) == 0 || e.Name == "" {
-			return fmt.Errorf("missing entity types or name in supported entity types")
-		}
-		if e.Name != strings.ToUpper(e.Name) {
-			return fmt.Errorf("entity type name must be uppercase: %s", e.Name)
+		if err := validateSupportedEntityTypes(e.Name, e.EntityTypes); err != nil {
+			return err
 		}
 	}
 	for _, e := range p.CustomEntityTypes {
@@ -159,7 +212,7 @@ func Post(c *gin.Context) {
 		return
 	}
 	ctx := storagev2.ParseContext(c)
-	req := parseRequestPayload(c)
+	req, payload := parseRequestPayload(c)
 	if req == nil {
 		return
 	}
@@ -183,22 +236,8 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	supportedEntityTypes := []models.SupportedEntityTypesEntry{}
-	for _, entityType := range req.SupportedEntityTypes {
-		supportedEntityTypes = append(supportedEntityTypes, models.SupportedEntityTypesEntry{
-			Name:        entityType.Name,
-			EntityTypes: entityType.EntityTypes,
-		})
-	}
-	customEntityTypes := []models.CustomEntityTypesEntry{}
-	for _, entityType := range req.CustomEntityTypesEntrys {
-		customEntityTypes = append(customEntityTypes, models.CustomEntityTypesEntry{
-			Name:     entityType.Name,
-			Regex:    entityType.Regex,
-			DenyList: entityType.DenyList,
-			Score:    entityType.Score,
-		})
-	}
+	supportedEntityTypes := payload.SupportedEntityTypes
+	customEntityTypes := payload.CustomEntityTypes
 
 	rule, err := models.CreateDataMaskingRule(&models.DataMaskingRule{
 		ID:                   uuid.NewString(),
@@ -259,7 +298,7 @@ func Put(c *gin.Context) {
 		return
 	}
 	ctx := storagev2.ParseContext(c)
-	req := parseRequestPayload(c)
+	req, payload := parseRequestPayload(c)
 	if req == nil {
 		return
 	}
@@ -292,22 +331,8 @@ func Put(c *gin.Context) {
 		}
 	}
 
-	supportedEntityTypes := []models.SupportedEntityTypesEntry{}
-	for _, entityType := range req.SupportedEntityTypes {
-		supportedEntityTypes = append(supportedEntityTypes, models.SupportedEntityTypesEntry{
-			Name:        entityType.Name,
-			EntityTypes: entityType.EntityTypes,
-		})
-	}
-	customEntityTypes := []models.CustomEntityTypesEntry{}
-	for _, entityType := range req.CustomEntityTypesEntrys {
-		customEntityTypes = append(customEntityTypes, models.CustomEntityTypesEntry{
-			Name:     entityType.Name,
-			Regex:    entityType.Regex,
-			DenyList: entityType.DenyList,
-			Score:    entityType.Score,
-		})
-	}
+	supportedEntityTypes := payload.SupportedEntityTypes
+	customEntityTypes := payload.CustomEntityTypes
 
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionUpdate).
 		Resource(ruleID, req.Name).
@@ -482,45 +507,20 @@ func upsertDatamaskingRuleAttributes(ctx *storagev2.Context, ruleName string, at
 	return models.UpsertDatamaskingRuleAttributes(models.DB, orgID, ruleName, attributeNames)
 }
 
-// parseRequestPayload parses and validates the openapi-shaped HTTP request body.
-// Keep validation rules in sync with ValidateRulePayload, which mirrors these checks
-// for callers that work with model types (e.g. the MCP server).
-func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
+// parseRequestPayload parses the openapi-shaped HTTP body and validates it
+// through the same model-shaped contract used by the MCP server. The returned
+// RulePayload is also the persistence shape, avoiding a second conversion.
+func parseRequestPayload(c *gin.Context) (*openapi.DataMaskingRuleRequest, RulePayload) {
 	req := openapi.DataMaskingRuleRequest{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Errorf("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return nil
+		return nil, RulePayload{}
 	}
-	if req.ScoreThreshold != nil && (*req.ScoreThreshold < 0 || *req.ScoreThreshold > 1) {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "score threshold must be between 0 and 1"})
-		return nil
+	payload := rulePayloadFromRequest(&req)
+	if err := ValidateRulePayload(payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return nil, RulePayload{}
 	}
-	for _, connID := range req.ConnectionIDs {
-		if _, err := uuid.Parse(connID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "invalid connection ID " + connID})
-			return nil
-		}
-	}
-	for _, e := range req.SupportedEntityTypes {
-		if len(e.EntityTypes) == 0 || e.Name == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "missing entity types or name in supported entity types"})
-			return nil
-		}
-		if e.Name != strings.ToUpper(e.Name) {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "entity type name must be uppercase: " + e.Name})
-			return nil
-		}
-	}
-	for _, e := range req.CustomEntityTypesEntrys {
-		if e.Name == "" || len(e.DenyList) == 0 && e.Regex == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "missing name, deny_list or regex in custom entity types"})
-			return nil
-		}
-		if e.Name != strings.ToUpper(e.Name) {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "entity type name must be uppercase: " + e.Name})
-			return nil
-		}
-	}
-	return &req
+	return &req, payload
 }

@@ -27,6 +27,7 @@ import (
 	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
 	_ "github.com/hoophq/hoop/gateway/federation/gcpoauth"
 	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/jobs/credentialsweeper"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
@@ -223,6 +224,12 @@ func Run() {
 			log.Infof("reconciled %d stale review(s) to executed status", reconciled)
 		}
 	}()
+
+	// Finalise the audit session of credentials whose access window elapsed.
+	// This used to run inline as the first statement of GET /api/sessions and
+	// the credential endpoints, where a read scoped to one org closed sessions
+	// for every tenant on the deployment.
+	go credentialsweeper.Run(context.Background(), models.DB)
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()
