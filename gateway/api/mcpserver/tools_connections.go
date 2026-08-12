@@ -18,9 +18,13 @@ type connectionsListInput struct {
 	AgentID     string `json:"agent_id,omitempty" jsonschema:"filter by agent UUID"`
 	Type        string `json:"type,omitempty" jsonschema:"filter by connection type (database, application, custom)"`
 	SubType     string `json:"subtype,omitempty" jsonschema:"filter by subtype (postgres, mysql, mongodb, mssql, oracledb, tcp, ssh, httpproxy)"`
-	TagSelector string `json:"tag_selector,omitempty" jsonschema:"filter by key/value tags, comma-separated constraints ANDed, supports = and != (e.g. environment=prod-eu,team!=infra)"`
-	Name        string `json:"name,omitempty" jsonschema:"filter by name pattern"`
-	Search      string `json:"search,omitempty" jsonschema:"search by name, type, subtype, resource name or status"`
+	TagSelector string `json:"tag_selector,omitempty" jsonschema:"filter by key/value tags (the tags returned by this tool) comma-separated constraints ANDed, supports = and != (e.g. environment=prod-eu,team!=infra)"`
+	// DEPRECATED: filters the legacy _tags string-array column, which only the
+	// deprecated REST 'tags' field writes. Kept for backwards compatibility,
+	// use TagSelector to filter the key/value tags this tool returns.
+	Tags   []string `json:"tags,omitempty" jsonschema:"DEPRECATED filter by the legacy string-array tags, it does not match the key/value tags returned by this tool, use tag_selector instead"`
+	Name   string   `json:"name,omitempty" jsonschema:"filter by name pattern"`
+	Search string   `json:"search,omitempty" jsonschema:"search by name, type, subtype, resource name or status"`
 }
 
 type connectionsGetInput struct {
@@ -117,6 +121,7 @@ func connectionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args co
 		Type:        args.Type,
 		SubType:     args.SubType,
 		TagSelector: args.TagSelector,
+		Tags:        args.Tags,
 		Name:        args.Name,
 		Search:      args.Search,
 	}
