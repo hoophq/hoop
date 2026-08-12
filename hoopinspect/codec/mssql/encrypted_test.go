@@ -16,12 +16,16 @@ const (
 	encryptNotSup = 0x02
 )
 
-// preloginPacket builds a PRELOGIN carrying VERSION and ENCRYPTION.
+// preloginBody builds a PRELOGIN payload carrying VERSION and ENCRYPTION.
 //
-// Payload layout: option entries of {token, uint16 BE offset, uint16 BE
-// length} terminated by 0xFF, then the option data. Offsets are relative to
-// the payload start.
-func preloginPacket(encryption byte) []byte {
+// Layout: option entries of {token, uint16 BE offset, uint16 BE length}
+// terminated by 0xFF, then the option data. Offsets are relative to the
+// payload start.
+//
+// The body is separate from the framing because the two directions frame it
+// differently: a client sends PRELOGIN as 0x12, and a server answers with
+// 0x04.
+func preloginBody(encryption byte) []byte {
 	const tableLen = 5 + 5 + 1
 	var body []byte
 
@@ -36,7 +40,11 @@ func preloginPacket(encryption byte) []byte {
 	body = append(body, 0xFF)
 	body = append(body, 15, 0, 0, 0, 0, 0)
 	body = append(body, encryption)
-	return tdsPacket(0x12, true, body)
+	return body
+}
+
+func preloginPacket(encryption byte) []byte {
+	return tdsPacket(0x12, true, preloginBody(encryption))
 }
 
 // tlsRecord builds a TLS record: content type, version, uint16 BE length.
@@ -237,22 +245,48 @@ func TestUnterminatedTLSFromTheFirstByteIsRefused(t *testing.T) {
 }
 
 // The routing guard is the control that stops a driver being redirected off
-// the relay. An encrypted login must not cost it: the server direction walks
-// the same records and resumes scanning at the plaintext login reply.
-func TestRoutingRedirectStillRefusedAfterAnEncryptedRegion(t *testing.T) {
+// the relay. An encrypted client login must not cost it, and it does not: a
+// server under ENCRYPT_OFF keeps its handshake inside 0x12 packets and sends
+// the login response in the clear. Verified on the wire against SQL Server
+// 2019, whose reply stream is PRELOGIN, 0x12-wrapped handshake, plaintext.
+func TestRoutingRedirectStillRefusedAfterAnEncryptedLogin(t *testing.T) {
 	insp := newInspector(t)
 	stream := concat(
-		tdsPacket(0x04, true, tlsRecord(0x16, 256)), // server handshake, TDS-wrapped
-		tlsRecord(0x17, 512),                        // encrypted login reply
+		tdsPacket(0x04, true, preloginBody(encryptOff)), // PRELOGIN reply
+		tdsPacket(0x12, true, tlsRecord(0x16, 256)),     // handshake, TDS-wrapped
 		loginResponse(routingEnvChange("secondary.corp.example", 1433)),
 	)
 
 	_, err := insp.Inspect(hoopinspect.FromServer, stream)
 	if !errors.Is(err, hoopinspect.ErrStreamUnsafe) {
-		t.Fatalf("routing redirect after an encrypted region returned %v, want ErrStreamUnsafe", err)
+		t.Fatalf("routing redirect after an encrypted login returned %v, want ErrStreamUnsafe", err)
 	}
 	if !strings.Contains(err.Error(), "secondary.corp.example") {
 		t.Errorf("error does not name the redirect target: %v", err)
+	}
+}
+
+// A raw TLS record from the upstream means ENCRYPT_ON: the whole session is
+// opaque, not just the login.
+//
+// Refusing on the server's reply is what makes this case detectable at all.
+// A client waiting for a login response sends nothing more, so the
+// client-side byte bound never fires and the connection stalls until the
+// driver's login timeout, which tells the operator nothing.
+func TestServerCiphertextIsRefusedImmediately(t *testing.T) {
+	insp := newInspector(t)
+	stream := concat(
+		tdsPacket(0x04, true, preloginBody(encryptOn)),
+		tdsPacket(0x12, true, tlsRecord(0x16, 256)),
+		tlsRecord(0x17, 512), // the encrypted login response
+	)
+
+	_, err := insp.Inspect(hoopinspect.FromServer, stream)
+	if !errors.Is(err, hoopinspect.ErrStreamUnsafe) {
+		t.Fatalf("server ciphertext returned %v, want ErrStreamUnsafe", err)
+	}
+	if !strings.Contains(err.Error(), "whole session") {
+		t.Errorf("error does not name the cause: %v", err)
 	}
 }
 

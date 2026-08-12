@@ -136,10 +136,11 @@ const (
 	// push to a few tens of KiB. 32 KiB clears that with room and is
 	// negligible against a session.
 	//
-	// The bound is a detector, not a shield. Under ENCRYPT_ON every byte is
-	// ciphertext whatever this codec does, so the bytes inside the bound
-	// were never inspectable; what the bound buys is finding out promptly
-	// and saying so, instead of a connection that stays dark forever.
+	// serverCiphertext catches ENCRYPT_ON first, on the upstream's opening
+	// reply, and catches it exactly. This bound covers the case that one
+	// misses: a client streaming ciphertext while the server stays silent.
+	// Under ENCRYPT_ON nobody could inspect those bytes whatever this codec
+	// did, so the bound buys prompt detection. It protects nothing.
 	maxEncryptedLogin = 32 << 10
 )
 
@@ -222,6 +223,39 @@ func (c *Codec) consumeEncrypted(b []byte) (n int, inside bool, err error) {
 				hoopinspect.ErrStreamUnsafe, c.tlsBytes)
 		}
 	}
+}
+
+// serverCiphertext refuses a raw TLS record arriving from the upstream.
+//
+// A server under ENCRYPT_OFF emits none, which is what makes this an exact
+// signal rather than a threshold. Its handshake stays inside 0x12 packets
+// (MS-TDS 3.3.5.2) and it sends the login response in the clear, verified on
+// the wire against SQL Server 2019: PRELOGIN reply, 0x12-wrapped handshake,
+// then plaintext. So a raw record here means the negotiation produced
+// ENCRYPT_ON or ENCRYPT_REQ and every byte of the session is opaque.
+//
+// Catching it on the server's first post-handshake reply matters more than it
+// looks. The client-side byte bound cannot fire on this case at all: a client
+// waiting for a login response sends nothing further, so the connection sits
+// at a few KiB and stalls until the driver's own login timeout, which reports
+// "Login timeout expired" and leaves the operator no reason. Refusing here
+// turns that into a denial with a cause, in milliseconds.
+//
+// This cannot fire on a TDS 8.0 lane. Whatever terminates the client's TLS
+// hands this codec plaintext TDS in both directions, so no raw record reaches
+// it. One arriving means nothing terminated that TLS.
+func (c *Codec) serverCiphertext(b []byte) error {
+	if len(b) < headerLen || !isTLSRecord(b) {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: the upstream answered with TLS records instead of TDS packets, so "+
+			"PRELOGIN negotiated ENCRYPT_ON or ENCRYPT_REQ and the whole session "+
+			"is encrypted, not just the login (the ENCRYPT_OFF case this relay "+
+			"reads through); no statement on it can be classified, masked or "+
+			"audited. Terminate the client's TLS in front of the relay, or move "+
+			"the lane to TDS 8.0",
+		hoopinspect.ErrStreamUnsafe)
 }
 
 // encryptedRegion is the hook both directions call at a packet boundary.

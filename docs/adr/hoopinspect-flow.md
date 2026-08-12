@@ -1467,16 +1467,32 @@ that function, a Rego policy keyed on `input.context.principal` reads
   and go-mssqldb negotiates it by default. `codec/mssql/encrypted.go` walks
   that region by TLS record framing and inspects the plaintext after it.
   Statements from such a session carry `mssql.login_encrypted`.
-- **The relay now refuses a fully encrypted MSSQL session.** The pass-through
-  above stays bounded and opens only during login. For ciphertext before the
-  login, after plaintext resumed, or past the bound, the codec returns
-  `ErrStreamUnsafe` and the gate denies. Call this the second behavior change
-  an existing deployment can notice: an `ENCRYPT_ON` lane reaching the relay
-  with nothing terminating in front used to connect and run uninspected, and
-  now fails with a message naming the missing terminator. We chose that on
-  purpose. Forwarding a session whose every statement escapes classification,
-  masking and audit hides the gap from the operator. Breaking the lane tells
-  them.
+- **The relay now refuses a fully encrypted MSSQL session.** A raw TLS record
+  from the upstream settles it: a server under `ENCRYPT_OFF` sends none, so
+  one arriving means PRELOGIN negotiated `ENCRYPT_ON` and every byte is
+  opaque. The codec returns `ErrStreamUnsafe` on the server's first reply and
+  the gate denies, alongside the same refusal for ciphertext before the login,
+  after plaintext resumed, or past the client-side bound.
+
+  Refusing on the server's reply rather than on a byte count is what makes the
+  case detectable at all. A client waiting for a login response sends nothing
+  further, so the bound never fires; an earlier revision stalled for eight
+  seconds and logged nothing, and the operator saw "Login timeout expired"
+  with no cause. Now the denial lands in milliseconds under `rule:
+  stream-unsafe`, verified against SQL Server 2019 in
+  `deploy/docker-compose/envoy-stack/mssql2019`.
+
+  Call this the second behavior change an existing deployment can notice: an
+  `ENCRYPT_ON` lane reaching the relay with nothing terminating in front used
+  to connect and run uninspected. We chose that on purpose. Forwarding a
+  session whose every statement escapes classification, masking and audit
+  hides the gap from the operator. Breaking the lane tells them.
+- **Statement metadata reaches the audit trail.** `audit.StatementEvent` used
+  to drop `Statement.Metadata` on the floor, so `sql.incomplete`,
+  `mssql.message` and `mssql.login_encrypted` were recorded nowhere. It now
+  merges session and statement metadata onto the event, statement keys
+  winning. An operator reading the trail can finally tell which construct
+  defeated the scanner and which sessions had an unreadable login.
 - **Statements are not transactions.** Each one gets its own verdict, and no
   cross-statement session state exists.
 - **A slow classification can outlive the upstream's idle budget.**

@@ -302,16 +302,12 @@ func (c *Codec) decodeServer(data []byte) ([]hoopinspect.Statement, int, error) 
 
 	pos := 0
 	for {
-		// The server's half of the handshake, and the login reply when it
-		// is encrypted. Same framing walk as the client direction; the
-		// early return above already scopes this to the login phase.
-		if n, inside, err := c.encryptedRegion(data[pos:], true); err != nil {
-			return nil, pos + n, err
-		} else if inside {
-			return nil, pos + n, nil
-		} else if n > 0 {
-			pos += n
-			continue
+		// A raw TLS record from the upstream means the whole session is
+		// encrypted, not just the login. Refuse it here, on the server's
+		// first post-handshake reply, rather than waiting for a client-side
+		// byte bound that a stalled login never reaches. See encrypted.go.
+		if err := c.serverCiphertext(data[pos:]); err != nil {
+			return nil, pos, err
 		}
 
 		if len(data)-pos < headerLen {
