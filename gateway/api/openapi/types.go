@@ -147,6 +147,10 @@ type UserInfo struct {
 	// True only while the user has not answered it and is within 7 days of their
 	// user record being created. Always false for anonymous users.
 	ShowOriginSurvey bool `json:"show_origin_survey"`
+	// Whether the sidebar setup checklist should still be offered. True only for
+	// administrators of an organization that has not completed onboarding, and
+	// permanently false once it has.
+	ShowSetupChecklist bool `json:"show_setup_checklist"`
 }
 
 type ServiceAccountStatusType string
@@ -1399,6 +1403,43 @@ type OrgProtectionProfileResponse struct {
 	// The Hoop-managed attribute that binds the profile's rules to
 	// connections; null when no profile is active
 	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
+}
+
+// OrgOnboardingChecks is the per-item state of the setup checklist. Every field
+// maps 1:1 to a sub-item of the webapp sidebar widget.
+type OrgOnboardingChecks struct {
+	// At least one standard agent is currently connected
+	AgentDeployed bool `json:"agent_deployed"`
+	// The organization has at least one connection
+	ResourceCreated bool `json:"resource_created"`
+	// The organization has run at least one session
+	SessionRan bool `json:"session_ran"`
+	// At least one group beyond the built-in admin group exists
+	GroupsCreated bool `json:"groups_created"`
+	// At least one user belongs to a group beyond the built-in admin group
+	PeopleAssigned bool `json:"people_assigned"`
+	// At least one user-created guardrail rule exists (profile-managed rules don't count)
+	GuardrailsExplored bool `json:"guardrails_explored"`
+	// At least one user-created data masking rule exists (profile-managed rules don't count)
+	DataMaskingExplored bool `json:"data_masking_explored"`
+	// An AI provider is configured for the session analyzer feature
+	AIAnalyzerEnabled bool `json:"ai_analyzer_enabled"`
+	// The organization has a default protection profile
+	ProtectionLevelSet bool `json:"protection_level_set"`
+}
+
+type OrgOnboardingResponse struct {
+	// Whether onboarding is finished. Terminal: stays true even if an
+	// individual check later regresses
+	Completed bool `json:"completed"`
+	// The live state of each checklist item
+	Checks OrgOnboardingChecks `json:"checks"`
+	// First web-terminal capable connection, for the "Run your first session"
+	// shortcut; null when the organization has none
+	ExecConnectionName *string `json:"exec_connection_name" example:"pgdemo"`
+	// First connection of any kind, the native-access fallback for the same
+	// shortcut; null when the organization has no connections
+	FirstConnectionName *string `json:"first_connection_name" example:"pgdemo"`
 }
 
 var FeatureList = []string{"ask-ai"}

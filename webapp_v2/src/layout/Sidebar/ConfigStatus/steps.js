@@ -1,7 +1,8 @@
 import { Database, Users, Sparkles, ShieldCogCorner, ShieldCheck } from 'lucide-react'
 
 // Setup checklist definition (Figma: EVAL Config status, node 14:2).
-// `checkKey` maps to a boolean in useConfigStatusStore.checks.
+// `checkKey` maps to a boolean in useConfigStatusStore.checks, which mirrors
+// the `checks` object from GET /orgs/onboarding verbatim — hence snake_case.
 // `to` navigates via router; `action` keys are resolved by the ConfigStatus
 // container (flows that need runtime data, e.g. picking a connection).
 export const STEP_DEFS = [
@@ -10,9 +11,9 @@ export const STEP_DEFS = [
     title: 'Connect a resource',
     icon: Database,
     subItems: [
-      { checkKey: 'agentDeployed', label: 'Deploy Hoop Agent', to: '/agents/new' },
-      { checkKey: 'resourceCreated', label: 'Create a Resource', to: '/resource-catalog' },
-      { checkKey: 'sessionRan', label: 'Run your first session', action: 'run-first-session' },
+      { checkKey: 'agent_deployed', label: 'Deploy Hoop Agent', to: '/agents/new' },
+      { checkKey: 'resource_created', label: 'Create a Resource', to: '/resource-catalog' },
+      { checkKey: 'session_ran', label: 'Run your first session', action: 'run-first-session' },
     ],
   },
   {
@@ -20,8 +21,8 @@ export const STEP_DEFS = [
     title: 'Set up access',
     icon: Users,
     subItems: [
-      { checkKey: 'groupsCreated', label: 'Create more groups', to: '/features/access-control' },
-      { checkKey: 'peopleAssigned', label: 'Assign people to groups', to: '/features/access-control' },
+      { checkKey: 'groups_created', label: 'Create more groups', to: '/features/access-control' },
+      { checkKey: 'people_assigned', label: 'Assign people to groups', to: '/features/access-control' },
     ],
   },
   {
@@ -29,11 +30,11 @@ export const STEP_DEFS = [
     title: 'Tune Features',
     icon: Sparkles,
     subItems: [
-      { checkKey: 'guardrailsExplored', label: 'Explore Guardrails', to: '/guardrails' },
-      { checkKey: 'dataMaskingExplored', label: 'Explore AI Data Masking', to: '/features/data-masking' },
-      { checkKey: 'aiAnalyzerEnabled', label: 'Explore AI Session Analyzer', to: '/features/ai-session-analyzer' },
+      { checkKey: 'guardrails_explored', label: 'Explore Guardrails', to: '/guardrails' },
+      { checkKey: 'data_masking_explored', label: 'Explore AI Data Masking', to: '/features/data-masking' },
+      { checkKey: 'ai_analyzer_enabled', label: 'Explore AI Session Analyzer', to: '/features/ai-session-analyzer' },
       {
-        checkKey: 'protectionLevelSet',
+        checkKey: 'protection_level_set',
         label: 'Set Protection Level',
         to: '/settings/protection-rules',
         icon: ShieldCogCorner,

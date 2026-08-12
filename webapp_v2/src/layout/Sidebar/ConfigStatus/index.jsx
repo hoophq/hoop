@@ -9,7 +9,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStatusStore } from '@/stores/useConfigStatusStore'
 import { useBridgeStore } from '@/stores/useBridgeStore'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
-import { computeProgress, STEP_DEFS } from './steps'
+import { computeProgress } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
 
@@ -17,10 +17,23 @@ import classes from './ConfigStatus.module.css'
 // - only one step open at a time; opening another closes the rest
 // - opening the widget auto-opens the first incomplete step
 // - interacting with anything outside the widget collapses it
+//
+// DEP-136: the gate below is hook-free on purpose — a hidden checklist must
+// mount no effects. It used to register its listeners and timers before the
+// visibility early-return, so it kept polling even while invisible.
 export function ConfigStatus() {
+  const isAdmin = useUserStore((s) => s.isAdmin)
+  // Server-owned visibility, same contract as show_origin_survey.
+  const showSetupChecklist = useUserStore((s) => s.user?.show_setup_checklist)
+  const completed = useConfigStatusStore((s) => s.completed)
+
+  if (!isAdmin || !showSetupChecklist || completed) return null
+  return <ConfigStatusWidget />
+}
+
+function ConfigStatusWidget() {
   const navigate = useNavigate()
   const location = useLocation()
-  const isAdmin = useUserStore((s) => s.isAdmin)
   const user = useUserStore((s) => s.user)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
   const status = useConfigStatusStore((s) => s.status)
@@ -37,55 +50,33 @@ export function ConfigStatus() {
   // Initial fetch + TTL-respecting refresh when the admin navigates (returning
   // from "Create a Resource" & friends should update the ring right away).
   useEffect(() => {
-    if (isAdmin) fetchStatus()
-  }, [isAdmin, location.pathname, fetchStatus])
+    fetchStatus()
+  }, [location.pathname, fetchStatus])
 
-  // Background reactivity: refresh on window focus (actions done via CLI or
-  // another tab) and on a slow poll, so completing a step reflects on the
-  // ring without reopening the widget. Skipped once setup is complete — the
-  // widget is gone at 3/3, so a configured org never polls.
+  // Background reactivity for work done outside this tab (CLI, another tab).
+  // Focus only — the 30s and 10s timers this replaces were the background load.
   useEffect(() => {
-    if (!isAdmin) return undefined
-    const tick = () => {
-      const state = useConfigStatusStore.getState()
-      if (state.status === 'ready' && computeProgress(state.checks).stepsDone === STEP_DEFS.length) return
-      fetchStatus()
-    }
-    window.addEventListener('focus', tick)
-    const interval = setInterval(tick, 30_000)
-    return () => {
-      window.removeEventListener('focus', tick)
-      clearInterval(interval)
-    }
-  }, [isAdmin, fetchStatus])
-
-  // Faster feedback while the admin is actually looking at the open checklist.
-  // TTL-respecting on purpose: the 10s tick nudges often, but the store's TTL
-  // caps the real probe rate so an expanded widget never bursts the API.
-  useEffect(() => {
-    if (!opened) return undefined
-    const interval = setInterval(() => fetchStatus(), 10_000)
-    return () => clearInterval(interval)
-  }, [opened, fetchStatus])
+    const onFocus = () => fetchStatus()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchStatus])
 
   // Instant reaction for the step-defining action: the CLJS web terminal
   // emits this event right after a successful exec (POST /sessions success in
   // webapp/src/webapp/events/editor_plugin.cljs), so "Run your first session"
   // checks off the moment the query runs.
   useEffect(() => {
-    if (!isAdmin) return undefined
     const onSessionExecuted = () => fetchStatus({ force: true })
     window.addEventListener('hoop:session-executed', onSessionExecuted)
     return () => window.removeEventListener('hoop:session-executed', onSessionExecuted)
-  }, [isAdmin, fetchStatus])
+  }, [fetchStatus])
 
-  // Never render for non-admins; stay hidden until the first snapshot
-  // resolves (avoids flashing "3 steps from success" at a fully configured
-  // org) and while the snapshot belongs to a previously logged-in user.
-  if (!isAdmin || status !== 'ready' || forUserId !== (user?.id ?? null)) return null
+  // Stay hidden until the first snapshot resolves (avoids flashing "3 steps
+  // from success" at an org that is nearly done) and while the snapshot belongs
+  // to a previously logged-in user.
+  if (status !== 'ready' || forUserId !== (user?.id ?? null)) return null
 
   const progress = computeProgress(checks)
-  if (progress.stepsDone === progress.totalSteps) return null
 
   const headerLabel =
     progress.stepsDone === 0

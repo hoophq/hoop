@@ -1,109 +1,40 @@
 import { create } from 'zustand'
-import { agentsService } from '@/services/agents'
-import { connectionsService } from '@/services/connections'
-import { sessionsService } from '@/services/sessions'
-import { userGroupsService } from '@/services/userGroups'
-import { usersService } from '@/services/users'
-import { guardrailsService } from '@/services/guardrails'
-import { dataMaskingService } from '@/services/dataMasking'
-import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { onboardingService } from '@/services/onboarding'
 import { useUserStore } from '@/stores/useUserStore'
 
-// EVL-98: backs the sidebar Config Status checklist. Every check derives
-// from real configuration state — nothing is persisted or manually ticked —
-// so the widget updates automatically as the admin configures the org.
+// EVL-98 / DEP-136: backs the sidebar Config Status checklist.
+//
+// The gateway owns it: GET /orgs/onboarding answers every item in a single
+// query, and /userinfo's `show_setup_checklist` decides whether the widget
+// exists at all. The first version derived the checklist in the browser from
+// eight endpoints on every route change, on focus and on two timers — one of
+// them GET /sessions, whose unbounded COUNT took ~2min at 1.5M sessions and
+// took a customer database down. Do not reintroduce client-side derivation.
 
-// Short TTL: navigation/focus/poll triggers all funnel through fetchStatus,
-// and the TTL is what dedupes them — 15s keeps the widget feeling live
-// without letting overlapping triggers stack requests.
+// Dedupes the navigation and focus triggers.
 const TTL_MS = 15_000
 
-// The gateway's built-in admin group (GroupAdmin). Server-side it is
-// env-overridable, but 'admin' is the default every org starts with, and the
-// checklist only needs a fresh-org approximation.
-const DEFAULT_GROUP = 'admin'
-
 const INITIAL_CHECKS = {
-  agentDeployed: false,
-  resourceCreated: false,
-  sessionRan: false,
-  groupsCreated: false,
-  peopleAssigned: false,
-  guardrailsExplored: false,
-  dataMaskingExplored: false,
-  aiAnalyzerEnabled: false,
-  protectionLevelSet: false,
+  agent_deployed: false,
+  resource_created: false,
+  session_ran: false,
+  groups_created: false,
+  people_assigned: false,
+  guardrails_explored: false,
+  data_masking_explored: false,
+  ai_analyzer_enabled: false,
+  protection_level_set: false,
 }
 
 const INITIAL_STATE = {
-  status: 'idle', // 'idle' | 'loading' | 'ready' — 'ready' even when some probes failed
+  status: 'idle', // 'idle' | 'loading' | 'ready'
+  completed: false, // server-latched; once true the widget is done for good
   checks: { ...INITIAL_CHECKS },
   execConnectionName: null, // first exec-capable connection, for "Run your first session"
   firstConnectionName: null, // fallback when no connection allows exec
   lastFetchedAt: null,
   forUserId: null, // whose /userinfo the snapshot was computed against
 }
-
-// Managed rules are provisioned automatically by protection profiles — only
-// user-created rules prove the admin actually explored the feature.
-const isUserCreated = (rule) => !rule?.managed_by
-
-// Each probe resolves to a partial state patch. Rejections are tolerated
-// per-probe (allSettled below): a failing endpoint leaves its checks false
-// instead of breaking the whole widget.
-const PROBES = [
-  async () => {
-    const { data } = await agentsService.list()
-    return { checks: { agentDeployed: (data ?? []).some((a) => a.status === 'CONNECTED') } }
-  },
-  async () => {
-    const { pages, data } = await connectionsService.getConnectionsPaginated({ pageSize: 50 })
-    const connections = data ?? []
-    // Mirrors the CLJS editor eligibility check (primary_connection.cljs):
-    // a connection is web-terminal capable unless exec is disabled.
-    const execConnection = connections.find((c) => c.access_mode_exec !== 'disabled')
-    return {
-      checks: { resourceCreated: (pages?.total ?? 0) >= 1 },
-      execConnectionName: execConnection?.name ?? null,
-      firstConnectionName: connections[0]?.name ?? null,
-    }
-  },
-  async () => {
-    const { data } = await sessionsService.list({ limit: 1 })
-    return { checks: { sessionRan: (data?.total ?? 0) >= 1 } }
-  },
-  async () => {
-    const { data } = await userGroupsService.list()
-    return { checks: { groupsCreated: (data ?? []).some((g) => g !== DEFAULT_GROUP) } }
-  },
-  async () => {
-    const { data } = await usersService.list()
-    return {
-      checks: {
-        peopleAssigned: (data ?? []).some((u) => (u.groups ?? []).some((g) => g !== DEFAULT_GROUP)),
-      },
-    }
-  },
-  async () => {
-    const { data } = await guardrailsService.list()
-    return { checks: { guardrailsExplored: (data ?? []).filter(isUserCreated).length >= 1 } }
-  },
-  async () => {
-    const { data } = await dataMaskingService.list()
-    return { checks: { dataMaskingExplored: (data ?? []).filter(isUserCreated).length >= 1 } }
-  },
-  async () => {
-    // The analyzer is configured once an AI provider exists; 404 is the
-    // gateway's "never set up" answer, not a probe failure.
-    try {
-      await aiSessionAnalyzerService.getProvider()
-      return { checks: { aiAnalyzerEnabled: true } }
-    } catch (err) {
-      if (err.response?.status === 404) return { checks: { aiAnalyzerEnabled: false } }
-      throw err
-    }
-  },
-]
 
 let inFlight = null
 let inFlightUserId = null
@@ -113,13 +44,16 @@ export const useConfigStatusStore = create((set, get) => ({
 
   fetchStatus: async ({ force = false } = {}) => {
     const { isAdmin, user } = useUserStore.getState()
-    if (!isAdmin) return
+    if (!isAdmin || !user?.show_setup_checklist) return
     const userId = user?.id ?? null
 
-    // A stale snapshot from a previous login (same tab) must never satisfy
-    // the TTL — refetch whenever the authenticated user changed.
-    const { lastFetchedAt, forUserId } = get()
+    // A stale snapshot from a previous login (same tab) must never satisfy the
+    // TTL or the completion short-circuit — refetch whenever the user changed.
+    const { lastFetchedAt, forUserId, completed } = get()
     const sameUser = forUserId === userId
+    // Completion is terminal server side: nothing left to poll for, and the
+    // widget hides without waiting for the next /userinfo.
+    if (sameUser && completed) return
     if (!force && sameUser && lastFetchedAt && Date.now() - lastFetchedAt < TTL_MS) return
 
     if (inFlight) {
@@ -134,41 +68,24 @@ export const useConfigStatusStore = create((set, get) => ({
     inFlight = (async () => {
       set((state) => ({ status: state.status === 'ready' ? 'ready' : 'loading' }))
 
-      const results = await Promise.allSettled(PROBES.map((probe) => probe()))
-      results
-        .filter((r) => r.status === 'rejected')
-        .forEach((r) => console.warn('[useConfigStatusStore] probe failed:', r.reason))
-
-      // With zero probes answering (gateway unreachable, expired auth) there
-      // is no snapshot to publish — keep the previous state so the widget
-      // stays hidden/unchanged and the next trigger retries past the TTL.
-      const fulfilled = results.filter((r) => r.status === 'fulfilled')
-      if (fulfilled.length === 0) return
-
-      const patch = { checks: {} }
-      for (const result of fulfilled) {
-        const { checks, ...rest } = result.value
-        Object.assign(patch.checks, checks)
-        Object.assign(patch, rest)
+      let data
+      try {
+        data = await onboardingService.get()
+      } catch (err) {
+        // Keep the previous state; the next trigger retries past the TTL.
+        console.warn('[useConfigStatusStore] failed loading onboarding status:', err)
+        return
       }
 
-      set((state) => ({
-        // When the authenticated user changed, never merge over the previous
-        // user's snapshot — failed probes must yield `false`, not user A's
-        // leftovers stamped with user B's id.
-        execConnectionName: sameUser ? state.execConnectionName : null,
-        firstConnectionName: sameUser ? state.firstConnectionName : null,
-        ...patch,
-        checks: {
-          ...(sameUser ? state.checks : INITIAL_CHECKS),
-          ...patch.checks,
-          // Derived synchronously from the already-loaded /userinfo payload.
-          protectionLevelSet: user?.default_protection_profile != null,
-        },
+      set({
+        completed: !!data?.completed,
+        checks: { ...INITIAL_CHECKS, ...data?.checks },
+        execConnectionName: data?.exec_connection_name ?? null,
+        firstConnectionName: data?.first_connection_name ?? null,
         status: 'ready',
         lastFetchedAt: Date.now(),
         forUserId: userId,
-      }))
+      })
     })()
 
     try {
