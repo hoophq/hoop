@@ -36,10 +36,10 @@ func (h *RDPHandler) HandleData(session *Session, msg *WebSocketMessage) error {
 // from its own environment, keeping customer-network infra out of gateway
 // state. Only the enable decision and analysis policy travel here.
 type RDPGuardConfig struct {
-	Enabled        bool
-	ScoreThreshold float64
-	EntityDenylist []string
-	BandPadding    int
+	Enabled         bool
+	ScoreThreshold  float64
+	EntityAllowlist []string
+	BandPadding     int
 	// Policy is "kill", "redact", or "redact_and_kill" (agent default kill
 	// when empty/unrecognized).
 	Policy string
@@ -125,11 +125,11 @@ func CreateRDPSession(
 		if guard.Policy != "" {
 			metadata["pii_policy"] = guard.Policy
 		}
-		if len(guard.EntityDenylist) > 0 {
+		if len(guard.EntityAllowlist) > 0 {
 			// JSON array, not a comma-join: entity names are an external
 			// (Presidio) vocabulary and must not rely on being comma-free.
-			if denylist, err := json.Marshal(guard.EntityDenylist); err == nil {
-				metadata["pii_entity_denylist"] = string(denylist)
+			if allowlist, err := json.Marshal(guard.EntityAllowlist); err == nil {
+				metadata["pii_entity_allowlist"] = string(allowlist)
 			}
 		}
 	}

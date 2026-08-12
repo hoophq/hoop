@@ -43,6 +43,10 @@ const (
 // and OCR sidecar endpoints configured).
 const CapabilitySupportsPIIGuard = "supports_pii_guard"
 
+// CapabilitySupportsPIIEntityAllowlist distinguishes agents that understand
+// the connection-scoped entity-selection metadata from legacy guard agents.
+const CapabilitySupportsPIIEntityAllowlist = "supports_pii_entity_allowlist"
+
 // ControlSentinelSID is the well-known sid used for connection-scoped control
 // frames (those that describe the agent connection, not a session). The wire
 // format requires a non-nil, versioned UUID in every header, so these frames
