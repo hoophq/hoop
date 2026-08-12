@@ -106,12 +106,71 @@ if REC_PRECISION == "fp16" and not USE_CUDA:
 #     HEURISTIC crashes at runtime on Turing (CUDNN_FE failure 11 under
 #     concurrent load). The retune cost EXHAUSTIVE incurs on varying input
 #     shapes is instead eliminated structurally by BucketRec's fixed shapes.
+# ONNX Runtime thread bounds. Left at ORT's default, each InferenceSession sizes
+# its intra-op thread pool to the host's logical core count. With WEB_CONCURRENCY
+# uvicorn workers, each holding the RapidOCR engine plus many fixed-shape bucket
+# sessions (one per width bucket), that default multiplies: on a high-core host
+# (e.g. a 192-vCPU GPU node) it becomes tens of thousands of threads and exhausts
+# the process/cgroup thread limit at session init (pthread_create EAGAIN),
+# crashing startup. The GPU does the heavy compute and serving throughput comes
+# from concurrent workers, not from intra-op parallelism within one inference, so
+# a small bounded pool is both sufficient and necessary. Applied to EVERY session
+# the server creates (the engine below, the bucket-rec sessions, and the per-
+# bucket det sessions). Overridable per deployment.
+def _env_threads(name: str, default: int) -> int:
+    try:
+        v = int(os.environ.get(name, str(default)))
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer >= 1") from exc
+    if v < 1:
+        raise RuntimeError(f"{name} must be >= 1, got {v}")
+    return v
+
+
+OCR_INTRA_OP_THREADS = _env_threads("OCR_INTRA_OP_THREADS", 4)
+OCR_INTER_OP_THREADS = _env_threads("OCR_INTER_OP_THREADS", 1)
+
+# CUDA arena growth strategy for every session's GPU memory pool. The default
+# 'kNextPowerOfTwo' rounds each arena up to a power of two, which is fast but
+# over-allocates: with many bucket sessions per worker it inflates per-worker
+# VRAM (~4.8GB on an 80GB H100), capping how many uvicorn workers — and thus how
+# many concurrent inferences — fit on the card, leaving the GPU underfed.
+# 'kSameAsRequested' grows the arena by exactly what each allocation needs:
+# smaller per-worker footprint (more workers fit) at the cost of more frequent
+# allocations. Tunable per deployment / GPU memory budget.
+OCR_CUDA_ARENA_STRATEGY = os.environ.get("OCR_CUDA_ARENA_STRATEGY", "kNextPowerOfTwo")
+if OCR_CUDA_ARENA_STRATEGY not in ("kNextPowerOfTwo", "kSameAsRequested"):
+    raise RuntimeError(
+        "OCR_CUDA_ARENA_STRATEGY must be 'kNextPowerOfTwo' or 'kSameAsRequested', "
+        f"got {OCR_CUDA_ARENA_STRATEGY!r}"
+    )
+
+
+def _bounded_session_options() -> onnxruntime.SessionOptions:
+    """SessionOptions with the intra/inter-op thread pools bounded (see above)
+    and rapidocr's usual quiet logging."""
+    opts = onnxruntime.SessionOptions()
+    opts.log_severity_level = 4
+    opts.intra_op_num_threads = OCR_INTRA_OP_THREADS
+    opts.inter_op_num_threads = OCR_INTER_OP_THREADS
+    return opts
+
+
 _ENGINE_PARAMS = {
     "Global.use_cls": False,
     "Global.width_height_ratio": -1,
     "Det.limit_type": "max",
     "Det.limit_side_len": 2048,
     "EngineConfig.onnxruntime.use_cuda": USE_CUDA,
+    # Bound the engine's own det/rec/cls session thread pools (see above).
+    "EngineConfig.onnxruntime.intra_op_num_threads": OCR_INTRA_OP_THREADS,
+    "EngineConfig.onnxruntime.inter_op_num_threads": OCR_INTER_OP_THREADS,
+    # ...and give those sessions the same arena strategy as the ones built
+    # below, so the knob covers every session rather than only the bucket
+    # ones. The engine's det/rec sessions hold VRAM even in fp16 mode (where
+    # BucketDet/BucketRec serve the actual inferences), so they count toward
+    # the per-worker footprint the strategy is meant to control.
+    "EngineConfig.onnxruntime.cuda_ep_cfg.arena_extend_strategy": OCR_CUDA_ARENA_STRATEGY,
 }
 if REC_LANG == "en":
     _ENGINE_PARAMS["Rec.lang_type"] = LangRec.EN
@@ -173,12 +232,11 @@ def _make_det_detector_factory(base_det, model_path: str):
     def factory():
         cuda_opts = {
             "device_id": 0,
-            "arena_extend_strategy": "kNextPowerOfTwo",
+            "arena_extend_strategy": OCR_CUDA_ARENA_STRATEGY,
             "cudnn_conv_algo_search": "EXHAUSTIVE",
             "do_copy_in_default_stream": True,
         }
-        sess_opts = onnxruntime.SessionOptions()
-        sess_opts.log_severity_level = 4
+        sess_opts = _bounded_session_options()
         raw = onnxruntime.InferenceSession(
             model_path,
             sess_options=sess_opts,
@@ -236,12 +294,11 @@ def _build_bucket_rec(model_path: str) -> BucketRec:
         )
     cuda_opts = {
         "device_id": 0,
-        "arena_extend_strategy": "kNextPowerOfTwo",
+        "arena_extend_strategy": OCR_CUDA_ARENA_STRATEGY,
         "cudnn_conv_algo_search": "EXHAUSTIVE",
         "do_copy_in_default_stream": True,
     }
-    sess_opts = onnxruntime.SessionOptions()
-    sess_opts.log_severity_level = 4
+    sess_opts = _bounded_session_options()
     sessions = {
         w: onnxruntime.InferenceSession(
             model_path,
