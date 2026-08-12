@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -631,6 +632,19 @@ type rdpDataMaskingParams struct {
 	BandPadding     int
 }
 
+func isCanonicalEntityType(entityType string) bool {
+	if entityType == "" {
+		return false
+	}
+	for i := 0; i < len(entityType); i++ {
+		c := entityType[i]
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 func dataMaskingParamsForConnection(orgID, connectionName string) (*rdpDataMaskingParams, error) {
 	rules, err := services.GetDataMaskingRulesForConnection(orgID, connectionName)
 	if err != nil {
@@ -654,9 +668,12 @@ func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
 		}
 		hasEntities := false
 		for _, group := range rule.SupportedEntityTypes {
+			if len(group.EntityTypes) == 0 {
+				return nil, fmt.Errorf("RDP masking rule %q has an empty supported entity group %q", rule.Name, group.Name)
+			}
 			for _, entity := range group.EntityTypes {
-				if entity == "" {
-					continue
+				if !isCanonicalEntityType(entity) {
+					return nil, fmt.Errorf("RDP masking rule %q has invalid entity type %q", rule.Name, entity)
 				}
 				entitySet[entity] = struct{}{}
 				hasEntities = true
@@ -669,6 +686,9 @@ func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
 		threshold := 0.5
 		if rule.ScoreThreshold != nil {
 			threshold = *rule.ScoreThreshold
+		}
+		if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 || threshold > 1 {
+			return nil, fmt.Errorf("RDP masking rule %q has invalid score threshold %v", rule.Name, threshold)
 		}
 		if !hasThreshold || threshold < scoreThreshold {
 			scoreThreshold = threshold

@@ -928,6 +928,43 @@ func TestParseRDPDataMaskingRulesUsesResourceEntitiesAndThreshold(t *testing.T) 
 	}
 }
 
+func TestParseRDPDataMaskingRulesRejectsNonCanonicalEntities(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "empty entity group",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[]}]}]`,
+		},
+		{
+			name: "empty entity",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[""]}]}]`,
+		},
+		{
+			name: "whitespace",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[" PERSON "]}]}]`,
+		},
+		{
+			name: "lowercase",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":["person"]}]}]`,
+		},
+		{
+			name: "punctuation",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":["PERSON-NAME"]}]}]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params, err := parseRDPDataMaskingRules([]byte(tt.data))
+			if err == nil {
+				t.Fatalf("invalid entity configuration returned params %#v; want an error", params)
+			}
+		})
+	}
+}
+
 func TestParseRDPDataMaskingRulesPreservesZeroThreshold(t *testing.T) {
 	params, err := parseRDPDataMaskingRules([]byte(`[
 		{
@@ -941,6 +978,24 @@ func TestParseRDPDataMaskingRulesPreservesZeroThreshold(t *testing.T) {
 	}
 	if params == nil || params.ScoreThreshold != 0 {
 		t.Fatalf("score threshold = %#v, want 0", params)
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsInvalidThresholds(t *testing.T) {
+	for _, threshold := range []float64{-0.1, 1.1} {
+		t.Run(fmt.Sprint(threshold), func(t *testing.T) {
+			data := fmt.Sprintf(`[
+				{
+					"name": "invalid-threshold",
+					"supported_entity_types": [{"name": "TIME_DATA", "entity_types": ["DATE_TIME"]}],
+					"score_threshold": %v
+				}
+			]`, threshold)
+			params, err := parseRDPDataMaskingRules([]byte(data))
+			if err == nil {
+				t.Fatalf("invalid score threshold returned params %#v; want an error", params)
+			}
+		})
 	}
 }
 
