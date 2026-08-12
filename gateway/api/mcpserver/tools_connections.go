@@ -15,12 +15,12 @@ import (
 )
 
 type connectionsListInput struct {
-	AgentID string   `json:"agent_id,omitempty" jsonschema:"filter by agent UUID"`
-	Type    string   `json:"type,omitempty" jsonschema:"filter by connection type (database, application, custom)"`
-	SubType string   `json:"subtype,omitempty" jsonschema:"filter by subtype (postgres, mysql, mongodb, mssql, oracledb, tcp, ssh, httpproxy)"`
-	Tags    []string `json:"tags,omitempty" jsonschema:"filter by tags"`
-	Name    string   `json:"name,omitempty" jsonschema:"filter by name pattern"`
-	Search  string   `json:"search,omitempty" jsonschema:"search by name, type, subtype, resource name or status"`
+	AgentID     string `json:"agent_id,omitempty" jsonschema:"filter by agent UUID"`
+	Type        string `json:"type,omitempty" jsonschema:"filter by connection type (database, application, custom)"`
+	SubType     string `json:"subtype,omitempty" jsonschema:"filter by subtype (postgres, mysql, mongodb, mssql, oracledb, tcp, ssh, httpproxy)"`
+	TagSelector string `json:"tag_selector,omitempty" jsonschema:"filter by key/value tags, comma-separated constraints ANDed, supports = and != (e.g. environment=prod-eu,team!=infra)"`
+	Name        string `json:"name,omitempty" jsonschema:"filter by name pattern"`
+	Search      string `json:"search,omitempty" jsonschema:"search by name, type, subtype, resource name or status"`
 }
 
 type connectionsGetInput struct {
@@ -70,7 +70,7 @@ func registerConnectionTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "connections_list",
-		Description: "List all connections accessible to the authenticated user, with optional filters by agent, type, subtype, tags, or search query",
+		Description: "List all connections accessible to the authenticated user, with optional filters by agent, type, subtype, tag_selector, or search query",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, connectionsListHandler)
 
@@ -113,12 +113,12 @@ func connectionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args co
 	}
 
 	filterOpts := models.ConnectionFilterOption{
-		AgentID: args.AgentID,
-		Type:    args.Type,
-		SubType: args.SubType,
-		Tags:    args.Tags,
-		Name:    args.Name,
-		Search:  args.Search,
+		AgentID:     args.AgentID,
+		Type:        args.Type,
+		SubType:     args.SubType,
+		TagSelector: args.TagSelector,
+		Name:        args.Name,
+		Search:      args.Search,
 	}
 
 	connections, err := models.ListConnections(sc, filterOpts)
