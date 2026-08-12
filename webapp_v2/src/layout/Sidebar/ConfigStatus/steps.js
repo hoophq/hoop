@@ -22,7 +22,7 @@ export const STEP_DEFS = [
     icon: Users,
     subItems: [
       { checkKey: 'groups_created', label: 'Create more groups', to: '/features/access-control' },
-      { checkKey: 'people_assigned', label: 'Assign people to groups', to: '/features/access-control' },
+      { checkKey: 'people_assigned', label: 'Assign people to groups', to: '/organization/users' },
     ],
   },
   {
