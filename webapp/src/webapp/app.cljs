@@ -75,14 +75,8 @@
    [webapp.events.tracking]
    [webapp.events.users]
    [webapp.shared-ui.cmdk.events.command-palette]
-   [webapp.features.access-control.events]
-   [webapp.features.access-control.main :as access-control]
-   [webapp.features.access-control.subs]
-   [webapp.features.access-control.views.group-form :as group-form]
    [webapp.features.access-request.events]
-   [webapp.features.access-request.main :as access-request]
    [webapp.features.access-request.subs]
-   [webapp.features.access-request.views.rule-form :as rule-form]
    [webapp.features.machine-identities.events]
    [webapp.features.machine-identities.main :as machine-identities]
    [webapp.features.machine-identities.subs]
@@ -572,58 +566,6 @@
 
 (defmethod routes/panels :logout-hoop-panel []
   [layout :auth [logout/main]])
-
-(defmethod routes/panels :access-control-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-license-feature "access-control"
-    [routes/wrap-admin-only
-     [access-control/main]]]])
-
-(defmethod routes/panels :access-control-new-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-license-feature "access-control"
-    [routes/wrap-admin-only
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [group-form/main :create]]]]])
-
-(defmethod routes/panels :access-control-edit-panel []
-  (let [search (.. js/window -location -search)
-        url-params (new js/URLSearchParams search)
-        group-id (.get url-params "group")]
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop
-     [routes/wrap-license-feature "access-control"
-      [routes/wrap-admin-only
-       [:div {:class "bg-gray-1 min-h-full h-max relative"}
-        [group-form/main :edit {:group-id group-id}]]]]]))
-
-(defmethod routes/panels :access-request-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-license-feature "access-requests"
-    [routes/wrap-admin-only
-     [access-request/main]]]])
-
-(defmethod routes/panels :access-request-new-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-license-feature "access-requests"
-    [routes/wrap-admin-only
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [rule-form/main :create]]]]])
-
-(defmethod routes/panels :access-request-edit-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        rule-name (:rule-name (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop
-     [routes/wrap-license-feature "access-requests"
-      [routes/wrap-admin-only
-       [:div {:class "bg-gray-1 min-h-full h-max relative"}
-        [rule-form/main :edit {:rule-name rule-name}]]]]]))
 
 (defmethod routes/panels :machine-identities-panel []
   (rf/dispatch [:destroy-page-loader])

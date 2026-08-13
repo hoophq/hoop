@@ -113,47 +113,10 @@
                :class "w-full h-full object-cover"}]
         [:> Box {:class "w-full h-full min-h-[28rem]"}])]]))
 
-(defn access-control-promotion
-  "Specific component for Access Control"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "Access Control"
-    :mode mode
-    :image "access-control-promotion.png"
-    :description "Transform your data management from unstructured to controlled with powerful permission rules."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Role-Based Access Control (RBAC)"
-                     :description "Granular permission management for resources with flexible role assignments and group management."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Connection-Level Permissions"
-                     :description "Group-based access management with customizable access levels per connection."}
-                    {:icon [:> UserRoundCheck {:size 20}]
-                     :title "Dynamic Access Management"
-                     :description "Real-time access updates and modifications with seamless integration with identity providers."}]
-    :on-primary-click (if (= mode :empty-state)
-                        (if installed?
-                          #(rf/dispatch [:navigate :access-control-new])
-                          #(rf/dispatch
-                            [:dialog->open
-                             {:title "Activate Access Control"
-                              :text "By activating this feature users will have their accesses blocked until a connection permission is set."
-                              :text-action-button "Confirm"
-                              :action-button? true
-                              :type :info
-                              :on-success (fn []
-                                            (rf/dispatch [:plugins->create-plugin {:name "access_control"
-                                                                                   :connections []}])
-                                            (js/setTimeout
-                                             (fn [] (rf/dispatch [:plugins->get-plugin-by-name "access_control"]))
-                                             1000))}]))
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Activate Access Control"
-                    "Request demo")}])
-
-;; The Guardrails promotion lives in the React app
-;; (webapp_v2 pages/Guardrails/components/GuardrailsPromotion.jsx) — the CLJS
-;; component was removed with the CLJS guardrails pages, its only consumer.
+;; The Guardrails, Access Control and Access Request promotions live in the
+;; React app (webapp_v2 pages/Guardrails/components/GuardrailsPromotion.jsx,
+;; pages/Features/AccessControl, pages/Features/AccessRequest) — the CLJS
+;; components were removed with the CLJS pages that were their only consumers.
 
 (defn runbooks-promotion
   "Specific component for Runbooks"
@@ -222,29 +185,6 @@
                      :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
     :primary-text "Get Started"}])
-
-(defn access-request-promotion
-  "Specific component for Access Request"
-  [{:keys [mode on-promotion-seen]}]
-  [feature-promotion
-   {:feature-name "Access Request"
-    :mode mode
-    :image "access-request-promotion.png"
-    :description "Streamline secure access with time-based approvals and automated workflows for your critical resources."
-    :feature-items [{:icon [:> ListTodo {:size 20}]
-                     :title "Just-in-Time Access Control"
-                     :description "Request temporary access to resources for specific time periods. Automatically manage access when the time expires, reducing security exposure."}
-                    {:icon [:> ListCheck {:size 20}]
-                     :title "Multi-Level Approval Workflows"
-                     :description "Configure approval chains with multiple reviewer groups to match your compliance requirements. Commands execute only after all designated approvers grant permission."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Integrated Notifications & Audit"
-                     :description "Receive real-time notifications through Slack and other channels when approvals are needed. Maintain complete audit logs for compliance."}]
-    :on-primary-click (fn []
-                        (when on-promotion-seen
-                          (on-promotion-seen))
-                        (rf/dispatch [:navigate :access-request-new]))
-    :primary-text "Create new Access Request rule"}])
 
 (defn ai-session-analyzer-promotion
   "Specific component for AI Session Analyzer"

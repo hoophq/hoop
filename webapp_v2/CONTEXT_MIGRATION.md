@@ -157,17 +157,30 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): `/features/access-control/*`,
-`/features/access-request/*`. The `features/access_control/` tree has no
-consumer outside itself (its `events.cljs` also registers
-`:plugins->get-plugin-by-name-with-callback`, which nothing else dispatches),
-so it can go whole, together with the `access-control-promotion` block in
-`features/promotion.cljs`. `features/access_request/` is only partly removable:
-`main.cljs` and `views/` have no outside consumer, but `events.cljs` and
-`subs.cljs` do — `features/ai_session_analyzer/views/rule_form.cljs` dispatches
-`:access-request/list-rules` and subscribes to `:access-request/rules` to fill
-its approval-rule picker, so those two files must survive until B3.2 lands.
-Removal belongs to a Track A cleanup PR.
+the CLJS page is unreachable): none left in the Guardrails / Access Control /
+Access Request families — all three were cleaned up.
+
+`/guardrails/*` lost its CLJS pages in EVL-147; `/features/access-control/*`
+and `/features/access-request/*` lost theirs in EVL-184. The two families were
+cleaned up differently, and the difference matters:
+
+- **Guardrails** keeps its bidi entries (see "Kept bidi entries" below) because
+  surviving CLJS still `url-for`/`:navigate`s them. `events/guardrails.cljs`
+  also stays, trimmed to the list read path.
+- **Access Control / Access Request** removed their bidi entries outright —
+  nothing in CLJS navigates to them. Both sets of panel defmethods, both
+  sidebar entries and both promotion blocks went too, and
+  `features/access_control/` was deleted whole (its `events.cljs` was the only
+  registrar *and* only dispatcher of
+  `:plugins->get-plugin-by-name-with-callback`).
+
+`features/access_request/` is the one partial removal: `events.cljs` and
+`subs.cljs` survive, trimmed to the rule *list* read path
+(`:access-request/list-rules`, `:access-request/set-rules`, the
+`:access-request/rules` sub), because
+`features/ai_session_analyzer/views/rule_form.cljs` still dispatches and
+subscribes to them to fill its approval-rule picker. Those last two files go
+once B3.2 (EVL-148) migrates the AI Session Analyzer.
 
 Kept bidi entries whose panel was deleted because CLJS code still navigates to
 them: `/guardrails` (`:guardrails`) and `/guardrails/new` (`:create-guardrail`)
