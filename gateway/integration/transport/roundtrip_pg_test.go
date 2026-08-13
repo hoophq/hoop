@@ -99,7 +99,7 @@ func assertSessionRecorded(t *testing.T) {
 
 	var list openapi.SessionList
 	testutil.DecodeJSON(t, resp, &list)
-	if list.Total < 1 || len(list.Items) == 0 {
+	if list.Total == nil || *list.Total < 1 || len(list.Items) == 0 {
 		t.Fatal("no sessions recorded; sessionuuid/audit did not persist the client session")
 	}
 	if _, err := uuid.Parse(list.Items[0].ID); err != nil {
