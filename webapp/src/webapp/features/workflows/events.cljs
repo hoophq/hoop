@@ -24,6 +24,10 @@
    {:db (assoc db :workflows (assoc initial-state
                                     :correlation-id correlation-id
                                     :status :loading))
+    ;; Deliberately no "count" param here, unlike the sessions list: this is the
+    ;; one view that reads (:total response) — :workflows/set-data derives
+    ;; :truncated? from it. count=none would fall back to (count data) and pin
+    ;; :truncated? to false forever.
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri "/plugins/audit/sessions"
                              :query-params {"correlation_id" correlation-id

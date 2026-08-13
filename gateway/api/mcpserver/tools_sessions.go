@@ -46,8 +46,12 @@ func registerSessionTools(server *mcp.Server) {
 	openWorld := false
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "sessions_list",
-		Description: "List sessions with optional filters (user, connection, date range, status). Returns metadata only, not session content. Max 100 results per request",
+		Name: "sessions_list",
+		Description: fmt.Sprintf("List sessions with optional filters (user, connection, date range, status). "+
+			"Returns metadata only, not session content. Max 100 results per request. "+
+			"The total is capped for performance: when total_is_capped is true the real number of "+
+			"matching sessions is at least total, not exactly total. Report it as \"%d+\" and "+
+			"narrow the filters if an exact figure matters.", models.SessionCountCapValue),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, sessionsListHandler)
 
@@ -88,6 +92,11 @@ func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessi
 	}
 
 	option := models.NewSessionOption()
+	// An exact count scans every matching row, and an agent working through a
+	// large workspace calls this tool repeatedly. The precise figure carries no
+	// information the model can act on that "at least 10,000" does not, so the
+	// cap is applied unconditionally and reported through total_is_capped.
+	option.CountMode = models.SessionCountCapped
 
 	if args.User != "" {
 		option.User = args.User
@@ -156,9 +165,10 @@ func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessi
 	}
 
 	result := map[string]any{
-		"total":         sessionList.Total,
-		"has_next_page": sessionList.HasNextPage,
-		"items":         items,
+		"total":           sessionList.Total,
+		"total_is_capped": sessionList.TotalIsCapped,
+		"has_next_page":   sessionList.HasNextPage,
+		"items":           items,
 	}
 	return jsonResult(result)
 }

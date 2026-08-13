@@ -136,6 +136,12 @@ export function todayReportParams() {
  * /sessions requires strict RFC3339 (a bare date returns 422) and filters on
  * `created_at`, inclusive at both ends. `limit: 1` is enough: `total` comes from
  * a separate un-limited COUNT query, so we pay for one row instead of twenty.
+ *
+ * `count: 'exact'` is the gateway default, but it is stated here on purpose.
+ * This card renders the total as a headline figure, so it is the one caller that
+ * genuinely cannot accept the cheaper `capped` mode — it would show a flat
+ * 10,000 on any tenant busy enough to exceed the cap in a day. The cost is
+ * bounded by the one-day window, which keeps the COUNT indexable.
  */
 export function todaySessionParams() {
   const start = startOfLocalDay()
@@ -144,6 +150,7 @@ export function todaySessionParams() {
     start_date: start.toISOString(),
     end_date: new Date(addDays(start, 1).getTime() - 1).toISOString(),
     limit: 1,
+    count: 'exact',
   }
 }
 

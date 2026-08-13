@@ -51,7 +51,13 @@
          url-search-params (new js/URLSearchParams search)
          url-params-list (js->clj (for [q url-search-params] q))
          url-params-map (into (sorted-map) url-params-list)
-         query-params (merge url-params-map {"limit" (or limit 20)} params)]
+         ;; count=none tells the gateway to skip the COUNT statement. Nothing on
+         ;; this page renders a total — "Load more sessions" is gated on
+         ;; :has_next_page alone — so the count was computed over the whole
+         ;; tenant and then discarded on every filter change and every page.
+         ;; Merged after the URL params so a stray ?count= in the address bar
+         ;; cannot reintroduce it.
+         query-params (merge url-params-map {"limit" (or limit 20) "count" "none"} params)]
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri "/plugins/audit/sessions"
                                :query-params query-params
@@ -124,8 +130,9 @@
          on-success (fn [res]
                       (rf/dispatch [::audit->set-sessions-by-batch-id res nil true]))]
      {:db (assoc db :audit->filtered-session-by-id {:data [] :status :loading :errors [] :offset 0 :has-more? false :loading true :search-term ""})
+      ;; count=none: this view pages on :has_next_page and never reads :total.
       :fx [[:dispatch [:fetch {:method "GET"
-                               :uri (str "/sessions?batch_id=" batch-id "&limit=20&offset=0")
+                               :uri (str "/sessions?batch_id=" batch-id "&limit=20&offset=0&count=none")
                                :on-success on-success
                                :on-failure on-failure}]]]})))
 
@@ -142,7 +149,7 @@
                       (rf/dispatch [::audit->set-sessions-by-batch-id res nil false]))]
      {:db (assoc-in db [:audit->filtered-session-by-id :loading] true)
       :fx [[:dispatch [:fetch {:method "GET"
-                               :uri (str "/sessions?batch_id=" batch-id "&limit=20&offset=" next-offset)
+                               :uri (str "/sessions?batch_id=" batch-id "&limit=20&count=none&offset=" next-offset)
                                :on-success on-success
                                :on-failure on-failure}]]]})))
 
