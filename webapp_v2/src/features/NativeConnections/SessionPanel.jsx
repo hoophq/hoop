@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Divider, Group, ScrollArea, Stack } from '@mantine/core'
 import Button from '@/components/Button'
+import Select from '@/components/Select'
 import Tabs from '@/components/Tabs'
+import { DEFAULT_RDP_DESKTOP_SIZE, RDP_DESKTOP_SIZE_OPTIONS } from './constants'
 import { pickCredentialRenderer } from './credentials'
 import { normalizeSubtype, openRdpWebClient } from './helpers'
 import classes from './NativeConnections.module.css'
@@ -29,6 +31,7 @@ function ScrollableBody({ children }) {
 export function SessionPanel({ credentials, onDisconnect }) {
   const rule = pickCredentialRenderer(credentials.connection_subtype)
   const [tab, setTab] = useState(rule.tabs?.[0]?.value ?? 'credentials')
+  const [rdpDesktopSize, setRdpDesktopSize] = useState(DEFAULT_RDP_DESKTOP_SIZE)
 
   // Capitalised aliases so JSX treats them as components rather than DOM tags.
   // Renderers are mounted as elements, not invoked as functions, so a renderer
@@ -78,15 +81,32 @@ export function SessionPanel({ credentials, onDisconnect }) {
           deliberately not surfaced here — it was never rendered in the CLJS UI
           either, and adding a new destructive action alongside the redesign is
           a separate product decision. */}
-      <Group justify="flex-end" gap="sm">
+      <Group justify="flex-end" align="flex-end" gap="sm">
         {subtype === 'rdp' && (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => openRdpWebClient(credentials.connection_credentials?.username)}
-          >
-            Open web client
-          </Button>
+          <>
+            <Select
+              label="Desktop resolution"
+              aria-label="Desktop resolution"
+              data={RDP_DESKTOP_SIZE_OPTIONS}
+              value={rdpDesktopSize}
+              onChange={setRdpDesktopSize}
+              allowDeselect={false}
+              size="sm"
+              w={190}
+            />
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() =>
+                openRdpWebClient(
+                  credentials.connection_credentials?.username,
+                  rdpDesktopSize,
+                )
+              }
+            >
+              Open web client
+            </Button>
+          </>
         )}
         <Button color="red" size="sm" onClick={onDisconnect}>
           Disconnect
