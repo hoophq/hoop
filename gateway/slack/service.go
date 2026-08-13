@@ -426,13 +426,33 @@ func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) erro
 	return nil
 }
 
+// approverGroupsLabelPrefix matches the section SendMessageReview posts right
+// above each group's action block; dropped together with the block so no
+// orphaned label survives a terminal rewrite.
+const approverGroupsLabelPrefix = "*Approver groups:*"
+
+func reviewOutcomeSection(rg ReviewedGroup) *slack.SectionBlock {
+	return slack.NewSectionBlock(&slack.TextBlockObject{
+		Type: slack.MarkdownType,
+		Text: fmt.Sprintf("%s `%s` this session at _%v_",
+			escapeSlackText(rg.ReviewerEmail), strings.ToLower(rg.Status),
+			rg.ReviewedAt.UTC().Format(time.RFC1123)),
+	}, nil, nil)
+}
+
 // rebuildReviewBlocks recreates the message block set from the originally
 // posted blocks, replacing each reviewed group's action block with its outcome
 // and appending the final or partial status. On terminal states the remaining
-// unreviewed groups' buttons are dropped: the review no longer accepts input
-// and a click would only produce a "wrong state" error. Never mutates m.blocks.
+// unreviewed groups' buttons are dropped (with their label sections): the
+// review no longer accepts input and a click would only produce a "wrong
+// state" error. Reviewed groups that match no action block — synthetic groups
+// appended when an admin or the owner rejects, or forced-approval groups
+// outside the approver set — get their outcome appended at the end, so a
+// terminal rejection is never rendered without attribution. Never mutates
+// m.blocks.
 func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, reviewed map[string]ReviewedGroup) []slack.Block {
 	done := req.IsApproved || req.IsRejected
+	matched := make(map[string]bool, len(reviewed))
 	blocks := make([]slack.Block, 0, len(m.blocks)+2)
 	for _, b := range m.blocks {
 		ab, ok := b.(*slack.ActionBlock)
@@ -440,19 +460,31 @@ func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, 
 			blocks = append(blocks, b)
 			continue
 		}
-		rg, ok := reviewed[reviewGroupFromBlockID(ab.BlockID, req.ReviewID)]
+		group := reviewGroupFromBlockID(ab.BlockID, req.ReviewID)
+		rg, ok := reviewed[group]
 		if !ok {
 			if !done {
 				blocks = append(blocks, b)
+				continue
+			}
+			// drop the button and its "*Approver groups:* X" label above it
+			if n := len(blocks); n > 0 {
+				if sec, ok := blocks[n-1].(*slack.SectionBlock); ok &&
+					sec.Text != nil && strings.HasPrefix(sec.Text.Text, approverGroupsLabelPrefix) {
+					blocks = blocks[:n-1]
+				}
 			}
 			continue
 		}
-		blocks = append(blocks, slack.NewSectionBlock(&slack.TextBlockObject{
-			Type: slack.MarkdownType,
-			Text: fmt.Sprintf("%s `%s` this session at _%v_",
-				escapeSlackText(rg.ReviewerEmail), strings.ToLower(rg.Status),
-				rg.ReviewedAt.UTC().Format(time.RFC1123)),
-		}, nil, nil))
+		matched[group] = true
+		blocks = append(blocks, reviewOutcomeSection(rg))
+	}
+
+	// synthetic reviewed groups with no action block of their own
+	for _, rg := range req.ReviewedGroups {
+		if !matched[rg.Name] {
+			blocks = append(blocks, reviewOutcomeSection(rg))
+		}
 	}
 
 	switch {

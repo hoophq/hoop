@@ -94,9 +94,16 @@ func TestReviewGroupFromBlockID(t *testing.T) {
 // originally posted block set shared across channels.
 func TestRebuildReviewBlocks(t *testing.T) {
 	const revID = "rev-1"
+	label := func(group string) *slack.SectionBlock {
+		return slack.NewSectionBlock(&slack.TextBlockObject{
+			Type: slack.MarkdownType, Text: "*Approver groups:* " + group,
+		}, nil, nil)
+	}
 	original := []slack.Block{
 		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		label("admin"),
 		slack.NewActionBlock(revID + ":admin:0"),
+		label("sre"),
 		slack.NewActionBlock(revID + ":sre:1"),
 	}
 	m := &sentReviewMessage{eventKind: EventKindOneTime, blocks: original}
@@ -108,50 +115,72 @@ func TestRebuildReviewBlocks(t *testing.T) {
 	// partial approval: admin replaced, sre still actionable, progress context appended
 	req := &UpdateReviewMessageRequest{ReviewID: revID, ReviewedGroups: []ReviewedGroup{reviewed["admin"]}, TotalGroups: 2}
 	blocks := rebuildReviewBlocks(m, req, reviewed)
-	if len(blocks) != 4 {
-		t.Fatalf("partial: got %d blocks, want 4", len(blocks))
+	if len(blocks) != 6 {
+		t.Fatalf("partial: got %d blocks, want 6", len(blocks))
 	}
-	sec, ok := blocks[1].(*slack.SectionBlock)
+	sec, ok := blocks[2].(*slack.SectionBlock)
 	if !ok {
-		t.Fatalf("partial: reviewed group block not replaced, got %T", blocks[1])
+		t.Fatalf("partial: reviewed group block not replaced, got %T", blocks[2])
 	}
 	if !strings.Contains(sec.Text.Text, "a@a.com") || !strings.Contains(sec.Text.Text, "`approved`") {
 		t.Errorf("partial: unexpected outcome text: %s", sec.Text.Text)
 	}
-	if _, ok := blocks[2].(*slack.ActionBlock); !ok {
-		t.Errorf("partial: pending group must keep its buttons, got %T", blocks[2])
+	if _, ok := blocks[4].(*slack.ActionBlock); !ok {
+		t.Errorf("partial: pending group must keep its buttons, got %T", blocks[4])
 	}
-	if _, ok := blocks[3].(*slack.ContextBlock); !ok {
-		t.Errorf("partial: missing progress context block, got %T", blocks[3])
+	if _, ok := blocks[5].(*slack.ContextBlock); !ok {
+		t.Errorf("partial: missing progress context block, got %T", blocks[5])
 	}
 
-	// terminal approval (e.g. min_approvals reached): unreviewed sre buttons
-	// are dropped and the ready divider+section replaces the progress context
+	// terminal approval (e.g. min_approvals reached): unreviewed sre button AND
+	// its label are dropped, ready divider+section replaces the progress context
 	req.IsApproved = true
 	blocks = rebuildReviewBlocks(m, req, reviewed)
-	if len(blocks) != 4 {
-		t.Fatalf("approved: got %d blocks, want 4", len(blocks))
+	if len(blocks) != 5 {
+		t.Fatalf("approved: got %d blocks, want 5", len(blocks))
 	}
 	for _, b := range blocks {
 		if _, ok := b.(*slack.ActionBlock); ok {
 			t.Errorf("approved: terminal message must not keep buttons")
 		}
+		if sec, ok := b.(*slack.SectionBlock); ok && strings.Contains(sec.Text.Text, "sre") {
+			t.Errorf("approved: orphaned label for dropped sre button: %s", sec.Text.Text)
+		}
 	}
-	ready, ok := blocks[3].(*slack.SectionBlock)
+	ready, ok := blocks[4].(*slack.SectionBlock)
 	if !ok || !strings.Contains(ready.Text.Text, "Session ready") {
-		t.Errorf("approved: missing ready section, got %T", blocks[3])
+		t.Errorf("approved: missing ready section, got %T", blocks[4])
 	}
 
-	// terminal rejection appends nothing and drops remaining buttons
+	// terminal rejection appends nothing and drops remaining buttons + labels
 	req.IsApproved = false
 	req.IsRejected = true
-	if blocks = rebuildReviewBlocks(m, req, reviewed); len(blocks) != 2 {
-		t.Errorf("rejected: got %d blocks, want 2", len(blocks))
+	if blocks = rebuildReviewBlocks(m, req, reviewed); len(blocks) != 3 {
+		t.Errorf("rejected: got %d blocks, want 3", len(blocks))
+	}
+
+	// synthetic reviewed group (admin/owner rejection, forced approval) matches
+	// no action block: its outcome must still be rendered, never a silent drop
+	synthetic := ReviewedGroup{Name: "owner-veto", Status: "REJECTED", ReviewerEmail: "b@b.com", ReviewedAt: reviewedAt}
+	sreq := &UpdateReviewMessageRequest{ReviewID: revID, IsRejected: true,
+		ReviewedGroups: []ReviewedGroup{synthetic}, TotalGroups: 2}
+	blocks = rebuildReviewBlocks(m, sreq, map[string]ReviewedGroup{synthetic.Name: synthetic})
+	var foundOutcome bool
+	for _, b := range blocks {
+		if _, ok := b.(*slack.ActionBlock); ok {
+			t.Errorf("synthetic rejection: buttons must be dropped")
+		}
+		if sec, ok := b.(*slack.SectionBlock); ok && strings.Contains(sec.Text.Text, "b@b.com") && strings.Contains(sec.Text.Text, "`rejected`") {
+			foundOutcome = true
+		}
+	}
+	if !foundOutcome {
+		t.Errorf("synthetic rejection: outcome section missing, blocks=%d", len(blocks))
 	}
 
 	// original blocks are shared across channels and must stay intact
-	if _, ok := original[1].(*slack.ActionBlock); !ok {
-		t.Errorf("original block set mutated: %T", original[1])
+	if _, ok := original[2].(*slack.ActionBlock); !ok {
+		t.Errorf("original block set mutated: %T", original[2])
 	}
 }
 
